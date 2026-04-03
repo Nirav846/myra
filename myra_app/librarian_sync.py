@@ -72,8 +72,16 @@ class LibrarianSyncMixin:
                             # ANTI-ANOMALY: Prevent future dates
                             if dt > today: continue
                             
+                            # Normalization: Ensure symbols with special characters are normalized
+                            raw_sym = str(item.get('symbol', '')).upper().strip()
+                            raw_sym = raw_sym.replace(' AND ', '&')
+                            if "M_M" in raw_sym or "M M" in raw_sym:
+                                raw_sym = raw_sym.replace("M_M", "M&M").replace("M M", "M&M")
+                            if "_" in raw_sym:
+                                raw_sym = raw_sym.replace("_", "-")
+
                             self._inst_conn.execute("INSERT OR REPLACE INTO insider_trades VALUES (?, ?, ?, ?, ?, ?, ?, ?)", 
-                                             (item.get('symbol'), item.get('acqName'), item.get('personCategory'), 
+                                             (raw_sym, item.get('acqName'), item.get('personCategory'),
                                               item.get('tdpTransactionType'), item.get('acqMode'), val_cr, avg_price, str(dt)))
                         except Exception: pass
                     self._inst_conn.commit()
@@ -163,9 +171,17 @@ class LibrarianSyncMixin:
             if deals:
                 for d in deals:
                     try:
+                        # Normalization: Ensure symbols with special characters are normalized
+                        raw_sym = str(d.get('symbol', '')).upper().strip()
+                        raw_sym = raw_sym.replace(' AND ', '&')
+                        if "M_M" in raw_sym or "M M" in raw_sym:
+                            raw_sym = raw_sym.replace("M_M", "M&M").replace("M M", "M&M")
+                        if "_" in raw_sym:
+                            raw_sym = raw_sym.replace("_", "-")
+
                         self._inst_conn.execute("""
                             INSERT OR REPLACE INTO large_deals VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """, (d['symbol'], d['type'], d['client'], d['buy_sell'], d['qty'], d['price'], str(d['date'])))
+                        """, (raw_sym, d['type'], d['client'], d['buy_sell'], d['qty'], d['price'], str(d['date'])))
                     except Exception: pass
                 self._inst_conn.commit()
                 self.set_metadata("last_large_deals_sync", datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
