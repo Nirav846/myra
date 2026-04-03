@@ -31,6 +31,8 @@ data/ohlcv_cache/
 data/Market_Archives/
 data/**/*.parquet
 data/**/*.csv
+*.db-wal
+*.db-shm
 
 # --- Python & Cache ---
 __pycache__/
@@ -77,3 +79,4 @@ results/*.pkl.lck
 
 # --- Exceptions ---
 !results/Data/yfinance.cache.zip
+HELP FILES/
