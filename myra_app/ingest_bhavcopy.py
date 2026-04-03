@@ -48,11 +48,17 @@ def ingest_bhavcopies(csv_folder, db_path="db/technical.db", batch_size=5000):
             mapping = {
                 'SYMBOL': 'symbol',
                 'DATE1': 'date',
+                'TIMESTAMP': 'date',
                 'OPEN_PRICE': 'open',
+                'OPEN': 'open',
                 'HIGH_PRICE': 'high',
+                'HIGH': 'high',
                 'LOW_PRICE': 'low',
+                'LOW': 'low',
                 'CLOSE_PRICE': 'close',
+                'CLOSE': 'close',
                 'TTL_TRD_QNTY': 'volume',
+                'TOTTRDQTY': 'volume',
                 'DELIV_QTY': 'delivery',
                 'NO_OF_TRADES': 'trades',
                 'AVG_PRICE': 'vwap',
@@ -64,13 +70,15 @@ def ingest_bhavcopies(csv_folder, db_path="db/technical.db", batch_size=5000):
             
             # Ensure all required columns exist
             required = ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume']
-            for col in required:
-                if col not in df.columns:
-                    # Try to find alternative names or skip
-                    continue
+            missing_cols = [col for col in required if col not in df.columns]
+            if missing_cols:
+                print(f"[!] Skipping file {file_path}. Missing required columns: {missing_cols}")
+                continue
             
             # Convert DATE1 (DD-MMM-YYYY or similar) to YYYY-MM-DD
             def parse_date(d_str):
+                if pd.isna(d_str):
+                    return None
                 try:
                     # Example: 20-Mar-2026 -> 2026-03-20
                     return datetime.strptime(str(d_str).strip(), "%d-%b-%Y").strftime("%Y-%m-%d")
@@ -78,12 +86,21 @@ def ingest_bhavcopies(csv_folder, db_path="db/technical.db", batch_size=5000):
                     return str(d_str) # Already in right format?
             
             df['date'] = df['date'].apply(parse_date)
+            # Drop rows with missing date
+            df = df.dropna(subset=['date'])
             
             # Cast numeric fields BEFORE derived columns
             numeric_cols = ['open', 'high', 'low', 'close', 'volume', 'delivery', 'trades', 'vwap', 'delivery_pct']
             for col in numeric_cols:
                 if col in df.columns:
-                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+
+            # Drop rows where critical price fields are NaN or <= 0
+            critical_prices = ['open', 'high', 'low', 'close']
+            for col in critical_prices:
+                if col in df.columns:
+                    df = df[df[col].notna()]
+                    df = df[df[col] > 0]
 
             # Derived Column: delivery_ratio
             if 'delivery' in df.columns and 'volume' in df.columns:
