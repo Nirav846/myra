@@ -4,10 +4,11 @@ import sqlite3
 import pandas as pd
 
 # Fix path
-sys.path.append(os.getcwd())
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.append(PROJECT_ROOT)
 
 def investigate_gappy_symbol(symbol):
-    db_path = "db/technical.db"
+    db_path = os.path.join(PROJECT_ROOT, "db", "technical.db")
     conn = sqlite3.connect(db_path)
     
     print(f"[*] Investigating symbol: {symbol}")
@@ -17,7 +18,7 @@ def investigate_gappy_symbol(symbol):
     print(f"    - DB Rows: {res[0]}, Range: {res[1]} to {res[2]}")
     
     # 2. Check gaps in missing_data.csv
-    df_missing = pd.read_csv("data/missing_data.csv")
+    df_missing = pd.read_csv(os.path.join(PROJECT_ROOT, "data", "missing_data.csv"))
     sym_missing = df_missing[df_missing['symbol'] == symbol]
     print(f"    - CSV Gaps: {len(sym_missing)}")
     if not sym_missing.empty:
