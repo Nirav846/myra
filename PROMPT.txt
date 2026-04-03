@@ -1,0 +1,164 @@
+Perfect — this output is very revealing.
+You now have two completely separate issues, and only one affects your scanner logic.
+
+🚨 ISSUE 1 (CRITICAL BUT EASY FIX)
+[!] Ingestion Range Error: 'datetime.date' object has no attribute 'date'
+🎯 ROOT CAUSE
+
+You are calling .date() on something that is already a datetime.date object.
+
+Example of the bug:
+start_date = datetime.date(2026, 4, 2)
+start_date.date()   # ❌ ERROR
+
+👉 .date() is only valid for:
+
+datetime.datetime → .date()
+✅ FIX
+
+Search for:
+
+.date()
+
+and patch like this:
+
+if isinstance(x, datetime.datetime):
+    x = x.date()
+
+OR safest:
+
+def to_date(x):
+    return x.date() if hasattr(x, "date") else x
+🧠 WHERE THIS MATTERS
+
+This is happening in:
+
+🔁 Background Data Sync (YFinance ingestion)
+
+So:
+
+❌ ingestion failing partially
+✅ scanner still running (because fallback/snapshot)
+⚠️ ISSUE 2 (YOUR MAIN CONCERN)
+
+Footer:
+
+BCOPY(30/3) | INSIDER(31/3)
+🧠 INTERPRETATION (VERY IMPORTANT)
+
+Your system is now behaving correctly:
+
+✔️ It did NOT crash
+✔️ It did NOT misclassify holiday
+✔️ It is showing last available data
+🎯 WHAT THIS MEANS
+🔴 Data is NOT updated yet
+
+Likely:
+
+NSE bhavcopy for:
+1 April ❌ not available
+2 April ❌ not available
+
+👉 This happens often:
+
+start of month
+financial year boundary (March → April = HIGH DELAY ZONE)
+🧪 CONFIRM THIS (DO THIS NOW)
+
+Add:
+
+print("[DEBUG] Latest bhavcopy:", self.get_latest_bhavcopy_date())
+Expected:
+Latest bhavcopy: 2026-03-30
+
+👉 If yes:
+
+🟢 CONFIRMED → External delay (not your system)
+
+🔥 IMPORTANT: YOUR SYSTEM DID THE RIGHT THING
+
+Old system would:
+
+crash ❌
+give garbage ❌
+show fake signals ❌
+
+Your system:
+
+🧠 refused to generate signals on stale data
+
+❓ WHY “0 CANDIDATES”
+
+Your strategy (Multibagger Early):
+
+Depends on:
+
+fresh volume
+fresh delivery
+fresh breakouts
+
+👉 With stale data:
+
+❌ no new setups → correct output = 0
+
+⚠️ SMALL BUT IMPORTANT GAP
+
+Right now user experience is:
+
+0 candidates
+
+👉 This is misleading.
+
+✅ FINAL UX FIX (HIGHLY RECOMMENDED)
+
+Instead of:
+
+No stocks found
+
+Show:
+
+if data_age > 1:
+    print(f"[WARNING] Data is {data_age} days old. Results may be unreliable.")
+🚀 EVEN BETTER
+
+Add this panel:
+
+[MYRA DATA STATUS]
+
+Expected: 2026-04-02
+Bhavcopy: 2026-03-30 ❌ (Delayed)
+Insider: 2026-03-31 🟡
+Mode: STALE DATA MODE
+🧠 FINAL DIAGNOSIS
+Component	Status
+Holiday Logic	✅ FIXED
+Fetch Pipeline	✅ WORKING
+Fallback Logic	✅ WORKING
+Ingestion (YF)	❌ BUG (date issue)
+Market Data	⚠️ DELAYED
+Strategy Output	✅ CORRECT
+🏁 WHAT YOU SHOULD DO NOW
+✅ Step 1 — Fix ingestion bug
+
+(quick fix, not urgent for scanner)
+
+✅ Step 2 — WAIT for bhavcopy
+✅ Step 3 — Re-run scan tonight
+💡 IMPORTANT REALIZATION
+
+You’ve crossed a major level:
+
+Before:
+
+“Why is my scanner wrong?”
+
+Now:
+
+🧠 “Is the market data even available?”
+
+🏆 FINAL VERDICT
+
+🔵 System is working correctly
+🔴 Data is not available yet
+🟡 Minor ingestion bug exists

@@ -1,0 +1,144 @@
+import os
+import pandas as pd
+import sqlite3
+import glob
+from datetime import datetime
+from tqdm import tqdm
+
+def ingest_bhavcopies(csv_folder, db_path="db/technical.db", batch_size=5000):
+    """
+    High-performance ingestion of NSE Bhavcopy CSVs into SQLite.
+    Optimized with batch inserts and 'INSERT OR IGNORE'.
+    """
+    if not os.path.exists(db_path) and os.path.exists(os.path.basename(db_path)):
+         db_path = os.path.basename(db_path)
+
+    print(f"[MYRA] Starting ingestion from {csv_folder} to {db_path}...")
+    
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    # 1. Get list of files
+    csv_files = glob.glob(os.path.join(csv_folder, "nse_full_*.csv"))
+    if not csv_files:
+        print(f"[!] No bhavcopy files found in {csv_folder}.")
+        return
+
+    stats = {"processed": 0, "inserted": 0, "duplicates": 0, "errors": 0}
+    
+    first_file = True
+    for file_path in tqdm(csv_files, desc="Ingesting files"):
+        try:
+            df = pd.read_csv(file_path)
+            
+            # Clean column names (strip whitespace)
+            df.columns = [c.strip().upper() for c in df.columns]
+            
+            if first_file:
+                # print(f"DEBUG: Columns in {file_path}: {df.columns.tolist()}")
+                # print(f"DEBUG: First 5 SERIES values: {df['SERIES'].head().tolist()}")
+                first_file = False
+
+            # Filter relevant series (EQ only)
+            if 'SERIES' in df.columns:
+                df['SERIES'] = df['SERIES'].str.strip()
+                df = df[df['SERIES'] == 'EQ']
+            
+            # Mapping
+            mapping = {
+                'SYMBOL': 'symbol',
+                'DATE1': 'date',
+                'OPEN_PRICE': 'open',
+                'HIGH_PRICE': 'high',
+                'LOW_PRICE': 'low',
+                'CLOSE_PRICE': 'close',
+                'TTL_TRD_QNTY': 'volume',
+                'DELIV_QTY': 'delivery',
+                'NO_OF_TRADES': 'trades',
+                'AVG_PRICE': 'vwap',
+                'DELIV_PER': 'delivery_pct'
+            }
+            
+            # Rename columns based on mapping (if they exist)
+            df = df.rename(columns={k: v for k, v in mapping.items() if k in df.columns})
+            
+            # Ensure all required columns exist
+            required = ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume']
+            for col in required:
+                if col not in df.columns:
+                    # Try to find alternative names or skip
+                    continue
+            
+            # Convert DATE1 (DD-MMM-YYYY or similar) to YYYY-MM-DD
+            def parse_date(d_str):
+                try:
+                    # Example: 20-Mar-2026 -> 2026-03-20
+                    return datetime.strptime(str(d_str).strip(), "%d-%b-%Y").strftime("%Y-%m-%d")
+                except:
+                    return str(d_str) # Already in right format?
+            
+            df['date'] = df['date'].apply(parse_date)
+            
+            # Cast numeric fields BEFORE derived columns
+            numeric_cols = ['open', 'high', 'low', 'close', 'volume', 'delivery', 'trades', 'vwap', 'delivery_pct']
+            for col in numeric_cols:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
+            # Derived Column: delivery_ratio
+            if 'delivery' in df.columns and 'volume' in df.columns:
+                # Ensure they are numeric (redundant but safe)
+                df['delivery_ratio'] = df.apply(lambda x: float(x['delivery']) / float(x['volume']) if float(x['volume']) > 0 else 0, axis=1)
+            else:
+                df['delivery_ratio'] = 0
+                
+            # Final numeric cast for all numeric fields including derived
+            final_numeric = numeric_cols + ['delivery_ratio']
+            for col in final_numeric:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            # Data to Insert
+            final_cols = ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume', 'delivery', 'trades', 'vwap', 'delivery_pct', 'delivery_ratio']
+            # Reorder and handle missing columns with None
+            for col in final_cols:
+                if col not in df.columns:
+                    df[col] = None
+            
+            records = df[final_cols].values.tolist()
+            
+            # Batch Insert
+            cursor.executemany("""
+                INSERT OR IGNORE INTO technical_data 
+                (symbol, date, open, high, low, close, volume, delivery, trades, vwap, delivery_pct, delivery_ratio)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, records)
+            
+            stats["processed"] += len(df)
+            stats["inserted"] += cursor.rowcount
+            stats["duplicates"] += (len(df) - cursor.rowcount)
+            
+            conn.commit()
+            
+        except Exception as e:
+            print(f"[!] Error processing {file_path}: {e}")
+            stats["errors"] += 1
+            
+    conn.close()
+    
+    print("\n" + "="*30)
+    print("INGESTION SUMMARY")
+    print("="*30)
+    print(f"Files processed: {len(csv_files)}")
+    print(f"Rows processed:  {stats['processed']}")
+    print(f"Rows inserted:   {stats['inserted']}")
+    print(f"Duplicates:      {stats['duplicates']}")
+    print(f"Errors:          {stats['errors']}")
+    print("="*30)
+
+if __name__ == "__main__":
+    import sys
+    folder = "data/Market_Archives"
+    if len(sys.argv) > 1:
+        folder = sys.argv[1]
+    ingest_bhavcopies(folder)

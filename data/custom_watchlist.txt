@@ -1,0 +1,4 @@
+# ENTER STOCKS YOU ARE WATCHING / CONSIDERING BELOW
+# These will be analyzed for Best Buy prices and Entry setups.
+
+ZOMATO, TATASTEEL, INFYS, WIPRO

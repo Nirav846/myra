@@ -1,0 +1,75 @@
+# --- Virtual Environments & Dependencies ---
+pkscreener_env/
+venv/
+.venv/
+env/
+bin/
+lib/
+share/
+include/
+build/
+dist/
+*.egg-info/
+*.egg
+*ta-lib*
+
+# --- Databases & Large Data (The 2.9GB block) ---
+*.db
+*.sqlite
+*.sql
+*.joblib
+*.keras
+*.h5
+*.bin
+*.run
+*.exe
+data/**/*.csv
+data/**/*.pkl
+results/
+myra_reports/
+
+# --- Python & Cache ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.cache
+*.session
+
+# --- Configuration & Secrets (DO NOT PUSH TO GITHUB) ---
+*.env
+*.dev
+*.ini
+pkscreener.ini
+myra_sources.json
+Cookies
+results/*_cookies.pkl
+
+# --- AI & Agent Artifacts ---
+*_plan.md
+AEON_Audit_*.csv
+MYRA_AI_READY.txt
+.DS_Store
+
+# --- Media & Documents ---
+*.png
+*.jpg
+*.jpeg
+*.pdf
+*.xlsx
+*.html
+*.spec
+*.whl
+
+# --- Temporary & Junk ---
+Help/
+DeleteThis/
+results/*_html.pkl
+results/*.pkl.lck
+
+# --- Exceptions ---
+!results/Data/yfinance.cache.zip

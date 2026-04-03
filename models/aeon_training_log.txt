@@ -1,0 +1,633 @@
+
+
+--- DEEP EVOLUTION STARTED: 2026-03-22 02:50:06.061353 ---
+[Gen 1/100] Best Fitness: -335.5320
+[Gen 2/100] Best Fitness: -335.5204
+[Gen 3/100] Best Fitness: -335.5204
+[Gen 4/100] Best Fitness: -335.5097
+[Gen 5/100] Best Fitness: -335.2270
+[Gen 6/100] Best Fitness: -335.2270
+[Gen 7/100] Best Fitness: -335.0726
+
+
+--- DEEP EVOLUTION STARTED: 2026-03-22 07:09:42.072280 ---
+[Gen 1/100] Best Fitness: -335.2597
+[Gen 2/100] Best Fitness: -335.2597
+[Gen 3/100] Best Fitness: -335.2597
+[Gen 4/100] Best Fitness: -335.2597
+[Gen 5/100] Best Fitness: -335.2597
+[Gen 6/100] Best Fitness: -335.2597
+[Gen 7/100] Best Fitness: -335.1552
+[Gen 8/100] Best Fitness: -335.1552
+[Gen 9/100] Best Fitness: -335.1552
+[Gen 10/100] Best Fitness: -335.1552
+[Gen 11/100] Best Fitness: -335.1552
+[Gen 12/100] Best Fitness: -335.0570
+[Gen 13/100] Best Fitness: -335.0570
+[Gen 14/100] Best Fitness: -335.0570
+[Gen 15/100] Best Fitness: -335.0440
+[Gen 16/100] Best Fitness: -335.0440
+[Gen 17/100] Best Fitness: -335.0440
+[Gen 18/100] Best Fitness: -335.0440
+[Gen 19/100] Best Fitness: -335.0440
+[Gen 20/100] Best Fitness: -335.0440
+[Gen 21/100] Best Fitness: -335.0440
+[Gen 22/100] Best Fitness: -335.0440
+[Gen 23/100] Best Fitness: -335.0440
+[Gen 24/100] Best Fitness: -334.9449
+[Gen 25/100] Best Fitness: -334.7519
+[Gen 26/100] Best Fitness: -334.3167
+[Gen 27/100] Best Fitness: -334.3167
+[Gen 28/100] Best Fitness: -334.0632
+[Gen 29/100] Best Fitness: -334.0632
+[Gen 30/100] Best Fitness: -334.0632
+[Gen 31/100] Best Fitness: -334.0632
+[Gen 32/100] Best Fitness: -333.8675
+[Gen 33/100] Best Fitness: -333.8675
+[Gen 34/100] Best Fitness: -333.8675
+[Gen 35/100] Best Fitness: -333.8675
+[Gen 36/100] Best Fitness: -333.8675
+[Gen 37/100] Best Fitness: -333.8675
+[Gen 38/100] Best Fitness: -333.8675
+[Gen 39/100] Best Fitness: -333.8675
+[Gen 40/100] Best Fitness: -333.8675
+[Gen 41/100] Best Fitness: -333.8675
+[Gen 42/100] Best Fitness: -333.8675
+[Gen 43/100] Best Fitness: -333.8675
+[Gen 44/100] Best Fitness: -333.8675
+[Gen 45/100] Best Fitness: -333.7248
+[Gen 46/100] Best Fitness: -333.7248
+[Gen 47/100] Best Fitness: -333.7248
+[Gen 48/100] Best Fitness: -333.5639
+[Gen 49/100] Best Fitness: -333.5639
+[Gen 50/100] Best Fitness: -333.5639
+[Gen 51/100] Best Fitness: -333.5639
+[Gen 52/100] Best Fitness: -333.5639
+[Gen 53/100] Best Fitness: -333.5639
+[Gen 54/100] Best Fitness: -333.5639
+[Gen 55/100] Best Fitness: -333.5639
+[Gen 56/100] Best Fitness: -333.5639
+[Gen 57/100] Best Fitness: -333.5639
+[Gen 58/100] Best Fitness: -333.5639
+[Gen 59/100] Best Fitness: -333.5639
+[Gen 60/100] Best Fitness: -333.5639
+[Gen 61/100] Best Fitness: -333.5639
+[Gen 62/100] Best Fitness: -333.5639
+[Gen 63/100] Best Fitness: -333.5639
+[Gen 64/100] Best Fitness: -333.5639
+[Gen 65/100] Best Fitness: -333.5639
+[Gen 66/100] Best Fitness: -333.5639
+[Gen 67/100] Best Fitness: -333.5639
+[Gen 68/100] Best Fitness: -333.5639
+[Gen 69/100] Best Fitness: -333.5639
+[Gen 70/100] Best Fitness: -333.5488
+[Gen 71/100] Best Fitness: -333.5488
+[Gen 72/100] Best Fitness: -333.3116
+[Gen 73/100] Best Fitness: -333.3116
+[Gen 74/100] Best Fitness: -333.3116
+[Gen 75/100] Best Fitness: -333.3116
+[Gen 76/100] Best Fitness: -333.3116
+[Gen 77/100] Best Fitness: -333.3116
+[Gen 78/100] Best Fitness: -333.3116
+[Gen 79/100] Best Fitness: -333.3116
+[Gen 80/100] Best Fitness: -333.3116
+[Gen 81/100] Best Fitness: -333.3116
+[Gen 82/100] Best Fitness: -333.3116
+[Gen 83/100] Best Fitness: -333.3116
+[Gen 84/100] Best Fitness: -333.2979
+[Gen 85/100] Best Fitness: -333.2979
+[Gen 86/100] Best Fitness: -333.0230
+[Gen 87/100] Best Fitness: -333.0230
+[Gen 88/100] Best Fitness: -333.0230
+[Gen 89/100] Best Fitness: -333.0230
+[Gen 90/100] Best Fitness: -333.0230
+[Gen 91/100] Best Fitness: -333.0230
+[Gen 92/100] Best Fitness: -332.8037
+[Gen 93/100] Best Fitness: -332.8037
+[Gen 94/100] Best Fitness: -332.8037
+[Gen 95/100] Best Fitness: -332.8037
+[Gen 96/100] Best Fitness: -332.8037
+[Gen 97/100] Best Fitness: -332.8037
+[Gen 98/100] Best Fitness: -332.8037
+[Gen 99/100] Best Fitness: -332.8037
+[Gen 100/100] Best Fitness: -332.8037
+
+
+--- ADVERSARIAL EVOLUTION STARTED: 2026-03-22 07:20:07.972898 ---
+[Gen 1/500] Best Fitness: -511.0627 (Mutation: 0.100)
+[Gen 2/500] Best Fitness: -511.0434 (Mutation: 0.100)
+[Gen 3/500] Best Fitness: -511.0434 (Mutation: 0.100)
+[Gen 4/500] Best Fitness: -511.0434 (Mutation: 0.099)
+[Gen 5/500] Best Fitness: -511.0296 (Mutation: 0.099)
+[Gen 6/500] Best Fitness: -511.0296 (Mutation: 0.099)
+[Gen 7/500] Best Fitness: -511.0296 (Mutation: 0.099)
+[Gen 8/500] Best Fitness: -511.0296 (Mutation: 0.099)
+[Gen 9/500] Best Fitness: -511.0029 (Mutation: 0.099)
+[Gen 10/500] Best Fitness: -510.9611 (Mutation: 0.098)
+[Gen 11/500] Best Fitness: -510.9611 (Mutation: 0.098)
+[Gen 12/500] Best Fitness: -510.9611 (Mutation: 0.098)
+[Gen 13/500] Best Fitness: -510.9611 (Mutation: 0.098)
+[Gen 14/500] Best Fitness: -510.8909 (Mutation: 0.098)
+[Gen 15/500] Best Fitness: -510.8909 (Mutation: 0.097)
+[Gen 16/500] Best Fitness: -510.8909 (Mutation: 0.097)
+[Gen 17/500] Best Fitness: -510.8909 (Mutation: 0.097)
+[Gen 18/500] Best Fitness: -510.8564 (Mutation: 0.097)
+[Gen 19/500] Best Fitness: -510.8564 (Mutation: 0.097)
+[Gen 20/500] Best Fitness: -510.8169 (Mutation: 0.097)
+[Gen 21/500] Best Fitness: -510.8169 (Mutation: 0.096)
+[Gen 22/500] Best Fitness: -510.6205 (Mutation: 0.096)
+[Gen 23/500] Best Fitness: -510.6205 (Mutation: 0.096)
+[Gen 24/500] Best Fitness: -510.6205 (Mutation: 0.096)
+[Gen 25/500] Best Fitness: -510.3048 (Mutation: 0.096)
+[Gen 26/500] Best Fitness: -510.3048 (Mutation: 0.096)
+[Gen 27/500] Best Fitness: -510.3048 (Mutation: 0.095)
+[Gen 28/500] Best Fitness: -510.3048 (Mutation: 0.095)
+[Gen 29/500] Best Fitness: -510.3048 (Mutation: 0.095)
+[Gen 30/500] Best Fitness: -510.3048 (Mutation: 0.095)
+[Gen 31/500] Best Fitness: -510.3048 (Mutation: 0.095)
+[Gen 32/500] Best Fitness: -510.3048 (Mutation: 0.094)
+[Gen 33/500] Best Fitness: -510.3048 (Mutation: 0.094)
+[Gen 34/500] Best Fitness: -510.3048 (Mutation: 0.094)
+[Gen 35/500] Best Fitness: -510.3048 (Mutation: 0.094)
+[Gen 36/500] Best Fitness: -510.3048 (Mutation: 0.094)
+[Gen 37/500] Best Fitness: -510.3048 (Mutation: 0.094)
+[Gen 38/500] Best Fitness: -510.3048 (Mutation: 0.093)
+[Gen 39/500] Best Fitness: -510.3048 (Mutation: 0.093)
+[Gen 40/500] Best Fitness: -510.3048 (Mutation: 0.093)
+[Gen 41/500] Best Fitness: -510.3048 (Mutation: 0.093)
+[Gen 42/500] Best Fitness: -510.3048 (Mutation: 0.093)
+[Gen 43/500] Best Fitness: -510.3048 (Mutation: 0.092)
+[Gen 44/500] Best Fitness: -509.8294 (Mutation: 0.092)
+[Gen 45/500] Best Fitness: -509.8294 (Mutation: 0.092)
+[Gen 46/500] Best Fitness: -509.8294 (Mutation: 0.092)
+[Gen 47/500] Best Fitness: -509.8294 (Mutation: 0.092)
+[Gen 48/500] Best Fitness: -509.8294 (Mutation: 0.092)
+[Gen 49/500] Best Fitness: -509.8294 (Mutation: 0.091)
+[Gen 50/500] Best Fitness: -509.8294 (Mutation: 0.091)
+[Gen 51/500] Best Fitness: -509.8294 (Mutation: 0.091)
+[Gen 52/500] Best Fitness: -509.8294 (Mutation: 0.091)
+[Gen 53/500] Best Fitness: -509.8294 (Mutation: 0.091)
+[Gen 54/500] Best Fitness: -509.8294 (Mutation: 0.090)
+[Gen 55/500] Best Fitness: -509.8294 (Mutation: 0.090)
+[Gen 56/500] Best Fitness: -509.8294 (Mutation: 0.090)
+[Gen 57/500] Best Fitness: -509.8294 (Mutation: 0.090)
+[Gen 58/500] Best Fitness: -509.8294 (Mutation: 0.090)
+[Gen 59/500] Best Fitness: -509.1470 (Mutation: 0.090)
+[Gen 60/500] Best Fitness: -509.1470 (Mutation: 0.089)
+[Gen 61/500] Best Fitness: -509.1470 (Mutation: 0.089)
+[Gen 62/500] Best Fitness: -509.1470 (Mutation: 0.089)
+[Gen 63/500] Best Fitness: -509.1470 (Mutation: 0.089)
+[Gen 64/500] Best Fitness: -509.1470 (Mutation: 0.089)
+[Gen 65/500] Best Fitness: -509.1470 (Mutation: 0.088)
+[Gen 66/500] Best Fitness: -509.1470 (Mutation: 0.088)
+[Gen 67/500] Best Fitness: -509.1470 (Mutation: 0.088)
+[Gen 68/500] Best Fitness: -509.1470 (Mutation: 0.088)
+[Gen 69/500] Best Fitness: -509.1470 (Mutation: 0.088)
+[Gen 70/500] Best Fitness: -509.1470 (Mutation: 0.088)
+[Gen 71/500] Best Fitness: -509.1470 (Mutation: 0.087)
+[Gen 72/500] Best Fitness: -509.1470 (Mutation: 0.087)
+[Gen 73/500] Best Fitness: -509.1470 (Mutation: 0.087)
+[Gen 74/500] Best Fitness: -509.1470 (Mutation: 0.087)
+[Gen 75/500] Best Fitness: -509.1470 (Mutation: 0.087)
+[Gen 76/500] Best Fitness: -509.1470 (Mutation: 0.087)
+[Gen 77/500] Best Fitness: -509.1470 (Mutation: 0.086)
+[Gen 78/500] Best Fitness: -509.1470 (Mutation: 0.086)
+[Gen 79/500] Best Fitness: -509.1470 (Mutation: 0.086)
+[Gen 80/500] Best Fitness: -509.1470 (Mutation: 0.086)
+[Gen 81/500] Best Fitness: -509.1470 (Mutation: 0.086)
+[Gen 82/500] Best Fitness: -509.1470 (Mutation: 0.085)
+[Gen 83/500] Best Fitness: -509.1470 (Mutation: 0.085)
+[Gen 84/500] Best Fitness: -509.1470 (Mutation: 0.085)
+[Gen 85/500] Best Fitness: -509.1470 (Mutation: 0.085)
+[Gen 86/500] Best Fitness: -509.1470 (Mutation: 0.085)
+[Gen 87/500] Best Fitness: -509.1470 (Mutation: 0.085)
+[Gen 88/500] Best Fitness: -509.1470 (Mutation: 0.084)
+[Gen 89/500] Best Fitness: -509.1470 (Mutation: 0.084)
+[Gen 90/500] Best Fitness: -509.1470 (Mutation: 0.084)
+[Gen 91/500] Best Fitness: -509.1470 (Mutation: 0.084)
+[Gen 92/500] Best Fitness: -509.1470 (Mutation: 0.084)
+[Gen 93/500] Best Fitness: -509.1470 (Mutation: 0.083)
+[Gen 94/500] Best Fitness: -509.1470 (Mutation: 0.083)
+[Gen 95/500] Best Fitness: -509.1470 (Mutation: 0.083)
+[Gen 96/500] Best Fitness: -509.1470 (Mutation: 0.083)
+[Gen 97/500] Best Fitness: -509.1470 (Mutation: 0.083)
+[Gen 98/500] Best Fitness: -509.1470 (Mutation: 0.083)
+[Gen 99/500] Best Fitness: -509.1470 (Mutation: 0.082)
+
+
+--- ADVERSARIAL EVOLUTION STARTED: 2026-03-22 07:42:25.539326 ---
+[Gen 1/100] Best Fitness: 0.0000 (Mutation: 0.100)
+[Gen 2/100] Best Fitness: 0.0000 (Mutation: 0.099)
+[Gen 3/100] Best Fitness: 0.0000 (Mutation: 0.098)
+[Gen 4/100] Best Fitness: 0.0137 (Mutation: 0.097)
+[Gen 5/100] Best Fitness: 0.0137 (Mutation: 0.096)
+[Gen 6/100] Best Fitness: 0.0137 (Mutation: 0.096)
+[Gen 7/100] Best Fitness: 0.0137 (Mutation: 0.095)
+[Gen 8/100] Best Fitness: 0.0140 (Mutation: 0.094)
+[Gen 9/100] Best Fitness: 0.0140 (Mutation: 0.093)
+[Gen 10/100] Best Fitness: 0.0140 (Mutation: 0.092)
+[Gen 11/100] Best Fitness: 0.0140 (Mutation: 0.091)
+[Gen 12/100] Best Fitness: 0.0140 (Mutation: 0.090)
+[Gen 13/100] Best Fitness: 0.0140 (Mutation: 0.089)
+[Gen 14/100] Best Fitness: 0.0140 (Mutation: 0.088)
+[Gen 15/100] Best Fitness: 0.0140 (Mutation: 0.087)
+[Gen 16/100] Best Fitness: 0.0140 (Mutation: 0.087)
+[Gen 17/100] Best Fitness: 0.0140 (Mutation: 0.086)
+[Gen 18/100] Best Fitness: 0.0140 (Mutation: 0.085)
+[Gen 19/100] Best Fitness: 0.0140 (Mutation: 0.084)
+[Gen 20/100] Best Fitness: 0.0140 (Mutation: 0.083)
+[Gen 21/100] Best Fitness: 0.0140 (Mutation: 0.082)
+[Gen 22/100] Best Fitness: 0.0140 (Mutation: 0.081)
+[Gen 23/100] Best Fitness: 0.0140 (Mutation: 0.080)
+[Gen 24/100] Best Fitness: 0.0207 (Mutation: 0.079)
+[Gen 25/100] Best Fitness: 0.0207 (Mutation: 0.078)
+[Gen 26/100] Best Fitness: 0.0207 (Mutation: 0.077)
+[Gen 27/100] Best Fitness: 0.0207 (Mutation: 0.077)
+[Gen 28/100] Best Fitness: 0.0207 (Mutation: 0.076)
+[Gen 29/100] Best Fitness: 0.0207 (Mutation: 0.075)
+[Gen 30/100] Best Fitness: 0.0207 (Mutation: 0.074)
+[Gen 31/100] Best Fitness: 0.0207 (Mutation: 0.073)
+[Gen 32/100] Best Fitness: 0.0207 (Mutation: 0.072)
+[Gen 33/100] Best Fitness: 0.0207 (Mutation: 0.071)
+[Gen 34/100] Best Fitness: 0.0207 (Mutation: 0.070)
+[Gen 35/100] Best Fitness: 0.0207 (Mutation: 0.069)
+[Gen 36/100] Best Fitness: 0.0207 (Mutation: 0.069)
+[Gen 37/100] Best Fitness: 0.0207 (Mutation: 0.068)
+[Gen 38/100] Best Fitness: 0.0207 (Mutation: 0.067)
+[Gen 39/100] Best Fitness: 0.0207 (Mutation: 0.066)
+[Gen 40/100] Best Fitness: 0.0207 (Mutation: 0.065)
+[Gen 41/100] Best Fitness: 0.0207 (Mutation: 0.064)
+[Gen 42/100] Best Fitness: 0.0207 (Mutation: 0.063)
+[Gen 43/100] Best Fitness: 0.0207 (Mutation: 0.062)
+[Gen 44/100] Best Fitness: 0.0207 (Mutation: 0.061)
+[Gen 45/100] Best Fitness: 0.0207 (Mutation: 0.060)
+[Gen 46/100] Best Fitness: 0.0207 (Mutation: 0.059)
+[Gen 47/100] Best Fitness: 0.0207 (Mutation: 0.059)
+[Gen 48/100] Best Fitness: 0.0207 (Mutation: 0.058)
+[Gen 49/100] Best Fitness: 0.0207 (Mutation: 0.057)
+[Gen 50/100] Best Fitness: 0.0207 (Mutation: 0.056)
+[Gen 51/100] Best Fitness: 0.0207 (Mutation: 0.055)
+[Gen 52/100] Best Fitness: 0.0207 (Mutation: 0.054)
+[Gen 53/100] Best Fitness: 0.0207 (Mutation: 0.053)
+[Gen 54/100] Best Fitness: 0.0207 (Mutation: 0.052)
+[Gen 55/100] Best Fitness: 0.0207 (Mutation: 0.051)
+[Gen 56/100] Best Fitness: 0.0207 (Mutation: 0.050)
+[Gen 57/100] Best Fitness: 0.0207 (Mutation: 0.050)
+[Gen 58/100] Best Fitness: 0.0207 (Mutation: 0.049)
+[Gen 59/100] Best Fitness: 0.0207 (Mutation: 0.048)
+[Gen 60/100] Best Fitness: 0.0207 (Mutation: 0.047)
+[Gen 61/100] Best Fitness: 0.0207 (Mutation: 0.046)
+[Gen 62/100] Best Fitness: 0.0207 (Mutation: 0.045)
+[Gen 63/100] Best Fitness: 0.0207 (Mutation: 0.044)
+[Gen 64/100] Best Fitness: 0.0207 (Mutation: 0.043)
+[Gen 65/100] Best Fitness: 0.0207 (Mutation: 0.042)
+[Gen 66/100] Best Fitness: 0.0207 (Mutation: 0.041)
+[Gen 67/100] Best Fitness: 0.0207 (Mutation: 0.041)
+[Gen 68/100] Best Fitness: 0.0389 (Mutation: 0.040)
+[Gen 69/100] Best Fitness: 0.0389 (Mutation: 0.039)
+[Gen 70/100] Best Fitness: 0.0389 (Mutation: 0.038)
+[Gen 71/100] Best Fitness: 0.0389 (Mutation: 0.037)
+[Gen 72/100] Best Fitness: 0.0389 (Mutation: 0.036)
+[Gen 73/100] Best Fitness: 0.0389 (Mutation: 0.035)
+[Gen 74/100] Best Fitness: 0.0389 (Mutation: 0.034)
+[Gen 75/100] Best Fitness: 0.0389 (Mutation: 0.033)
+[Gen 76/100] Best Fitness: 0.0389 (Mutation: 0.033)
+[Gen 77/100] Best Fitness: 0.0389 (Mutation: 0.032)
+[Gen 78/100] Best Fitness: 0.0389 (Mutation: 0.031)
+[Gen 79/100] Best Fitness: 0.0389 (Mutation: 0.030)
+[Gen 80/100] Best Fitness: 0.0389 (Mutation: 0.029)
+[Gen 81/100] Best Fitness: 0.0389 (Mutation: 0.028)
+[Gen 82/100] Best Fitness: 0.0389 (Mutation: 0.027)
+[Gen 83/100] Best Fitness: 0.0389 (Mutation: 0.026)
+[Gen 84/100] Best Fitness: 0.0389 (Mutation: 0.025)
+[Gen 85/100] Best Fitness: 0.0389 (Mutation: 0.024)
+[Gen 86/100] Best Fitness: 0.0389 (Mutation: 0.023)
+[Gen 87/100] Best Fitness: 0.0389 (Mutation: 0.023)
+[Gen 88/100] Best Fitness: 0.0389 (Mutation: 0.022)
+[Gen 89/100] Best Fitness: 0.0389 (Mutation: 0.021)
+[Gen 90/100] Best Fitness: 0.0389 (Mutation: 0.020)
+[Gen 91/100] Best Fitness: 0.0389 (Mutation: 0.019)
+[Gen 92/100] Best Fitness: 0.0389 (Mutation: 0.018)
+[Gen 93/100] Best Fitness: 0.0389 (Mutation: 0.017)
+[Gen 94/100] Best Fitness: 0.0389 (Mutation: 0.016)
+[Gen 95/100] Best Fitness: 0.0389 (Mutation: 0.015)
+[Gen 96/100] Best Fitness: 0.0389 (Mutation: 0.014)
+[Gen 97/100] Best Fitness: 0.0389 (Mutation: 0.014)
+[Gen 98/100] Best Fitness: 0.0389 (Mutation: 0.013)
+[Gen 99/100] Best Fitness: 0.0389 (Mutation: 0.012)
+[Gen 100/100] Best Fitness: 0.0389 (Mutation: 0.011)
+
+
+--- ADVERSARIAL EVOLUTION STARTED: 2026-03-22 08:01:01.914790 ---
+[Gen 1/100] Best Fitness: 655.4736 (Mutation: 0.100)
+[Gen 2/100] Best Fitness: 655.4736 (Mutation: 0.099)
+[Gen 3/100] Best Fitness: 655.4736 (Mutation: 0.098)
+[Gen 4/100] Best Fitness: 655.4736 (Mutation: 0.097)
+[Gen 5/100] Best Fitness: 655.4736 (Mutation: 0.096)
+[Gen 6/100] Best Fitness: 655.4736 (Mutation: 0.096)
+[Gen 7/100] Best Fitness: 655.4736 (Mutation: 0.095)
+[Gen 8/100] Best Fitness: 655.4736 (Mutation: 0.094)
+[Gen 9/100] Best Fitness: 655.4736 (Mutation: 0.093)
+[Gen 10/100] Best Fitness: 655.4736 (Mutation: 0.092)
+[Gen 11/100] Best Fitness: 655.7330 (Mutation: 0.091)
+[Gen 12/100] Best Fitness: 655.7330 (Mutation: 0.090)
+[Gen 13/100] Best Fitness: 655.7330 (Mutation: 0.089)
+[Gen 14/100] Best Fitness: 655.8093 (Mutation: 0.088)
+[Gen 15/100] Best Fitness: 655.8093 (Mutation: 0.087)
+[Gen 16/100] Best Fitness: 655.9989 (Mutation: 0.087)
+[Gen 17/100] Best Fitness: 656.3916 (Mutation: 0.086)
+[Gen 18/100] Best Fitness: 656.3916 (Mutation: 0.085)
+[Gen 19/100] Best Fitness: 656.5273 (Mutation: 0.084)
+[Gen 20/100] Best Fitness: 656.5273 (Mutation: 0.083)
+[Gen 21/100] Best Fitness: 656.7015 (Mutation: 0.082)
+[Gen 22/100] Best Fitness: 656.7015 (Mutation: 0.081)
+[Gen 23/100] Best Fitness: 656.7674 (Mutation: 0.080)
+[Gen 24/100] Best Fitness: 656.7674 (Mutation: 0.079)
+[Gen 25/100] Best Fitness: 656.7674 (Mutation: 0.078)
+[Gen 26/100] Best Fitness: 656.7674 (Mutation: 0.077)
+[Gen 27/100] Best Fitness: 656.8654 (Mutation: 0.077)
+[Gen 28/100] Best Fitness: 656.8654 (Mutation: 0.076)
+[Gen 29/100] Best Fitness: 656.8654 (Mutation: 0.075)
+[Gen 30/100] Best Fitness: 656.8654 (Mutation: 0.074)
+[Gen 31/100] Best Fitness: 656.8654 (Mutation: 0.073)
+[Gen 32/100] Best Fitness: 656.8654 (Mutation: 0.072)
+[Gen 33/100] Best Fitness: 656.8654 (Mutation: 0.071)
+[Gen 34/100] Best Fitness: 656.8654 (Mutation: 0.070)
+[Gen 35/100] Best Fitness: 657.0380 (Mutation: 0.069)
+[Gen 36/100] Best Fitness: 657.0522 (Mutation: 0.069)
+[Gen 37/100] Best Fitness: 657.0522 (Mutation: 0.068)
+[Gen 38/100] Best Fitness: 657.0522 (Mutation: 0.067)
+[Gen 39/100] Best Fitness: 657.0522 (Mutation: 0.066)
+[Gen 40/100] Best Fitness: 657.0522 (Mutation: 0.065)
+[Gen 41/100] Best Fitness: 657.0522 (Mutation: 0.064)
+[Gen 42/100] Best Fitness: 657.0522 (Mutation: 0.063)
+[Gen 43/100] Best Fitness: 657.3858 (Mutation: 0.062)
+[Gen 44/100] Best Fitness: 657.3858 (Mutation: 0.061)
+[Gen 45/100] Best Fitness: 657.3858 (Mutation: 0.060)
+[Gen 46/100] Best Fitness: 657.3858 (Mutation: 0.059)
+[Gen 47/100] Best Fitness: 657.3858 (Mutation: 0.059)
+[Gen 48/100] Best Fitness: 657.3858 (Mutation: 0.058)
+[Gen 49/100] Best Fitness: 657.3858 (Mutation: 0.057)
+[Gen 50/100] Best Fitness: 657.6431 (Mutation: 0.056)
+[Gen 51/100] Best Fitness: 657.6431 (Mutation: 0.055)
+[Gen 52/100] Best Fitness: 657.6431 (Mutation: 0.054)
+[Gen 53/100] Best Fitness: 657.6906 (Mutation: 0.053)
+[Gen 54/100] Best Fitness: 657.6906 (Mutation: 0.052)
+[Gen 55/100] Best Fitness: 657.7707 (Mutation: 0.051)
+[Gen 56/100] Best Fitness: 657.7784 (Mutation: 0.050)
+[Gen 57/100] Best Fitness: 657.7784 (Mutation: 0.050)
+[Gen 58/100] Best Fitness: 657.8100 (Mutation: 0.049)
+[Gen 59/100] Best Fitness: 657.8100 (Mutation: 0.048)
+[Gen 60/100] Best Fitness: 657.8100 (Mutation: 0.047)
+[Gen 61/100] Best Fitness: 657.8100 (Mutation: 0.046)
+[Gen 62/100] Best Fitness: 657.8100 (Mutation: 0.045)
+[Gen 63/100] Best Fitness: 658.5337 (Mutation: 0.044)
+[Gen 64/100] Best Fitness: 658.5337 (Mutation: 0.043)
+[Gen 65/100] Best Fitness: 658.5337 (Mutation: 0.042)
+[Gen 66/100] Best Fitness: 658.5337 (Mutation: 0.041)
+[Gen 67/100] Best Fitness: 658.5562 (Mutation: 0.041)
+[Gen 68/100] Best Fitness: 658.5562 (Mutation: 0.040)
+[Gen 69/100] Best Fitness: 658.6044 (Mutation: 0.039)
+[Gen 70/100] Best Fitness: 658.6044 (Mutation: 0.038)
+[Gen 71/100] Best Fitness: 658.6044 (Mutation: 0.037)
+[Gen 72/100] Best Fitness: 658.6044 (Mutation: 0.036)
+[Gen 73/100] Best Fitness: 658.6044 (Mutation: 0.035)
+[Gen 74/100] Best Fitness: 658.6044 (Mutation: 0.034)
+[Gen 75/100] Best Fitness: 658.6044 (Mutation: 0.033)
+[Gen 76/100] Best Fitness: 658.6044 (Mutation: 0.033)
+[Gen 77/100] Best Fitness: 658.6044 (Mutation: 0.032)
+[Gen 78/100] Best Fitness: 658.6044 (Mutation: 0.031)
+[Gen 79/100] Best Fitness: 658.6044 (Mutation: 0.030)
+[Gen 80/100] Best Fitness: 658.6044 (Mutation: 0.029)
+[Gen 81/100] Best Fitness: 658.6044 (Mutation: 0.028)
+[Gen 82/100] Best Fitness: 658.6044 (Mutation: 0.027)
+[Gen 83/100] Best Fitness: 658.6044 (Mutation: 0.026)
+[Gen 84/100] Best Fitness: 658.7126 (Mutation: 0.025)
+[Gen 85/100] Best Fitness: 658.7126 (Mutation: 0.024)
+[Gen 86/100] Best Fitness: 658.7126 (Mutation: 0.023)
+[Gen 87/100] Best Fitness: 658.7126 (Mutation: 0.023)
+[Gen 88/100] Best Fitness: 658.7126 (Mutation: 0.022)
+[Gen 89/100] Best Fitness: 658.7126 (Mutation: 0.021)
+[Gen 90/100] Best Fitness: 658.7126 (Mutation: 0.020)
+[Gen 91/100] Best Fitness: 658.7365 (Mutation: 0.019)
+[Gen 92/100] Best Fitness: 658.7365 (Mutation: 0.018)
+[Gen 93/100] Best Fitness: 658.7920 (Mutation: 0.017)
+[Gen 94/100] Best Fitness: 658.8115 (Mutation: 0.016)
+[Gen 95/100] Best Fitness: 658.8115 (Mutation: 0.015)
+[Gen 96/100] Best Fitness: 658.8115 (Mutation: 0.014)
+[Gen 97/100] Best Fitness: 658.8115 (Mutation: 0.014)
+[Gen 98/100] Best Fitness: 658.8184 (Mutation: 0.013)
+[Gen 99/100] Best Fitness: 658.8184 (Mutation: 0.012)
+[Gen 100/100] Best Fitness: 658.8184 (Mutation: 0.011)
+
+
+--- ADVERSARIAL EVOLUTION STARTED: 2026-03-22 08:45:20.198774 ---
+[Gen 1/100] Best Fitness: 0.0000 (Mutation: 0.100)
+[Gen 2/100] Best Fitness: 0.0000 (Mutation: 0.099)
+[Gen 3/100] Best Fitness: 0.0000 (Mutation: 0.098)
+[Gen 4/100] Best Fitness: 0.0000 (Mutation: 0.097)
+[Gen 5/100] Best Fitness: 0.0000 (Mutation: 0.096)
+[Gen 6/100] Best Fitness: 0.0000 (Mutation: 0.096)
+[Gen 7/100] Best Fitness: 0.0000 (Mutation: 0.095)
+[Gen 8/100] Best Fitness: 0.0000 (Mutation: 0.094)
+[Gen 9/100] Best Fitness: 0.0000 (Mutation: 0.093)
+[Gen 10/100] Best Fitness: 0.0000 (Mutation: 0.092)
+[Gen 11/100] Best Fitness: 0.0000 (Mutation: 0.091)
+[Gen 12/100] Best Fitness: 0.0000 (Mutation: 0.090)
+[Gen 13/100] Best Fitness: 0.0000 (Mutation: 0.089)
+[Gen 14/100] Best Fitness: 0.0000 (Mutation: 0.088)
+[Gen 15/100] Best Fitness: 0.0000 (Mutation: 0.087)
+[Gen 16/100] Best Fitness: 0.0000 (Mutation: 0.087)
+[Gen 17/100] Best Fitness: 0.0070 (Mutation: 0.086)
+[Gen 18/100] Best Fitness: 0.0070 (Mutation: 0.085)
+[Gen 19/100] Best Fitness: 0.0070 (Mutation: 0.084)
+[Gen 20/100] Best Fitness: 0.0140 (Mutation: 0.083)
+[Gen 21/100] Best Fitness: 0.0140 (Mutation: 0.082)
+[Gen 22/100] Best Fitness: 0.0140 (Mutation: 0.081)
+[Gen 23/100] Best Fitness: 0.0140 (Mutation: 0.080)
+[Gen 24/100] Best Fitness: 0.0140 (Mutation: 0.079)
+[Gen 25/100] Best Fitness: 0.0140 (Mutation: 0.078)
+[Gen 26/100] Best Fitness: 0.0140 (Mutation: 0.077)
+[Gen 27/100] Best Fitness: 0.0140 (Mutation: 0.077)
+[Gen 28/100] Best Fitness: 0.0140 (Mutation: 0.076)
+[Gen 29/100] Best Fitness: 0.0140 (Mutation: 0.075)
+[Gen 30/100] Best Fitness: 0.0140 (Mutation: 0.074)
+[Gen 31/100] Best Fitness: 0.0140 (Mutation: 0.073)
+[Gen 32/100] Best Fitness: 0.0140 (Mutation: 0.072)
+[Gen 33/100] Best Fitness: 0.0140 (Mutation: 0.071)
+[Gen 34/100] Best Fitness: 0.0140 (Mutation: 0.070)
+[Gen 35/100] Best Fitness: 0.0140 (Mutation: 0.069)
+[Gen 36/100] Best Fitness: 0.0140 (Mutation: 0.069)
+[Gen 37/100] Best Fitness: 0.0140 (Mutation: 0.068)
+[Gen 38/100] Best Fitness: 0.0140 (Mutation: 0.067)
+[Gen 39/100] Best Fitness: 0.0140 (Mutation: 0.066)
+[Gen 40/100] Best Fitness: 0.0140 (Mutation: 0.065)
+[Gen 41/100] Best Fitness: 0.0140 (Mutation: 0.064)
+[Gen 42/100] Best Fitness: 0.0140 (Mutation: 0.063)
+[Gen 43/100] Best Fitness: 0.0140 (Mutation: 0.062)
+[Gen 44/100] Best Fitness: 0.0140 (Mutation: 0.061)
+[Gen 45/100] Best Fitness: 0.0140 (Mutation: 0.060)
+[Gen 46/100] Best Fitness: 0.0140 (Mutation: 0.059)
+[Gen 47/100] Best Fitness: 0.0140 (Mutation: 0.059)
+[Gen 48/100] Best Fitness: 0.0140 (Mutation: 0.058)
+[Gen 49/100] Best Fitness: 0.0140 (Mutation: 0.057)
+[Gen 50/100] Best Fitness: 0.0140 (Mutation: 0.056)
+[Gen 51/100] Best Fitness: 0.0140 (Mutation: 0.055)
+[Gen 52/100] Best Fitness: 0.0140 (Mutation: 0.054)
+[Gen 53/100] Best Fitness: 0.0140 (Mutation: 0.053)
+[Gen 54/100] Best Fitness: 0.0140 (Mutation: 0.052)
+[Gen 55/100] Best Fitness: 0.0140 (Mutation: 0.051)
+[Gen 56/100] Best Fitness: 0.0140 (Mutation: 0.050)
+[Gen 57/100] Best Fitness: 0.0140 (Mutation: 0.050)
+[Gen 58/100] Best Fitness: 0.0218 (Mutation: 0.049)
+[Gen 59/100] Best Fitness: 0.0218 (Mutation: 0.048)
+[Gen 60/100] Best Fitness: 0.0347 (Mutation: 0.047)
+[Gen 61/100] Best Fitness: 0.0347 (Mutation: 0.046)
+[Gen 62/100] Best Fitness: 0.0347 (Mutation: 0.045)
+[Gen 63/100] Best Fitness: 0.0347 (Mutation: 0.044)
+[Gen 64/100] Best Fitness: 0.0347 (Mutation: 0.043)
+[Gen 65/100] Best Fitness: 0.0347 (Mutation: 0.042)
+[Gen 66/100] Best Fitness: 0.0347 (Mutation: 0.041)
+[Gen 67/100] Best Fitness: 0.0347 (Mutation: 0.041)
+[Gen 68/100] Best Fitness: 0.0347 (Mutation: 0.040)
+[Gen 69/100] Best Fitness: 0.0347 (Mutation: 0.039)
+[Gen 70/100] Best Fitness: 0.0347 (Mutation: 0.038)
+[Gen 71/100] Best Fitness: 0.0347 (Mutation: 0.037)
+[Gen 72/100] Best Fitness: 0.0347 (Mutation: 0.036)
+[Gen 73/100] Best Fitness: 0.0347 (Mutation: 0.035)
+[Gen 74/100] Best Fitness: 0.0347 (Mutation: 0.034)
+[Gen 75/100] Best Fitness: 0.0501 (Mutation: 0.033)
+[Gen 76/100] Best Fitness: 0.0501 (Mutation: 0.033)
+[Gen 77/100] Best Fitness: 0.0501 (Mutation: 0.032)
+[Gen 78/100] Best Fitness: 0.0501 (Mutation: 0.031)
+[Gen 79/100] Best Fitness: 0.0501 (Mutation: 0.030)
+[Gen 80/100] Best Fitness: 0.0501 (Mutation: 0.029)
+[Gen 81/100] Best Fitness: 0.0501 (Mutation: 0.028)
+[Gen 82/100] Best Fitness: 0.0501 (Mutation: 0.027)
+[Gen 83/100] Best Fitness: 0.0941 (Mutation: 0.026)
+[Gen 84/100] Best Fitness: 0.0941 (Mutation: 0.025)
+[Gen 85/100] Best Fitness: 0.0941 (Mutation: 0.024)
+[Gen 86/100] Best Fitness: 0.0941 (Mutation: 0.023)
+[Gen 87/100] Best Fitness: 0.0941 (Mutation: 0.023)
+[Gen 88/100] Best Fitness: 0.0941 (Mutation: 0.022)
+[Gen 89/100] Best Fitness: 0.0941 (Mutation: 0.021)
+[Gen 90/100] Best Fitness: 0.0941 (Mutation: 0.020)
+[Gen 91/100] Best Fitness: 0.0941 (Mutation: 0.019)
+[Gen 92/100] Best Fitness: 0.0941 (Mutation: 0.018)
+[Gen 93/100] Best Fitness: 0.0941 (Mutation: 0.017)
+[Gen 94/100] Best Fitness: 0.0941 (Mutation: 0.016)
+[Gen 95/100] Best Fitness: 0.0941 (Mutation: 0.015)
+[Gen 96/100] Best Fitness: 0.0941 (Mutation: 0.014)
+[Gen 97/100] Best Fitness: 0.0941 (Mutation: 0.014)
+[Gen 98/100] Best Fitness: 0.0941 (Mutation: 0.013)
+[Gen 99/100] Best Fitness: 0.0941 (Mutation: 0.012)
+[Gen 100/100] Best Fitness: 0.0941 (Mutation: 0.011)
+
+
+--- ADVERSARIAL EVOLUTION STARTED: 2026-03-22 09:53:30.981169 ---
+[Gen 1/100] Best Fitness: 0.0000 (Mutation: 0.100)
+[Gen 2/100] Best Fitness: 0.0000 (Mutation: 0.099)
+[Gen 3/100] Best Fitness: 0.0000 (Mutation: 0.098)
+[Gen 4/100] Best Fitness: 0.0000 (Mutation: 0.097)
+[Gen 5/100] Best Fitness: 0.0000 (Mutation: 0.096)
+[Gen 6/100] Best Fitness: 0.0000 (Mutation: 0.096)
+[Gen 7/100] Best Fitness: 0.0000 (Mutation: 0.095)
+[Gen 8/100] Best Fitness: 0.0272 (Mutation: 0.094)
+[Gen 9/100] Best Fitness: 0.0272 (Mutation: 0.093)
+[Gen 10/100] Best Fitness: 0.0272 (Mutation: 0.092)
+[Gen 11/100] Best Fitness: 0.0272 (Mutation: 0.091)
+[Gen 12/100] Best Fitness: 0.0272 (Mutation: 0.090)
+[Gen 13/100] Best Fitness: 0.0272 (Mutation: 0.089)
+[Gen 14/100] Best Fitness: 0.0272 (Mutation: 0.088)
+[Gen 15/100] Best Fitness: 0.0272 (Mutation: 0.087)
+[Gen 16/100] Best Fitness: 0.0272 (Mutation: 0.087)
+[Gen 17/100] Best Fitness: 0.0272 (Mutation: 0.086)
+[Gen 18/100] Best Fitness: 0.0272 (Mutation: 0.085)
+[Gen 19/100] Best Fitness: 0.0272 (Mutation: 0.084)
+[Gen 20/100] Best Fitness: 0.0272 (Mutation: 0.083)
+[Gen 21/100] Best Fitness: 0.0272 (Mutation: 0.082)
+[Gen 22/100] Best Fitness: 0.0272 (Mutation: 0.081)
+[Gen 23/100] Best Fitness: 0.0272 (Mutation: 0.080)
+[Gen 24/100] Best Fitness: 0.0272 (Mutation: 0.079)
+[Gen 25/100] Best Fitness: 0.0272 (Mutation: 0.078)
+[Gen 26/100] Best Fitness: 0.0272 (Mutation: 0.077)
+[Gen 27/100] Best Fitness: 0.0284 (Mutation: 0.077)
+[Gen 28/100] Best Fitness: 0.0284 (Mutation: 0.076)
+[Gen 29/100] Best Fitness: 0.0284 (Mutation: 0.075)
+[Gen 30/100] Best Fitness: 0.0284 (Mutation: 0.074)
+[Gen 31/100] Best Fitness: 0.0284 (Mutation: 0.073)
+[Gen 32/100] Best Fitness: 0.0406 (Mutation: 0.072)
+[Gen 33/100] Best Fitness: 0.0406 (Mutation: 0.071)
+[Gen 34/100] Best Fitness: 0.0418 (Mutation: 0.070)
+[Gen 35/100] Best Fitness: 0.0418 (Mutation: 0.069)
+[Gen 36/100] Best Fitness: 0.0418 (Mutation: 0.069)
+[Gen 37/100] Best Fitness: 0.0418 (Mutation: 0.068)
+[Gen 38/100] Best Fitness: 0.0418 (Mutation: 0.067)
+[Gen 39/100] Best Fitness: 0.0418 (Mutation: 0.066)
+[Gen 40/100] Best Fitness: 0.0418 (Mutation: 0.065)
+[Gen 41/100] Best Fitness: 0.0418 (Mutation: 0.064)
+[Gen 42/100] Best Fitness: 0.0418 (Mutation: 0.063)
+[Gen 43/100] Best Fitness: 0.0418 (Mutation: 0.062)
+[Gen 44/100] Best Fitness: 0.0418 (Mutation: 0.061)
+[Gen 45/100] Best Fitness: 0.0418 (Mutation: 0.060)
+[Gen 46/100] Best Fitness: 0.0418 (Mutation: 0.059)
+[Gen 47/100] Best Fitness: 0.0418 (Mutation: 0.059)
+[Gen 48/100] Best Fitness: 0.0418 (Mutation: 0.058)
+[Gen 49/100] Best Fitness: 0.0418 (Mutation: 0.057)
+[Gen 50/100] Best Fitness: 0.0418 (Mutation: 0.056)
+[Gen 51/100] Best Fitness: 0.0418 (Mutation: 0.055)
+[Gen 52/100] Best Fitness: 0.0418 (Mutation: 0.054)
+[Gen 53/100] Best Fitness: 0.0418 (Mutation: 0.053)
+[Gen 54/100] Best Fitness: 0.0418 (Mutation: 0.052)
+[Gen 55/100] Best Fitness: 0.0418 (Mutation: 0.051)
+[Gen 56/100] Best Fitness: 0.0418 (Mutation: 0.050)
+[Gen 57/100] Best Fitness: 0.0418 (Mutation: 0.050)
+[Gen 58/100] Best Fitness: 0.0418 (Mutation: 0.049)
+[Gen 59/100] Best Fitness: 0.0418 (Mutation: 0.048)
+[Gen 60/100] Best Fitness: 0.0418 (Mutation: 0.047)
+[Gen 61/100] Best Fitness: 0.0418 (Mutation: 0.046)
+[Gen 62/100] Best Fitness: 0.0418 (Mutation: 0.045)
+[Gen 63/100] Best Fitness: 0.0418 (Mutation: 0.044)
+[Gen 64/100] Best Fitness: 0.0418 (Mutation: 0.043)
+[Gen 65/100] Best Fitness: 0.0418 (Mutation: 0.042)
+[Gen 66/100] Best Fitness: 0.0418 (Mutation: 0.041)
+[Gen 67/100] Best Fitness: 0.0418 (Mutation: 0.041)
+[Gen 68/100] Best Fitness: 0.0418 (Mutation: 0.040)
+[Gen 69/100] Best Fitness: 0.0418 (Mutation: 0.039)
+[Gen 70/100] Best Fitness: 0.0418 (Mutation: 0.038)
+[Gen 71/100] Best Fitness: 0.0418 (Mutation: 0.037)
+[Gen 72/100] Best Fitness: 0.0418 (Mutation: 0.036)
+[Gen 73/100] Best Fitness: 0.0418 (Mutation: 0.035)
+[Gen 74/100] Best Fitness: 0.0418 (Mutation: 0.034)
+[Gen 75/100] Best Fitness: 0.0418 (Mutation: 0.033)
+[Gen 76/100] Best Fitness: 0.0418 (Mutation: 0.033)
+[Gen 77/100] Best Fitness: 0.0418 (Mutation: 0.032)
+[Gen 78/100] Best Fitness: 0.0418 (Mutation: 0.031)
+[Gen 79/100] Best Fitness: 0.0418 (Mutation: 0.030)
+[Gen 80/100] Best Fitness: 0.0418 (Mutation: 0.029)
+[Gen 81/100] Best Fitness: 0.0418 (Mutation: 0.028)
+[Gen 82/100] Best Fitness: 0.0418 (Mutation: 0.027)
+[Gen 83/100] Best Fitness: 0.0418 (Mutation: 0.026)
+[Gen 84/100] Best Fitness: 0.0418 (Mutation: 0.025)
+[Gen 85/100] Best Fitness: 0.0418 (Mutation: 0.024)
+[Gen 86/100] Best Fitness: 0.0418 (Mutation: 0.023)
+[Gen 87/100] Best Fitness: 0.0418 (Mutation: 0.023)
+[Gen 88/100] Best Fitness: 0.0418 (Mutation: 0.022)
+[Gen 89/100] Best Fitness: 0.0418 (Mutation: 0.021)
+[Gen 90/100] Best Fitness: 0.0418 (Mutation: 0.020)
+[Gen 91/100] Best Fitness: 0.0418 (Mutation: 0.019)
+[Gen 92/100] Best Fitness: 0.0418 (Mutation: 0.018)
+[Gen 93/100] Best Fitness: 0.0418 (Mutation: 0.017)
+[Gen 94/100] Best Fitness: 0.0418 (Mutation: 0.016)
+[Gen 95/100] Best Fitness: 0.0418 (Mutation: 0.015)
+[Gen 96/100] Best Fitness: 0.0418 (Mutation: 0.014)
+[Gen 97/100] Best Fitness: 0.0653 (Mutation: 0.014)
+[Gen 98/100] Best Fitness: 0.0653 (Mutation: 0.013)
+[Gen 99/100] Best Fitness: 0.0653 (Mutation: 0.012)
+[Gen 100/100] Best Fitness: 0.0653 (Mutation: 0.011)
+
+
+--- ADVERSARIAL EVOLUTION STARTED: 2026-03-22 10:21:29.670989 ---
+
+
+--- ADVERSARIAL EVOLUTION STARTED: 2026-03-22 10:21:55.272525 ---

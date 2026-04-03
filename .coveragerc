@@ -1,0 +1,46 @@
+#coverage run --source=pkscreener --branch -m pytest -vv --durations-min=0.005 test/pkscreenercli_test.py && coverage combine && coverage report -i && coverage html -i
+# .coveragerc to control coverage.py
+[run]
+branch = True
+concurrency=multiprocessing
+parallel = True
+omit =
+    test/*
+    pkscreener/classes/Committer.py
+    pkscreener/classes/WorkflowManager.py
+    pkscreener/pkscreenerbot.py
+    pkscreener/classes/PKSpreadsheets.py
+    pkscreener/classes/Portfolio.py
+
+[report]
+show_missing = True
+# Regexes for lines to exclude from consideration
+# exclude_also =
+#     except IOError as e: 
+#     except FileNotFoundError as e:
+#     if bData is None: 
+#     except Exception as e: 
+#     except pickle.PicklingError as e:
+#     except EOFError as e:
+#     except ValueError as e:
+#     except Exception as ex: 
+
+    # Don't complain about missing debug-only code:
+    # def __repr__
+    # if self\.debug
+
+    # # Don't complain if tests don't hit defensive assertion code:
+    # raise AssertionError
+    # raise NotImplementedError
+
+    # # Don't complain if non-runnable code isn't run:
+    # if 0:
+    # if __name__ == .__main__.:
+
+    # # Don't complain about abstract methods, they aren't run:
+    # @(abc\.)?abstractmethod
+
+# ignore_errors = True
+
+[paths]
+source =pkscreener

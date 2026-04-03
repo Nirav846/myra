@@ -1,0 +1,61 @@
+### 1. Identify where technical data is handled (price, volume, delivery, indicators)
+- **Acquisition**: myra_app/fetcher.py (fetching OHLCV and delivery data from NSE/yfinance) and myra_app/librarian.py (local database management).
+- **Processing (Technicals)**: myra_app/engine.py (Turbo-SQL engine computing technical indicators like SMA, RSI, etc., and storing them in calculated_indicators table).
+- **Processing (SMC/VSA)**: myra_app/scanners/patterns.py (Pattern detection) and myra_app/scanners/primitives.py (Technical primitives).
+- **State/Caching**: DuckDB tables prices and calculated_indicators.
+
+### 2. Identify where fundamental data is handled (PE, ROE, growth, etc.)
+- **Acquisition**: myra_app/fetcher.py (scraping from Finology/GitHub) and myra_app/fundamental_manager.py (orchestration).
+- **Processing (Ranking/Scoring)**: myra_app/fundamental_ranker.py (computing Funda_Score based on Growth, Quality, Stability, and Risk).
+- **State/Caching**: DuckDB tables fundamentals and fundamentals_quarterly.
+
+### 3. Find all places where both are mixed together
+- **myra_app/engine.py**: The _worker_task merges technical data (df) and precomputed fundamental/indicator metrics (funda) before passing them to strategies or scanners.
+- **myra_app/screener.py**: run_market_xray joins calculated_indicators with fundamentals to provide a sector-aware market view.
+- **myra_app/scanners/primitives.py**: Several scanners (e.g., 109, 115, 123) use both price data from df and fundamental/static metrics from the funda dictionary (e.g., low_1y, EPS_Latest).
+- **myra_app/results_manager.py**: Merges technical results with fundamental scores for final UI display.
+
+### 4. Trace how scanners access this combined data
+1. **MYRAScreener** (screener.py) initiates a scan.
+2. **Engine** (engine.py) pulls the active universe from Librarian.
+3. For each symbol, the Engine fetches:
+   - Full price history (df) from prices table.
+   - Latest precomputed metrics (funda dict) from calculated_indicators and fundamentals.
+4. The Engine dispatches these to **_worker_task** (multiprocessing).
+5. The worker task calls run_scanner(df, sid, funda=funda) in **myra_app/scanners/primitives.py**.
+6. The scanner logic uses df for time-series analysis (RSI, MACD) and funda for point-in-time checks (P/E, 52W Low).
+
+### 5. Identify performance bottlenecks and redundant computations
+- **Redundant Resampling**: Many primitive scanners (e.g., 109, 110, 112, 118) resample the df to weekly frequency independently. This should be done once and passed down.
+- **Heavy SQL Joins**: screener.py and fundamental_ranker.py perform complex joins and window functions repeatedly.
+- **Data Loading Overhead**: engine.py loads full history for every symbol in every scan. For many scanners, only a small tail of the data is needed.
+- **Lock Contention**: librarian.py uses a global thread lock (_db_lock) which can slow down background sync during active scanning.
+
+---
+
+### Clear Architecture Diagram
+
+[ Data Sources ] --(Fetcher)--> [ Librarian (DuckDB) ]
+                                      |
+                                      | (Prices, Indicators, Fundamentals)
+                                      v
+[ MYRAScreener ] <---------- [ Engine (Turbo-SQL) ]
+      |                               |
+      | (Orchestration)               | (Payload: DF + Funda Dict)
+      v                               v
+[ ResultsManager ] <--------- [ Scanners / Strategies ]
+      |                               ^
+      | (Final Merge)                 | (Logic: technical + fundamental)
+      v                               |
+[ MYRA UI / Telegram ] ---------------'
+
+### List of Tightly Coupled Modules
+1. **Librarian & DataFetcher**: Librarian depends heavily on Fetcher for background sync, making it hard to test data management in isolation.
+2. **Engine & Scanners**: The Engine has hardcoded logic to route to primitives.py vs strategies/ based on ID prefix.
+3. **Screener & Librarian**: Screener performs direct SQL queries on Librarian's connection, bypassing abstraction layers.
+
+### List of Refactoring Targets
+- **myra_app/scanners/primitives.py**: Centralize resampling and indicator calculation. Many scanners recompute RSI, SMA, and ATR.
+- **myra_app/engine.py**: Implement Delta Loading. Instead of loading 3 years of data for a Golden Cross check, load only what's required for the longest window.
+- **myra_app/fundamental_ranker.py**: Materialize the ranking results into a cache table instead of running the massive window-function query on every rank() call.
+- **myra_app/librarian.py**: Move heavy background sync logic into a separate SyncManager to reduce the complexity of the Gatekeeper.
