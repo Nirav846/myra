@@ -42,7 +42,7 @@ class GhostSession:
     def _init_cache(self):
         if not self.cache_path: return
         try:
-            conn = sqlite3.connect(self.cache_path)
+            conn = sqlite3.connect(self.cache_path, timeout=20)
             conn.execute("PRAGMA journal_mode=WAL;") # Fix 6: Prevent locking
             conn.execute("CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value BLOB, expiry TIMESTAMP, data_hash TEXT)") # Fix 29
             conn.close()
@@ -52,7 +52,8 @@ class GhostSession:
         if not self.cache_path: return None
         key = hashlib.md5(f"{url}{json.dumps(params, sort_keys=True)}".encode()).hexdigest()
         try:
-            conn = sqlite3.connect(self.cache_path)
+            conn = sqlite3.connect(self.cache_path, timeout=20)
+            conn.execute("PRAGMA journal_mode=WAL;") # Fix 6: Prevent locking
             res = conn.execute("SELECT value FROM cache WHERE key = ? AND expiry > ?", (key, datetime.now())).fetchone()
             conn.close()
             return res[0] if res else None
@@ -64,7 +65,8 @@ class GhostSession:
         expiry = datetime.now() + timedelta(seconds=expire_seconds)
         data_hash = hashlib.md5(value).hexdigest() if value else None
         try:
-            conn = sqlite3.connect(self.cache_path)
+            conn = sqlite3.connect(self.cache_path, timeout=20)
+            conn.execute("PRAGMA journal_mode=WAL;") # Fix 6: Prevent locking
             conn.execute("INSERT OR REPLACE INTO cache VALUES (?, ?, ?, ?)", (key, value, expiry, data_hash))
             conn.commit()
             conn.close()
@@ -342,7 +344,8 @@ class DataFetcher:
         if self._is_holiday(current_date): return # Freeze learning on holidays
         
         try:
-            conn = sqlite3.connect(self.session.cache_path)
+            conn = sqlite3.connect(self.session.cache_path, timeout=20)
+            conn.execute("PRAGMA journal_mode=WAL;") # Fix 6: Prevent locking
             conn.execute("CREATE TABLE IF NOT EXISTS source_stats (name TEXT, score FLOAT, date TIMESTAMP)")
             conn.execute("INSERT INTO source_stats VALUES (?, ?, ?)", (name, score, datetime.now()))
             # Retain last 15 for better decay resolution
@@ -354,7 +357,8 @@ class DataFetcher:
     def get_reliability(self, name):
         """Computes trust score using weighted decay (Fix 24)."""
         try:
-            conn = sqlite3.connect(self.session.cache_path)
+            conn = sqlite3.connect(self.session.cache_path, timeout=20)
+            conn.execute("PRAGMA journal_mode=WAL;") # Fix 6: Prevent locking
             res = conn.execute("SELECT score FROM source_stats WHERE name = ? ORDER BY date ASC", (name,)).fetchall()
             conn.close()
             if not res: return 0.5
@@ -508,7 +512,8 @@ class DataFetcher:
         
         # 1. Cooldown Check (Fix v12.1)
         try:
-            conn = sqlite3.connect(self.session.cache_path)
+            conn = sqlite3.connect(self.session.cache_path, timeout=20)
+            conn.execute("PRAGMA journal_mode=WAL;") # Fix 6: Prevent locking
             last_action = conn.execute("SELECT MAX(date) FROM source_stats WHERE name = 'SYSTEM_ACTION'").fetchone()
             if last_action and last_action[0]:
                 la_dt = datetime.fromisoformat(last_action[0])
@@ -538,7 +543,8 @@ class DataFetcher:
             
             # Log Action for cooldown
             try:
-                conn = sqlite3.connect(self.session.cache_path)
+                conn = sqlite3.connect(self.session.cache_path, timeout=20)
+                conn.execute("PRAGMA journal_mode=WAL;") # Fix 6: Prevent locking
                 conn.execute("INSERT INTO source_stats VALUES (?, ?, ?)", ("SYSTEM_ACTION", total_weight, datetime.now()))
                 conn.commit(); conn.close()
             except Exception: pass
