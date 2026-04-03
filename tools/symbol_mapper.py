@@ -2,12 +2,14 @@ import os
 import pandas as pd
 import json
 
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
 class SymbolMapper:
     """
     NSE Symbol Lineage Tracker (v2.0).
     Uses manual maps + symbol_change.csv.
     """
-    def __init__(self, csv_path="data/symbol_change.csv", manual_path="config/manual_symbol_map.json"):
+    def __init__(self, csv_path=os.path.join(PROJECT_ROOT, "data", "symbol_change.csv"), manual_path=os.path.join(PROJECT_ROOT, "config", "manual_symbol_map.json")):
         self.forward_map = {} # old -> new
         
         # 1. Load Manual Map (Highest Priority)

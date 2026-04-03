@@ -3,7 +3,8 @@ import os
 import sys
 
 # Fix path
-sys.path.append(os.getcwd())
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.append(PROJECT_ROOT)
 from tools.symbol_mapper import SymbolMapper
 
 def unify_database_symbols():

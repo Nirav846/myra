@@ -5,9 +5,11 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
 def migrate_duckdb_to_sqlite():
-    duck_db_path = os.path.join(os.getcwd(), "db", "myra_market_data.db")
-    sqlite_db_path = os.path.join(os.getcwd(), "db", "technical.db")
+    duck_db_path = os.path.join(PROJECT_ROOT, "db", "myra_market_data.db")
+    sqlite_db_path = os.path.join(PROJECT_ROOT, "db", "technical.db")
     
     if not os.path.exists(duck_db_path):
         print(f"[!] DuckDB not found at {duck_db_path}")

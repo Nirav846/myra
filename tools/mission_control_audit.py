@@ -3,7 +3,8 @@ import sys
 from rich.console import Console
 
 # Fix path
-sys.path.append(os.getcwd())
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.append(PROJECT_ROOT)
 
 from myra_app.screener import MYRAScreener
 
