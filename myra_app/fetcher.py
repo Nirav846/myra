@@ -127,11 +127,21 @@ class SchemaContractEnforcer:
             if col not in df.columns:
                 errors.append(f"Missing required column: {col}")
 
-        # 2. Type validation
-        for col, dtype in {**self.contract["required_columns"], **self.contract["optional_columns"]}.items():
-            if col in df.columns:
-                if dtype in [float, int] and not pd.api.types.is_numeric_dtype(df[col]):
-                    # Attempt auto-heal for numeric strings
+        # 2. Type validation (Vectorized Auto-Heal)
+        all_cols = {**self.contract["required_columns"], **self.contract["optional_columns"]}
+        num_cols = [c for c, t in all_cols.items() if t in [float, int] and c in df.columns and not pd.api.types.is_numeric_dtype(df[c])]
+
+        if num_cols:
+            try:
+                # Vectorized conversion for all candidate numeric columns
+                df[num_cols] = df[num_cols].apply(pd.to_numeric, errors='coerce')
+                # Check for columns that failed completely
+                for col in num_cols:
+                    if df[col].isna().all():
+                        errors.append(f"Type mismatch in {col}: Not numeric")
+            except Exception:
+                # Fallback to granular error reporting if vectorization fails
+                for col in num_cols:
                     try:
                         df[col] = pd.to_numeric(df[col], errors='coerce')
                         if df[col].isna().all(): errors.append(f"Type mismatch in {col}: Not numeric")
