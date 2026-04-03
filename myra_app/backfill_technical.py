@@ -2,9 +2,7 @@ import os
 import sys
 import pandas as pd
 import sqlite3
-import zipfile
-import io
-from datetime import datetime, timedelta
+from datetime import datetime
 from tqdm import tqdm
 import time
 from io import StringIO
@@ -159,7 +157,7 @@ def backfill_missing_data(missing_csv="data/missing_data.csv", db_path="db/techn
                         stats["rows"] += len(records)
                 
                 time.sleep(0.05)
-            except Exception as e:
+            except Exception:
                 stats["errors"] += 1
 
     conn.close()
