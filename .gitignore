@@ -27,6 +27,10 @@ data/**/*.csv
 data/**/*.pkl
 results/
 myra_reports/
+data/ohlcv_cache/
+data/Market_Archives/
+data/**/*.parquet
+data/**/*.csv
 
 # --- Python & Cache ---
 __pycache__/
