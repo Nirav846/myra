@@ -168,12 +168,44 @@ class DataAdapter:
         if df.empty or len(df) < 20: return df
         try:
             import pandas_ta as ta
-            if 'RSI' not in df.columns: df['RSI'] = ta.rsi(df['Close'], length=14)
+
+            # Determine which indicators need to be computed
+            missing_ta = []
+            if 'RSI' not in df.columns:
+                missing_ta.append({"kind": "rsi", "length": 14})
+
             for length in [20, 50, 150, 200]:
                 if f'sma{length}' not in df.columns:
-                    df[f'sma{length}'] = ta.sma(df['Close'], length=length)
+                    missing_ta.append({"kind": "sma", "length": length})
+
             if 'atr20' not in df.columns:
-                df['atr20'] = ta.atr(df['High'], df['Low'], df['Close'], length=20)
+                missing_ta.append({"kind": "atr", "length": 20})
+
+            if not missing_ta:
+                return df
+
+            # Create a Strategy/Study to compute them all in one pass
+            study = ta.Study(
+                name="CommonIndicators",
+                cores=0,
+                ta=missing_ta
+            )
+
+            # Compute indicators
+            df.ta.study(study)
+
+            # Rename pandas_ta generated columns back to our standard format
+            rename_map = {
+                'RSI_14': 'RSI',
+                'SMA_20': 'sma20',
+                'SMA_50': 'sma50',
+                'SMA_150': 'sma150',
+                'SMA_200': 'sma200',
+                'ATRr_20': 'atr20'
+            }
+            # Only rename columns that were actually created
+            df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns}, inplace=True)
+
             return df
         except: return df
 
