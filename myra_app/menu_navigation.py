@@ -1,4 +1,3 @@
-import os
 from rich.console import Console
 from rich.panel import Panel
 
@@ -28,7 +27,7 @@ class MenuNavigator:
 
     def clear_screen(self):
         """Clears the terminal for a fresh menu state."""
-        os.system('cls' if os.name == 'nt' else 'clear')
+        self.console.clear()
 
     def render_menu(self, title: str, options: list):
         """Renders a standard MYRA sub-menu."""
