@@ -676,9 +676,13 @@ class DataFetcher:
         
         if not mto_data: return None
         df_mto = pd.DataFrame(mto_data)
+        df_mto = df_mto.drop_duplicates(subset=['SYMBOL', 'SERIES'], keep='first')
         
         # Fix 9 & 15: Left Join + Universe Integrity check
         df_full = pd.merge(df_bhav, df_mto, on=['SYMBOL', 'SERIES'], how='left')
+        if len(df_full) != len(df_bhav):
+            print(f"[TRACE] PRIMARY Universe Integrity Check Failed. Expected {len(df_bhav)} rows, got {len(df_full)}. Forcing Fallback.")
+            return None
         
         # Check for Partial Delivery (Fix 15)
         missing_delivery = df_full["DELIV_QTY"].isna().mean()
