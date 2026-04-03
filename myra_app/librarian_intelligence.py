@@ -46,6 +46,17 @@ class LibrarianIntelligenceMixin:
             print("[!] No active symbols found for indicator update.")
             return
 
+        # 0. Load Institutional Deals for joining
+        deals_df = pd.DataFrame()
+        if self._inst_conn:
+            try:
+                # Group deals by symbol and date
+                deals_df = pd.read_sql("SELECT symbol, date, SUM(qty) as inst_vol FROM large_deals GROUP BY symbol, date", self._inst_conn)
+                if not deals_df.empty:
+                    # Make sure date is datetime
+                    deals_df['date'] = pd.to_datetime(deals_df['date'])
+            except Exception: pass
+
         print(f"[MYRA] Updating Virtual Indicator Lake for {len(active_symbols)} symbols...")
         
         for sym in tqdm(active_symbols, desc="Precomputing"):
@@ -56,7 +67,22 @@ class LibrarianIntelligenceMixin:
                 
                 # Normalize column names for computation
                 df.columns = [c.capitalize() for c in df.columns]
+                # Ensure index is datetime for exact date matching
+                df.index = pd.to_datetime(df.index)
                 df.sort_index(inplace=True)
+
+                # Join Institutional Deals explicitly on EXACT dates
+                if not deals_df.empty:
+                    sym_deals = deals_df[deals_df['symbol'] == sym].copy()
+                    if not sym_deals.empty:
+                        sym_deals.set_index('date', inplace=True)
+                        # Left join institutional volume to the price dataframe
+                        df = df.join(sym_deals[['inst_vol']], how='left')
+                        df['inst_vol'] = df['inst_vol'].fillna(0)
+                    else:
+                        df['inst_vol'] = 0.0
+                else:
+                    df['inst_vol'] = 0.0
                 
                 # 2. Basic Technicals
                 df['sma20'] = ta.sma(df['Close'], length=20)
@@ -74,6 +100,14 @@ class LibrarianIntelligenceMixin:
                 df['high_1y'] = df['High'].rolling(252).max()
                 df['drawdown'] = (df['high_1y'] - df['Close']) / df['high_1y'].replace(0, 1)
                 
+                # TRUTH LAYER: Add a validation gate to reject any join where 'Institutional Volume'
+                # exceeds the 'Total Traded Volume' (Volume) for that day.
+                if 'inst_vol' in df.columns and 'Volume' in df.columns:
+                    # Identify corrupted rows where inst_vol > Total Traded Volume
+                    corrupted_mask = df['inst_vol'] > df['Volume']
+                    # Nullify/reject institutional volume for those specific days
+                    df.loc[corrupted_mask, 'inst_vol'] = 0.0
+
                 # 4. Institutional Footprints (VSA)
                 df['vol_sma50'] = ta.sma(df['Volume'], length=50)
                 if 'Delivery_qty' in df.columns:
