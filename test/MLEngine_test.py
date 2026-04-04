@@ -323,5 +323,50 @@ class TestDilatedCNNForecasterPredictNext(unittest.TestCase):
 
         self.assertAlmostEqual(result, 0.6, places=5)
 
+
+class TestEvolutionaryAgent(unittest.TestCase):
+    def test_get_probs(self):
+        from myra_app.ml_engine import EvolutionaryAgent
+        agent = EvolutionaryAgent(input_size=2, hidden_size=2, output_size=2)
+
+        # Set deterministic weights as required for layers l1, l2, l3
+        agent.weights = {
+            'l1_w': np.array([[0.5, -0.5], [0.1, 0.8]]),
+            'l1_b': np.array([[0.0, 0.1]]),
+            'l2_w': np.array([[1.0, -1.0], [0.5, 0.5]]),
+            'l2_b': np.array([[-0.2, 0.2]]),
+            'l3_w': np.array([[1.0, 0.0], [0.0, 1.0]]),
+            'l3_b': np.array([[0.0, 0.0]])
+        }
+
+        state = np.array([[1.0, 2.0]])
+
+        # Manual calculation to verify logic:
+        # l1 = state @ l1_w + l1_b
+        # l1 = [[1.0*0.5 + 2.0*0.1, 1.0*-0.5 + 2.0*0.8]] + [[0.0, 0.1]]
+        # l1 = [[0.7, 1.1]] + [[0.0, 0.1]] = [[0.7, 1.2]]
+        # l1 = ReLU(l1) = [[0.7, 1.2]]
+
+        # l2 = l1 @ l2_w + l2_b
+        # l2 = [[0.7*1.0 + 1.2*0.5, 0.7*-1.0 + 1.2*0.5]] + [[-0.2, 0.2]]
+        # l2 = [[1.3, -0.1]] + [[-0.2, 0.2]] = [[1.1, 0.1]]
+        # l2 = ReLU(l2) = [[1.1, 0.1]]
+
+        # l3 = l2 @ l3_w + l3_b
+        # l3 = [[1.1*1.0 + 0.1*0.0, 1.1*0.0 + 0.1*1.0]] + [[0.0, 0.0]] = [[1.1, 0.1]]
+        # l3 = ReLU(l3) = [[1.1, 0.1]]
+
+        # softmax(l3): exp(1.1 - 1.1) = 1.0, exp(0.1 - 1.1) = exp(-1.0) ~= 0.367879
+        # sum = 1.367879
+        # probs = [1.0 / 1.367879, 0.367879 / 1.367879] = [0.731058, 0.268941]
+
+        expected_l3 = np.array([[1.1, 0.1]])
+        expected_exp = np.exp(expected_l3 - np.max(expected_l3, axis=1, keepdims=True))
+        expected_probs = expected_exp / expected_exp.sum(axis=1, keepdims=True)
+
+        actual_probs = agent.get_probs(state)
+        np.testing.assert_allclose(actual_probs, expected_probs, rtol=1e-5)
+
+
 if __name__ == "__main__":
     unittest.main()
