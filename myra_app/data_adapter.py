@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import threading
 import sqlite3
-from typing import Optional, Dict, Any, List
+from typing import Dict, Any
 
 class DataAdapter:
     """
