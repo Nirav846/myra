@@ -10,7 +10,7 @@ for mod in ['pandas', 'numpy', 'xgboost', 'joblib', 'yfinance', 'requests', 'pan
 import pandas as pd
 import numpy as np
 import os
-from myra_app.ml_engine import NiftyDataPipeline, TrendForecaster, DilatedCNNForecaster, SMCEnvironment, AEONEngine
+from myra_app.ml_engine import NiftyDataPipeline, TrendForecaster, DilatedCNNForecaster, SMCEnvironment, AEONEngine, EvolutionaryAgent
 
 
 class TestMLEngine(unittest.TestCase):
@@ -322,6 +322,54 @@ class TestDilatedCNNForecasterPredictNext(unittest.TestCase):
             result = forecaster.predict_next(mock_df)
 
         self.assertAlmostEqual(result, 0.6, places=5)
+
+class TestEvolutionaryAgent(unittest.TestCase):
+    def test_get_and_set_genes_inverse(self):
+        """Test that get_genes and set_genes are exact inverses."""
+        if isinstance(np, MagicMock):
+            self.skipTest("NumPy not available in this environment")
+        agent = EvolutionaryAgent(input_size=4, hidden_size=4, output_size=2)
+
+        # Save original weights
+        original_weights = {k: v.copy() for k, v in agent.weights.items()}
+
+        # Flatten
+        genes = agent.get_genes()
+
+        # Verify flattened shape
+        expected_size = (4*4) + 4 + (4*2) + 2  # W1 + b1 + W2 + b2
+        self.assertEqual(len(genes), expected_size)
+
+        # Mutate to all zeros
+        for k in agent.weights:
+            agent.weights[k] = np.zeros_like(agent.weights[k])
+
+        # Ensure mutation worked
+        self.assertFalse(np.array_equal(original_weights['W1'], agent.weights['W1']))
+
+        # Restore
+        agent.set_genes(genes)
+
+        # Verify restoration
+        for k in original_weights:
+            np.testing.assert_array_almost_equal(original_weights[k], agent.weights[k])
+
+    def test_set_genes_shape_preservation(self):
+        """Test that set_genes properly preserves the shapes of all weight matrices."""
+        if isinstance(np, MagicMock):
+            self.skipTest("NumPy not available in this environment")
+        agent = EvolutionaryAgent(input_size=10, hidden_size=5, output_size=3)
+        expected_shapes = {k: v.shape for k, v in agent.weights.items()}
+
+        # Generate random genes
+        total_params = sum(np.prod(s) for s in expected_shapes.values())
+        random_genes = np.random.randn(total_params)
+
+        agent.set_genes(random_genes)
+
+        # Verify shapes remain correct
+        for k in expected_shapes:
+            self.assertEqual(agent.weights[k].shape, expected_shapes[k])
 
 if __name__ == "__main__":
     unittest.main()
