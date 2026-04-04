@@ -10,7 +10,8 @@ for mod in ['pandas', 'numpy', 'xgboost', 'joblib', 'yfinance', 'requests', 'pan
 import pandas as pd
 import numpy as np
 import os
-from myra_app.ml_engine import NiftyDataPipeline, TrendForecaster, DilatedCNNForecaster, AEONEngine
+from myra_app.ml_engine import NiftyDataPipeline, TrendForecaster, DilatedCNNForecaster, SMCEnvironment, AEONEngine
+
 
 class TestMLEngine(unittest.TestCase):
     @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
@@ -145,6 +146,89 @@ class TestDilatedCNNForecasterErrors(unittest.TestCase):
             model = forecaster.build_model()
             self.assertIsNone(model, "build_model should return None when Model building fails")
 
+class TestSMCEnvironment(unittest.TestCase):
+    @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
+    def test_evaluate_agent_vectorized_fitness_calculation(self):
+        # We need at least 62 rows so that indices 60 to N-2 exists
+        # prices will be df['close'].values[60:-1]
+        # next_prices will be df['close'].values[61:]
+        # If N=65, then:
+        # prices = values[60:64] -> length 4
+        # next_prices = values[61:65] -> length 4
+
+        # Prices we want at index 60, 61, 62, 63, 64
+        # 60: 100.0, 61: 110.0, 62: 90.0, 63: 100.0, 64: 80.0
+
+        close_prices = np.zeros(65)
+        close_prices[60:65] = [100.0, 110.0, 90.0, 100.0, 80.0]
+
+        high_1y = np.zeros(65)
+        high_1y[60:65] = [100.0, 110.0, 110.0, 110.0, 110.0]
+
+        df = pd.DataFrame({
+            'close': close_prices,
+            'high_1y': high_1y
+        })
+
+        env = SMCEnvironment(df)
+
+        mock_agent = MagicMock()
+        # The actions will map to allocations: 0 -> 0, 1 -> 0.25, 2 -> 0.5, 3 -> 1.0
+        mock_agent.forward.return_value = np.array([0, 1, 2, 3])
+
+        mock_states = np.zeros((4, 1)) # just dummy states
+
+        fitness = env.evaluate_agent_vectorized(mock_agent, states=mock_states)
+
+        # Expected fitness based on the test_cal script
+        expected_fitness = -0.20122912440855095
+
+        self.assertAlmostEqual(fitness, expected_fitness, places=5)
+
+    @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
+    def test_evaluate_agent_vectorized_empty_states(self):
+        # Dataframe with length < 61
+        df = pd.DataFrame({'close': np.zeros(50), 'high_1y': np.zeros(50)})
+        env = SMCEnvironment(df)
+        mock_agent = MagicMock()
+
+        # Test with states explicitly passed as empty
+        fitness_explicit = env.evaluate_agent_vectorized(mock_agent, states=np.array([]))
+        self.assertEqual(fitness_explicit, 0)
+        mock_agent.forward.assert_not_called()
+
+        # Test with states=None, should generate empty states due to short dataframe
+        fitness_auto = env.evaluate_agent_vectorized(mock_agent, states=None)
+        self.assertEqual(fitness_auto, 0)
+        mock_agent.forward.assert_not_called()
+
+    @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
+    def test_evaluate_agent_vectorized_generate_states(self):
+        # Dataframe with length 62 so get_all_states will return 1 state
+        cols = ['d_poc', 'absorp_ratio', 'std20', 'delivery_percent', 'sma50', 'sma200', 'rdv', 'close', 'high_1y']
+        df = pd.DataFrame(np.zeros((62, len(cols))), columns=cols)
+
+        # Add some mock values just to prevent zero divisions if standardizer runs
+        df['close'] = 100.0
+        df['high_1y'] = 110.0
+
+        env = SMCEnvironment(df)
+
+        mock_agent = MagicMock()
+        mock_agent.forward.return_value = np.array([2]) # e.g. Action 2 (50%)
+
+        # We don't need to check the exact return value here, just that get_all_states was called
+        # implicitly by the fact that the agent's forward function is triggered with generated states.
+
+        # Since we just want to ensure it calculates auto states, we patch _standardize_window to avoid complex math
+        with patch.object(env, '_standardize_window', return_value=np.zeros((1, 8))):
+            env.evaluate_agent_vectorized(mock_agent, states=None)
+
+            # The agent should be called with an array of shape (1, 8) since 62 rows -> 1 state (index 60 to 60)
+            # Actually range is (60, len(self.df)-1) which is (60, 61), so 1 state
+            mock_agent.forward.assert_called_once()
+            called_states = mock_agent.forward.call_args[0][0]
+            self.assertEqual(called_states.shape, (1, 8))
 class TestAEONEngine(unittest.TestCase):
     def setUp(self):
         self.librarian_mock = MagicMock()
