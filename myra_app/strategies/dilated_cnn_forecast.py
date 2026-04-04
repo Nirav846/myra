@@ -23,6 +23,8 @@ class Strategy:
         # Get Forecast
         try:
             forecast_move = self.engine.predict_next(df)
+            if forecast_move is None:
+                forecast_move = 0
         except Exception:
             forecast_move = 0
             

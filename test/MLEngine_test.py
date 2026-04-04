@@ -108,5 +108,57 @@ class TestDilatedCNNForecasterErrors(unittest.TestCase):
             model = forecaster.build_model()
             self.assertIsNone(model, "build_model should return None when Model building fails")
 
+class TestDilatedCNNForecasterPredictNext(unittest.TestCase):
+    @patch('os.path.exists')
+    def test_predict_next_no_model_path(self, mock_exists):
+        """Test predict_next when no model exists."""
+        mock_exists.return_value = False
+        forecaster = DilatedCNNForecaster()
+        forecaster.model = None
+        self.assertIsNone(forecaster.predict_next(MagicMock()))
+
+    def test_predict_next_insufficient_data(self):
+        """Test predict_next when data length is less than window_size."""
+        forecaster = DilatedCNNForecaster()
+        forecaster.model = MagicMock()
+        forecaster.window_size = 60
+
+        mock_df = MagicMock()
+        mock_df.__len__.return_value = 50
+
+        self.assertIsNone(forecaster.predict_next(mock_df))
+
+    @patch.dict('sys.modules', {'sklearn': MagicMock(), 'sklearn.preprocessing': MagicMock()})
+    def test_predict_next_success(self):
+        """Test predict_next successful prediction."""
+        forecaster = DilatedCNNForecaster()
+        forecaster.window_size = 60
+        forecaster.features_count = 8
+
+        mock_model = MagicMock()
+        mock_model.predict.return_value = [[0.8]]
+        forecaster.model = mock_model
+
+        mock_df = MagicMock()
+        mock_df.__len__.return_value = 65
+
+        class MockDataArray:
+            def __getitem__(self, key):
+                if isinstance(key, slice):
+                    mock_slice = MagicMock()
+                    mock_slice.reshape.return_value = "reshaped_window"
+                    return mock_slice
+                elif isinstance(key, tuple) and key == (-1, -1):
+                    return 0.5
+                return MagicMock()
+
+        mock_scaler = MagicMock()
+        mock_scaler.fit_transform.return_value = MockDataArray()
+
+        with patch('sklearn.preprocessing.StandardScaler', return_value=mock_scaler, create=True):
+            result = forecaster.predict_next(mock_df)
+
+        self.assertAlmostEqual(result, 0.6, places=5)
+
 if __name__ == "__main__":
     unittest.main()
