@@ -87,7 +87,7 @@ def train_es():
             gene_list.append(w.flatten())
         final_genes = np.concatenate(gene_list)
         joblib.dump(final_genes, "models/aeon_agent.joblib")
-        print(f"\n[✔] AEON-ES Training Complete. Genes saved.")
+        print("\n[✔] AEON-ES Training Complete. Genes saved.")
         
     except KeyboardInterrupt:
         print("\n[!] Training paused.")

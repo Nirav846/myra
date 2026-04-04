@@ -13,7 +13,7 @@ class TestGrahamData(unittest.TestCase):
         
         # Create table with new schema
         self.conn.execute("""
-            CREATE TABLE fundamentals_quarterly (
+            CREATE TABLE quarterly_results (
                 symbol VARCHAR, report_date VARCHAR, revenue DOUBLE, net_profit DOUBLE, 
                 eps DOUBLE, roce DOUBLE, roe DOUBLE, debt DOUBLE,
                 opm_pct DOUBLE, interest DOUBLE, borrowings DOUBLE, cash_from_ops DOUBLE,
@@ -37,7 +37,7 @@ class TestGrahamData(unittest.TestCase):
         # Mock quarterly data: EPS=10, BVPS=100
         # Graham = (22.5 * 10 * 100) ** 0.5 = (22500) ** 0.5 = 150
         self.conn.execute(f"""
-            INSERT INTO fundamentals_quarterly (symbol, report_date, eps, book_value, last_updated)
+            INSERT INTO quarterly_results (symbol, report_date, eps, book_value, last_updated)
             VALUES ('{symbol}', 'Dec 2025', 10.0, 100.0, '{date.today()}')
         """)
         

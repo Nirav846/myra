@@ -163,7 +163,7 @@ class LibrarianIntelligenceMixin:
                 df['symbol'] = sym
                 self.loader.indicators.save_indicators("precomputed", sym, df)
                 
-            except Exception as e:
+            except Exception:
                 continue
         
         print("[+] Indicator Lake Updated.")

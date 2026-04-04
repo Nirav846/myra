@@ -49,7 +49,7 @@ def run_backtest():
                 scan_all=True,
                 is_piped=True # Silent mode
             )
-        except Exception as e:
+        except Exception:
             # console.print(f"[error]Error on {day_str}: {e}[/error]")
             hits = []
         
