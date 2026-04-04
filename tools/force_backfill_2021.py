@@ -23,7 +23,8 @@ def backfill_2021():
         res = lib.conn.execute("SELECT DISTINCT date FROM prices WHERE date >= '2021-01-01'").fetchall()
         existing_dates = {r[0] for r in res}
         print(f"[*] Found {len(existing_dates)} days already in database.")
-    except Exception: pass
+    except Exception as e:
+        print(f"[!] Error checking existing dates: {e}")
     
     target_days = [d for d in trading_days if d not in existing_dates]
     target_days.sort() # Process chronologically
