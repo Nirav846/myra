@@ -492,7 +492,8 @@ class ResultsManager:
                     
                     if c == "RS_Raw":
                         color = "green" if num_val > 1.1 else "red" if num_val < 0.9 else "yellow"
-                        colored_val = f"[{color}]{formatted_val}[/{color}]"
+                        arrow = "↑ " if num_val > 1.1 else "↓ " if num_val < 0.9 else "→ "
+                        colored_val = f"[{color}]{arrow}{formatted_val}[/{color}]"
                     elif c == "ROE":
                         color = "green" if num_val > 20 else "red" if num_val < 10 else "yellow"
                         colored_val = f"[{color}]{formatted_val}[/{color}]"
@@ -510,7 +511,8 @@ class ResultsManager:
                         colored_val = f"[{color}]{formatted_val}[/{color}]"
                     elif c == "Forecast_Move%":
                         color = "green" if num_val > 0.5 else "red" if num_val < -0.5 else "white"
-                        colored_val = f"[{color}]{formatted_val}[/{color}]"
+                        arrow = "↑ " if num_val > 0.5 else "↓ " if num_val < -0.5 else "→ "
+                        colored_val = f"[{color}]{arrow}{formatted_val}[/{color}]"
                     elif c == "Tightness":
                         color = "green" if num_val < 2 else "yellow" if num_val < 5 else "red"
                         colored_val = f"[{color}]{formatted_val}[/{color}]"

@@ -394,7 +394,9 @@ class MYRAScreener:
             for r in results:
                 b = broker_map.get(r["Stock"]); ltp = r.get("LTP", 0); ab = b.get("Avg_Price", 0)
                 pnl = round(((ltp - ab) / ab) * 100, 1) if ab > 0 else 0
-                r["PnL%"] = f"[{'green' if pnl >= 0 else 'red'}]{pnl}%[/{'green' if pnl >= 0 else 'red'}]"
+                pnl_color = 'green' if pnl > 0 else 'red' if pnl < 0 else 'white'
+                pnl_arrow = '↑ ' if pnl > 0 else '↓ ' if pnl < 0 else '→ '
+                r["PnL%"] = f"[{pnl_color}]{pnl_arrow}{pnl}%[/{pnl_color}]"
                 r["Funda_Score"] = funda_map.get(r["Stock"], 0)
                 tsl = r.get("SL", 0); stage = r.get("Stage", "-")
                 ad_vibe = r.get("Closing_Vibe", "-"); accel = r.get("AV_Accel", 0)
