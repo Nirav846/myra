@@ -6,7 +6,6 @@ EXCLUSIVE GATEKEEPER for all MYRA data.
 """
 import os
 import pandas as pd
-from rich.console import Console
 
 from myra_app.fetcher import DataFetcher
 from myra_app.data_loader import StockDataLoader
@@ -38,6 +37,8 @@ class Librarian(LibrarianCore, LibrarianSchemaMixin, LibrarianSyncMixin, Librari
         # Connect is called in LibrarianCore.__init__
         self.fundamental_manager.set_connection(self._val_conn)
         
+        self._funda_cols = None # Cache for fundamentals columns
+
         from myra_app.fundamental_ranker import FundamentalRanker
         self.fundamental_ranker = FundamentalRanker(self._val_conn, scoring_db_path=os.path.join(os.getcwd(), "db", "scoring.db"))
         
@@ -163,13 +164,15 @@ class Librarian(LibrarianCore, LibrarianSchemaMixin, LibrarianSyncMixin, Librari
         try:
             res = self._val_conn.execute("SELECT * FROM fundamentals WHERE symbol = ?", (clean,)).fetchone()
             if res:
-                # Get column names for dict mapping
-                cursor = self._val_conn.execute("PRAGMA table_info('fundamentals')")
-                cols = [row[1] for row in cursor.fetchall()] # row[1] is name
-                # Simple fallback if fetchall fails to give names
-                if not cols: cols = ['symbol', 'pe', 'roe', 'eps', 'book_value', 'market_cap', 'sector', 'last_updated']
+                # Get column names for dict mapping (Cached)
+                if getattr(self, '_funda_cols', None) is None:
+                    cursor = self._val_conn.execute("PRAGMA table_info('fundamentals')")
+                    self._funda_cols = [row[1] for row in cursor.fetchall()] # row[1] is name
+                    # Simple fallback if fetchall fails to give names
+                    if not self._funda_cols:
+                        self._funda_cols = ['symbol', 'pe', 'roe', 'eps', 'book_value', 'market_cap', 'sector', 'last_updated']
 
-                d = dict(zip(cols, res))
+                d = dict(zip(self._funda_cols, res))
                 # Return standardized casing for compatibility, but include all raw data
                 out = {k.title(): v for k, v in d.items()}
                 out.update(d) # Keep original snake_case too
