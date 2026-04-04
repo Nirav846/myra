@@ -1,7 +1,5 @@
-import duckdb
 import os
 import sys
-from datetime import date
 
 # Add current dir to path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
