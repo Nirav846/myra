@@ -25,7 +25,8 @@ def backfill_2022():
         res = lib.conn.execute("SELECT DISTINCT date FROM prices WHERE date >= '2022-01-01' AND date <= '2022-12-31'").fetchall()
         existing_dates = {r[0] for r in res}
         console.print(f"[info][*] Found {len(existing_dates)} days for 2022 already in database.[/info]")
-    except Exception: pass
+    except Exception as e:
+        console.print(f"[warning][!] Error checking existing dates: {e}[/warning]")
     
     target_days = [d for d in trading_days if d not in existing_dates]
     target_days.sort() 
