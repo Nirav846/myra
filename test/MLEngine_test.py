@@ -323,5 +323,29 @@ class TestDilatedCNNForecasterPredictNext(unittest.TestCase):
 
         self.assertAlmostEqual(result, 0.6, places=5)
 
+    @unittest.skipIf(isinstance(pd, MagicMock), "Requires actual libraries")
+    def test_build_model(self):
+        try:
+            import tensorflow.keras.models
+        except ImportError:
+            self.skipTest("tensorflow not available")
+
+        forecaster = DilatedCNNForecaster()
+        model = forecaster.build_model()
+
+        self.assertIsNotNone(model, "Model should not be None")
+
+        from tensorflow.keras.models import Model
+        self.assertIsInstance(model, Model, "Built model should be a Keras Model instance")
+
+        # Validate shapes
+        self.assertEqual(model.input_shape, (None, 60, 8))
+        self.assertEqual(model.output_shape, (None, 1))
+
+        # Validate layer presence
+        layer_types = [type(layer).__name__ for layer in model.layers]
+        self.assertIn("Conv1D", layer_types)
+        self.assertIn("Dense", layer_types)
+
 if __name__ == "__main__":
     unittest.main()
