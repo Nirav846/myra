@@ -71,6 +71,18 @@ class TestMLEngine(unittest.TestCase):
         if os.path.exists("test_models"):
             shutil.rmtree("test_models")
 
+    @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
+    @patch('myra_app.ml_engine.yf.download')
+    def test_fetch_historical_nifty_exception(self, mock_yf_download):
+        """Test that fetch_historical_nifty handles yf.download exceptions."""
+        mock_yf_download.side_effect = Exception("Simulated yfinance error")
+
+        pipeline = NiftyDataPipeline(None)
+        result = pipeline.fetch_historical_nifty()
+
+        # Check that None is returned on exception
+        self.assertIsNone(result, "Should return None on exception")
+
 class TestDilatedCNNForecasterErrors(unittest.TestCase):
     @patch.dict('sys.modules', {'tensorflow': None})
     def test_build_model_import_error(self):
