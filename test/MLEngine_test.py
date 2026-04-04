@@ -148,6 +148,30 @@ class TestDilatedCNNForecasterErrors(unittest.TestCase):
 
 class TestSMCEnvironment(unittest.TestCase):
     @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
+    def test_get_all_states(self):
+        # 1. Test with insufficient data (<61 rows)
+        cols = ['d_poc', 'absorp_ratio', 'std20', 'delivery_percent', 'sma50', 'sma200', 'rdv', 'close']
+        df_short = pd.DataFrame(np.zeros((60, len(cols))), columns=cols)
+        env_short = SMCEnvironment(df_short)
+        states_short = env_short.get_all_states()
+
+        self.assertIsInstance(states_short, np.ndarray)
+        self.assertEqual(states_short.shape, (0,))
+
+        # 2. Test with sufficient data (e.g. 65 rows -> 4 states)
+        # Because range is (60, len(self.df) - 1), so range(60, 64) -> i=60, 61, 62, 63 -> 4 states
+        df_long = pd.DataFrame(np.zeros((65, len(cols))), columns=cols)
+        # Avoid division by zero in _standardize_window
+        df_long['close'] = 100.0
+
+        env_long = SMCEnvironment(df_long)
+        states_long = env_long.get_all_states()
+
+        self.assertIsInstance(states_long, np.ndarray)
+        # 4 states, each state is flattened 60x8 = 480
+        self.assertEqual(states_long.shape, (4, 480))
+
+    @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
     def test_evaluate_agent_vectorized_fitness_calculation(self):
         # We need at least 62 rows so that indices 60 to N-2 exists
         # prices will be df['close'].values[60:-1]
