@@ -149,6 +149,9 @@ class DilatedCNNForecaster:
         self.features_count = 8
 
     def build_model(self):
+        """
+        Builds the underlying TensorFlow/Keras architecture.
+        """
         try:
             from tensorflow.keras.layers import Input, Conv1D, Dense, Dropout, Lambda
             from tensorflow.keras.models import Model
@@ -311,20 +314,11 @@ class EvolutionaryAgent:
         return exp_z / exp_z.sum(axis=1, keepdims=True)
 
     def forward(self, state):
-        """Standard MLP Forward Pass with ReLU activation. Handles batch input."""
-        # Ensure state is 2D
-        if state.ndim == 1:
-            state = state.reshape(1, -1)
-            
-        z1 = np.dot(state, self.weights['W1']) + self.weights['b1']
-        a1 = np.maximum(0, z1) # ReLU
-        z2 = np.dot(a1, self.weights['W2']) + self.weights['b2']
+        """Returns the selected action (argmax). Handles batch input."""
+        original_ndim = state.ndim
+        probs = self.get_probs(state)
         
-        # Softmax for probability distribution over actions
-        exp_z = np.exp(z2 - np.max(z2, axis=1, keepdims=True))
-        probs = exp_z / exp_z.sum(axis=1, keepdims=True)
-        
-        if state.shape[0] == 1:
+        if original_ndim == 1 or state.shape[0] == 1:
             return np.argmax(probs)
         return np.argmax(probs, axis=1)
 
@@ -534,7 +528,7 @@ class AEONEngine:
 
     def get_conviction(self, symbol, df, funda=None):
         """Returns the Agent's conviction level (0-3)."""
-        if df.empty or len(df) < 60:
+        if df.empty and not funda:
             return "N/A"
             
         try:
@@ -544,7 +538,7 @@ class AEONEngine:
             window_cols = cols + [close_col]
             
             # 1. Prepare the historical state window
-            if len(df) >= 60:
+            if not df.empty and len(df) >= 60:
                 # Check if all other indicators exist in the history
                 missing = [c for c in cols if c not in df.columns]
                 if not missing:
@@ -553,33 +547,56 @@ class AEONEngine:
                     window_df.columns = [c.lower() for c in window_df.columns] # Ensure consistency
                     state = self._standardize_window(window_df)
                 elif funda:
-                    # Fallback to funda-based reconstruction if columns are missing
-                    row_dict = {}
+                    # Optimized Vectorized Reconstruction (Jules Boost)
+                    # Instead of a DataFrame, create the flattened feature vector directly
+                    vals = []
+                    close = float(funda.get('close') or df[close_col].iloc[-1] or 1.0)
                     for c in cols + ['close']:
                         f_key = c
-                        if c == 'absorp_ratio':
-                            f_key = 'Absorp_Ratio'
-                        if c == 'rdv':
-                            f_key = 'RDV'
-                        val = funda.get(f_key, 0)
-                        row_dict[c] = val if val is not None else 0
-                    window_df = pd.DataFrame(row_dict, index=range(60))
-                    state = self._standardize_window(window_df)
+                        if c == 'absorp_ratio': f_key = 'Absorp_Ratio'
+                        if c == 'rdv': f_key = 'RDV'
+                        val = float(funda.get(f_key, 0) or 0)
+                        
+                        # Apply same normalization as _standardize_window
+                        if c in ['d_poc', 'sma50', 'sma200', 'close', 'std20']:
+                            norm_val = val / close
+                        elif c == 'delivery_percent':
+                            norm_val = val / 100.0
+                        elif c == 'absorp_ratio':
+                            norm_val = np.clip(val / 2.0, 0, 2)
+                        elif c == 'rdv':
+                            norm_val = np.clip(val / 5.0, 0, 2)
+                        else:
+                            norm_val = val
+                        vals.append(norm_val)
+                    
+                    # Replicate 60 times and flatten
+                    state = np.tile(np.array(vals), 60).reshape(1, -1)
                 else:
                     return "N/A"
             elif funda:
-                # Reconstruction for short-history stocks
-                row_dict = {}
+                # Optimized Vectorized Reconstruction for short-history/new stocks
+                vals = []
+                close = float(funda.get('close') or 1.0)
                 for c in cols + ['close']:
                     f_key = c
-                    if c == 'absorp_ratio':
-                        f_key = 'Absorp_Ratio'
-                    if c == 'rdv':
-                        f_key = 'RDV'
-                    val = funda.get(f_key, 0)
-                    row_dict[c] = val if val is not None else 0
-                window_df = pd.DataFrame(row_dict, index=range(60))
-                state = self._standardize_window(window_df)
+                    if c == 'absorp_ratio': f_key = 'Absorp_Ratio'
+                    if c == 'rdv': f_key = 'RDV'
+                    val = float(funda.get(f_key, 0) or 0)
+                    
+                    if c in ['d_poc', 'sma50', 'sma200', 'close', 'std20']:
+                        norm_val = val / close
+                    elif c == 'delivery_percent':
+                        norm_val = val / 100.0
+                    elif c == 'absorp_ratio':
+                        norm_val = np.clip(val / 2.0, 0, 2)
+                    elif c == 'rdv':
+                        norm_val = np.clip(val / 5.0, 0, 2)
+                    else:
+                        norm_val = val
+                    vals.append(norm_val)
+                
+                state = np.tile(np.array(vals), 60).reshape(1, -1)
             else:
                 return "N/A"
                 
