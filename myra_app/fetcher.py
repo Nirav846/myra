@@ -46,10 +46,19 @@ class GhostSession:
         try:
             conn = sqlite3.connect(self.cache_path, timeout=20)
             conn.execute("PRAGMA journal_mode=WAL;") # Fix 6: Prevent locking
-            conn.execute("CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value BLOB, expiry TIMESTAMP, data_hash TEXT)") # Fix 29
+            # Check if column exists, if not, add it (Fix 30: Schema Migration)
+            cursor = conn.execute("PRAGMA table_info(cache)")
+            columns = [info[1] for info in cursor.fetchall()]
+            
+            if not columns:
+                conn.execute("CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value BLOB, expiry TIMESTAMP, data_hash TEXT)")
+            elif "data_hash" not in columns:
+                logger.info(f"Upgrading cache schema in {self.cache_path}: Adding data_hash column.")
+                conn.execute("ALTER TABLE cache ADD COLUMN data_hash TEXT")
+            
             conn.close()
         except Exception as e:
-            logger.error(f'Unexpected error: {e}', exc_info=True)
+            logger.error(f'Unexpected error during cache init: {e}', exc_info=True)
             pass
 
     def _get_cache(self, url, params=None):
@@ -62,7 +71,7 @@ class GhostSession:
             conn.close()
             return res[0] if res else None
         except Exception as e:
-            logger.error(f'Unexpected error: {e}', exc_info=True)
+            logger.error(f'Unexpected error in _get_cache: {e}', exc_info=True)
             return None
 
     def _set_cache(self, url, value, params=None, expire_seconds=86400):
@@ -73,14 +82,21 @@ class GhostSession:
         try:
             conn = sqlite3.connect(self.cache_path, timeout=20)
             conn.execute("PRAGMA journal_mode=WAL;") # Fix 6: Prevent locking
-            conn.execute("INSERT OR REPLACE INTO cache VALUES (?, ?, ?, ?)", (key, value, expiry, data_hash))
+            try:
+                conn.execute("INSERT OR REPLACE INTO cache VALUES (?, ?, ?, ?)", (key, value, expiry, data_hash))
+            except sqlite3.OperationalError as e:
+                if "table cache has 3 columns but 4 values were supplied" in str(e):
+                    logger.warning("Cache schema mismatch detected during INSERT. Falling back to 3-column insert.")
+                    conn.execute("INSERT OR REPLACE INTO cache (key, value, expiry) VALUES (?, ?, ?)", (key, value, expiry))
+                else:
+                    raise
             conn.commit()
             conn.close()
         except Exception as e:
-            logger.error(f'Unexpected error: {e}', exc_info=True)
+            logger.error(f'Unexpected error in _set_cache: {e}', exc_info=True)
             pass
 
-    def get(self, url, params=None, headers=None, timeout=10, bypass_cache=False):
+    def get(self, url, params=None, headers=None, timeout=30, bypass_cache=False):
         """Standardized GET with Requests-First resilience (Fix 5)."""
         if not bypass_cache:
             cached = self._get_cache(url, params)
@@ -104,24 +120,29 @@ class GhostSession:
                 self._set_cache(url, r.content, params)
             return r
         except Exception as e:
-            logger.error(f'Unexpected error: {e}', exc_info=True)
+            logger.error(f'Requests error for {url}: {e}')
             # 2. FALLBACK: Stealth Scrapling (Only if blocked)
             try:
                 if self.fetcher is None:
                     from scrapling import Fetcher
+                    # Scrapling v0.3+ uses adaptive/huge_tree instead of auto_match
                     self.fetcher = Fetcher()
-                    try: self.fetcher.configure(auto_match=True)
-                    except Exception as e:
-                        logger.error(f'Unexpected error: {e}', exc_info=True)
+                    try:
+                        # Skip auto_match as it is deprecated/invalid
                         pass
+                    except Exception as e:
+                        logger.error(f'Scrapling config error: {e}')
                 
-                response = self.fetcher.get(url, params=params, headers=current_headers, timeout=timeout + 10)
-                response.status_code = response.status
+                response = self.fetcher.get(url, params=params, headers=current_headers, timeout=timeout + 20)
+                # Scrapling responses: 'status' instead of 'status_code', 'body' instead of 'content'
+                response.status_code = getattr(response, 'status', 0)
+                response.content = getattr(response, 'body', b'')
+                
                 if response.status_code == 200:
                     self._set_cache(url, response.content, params)
                 return response
             except Exception as e:
-                logger.error(f'Unexpected error: {e}', exc_info=True)
+                logger.error(f'Scrapling fallback error for {url}: {e}')
                 return None
 
 class SchemaContractEnforcer:
