@@ -122,29 +122,30 @@ def backfill_missing_data(missing_csv="data/missing_data.csv", db_path="db/techn
                     targets = set(df_missing[df_missing['missing_date'] == date_processed]['symbol'])
                     
                     records = []
-                    for _, row in df_bhav.iterrows():
-                        raw_sym = str(row['SYMBOL']).strip().upper()
+                    for row in df_bhav.itertuples(index=False):
+                        row_dict = row._asdict()
+                        raw_sym = str(row_dict.get('SYMBOL', '')).strip().upper()
                         # Resolve raw bhavcopy symbol to its CURRENT name
                         current_name = recovery.mapper.get_current_symbol(raw_sym)
                         
                         # IMPORTANT: If the CURRENT name is in our target list, we save it
                         if current_name in targets:
                             # Use current name for insertion to keep technical.db consistent
-                            vol = row.get('TTL_TRD_QNTY', row.get('TOTTRDQTY', 0))
-                            close = row.get('CLOSE_PRICE', row.get('CLOSE', 0))
-                            deliv = row.get('DELIV_QTY', 0)
+                            vol = row_dict.get('TTL_TRD_QNTY', row_dict.get('TOTTRDQTY', 0))
+                            close = row_dict.get('CLOSE_PRICE', row_dict.get('CLOSE', 0))
+                            deliv = row_dict.get('DELIV_QTY', 0)
                             
                             records.append((
                                 current_name, date_processed,
-                                float(row.get('OPEN_PRICE', row.get('OPEN', 0))),
-                                float(row.get('HIGH_PRICE', row.get('HIGH', 0))),
-                                float(row.get('LOW_PRICE', row.get('LOW', 0))),
+                                float(row_dict.get('OPEN_PRICE', row_dict.get('OPEN', 0))),
+                                float(row_dict.get('HIGH_PRICE', row_dict.get('HIGH', 0))),
+                                float(row_dict.get('LOW_PRICE', row_dict.get('LOW', 0))),
                                 float(close),
                                 int(vol),
                                 int(deliv),
-                                int(row.get('NO_OF_TRADES', row.get('TOTALTRADES', 0))),
-                                float(row.get('AVG_PRICE', close)),
-                                float(row.get('DELIV_PER', 0)),
+                                int(row_dict.get('NO_OF_TRADES', row_dict.get('TOTALTRADES', 0))),
+                                float(row_dict.get('AVG_PRICE', close)),
+                                float(row_dict.get('DELIV_PER', 0)),
                                 (float(deliv)/float(vol)) if vol and vol > 0 else 0
                             ))
                     
