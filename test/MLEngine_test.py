@@ -14,6 +14,31 @@ from myra_app.ml_engine import NiftyDataPipeline, TrendForecaster, DilatedCNNFor
 
 class TestMLEngine(unittest.TestCase):
     @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
+    def test_feature_engineering_edge_cases(self):
+        pipeline = NiftyDataPipeline(None)
+
+        # 1. Test with None
+        df_none = pipeline.engineer_features(None)
+        self.assertTrue(df_none.empty)
+
+        # 2. Test with Empty DataFrame
+        df_empty_in = pd.DataFrame()
+        df_empty_out = pipeline.engineer_features(df_empty_in)
+        self.assertTrue(df_empty_out.empty)
+
+        # 3. Test with DataFrame less than 60 rows
+        dates = pd.date_range(end='2026-03-19', periods=50)
+        df_small = pd.DataFrame({
+            "Open": np.random.uniform(22000, 23000, 50),
+            "High": np.random.uniform(22000, 23000, 50),
+            "Low": np.random.uniform(22000, 23000, 50),
+            "Close": np.random.uniform(22000, 23000, 50),
+            "Volume": np.random.uniform(100000, 200000, 50)
+        }, index=dates)
+        df_small_out = pipeline.engineer_features(df_small)
+        self.assertTrue(df_small_out.empty)
+
+    @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
     def test_feature_engineering(self):
         # Create mock OHLCV data
         dates = pd.date_range(end='2026-03-19', periods=100)
