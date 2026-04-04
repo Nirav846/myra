@@ -109,6 +109,89 @@ class TestMLEngine(unittest.TestCase):
         # Check that None is returned on exception
         self.assertIsNone(result, "Should return None on exception")
 
+    def test_get_forecast_no_model(self):
+        forecaster = TrendForecaster(None, model_path="test_models/test_nifty_no_model.joblib")
+        forecaster.model = None
+        result = forecaster.get_forecast()
+        self.assertEqual(result, {"direction": "UNKNOWN", "confidence": 0})
+
+    @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
+    def test_get_forecast_empty_data(self):
+        forecaster = TrendForecaster(None, model_path="test_models/test_nifty_empty_data.joblib")
+        forecaster.model = MagicMock()
+
+        # Mock fetch_historical_nifty to return empty DataFrame
+        forecaster.pipeline.fetch_historical_nifty = MagicMock(return_value=pd.DataFrame())
+
+        result = forecaster.get_forecast()
+        self.assertEqual(result, {"direction": "ERROR", "confidence": 0})
+
+    @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
+    def test_get_forecast_bullish(self):
+        forecaster = TrendForecaster(None, model_path="test_models/test_nifty_bullish.joblib")
+        forecaster.model = MagicMock()
+        forecaster.model.predict_proba.return_value = [[0.4, 0.6]] # prob = 0.6
+
+        # Create minimal DataFrame for engineering features
+        dates = pd.date_range(end='2026-03-19', periods=20)
+        df = pd.DataFrame({
+            "Open": np.random.uniform(22000, 23000, 20),
+            "High": np.random.uniform(22000, 23000, 20),
+            "Low": np.random.uniform(22000, 23000, 20),
+            "Close": np.random.uniform(22000, 23000, 20),
+            "Volume": np.random.uniform(100000, 200000, 20)
+        }, index=dates)
+
+        forecaster.pipeline.fetch_historical_nifty = MagicMock(return_value=df)
+
+        result = forecaster.get_forecast()
+        self.assertEqual(result["direction"], "BULLISH")
+        self.assertEqual(result["confidence"], 60.0)
+
+    @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
+    def test_get_forecast_bearish(self):
+        forecaster = TrendForecaster(None, model_path="test_models/test_nifty_bearish.joblib")
+        forecaster.model = MagicMock()
+        forecaster.model.predict_proba.return_value = [[0.6, 0.4]] # prob = 0.4
+
+        # Create minimal DataFrame for engineering features
+        dates = pd.date_range(end='2026-03-19', periods=20)
+        df = pd.DataFrame({
+            "Open": np.random.uniform(22000, 23000, 20),
+            "High": np.random.uniform(22000, 23000, 20),
+            "Low": np.random.uniform(22000, 23000, 20),
+            "Close": np.random.uniform(22000, 23000, 20),
+            "Volume": np.random.uniform(100000, 200000, 20)
+        }, index=dates)
+
+        forecaster.pipeline.fetch_historical_nifty = MagicMock(return_value=df)
+
+        result = forecaster.get_forecast()
+        self.assertEqual(result["direction"], "BEARISH")
+        self.assertEqual(result["confidence"], 60.0)
+
+    @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
+    def test_get_forecast_neutral(self):
+        forecaster = TrendForecaster(None, model_path="test_models/test_nifty_neutral.joblib")
+        forecaster.model = MagicMock()
+        forecaster.model.predict_proba.return_value = [[0.5, 0.5]] # prob = 0.5
+
+        # Create minimal DataFrame for engineering features
+        dates = pd.date_range(end='2026-03-19', periods=20)
+        df = pd.DataFrame({
+            "Open": np.random.uniform(22000, 23000, 20),
+            "High": np.random.uniform(22000, 23000, 20),
+            "Low": np.random.uniform(22000, 23000, 20),
+            "Close": np.random.uniform(22000, 23000, 20),
+            "Volume": np.random.uniform(100000, 200000, 20)
+        }, index=dates)
+
+        forecaster.pipeline.fetch_historical_nifty = MagicMock(return_value=df)
+
+        result = forecaster.get_forecast()
+        self.assertEqual(result["direction"], "NEUTRAL")
+        self.assertEqual(result["confidence"], 50.0)
+
 class TestDilatedCNNForecasterErrors(unittest.TestCase):
     @patch.dict('sys.modules', {'tensorflow': None})
     def test_build_model_import_error(self):
