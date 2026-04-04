@@ -3,7 +3,7 @@ import os
 import sys
 
 # Fix path
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 sys.path.append(PROJECT_ROOT)
 
 def check_sync_status():
