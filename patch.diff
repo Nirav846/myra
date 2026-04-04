@@ -1,0 +1,24 @@
+--- myra_app/results_manager.py
++++ myra_app/results_manager.py
+@@ -194,7 +194,8 @@
+             style="on black",
+             box=box.SIMPLE if is_narrow else box.HEAVY_EDGE,
+             expand=True,
+-            min_width=100
++            min_width=100,
++            caption=f"[dim]Total: {total} | Strong (Stage 2): {strong}[/dim]"
+         )
+
+         # Column 1: Identity Group (Yellow)
+@@ -321,11 +322,6 @@
+
+         self.console.print(table)
+
+-        # PERSISTENT SUMMARY FOOTER
+-        total = len(results)
+-        strong = len([r for r in results if "2" in str(r.get("Stage", ""))])
+-        self.console.print(f"[dim]  [+] Scan Complete: {total} candidates identified. Strong Trend (Stage 2): {strong} [/dim]")
+-
+     def offer_institutional_deep_dive(self, results: list):
+         """
+         PKScreener Superpower: On-Demand Institutional Deep-Dive.
