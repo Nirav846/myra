@@ -165,11 +165,14 @@ class Librarian(LibrarianCore, LibrarianSchemaMixin, LibrarianSyncMixin, Librari
             if res:
                 # Get column names for dict mapping
                 cursor = self._val_conn.execute("PRAGMA table_info('fundamentals')")
-                cols = [row[1] for r in cursor.fetchall()] # row[1] is name
+                cols = [row[1] for row in cursor.fetchall()] # row[1] is name
                 # Simple fallback if fetchall fails to give names
                 if not cols: cols = ['symbol', 'pe', 'roe', 'eps', 'book_value', 'market_cap', 'sector', 'last_updated']
-                
+
                 d = dict(zip(cols, res))
-                return {"PE": d.get("pe"), "ROE": d.get("roe"), "Sector": d.get("sector"), "MCap": d.get("market_cap")}
+                # Return standardized casing for compatibility, but include all raw data
+                out = {k.title(): v for k, v in d.items()}
+                out.update(d) # Keep original snake_case too
+                return out
         except Exception: pass
         return {}
