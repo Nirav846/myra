@@ -396,15 +396,10 @@ class Engine:
                         GROUP BY symbol
                     """, lib._inst_conn)
                     
-                    for _, row in m_data.iterrows():
-                        s = row['symbol']
-                        accel = 3 if row['active_days'] > 5 else 2 if row['active_days'] >= 3 else 1 if row['active_days'] >= 1 else 0
-                        insider_map[s] = {
-                            "buy_latest": row['net_5d'],
-                            "total_60d": row['net_60d'],
-                            "avg_buy_60d": row['avg_buy_60d'],
-                            "accel": accel
-                        }
+                    m_data['accel'] = np.where(m_data['active_days'] > 5, 3,
+                                      np.where(m_data['active_days'] >= 3, 2,
+                                      np.where(m_data['active_days'] >= 1, 1, 0)))
+                    insider_map.update(m_data.rename(columns={'net_5d': 'buy_latest', 'net_60d': 'total_60d'}).set_index('symbol')[['buy_latest', 'total_60d', 'avg_buy_60d', 'accel']].to_dict('index'))
                 except Exception: pass
 
             deal_map = {}
