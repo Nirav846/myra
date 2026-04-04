@@ -5,7 +5,7 @@ from rich.console import Console
 
 # Fix path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.append(PROJECT_ROOT)
+sys.path.insert(0, PROJECT_ROOT)
 
 from myra_app.librarian import Librarian
 from myra_app.data_adapter import DataAdapter
