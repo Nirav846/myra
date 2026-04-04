@@ -10,10 +10,36 @@ for mod in ['pandas', 'numpy', 'xgboost', 'joblib', 'yfinance', 'requests', 'pan
 import pandas as pd
 import numpy as np
 import os
-from myra_app.ml_engine import NiftyDataPipeline, TrendForecaster, DilatedCNNForecaster, SMCEnvironment, AEONEngine
+from myra_app.ml_engine import NiftyDataPipeline, TrendForecaster, DilatedCNNForecaster, SMCEnvironment, AEONEngine, EvolutionaryAgent
 
 
 class TestMLEngine(unittest.TestCase):
+    @unittest.skipIf(isinstance(np, MagicMock), "Numpy not available in this environment")
+    def test_evolutionary_agent_get_genes(self):
+        """Test that get_genes correctly flattens weights in alphabetical order of keys."""
+        agent = EvolutionaryAgent(input_size=2, hidden_size=2, output_size=1)
+
+        # Override weights with a specific mock dictionary to ensure exact testing behavior
+        # We use keys that test alphabetical sorting: 'b_vector', 'c_matrix', 'a_scalar'
+        # 'a_scalar' -> [1.0]
+        # 'b_vector' -> [2.0, 3.0]
+        # 'c_matrix' -> [[4.0, 5.0], [6.0, 7.0]]
+        agent.weights = {
+            'c_matrix': np.array([[4.0, 5.0], [6.0, 7.0]]),
+            'a_scalar': np.array([1.0]),
+            'b_vector': np.array([2.0, 3.0])
+        }
+
+        genes = agent.get_genes()
+
+        # The expected order is a_scalar, b_vector, c_matrix
+        # Flattened: [1.0] + [2.0, 3.0] + [4.0, 5.0, 6.0, 7.0]
+        # => [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+        expected_genes = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+
+        np.testing.assert_array_equal(genes, expected_genes)
+        self.assertEqual(genes.shape, (7,))
+
     @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
     def test_feature_engineering_edge_cases(self):
         pipeline = NiftyDataPipeline(None)
