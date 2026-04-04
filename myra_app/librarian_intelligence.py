@@ -4,6 +4,8 @@ MYRA Librarian Intelligence Layer (TRILOGY ERA)
 Handles all heavy indicator computation using Parquet Lake.
 """
 import os
+import logging
+logger = logging.getLogger(__name__)
 import pandas as pd
 import numpy as np
 import pandas_ta as ta
@@ -55,7 +57,9 @@ class LibrarianIntelligenceMixin:
                 if not deals_df.empty:
                     # Make sure date is datetime
                     deals_df['date'] = pd.to_datetime(deals_df['date'])
-            except Exception: pass
+            except Exception as e:
+                logger.error(f'Unexpected error: {e}', exc_info=True)
+                pass
 
         print(f"[MYRA] Updating Virtual Indicator Lake for {len(active_symbols)} symbols...")
         
@@ -67,6 +71,16 @@ class LibrarianIntelligenceMixin:
                 
                 # Normalize column names for computation
                 df.columns = [c.capitalize() for c in df.columns]
+
+                # TRUTH LAYER: Strict Mode Check
+                # Drop rows where mandatory columns (Close, Volume) are NaN before proceeding.
+                initial_len = len(df)
+                # 'Symbol' might not be a column if it's index or implied, but we can check if it exists or check the critical ones
+                mandatory_cols = [c for c in ['Close', 'Volume'] if c in df.columns]
+                df.dropna(subset=mandatory_cols, inplace=True)
+                if len(df) < initial_len:
+                    logger.warning(f"Materiality Warning: Dropped {initial_len - len(df)} rows due to missing Close/Volume for {sym}")
+
                 # Ensure index is datetime for exact date matching
                 df.index = pd.to_datetime(df.index)
                 df.sort_index(inplace=True)
@@ -78,7 +92,7 @@ class LibrarianIntelligenceMixin:
                         sym_deals.set_index('date', inplace=True)
                         # Left join institutional volume to the price dataframe
                         df = df.join(sym_deals[['inst_vol']], how='left')
-                        df['inst_vol'] = df['inst_vol'].fillna(0)
+                        df['inst_vol'] = df['inst_vol'].fillna(0.0)
                     else:
                         df['inst_vol'] = 0.0
                 else:
@@ -104,7 +118,7 @@ class LibrarianIntelligenceMixin:
                 # exceeds the 'Total Traded Volume' (Volume) for that day.
                 if 'inst_vol' in df.columns and 'Volume' in df.columns:
                     # Identify corrupted rows where inst_vol > Total Traded Volume
-                    corrupted_mask = df['inst_vol'] > df['Volume']
+                    corrupted_mask = df['inst_vol'].fillna(0) > df['Volume'].fillna(0)
                     # Nullify/reject institutional volume for those specific days
                     df.loc[corrupted_mask, 'inst_vol'] = 0.0
 
