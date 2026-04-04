@@ -260,7 +260,8 @@ class DataFetcher:
         "ROE": "roe", "RETURN ON EQUITY": "roe", "ROE %": "roe",
         "ROCE": "roce", "RETURN ON CAPITAL EMPLOYED": "roce",
         "DEBT TO EQUITY": "debt", "D/E": "debt", "DEBT EQUITY": "debt",
-        "EPS": "eps", "EARNINGS PER SHARE": "eps", "OPM": "opm_pct", "OPERATING PROFIT MARGIN": "opm_pct"
+        "EPS": "eps", "EARNINGS PER SHARE": "eps", "OPM": "opm_pct", "OPERATING PROFIT MARGIN": "opm_pct",
+        "BOOK VALUE": "book_value", "MARKET CAP": "market_cap", "MCAP": "market_cap"
     }
 
     def __init__(self):
