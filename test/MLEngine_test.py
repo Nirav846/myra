@@ -3,7 +3,7 @@ from unittest.mock import patch, MagicMock
 import sys
 
 # Mock modules for testing in environments without these dependencies
-for mod in ['pandas', 'numpy', 'xgboost', 'joblib', 'yfinance', 'requests', 'pandas_ta']:
+for mod in ['pandas', 'numpy', 'xgboost', 'joblib', 'yfinance', 'requests', 'pandas_ta', 'sklearn', 'sklearn.preprocessing']:
     if mod not in sys.modules:
         sys.modules[mod] = MagicMock()
 
@@ -543,6 +543,91 @@ class TestDilatedCNNForecasterPredictNext(unittest.TestCase):
 
         self.assertAlmostEqual(result, 0.6, places=5)
 
+
+class TestDilatedCNNForecasterTrain(unittest.TestCase):
+    def test_train_insufficient_data(self):
+        forecaster = DilatedCNNForecaster()
+        forecaster.window_size = 60
+        # Mock dataframe with less than window_size + 10 elements
+        mock_df = MagicMock()
+        mock_df.__len__.return_value = 65
+        result = forecaster.train(mock_df)
+        self.assertFalse(result)
+
+    @patch('myra_app.ml_engine.DilatedCNNForecaster.build_model')
+    @patch('os.makedirs')
+    @patch('sklearn.preprocessing.StandardScaler')
+    def test_train_success(self, mock_scaler_class, mock_makedirs, mock_build_model):
+        forecaster = DilatedCNNForecaster()
+        forecaster.window_size = 60
+        forecaster.model_path = "/tmp/fake_model.keras"
+
+        mock_df = MagicMock()
+        mock_df.__len__.return_value = 80
+
+        # We need a mock df[cols].fillna(0) which scaler.fit_transform takes
+        mock_df_cols = MagicMock()
+        mock_df.__getitem__.return_value = mock_df_cols
+        mock_df_cols.fillna.return_value = "filled_data"
+
+        # Mock scaler
+        mock_scaler_instance = MagicMock()
+
+        # Create fake data that looks like numpy array so data[i-self.window_size : i] works
+        class MockData:
+            def __len__(self):
+                return 80
+            def __getitem__(self, idx):
+                if isinstance(idx, tuple): # data[i, -1]
+                    return 0.5
+                return [0.1] * 8
+
+        mock_scaler_instance.fit_transform.return_value = MockData()
+        mock_scaler_class.return_value = mock_scaler_instance
+
+        # Mock model
+        mock_model = MagicMock()
+        mock_build_model.return_value = mock_model
+
+        result = forecaster.train(mock_df)
+
+        self.assertTrue(result)
+        mock_model.fit.assert_called_once()
+        mock_makedirs.assert_called_once_with("/tmp", exist_ok=True)
+        mock_model.save.assert_called_once_with("/tmp/fake_model.keras")
+
+    @patch('myra_app.ml_engine.DilatedCNNForecaster.build_model')
+    @patch('sklearn.preprocessing.StandardScaler')
+    def test_train_model_build_fails(self, mock_scaler_class, mock_build_model):
+        forecaster = DilatedCNNForecaster()
+        forecaster.window_size = 60
+
+        mock_df = MagicMock()
+        mock_df.__len__.return_value = 80
+
+        mock_df_cols = MagicMock()
+        mock_df.__getitem__.return_value = mock_df_cols
+        mock_df_cols.fillna.return_value = "filled_data"
+
+        mock_scaler_instance = MagicMock()
+        class MockData:
+            def __len__(self):
+                return 80
+            def __getitem__(self, idx):
+                if isinstance(idx, tuple):
+                    return 0.5
+                return [0.1] * 8
+        mock_scaler_instance.fit_transform.return_value = MockData()
+        mock_scaler_class.return_value = mock_scaler_instance
+
+        # Model fails to build
+        mock_build_model.return_value = None
+
+        result = forecaster.train(mock_df)
+        self.assertFalse(result)
+
+if __name__ == '__main__':
+    unittest.main()
     @unittest.skipIf(isinstance(pd, MagicMock), "Requires actual libraries")
     def test_build_model(self):
         try:
