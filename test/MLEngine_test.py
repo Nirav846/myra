@@ -148,6 +148,35 @@ class TestDilatedCNNForecasterErrors(unittest.TestCase):
 
 class TestSMCEnvironment(unittest.TestCase):
     @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
+    def test_reset(self):
+        # Provide a minimal valid DataFrame that _get_state/_standardize_window needs.
+        # We need at least 61 rows to extract a window of size 60 up to index 60.
+        cols = ['d_poc', 'absorp_ratio', 'std20', 'delivery_percent', 'sma50', 'sma200', 'rdv', 'close', 'high_1y']
+        df = pd.DataFrame(np.zeros((65, len(cols))), columns=cols)
+        # Avoid division by zero in standardizer
+        df['close'] = 100.0
+
+        env = SMCEnvironment(df, initial_balance=250000)
+
+        # Modify internal state to simulate an ongoing episode
+        env.balance = 50000
+        env.inventory = 100
+        env.current_step = 120
+        env.total_reward = -500.5
+
+        # Reset the environment
+        state = env.reset()
+
+        # Assert state variables are correctly restored
+        self.assertEqual(env.balance, 250000)
+        self.assertEqual(env.inventory, 0)
+        self.assertEqual(env.current_step, 60)
+        self.assertEqual(env.total_reward, 0)
+        self.assertIsNotNone(state)
+        # It returns standard standardized window state
+        self.assertEqual(state.shape, (60, 8))
+
+    @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
     def test_evaluate_agent_vectorized_fitness_calculation(self):
         # We need at least 62 rows so that indices 60 to N-2 exists
         # prices will be df['close'].values[60:-1]
