@@ -206,10 +206,9 @@ class DilatedCNNForecaster:
                 import tensorflow as tf
                 self.model = tf.keras.models.load_model(self.model_path)
             else:
-                return 0
+                return None
         
-        if len(df) < self.window_size:
-            return 0
+        if len(df) < self.window_size: return None
         
         from sklearn.preprocessing import StandardScaler
         scaler = StandardScaler()
