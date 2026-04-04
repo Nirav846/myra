@@ -21,8 +21,9 @@ class NiftyDataPipeline:
             # Clean columns (yf sometimes returns multi-index or lowercase)
             data.columns = [c.title() if isinstance(c, str) else c[0].title() for c in data.columns]
             return data
-        except Exception:
-            return pd.DataFrame()
+        except Exception as e:
+            print(f"[ML] Error fetching Nifty history: {e}")
+            return None
 
     def engineer_features(self, df):
         """Applies technical indicators and creates time-series features."""
