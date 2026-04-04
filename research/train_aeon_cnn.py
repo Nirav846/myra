@@ -8,8 +8,10 @@ from datetime import datetime
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
 
-# Add current dir to path
-sys.path.append(os.getcwd())
+# 2. Implementation: The Absolute Path Anchor
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if BASE_DIR not in sys.path:
+    sys.path.append(BASE_DIR)
 
 from myra_app.librarian import Librarian
 
@@ -123,8 +125,8 @@ def train_cnn():
     model.fit(X_train, y_train, epochs=10, batch_size=64, validation_split=0.1, verbose=1)
     
     # Save
-    model_path = "models/aeon_cnn_forecast.keras"
-    os.makedirs("models", exist_ok=True)
+    model_path = os.path.join(BASE_DIR, "models", "aeon_cnn_forecast.keras")
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
     model.save(model_path)
     console.print(f"[success][✔] CNN Model saved to {model_path}[/success]")
     

@@ -127,6 +127,7 @@ class LibrarianSchemaMixin:
                 CREATE TABLE IF NOT EXISTS quarterly_results (
                     symbol TEXT,
                     report_date TEXT,
+                    period_end TEXT,
                     revenue REAL,
                     net_profit REAL,
                     eps REAL,
@@ -134,6 +135,10 @@ class LibrarianSchemaMixin:
                     PRIMARY KEY (symbol, report_date)
                 )
             """, conn=self._val_conn)
+            # Migration: Ensure period_end exists
+            try:
+                self.safe_execute("ALTER TABLE quarterly_results ADD COLUMN period_end TEXT", conn=self._val_conn)
+            except Exception: pass
 
         # --- 5. GOVERNANCE.DB (Pledge & SAST) ---
         if self._gov_conn:

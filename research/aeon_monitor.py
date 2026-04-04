@@ -7,9 +7,12 @@ import matplotlib.pyplot as plt
 from rich.console import Console
 from rich.table import Table
 
+# 2. Implementation: The Absolute Path Anchor
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 def monitor():
     console = Console()
-    history_path = "models/aeon_fitness.json"
+    history_path = os.path.join(BASE_DIR, "models", "aeon_fitness.json")
     
     if not os.path.exists(history_path):
         console.print("[error][!] No fitness history found. Run train_aeon.py first.[/error]")
@@ -43,7 +46,7 @@ def monitor():
     plt.ylabel("Reward")
     plt.grid(True)
     
-    save_path = "myra_reports/charts/aeon_evolution.png"
+    save_path = os.path.join(BASE_DIR, "myra_reports", "charts", "aeon_evolution.png")
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     plt.savefig(save_path)
     console.print(f"[success][✔] Evolution chart saved to {save_path}[/success]")

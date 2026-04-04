@@ -1,4 +1,5 @@
-# myra_app/data_sources/normalizer.py
+from datetime import datetime
+import calendar
 
 def safe_float(val):
     if val is None: return None
@@ -11,6 +12,27 @@ def safe_float(val):
     except (ValueError, TypeError):
         return None
 
+def derive_period_end(report_date):
+    """Converts 'Dec 2025' or '2025-12' to '2025-12-31'."""
+    if not report_date: return None
+    try:
+        # Handle 'Dec 2025'
+        if len(report_date.split()) == 2:
+            mon, year = report_date.split()
+            # Convert month name to number
+            month_num = list(calendar.month_abbr).index(mon[:3].title())
+            last_day = calendar.monthrange(int(year), month_num)[1]
+            return f"{year}-{month_num:02d}-{last_day}"
+        # Handle ISO-like dates
+        if "-" in report_date:
+            parts = report_date.split("-")
+            if len(parts) >= 2:
+                year, month = int(parts[0]), int(parts[1])
+                last_day = calendar.monthrange(year, month)[1]
+                return f"{year}-{month:02d}-{last_day}"
+    except Exception: pass
+    return report_date
+
 def normalize(data, source):
     """
     Normalizes raw data from various sources into a standard MYRA format.
@@ -21,10 +43,13 @@ def normalize(data, source):
         # Standardize field names across different potential raw inputs before specific source logic
         # Some sources might return 'book_value' while others 'Book Value'
         std_row = {str(k).lower().replace(" ", "_"): v for k, v in row.items()}
+        report_date = row.get("report_date") or row.get("date")
+        period_end = derive_period_end(report_date)
         
         if source in ["screener", "screener_in"]:
             normalized.append({
-                "report_date": row.get("report_date"),
+                "report_date": report_date,
+                "period_end": period_end,
                 "revenue": safe_float(row.get("revenue")),
                 "net_profit": safe_float(row.get("net_profit")),
                 "eps": safe_float(row.get("eps")),
@@ -50,7 +75,8 @@ def normalize(data, source):
             })
         elif source in ["google_finance", "finology", "google"]:
             normalized.append({
-                "report_date": row.get("report_date"),
+                "report_date": report_date,
+                "period_end": period_end,
                 "revenue": safe_float(row.get("revenue")),
                 "net_profit": safe_float(row.get("net_profit")),
                 "eps": safe_float(row.get("eps")),
@@ -65,7 +91,8 @@ def normalize(data, source):
         # Fallback for other sources (simplified)
         else:
             normalized.append({
-                "report_date": row.get("date") or row.get("report_date"),
+                "report_date": report_date,
+                "period_end": period_end,
                 "revenue": safe_float(row.get("revenue") or row.get("totalRevenue")),
                 "net_profit": safe_float(row.get("profit") or row.get("netProfit")),
                 "eps": safe_float(row.get("eps")),

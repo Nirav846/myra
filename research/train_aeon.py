@@ -6,8 +6,10 @@ import joblib
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
 
-# Add current dir to path
-sys.path.append(os.getcwd())
+# 2. Implementation: The Absolute Path Anchor
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if BASE_DIR not in sys.path:
+    sys.path.append(BASE_DIR)
 
 from myra_app.librarian import Librarian
 from myra_app.ml_engine import EvolutionaryAgent, SMCEnvironment, DeepEvolutionStrategy
@@ -41,7 +43,7 @@ def train_aeon():
     # 2. Setup Agent & Strategy
     # Architecture: 480 Inputs (60 days * 8 features) -> 16 Hidden -> 4 Outputs (Actions)
     agent = EvolutionaryAgent(input_size=480, hidden_size=16, output_size=4)
-    model_path = "models/aeon_agent.joblib"
+    model_path = os.path.join(BASE_DIR, "models", "aeon_agent.joblib")
     
     # Load existing genes if available
     if os.path.exists(model_path):
@@ -88,7 +90,7 @@ def train_aeon():
     # 5. Training Loop
     iterations = 100
     history = []
-    history_path = "models/aeon_fitness.json"
+    history_path = os.path.join(BASE_DIR, "models", "aeon_fitness.json")
     
     with Progress(
         SpinnerColumn(),

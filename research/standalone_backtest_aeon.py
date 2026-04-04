@@ -1,27 +1,36 @@
 
 import os
+import sys
 import duckdb
 import pandas as pd
 import numpy as np
 import joblib
 from datetime import datetime, timedelta
+
+# 2. Implementation: The Absolute Path Anchor
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if BASE_DIR not in sys.path:
+    sys.path.append(BASE_DIR)
+
 from myra_app.ml_engine import EvolutionaryAgent, AEONEngine
 from tqdm import tqdm
 
 def run_standalone_backtest():
-    db_path = "results/Data/myra_market_data.db"
-    if not os.path.exists(db_path): db_path = "myra.db"
+    db_path = os.path.join(BASE_DIR, "results", "Data", "myra_market_data.db")
+    if not os.path.exists(db_path): 
+        db_path = os.path.join(BASE_DIR, "myra.db")
     
     # 1. Direct Connection (Bypass Librarian)
     conn = duckdb.connect(db_path, read_only=True)
     
     # 2. Load AEON Agent
     agent = EvolutionaryAgent(input_size=80)
-    if os.path.exists("models/aeon_agent.joblib"):
-        genes = joblib.load("models/aeon_agent.joblib")
+    model_path = os.path.join(BASE_DIR, "models", "aeon_agent.joblib")
+    if os.path.exists(model_path):
+        genes = joblib.load(model_path)
         agent.set_genes(genes)
     else:
-        print("[!] No trained model found at models/aeon_agent.joblib")
+        print(f"[!] No trained model found at {model_path}")
         return
 
     # 3. Define Timeframe

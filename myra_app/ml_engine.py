@@ -548,55 +548,31 @@ class AEONEngine:
                     state = self._standardize_window(window_df)
                 elif funda:
                     # Optimized Vectorized Reconstruction (Jules Boost)
-                    # Instead of a DataFrame, create the flattened feature vector directly
-                    vals = []
-                    close = float(funda.get('close') or df[close_col].iloc[-1] or 1.0)
+                    # Priority for 680-stock scan performance on AMD APU systems
+                    row_dict = {}
                     for c in cols + ['close']:
                         f_key = c
                         if c == 'absorp_ratio': f_key = 'Absorp_Ratio'
                         if c == 'rdv': f_key = 'RDV'
-                        val = float(funda.get(f_key, 0) or 0)
-                        
-                        # Apply same normalization as _standardize_window
-                        if c in ['d_poc', 'sma50', 'sma200', 'close', 'std20']:
-                            norm_val = val / close
-                        elif c == 'delivery_percent':
-                            norm_val = val / 100.0
-                        elif c == 'absorp_ratio':
-                            norm_val = np.clip(val / 2.0, 0, 2)
-                        elif c == 'rdv':
-                            norm_val = np.clip(val / 5.0, 0, 2)
-                        else:
-                            norm_val = val
-                        vals.append(norm_val)
+                        val = funda.get(f_key, 0)
+                        row_dict[c] = val if val is not None else 0
                     
-                    # Replicate 60 times and flatten
-                    state = np.tile(np.array(vals), 60).reshape(1, -1)
+                    window_df = pd.DataFrame([row_dict] * 60)
+                    state = self._standardize_window(window_df)
                 else:
                     return "N/A"
             elif funda:
                 # Optimized Vectorized Reconstruction for short-history/new stocks
-                vals = []
-                close = float(funda.get('close') or 1.0)
+                row_dict = {}
                 for c in cols + ['close']:
                     f_key = c
                     if c == 'absorp_ratio': f_key = 'Absorp_Ratio'
                     if c == 'rdv': f_key = 'RDV'
-                    val = float(funda.get(f_key, 0) or 0)
-                    
-                    if c in ['d_poc', 'sma50', 'sma200', 'close', 'std20']:
-                        norm_val = val / close
-                    elif c == 'delivery_percent':
-                        norm_val = val / 100.0
-                    elif c == 'absorp_ratio':
-                        norm_val = np.clip(val / 2.0, 0, 2)
-                    elif c == 'rdv':
-                        norm_val = np.clip(val / 5.0, 0, 2)
-                    else:
-                        norm_val = val
-                    vals.append(norm_val)
+                    val = funda.get(f_key, 0)
+                    row_dict[c] = val if val is not None else 0
                 
-                state = np.tile(np.array(vals), 60).reshape(1, -1)
+                window_df = pd.DataFrame([row_dict] * 60)
+                state = self._standardize_window(window_df)
             else:
                 return "N/A"
                 

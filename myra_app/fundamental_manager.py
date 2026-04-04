@@ -102,7 +102,7 @@ class FundamentalManager:
             for row in data:
                 try:
                     # Modular Schema: Map fields to quarterly_results
-                    cols = ['symbol', 'report_date', 'revenue', 'net_profit', 'eps', 'opm_pct']
+                    cols = ['symbol', 'report_date', 'period_end', 'revenue', 'net_profit', 'eps', 'opm_pct']
                     # Some sources provide more, check if we need to expand
                     
                     placeholders = ", ".join(["?" for _ in cols])
