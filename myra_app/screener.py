@@ -73,7 +73,6 @@ class MYRAScreener:
         
         # UI Display
         from rich.columns import Columns
-        from rich.panel import Panel
         from rich.table import Table
         
         panels = [
@@ -108,7 +107,6 @@ class MYRAScreener:
 
     def display_data_status(self):
         """Displays a summary panel of data availability (Fix: PROMPT.txt UX)."""
-        from rich.panel import Panel
         from rich.table import Table
         from datetime import datetime
         
@@ -370,7 +368,7 @@ class MYRAScreener:
             self.rm.archive_results(results, "Custom_Scout")
 
     def run_full_market_scout(self):
-        self.console.print(f"[info][MYRA] Scouting FULL MARKET (3000+ stocks) with Technical Intelligence...[/info]")
+        self.console.print("[info][MYRA] Scouting FULL MARKET (3000+ stocks) with Technical Intelligence...[/info]")
         results = self.execute_scan("technicals", "Full Market Scout", scan_all=True)
         if results:
             self.rm.display_discovery_table(results, "Full Market Scout", "technicals", [])
@@ -422,7 +420,7 @@ class MYRAScreener:
     def _calculate_grade(self, stock_funda, sector_stats):
         if not sector_stats: return 50, "C"
         sect = stock_funda.get("Sector")
-        if not sect in sector_stats: return 50, "C"
+        if sect not in sector_stats: return 50, "C"
         stats = sector_stats[sect]; ts, f = 0, 0
         roe = stock_funda.get("ROE")
         if roe and roe != "NULL" and "roe" in stats:

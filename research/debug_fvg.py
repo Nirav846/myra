@@ -45,7 +45,7 @@ def debug_fvg():
                         print(f"    [!] Mitigated at index {j} (Close {closes[j]:.2f} < Mid {mid:.2f})")
                         break
                 if not is_invalid:
-                    print(f"    [✔] VALID VIRGIN FVG!")
+                    print("    [✔] VALID VIRGIN FVG!")
         
         if gaps_found == 0:
             print("[!] No Bullish FVGs found in history.")

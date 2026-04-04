@@ -50,7 +50,7 @@ class DataExporter:
                 # 3. Save to Parquet
                 out_path = os.path.join(self.export_dir, f"{symbol}.parquet")
                 df.to_parquet(out_path, compression='snappy')
-            except Exception as e:
+            except Exception:
                 # print(f"Error exporting {symbol}: {e}")
                 continue
         

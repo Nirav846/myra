@@ -172,7 +172,7 @@ class FundamentalManager:
 
             # Update summary table
             # We preserve existing sector/industry/holdings if they were already there
-            self.conn.execute(f"""
+            self.conn.execute("""
                 INSERT INTO fundamentals (symbol, pe, roe, eps, book_value, profit_growth, sales_growth, market_cap, last_updated)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (symbol) DO UPDATE SET

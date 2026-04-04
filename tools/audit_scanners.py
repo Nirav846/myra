@@ -31,7 +31,7 @@ def run_suite_audit():
                 console.print(f"[success][✔] Mapping Verified! Identified {len(results)} candidates.[/success]")
                 screener.rm.display_discovery_table(results[:3], s['name'], s['id'], s['cols'])
             else:
-                console.print(f"[warning][!] Data flow verified, but 0 candidates found for current market state.[/warning]")
+                console.print("[warning][!] Data flow verified, but 0 candidates found for current market state.[/warning]")
         except Exception as e:
             console.print(f"[error][!] Audit FAILED for {s['id']}: {e}[/error]")
 

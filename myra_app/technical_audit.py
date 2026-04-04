@@ -12,7 +12,7 @@ class TechnicalAudit:
         self.cal_db = cal_db if cal_db else os.path.join(os.getcwd(), "db", "calendar.db")
 
     def run_audit(self):
-        print(f"[MYRA] Initializing Data Integrity Audit...")
+        print("[MYRA] Initializing Data Integrity Audit...")
         
         if not os.path.exists(self.tech_db):
             print("[!] technical.db missing.")

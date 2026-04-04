@@ -103,6 +103,6 @@ class Strategy:
                 }
             }
 
-        except Exception as e:
+        except Exception:
             # print(f"DEBUG: Surpriver Error: {e}")
             return {"signal": False}
