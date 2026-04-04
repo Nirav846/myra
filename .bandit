@@ -1,3 +1,0 @@
-[bandit]
-exclude = test,docs,patterns,screenshots,.github,
-skips = B301,B607,B605

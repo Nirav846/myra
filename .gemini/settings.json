@@ -1,9 +1,0 @@
-{
-  "agents": {
-    "overrides": {
-      "cli_help": {
-        "enabled": false
-      }
-    }
-  }
-}

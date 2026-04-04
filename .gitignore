@@ -56,9 +56,20 @@ Cookies
 results/*_cookies.pkl
 
 # --- AI & Agent Artifacts ---
+.agent/
+.agents/
+.gemini/
+conductor/
+memory/
+superpowers/
 *_plan.md
 AEON_Audit_*.csv
 MYRA_AI_READY.txt
+.julesrules
+skills-lock.json
+NRV.txt
+PROMPT.txt
+PROMPTRESULT.txt
 .DS_Store
 
 # --- Media & Documents ---
@@ -76,6 +87,16 @@ Help/
 DeleteThis/
 results/*_html.pkl
 results/*.pkl.lck
+sync_log.txt
+*.txt
+!requirements.txt
+!README.md
+!GEMINI.md
+!PROJECT_SUMMARY.md
+!ruff.toml
+!.bandit
+!.coveragerc
+!*.py
 
 # --- Exceptions ---
 !results/Data/yfinance.cache.zip
