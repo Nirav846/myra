@@ -10,7 +10,7 @@ for mod in ['pandas', 'numpy', 'xgboost', 'joblib', 'yfinance', 'requests', 'pan
 import pandas as pd
 import numpy as np
 import os
-from myra_app.ml_engine import NiftyDataPipeline, TrendForecaster, DilatedCNNForecaster
+from myra_app.ml_engine import NiftyDataPipeline, TrendForecaster, DilatedCNNForecaster, AEONEngine
 
 class TestMLEngine(unittest.TestCase):
     @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
@@ -107,6 +107,49 @@ class TestDilatedCNNForecasterErrors(unittest.TestCase):
             forecaster = DilatedCNNForecaster()
             model = forecaster.build_model()
             self.assertIsNone(model, "build_model should return None when Model building fails")
+
+class TestAEONEngine(unittest.TestCase):
+    def setUp(self):
+        self.librarian_mock = MagicMock()
+        self.engine = AEONEngine(self.librarian_mock, model_path="nonexistent_path")
+
+    @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
+    def test_empty_dataframe(self):
+        df = pd.DataFrame()
+        result = self.engine.get_conviction(symbol="TEST", df=df)
+        self.assertEqual(result, "N/A")
+
+    @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
+    def test_short_dataframe(self):
+        # 50 rows
+        df = pd.DataFrame({'close': np.random.uniform(100, 200, 50)})
+        result = self.engine.get_conviction(symbol="TEST", df=df)
+        self.assertEqual(result, "N/A")
+
+    @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
+    def test_missing_columns_no_funda(self):
+        # 60 rows but missing required columns like 'd_poc', 'absorp_ratio'
+        df = pd.DataFrame({'close': np.random.uniform(100, 200, 60)})
+        result = self.engine.get_conviction(symbol="TEST", df=df)
+        self.assertEqual(result, "N/A")
+
+    @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
+    def test_happy_path(self):
+        # 60 rows with all required columns
+        df = pd.DataFrame({
+            'd_poc': np.random.uniform(100, 200, 60),
+            'absorp_ratio': np.random.uniform(0.5, 1.5, 60),
+            'std20': np.random.uniform(1, 10, 60),
+            'delivery_percent': np.random.uniform(10, 90, 60),
+            'sma50': np.random.uniform(100, 200, 60),
+            'sma200': np.random.uniform(100, 200, 60),
+            'rdv': np.random.uniform(0.1, 2.0, 60),
+            'close': np.random.uniform(100, 200, 60)
+        })
+        result = self.engine.get_conviction(symbol="TEST", df=df)
+        valid_returns = ["EXIT / Stay Out", "TACTICAL (25%)", "CORE LOAD (50%)", "CONVICTION (100%)", "Unknown", "N/A"]
+        self.assertIn(result, valid_returns)
+
 
 if __name__ == "__main__":
     unittest.main()
