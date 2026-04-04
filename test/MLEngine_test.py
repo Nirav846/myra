@@ -407,5 +407,39 @@ class TestDilatedCNNForecasterPredictNext(unittest.TestCase):
 
         self.assertAlmostEqual(result, 0.6, places=5)
 
+class TestEvolutionaryAgent(unittest.TestCase):
+    @unittest.skipIf(isinstance(np, MagicMock), "Numpy not available in this environment")
+    def test_get_genes(self):
+        """Test that get_genes flattens weights deterministically into a single vector."""
+        agent = EvolutionaryAgent(input_size=2, hidden_size=2, output_size=2)
+
+        # Override weights with deterministic arrays
+        # Sorted keys: ['W1', 'W2', 'b1', 'b2']
+        agent.weights = {
+            'W1': np.array([[1.0, 2.0], [3.0, 4.0]]),
+            'b1': np.array([[0.1, 0.2]]),
+            'W2': np.array([[5.0, 6.0], [7.0, 8.0]]),
+            'b2': np.array([[0.3, 0.4]])
+        }
+
+        # Expected flattened arrays based on sorted keys
+        # W1: [1.0, 2.0, 3.0, 4.0]
+        # W2: [5.0, 6.0, 7.0, 8.0]
+        # b1: [0.1, 0.2]
+        # b2: [0.3, 0.4]
+        # Expected concatenation order: W1, W2, b1, b2
+        expected_genes = np.array([
+            1.0, 2.0, 3.0, 4.0,  # W1
+            5.0, 6.0, 7.0, 8.0,  # W2
+            0.1, 0.2,            # b1
+            0.3, 0.4             # b2
+        ])
+
+        genes = agent.get_genes()
+
+        # We handle np.testing gracefully in case it's mocked, but with @skipIf this shouldn't execute
+        np.testing.assert_array_almost_equal(genes, expected_genes)
+        self.assertEqual(genes.shape, expected_genes.shape)
+
 if __name__ == "__main__":
     unittest.main()
