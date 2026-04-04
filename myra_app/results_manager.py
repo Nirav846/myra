@@ -386,6 +386,7 @@ class ResultsManager:
             
         for idx, r in enumerate(results):
             g = r.get("Grade", "C")
+            g_sym = "★" if "A" in g else "✓" if "B" in g else "⚠" if "C" in g else "✗"
             gc = "green" if "A" in g else "yellow" if "B" in g else "white" if "C" in g else "red"
             
             # Universal Formatting for standard numeric fields
@@ -427,24 +428,29 @@ class ResultsManager:
             row.append(r["Stars"])
             
             if not strictly_technical:
-                if not is_mobile: row.append(f"[{gc}]{g}[/{gc}]")
+                if not is_mobile: row.append(f"[{gc}]{g_sym} {g}[/{gc}]")
                 score_v25 = r.get("MYRA_Score_v25", 0)
                 if score_v25 is None or str(score_v25) == 'nan': score_v25 = 0
+                s_sym = "★ " if score_v25 >= 70 else "✓ " if score_v25 >= 50 else "⚠ "
                 score_color = "bold green" if score_v25 >= 70 else "yellow" if score_v25 >= 50 else "red"
-                row.append(f"[{score_color}]{score_v25}[/{score_color}]")
+                row.append(f"[{score_color}]{s_sym}{score_v25}[/{score_color}]")
                 
                 # Add Accuracy Data
                 if not is_narrow:
                     acc = r.get("Accuracy", "-")
                     if acc is None or str(acc) == 'nan': acc = "-"
                     acc_color = "white"
+                    a_sym = ""
                     try:
                         if "%" in str(acc):
                             val_num = float(acc.replace("%", ""))
+                            a_sym = "★ " if val_num >= 70 else "⚠ " if val_num < 40 else "✓ "
                             acc_color = "green" if val_num >= 70 else "yellow" if val_num >= 40 else "red"
-                        elif acc == "New": acc_color = "cyan"
+                        elif acc == "New":
+                            a_sym = "✦ "
+                            acc_color = "cyan"
                     except: pass
-                    row.append(f"[{acc_color}]{acc}[/{acc_color}]")
+                    row.append(f"[{acc_color}]{a_sym}{acc}[/{acc_color}]")
                     
                     # Add Pattern Data (PKScreener Superpower)
                     row.append(str(r.get("Pattern", "-")))
@@ -495,27 +501,32 @@ class ResultsManager:
                         arrow = "↑ " if num_val > 1.1 else "↓ " if num_val < 0.9 else "→ "
                         colored_val = f"[{color}]{arrow}{formatted_val}[/{color}]"
                     elif c == "ROE":
+                        sym = "★ " if num_val > 20 else "⚠ " if num_val < 10 else "✓ "
                         color = "green" if num_val > 20 else "red" if num_val < 10 else "yellow"
-                        colored_val = f"[{color}]{formatted_val}[/{color}]"
+                        colored_val = f"[{color}]{sym}{formatted_val}[/{color}]"
                     elif c == "SMC":
 
+                        sym = "★ " if num_val > 20 else "⚠ " if num_val < 10 else "✓ "
                         color = "green" if num_val > 20 else "red" if num_val < 10 else "yellow"
-                        colored_val = f"[{color}]{formatted_val}[/{color}]"
+                        colored_val = f"[{color}]{sym}{formatted_val}[/{color}]"
                     elif c == "Absorp_Ratio" or c == "Absorption":
+                        sym = "★ " if num_val > 1.5 else "⚠ " if num_val < 0.8 else "✓ "
                         color = "green" if num_val > 1.5 else "red" if num_val < 0.8 else "yellow"
-                        colored_val = f"[{color}]{formatted_val}[/{color}]"
+                        colored_val = f"[{color}]{sym}{formatted_val}[/{color}]"
                     elif c == "d_poc" or c == "D-POC":
                         colored_val = f"[dim]{formatted_val}[/dim]"
                     elif c == "Floor_Gap%" or c == "POC_Dist":
+                        sym = "★ " if num_val < 0 else "⚠ "
                         color = "green" if num_val < 0 else "yellow"
-                        colored_val = f"[{color}]{formatted_val}[/{color}]"
+                        colored_val = f"[{color}]{sym}{formatted_val}[/{color}]"
                     elif c == "Forecast_Move%":
                         color = "green" if num_val > 0.5 else "red" if num_val < -0.5 else "white"
                         arrow = "↑ " if num_val > 0.5 else "↓ " if num_val < -0.5 else "→ "
                         colored_val = f"[{color}]{arrow}{formatted_val}[/{color}]"
                     elif c == "Tightness":
+                        sym = "★ " if num_val < 2 else "⚠ " if num_val >= 5 else "✓ "
                         color = "green" if num_val < 2 else "yellow" if num_val < 5 else "red"
-                        colored_val = f"[{color}]{formatted_val}[/{color}]"
+                        colored_val = f"[{color}]{sym}{formatted_val}[/{color}]"
                 except: 
                     # Handle specific text colorings
                     if c == "AEON_Conviction":
