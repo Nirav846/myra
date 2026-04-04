@@ -18,6 +18,10 @@ def normalize(data, source):
     normalized = []
     
     for row in data:
+        # Standardize field names across different potential raw inputs before specific source logic
+        # Some sources might return 'book_value' while others 'Book Value'
+        std_row = {str(k).lower().replace(" ", "_"): v for k, v in row.items()}
+        
         if source in ["screener", "screener_in"]:
             normalized.append({
                 "report_date": row.get("report_date"),
@@ -39,6 +43,7 @@ def normalize(data, source):
                 "industry_pe": safe_float(row.get("industry_pe")),
                 "stock_pe": safe_float(row.get("stock_pe")),
                 "book_value": safe_float(row.get("book_value")),
+                "market_cap": safe_float(row.get("market_cap")),
                 "sales_per_share": safe_float(row.get("sales_per_share")),
                 "dividend_yield": safe_float(row.get("dividend_yield")),
                 "source": source
@@ -52,6 +57,8 @@ def normalize(data, source):
                 "roce": safe_float(row.get("roce")),
                 "roe": safe_float(row.get("roe")),
                 "debt": safe_float(row.get("debt")),
+                "book_value": safe_float(row.get("book_value")),
+                "market_cap": safe_float(row.get("market_cap")),
                 "source": source
             })
         
@@ -65,6 +72,8 @@ def normalize(data, source):
                 "roce": safe_float(row.get("roce")),
                 "roe": safe_float(row.get("roe")),
                 "debt": safe_float(row.get("debt")),
+                "book_value": safe_float(row.get("book_value")),
+                "market_cap": safe_float(row.get("market_cap")),
                 "source": source
             })
 

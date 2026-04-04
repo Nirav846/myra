@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import threading
 import sqlite3
-from typing import Optional, Dict, Any, List
+from typing import Dict, Any
 
 class DataAdapter:
     """
@@ -93,10 +93,12 @@ class DataAdapter:
             else:
                 funda = {'symbol': symbol_clean}
 
-        if not funda:
+        if len(funda) <= 1: # Only symbol is present
             # 1. Try Librarian (Unified Interface)
             if self.librarian:
-                funda = self.librarian.get_fundamentals(symbol_clean)
+                lib_funda = self.librarian.get_fundamentals(symbol_clean)
+                if lib_funda:
+                    funda.update(lib_funda)
                 # Sector Intelligence: Fetch from meta.db via Librarian
                 try:
                     meta = self.librarian._meta_conn.execute("SELECT sector, industry FROM symbols_master WHERE symbol = ?", (symbol_clean,)).fetchone()
@@ -115,7 +117,7 @@ class DataAdapter:
                         if res:
                             cursor = conn.execute("PRAGMA table_info('fundamentals')")
                             cols = [row[1] for row in cursor.fetchall()]
-                            funda = dict(zip(cols, res))
+                            funda.update(dict(zip(cols, res)))
                     except: pass
                     finally: conn.close()
                 
@@ -157,6 +159,13 @@ class DataAdapter:
             if not funda.get('delivery_percent'):
                 if 'delivery_pct' in df.columns: funda['delivery_percent'] = float(df['delivery_pct'].iloc[-1])
                 elif 'Delivery_Qty' in df.columns: funda['delivery_percent'] = (float(df['Delivery_Qty'].iloc[-1])/float(df['Volume'].iloc[-1])*100) if df['Volume'].iloc[-1] > 0 else 0
+
+        # 4. VALUATION: Compute Graham Number if possible
+        if not funda.get('graham_number'):
+            eps = funda.get('eps')
+            bv = funda.get('book_value')
+            if eps and bv and float(eps) > 0 and float(bv) > 0:
+                funda['graham_number'] = round((22.5 * float(eps) * float(bv)) ** 0.5, 2)
 
         with self._lock:
             self._funda_cache[symbol_clean] = funda

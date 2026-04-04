@@ -110,7 +110,7 @@ class LibrarianSyncMixin:
                 # 4. FII/DII and Announcements (New)
                 try:
                     fii_data = self.fetcher.fetch_fii_dii_activity()
-                    if fii_data and hasattr(self, 'console'): self.console.print(f"[dim][IAS] Fetched FII/DII activity.[/dim]")
+                    if fii_data and hasattr(self, 'console'): self.console.print("[dim][IAS] Fetched FII/DII activity.[/dim]")
                     
                     announcements = self.fetcher.fetch_corporate_announcements()
                     if announcements: 
@@ -233,7 +233,6 @@ class LibrarianSyncMixin:
         if self._sync_thread and self._sync_thread.is_alive():
             return self._sync_thread
             
-        import threading
         import time
 
         def sync_loop():

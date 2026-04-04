@@ -236,7 +236,7 @@ class MYRA_UI:
             f_col = "green" if forecast['direction'] == "BULLISH" else "red" if forecast['direction'] == "BEARISH" else "yellow"
             forecast_text = f" | [bold white]AI-Trend:[/] [{f_col}]{forecast['direction']}[/]"
         else:
-            forecast_text = f" | [bold white]AI-Trend:[/] [yellow]Calibrating...[/]"
+            forecast_text = " | [bold white]AI-Trend:[/] [yellow]Calibrating...[/]"
 
         footer_table = Table.grid(expand=True)
         left_text = f"[bold blue]DB:[/] {db_status} ({db_size}) | [bold white]Status:[/] {sync_text}{forecast_text}"

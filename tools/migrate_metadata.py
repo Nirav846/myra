@@ -1,9 +1,7 @@
 import sqlite3
 import duckdb
 import os
-import pandas as pd
 import numpy as np
-from tqdm import tqdm
 
 def migrate_metadata():
     duck_db_path = os.path.join("db", "myra_market_data.db")

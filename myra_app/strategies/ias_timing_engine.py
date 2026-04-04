@@ -152,5 +152,5 @@ def run(df: pd.DataFrame, funda: dict) -> dict:
             }
         }
         
-    except Exception as e:
+    except Exception:
         return {"signal": False}
