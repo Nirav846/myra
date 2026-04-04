@@ -148,6 +148,38 @@ class TestDilatedCNNForecasterErrors(unittest.TestCase):
 
 class TestSMCEnvironment(unittest.TestCase):
     @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
+    def test_reset(self):
+        # Create a dummy dataframe with enough rows
+        cols = ['d_poc', 'absorp_ratio', 'std20', 'delivery_percent', 'sma50', 'sma200', 'rdv', 'close', 'high_1y']
+        df = pd.DataFrame(np.zeros((65, len(cols))), columns=cols)
+        df['close'] = 100.0
+
+        # Initialize the environment
+        initial_balance = 50000
+        env = SMCEnvironment(df, initial_balance=initial_balance)
+
+        # Modify state to ensure reset changes it back
+        env.balance = 1000
+        env.inventory = 50
+        env.current_step = 62
+        env.total_reward = 10.5
+
+        # Call reset
+        state = env.reset()
+
+        # Assert correct reset state
+        self.assertEqual(env.balance, initial_balance)
+        self.assertEqual(env.inventory, 0)
+        self.assertEqual(env.current_step, 60)
+        self.assertEqual(env.total_reward, 0)
+
+        # Assert returned state shape
+        self.assertIsNotNone(state)
+        # Should be a flat numpy array of shape (1, 8) according to standardizer behavior
+        self.assertEqual(state.shape, (1, 8))
+
+
+    @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
     def test_evaluate_agent_vectorized_fitness_calculation(self):
         # We need at least 62 rows so that indices 60 to N-2 exists
         # prices will be df['close'].values[60:-1]
