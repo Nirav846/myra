@@ -396,15 +396,14 @@ class Engine:
                         GROUP BY symbol
                     """, lib._inst_conn)
                     
-                    for _, row in m_data.iterrows():
-                        s = row['symbol']
-                        accel = 3 if row['active_days'] > 5 else 2 if row['active_days'] >= 3 else 1 if row['active_days'] >= 1 else 0
-                        insider_map[s] = {
-                            "buy_latest": row['net_5d'],
-                            "total_60d": row['net_60d'],
-                            "avg_buy_60d": row['avg_buy_60d'],
-                            "accel": accel
-                        }
+                    insider_map.update({
+                        row.symbol: {
+                            "buy_latest": row.net_5d,
+                            "total_60d": row.net_60d,
+                            "avg_buy_60d": row.avg_buy_60d,
+                            "accel": 3 if row.active_days > 5 else 2 if row.active_days >= 3 else 1 if row.active_days >= 1 else 0
+                        } for row in m_data.itertuples(index=False)
+                    })
                 except Exception: pass
 
             deal_map = {}
