@@ -148,6 +148,75 @@ class TestDilatedCNNForecasterErrors(unittest.TestCase):
 
 class TestSMCEnvironment(unittest.TestCase):
     @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
+    def test_step_actions_and_rewards(self):
+        # Prepare mock dataframe
+        # We need at least 62 rows so initial step is 60 and we can take a step
+        cols = ['d_poc', 'absorp_ratio', 'std20', 'delivery_percent', 'sma50', 'sma200', 'rdv', 'close', 'high_1y']
+        df = pd.DataFrame(np.zeros((62, len(cols))), columns=cols)
+
+        # Step 60 data
+        df.loc[60, 'close'] = 100.0
+        df.loc[60, 'high_1y'] = 110.0
+
+        # Step 61 data
+        df.loc[61, 'close'] = 110.0
+        df.loc[61, 'high_1y'] = 110.0
+
+        env = SMCEnvironment(df, initial_balance=100000)
+
+        # Test Action 1: 25% Allocation
+        state, reward, done = env.step(1)
+        self.assertEqual(env.current_step, 61)
+        self.assertFalse(done)
+
+        # Balance = 100000 - 25000 = 75000, Inventory = 250
+        self.assertEqual(env.balance, 75000)
+        self.assertEqual(env.inventory, 250)
+
+        # Reward calculation:
+        # prev_val = 100000 (0 inv * 100 price + 100000 bal)
+        # current_val = 75000 + (250 * 110) = 75000 + 27500 = 102500
+        # reward = ln(102500 / 100000) = ln(1.025)
+        self.assertAlmostEqual(reward, np.log(1.025), places=5)
+
+        # Test Action 3: 100% Allocation on step 61
+        # Data for next step 62 to calculate reward (even though we are at end of df)
+        df.loc[62, 'close'] = 90.0 # Price drop
+        df.loc[62, 'high_1y'] = 110.0
+        env.df = df
+
+        state, reward, done = env.step(3)
+        self.assertEqual(env.current_step, 62)
+        self.assertTrue(done) # End of df (len 63, index 62 is last)
+
+        # Balance = 0, Inventory = 102500 / 110
+        self.assertAlmostEqual(env.balance, 0, places=5)
+        self.assertAlmostEqual(env.inventory, 102500 / 110.0, places=5)
+
+        # Reward calculation:
+        # prev_val = 102500
+        # current_val = 0 + (102500 / 110 * 90)
+        # reward = ln(current_val / prev_val)
+        expected_current_val = (102500 / 110.0) * 90.0
+        # Check drawdown penalty: new_price (90) / high_1y (110) - 1 = -0.18 < -0.15 => Apply -0.05
+        expected_reward = np.log(expected_current_val / 102500) - 0.05
+        self.assertAlmostEqual(reward, expected_reward, places=5)
+
+        # Test Action 0: Sell
+        # Reset env to a state with inventory
+        env.balance = 50000
+        env.inventory = 500 # Valued at 500 * 90 = 45000 (total = 95000)
+        env.current_step = 62
+
+        df.loc[63, 'close'] = 90.0
+        df.loc[63, 'high_1y'] = 110.0
+        env.df = df
+
+        state, reward, done = env.step(0)
+        self.assertEqual(env.inventory, 0)
+        self.assertEqual(env.balance, 95000)
+
+    @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
     def test_evaluate_agent_vectorized_fitness_calculation(self):
         # We need at least 62 rows so that indices 60 to N-2 exists
         # prices will be df['close'].values[60:-1]
