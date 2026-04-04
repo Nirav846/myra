@@ -788,34 +788,49 @@ class DataFetcher:
         return str(symbol).split(':')[-1].split('.')[0].replace('_', '&').strip().upper()
 
     def fetch_insider_trades(self, days=30):
-        streams = list(self.registry.get("data_streams", {}).get("institutional_tracking", []))
         headers = self.registry.get("headers", {}).get("nse_api_headers", {}).copy()
-        headers["Referer"] = "https://www.nseindia.com/companies-listing/corporate-filings-insider-trading"
-        params = {"index": "equities", "from_date": (date.today() - timedelta(days=days)).strftime("%d-%m-%Y"), "to_date": date.today().strftime("%d-%m-%Y")}
+        headers.update({"Referer": "https://www.nseindia.com/", "X-Requested-With": "XMLHttpRequest", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+        start_date = (date.today() - timedelta(days=days))
+        end_date = date.today()
+        params = {"index": "equities", "from_date": start_date.strftime("%d-%m-%Y"), "to_date": end_date.strftime("%d-%m-%Y")}
+        bse_params = {"strpdt": start_date.strftime("%Y%m%d"), "strfdt": end_date.strftime("%Y%m%d")}
+        streams = [{"name": "nse_primary", "url": "https://www.nseindia.com/api/corporates-pit"}, {"name": "bse_fallback", "url": "https://api.bseindia.com/BseIndiaAPI/api/InsiderTrading/w"}]
         
-        # Fallback if registry is empty or missing
-        if not streams or not any(s.get("name") == "nse_insider_trades" for s in streams):
-            streams.append({"name": "nse_insider_trades", "url": "https://www.nseindia.com/api/corporates-pit"})
+        for stream in streams:
+            for attempt in range(3):
+                try:
+                    if "nse" in stream["name"]:
+                        self.session.get("https://www.nseindia.com", headers=headers, timeout=10)
+                        r = self.session.get(stream["url"], params=params, headers=headers, timeout=15)
+                    else:
+                        bse_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Origin": "https://www.bseindia.com", "Referer": "https://www.bseindia.com/", "Accept": "application/json"}
+                        r = self.session.get(stream["url"], params=bse_params, headers=bse_headers, timeout=15)
 
-        for stream in [s for s in streams if s.get("name") == "nse_insider_trades"]:
-            try:
-                # Scrapling handles the session handoff automatically via its internal state
-                self.session.get("https://www.nseindia.com", headers=self.registry.get("headers", {}).get("nse_api_headers", {}))
-                r = self.session.get(stream["url"], params=params, headers=headers)
-                if getattr(r, 'status_code', 0) == 200:
-                    try:
-                        data = r.json().get('data', [])
-                        for d in data:
-                            d['secVal'] = self.sanitize_float(d.get('secVal', 0))
-                            d['secAcq'] = self.sanitize_float(d.get('secAcq', 0))
-                        return data
-                    except Exception as parse_e:
-                        logger.error(f"Failed to parse insider JSON: {parse_e}")
-                else:
-                    logger.warning(f"Failed to fetch insider trades: HTTP {getattr(r, 'status_code', 'Unknown')}")
-            except Exception as e:
-                logger.error(f'Unexpected error: {e}', exc_info=True)
-                continue
+                    if getattr(r, 'status_code', 0) == 200:
+                        try:
+                            json_obj = r.json()
+                            if "nse" in stream["name"]:
+                                data = json_obj.get('data', [])
+                            else:
+                                data = json_obj.get('Table', []) if isinstance(json_obj, dict) else json_obj
+                        except ValueError:
+                            # Not a valid JSON response (e.g. WAF block, HTML response from BSE)
+                            time.sleep(2)
+                            continue
+
+                        # If we get a valid empty list, we return it immediately instead of retrying
+                        if data is not None:
+                            for d in data:
+                                # Ensure d is a dict to avoid TypeError if data is a list of strings
+                                if isinstance(d, dict):
+                                    d['secVal'] = self.sanitize_float(d.get('secVal', d.get('ValueofSecurityAcq', 0)))
+                                    d['secAcq'] = self.sanitize_float(d.get('secAcq', d.get('NoOfSecuritiesAcq', 0)))
+                            return data
+
+                    time.sleep(2)
+                except Exception as e:
+                    logger.error(f'Unexpected error in {stream["name"]}: {e}')
+                    time.sleep(2)
         return []
 
     def fetch_large_deals_v2(self):
