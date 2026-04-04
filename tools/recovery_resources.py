@@ -4,8 +4,8 @@ import pandas as pd
 from datetime import datetime
 
 # Fix path
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.append(PROJECT_ROOT)
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
 def build_recovery_resources():
     print("[MYRA] Building recovery resources...")
@@ -40,7 +40,7 @@ def build_recovery_resources():
         if r.status_code == 200:
             # Use r.content and decode carefully
             text = r.content.decode('utf-8', errors='ignore')
-            with open('data/symbol_change.csv', 'w', encoding='utf-8') as f:
+            with open(os.path.join(PROJECT_ROOT, 'data', 'symbol_change.csv'), 'w', encoding='utf-8') as f:
                 f.write(text)
             print("[+] Downloaded symbol_change.csv")
         else:
