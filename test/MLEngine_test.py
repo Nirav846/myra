@@ -266,6 +266,32 @@ class TestAEONEngine(unittest.TestCase):
         self.librarian_mock = MagicMock()
         self.engine = AEONEngine(self.librarian_mock, model_path="nonexistent_path")
 
+    @patch('myra_app.ml_engine.os.path.exists')
+    @patch('myra_app.ml_engine.joblib.load')
+    def test_load(self, mock_joblib_load, mock_exists):
+        # Test when path does not exist
+        mock_exists.return_value = False
+        self.assertFalse(self.engine.load())
+
+        # Test when path exists but joblib throws an exception
+        mock_exists.return_value = True
+        mock_joblib_load.side_effect = Exception("Simulated load error")
+        self.assertFalse(self.engine.load())
+
+        # Test when path exists but genes have wrong size
+        mock_joblib_load.side_effect = None
+        mock_joblib_load.return_value = np.zeros(10)
+        self.assertFalse(self.engine.load())
+
+        # Test successful load
+        expected_size = 480 * 16 + 16 + 16 * 4 + 4
+        mock_genes = MagicMock()
+        mock_genes.__len__.return_value = expected_size
+        mock_joblib_load.return_value = mock_genes
+        self.engine.agent.set_genes = MagicMock()
+        self.assertTrue(self.engine.load())
+        self.engine.agent.set_genes.assert_called_once()
+
     @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
     def test_empty_dataframe(self):
         df = pd.DataFrame()
