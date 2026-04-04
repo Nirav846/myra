@@ -1,5 +1,4 @@
 from myra_app.librarian import Librarian
-import os
 
 def force_refresh():
     lib = Librarian()

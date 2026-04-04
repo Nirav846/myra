@@ -9,13 +9,10 @@ from io import StringIO
 import concurrent.futures
 
 # Fix path
-sys.path.append(os.getcwd())
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
 
-try:
-    from myra_app.fetcher import DataFetcher
-except ImportError:
-    sys.path.append(os.path.join(os.getcwd(), ".."))
-    from fetcher import DataFetcher
+from myra_app.fetcher import DataFetcher
 
 from tools.symbol_mapper import SymbolMapper
 

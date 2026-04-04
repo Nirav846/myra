@@ -4,8 +4,6 @@ import xgboost as xgb
 import os
 import joblib
 import yfinance as yf
-import requests
-from datetime import datetime, timedelta
 import pandas_ta as ta
 
 class NiftyDataPipeline:
@@ -28,7 +26,7 @@ class NiftyDataPipeline:
 
     def engineer_features(self, df):
         """Applies technical indicators and creates time-series features."""
-        if df.empty or len(df) < 60:
+        if df is None or df.empty or len(df) < 60:
             return pd.DataFrame()
 
         df = df.copy()
@@ -66,10 +64,12 @@ class TrendForecaster:
             return True
             
         df = self.pipeline.fetch_historical_nifty()
-        if df.empty: return False
+        if df.empty:
+            return False
         
         data = self.pipeline.engineer_features(df)
-        if data.empty: return False
+        if data.empty:
+            return False
         
         X = data[self.features]
         y = data["Target"]
@@ -98,7 +98,8 @@ class TrendForecaster:
             try:
                 self.model = joblib.load(self.model_path)
                 return True
-            except Exception: pass
+            except Exception:
+                pass
         return False
 
     def get_forecast(self):
@@ -107,11 +108,12 @@ class TrendForecaster:
             return {"direction": "UNKNOWN", "confidence": 0}
             
         df = self.pipeline.fetch_historical_nifty()
-        if df.empty: return {"direction": "ERROR", "confidence": 0}
+        if df.empty:
+            return {"direction": "ERROR", "confidence": 0}
         
         # Engineer features but don't drop target (we don't have future target for latest row)
         # We manually apply indicators to the latest row
-        data = self.pipeline.engineer_features(df) # This drops last 3 rows because of shift(-3)
+        self.pipeline.engineer_features(df) # This drops last 3 rows because of shift(-3)
         # We need the features for the ABSOLUTE LATEST row
         
         # Re-engineering without dropping for the very last row
@@ -147,7 +149,6 @@ class DilatedCNNForecaster:
 
     def build_model(self):
         try:
-            import tensorflow as tf
             from tensorflow.keras.layers import Input, Conv1D, Dense, Dropout, Lambda
             from tensorflow.keras.models import Model
 
@@ -174,7 +175,8 @@ class DilatedCNNForecaster:
 
     def train(self, df, epochs=50):
         """Trains the CNN on a single stock's history."""
-        if len(df) < self.window_size + 10: return False
+        if len(df) < self.window_size + 10:
+            return False
         
         from sklearn.preprocessing import StandardScaler
         scaler = StandardScaler()
@@ -204,9 +206,9 @@ class DilatedCNNForecaster:
                 import tensorflow as tf
                 self.model = tf.keras.models.load_model(self.model_path)
             else:
-                return 0
+                return None
         
-        if len(df) < self.window_size: return 0
+        if len(df) < self.window_size: return None
         
         from sklearn.preprocessing import StandardScaler
         scaler = StandardScaler()
@@ -261,8 +263,9 @@ class DeepEvolutionStrategy:
             # 4. Gradient Estimation & Weight Update
             # Weight_new = Weight_old + lr * (noise * rewards).mean() / sigma
             for idx, w in enumerate(self.weights):
+                pass
                 # Aggregate noise weighted by reward
-                noise_matrix = np.array([p[idx] for p in population_noise])
+                # noise_matrix = np.array([p[idx] for p in population_noise])
                 # Dot product noise with standardized rewards
                 # np.dot(rewards, noise_matrix)
                 # But noise_matrix is (pop, shape...), we need to weight each pop's noise
@@ -363,7 +366,8 @@ class SMCEnvironment:
         # Use relative values to Close to ensure scale-invariance
         w = window.copy()
         close = w['close'].values[-1]
-        if close == 0: close = 1.0 # Avoid div zero
+        if close == 0:
+            close = 1.0 # Avoid div zero
         
         # 1. Price-relative metrics
         w['d_poc'] = w['d_poc'] / close
@@ -499,7 +503,8 @@ class AEONEngine:
                 if len(genes) == expected_size:
                     self.agent.set_genes(genes)
                     return True
-            except Exception: pass
+            except Exception:
+                pass
         return False
 
     def _standardize_window(self, window):
@@ -508,7 +513,8 @@ class AEONEngine:
         # Use relative values to Close to ensure scale-invariance
         w = window.copy()
         close = w['close'].values[-1]
-        if close == 0: close = 1.0 # Avoid div zero
+        if close == 0:
+            close = 1.0 # Avoid div zero
         
         # 1. Price-relative metrics
         w['d_poc'] = w['d_poc'] / close
@@ -547,33 +553,31 @@ class AEONEngine:
                     state = self._standardize_window(window_df)
                 elif funda:
                     # Fallback to funda-based reconstruction if columns are missing
-                    rows = []
-                    for _ in range(60):
-                        row = []
-                        for c in cols + ['close']:
-                            f_key = c
-                            if c == 'absorp_ratio': f_key = 'Absorp_Ratio'
-                            if c == 'rdv': f_key = 'RDV'
-                            val = funda.get(f_key, 0)
-                            row.append(val if val is not None else 0)
-                        rows.append(row)
-                    window_df = pd.DataFrame(rows, columns=['d_poc', 'absorp_ratio', 'std20', 'delivery_percent', 'sma50', 'sma200', 'rdv', 'close'])
+                    row_dict = {}
+                    for c in cols + ['close']:
+                        f_key = c
+                        if c == 'absorp_ratio':
+                            f_key = 'Absorp_Ratio'
+                        if c == 'rdv':
+                            f_key = 'RDV'
+                        val = funda.get(f_key, 0)
+                        row_dict[c] = val if val is not None else 0
+                    window_df = pd.DataFrame(row_dict, index=range(60))
                     state = self._standardize_window(window_df)
                 else:
                     return "N/A"
             elif funda:
                 # Reconstruction for short-history stocks
-                rows = []
-                for _ in range(60):
-                    row = []
-                    for c in cols + ['close']:
-                        f_key = c
-                        if c == 'absorp_ratio': f_key = 'Absorp_Ratio'
-                        if c == 'rdv': f_key = 'RDV'
-                        val = funda.get(f_key, 0)
-                        row.append(val if val is not None else 0)
-                    rows.append(row)
-                window_df = pd.DataFrame(rows, columns=['d_poc', 'absorp_ratio', 'std20', 'delivery_percent', 'sma50', 'sma200', 'rdv', 'close'])
+                row_dict = {}
+                for c in cols + ['close']:
+                    f_key = c
+                    if c == 'absorp_ratio':
+                        f_key = 'Absorp_Ratio'
+                    if c == 'rdv':
+                        f_key = 'RDV'
+                    val = funda.get(f_key, 0)
+                    row_dict[c] = val if val is not None else 0
+                window_df = pd.DataFrame(row_dict, index=range(60))
                 state = self._standardize_window(window_df)
             else:
                 return "N/A"

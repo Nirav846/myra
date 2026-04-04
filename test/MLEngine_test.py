@@ -14,6 +14,31 @@ from myra_app.ml_engine import NiftyDataPipeline, TrendForecaster, DilatedCNNFor
 
 class TestMLEngine(unittest.TestCase):
     @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
+    def test_feature_engineering_edge_cases(self):
+        pipeline = NiftyDataPipeline(None)
+
+        # 1. Test with None
+        df_none = pipeline.engineer_features(None)
+        self.assertTrue(df_none.empty)
+
+        # 2. Test with Empty DataFrame
+        df_empty_in = pd.DataFrame()
+        df_empty_out = pipeline.engineer_features(df_empty_in)
+        self.assertTrue(df_empty_out.empty)
+
+        # 3. Test with DataFrame less than 60 rows
+        dates = pd.date_range(end='2026-03-19', periods=50)
+        df_small = pd.DataFrame({
+            "Open": np.random.uniform(22000, 23000, 50),
+            "High": np.random.uniform(22000, 23000, 50),
+            "Low": np.random.uniform(22000, 23000, 50),
+            "Close": np.random.uniform(22000, 23000, 50),
+            "Volume": np.random.uniform(100000, 200000, 50)
+        }, index=dates)
+        df_small_out = pipeline.engineer_features(df_small)
+        self.assertTrue(df_small_out.empty)
+
+    @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
     def test_feature_engineering(self):
         # Create mock OHLCV data
         dates = pd.date_range(end='2026-03-19', periods=100)
@@ -150,6 +175,57 @@ class TestAEONEngine(unittest.TestCase):
         valid_returns = ["EXIT / Stay Out", "TACTICAL (25%)", "CORE LOAD (50%)", "CONVICTION (100%)", "Unknown", "N/A"]
         self.assertIn(result, valid_returns)
 
+class TestDilatedCNNForecasterPredictNext(unittest.TestCase):
+    @patch('os.path.exists')
+    def test_predict_next_no_model_path(self, mock_exists):
+        """Test predict_next when no model exists."""
+        mock_exists.return_value = False
+        forecaster = DilatedCNNForecaster()
+        forecaster.model = None
+        self.assertIsNone(forecaster.predict_next(MagicMock()))
+
+    def test_predict_next_insufficient_data(self):
+        """Test predict_next when data length is less than window_size."""
+        forecaster = DilatedCNNForecaster()
+        forecaster.model = MagicMock()
+        forecaster.window_size = 60
+
+        mock_df = MagicMock()
+        mock_df.__len__.return_value = 50
+
+        self.assertIsNone(forecaster.predict_next(mock_df))
+
+    @patch.dict('sys.modules', {'sklearn': MagicMock(), 'sklearn.preprocessing': MagicMock()})
+    def test_predict_next_success(self):
+        """Test predict_next successful prediction."""
+        forecaster = DilatedCNNForecaster()
+        forecaster.window_size = 60
+        forecaster.features_count = 8
+
+        mock_model = MagicMock()
+        mock_model.predict.return_value = [[0.8]]
+        forecaster.model = mock_model
+
+        mock_df = MagicMock()
+        mock_df.__len__.return_value = 65
+
+        class MockDataArray:
+            def __getitem__(self, key):
+                if isinstance(key, slice):
+                    mock_slice = MagicMock()
+                    mock_slice.reshape.return_value = "reshaped_window"
+                    return mock_slice
+                elif isinstance(key, tuple) and key == (-1, -1):
+                    return 0.5
+                return MagicMock()
+
+        mock_scaler = MagicMock()
+        mock_scaler.fit_transform.return_value = MockDataArray()
+
+        with patch('sklearn.preprocessing.StandardScaler', return_value=mock_scaler, create=True):
+            result = forecaster.predict_next(mock_df)
+
+        self.assertAlmostEqual(result, 0.6, places=5)
 
 if __name__ == "__main__":
     unittest.main()
