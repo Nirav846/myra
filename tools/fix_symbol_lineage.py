@@ -8,7 +8,7 @@ sys.path.append(PROJECT_ROOT)
 from tools.symbol_mapper import SymbolMapper
 
 def unify_database_symbols():
-    db_path = os.path.join("db", "technical.db")
+    db_path = os.path.join(PROJECT_ROOT, "db", "technical.db")
     if not os.path.exists(db_path):
         print("[!] DB missing.")
         return
