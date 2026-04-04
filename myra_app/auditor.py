@@ -4,7 +4,6 @@ MYRA Auditor - The Performance Verification Layer (v1.0)
 Calculates MFE, MAE, and T+N returns for the 'Trust Loop'.
 """
 import pandas as pd
-import numpy as np
 from rich.console import Console
 
 class TrustLoopAuditor:
