@@ -124,7 +124,7 @@ class ResultsManager:
             
             # 7. Cleanup temp columns
             return df.drop(columns=['_stage_base', '_stage_rank', '_star_rank', '_mf_rank', '_aeon_rank', '_anom_rank', '_inst_score'])
-        except Exception as e:
+        except Exception:
             # If ranking fails, return original to avoid losing data
             return df
 
@@ -263,7 +263,7 @@ class ResultsManager:
         with open("MYRA_AI_READY.txt", "w", encoding="utf-8") as f:
             f.write("\n".join(prompt))
         
-        self.console.print(f"\n[success][✔] AI Prompt Ready![/success] Copy from [bold]MYRA_AI_READY.txt[/bold] into Gemini.")
+        self.console.print("\n[success][✔] AI Prompt Ready![/success] Copy from [bold]MYRA_AI_READY.txt[/bold] into Gemini.")
 
     def display_portfolio_risk_audit(self, results: list):
         """Visualizes portfolio concentration and risk distribution."""
@@ -300,7 +300,7 @@ class ResultsManager:
     def save_charts(self, results: list, lib):
         """Generates PNG charts for the top 5 candidates."""
         if not plt or not results: return
-        self.console.print(f"[info][MYRA] Generating visual charts for top candidates...[/info]")
+        self.console.print("[info][MYRA] Generating visual charts for top candidates...[/info]")
         for r in results[:5]:
             try:
                 symbol = r["Stock"]
@@ -327,7 +327,7 @@ class ResultsManager:
         strong = len([r for r in results if "2" in str(r.get("Stage", ""))]) if results else 0
 
         if not results:
-            self.console.print(f"[dim]  [+] Scan Complete: 0 candidates identified. [/dim]")
+            self.console.print("[dim]  [+] Scan Complete: 0 candidates identified. [/dim]")
             return
         
         # Check if v2.5 Score exists in results to add it automatically

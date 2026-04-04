@@ -248,7 +248,7 @@ def _worker_task(payload):
             # Ensure the display key is consistent for ResultsManager
             res_dict["Money_Flow"] = f"₹{round(funda.get('money_flow_cr', 0))}Cr"
             return res_dict
-    except Exception as e:
+    except Exception:
         # print(f"DEBUG: Worker Error for {symbol}: {e}")
         return None
     return None
@@ -751,7 +751,7 @@ class SMCManager:
 
             return float(d_poc)
 
-        except Exception as e:
+        except Exception:
             # print(f"DEBUG: calculate_d_poc Error: {e}")
             return 0.0
 

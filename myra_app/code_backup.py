@@ -55,9 +55,9 @@ def generate_backup(source_dir, output_file):
     output_path = Path(output_file).resolve()
     
     with open(output_file, 'w', encoding='utf-8') as outfile:
-        outfile.write(f"# Codebase Backup for Review\n")
+        outfile.write("# Codebase Backup for Review\n")
         outfile.write(f"**Source:** `{source_path.name}`\n")
-        outfile.write(f"**Note:** Sensitive files are excluded and credentials are redacted.\n\n")
+        outfile.write("**Note:** Sensitive files are excluded and credentials are redacted.\n\n")
         outfile.write("---\n\n")
 
         processed_files = 0
@@ -94,7 +94,7 @@ def generate_backup(source_dir, output_file):
                     outfile.write(redacted_content)
                     if not redacted_content.endswith('\n'):
                         outfile.write('\n')
-                    outfile.write(f"```\n\n")
+                    outfile.write("```\n\n")
                     
                     processed_files += 1
                     

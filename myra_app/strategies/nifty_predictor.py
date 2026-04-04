@@ -93,7 +93,7 @@ def run(df: pd.DataFrame, funda: dict = None) -> dict:
             }
         }
             
-    except Exception as e:
+    except Exception:
         # print(f"Nifty ML Error: {e}")
         pass
         
