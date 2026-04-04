@@ -149,6 +149,9 @@ class DilatedCNNForecaster:
         self.features_count = 8
 
     def build_model(self):
+        """
+        Builds the underlying TensorFlow/Keras architecture.
+        """
         try:
             from tensorflow.keras.layers import Input, Conv1D, Dense, Dropout, Lambda
             from tensorflow.keras.models import Model
