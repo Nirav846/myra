@@ -146,6 +146,35 @@ class TestDilatedCNNForecasterErrors(unittest.TestCase):
             model = forecaster.build_model()
             self.assertIsNone(model, "build_model should return None when Model building fails")
 
+class TestEvolutionaryAgent(unittest.TestCase):
+    @patch('myra_app.ml_engine.np.argmax')
+    def test_forward_single(self, mock_argmax):
+        mock_argmax.return_value = 1
+        from myra_app.ml_engine import EvolutionaryAgent
+        import numpy as real_np
+        agent = EvolutionaryAgent(input_size=4, hidden_size=2, output_size=2)
+        state = real_np.array([0.1, 0.2, 0.3, 0.4])
+
+        with patch.object(EvolutionaryAgent, 'get_probs', return_value=real_np.array([[0.2, 0.8]])) as mock_get_probs:
+            action = agent.forward(state)
+            mock_get_probs.assert_called_once()
+            mock_argmax.assert_called_once()
+            self.assertEqual(action, 1)
+
+    @patch('myra_app.ml_engine.np.argmax')
+    def test_forward_batch(self, mock_argmax):
+        import numpy as real_np
+        mock_argmax.return_value = [0, 1]
+        from myra_app.ml_engine import EvolutionaryAgent
+        agent = EvolutionaryAgent(input_size=4, hidden_size=2, output_size=2)
+        state = real_np.array([[0.1, 0.2, 0.3, 0.4], [0.4, 0.3, 0.2, 0.1]])
+
+        with patch.object(EvolutionaryAgent, 'get_probs', return_value=real_np.array([[0.8, 0.2], [0.3, 0.7]])) as mock_get_probs:
+            actions = agent.forward(state)
+            mock_get_probs.assert_called_once()
+            mock_argmax.assert_called_once()
+            self.assertEqual(list(actions), [0, 1])
+
 class TestSMCEnvironment(unittest.TestCase):
     @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
     def test_evaluate_agent_vectorized_fitness_calculation(self):

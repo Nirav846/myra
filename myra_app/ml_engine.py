@@ -311,20 +311,11 @@ class EvolutionaryAgent:
         return exp_z / exp_z.sum(axis=1, keepdims=True)
 
     def forward(self, state):
-        """Standard MLP Forward Pass with ReLU activation. Handles batch input."""
-        # Ensure state is 2D
-        if state.ndim == 1:
-            state = state.reshape(1, -1)
-            
-        z1 = np.dot(state, self.weights['W1']) + self.weights['b1']
-        a1 = np.maximum(0, z1) # ReLU
-        z2 = np.dot(a1, self.weights['W2']) + self.weights['b2']
+        """Returns the selected action (argmax). Handles batch input."""
+        original_ndim = state.ndim
+        probs = self.get_probs(state)
         
-        # Softmax for probability distribution over actions
-        exp_z = np.exp(z2 - np.max(z2, axis=1, keepdims=True))
-        probs = exp_z / exp_z.sum(axis=1, keepdims=True)
-        
-        if state.shape[0] == 1:
+        if original_ndim == 1 or state.shape[0] == 1:
             return np.argmax(probs)
         return np.argmax(probs, axis=1)
 
