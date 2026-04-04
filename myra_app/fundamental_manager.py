@@ -23,10 +23,8 @@ class FundamentalManager:
     def is_stale(self, symbol, days=90):
         if not self.conn: return True
         symbol_clean = symbol.split('.')[0].upper()
-        count = self.conn.execute("SELECT COUNT(*) FROM fundamentals_quarterly WHERE symbol = ?", (symbol_clean,)).fetchone()[0]
-        if count == 0: return True
         try:
-            res = self.conn.execute("SELECT MAX(last_updated) FROM fundamentals_quarterly WHERE symbol = ?", (symbol_clean,)).fetchone()
+            res = self.conn.execute("SELECT MAX(last_updated) FROM fundamentals WHERE symbol = ?", (symbol_clean,)).fetchone()
             if not res or not res[0]: return True
             last_date = res[0]
             if isinstance(last_date, str): last_date = datetime.strptime(last_date, "%Y-%m-%d").date()
@@ -59,7 +57,7 @@ class FundamentalManager:
         if not self.conn: return 0
         symbol_clean = symbol.split('.')[0].upper()
         try:
-            df = self.conn.execute("SELECT * FROM fundamentals_quarterly WHERE symbol = ? ORDER BY report_date DESC", (symbol_clean,)).df()
+            df = self.conn.execute("SELECT * FROM quarterly_results WHERE symbol = ? ORDER BY report_date DESC", (symbol_clean,)).df()
             if len(df) < 2: return 0
             
             score = 0
@@ -87,7 +85,7 @@ class FundamentalManager:
         symbol_clean = symbol.split('.')[0].upper()
         try:
             # Get latest quarterly EPS and Book Value
-            res = self.conn.execute("SELECT eps, book_value FROM fundamentals_quarterly WHERE symbol = ? ORDER BY report_date DESC LIMIT 1", (symbol_clean,)).fetchone()
+            res = self.conn.execute("SELECT eps, book_value FROM quarterly_results WHERE symbol = ? ORDER BY report_date DESC LIMIT 1", (symbol_clean,)).fetchone()
             if not res: return {}
             eps, bv = res
             
@@ -128,20 +126,22 @@ class FundamentalManager:
         # 1. Update Detailed Quarterly Table
         for row in data:
             try:
-                cols = list(row.keys())
-                if "symbol" not in cols: cols.append("symbol")
-                if "last_updated" not in cols: cols.append("last_updated")
+                # strictly map to quarterly_results schema and add book_value dynamically
+                try:
+                    self.conn.execute("ALTER TABLE quarterly_results ADD COLUMN book_value REAL")
+                except Exception:
+                    pass # already exists
                 
+                cols = ['symbol', 'report_date', 'revenue', 'net_profit', 'eps', 'opm_pct', 'book_value']
                 placeholders = ", ".join(["?" for _ in cols])
                 col_names = ", ".join(cols)
                 
                 values = []
                 for c in cols:
-                    if c == "symbol": values.append(symbol_clean)
-                    elif c == "last_updated": values.append(date.today())
+                    if c == 'symbol': values.append(symbol_clean)
                     else: values.append(row.get(c))
 
-                query = f"INSERT OR REPLACE INTO fundamentals_quarterly ({col_names}) VALUES ({placeholders})"
+                query = f"INSERT OR REPLACE INTO quarterly_results ({col_names}) VALUES ({placeholders})"
                 self.conn.execute(query, values)
             except Exception: pass
 

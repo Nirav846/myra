@@ -110,7 +110,8 @@ class MYRAScreener:
         from rich.table import Table
         from datetime import datetime
         
-        now = datetime.now()
+        import datetime as _dt
+        now = _dt.datetime.now()
         last_bhav = self.lib.get_max_price_date()
         last_insider = self.lib.get_max_insider_date()
         
@@ -165,7 +166,8 @@ class MYRAScreener:
 
         # 1. SMART SYNC: Only sync if missing relevant data
         last_import = self.lib.get_max_price_date()
-        now = datetime.now()
+        import datetime as _dt
+        now = _dt.datetime.now()
         today = now.date()
         
         # Calculate the latest date we SHOULD have data for
