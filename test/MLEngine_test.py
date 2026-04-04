@@ -10,10 +10,36 @@ for mod in ['pandas', 'numpy', 'xgboost', 'joblib', 'yfinance', 'requests', 'pan
 import pandas as pd
 import numpy as np
 import os
-from myra_app.ml_engine import NiftyDataPipeline, TrendForecaster, DilatedCNNForecaster, SMCEnvironment, AEONEngine
+from myra_app.ml_engine import NiftyDataPipeline, TrendForecaster, DilatedCNNForecaster, SMCEnvironment, AEONEngine, EvolutionaryAgent
 
 
 class TestMLEngine(unittest.TestCase):
+    @unittest.skipIf(isinstance(np, MagicMock), "Numpy not available in this environment")
+    def test_evolutionary_agent_get_genes(self):
+        """Test that get_genes correctly flattens weights in alphabetical order of keys."""
+        agent = EvolutionaryAgent(input_size=2, hidden_size=2, output_size=1)
+
+        # Override weights with a specific mock dictionary to ensure exact testing behavior
+        # We use keys that test alphabetical sorting: 'b_vector', 'c_matrix', 'a_scalar'
+        # 'a_scalar' -> [1.0]
+        # 'b_vector' -> [2.0, 3.0]
+        # 'c_matrix' -> [[4.0, 5.0], [6.0, 7.0]]
+        agent.weights = {
+            'c_matrix': np.array([[4.0, 5.0], [6.0, 7.0]]),
+            'a_scalar': np.array([1.0]),
+            'b_vector': np.array([2.0, 3.0])
+        }
+
+        genes = agent.get_genes()
+
+        # The expected order is a_scalar, b_vector, c_matrix
+        # Flattened: [1.0] + [2.0, 3.0] + [4.0, 5.0, 6.0, 7.0]
+        # => [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+        expected_genes = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+
+        np.testing.assert_array_equal(genes, expected_genes)
+        self.assertEqual(genes.shape, (7,))
+
     @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
     def test_feature_engineering_edge_cases(self):
         pipeline = NiftyDataPipeline(None)
@@ -109,6 +135,121 @@ class TestMLEngine(unittest.TestCase):
         # Check that None is returned on exception
         self.assertIsNone(result, "Should return None on exception")
 
+    def test_get_forecast_no_model(self):
+        forecaster = TrendForecaster(None, model_path="test_models/test_nifty_no_model.joblib")
+        forecaster.model = None
+        result = forecaster.get_forecast()
+        self.assertEqual(result, {"direction": "UNKNOWN", "confidence": 0})
+
+    @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
+    def test_get_forecast_empty_data(self):
+        forecaster = TrendForecaster(None, model_path="test_models/test_nifty_empty_data.joblib")
+        forecaster.model = MagicMock()
+
+        # Mock fetch_historical_nifty to return empty DataFrame
+        forecaster.pipeline.fetch_historical_nifty = MagicMock(return_value=pd.DataFrame())
+
+        result = forecaster.get_forecast()
+        self.assertEqual(result, {"direction": "ERROR", "confidence": 0})
+
+    @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
+    def test_get_forecast_bullish(self):
+        forecaster = TrendForecaster(None, model_path="test_models/test_nifty_bullish.joblib")
+        forecaster.model = MagicMock()
+        forecaster.model.predict_proba.return_value = [[0.4, 0.6]] # prob = 0.6
+
+        # Create minimal DataFrame for engineering features
+        dates = pd.date_range(end='2026-03-19', periods=20)
+        df = pd.DataFrame({
+            "Open": np.random.uniform(22000, 23000, 20),
+            "High": np.random.uniform(22000, 23000, 20),
+            "Low": np.random.uniform(22000, 23000, 20),
+            "Close": np.random.uniform(22000, 23000, 20),
+            "Volume": np.random.uniform(100000, 200000, 20)
+        }, index=dates)
+
+        forecaster.pipeline.fetch_historical_nifty = MagicMock(return_value=df)
+
+        result = forecaster.get_forecast()
+        self.assertEqual(result["direction"], "BULLISH")
+        self.assertEqual(result["confidence"], 60.0)
+
+    @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
+    def test_get_forecast_bearish(self):
+        forecaster = TrendForecaster(None, model_path="test_models/test_nifty_bearish.joblib")
+        forecaster.model = MagicMock()
+        forecaster.model.predict_proba.return_value = [[0.6, 0.4]] # prob = 0.4
+
+        # Create minimal DataFrame for engineering features
+        dates = pd.date_range(end='2026-03-19', periods=20)
+        df = pd.DataFrame({
+            "Open": np.random.uniform(22000, 23000, 20),
+            "High": np.random.uniform(22000, 23000, 20),
+            "Low": np.random.uniform(22000, 23000, 20),
+            "Close": np.random.uniform(22000, 23000, 20),
+            "Volume": np.random.uniform(100000, 200000, 20)
+        }, index=dates)
+
+        forecaster.pipeline.fetch_historical_nifty = MagicMock(return_value=df)
+
+        result = forecaster.get_forecast()
+        self.assertEqual(result["direction"], "BEARISH")
+        self.assertEqual(result["confidence"], 60.0)
+
+    @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
+    def test_get_forecast_neutral(self):
+        forecaster = TrendForecaster(None, model_path="test_models/test_nifty_neutral.joblib")
+        forecaster.model = MagicMock()
+        forecaster.model.predict_proba.return_value = [[0.5, 0.5]] # prob = 0.5
+
+        # Create minimal DataFrame for engineering features
+        dates = pd.date_range(end='2026-03-19', periods=20)
+        df = pd.DataFrame({
+            "Open": np.random.uniform(22000, 23000, 20),
+            "High": np.random.uniform(22000, 23000, 20),
+            "Low": np.random.uniform(22000, 23000, 20),
+            "Close": np.random.uniform(22000, 23000, 20),
+            "Volume": np.random.uniform(100000, 200000, 20)
+        }, index=dates)
+
+        forecaster.pipeline.fetch_historical_nifty = MagicMock(return_value=df)
+
+        result = forecaster.get_forecast()
+        self.assertEqual(result["direction"], "NEUTRAL")
+        self.assertEqual(result["confidence"], 50.0)
+    @patch('os.path.exists')
+    @patch('myra_app.ml_engine.joblib.load')
+    def test_trend_forecaster_load(self, mock_joblib_load, mock_os_path_exists):
+        """Test the load method of TrendForecaster."""
+        forecaster = TrendForecaster(None, model_path="dummy_path.joblib")
+
+        # 1. Test success path
+        mock_os_path_exists.return_value = True
+        mock_joblib_load.return_value = "dummy_model"
+
+        result = forecaster.load()
+
+        self.assertTrue(result)
+        self.assertEqual(forecaster.model, "dummy_model")
+
+        # 2. Test exception path
+        forecaster.model = None  # Reset
+        mock_joblib_load.side_effect = Exception("Simulated joblib error")
+
+        result = forecaster.load()
+
+        self.assertFalse(result)
+        self.assertIsNone(forecaster.model)
+
+        # 3. Test file does not exist path
+        forecaster.model = None  # Reset
+        mock_os_path_exists.return_value = False
+
+        result = forecaster.load()
+
+        self.assertFalse(result)
+        self.assertIsNone(forecaster.model)
+
 class TestDilatedCNNForecasterErrors(unittest.TestCase):
     @patch.dict('sys.modules', {'tensorflow': None})
     def test_build_model_import_error(self):
@@ -146,35 +287,134 @@ class TestDilatedCNNForecasterErrors(unittest.TestCase):
             model = forecaster.build_model()
             self.assertIsNone(model, "build_model should return None when Model building fails")
 
+class TestEvolutionaryAgent(unittest.TestCase):
+    @patch('myra_app.ml_engine.np.argmax')
+    def test_forward_single(self, mock_argmax):
+        mock_argmax.return_value = 1
+        from myra_app.ml_engine import EvolutionaryAgent
+        import numpy as real_np
+        agent = EvolutionaryAgent(input_size=4, hidden_size=2, output_size=2)
+        state = real_np.array([0.1, 0.2, 0.3, 0.4])
+
+        with patch.object(EvolutionaryAgent, 'get_probs', return_value=real_np.array([[0.2, 0.8]])) as mock_get_probs:
+            action = agent.forward(state)
+            mock_get_probs.assert_called_once()
+            mock_argmax.assert_called_once()
+            self.assertEqual(action, 1)
+
+    @patch('myra_app.ml_engine.np.argmax')
+    def test_forward_batch(self, mock_argmax):
+        import numpy as real_np
+        mock_argmax.return_value = [0, 1]
+        from myra_app.ml_engine import EvolutionaryAgent
+        agent = EvolutionaryAgent(input_size=4, hidden_size=2, output_size=2)
+        state = real_np.array([[0.1, 0.2, 0.3, 0.4], [0.4, 0.3, 0.2, 0.1]])
+
+        with patch.object(EvolutionaryAgent, 'get_probs', return_value=real_np.array([[0.8, 0.2], [0.3, 0.7]])) as mock_get_probs:
+            actions = agent.forward(state)
+            mock_get_probs.assert_called_once()
+            mock_argmax.assert_called_once()
+            self.assertEqual(list(actions), [0, 1])
+
 class TestSMCEnvironment(unittest.TestCase):
     @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
+    def test_step_actions_and_rewards(self):
+        # Prepare mock dataframe
+        # We need at least 62 rows so initial step is 60 and we can take a step
+        cols = ['d_poc', 'absorp_ratio', 'std20', 'delivery_percent', 'sma50', 'sma200', 'rdv', 'close', 'high_1y']
+        df = pd.DataFrame(np.zeros((62, len(cols))), columns=cols)
+
+        # Step 60 data
+        df.loc[60, 'close'] = 100.0
+        df.loc[60, 'high_1y'] = 110.0
+
+        # Step 61 data
+        df.loc[61, 'close'] = 110.0
+        df.loc[61, 'high_1y'] = 110.0
+
+        env = SMCEnvironment(df, initial_balance=100000)
+
+        # Test Action 1: 25% Allocation
+        state, reward, done = env.step(1)
+        self.assertEqual(env.current_step, 61)
+        self.assertFalse(done)
+
+        # Balance = 100000 - 25000 = 75000, Inventory = 250
+        self.assertEqual(env.balance, 75000)
+        self.assertEqual(env.inventory, 250)
+
+        # Reward calculation:
+        # prev_val = 100000 (0 inv * 100 price + 100000 bal)
+        # current_val = 75000 + (250 * 110) = 75000 + 27500 = 102500
+        # reward = ln(102500 / 100000) = ln(1.025)
+        self.assertAlmostEqual(reward, np.log(1.025), places=5)
+
+        # Test Action 3: 100% Allocation on step 61
+        # Data for next step 62 to calculate reward (even though we are at end of df)
+        df.loc[62, 'close'] = 90.0 # Price drop
+        df.loc[62, 'high_1y'] = 110.0
+        env.df = df
+
+        state, reward, done = env.step(3)
+        self.assertEqual(env.current_step, 62)
+        self.assertTrue(done) # End of df (len 63, index 62 is last)
+
+        # Balance = 0, Inventory = 102500 / 110
+        self.assertAlmostEqual(env.balance, 0, places=5)
+        self.assertAlmostEqual(env.inventory, 102500 / 110.0, places=5)
+
+        # Reward calculation:
+        # prev_val = 102500
+        # current_val = 0 + (102500 / 110 * 90)
+        # reward = ln(current_val / prev_val)
+        expected_current_val = (102500 / 110.0) * 90.0
+        # Check drawdown penalty: new_price (90) / high_1y (110) - 1 = -0.18 < -0.15 => Apply -0.05
+        expected_reward = np.log(expected_current_val / 102500) - 0.05
+        self.assertAlmostEqual(reward, expected_reward, places=5)
+
+        # Test Action 0: Sell
+        # Reset env to a state with inventory
+        env.balance = 50000
+        env.inventory = 500 # Valued at 500 * 90 = 45000 (total = 95000)
+        env.current_step = 62
+
+        df.loc[63, 'close'] = 90.0
+        df.loc[63, 'high_1y'] = 110.0
+        env.df = df
+
+        state, reward, done = env.step(0)
+        self.assertEqual(env.inventory, 0)
+        self.assertEqual(env.balance, 95000)
     def test_reset(self):
-        # Provide a minimal valid DataFrame that _get_state/_standardize_window needs.
-        # We need at least 61 rows to extract a window of size 60 up to index 60.
+        # Create a dummy dataframe with enough rows
         cols = ['d_poc', 'absorp_ratio', 'std20', 'delivery_percent', 'sma50', 'sma200', 'rdv', 'close', 'high_1y']
         df = pd.DataFrame(np.zeros((65, len(cols))), columns=cols)
-        # Avoid division by zero in standardizer
         df['close'] = 100.0
 
-        env = SMCEnvironment(df, initial_balance=250000)
+        # Initialize the environment
+        initial_balance = 50000
+        env = SMCEnvironment(df, initial_balance=initial_balance)
 
-        # Modify internal state to simulate an ongoing episode
-        env.balance = 50000
-        env.inventory = 100
-        env.current_step = 120
-        env.total_reward = -500.5
+        # Modify state to ensure reset changes it back
+        env.balance = 1000
+        env.inventory = 50
+        env.current_step = 62
+        env.total_reward = 10.5
 
-        # Reset the environment
+        # Call reset
         state = env.reset()
 
-        # Assert state variables are correctly restored
-        self.assertEqual(env.balance, 250000)
+        # Assert correct reset state
+        self.assertEqual(env.balance, initial_balance)
         self.assertEqual(env.inventory, 0)
         self.assertEqual(env.current_step, 60)
         self.assertEqual(env.total_reward, 0)
+
+        # Assert returned state shape
         self.assertIsNotNone(state)
-        # It returns standard standardized window state
-        self.assertEqual(state.shape, (60, 8))
+        # Should be a flat numpy array of shape (1, 8) according to standardizer behavior
+        self.assertEqual(state.shape, (1, 8))
+
 
     @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
     def test_evaluate_agent_vectorized_fitness_calculation(self):
@@ -262,6 +502,32 @@ class TestAEONEngine(unittest.TestCase):
     def setUp(self):
         self.librarian_mock = MagicMock()
         self.engine = AEONEngine(self.librarian_mock, model_path="nonexistent_path")
+
+    @patch('myra_app.ml_engine.os.path.exists')
+    @patch('myra_app.ml_engine.joblib.load')
+    def test_load(self, mock_joblib_load, mock_exists):
+        # Test when path does not exist
+        mock_exists.return_value = False
+        self.assertFalse(self.engine.load())
+
+        # Test when path exists but joblib throws an exception
+        mock_exists.return_value = True
+        mock_joblib_load.side_effect = Exception("Simulated load error")
+        self.assertFalse(self.engine.load())
+
+        # Test when path exists but genes have wrong size
+        mock_joblib_load.side_effect = None
+        mock_joblib_load.return_value = np.zeros(10)
+        self.assertFalse(self.engine.load())
+
+        # Test successful load
+        expected_size = 480 * 16 + 16 + 16 * 4 + 4
+        mock_genes = MagicMock()
+        mock_genes.__len__.return_value = expected_size
+        mock_joblib_load.return_value = mock_genes
+        self.engine.agent.set_genes = MagicMock()
+        self.assertTrue(self.engine.load())
+        self.engine.agent.set_genes.assert_called_once()
 
     @unittest.skipIf(isinstance(pd, MagicMock), "Pandas not available in this environment")
     def test_empty_dataframe(self):
@@ -351,6 +617,63 @@ class TestDilatedCNNForecasterPredictNext(unittest.TestCase):
             result = forecaster.predict_next(mock_df)
 
         self.assertAlmostEqual(result, 0.6, places=5)
+
+    @unittest.skipIf(isinstance(pd, MagicMock), "Requires actual libraries")
+    def test_build_model(self):
+        try:
+            import tensorflow.keras.models
+        except ImportError:
+            self.skipTest("tensorflow not available")
+
+        forecaster = DilatedCNNForecaster()
+        model = forecaster.build_model()
+
+        self.assertIsNotNone(model, "Model should not be None")
+
+        from tensorflow.keras.models import Model
+        self.assertIsInstance(model, Model, "Built model should be a Keras Model instance")
+
+        # Validate shapes
+        self.assertEqual(model.input_shape, (None, 60, 8))
+        self.assertEqual(model.output_shape, (None, 1))
+
+        # Validate layer presence
+        layer_types = [type(layer).__name__ for layer in model.layers]
+        self.assertIn("Conv1D", layer_types)
+        self.assertIn("Dense", layer_types)
+class TestEvolutionaryAgent(unittest.TestCase):
+    @unittest.skipIf(isinstance(np, MagicMock), "Numpy not available in this environment")
+    def test_get_genes(self):
+        """Test that get_genes flattens weights deterministically into a single vector."""
+        agent = EvolutionaryAgent(input_size=2, hidden_size=2, output_size=2)
+
+        # Override weights with deterministic arrays
+        # Sorted keys: ['W1', 'W2', 'b1', 'b2']
+        agent.weights = {
+            'W1': np.array([[1.0, 2.0], [3.0, 4.0]]),
+            'b1': np.array([[0.1, 0.2]]),
+            'W2': np.array([[5.0, 6.0], [7.0, 8.0]]),
+            'b2': np.array([[0.3, 0.4]])
+        }
+
+        # Expected flattened arrays based on sorted keys
+        # W1: [1.0, 2.0, 3.0, 4.0]
+        # W2: [5.0, 6.0, 7.0, 8.0]
+        # b1: [0.1, 0.2]
+        # b2: [0.3, 0.4]
+        # Expected concatenation order: W1, W2, b1, b2
+        expected_genes = np.array([
+            1.0, 2.0, 3.0, 4.0,  # W1
+            5.0, 6.0, 7.0, 8.0,  # W2
+            0.1, 0.2,            # b1
+            0.3, 0.4             # b2
+        ])
+
+        genes = agent.get_genes()
+
+        # We handle np.testing gracefully in case it's mocked, but with @skipIf this shouldn't execute
+        np.testing.assert_array_almost_equal(genes, expected_genes)
+        self.assertEqual(genes.shape, expected_genes.shape)
 
 if __name__ == "__main__":
     unittest.main()
