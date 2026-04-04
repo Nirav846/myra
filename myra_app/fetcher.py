@@ -11,6 +11,8 @@ EXCLUSIVE GATEKEEPER for all network requests.
 import random
 import json
 import os
+import logging
+logger = logging.getLogger(__name__)
 import re
 import pandas as pd
 import numpy as np
@@ -46,7 +48,9 @@ class GhostSession:
             conn.execute("PRAGMA journal_mode=WAL;") # Fix 6: Prevent locking
             conn.execute("CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value BLOB, expiry TIMESTAMP, data_hash TEXT)") # Fix 29
             conn.close()
-        except Exception: pass
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}', exc_info=True)
+            pass
 
     def _get_cache(self, url, params=None):
         if not self.cache_path: return None
@@ -57,7 +61,9 @@ class GhostSession:
             res = conn.execute("SELECT value FROM cache WHERE key = ? AND expiry > ?", (key, datetime.now())).fetchone()
             conn.close()
             return res[0] if res else None
-        except Exception: return None
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}', exc_info=True)
+            return None
 
     def _set_cache(self, url, value, params=None, expire_seconds=86400):
         if not self.cache_path: return
@@ -70,7 +76,9 @@ class GhostSession:
             conn.execute("INSERT OR REPLACE INTO cache VALUES (?, ?, ?, ?)", (key, value, expiry, data_hash))
             conn.commit()
             conn.close()
-        except Exception: pass
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}', exc_info=True)
+            pass
 
     def get(self, url, params=None, headers=None, timeout=10, bypass_cache=False):
         """Standardized GET with Requests-First resilience (Fix 5)."""
@@ -95,21 +103,25 @@ class GhostSession:
             if r.status_code == 200:
                 self._set_cache(url, r.content, params)
             return r
-        except Exception:
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}', exc_info=True)
             # 2. FALLBACK: Stealth Scrapling (Only if blocked)
             try:
                 if self.fetcher is None:
                     from scrapling import Fetcher
                     self.fetcher = Fetcher()
                     try: self.fetcher.configure(auto_match=True)
-                    except: pass
+                    except Exception as e:
+                        logger.error(f'Unexpected error: {e}', exc_info=True)
+                        pass
                 
                 response = self.fetcher.get(url, params=params, headers=current_headers, timeout=timeout + 10)
                 response.status_code = response.status
                 if response.status_code == 200:
                     self._set_cache(url, response.content, params)
                 return response
-            except Exception:
+            except Exception as e:
+                logger.error(f'Unexpected error: {e}', exc_info=True)
                 return None
 
 class SchemaContractEnforcer:
@@ -124,6 +136,15 @@ class SchemaContractEnforcer:
         errors = []
         if df is None or df.empty: return ["EMPTY_DATAFRAME"]
         
+        # TRUTH LAYER: Strict Mode Check
+        # If mandatory columns contain NaN or None, drop the row and log a Materiality Warning.
+        req_cols_present = [col for col in self.contract["required_columns"] if col in df.columns]
+        if req_cols_present:
+            initial_len = len(df)
+            df.dropna(subset=req_cols_present, inplace=True)
+            if len(df) < initial_len:
+                logger.warning(f"Materiality Warning: Dropped {initial_len - len(df)} rows due to missing required columns.")
+
         # 1. Check required columns
         for col in self.contract["required_columns"]:
             if col not in df.columns:
@@ -141,13 +162,16 @@ class SchemaContractEnforcer:
                 for col in num_cols:
                     if df[col].isna().all():
                         errors.append(f"Type mismatch in {col}: Not numeric")
-            except Exception:
+            except Exception as e:
+                logger.error(f'Unexpected error: {e}', exc_info=True)
                 # Fallback to granular error reporting if vectorization fails
                 for col in num_cols:
                     try:
                         df[col] = pd.to_numeric(df[col], errors='coerce')
                         if df[col].isna().all(): errors.append(f"Type mismatch in {col}: Not numeric")
-                    except: errors.append(f"Type mismatch in {col}")
+                    except Exception as e:
+                        logger.error(f'Unexpected error: {e}', exc_info=True)
+                        errors.append(f"Type mismatch in {col}")
 
         # 3. Integrity check
         if "close_price" in df.columns:
@@ -240,12 +264,16 @@ class DataFetcher:
     def _load_registry(self):
         try:
             with open(self.registry_path, 'r') as f: self.registry = json.load(f)
-        except Exception: self.registry = {}
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}', exc_info=True)
+            self.registry = {}
 
     def _load_config(self):
         try:
             with open(self.config_path, 'r') as f: self.config = json.load(f)
-        except Exception: self.config = {}
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}', exc_info=True)
+            self.config = {}
 
     def _load_calendar(self):
         self.valid_dates = set()
@@ -253,7 +281,9 @@ class DataFetcher:
             try:
                 df = pd.read_csv(self.cal_path)
                 self.valid_dates = set(df['date'].astype(str).tolist())
-            except: pass
+            except Exception as e:
+                logger.error(f'Unexpected error: {e}', exc_info=True)
+                pass
 
     def _is_holiday(self, dt):
         """
@@ -280,7 +310,9 @@ class DataFetcher:
             target_date = dt.date() if hasattr(dt, "date") else dt
             if target_date > datetime.now().date():
                 return True
-        except Exception: pass
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}', exc_info=True)
+            pass
             
         return False # Assume open if not a known holiday/weekend
 
@@ -332,7 +364,9 @@ class DataFetcher:
                 elif density > 0.5: score += 0.1
                 
             return round(score, 2)
-        except Exception: return 0.0
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}', exc_info=True)
+            return 0.0
 
     def is_special_session(self, dt):
         """Detects Muhurat or Budget day anomalies."""
@@ -352,7 +386,9 @@ class DataFetcher:
             conn.execute("DELETE FROM source_stats WHERE name = ? AND date NOT IN (SELECT date FROM source_stats WHERE name = ? ORDER BY date DESC LIMIT 15)", (name, name))
             conn.commit()
             conn.close()
-        except Exception: pass
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}', exc_info=True)
+            pass
 
     def get_reliability(self, name):
         """Computes trust score using weighted decay (Fix 24)."""
@@ -367,7 +403,9 @@ class DataFetcher:
             weights = [i + 1 for i in range(len(scores))] # Recency bias
             weighted_sum = sum(s * w for s, w in zip(scores, weights))
             return round(weighted_sum / sum(weights), 2)
-        except Exception: return 0.5
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}', exc_info=True)
+            return 0.5
 
     def to_snake_case(self, col):
         """Standardizes column naming (Fix: Universal Normalizer)."""
@@ -403,7 +441,9 @@ class DataFetcher:
                 "mean_close": df["close_price"].mean() if "close_price" in df.columns else 0,
                 "total_volume": df["total_traded_qty"].sum() if "total_traded_qty" in df.columns else 0
             }
-        except Exception: return None
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}', exc_info=True)
+            return None
 
     def is_stale_fingerprint(self, fp_today, fp_prev):
         """Compares fingerprints for logical similarity (Fix 33)."""
@@ -433,7 +473,9 @@ class DataFetcher:
                 return False, "STALE_DATA_CONFIRMED"
                 
             return True, "OK"
-        except Exception: return True, "CHECK_FAILED"
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}', exc_info=True)
+            return True, "CHECK_FAILED"
 
     def check_sector_coverage(self, df):
         """
@@ -451,7 +493,9 @@ class DataFetcher:
                 if weight > base * 2.5:
                     return False, f"ABNORMAL_SECTOR_SKEW_{sector}"
             return True, "OK"
-        except Exception: return True, "CHECK_FAILED"
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}', exc_info=True)
+            return True, "CHECK_FAILED"
 
     def fetch_bhavcopy_with_retry(self, current_date):
         """
@@ -501,7 +545,9 @@ class DataFetcher:
                 return False, f"ABNORMAL_UNIVERSE_MEAN_{avg_p}"
                 
             return True, "OK"
-        except Exception: return True, "CHECK_FAILED"
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}', exc_info=True)
+            return True, "CHECK_FAILED"
 
     def execute_controlled_response(self, analysis):
         """
@@ -521,7 +567,9 @@ class DataFetcher:
                     print("[MYRA] Auto-Response in Cooldown. Skipping action to prevent cascade.")
                     conn.close(); return
             conn.close()
-        except Exception: pass
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}', exc_info=True)
+            pass
 
         # 2. Weighted Failure Confidence (Fix v12.1)
         FAILURE_WEIGHTS = {
@@ -547,7 +595,9 @@ class DataFetcher:
                 conn.execute("PRAGMA journal_mode=WAL;") # Fix 6: Prevent locking
                 conn.execute("INSERT INTO source_stats VALUES (?, ?, ?)", ("SYSTEM_ACTION", total_weight, datetime.now()))
                 conn.commit(); conn.close()
-            except Exception: pass
+            except Exception as e:
+                logger.error(f'Unexpected error: {e}', exc_info=True)
+                pass
 
             if failures.get("schema", 0) >= 3:
                 print("👉 Action: SCHEMA EMERGENCY. Forcing Mirror Priority Reset.")
@@ -628,7 +678,9 @@ class DataFetcher:
                             if not valid_price:
                                 print(f"[TRACE] Source {stream['name']} failed truth check: {p_reason}")
                                 score = 0.0 # Catastrophic failure
-                    except Exception: pass
+                    except Exception as e:
+                        logger.error(f'Unexpected error: {e}', exc_info=True)
+                        pass
 
                     # 3. Historical Reliability
                     rel = self.get_reliability(stream["name"])
@@ -656,7 +708,9 @@ class DataFetcher:
                     if final_score >= 0.85 and not exploration_triggered:
                         break
                         
-            except Exception: continue
+            except Exception as e:
+                logger.error(f'Unexpected error: {e}', exc_info=True)
+                continue
             
         if best_data:
             self._update_source_reliability(best_source_name, best_final_score, current_date)
@@ -728,7 +782,9 @@ class DataFetcher:
                         d['secVal'] = self.sanitize_float(d.get('secVal', 0))
                         d['secAcq'] = self.sanitize_float(d.get('secAcq', 0))
                     return data
-            except Exception: continue
+            except Exception as e:
+                logger.error(f'Unexpected error: {e}', exc_info=True)
+                continue
         return []
 
     def fetch_large_deals_v2(self):
@@ -745,7 +801,9 @@ class DataFetcher:
                         for deal in data.get(key, []):
                             results.append({"symbol": self.unify_symbol(deal.get("symbol")), "type": deal_type, "client": deal.get("clientName"), "buy_sell": deal.get("buySell"), "qty": int(self.sanitize_float(deal.get("quantityTraded", 0))), "price": self.sanitize_float(deal.get("tradePrice", 0)), "date": date.today()})
                     return results
-            except Exception: continue
+            except Exception as e:
+                logger.error(f'Unexpected error: {e}', exc_info=True)
+                continue
         return []
 
     def fetch_fundamentals(self, symbol):
@@ -757,7 +815,9 @@ class DataFetcher:
                 elif stream["name"] == "google_finance": res = self._fetch_google(clean_symbol)
                 else: continue
                 if res: return res, stream["name"]
-            except Exception: continue
+            except Exception as e:
+                logger.error(f'Unexpected error: {e}', exc_info=True)
+                continue
         return None, None
 
     def fetch_deep_history(self, symbol):
@@ -861,7 +921,9 @@ class DataFetcher:
         try:
             r = self.session.get(sources["primary"])
             if r.status_code == 200: return [self.unify_symbol(s) for s in self._parse_nse_csv(r.text)]
-        except Exception: pass
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}', exc_info=True)
+            pass
         return []
 
     def _parse_nse_csv(self, text):
@@ -869,7 +931,9 @@ class DataFetcher:
             df = pd.read_csv(StringIO(text))
             col = "Symbol" if "Symbol" in df.columns else "SYMBOL" if "SYMBOL" in df.columns else df.columns[2]
             return df[col].tolist()
-        except Exception: return []
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}', exc_info=True)
+            return []
 
     def fetch_market_status(self):
         """Registry-driven Market Status"""
@@ -882,7 +946,9 @@ class DataFetcher:
                 self.session.get("https://www.nseindia.com", headers=headers)
                 r = self.session.get(stream["url"], headers=headers)
                 if r.status_code == 200: return r.json()
-            except Exception: continue
+            except Exception as e:
+                logger.error(f'Unexpected error: {e}', exc_info=True)
+                continue
         return None
 
     def sanitize_float(self, val):
@@ -891,7 +957,9 @@ class DataFetcher:
         try:
             clean = re.sub(r'[^\d.-]', '', str(val).replace(",", ""))
             return float(clean) if clean else 0.0
-        except Exception: return 0.0
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}', exc_info=True)
+            return 0.0
 
     def _normalize_field(self, raw_name):
         name = str(raw_name).strip().upper()
@@ -904,7 +972,9 @@ class DataFetcher:
         if isinstance(val, (int, float)): return float(val)
         clean = re.sub(r'[^\d.]', '', val.replace(",", "").replace("%", ""))
         try: return float(clean) if clean else None
-        except: return None
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}', exc_info=True)
+            return None
 
     def fetch_sast_disclosures(self, days=3):
         """Fetches SAST Regulation 29 disclosures (Last X days)."""
@@ -920,7 +990,9 @@ class DataFetcher:
             r = self.session.get(url, headers=headers)
             if r.status_code == 200:
                 return r.json().get('data', [])
-        except Exception: pass
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}', exc_info=True)
+            pass
         return []
 
     def fetch_pledged_info(self, symbol):
@@ -933,7 +1005,9 @@ class DataFetcher:
             r = self.session.get(url, headers=headers)
             if r.status_code == 200:
                 return r.json().get('data', [])
-        except Exception: pass
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}', exc_info=True)
+            pass
         return []
 
     def fetch_fii_dii_activity(self):
@@ -945,7 +1019,9 @@ class DataFetcher:
             r = self.session.get(url, headers=headers)
             if r.status_code == 200:
                 return r.json()
-        except Exception: pass
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}', exc_info=True)
+            pass
         return []
 
     def fetch_shareholding_pattern(self, symbol):
@@ -957,7 +1033,9 @@ class DataFetcher:
             r = self.session.get(url, headers=headers)
             if r.status_code == 200:
                 return r.json().get('data', [])
-        except Exception: pass
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}', exc_info=True)
+            pass
         return []
 
     def fetch_corporate_announcements(self, days=2):
@@ -969,7 +1047,9 @@ class DataFetcher:
             r = self.session.get(url, headers=headers)
             if r.status_code == 200:
                 return r.json()
-        except Exception: pass
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}', exc_info=True)
+            pass
         return []
 
     def get_ticker_info_safe(self, ticker):
@@ -978,4 +1058,6 @@ class DataFetcher:
         try:
             t = yf.Ticker(ticker)
             return t.info
-        except Exception: return {}
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}', exc_info=True)
+            return {}
