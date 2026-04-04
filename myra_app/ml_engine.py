@@ -26,7 +26,7 @@ class NiftyDataPipeline:
 
     def engineer_features(self, df):
         """Applies technical indicators and creates time-series features."""
-        if df.empty or len(df) < 60:
+        if df is None or df.empty or len(df) < 60:
             return pd.DataFrame()
 
         df = df.copy()
