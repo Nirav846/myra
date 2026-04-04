@@ -1,7 +1,0 @@
-# ENTER YOUR PORTFOLIO SYMBOLS BELOW (One per line or comma-separated)
-# Example:
-# RELIANCE
-# HDFCBANK
-# ITC
-
-PREMEXPLN

@@ -23,14 +23,10 @@ dist/
 *.bin
 *.run
 *.exe
-data/**/*.csv
-data/**/*.pkl
+data/
+logs/
 results/
 myra_reports/
-data/ohlcv_cache/
-data/Market_Archives/
-data/**/*.parquet
-data/**/*.csv
 *.db-wal
 *.db-shm
 
@@ -59,6 +55,8 @@ results/*_cookies.pkl
 .agent/
 .agents/
 .gemini/
+.geminiignore
+GEMINI.md
 conductor/
 memory/
 superpowers/
@@ -91,7 +89,6 @@ sync_log.txt
 *.txt
 !requirements.txt
 !README.md
-!GEMINI.md
 !PROJECT_SUMMARY.md
 !ruff.toml
 !.bandit
