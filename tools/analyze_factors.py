@@ -5,7 +5,9 @@ import numpy as np
 import glob
 from tqdm import tqdm
 
-def analyze_factor_importance(lake_dir="data/lake"):
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+def analyze_factor_importance(lake_dir=os.path.join(PROJECT_ROOT, "data", "lake")):
     """
     Analyzes which factors actually lead to 3-month (60-day) forward returns.
     Inspired by AlphaPy.

@@ -6,12 +6,13 @@ from datetime import datetime
 from io import StringIO
 
 # Fix path
-sys.path.append(os.getcwd())
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.append(PROJECT_ROOT)
 from tools.symbol_mapper import SymbolMapper
 
 def debug_dcal_insertion():
-    db_path = "db/technical.db"
-    archive_dir = "data/Market_Archives"
+    db_path = os.path.join(PROJECT_ROOT, "db", "technical.db")
+    archive_dir = os.path.join(PROJECT_ROOT, "data", "Market_Archives")
     mapper = SymbolMapper()
     
     # We know 2024-03-28 is in our missing list for DCAL

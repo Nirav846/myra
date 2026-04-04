@@ -4,13 +4,14 @@ import pandas as pd
 from datetime import datetime
 
 # Fix path
-sys.path.append(os.getcwd())
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.append(PROJECT_ROOT)
 
 def build_recovery_resources():
     print("[MYRA] Building recovery resources...")
     
     # 1. Process Trading Dates
-    dates_file = "data/trading dates till 30032026.txt"
+    dates_file = os.path.join(PROJECT_ROOT, "data", "trading dates till 30032026.txt")
     if os.path.exists(dates_file):
         with open(dates_file, 'r') as f:
             lines = f.readlines()
@@ -27,7 +28,7 @@ def build_recovery_resources():
         
         # Save as a clean CSV for missing_detector
         df_dates = pd.DataFrame(sorted(list(set(trading_dates))), columns=['date'])
-        df_dates.to_csv("data/trading_calendar_master.csv", index=False)
+        df_dates.to_csv(os.path.join(PROJECT_ROOT, "data", "trading_calendar_master.csv"), index=False)
         print(f"[+] Processed {len(df_dates)} trading dates.")
 
     # 2. Download Symbol Changes (with proper encoding)
