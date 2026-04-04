@@ -34,15 +34,15 @@ def unify_database_symbols():
             # then delete the old one.
             try:
                 # 1. Copy to new name
-                cursor.execute(f"""
+                cursor.execute("""
                     INSERT OR REPLACE INTO technical_data 
                     (symbol, date, open, high, low, close, volume, delivery, trades, vwap, delivery_pct, delivery_ratio)
-                    SELECT '{current}', date, open, high, low, close, volume, delivery, trades, vwap, delivery_pct, delivery_ratio
-                    FROM technical_data WHERE symbol = '{sym}'
-                """)
+                    SELECT ?, date, open, high, low, close, volume, delivery, trades, vwap, delivery_pct, delivery_ratio
+                    FROM technical_data WHERE symbol = ?
+                """, (current, sym))
                 
                 # 2. Delete old name
-                cursor.execute(f"DELETE FROM technical_data WHERE symbol = '{sym}'")
+                cursor.execute("DELETE FROM technical_data WHERE symbol = ?", (sym,))
                 updates += 1
             except Exception as e:
                 print(f"    [!] Error mapping {sym}: {e}")
