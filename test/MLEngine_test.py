@@ -109,6 +109,39 @@ class TestMLEngine(unittest.TestCase):
         # Check that None is returned on exception
         self.assertIsNone(result, "Should return None on exception")
 
+    @patch('os.path.exists')
+    @patch('myra_app.ml_engine.joblib.load')
+    def test_trend_forecaster_load(self, mock_joblib_load, mock_os_path_exists):
+        """Test the load method of TrendForecaster."""
+        forecaster = TrendForecaster(None, model_path="dummy_path.joblib")
+
+        # 1. Test success path
+        mock_os_path_exists.return_value = True
+        mock_joblib_load.return_value = "dummy_model"
+
+        result = forecaster.load()
+
+        self.assertTrue(result)
+        self.assertEqual(forecaster.model, "dummy_model")
+
+        # 2. Test exception path
+        forecaster.model = None  # Reset
+        mock_joblib_load.side_effect = Exception("Simulated joblib error")
+
+        result = forecaster.load()
+
+        self.assertFalse(result)
+        self.assertIsNone(forecaster.model)
+
+        # 3. Test file does not exist path
+        forecaster.model = None  # Reset
+        mock_os_path_exists.return_value = False
+
+        result = forecaster.load()
+
+        self.assertFalse(result)
+        self.assertIsNone(forecaster.model)
+
 class TestDilatedCNNForecasterErrors(unittest.TestCase):
     @patch.dict('sys.modules', {'tensorflow': None})
     def test_build_model_import_error(self):
