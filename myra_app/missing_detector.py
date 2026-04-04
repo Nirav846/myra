@@ -5,13 +5,11 @@ import sys
 from datetime import datetime, timedelta
 
 # Fix path
-sys.path.append(os.getcwd())
-try:
-    from myra_app.librarian import Librarian
-except ImportError:
-    sys.path.append(os.path.join(os.getcwd(), ".."))
-    from librarian import Librarian
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
+from myra_app.librarian import Librarian
 from tools.symbol_mapper import SymbolMapper
 
 def detect_missing_candles(tech_db=None, calendar_csv=None, output_csv=None, lookback_days=1000):
@@ -20,10 +18,10 @@ def detect_missing_candles(tech_db=None, calendar_csv=None, output_csv=None, loo
     Only flags dates where we have NO data for an active symbol, 
     starting from the EARLIEST date that symbol appears in our DB.
     """
-    tech_db = tech_db if tech_db else os.path.join(os.getcwd(), "db", "technical.db")
-    meta_db = os.path.join(os.getcwd(), "db", "meta.db")
-    calendar_csv = calendar_csv if calendar_csv else os.path.join(os.getcwd(), "data", "trading_calendar_master.csv")
-    output_csv = output_csv if output_csv else os.path.join(os.getcwd(), "data", "missing_data.csv")
+    tech_db = tech_db if tech_db else os.path.join(PROJECT_ROOT, "db", "technical.db")
+    meta_db = os.path.join(PROJECT_ROOT, "db", "meta.db")
+    calendar_csv = calendar_csv if calendar_csv else os.path.join(PROJECT_ROOT, "data", "trading_calendar_master.csv")
+    output_csv = output_csv if output_csv else os.path.join(PROJECT_ROOT, "data", "missing_data.csv")
     
     print("[MYRA] Initializing Empirical Gap Detection...")
     
