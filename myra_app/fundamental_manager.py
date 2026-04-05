@@ -169,6 +169,43 @@ class FundamentalManager:
         finally:
             v_conn.close()
 
+    def get_bulk_f_scores(self, symbols):
+        """Calculates F-Scores for multiple symbols using a single query."""
+        if not symbols: return {}
+        symbol_cleans = [s.split('.')[0].upper() for s in symbols]
+        try:
+            conn = self._get_val_conn()
+            placeholders = ','.join(['?'] * len(symbol_cleans))
+            query = f"""
+                SELECT symbol, report_date, net_profit
+                FROM (
+                    SELECT symbol, report_date, net_profit,
+                           ROW_NUMBER() OVER(PARTITION BY symbol ORDER BY report_date DESC) as rn
+                    FROM quarterly_results
+                    WHERE symbol IN ({placeholders})
+                )
+                WHERE rn <= 4
+            """
+            df = pd.read_sql(query, conn, params=symbol_cleans)
+            conn.close()
+
+            scores = {}
+            for sym in symbol_cleans:
+                sym_df = df[df['symbol'] == sym]
+                if len(sym_df) < 2:
+                    scores[sym] = 0
+                    continue
+                score = 0
+                latest = sym_df.iloc[0]
+                prev = sym_df.iloc[1]
+                if latest.get('net_profit', 0) > 0: score += 1
+                if latest.get('net_profit', 0) > prev.get('net_profit', 0): score += 1
+                scores[sym] = score
+            return scores
+        except Exception:
+            # print("Bulk F-Score Exception:", e)
+            return {}
+
     def calculate_f_score(self, symbol):
         """Piotroski F-Score implementation for Trilogy DB."""
         symbol_clean = symbol.split('.')[0].upper()
@@ -188,6 +225,37 @@ class FundamentalManager:
             # Ratio checks... (Simplified for v3.0 core)
             return score
         except Exception: return 0
+
+    def get_bulk_valuation_metrics(self, symbols):
+        """Calculates Graham Number for multiple symbols using a single query."""
+        if not symbols: return {}
+        symbol_cleans = [s.split('.')[0].upper() for s in symbols]
+        try:
+            conn = self._get_val_conn()
+            placeholders = ','.join(['?'] * len(symbol_cleans))
+            query = f"""
+                SELECT symbol, eps, book_value
+                FROM (
+                    SELECT symbol, eps, book_value,
+                           ROW_NUMBER() OVER(PARTITION BY symbol ORDER BY report_date DESC) as rn
+                    FROM quarterly_results
+                    WHERE symbol IN ({placeholders})
+                )
+                WHERE rn = 1
+            """
+            rows = conn.execute(query, symbol_cleans).fetchall()
+            conn.close()
+
+            metrics = {}
+            for sym, eps, bv in rows:
+                if eps and bv and eps > 0 and bv > 0:
+                    graham = (22.5 * eps * bv) ** 0.5
+                    metrics[sym] = {"graham_number": round(graham, 2)}
+                else:
+                    metrics[sym] = {}
+            return metrics
+        except Exception:
+            return {}
 
     def get_valuation_metrics(self, symbol):
         """Calculates Graham Number from Trilogy DB."""

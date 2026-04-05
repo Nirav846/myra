@@ -320,12 +320,16 @@ class MYRAScreener:
         results.sort(key=lambda x: x.get("MYRA_Score", 0), reverse=True)
         top_20 = results[:20]
         
+        # Optimization: Fetch F-Score and Graham Numbers in bulk to prevent N+1 Queries
+        top_20_symbols = [r["Stock"] for r in top_20]
+        bulk_f_scores = self.lib.fundamental_manager.get_bulk_f_scores(top_20_symbols)
+        bulk_val_metrics = self.lib.fundamental_manager.get_bulk_valuation_metrics(top_20_symbols)
+
         for r in tqdm(top_20, desc="Deep Fundamental Audit", leave=False):
             sym = r["Stock"]
-            # Optimization: Dynamic F-Score and Graham Numbers
-            r["F_Score"] = self.lib.fundamental_manager.calculate_f_score(sym)
-            val_metrics = self.lib.fundamental_manager.get_valuation_metrics(sym)
-            r["graham_number"] = val_metrics.get("graham_number", 0)
+            sym_clean = sym.split('.')[0].upper()
+            r["F_Score"] = bulk_f_scores.get(sym_clean, 0)
+            r["graham_number"] = bulk_val_metrics.get(sym_clean, {}).get("graham_number", 0)
 
         # 5. FINAL POSITIONAL SCORING
         res_df = pd.DataFrame(results)
