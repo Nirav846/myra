@@ -9,9 +9,6 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from myra_app.librarian import Librarian
-from tools.symbol_mapper import SymbolMapper
-
 def detect_missing_candles(tech_db=None, calendar_csv=None, output_csv=None, lookback_days=1000):
     """
     True Gap Detection based on ACTUAL presence in database.
@@ -25,8 +22,6 @@ def detect_missing_candles(tech_db=None, calendar_csv=None, output_csv=None, loo
     
     print("[MYRA] Initializing Empirical Gap Detection...")
     
-    mapper = SymbolMapper()
-    
     # 1. Get Active Symbols
     conn_meta = sqlite3.connect(meta_db)
     active_symbols = [r[0] for r in conn_meta.execute("SELECT symbol FROM symbols_master WHERE is_active = 1 AND in_active_universe = 1").fetchall()]
@@ -36,13 +31,15 @@ def detect_missing_candles(tech_db=None, calendar_csv=None, output_csv=None, loo
         print("[!] No active symbols found.")
         return
 
+    import numpy as np
+
     # 2. Get Trading Days from Calendar
     df_cal = pd.read_csv(calendar_csv)
     # Filter for last 2 years roughly (730 days) as per user mandate
     # Or use provided lookback
     lookback_date = (datetime.now() - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
     trading_days = sorted(df_cal[df_cal['date'] >= lookback_date]['date'].tolist())
-    trading_days_set = set(trading_days)
+    trading_days_arr = np.array(trading_days)
 
     # 3. Get Empirical Bounds from Technical DB
     conn_tech = sqlite3.connect(tech_db)
@@ -53,31 +50,44 @@ def detect_missing_candles(tech_db=None, calendar_csv=None, output_csv=None, loo
     existing = pd.read_sql("SELECT symbol, date FROM technical_data WHERE date >= ?", conn_tech, params=(lookback_date,))
     conn_tech.close()
     
-    bounds_map = {row['symbol']: row['first'] for _, row in bounds.iterrows()}
+    bounds_map = {row.symbol: row.first for row in bounds.itertuples(index=False)}
     existing_map = {}
     if not existing.empty:
         for sym, group in existing.groupby('symbol'):
             existing_map[sym] = set(group['date'])
 
     # 4. Gap Detection
-    missing_records = []
+    valid_days_cache = {}
+    missing_symbols = []
+    missing_dates = []
+
     for sym in active_symbols:
         # Determine the effective start date for this symbol
         # If we have data, we start from our earliest record.
         # If we have NO data, we start from lookback_date.
         effective_start = bounds_map.get(sym, lookback_date)
         
-        # Valid days for this symbol are from its first appearance to today
-        valid_days = [d for d in trading_days if d >= effective_start]
-        
+        if effective_start not in valid_days_cache:
+            idx = np.searchsorted(trading_days_arr, effective_start)
+            valid_days_cache[effective_start] = set(trading_days_arr[idx:])
+
+        valid_days = valid_days_cache[effective_start]
         sym_dates = existing_map.get(sym, set())
-        missing = set(valid_days) - sym_dates
         
-        for m_date in missing:
-            missing_records.append({'symbol': sym, 'missing_date': m_date})
+        missing = valid_days - sym_dates
+
+        if missing:
+            missing_symbols.extend([sym] * len(missing))
+            missing_dates.extend(missing)
             
     # 5. Final Report
-    df_missing = pd.DataFrame(missing_records)
+    if missing_symbols:
+        df_missing = pd.DataFrame({
+            'symbol': missing_symbols,
+            'missing_date': missing_dates
+        }, index=range(len(missing_symbols)))
+    else:
+        df_missing = pd.DataFrame(columns=['symbol', 'missing_date'])
     if not df_missing.empty:
         os.makedirs(os.path.dirname(output_csv), exist_ok=True)
         df_missing.to_csv(output_csv, index=False)
