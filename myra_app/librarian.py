@@ -46,6 +46,80 @@ class Librarian(LibrarianCore, LibrarianSchemaMixin, LibrarianSyncMixin, Librari
             self._create_tables()
             self._migrate_schema()
 
+    def get_market_holidays(self, year):
+        import json, os, datetime
+        from myra_app.fetcher import DataFetcher
+        cache_file = os.path.join(os.getcwd(), ".jules", "cache", f"holidays_{year}.json")
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, "r") as f: return set(json.load(f))
+            except Exception: pass
+
+        fetcher = DataFetcher()
+        holidays = set()
+
+        # 1. Primary: NSE
+        try:
+            r = fetcher.session.get("https://www.nseindia.com/api/holiday-master?type=trading", headers={"Referer": "https://www.nseindia.com/", "X-Requested-With": "XMLHttpRequest", "User-Agent": "Mozilla/5.0"}, timeout=10)
+            if getattr(r, 'status_code', 0) == 200:
+                data = r.json()
+                for h in data.get("CM", []):
+                    try:
+                        d = datetime.datetime.strptime(h["tradingDate"], "%d-%b-%Y").strftime("%Y-%m-%d")
+                        if d.startswith(str(year)): holidays.add(d)
+                    except: pass
+        except Exception: pass
+
+        # 2. Fallback: BSE
+        if not holidays:
+            try:
+                import urllib.request
+                req = urllib.request.Request("https://api.bseindia.com/BseIndiaAPI/api/HolidayTrading/w?flag=Trading", headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
+                with urllib.request.urlopen(req, timeout=10) as res:
+                    data = json.loads(res.read().decode()).get("Table", [])
+                    for h in data:
+                        try:
+                            d = datetime.datetime.strptime(h["TradingDate"], "%d %b %Y").strftime("%Y-%m-%d")
+                            if d.startswith(str(year)): holidays.add(d)
+                        except: pass
+            except Exception: pass
+
+        # 3. Final Fallback: PKDateUtilities
+        if not holidays:
+            from myra_core.date_utils import PKDateUtilities
+            _, dates = PKDateUtilities.holidayList()
+            if dates: holidays = {d for d in dates if d.startswith(str(year))}
+
+        os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+        with open(cache_file, "w") as f: json.dump(list(holidays), f)
+        return holidays
+
+    def get_expected_trading_day(self, now=None):
+        import datetime, pandas as pd
+        if not now: now = datetime.datetime.now()
+
+        target = now.date()
+        is_after_market = now.hour > 18 or (now.hour == 18 and now.minute >= 30)
+        if not is_after_market:
+            target -= datetime.timedelta(days=1)
+
+        holidays = self.get_market_holidays(target.year)
+
+        while target.weekday() >= 5 or target.strftime("%Y-%m-%d") in holidays:
+            target -= datetime.timedelta(days=1)
+            if target.year not in [d[:4] for d in holidays]:
+                holidays.update(self.get_market_holidays(target.year))
+
+        # If bhavcopy date exists, use it as ground truth if it's earlier than expected
+        last_bhav = self.get_max_price_date()
+        if last_bhav:
+            try:
+                lb_dt = datetime.datetime.strptime(last_bhav, "%Y-%m-%d").date()
+                if lb_dt > target: return lb_dt
+            except Exception: pass
+
+        return target
+
     def run_integrity_check(self):
         """Runs the TechnicalAudit tool to verify modular DB health."""
         from myra_app.technical_audit import TechnicalAudit
