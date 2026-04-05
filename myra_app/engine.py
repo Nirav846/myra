@@ -397,14 +397,18 @@ class Engine:
                         GROUP BY symbol
                     """, lib._inst_conn)
                     
-                    insider_map.update({
-                        row.symbol: {
-                            "buy_latest": row.net_5d,
-                            "total_60d": row.net_60d,
-                            "avg_buy_60d": row.avg_buy_60d,
-                            "accel": 3 if row.active_days > 5 else 2 if row.active_days >= 3 else 1 if row.active_days >= 1 else 0
-                        } for row in m_data.itertuples(index=False)
-                    })
+                    if not m_data.empty:
+                        conditions = [
+                            m_data['active_days'] > 5,
+                            m_data['active_days'] >= 3,
+                            m_data['active_days'] >= 1
+                        ]
+                        m_data['accel'] = np.select(conditions, [3, 2, 1], default=0).astype(int)
+
+                        m_data.fillna({'avg_buy_60d': 0.0, 'net_5d': 0.0, 'net_60d': 0.0}, inplace=True)
+                        m_data.rename(columns={'net_5d': 'buy_latest', 'net_60d': 'total_60d'}, inplace=True)
+
+                        insider_map.update(m_data.set_index('symbol')[['buy_latest', 'total_60d', 'avg_buy_60d', 'accel']].to_dict('index'))
                 except Exception: pass
 
             deal_map = {}

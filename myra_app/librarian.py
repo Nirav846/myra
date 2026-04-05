@@ -6,6 +6,7 @@ EXCLUSIVE GATEKEEPER for all MYRA data.
 """
 import os
 import pandas as pd
+from rich.console import Console
 
 from myra_app.fetcher import DataFetcher
 from myra_app.data_loader import StockDataLoader
@@ -38,7 +39,6 @@ class Librarian(LibrarianCore, LibrarianSchemaMixin, LibrarianSyncMixin, Librari
         self.fundamental_manager.set_connection(self._val_conn)
         
         self._funda_cols = None # Cache for fundamentals columns
-
         from myra_app.fundamental_ranker import FundamentalRanker
         self.fundamental_ranker = FundamentalRanker(self._val_conn, scoring_db_path=os.path.join(os.getcwd(), "db", "scoring.db"))
         

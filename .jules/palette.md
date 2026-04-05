@@ -2,6 +2,7 @@
 ## 2024-05-24 - [Directional Arrows for Metrics]
 **Learning:** Pairing colors with clear, visual indicators (like ↑, ↓, →) for metrics such as `PnL%`, `RS_Raw`, and `Forecast_Move%` significantly speeds up scan time by removing reliance on color alone or on small negative signs, especially for tired traders analyzing large sets of numbers.
 **Action:** Reuse this pattern wherever numerical metrics indicate a positive, negative, or neutral change/standing. Combine color styling with these prefix symbols to make signals pop instantly.
+<<<<<<< HEAD
 
 ## 2026-04-04 - Accessible Symbols
 **Learning:** Relying on color alone reduces scan speed and violates accessibility principles. Pairing colors with symbols (e.g., ★ for Elite, ✓ for Good, ⚠ for Warning, ✗ for Danger) drastically improves scanability and cognitive load for traders.
@@ -10,3 +11,5 @@
 ## 2024-05-24 - [Directional Arrows for Metrics Extension]
 **Learning:** Extending the directional arrows pattern (`↑`, `↓`, `→`) to accuracy metrics speeds up scan time by providing consistent, color-paired visual indicators for positive, negative, and neutral states, reducing cognitive load compared to symbols like ★ or ⚠.
 **Action:** Used directional arrows to signify high/low/medium status for Accuracy in terminal tables. This creates visual consistency across the entire metrics display.
+=======
+>>>>>>> origin/bolt-optimize-insider-iterrows-4248715308406586452

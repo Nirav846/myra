@@ -163,7 +163,6 @@ class MYRAScreener:
         last_import = self.lib.get_max_price_date()
         import datetime as _dt
         now = _dt.datetime.now()
-        
         expected_date = self.lib.get_expected_trading_day(now)
             
         needs_sync = False
