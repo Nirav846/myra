@@ -169,6 +169,7 @@ class FundamentalManager:
         finally:
             v_conn.close()
 
+<<<<<<< HEAD
     def get_bulk_f_scores(self, symbols):
         """Calculates F-Scores for multiple symbols using a single query."""
         if not symbols: return {}
@@ -206,6 +207,8 @@ class FundamentalManager:
             # print("Bulk F-Score Exception:", e)
             return {}
 
+=======
+>>>>>>> origin/bolt-optimize-insider-iterrows-4248715308406586452
     def calculate_f_score(self, symbol):
         """Piotroski F-Score implementation for Trilogy DB."""
         symbol_clean = symbol.split('.')[0].upper()
@@ -226,6 +229,7 @@ class FundamentalManager:
             return score
         except Exception: return 0
 
+<<<<<<< HEAD
     def get_bulk_valuation_metrics(self, symbols):
         """Calculates Graham Number for multiple symbols using a single query."""
         if not symbols: return {}
@@ -257,6 +261,8 @@ class FundamentalManager:
         except Exception:
             return {}
 
+=======
+>>>>>>> origin/bolt-optimize-insider-iterrows-4248715308406586452
     def get_valuation_metrics(self, symbol):
         """Calculates Graham Number from Trilogy DB."""
         symbol_clean = symbol.split('.')[0].upper()

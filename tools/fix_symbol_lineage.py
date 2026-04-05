@@ -34,6 +34,7 @@ def unify_database_symbols():
             # then delete the old one.
             try:
                 # 1. Copy to new name
+<<<<<<< HEAD
                 cursor.execute("""
                     INSERT OR REPLACE INTO technical_data 
                     (symbol, date, open, high, low, close, volume, delivery, trades, vwap, delivery_pct, delivery_ratio)
@@ -43,6 +44,17 @@ def unify_database_symbols():
                 
                 # 2. Delete old name
                 cursor.execute("DELETE FROM technical_data WHERE symbol = ?", (sym,))
+=======
+                cursor.execute(f"""
+                    INSERT OR REPLACE INTO technical_data
+                    (symbol, date, open, high, low, close, volume, delivery, trades, vwap, delivery_pct, delivery_ratio)
+                    SELECT '{current}', date, open, high, low, close, volume, delivery, trades, vwap, delivery_pct, delivery_ratio
+                    FROM technical_data WHERE symbol = '{sym}'
+                """)
+
+                # 2. Delete old name
+                cursor.execute(f"DELETE FROM technical_data WHERE symbol = '{sym}'")
+>>>>>>> origin/bolt-optimize-insider-iterrows-4248715308406586452
                 updates += 1
             except Exception as e:
                 print(f"    [!] Error mapping {sym}: {e}")
