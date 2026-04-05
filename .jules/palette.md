@@ -6,3 +6,7 @@
 ## 2026-04-04 - Accessible Symbols
 **Learning:** Relying on color alone reduces scan speed and violates accessibility principles. Pairing colors with symbols (e.g., ★ for Elite, ✓ for Good, ⚠ for Warning, ✗ for Danger) drastically improves scanability and cognitive load for traders.
 **Action:** Re-use conditional symbol logic in terminal tables whenever highlighting categorical or numerical performance metrics (like Grades, Scores, Win Rates, or ROE).
+
+## 2024-05-24 - [Directional Arrows for Metrics Extension]
+**Learning:** Extending the directional arrows pattern (`↑`, `↓`, `→`) to accuracy metrics speeds up scan time by providing consistent, color-paired visual indicators for positive, negative, and neutral states, reducing cognitive load compared to symbols like ★ or ⚠.
+**Action:** Used directional arrows to signify high/low/medium status for Accuracy in terminal tables. This creates visual consistency across the entire metrics display.

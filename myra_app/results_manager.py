@@ -445,7 +445,7 @@ class ResultsManager:
                     try:
                         if "%" in str(acc):
                             val_num = float(acc.replace("%", ""))
-                            a_sym = "★ " if val_num >= 70 else "⚠ " if val_num < 40 else "✓ "
+                            a_sym = "↑ " if val_num >= 70 else "↓ " if val_num < 40 else "→ "
                             acc_color = "green" if val_num >= 70 else "yellow" if val_num >= 40 else "red"
                         elif acc == "New":
                             a_sym = "✦ "
