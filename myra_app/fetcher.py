@@ -802,36 +802,114 @@ class DataFetcher:
                     if "nse" in stream["name"]:
                         self.session.get("https://www.nseindia.com", headers=headers, timeout=10)
                         r = self.session.get(stream["url"], params=params, headers=headers, timeout=15)
+                        if getattr(r, 'status_code', 0) == 200:
+                            try:
+                                json_payload = r.json()
+                            except ValueError:
+                                raise ValueError(f"Invalid JSON Structure from {stream['name']}")
+
+                            data = json_payload.get('data', [])
+                            if data is not None:
+                                # Data Validation 1: Empty Dataset Check
+                                if len(data) == 0:
+                                    raise ValueError(f"Received structurally valid but empty dataset from {stream['name']}")
+
+                                latest_date = None
+                                for d in data:
+                                    if isinstance(d, dict):
+                                        # Data Validation 2: Key Fields Presence
+                                        if 'secVal' not in d and 'secAcq' not in d:
+                                            raise ValueError("Missing critical fields (secVal/secAcq) in NSE payload")
+
+                                        d['secVal'] = self.sanitize_float(d.get('secVal', 0))
+                                        d['secAcq'] = self.sanitize_float(d.get('secAcq', 0))
+
+                                        # Parse date for freshness check
+                                        d_date = d.get('date', d.get('anndate', ''))
+                                        if d_date:
+                                            try:
+                                                # NSE often uses DD-MMM-YYYY
+                                                pd_date = datetime.strptime(d_date[:11].strip(), "%d-%b-%Y")
+                                                if latest_date is None or pd_date > latest_date:
+                                                    latest_date = pd_date
+                                            except: pass
+
+                                # Freshness Check
+                                if latest_date:
+                                    if (datetime.now() - latest_date).days > 14:
+                                        logger.warning(f"Data from {stream['name']} is stale (latest record > 14 days old).")
+
+                                # [ARCHITECTURAL PLACEHOLDER: CACHED FALLBACK]
+                                # if cache is active and we failed live rules: return cached_data
+
+                                return data
                     else:
-                        bse_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Origin": "https://www.bseindia.com", "Referer": "https://www.bseindia.com/", "Accept": "application/json"}
-                        r = self.session.get(stream["url"], params=bse_params, headers=bse_headers, timeout=15)
+                        # BSE Fallback using urllib to avoid curl_cffi redirect loops
+                        import urllib.request
+                        bse_url = f"{stream['url']}?strpdt={bse_params['strpdt']}&strfdt={bse_params['strfdt']}"
+                        bse_headers = {
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                            "Accept": "application/json",
+                            "Origin": "https://www.bseindia.com",
+                            "Referer": "https://www.bseindia.com/"
+                        }
+                        req = urllib.request.Request(bse_url, headers=bse_headers)
+                        with urllib.request.urlopen(req, timeout=15) as response:
+                            if response.status == 200:
+                                try:
+                                    json_payload = json.loads(response.read().decode())
+                                except ValueError:
+                                    raise ValueError(f"Invalid JSON Structure from {stream['name']}")
+                                except Exception as json_e:
+                                    raise ValueError(f"Failed parsing BSE fallback response: {json_e}")
 
-                    if getattr(r, 'status_code', 0) == 200:
-                        try:
-                            json_obj = r.json()
-                            if "nse" in stream["name"]:
-                                data = json_obj.get('data', [])
-                            else:
-                                data = json_obj.get('Table', []) if isinstance(json_obj, dict) else json_obj
-                        except ValueError:
-                            # Not a valid JSON response (e.g. WAF block, HTML response from BSE)
-                            time.sleep(2)
-                            continue
+                                data = json_payload.get('Table', []) if isinstance(json_payload, dict) else json_payload
 
-                        # If we get a valid empty list, we return it immediately instead of retrying
-                        if data is not None:
-                            for d in data:
-                                # Ensure d is a dict to avoid TypeError if data is a list of strings
-                                if isinstance(d, dict):
-                                    d['secVal'] = self.sanitize_float(d.get('secVal', d.get('ValueofSecurityAcq', 0)))
-                                    d['secAcq'] = self.sanitize_float(d.get('secAcq', d.get('NoOfSecuritiesAcq', 0)))
-                            return data
+                                if data is not None:
+                                    # Data Validation 1: Empty Dataset Check
+                                    if not isinstance(data, list) or len(data) == 0:
+                                        raise ValueError(f"Received structurally valid but empty dataset from {stream['name']}")
+
+                                    latest_date = None
+                                    for d in data:
+                                        if isinstance(d, dict):
+                                            # Data Validation 2: Key Fields Presence
+                                            if 'ValueofSecurityAcq' not in d and 'NoOfSecuritiesAcq' not in d:
+                                                raise ValueError("Missing critical fields (secVal/secAcq equivalents) in BSE payload")
+
+                                            d['secVal'] = self.sanitize_float(d.get('ValueofSecurityAcq', 0))
+                                            d['secAcq'] = self.sanitize_float(d.get('NoOfSecuritiesAcq', 0))
+
+                                            # Parse date for freshness check
+                                            d_date = d.get('DissemDT', '')
+                                            if d_date:
+                                                try:
+                                                    # BSE uses YYYY-MM-DDTHH:MM:SS
+                                                    pd_date = datetime.strptime(d_date[:10].strip(), "%Y-%m-%d")
+                                                    if latest_date is None or pd_date > latest_date:
+                                                        latest_date = pd_date
+                                                except: pass
+
+                                    # Freshness Check
+                                    if latest_date:
+                                        if (datetime.now() - latest_date).days > 14:
+                                            logger.warning(f"Data from {stream['name']} is stale (latest record > 14 days old).")
+
+                                    # [ARCHITECTURAL PLACEHOLDER: CACHED FALLBACK]
+                                    # If cache is valid and we failed all live requests, return cached data here:
+                                    # cached_data = self._get_insider_cache()
+                                    # if cached_data: return cached_data
+
+                                    return data
 
                     time.sleep(2)
                 except Exception as e:
                     logger.error(f'Unexpected error in {stream["name"]}: {e}')
                     time.sleep(2)
-        return []
+
+        # Hard Failure: Prevent Silent Data Corruption
+        logger.error("All insider trading fetch attempts failed (Primary and Fallbacks).")
+        raise RuntimeError("CRITICAL: Failed to fetch insider trades from all configured sources. Halting pipeline to prevent silent data corruption.")
 
     def fetch_large_deals_v2(self):
         streams = self.registry.get("data_streams", {}).get("institutional_tracking", [])
