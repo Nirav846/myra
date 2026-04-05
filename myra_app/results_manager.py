@@ -5,6 +5,7 @@ from datetime import datetime
 from rich.table import Table
 from rich.console import Console
 from .institutional_pipe import InstitutionalPipe
+from myra_app.strategies.alpha.position_sizer import VolatilityAdjustedSizer, KellySizer
 
 try:
     import matplotlib.pyplot as plt
@@ -617,8 +618,6 @@ class ResultsManager:
 
             # Institutional Position Sizing (Plan 1 Closing)
             try:
-                from myra_app.strategies.alpha.position_sizer import VolatilityAdjustedSizer, KellySizer
-                
                 # 1. Kelly Allocation (Strategy Edge)
                 acc_str = str(r.get("Accuracy", "50%")).replace("%", "")
                 win_rate = float(acc_str)/100.0 if acc_str.isdigit() else 0.5
