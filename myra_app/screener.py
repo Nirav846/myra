@@ -115,7 +115,9 @@ class MYRAScreener:
         last_bhav = self.lib.get_max_price_date()
         last_insider = self.lib.get_max_insider_date()
         
-        expected = self.lib.get_expected_trading_day(now)
+        expected_raw = self.lib.get_expected_trading_day(now)
+        from myra_core.utils.date_utils import to_date
+        expected = to_date(expected_raw)
             
         status_table = Table.grid(padding=(0, 1))
         status_table.add_column(style="dim")
@@ -126,7 +128,7 @@ class MYRAScreener:
         bhav_str = f"{last_bhav}"
         if last_bhav:
             try:
-                lb_dt = datetime.strptime(last_bhav, "%Y-%m-%d").date()
+                lb_dt = to_date(last_bhav)
                 if lb_dt < expected: bhav_str += " [bold red]❌ (Delayed)[/]"
                 else: bhav_str += " [bold green]✅[/]"
             except: pass
@@ -135,7 +137,7 @@ class MYRAScreener:
         insider_str = f"{last_insider}"
         if last_insider:
             try:
-                li_dt = datetime.strptime(last_insider, "%Y-%m-%d").date()
+                li_dt = to_date(last_insider)
                 if li_dt < expected: insider_str += " [bold yellow]🟡[/]"
                 else: insider_str += " [bold green]✅[/]"
             except: pass
@@ -144,7 +146,7 @@ class MYRAScreener:
         mode = "NORMAL"
         if last_bhav:
             try:
-                lb_dt = datetime.strptime(last_bhav, "%Y-%m-%d").date()
+                lb_dt = to_date(last_bhav)
                 if lb_dt < expected: mode = "[bold yellow]STALE DATA MODE[/]"
             except: pass
             
@@ -160,20 +162,19 @@ class MYRAScreener:
         self.display_data_status()
 
         # 1. SMART SYNC: Only sync if missing relevant data
-        last_import = self.lib.get_max_price_date()
+        last_import_raw = self.lib.get_max_price_date()
+        from myra_core.utils.date_utils import to_date
+        last_import = to_date(last_import_raw) if last_import_raw else None
+        
         import datetime as _dt
         now = _dt.datetime.now()
-        expected_date = self.lib.get_expected_trading_day(now)
+        expected_date_raw = self.lib.get_expected_trading_day(now)
+        expected_date = to_date(expected_date_raw)
             
         needs_sync = False
         if not last_import:
             needs_sync = True
         else:
-            if isinstance(last_import, str):
-                try:
-                    last_import = datetime.strptime(last_import, "%Y-%m-%d").date()
-                except: pass
-            
             if last_import < expected_date:
                 last_check_str = self.lib.get_metadata("last_sync_check") or "1900-01-01 00:00:00"
                 last_check = datetime.strptime(last_check_str, "%Y-%m-%d %H:%M:%S")
