@@ -115,18 +115,13 @@ class MYRAScreener:
         last_bhav = self.lib.get_max_price_date()
         last_insider = self.lib.get_max_insider_date()
         
-        # Calculate expected date (simplified)
-        today = now.date()
-        if today.weekday() < 5:
-            expected = today if now.hour >= 18 else today - pd.Timedelta(days=1)
-        else:
-            expected = today - pd.Timedelta(days=today.weekday() - 4)
+        expected = self.lib.get_expected_trading_day(now)
             
         status_table = Table.grid(padding=(0, 1))
         status_table.add_column(style="dim")
         status_table.add_column()
         
-        status_table.add_row("Expected:", str(expected))
+        status_table.add_row("Expected (Trading Day):", str(expected))
         
         bhav_str = f"{last_bhav}"
         if last_bhav:
@@ -168,15 +163,8 @@ class MYRAScreener:
         last_import = self.lib.get_max_price_date()
         import datetime as _dt
         now = _dt.datetime.now()
-        today = now.date()
         
-        # Calculate the latest date we SHOULD have data for
-        is_after_market = now.hour > 18 or (now.hour == 18 and now.minute >= 30)
-        if today.weekday() < 5: # Mon-Fri
-            expected_date = today if is_after_market else today - pd.Timedelta(days=1)
-        else: # Sat-Sun
-            days_to_friday = (today.weekday() - 4)
-            expected_date = today - pd.Timedelta(days=days_to_friday)
+        expected_date = self.lib.get_expected_trading_day(now)
             
         needs_sync = False
         if not last_import:
