@@ -59,15 +59,20 @@ def mass_backfill(db_path="technical.db", missing_csv="missing_data.csv"):
                     data.columns = data.columns.get_level_values(0)
                 data.reset_index(inplace=True)
                 
-                records = []
-                for _, row in data.iterrows():
-                    d_str = row['Date'].strftime("%Y-%m-%d")
-                    if d_str in set(sym_gaps['missing_date']):
-                        records.append((
-                            symbol, d_str,
-                            float(row['Open']), float(row['High']), float(row['Low']), float(row['Close']),
-                            int(row['Volume']), None, None, float(row['Close']), None, None
-                        ))
+                missing_set = set(sym_gaps['missing_date'])
+                d_strs = data['Date'].dt.strftime("%Y-%m-%d")
+                mask = d_strs.isin(missing_set)
+                filtered_data = data[mask].copy()
+                filtered_data['d_str'] = d_strs[mask]
+
+                records = [
+                    (
+                        symbol, row.d_str,
+                        float(row.Open), float(row.High), float(row.Low), float(row.Close),
+                        int(row.Volume), None, None, float(row.Close), None, None
+                    )
+                    for row in filtered_data.itertuples(index=False)
+                ]
                 
                 if records:
                     cursor.executemany("""
