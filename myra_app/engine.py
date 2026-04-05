@@ -346,7 +346,8 @@ class Engine:
         if not lib.conn: lib.connect()
         
         # 0. HOLIDAY SHORT-CIRCUIT (Fix 21)
-        target_date = datetime.strptime(as_of_date, "%Y-%m-%d").date() if as_of_date else date.today()
+        from myra_core.utils.date_utils import to_date
+        target_date = to_date(as_of_date) if as_of_date else date.today()
         from myra_app.fetcher import DataFetcher
         fetcher = DataFetcher() # Lightweight check
         if fetcher._is_holiday(target_date):
