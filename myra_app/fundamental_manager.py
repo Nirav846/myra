@@ -108,9 +108,8 @@ class FundamentalManager:
                     placeholders = ", ".join(["?" for _ in cols])
                     col_names = ", ".join(cols)
                     
-                    values = [symbol_clean]
-                    for c in cols[1:]:
-                        values.append(row.get(c))
+                    # Fix 113: Avoid .append in loop
+                    values = [symbol_clean] + [row.get(c) for c in cols[1:]]
 
                     query = f"INSERT OR REPLACE INTO quarterly_results ({col_names}) VALUES ({placeholders})"
                     v_conn.execute(query, values)
@@ -150,7 +149,7 @@ class FundamentalManager:
                     book_value = EXCLUDED.book_value,
                     market_cap = COALESCE(EXCLUDED.market_cap, fundamentals.market_cap),
                     last_updated = EXCLUDED.last_updated
-            """, (symbol_clean, pe, roe, eps, bv, mcap, date.today().strftime("%Y-%m-%d")))
+            """, (symbol_clean, pe, roe, eps, bv, mcap, date.today().isoformat()))
             
             v_conn.commit()
             
@@ -158,7 +157,7 @@ class FundamentalManager:
             m_conn = self._get_meta_conn()
             try:
                 m_conn.execute("UPDATE symbols_master SET last_fundamental_update = ? WHERE symbol = ?", 
-                               (date.today().strftime("%Y-%m-%d"), symbol_clean))
+                               (date.today().isoformat(), symbol_clean))
                 m_conn.commit()
             finally:
                 m_conn.close()
