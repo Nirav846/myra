@@ -56,10 +56,10 @@ results/*_cookies.pkl
 .agents/
 .gemini/
 .geminiignore
-GEMINI.md
-conductor/
-memory/
-superpowers/
+# GEMINI.md (Tracked for agent synchronization)
+# conductor/
+# memory/
+# superpowers/
 *_plan.md
 AEON_Audit_*.csv
 MYRA_AI_READY.txt
