@@ -35,21 +35,24 @@ class FundamentalRanker:
         
         try:
             cursor = conn_sq.cursor()
-            today = date.today().strftime("%Y-%m-%d")
+            # Fix 38: Use .isoformat()
+            today = date.today().isoformat()
             
-            records = []
-            for _, row in df.iterrows():
-                score = row['Funda_Score']
+            # Optimized with list comprehension (Fix 41, 44: Avoid .append in loop)
+            def _to_record(row):
+                score = row.Funda_Score
                 grade = 'A' if score >= 70 else 'B' if score >= 50 else 'C' if score >= 30 else 'D'
-                records.append((
-                    row['Stock'], today, 
-                    float(row.get('Rev_Growth_Per', 0)), 
-                    float(row.get('ROE', 0)), 
+                return (
+                    row.Stock, today, 
+                    float(getattr(row, 'Rev_Growth_Per', 0)), 
+                    float(getattr(row, 'ROE', 0)), 
                     0.0, # stability placeholder
-                    float(row.get('Pledge_Pct', 0)),
+                    float(getattr(row, 'Pledge_Pct', 0)),
                     float(score),
                     grade
-                ))
+                )
+
+            records = [_to_record(row) for row in df.itertuples(index=False)]
             
             cursor.executemany("""
                 INSERT OR REPLACE INTO fundamental_scores 
