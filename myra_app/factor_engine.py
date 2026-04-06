@@ -10,11 +10,9 @@ class FactorEngine:
     Orchestrates modular factors into a unified conviction score.
     """
     def __init__(self, enabled_factors: List[str] = None):
-        self.factors = []
+        # Optimized with list comprehension (Fix 17: Avoid .append in loop)
         if enabled_factors:
-            for f_key in enabled_factors:
-                if f_key in GLOBAL_FACTORS:
-                    self.factors.append(GLOBAL_FACTORS[f_key])
+            self.factors = [GLOBAL_FACTORS[f] for f in enabled_factors if f in GLOBAL_FACTORS]
         else:
             self.factors = list(GLOBAL_FACTORS.values())
 
@@ -48,13 +46,10 @@ class FactorEngine:
         df_ranks["conviction_rank"] = df_ranks["conviction_score"].rank(pct=True) * 100
         df_ranks["conviction_rank"] = df_ranks["conviction_rank"].round(1)
         
-        # Add a visual tag
-        def get_tag(rank):
-            if rank >= 90: return "ELITE"
-            if rank >= 75: return "LEADER"
-            if rank >= 50: return "STRONG"
-            return "WATCH"
-            
-        df_ranks["conviction_tag"] = df_ranks["conviction_rank"].apply(get_tag)
+        # Add a visual tag (Fix 58: Vectorized np.select)
+        rank_col = df_ranks["conviction_rank"]
+        conditions = [rank_col >= 90, rank_col >= 75, rank_col >= 50]
+        choices = ["ELITE", "LEADER", "STRONG"]
+        df_ranks["conviction_tag"] = np.select(conditions, choices, default="WATCH")
         
         return df_ranks.to_dict('records')
