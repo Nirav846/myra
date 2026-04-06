@@ -76,16 +76,12 @@ def ingest_bhavcopies(csv_folder, db_path="db/technical.db", batch_size=5000):
                 continue
             
             # Convert DATE1 (DD-MMM-YYYY or similar) to YYYY-MM-DD
-            def parse_date(d_str):
-                if pd.isna(d_str):
-                    return None
-                try:
-                    # Example: 20-Mar-2026 -> 2026-03-20
-                    return datetime.strptime(str(d_str).strip(), "%d-%b-%Y").strftime("%Y-%m-%d")
-                except:
-                    return str(d_str) # Already in right format?
+            # Optimized with vectorized pd.to_datetime (Fix 84, 88: Avoid .apply and .strftime)
+            if 'date' in df.columns:
+                df['date_dt'] = pd.to_datetime(df['date'].astype(str).str.strip(), format='%d-%b-%Y', errors='coerce')
+                df['date'] = df['date_dt'].dt.date.astype(str).where(df['date_dt'].notna(), df['date'])
+                df.drop(columns=['date_dt'], inplace=True)
             
-            df['date'] = df['date'].apply(parse_date)
             # Drop rows with missing date
             df = df.dropna(subset=['date'])
             
@@ -104,8 +100,9 @@ def ingest_bhavcopies(csv_folder, db_path="db/technical.db", batch_size=5000):
 
             # Derived Column: delivery_ratio
             if 'delivery' in df.columns and 'volume' in df.columns:
-                # Ensure they are numeric (redundant but safe)
-                df['delivery_ratio'] = df.apply(lambda x: float(x['delivery']) / float(x['volume']) if float(x['volume']) > 0 else 0, axis=1)
+                # Optimized with vectorized division (Fix 108: Avoid .apply)
+                df['delivery_ratio'] = (df['delivery'] / df['volume']).fillna(0)
+                df.loc[df['volume'] <= 0, 'delivery_ratio'] = 0
             else:
                 df['delivery_ratio'] = 0
                 
