@@ -46,33 +46,29 @@ def generate_calendar(db_path="calendar.db", start_year=2021, end_year=2026):
     
     start_date = datetime(start_year, 1, 1)
     end_date = datetime(end_year, 12, 31)
-    current_date = start_date
     
-    records = []
-    while current_date <= end_date:
-        d_str = current_date.strftime("%Y-%m-%d")
-        mm_dd = current_date.strftime("%m-%d")
+    # Optimized with list comprehension (Fix 53, 54, 74: Avoid .append in loop)
+    def _is_holiday(dt):
+        d_str = dt.date().isoformat()
+        mm_dd = f"{dt.month:02d}-{dt.day:02d}"
         
         is_trading = 1
         holiday = None
         
-        # 1. Weekends
-        if current_date.weekday() >= 5: # Saturday=5, Sunday=6
+        if dt.weekday() >= 5:
             is_trading = 0
             holiday = "Weekend"
-        
-        # 2. Fixed Holidays
         elif mm_dd in fixed_holidays:
             is_trading = 0
             holiday = fixed_holidays[mm_dd]
-            
-        # 3. Variable Holidays
         elif d_str in variable_holidays:
             is_trading = 0
             holiday = "Market Holiday"
             
-        records.append((d_str, is_trading, holiday))
-        current_date += timedelta(days=1)
+        return (d_str, is_trading, holiday)
+
+    num_days = (end_date - start_date).days + 1
+    records = [_is_holiday(start_date + timedelta(days=i)) for i in range(num_days)]
         
     cursor.executemany("INSERT OR REPLACE INTO market_calendar VALUES (?, ?, ?)", records)
     conn.commit()
