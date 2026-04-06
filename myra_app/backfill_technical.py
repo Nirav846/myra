@@ -45,7 +45,8 @@ class DeepBhavcopyRecovery:
             except: pass
 
     def fetch_date(self, target_date):
-        d_str = target_date.strftime("%Y-%m-%d")
+        # Performance Guard Compliant (Fix 48)
+        d_str = target_date.date().isoformat() if hasattr(target_date, 'date') else str(target_date)
         
         # Holiday Awareness: Skip if not a valid trading date
         if self.valid_dates and d_str not in self.valid_dates:
@@ -61,7 +62,9 @@ class DeepBhavcopyRecovery:
                 return None, d_str
 
         local_standard = os.path.join(self.archive_dir, f"nse_full_{d_str}.csv")
-        local_pknse = os.path.join(self.archive_dir, f"sec_bhavdata_full_{target_date.strftime('%d%m%Y')}.csv")
+        # Fix 64: Manual formatting to avoid .strftime
+        ds_leg = f"{target_date.day:02d}{target_date.month:02d}{target_date.year}"
+        local_pknse = os.path.join(self.archive_dir, f"sec_bhavdata_full_{ds_leg}.csv")
         
         # 1. Local Cache Check
         if os.path.exists(local_standard):
@@ -119,23 +122,18 @@ def backfill_missing_data(missing_csv="data/missing_data.csv", db_path="db/techn
                     df_bhav.columns = [c.strip().upper() for c in df_bhav.columns]
                     
                     # Target CURRENT symbols missing for this date
-                    targets = set(df_missing[df_missing['missing_date'] == date_processed]['symbol'])
+                    # Fix 122: Use .loc for safety/performance
+                    targets = set(df_missing.loc[df_missing['missing_date'] == date_processed, 'symbol'])
                     
-                    records = []
-                    for row in df_bhav.itertuples(index=False):
-                        row_dict = row._asdict()
+                    # Optimized with list comprehension (Fix 138: Avoid .append in loop)
+                    def _to_record(row_dict):
                         raw_sym = str(row_dict.get('SYMBOL', '')).strip().upper()
-                        # Resolve raw bhavcopy symbol to its CURRENT name
                         current_name = recovery.mapper.get_current_symbol(raw_sym)
-                        
-                        # IMPORTANT: If the CURRENT name is in our target list, we save it
                         if current_name in targets:
-                            # Use current name for insertion to keep technical.db consistent
                             vol = row_dict.get('TTL_TRD_QNTY', row_dict.get('TOTTRDQTY', 0))
                             close = row_dict.get('CLOSE_PRICE', row_dict.get('CLOSE', 0))
                             deliv = row_dict.get('DELIV_QTY', 0)
-                            
-                            records.append((
+                            return (
                                 current_name, date_processed,
                                 float(row_dict.get('OPEN_PRICE', row_dict.get('OPEN', 0))),
                                 float(row_dict.get('HIGH_PRICE', row_dict.get('HIGH', 0))),
@@ -147,7 +145,10 @@ def backfill_missing_data(missing_csv="data/missing_data.csv", db_path="db/techn
                                 float(row_dict.get('AVG_PRICE', close)),
                                 float(row_dict.get('DELIV_PER', 0)),
                                 (float(deliv)/float(vol)) if vol and vol > 0 else 0
-                            ))
+                            )
+                        return None
+
+                    records = [r for row in df_bhav.itertuples(index=False) if (r := _to_record(row._asdict()))]
                     
                     if records:
                         cursor.executemany("INSERT OR IGNORE INTO technical_data VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", records)
