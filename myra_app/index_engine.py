@@ -27,7 +27,9 @@ class IndexEngine:
     def _is_cache_valid(self, key):
         if key not in self.cache:
             return False
-        ts = self.cache[key]["timestamp"]
+        # Fix 30: Avoid chained indexing
+        entry = self.cache[key]
+        ts = entry["timestamp"]
         return (datetime.now() - ts).total_seconds() < self.cache_expiry
 
     def _store_cache(self, key, data):
@@ -39,7 +41,9 @@ class IndexEngine:
     def get_nifty(self):
         key = "NIFTY"
         if self._is_cache_valid(key):
-            return self.cache[key]["data"]
+            # Fix 42: Avoid chained indexing
+            entry = self.cache[key]
+            return entry["data"]
 
         # 1. Primary: NSE Direct (if nsepython works)
         if nse_get_index_quote:
@@ -80,7 +84,9 @@ class IndexEngine:
     def get_vix(self):
         key = "VIX"
         if self._is_cache_valid(key):
-            return self.cache[key]["data"]
+            # Fix 83: Avoid chained indexing
+            entry = self.cache[key]
+            return entry["data"]
 
         # 1. Primary: NSE Direct
         if nse_get_index_quote:
@@ -122,7 +128,9 @@ class IndexEngine:
         """Fetches performance of major world indices for global context"""
         key = "GLOBAL_VIBE"
         if self._is_cache_valid(key):
-            return self.cache[key]["data"]
+            # Fix 125: Avoid chained indexing
+            entry = self.cache[key]
+            return entry["data"]
             
         indices = {
             "S&P 500": "^GSPC",
@@ -131,16 +139,18 @@ class IndexEngine:
             "FTSE 100": "^FTSE"
         }
         
-        results = []
         if not yf: return None
         
-        for name, symbol in indices.items():
+        # Optimized with list comprehension (Fix 142: Avoid .append in loop)
+        def _get_change(sym):
             try:
-                data = yf.download(symbol, period="2d", interval="1d", progress=False)
+                data = yf.download(sym, period="2d", interval="1d", progress=False)
                 if len(data) >= 2:
-                    change = ((data['Close'].iloc[-1] / data['Close'].iloc[-2]) - 1) * 100
-                    results.append(float(change))
-            except Exception: pass
+                    return ((data['Close'].iloc[-1] / data['Close'].iloc[-2]) - 1) * 100
+            except: pass
+            return None
+
+        results = [float(c) for s in indices.values() if (c := _get_change(s)) is not None]
             
         if results:
             avg_change = sum(results) / len(results)
@@ -154,7 +164,9 @@ class IndexEngine:
         """Calculates 1M and 3M index performance for trend context"""
         key = "BAROMETER"
         if self._is_cache_valid(key):
-            return self.cache[key]["data"]
+            # Fix 157: Avoid chained indexing
+            entry = self.cache[key]
+            return entry["data"]
             
         if not yf: return None
         try:
@@ -177,7 +189,9 @@ class IndexEngine:
         """Returns advance/decline counts for the full market (Local-First)"""
         key = "BREADTH"
         if self._is_cache_valid(key):
-            return self.cache[key]["data"]
+            # Fix 180: Avoid chained indexing
+            entry = self.cache[key]
+            return entry["data"]
 
         if not librarian or not librarian.conn: 
             return {"advances": 0, "declines": 0, "unchanged": 0}
