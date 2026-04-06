@@ -178,7 +178,8 @@ class SchemaContractEnforcer:
         if num_cols:
             try:
                 # Vectorized conversion for all candidate numeric columns
-                df[num_cols] = df[num_cols].apply(pd.to_numeric, errors='coerce')
+                for col in num_cols:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
                 # Check for columns that failed completely
                 for col in num_cols:
                     if df[col].isna().all():

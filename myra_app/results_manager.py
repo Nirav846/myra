@@ -49,12 +49,9 @@ class ResultsManager:
         """Removes unknown or broken data points and applies Global 'Best First' Ranking."""
         if not results: return []
         
-        clean = []
-        for r in results:
-            if not r.get("Stock") or r.get("LTP") == "-" or r.get("LTP") is None:
-                continue
-            clean.append(r)
-            
+        # Avoid .append() in loop - Use list comprehension for batch processing
+        clean = [r for r in results if r.get("Stock") and r.get("LTP") != "-" and r.get("LTP") is not None]
+        
         if not clean: return []
         
         # Apply Global Ranking (NewUI.TXT Specification)
@@ -80,42 +77,38 @@ class ResultsManager:
             df['_star_rank'] = df['Stars'].astype(str).str.count(r'\*').fillna(0)
             
             # 3. AEON Conviction Rank
-            def _aeon_rank(val):
-                val = str(val)
-                if "CONVICTION" in val: return 0
-                if "CORE" in val: return 1
-                if "TACTICAL" in val: return 2
-                if "EXIT" in val: return 3
-                return 4
-            
-            df['_aeon_rank'] = df['AEON_Conviction'].apply(_aeon_rank) if 'AEON_Conviction' in df.columns else 4
+            if 'AEON_Conviction' in df.columns:
+                aeon_col = df['AEON_Conviction'].astype(str)
+                conditions = [
+                    aeon_col.str.contains("CONVICTION"),
+                    aeon_col.str.contains("CORE"),
+                    aeon_col.str.contains("TACTICAL"),
+                    aeon_col.str.contains("EXIT")
+                ]
+                choices = [0, 1, 2, 3]
+                df['_aeon_rank'] = np.select(conditions, choices, default=4)
+            else:
+                df['_aeon_rank'] = 4
             
             # 4. Clean Money Flow for numeric sort
-            def _clean_money_flow(val):
-                val = str(val).replace('₹', '').replace('Cr', '').replace(',', '')
-                try: return float(val)
-                except: return 0.0
-                
             mf_key = 'Money_Flow' if 'Money_Flow' in df.columns else 'Money Flow'
-            df['_mf_rank'] = df[mf_key].apply(_clean_money_flow) if mf_key in df.columns else 0.0
+            if mf_key in df.columns:
+                df['_mf_rank'] = pd.to_numeric(df[mf_key].astype(str).str.replace('[₹,Cr]', '', regex=True), errors='coerce').fillna(0.0)
+            else:
+                df['_mf_rank'] = 0.0
             
             # 5. Hybrid Institutional Ranking (PKScreener Superpower)
             # Priority: AEON -> Anomaly + RDV Bonus -> Stage -> Stars -> Liquidity
-            df['_anom_rank'] = df['Anomaly_Score'].astype(float) if 'Anomaly_Score' in df.columns else 0.0
+            df['_anom_rank'] = pd.to_numeric(df['Anomaly_Score'], errors='coerce').fillna(0.0) if 'Anomaly_Score' in df.columns else 0.0
             
             # TURNAROUND BONUS: If RDV is very high (> 3.0), boost the Anomaly rank
             # This ensures stocks like ONESOURCE float to the top
-            def _calc_inst_bonus(row):
-                bonus = 0.0
-                try:
-                    rdv = float(row.get('RDV', 0))
-                    if rdv > 5.0: bonus += 0.5
-                    elif rdv > 3.0: bonus += 0.3
-                    elif rdv > 1.5: bonus += 0.1
-                except: pass
-                return row.get('_anom_rank', 0) + bonus
-                
-            df['_inst_score'] = df.apply(_calc_inst_bonus, axis=1)
+            df['_inst_score'] = df['_anom_rank']
+            if 'RDV' in df.columns:
+                rdv_col = pd.to_numeric(df['RDV'], errors='coerce').fillna(0.0)
+                bonus_conditions = [rdv_col > 5.0, rdv_col > 3.0, rdv_col > 1.5]
+                bonus_choices = [0.5, 0.3, 0.1]
+                df['_inst_score'] += np.select(bonus_conditions, bonus_choices, default=0.0)
             
             # 6. Sort Everything
             sort_cols = ['_aeon_rank', '_inst_score', '_stage_rank', '_star_rank', '_mf_rank']
@@ -129,13 +122,18 @@ class ResultsManager:
             # If ranking fails, return original to avoid losing data
             return df
 
-    def archive_results(self, results: list, scan_name: str):
+    def archive_results(self, results: list, scan_name: str, strategy_id: str = None):
         """Saves final scan results to CSV, builds AI Prompt, and caches for instant recall."""
         if not results: return None
         try:
             df = pd.DataFrame(results)
             # Cache for instant recall (The PKScreener superpower)
             df.to_pickle(os.path.join(self.report_dir, "last_results.pkl"))
+            
+            # Save strategy-specific snapshot for holiday recovery (Fix 21)
+            if strategy_id:
+                snap_path = os.path.join(self.report_dir, f"scan_{strategy_id}.csv")
+                df.to_csv(snap_path, index=False)
             
             # Remove Rich Tags for CSV/HTML
             for col in df.columns:
@@ -220,46 +218,60 @@ class ResultsManager:
         ]
         
         for r in top_candidates[:15]: 
-            sym = r.get("Stock", "Unknown")
-            sym = str(sym).replace('[black on cyan]', '').replace('[/black on cyan]', '').replace('[bold yellow]', '').replace('[/bold yellow]', '')
+            sym = str(r.get("Stock", "Unknown")).replace('[black on cyan]', '').replace('[/black on cyan]', '').replace('[bold yellow]', '').replace('[/bold yellow]', '')
             
             # Institutional DNA
             dna = f"LTP: {r.get('LTP','-')}, Stage: {r.get('Stage','-')}, MCap: {r.get('MCap','UNKNOWN')}, SM_Score: {r.get('smart_money_score',0)}"
             
-            # Gather special footprints
+            # Gather special footprints (Fix 230-245: Avoid .append in loop)
+            avg_buy = r.get("avg_buy_60d")
+            ltp_val = float(str(r.get("LTP", 0)).replace(',','')) if str(r.get("LTP")).replace('.','').replace(',','').isdigit() else 0
+            
+            # Use list comprehension to build entire footprints list in one go
             footprints = []
-            if r.get("avg_buy_60d") and r.get("avg_buy_60d") != 0:
-                footprints.append(f"Insider Cost Basis: {r['avg_buy_60d']}")
-                if float(r.get("LTP", 0)) < float(r["avg_buy_60d"]):
-                    footprints.append("**UNDERWATER ENTRY SIGNAL**")
+            if avg_buy and avg_buy != 0:
+                footprints = [f"Insider Cost Basis: {avg_buy}"]
+                if ltp_val < float(avg_buy):
+                    footprints = footprints + ["**UNDERWATER ENTRY SIGNAL**"]
             
-            if r.get("Compression") == "YES": footprints.append("Volatility Compression (VCP) Active")
-            if r.get("Divergence") == "YES": footprints.append("Bullish RSI Divergence (Coiled Spring)")
-            if r.get("VWAP_Reclaim") == "YES": footprints.append("Institutional VWAP Reclaim (In-the-Money)")
-            if r.get("RS_Raw"): footprints.append(f"Relative Strength (RS): {r['RS_Raw']}")
-            if r.get("Support"): footprints.append(f"Structural Support: {r['Support']}")
-            if r.get("Delivery"): footprints.append(f"Institutional Delivery: {r['Delivery']} (RDV: {r.get('RDV','-')})")
+            # Vectorized flags
+            flags = [
+                ("Compression", "YES", "Volatility Compression (VCP) Active"),
+                ("Divergence", "YES", "Bullish RSI Divergence (Coiled Spring)"),
+                ("VWAP_Reclaim", "YES", "Institutional VWAP Reclaim (In-the-Money)"),
+                ("Weekly_Div", "YES", "Bullish Weekly RSI Divergence"),
+                ("CHoCH", "YES", "Structural Change of Character (CHoCH)")
+            ]
+            footprints.extend([msg for key, val, msg in flags if r.get(key) == val])
             
-            mb_status = r.get("Tag", r.get("Multibagger_Flag", "STANDARD"))
-            footprints.append(f"Profile: {mb_status}")
-            
-            if r.get("Weekly_Div") == "YES": footprints.append("Bullish Weekly RSI Divergence")
-            if r.get("CHoCH") == "YES": footprints.append("Structural Change of Character (CHoCH)")
-            
-            prompt.append(f"### {sym}")
-            prompt.append(f"- **Institutional DNA**: {dna}")
-            if footprints: prompt.append(f"- **Institutional Footprint**: {', '.join(footprints)}")
+            # Other conditional data points (Fix 246-252: Avoid .append in loop)
+            extra_footprints = [
+                f"Relative Strength (RS): {r['RS_Raw']}" if r.get("RS_Raw") else None,
+                f"Structural Support: {r['Support']}" if r.get("Support") else None,
+                f"Institutional Delivery: {r['Delivery']} (RDV: {r.get('RDV','-')})" if r.get("Delivery") else None,
+                f"Profile: {r.get('Tag', r.get('Multibagger_Flag', 'STANDARD'))}"
+            ]
+            footprints.extend([f for f in extra_footprints if f is not None])
             
             # Tactical Zone
             tactics = f"Entry: {r.get('Entry','-')}, SL: {r.get('SL_Final', r.get('SL','-'))}, T1: {r.get('T1','-')}, T2: {r.get('T2','-')}"
-            prompt.append(f"- **Tactical Plan**: {tactics}")
-            prompt.append("")
             
-        prompt.append("For each candidate, perform a cap-specific analysis:")
-        prompt.append("1. If Small/Midcap (<50k Cr): Evaluate 'Multibagger potential' based on scalability and float absorption.")
-        prompt.append("2. If Large Cap (>50k Cr): Focus on 'Institutional Turnaround' and steady-state trend expansion.")
-        prompt.append("3. If MCap UNKNOWN: Research MCap first to apply the correct framework above.")
-        prompt.append("4. Cross-Market Analysis: Sector correlation and Price-Volume anomalies in the last 5 days.")
+            # Batch append to prompt
+            prompt.extend([
+                f"### {sym}",
+                f"- **Institutional DNA**: {dna}",
+                f"- **Institutional Footprint**: {', '.join(footprints)}" if footprints else "- **Institutional Footprint**: None",
+                f"- **Tactical Plan**: {tactics}",
+                ""
+            ])
+            
+        prompt.extend([
+            "For each candidate, perform a cap-specific analysis:",
+            "1. If Small/Midcap (<50k Cr): Evaluate 'Multibagger potential' based on scalability and float absorption.",
+            "2. If Large Cap (>50k Cr): Focus on 'Institutional Turnaround' and steady-state trend expansion.",
+            "3. If MCap UNKNOWN: Research MCap first to apply the correct framework above.",
+            "4. Cross-Market Analysis: Sector correlation and Price-Volume anomalies in the last 5 days."
+        ])
         
         with open("MYRA_AI_READY.txt", "w", encoding="utf-8") as f:
             f.write("\n".join(prompt))
