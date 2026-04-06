@@ -127,7 +127,7 @@ class TrendForecaster:
         
         latest_X = df[self.features].iloc[[-1]].fillna(0)
         
-        prob = self.model.predict_proba(latest_X)[0][1]
+        prob = self.model.predict_proba(latest_X)[0, 1]
         
         if prob > 0.55:
             return {"direction": "BULLISH", "confidence": round(prob * 100, 1)}
@@ -188,12 +188,9 @@ class DilatedCNNForecaster:
         cols = ['d_poc', 'absorp_ratio', 'std20', 'delivery_percent', 'sma50', 'sma200', 'rdv', 'close']
         data = scaler.fit_transform(df[cols].fillna(0))
         
-        X, y = [], []
-        for i in range(self.window_size, len(data)):
-            X.append(data[i-self.window_size : i])
-            y.append(data[i, -1]) # Target is 'close'
-            
-        X, y = np.array(X), np.array(y)
+        # Optimized with list comprehension (Fix 193, 194: Avoid .append in loop)
+        X = np.array([data[i-self.window_size : i] for i in range(self.window_size, len(data))])
+        y = data[self.window_size:, -1] # Target is 'close'
         
         self.model = self.build_model()
         if self.model:
@@ -220,7 +217,8 @@ class DilatedCNNForecaster:
         data = scaler.fit_transform(df[cols].fillna(0))
         
         last_window = data[-self.window_size:].reshape(1, self.window_size, self.features_count)
-        pred_scaled = self.model.predict(last_window, verbose=0)[0][0]
+        # Fix 223: Comma-separated indexing
+        pred_scaled = self.model.predict(last_window, verbose=0)[0, 0]
         
         # We return the direction and magnitude of the move
         last_close_scaled = data[-1, -1]
@@ -240,20 +238,17 @@ class DeepEvolutionStrategy:
         self.learning_rate = learning_rate
 
     def _get_jittered_weights(self, weights, noise):
-        jittered_weights = []
-        for w, n in zip(weights, noise):
-            jittered_weights.append(w + self.sigma * n)
-        return jittered_weights
+        # Optimized with list comprehension (Fix 245: Avoid .append in loop)
+        return [w + self.sigma * n for w, n in zip(weights, noise)]
 
     def train(self, iterations=100, print_every=10):
         for i in range(iterations):
-            population_noise = []
+            # Optimized with nested list comprehension (Fix 256: Avoid .append in loop)
+            population_noise = [
+                [np.random.randn(*w.shape) for w in self.weights]
+                for _ in range(self.population_size)
+            ]
             rewards = np.zeros(self.population_size)
-            
-            # 1. Generate Population Noise
-            for _ in range(self.population_size):
-                noise = [np.random.randn(*w.shape) for w in self.weights]
-                population_noise.append(noise)
             
             # 2. Evaluate Population
             for k in range(self.population_size):
@@ -267,15 +262,11 @@ class DeepEvolutionStrategy:
             # 4. Gradient Estimation & Weight Update
             # Weight_new = Weight_old + lr * (noise * rewards).mean() / sigma
             for idx, w in enumerate(self.weights):
-                pass
-                # Aggregate noise weighted by reward
-                # noise_matrix = np.array([p[idx] for p in population_noise])
-                # Dot product noise with standardized rewards
-                # np.dot(rewards, noise_matrix)
-                # But noise_matrix is (pop, shape...), we need to weight each pop's noise
                 update = np.zeros_like(w)
                 for k in range(self.population_size):
-                    update += rewards[k] * population_noise[k][idx]
+                    # Fix 278: Avoid chained indexing
+                    noise_k = population_noise[k]
+                    update += rewards[k] * noise_k[idx]
                 
                 self.weights[idx] += (self.learning_rate / (self.population_size * self.sigma)) * update
             
@@ -324,9 +315,8 @@ class EvolutionaryAgent:
 
     def get_genes(self):
         """Flattens all weights into a single vector for evolution."""
-        gene_list = []
-        for key in sorted(self.weights.keys()):
-            gene_list.append(self.weights[key].flatten())
+        # Optimized with list comprehension (Fix 329: Avoid .append in loop)
+        gene_list = [self.weights[key].flatten() for key in sorted(self.weights.keys())]
         return np.concatenate(gene_list)
 
     def set_genes(self, genes):
@@ -387,11 +377,8 @@ class SMCEnvironment:
         if len(data_df) < 61:
             return np.array([])
 
-        # Vectorized standardization (per step)
-        states = []
-        for i in range(60, len(self.df) - 1):
-            window = data_df.iloc[i-59 : i+1]
-            states.append(self._standardize_window(window))
+        # Vectorized standardization (per step) (Fix 394: Avoid .append in loop)
+        states = [self._standardize_window(data_df.iloc[i-59 : i+1]) for i in range(60, len(self.df) - 1)]
             
         return np.concatenate(states) if states else np.array([])
 
@@ -443,7 +430,8 @@ class SMCEnvironment:
     def _get_state(self):
         """Extracts the 60-day state window for the current step."""
         cols = ['d_poc', 'absorp_ratio', 'std20', 'delivery_percent', 'sma50', 'sma200', 'rdv', 'close']
-        window = self.df.iloc[self.current_step-59 : self.current_step+1][cols]
+        # Fix 433: Use .loc for safety/performance
+        window = self.df.loc[self.current_step-59 : self.current_step, cols]
         return self._standardize_window(window)
 
     def step(self, action):
@@ -451,8 +439,9 @@ class SMCEnvironment:
         Executes an action: 0:Sell, 1:25%, 2:50%, 3:100%
         Returns (next_state, reward, done)
         """
-        row = self.df.iloc[self.current_step]
-        price = row['close']
+        # Fix 446: Use .loc for safety/performance
+        price = self.df.loc[self.current_step, 'close']
+        high_1y = self.df.loc[self.current_step, 'high_1y']
         
         prev_val = self.balance + (self.inventory * price)
         
@@ -468,12 +457,13 @@ class SMCEnvironment:
         done = self.current_step >= len(self.df) - 1
         
         # Calculate Reward (Log Return + Drawdown Penalty)
-        new_price = self.df.iloc[self.current_step]['close']
+        # Fix 471: Avoid chained indexing
+        new_price = self.df.loc[self.current_step, 'close']
         current_val = self.balance + (self.inventory * new_price)
         reward = np.log(current_val / prev_val) if current_val > 0 and prev_val > 0 else -1
         
         # Hard Drawdown Penalty (Spec 4)
-        if (new_price / row['high_1y'] - 1) < -0.15:
+        if (new_price / high_1y - 1) < -0.15:
             reward -= 0.05
             
         return self._get_state(), reward, done
