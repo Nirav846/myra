@@ -182,10 +182,9 @@ class DataAdapter:
             if 'RSI' not in df.columns:
                 missing_ta.append({"kind": "rsi", "length": 14})
 
-            for length in [20, 50, 150, 200]:
-                if f'sma{length}' not in df.columns:
-                    missing_ta.append({"kind": "sma", "length": length})
-
+            # Vectorized detection for SMA and ATR
+            missing_ta.extend([{"kind": "sma", "length": length} for length in [20, 50, 150, 200] if f'sma{length}' not in df.columns])
+            
             if 'atr20' not in df.columns:
                 missing_ta.append({"kind": "atr", "length": 20})
 

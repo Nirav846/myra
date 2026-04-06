@@ -24,8 +24,10 @@ class TrustLoopAuditor:
             return
 
         updated_count = 0
-        for _, signal in pending.iterrows():
-            if self._audit_one_signal(signal):
+        for signal in pending.itertuples(index=False):
+            # Convert tuple back to dict for easier access if needed
+            signal_dict = signal._asdict()
+            if self._audit_one_signal(signal_dict):
                 updated_count += 1
         
         if updated_count > 0:
@@ -119,13 +121,14 @@ class TrustLoopAuditor:
         """
         summary = self.lib.safe_execute(summary_sql).df()
         
-        suggestions = []
-        for _, row in summary.iterrows():
-            fail_rate = (row['fails'] / row['total']) * 100
-            if fail_rate > 40:
-                suggestions.append({
-                    "strategy": row['strategy_id'],
-                    "fail_rate": round(fail_rate, 1),
-                    "action": "Increase RDV threshold by 0.5 or add VIX Stability filter."
-                })
+        # Optimized suggestion generation
+        suggestions = [
+            {
+                "strategy": row.strategy_id,
+                "fail_rate": round((row.fails / row.total) * 100, 1),
+                "action": "Increase RDV threshold by 0.5 or add VIX Stability filter."
+            }
+            for row in summary.itertuples(index=False)
+            if (row.fails / row.total) * 100 > 40
+        ]
         return suggestions
