@@ -29,10 +29,11 @@ class BrokerParser:
             
             # 2. Find the header row by keyword
             header_idx = -1
-            for idx, row in df_raw.iterrows():
-                row_str = " ".join([str(v) for v in row.values]).lower()
+            # Fix 32: Use itertuples for performance
+            for row in df_raw.itertuples():
+                row_str = " ".join([str(v) for v in row[1:]]).lower()
                 if "symbol" in row_str:
-                    header_idx = idx
+                    header_idx = row.Index
                     break
             
             if header_idx == -1: return []
@@ -59,17 +60,19 @@ class BrokerParser:
             df['Stock'] = df['Stock'].astype(str).str.split().str[0].str.split('.').str[0].str.upper().str.strip()
             
             # Final conversion to list of dicts with numeric types
-            holdings = []
-            for _, r in df.iterrows():
+            # Optimized with list comprehension (Fix 63, 67: Avoid .append in loop)
+            def _to_holding(r):
                 try:
-                    s = r['Stock']
-                    if s == "NAN" or not s or len(s) < 2: continue
-                    holdings.append({
+                    s = str(r.Stock)
+                    if s == "NAN" or not s or len(s) < 2: return None
+                    return {
                         'Stock': s,
-                        'Qty': float(str(r['Qty']).replace(',', '')),
-                        'Avg_Price': float(str(r['Avg_Price']).replace(',', ''))
-                    })
-                except: continue
+                        'Qty': float(str(r.Qty).replace(',', '')),
+                        'Avg_Price': float(str(r.Avg_Price).replace(',', ''))
+                    }
+                except: return None
+
+            holdings = [h for r in df.itertuples(index=False) if (h := _to_holding(r))]
                 
             return holdings
         except Exception: return []
