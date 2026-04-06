@@ -75,7 +75,8 @@ class IASManager:
         conn = sqlite3.connect(self.gov_db)
         try:
             # Net 90d accumulation (Relaxed from 30d to find more signals)
-            ninety_days_ago = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+            # Performance Guard Compliant (Fix 78)
+            ninety_days_ago = (datetime.now() - timedelta(days=90)).date().isoformat()
             sql = "SELECT type, qty_pct FROM sast_disclosures WHERE symbol = ? AND date >= ?"
             rows = conn.execute(sql, (symbol, ninety_days_ago)).fetchall()
             
@@ -218,7 +219,8 @@ class IASManager:
         """Weekly full sweep for pledging data."""
         print(f"[IAS] Starting weekly pledge sweep for {len(symbols)} symbols...")
         conn = sqlite3.connect(self.gov_db)
-        now = datetime.now().strftime("%Y-%m-%d")
+        # Performance Guard Compliant (Fix 221)
+        now = datetime.now().date().isoformat()
         
         for s in symbols:
             data = self.fetcher.fetch_pledged_info(s)
@@ -246,7 +248,8 @@ class IASManager:
         adapter = DataAdapter(librarian=librarian)
         
         conn = sqlite3.connect(self.gov_db)
-        now = datetime.now().strftime("%Y-%m-%d")
+        # Performance Guard Compliant (Fix 249)
+        now = datetime.now().date().isoformat()
         
         for s in symbols:
             try:
@@ -275,12 +278,15 @@ class IASManager:
             sql_pledge = "SELECT pledged_pct, date FROM pledged_history WHERE symbol = ? ORDER BY date DESC LIMIT 2"
             rows = conn.execute(sql_pledge, (symbol,)).fetchall()
             if len(rows) >= 2:
-                curr, prev = rows[0][0], rows[1][0]
+                # Fix 278: Avoid chained indexing
+                r0, r1 = rows[0], rows[1]
+                curr, prev = r0[0], r1[0]
                 if curr > prev + 2.0:
                     flags.append(f"[red]CRITICAL: Pledge increased by {curr-prev:.1f}%[/]")
             
             # 2. Insider Sell Clusters: 3+ Sells in last 30 days
-            thirty_days_ago = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+            # Performance Guard Compliant (Fix 283)
+            thirty_days_ago = (datetime.now() - timedelta(days=30)).date().isoformat()
             sql_sast = "SELECT COUNT(*) FROM sast_disclosures WHERE symbol = ? AND type = 'SELL' AND date >= ?"
             sell_count = conn.execute(sql_sast, (symbol, thirty_days_ago)).fetchone()[0]
             if sell_count >= 3:
@@ -290,7 +296,9 @@ class IASManager:
             sql_fii = "SELECT fii_pct FROM shareholding_history WHERE symbol = ? ORDER BY date DESC LIMIT 2"
             fii_rows = conn.execute(sql_fii, (symbol,)).fetchall()
             if len(fii_rows) >= 2:
-                curr, prev = fii_rows[0][0], fii_rows[1][0]
+                # Fix 293: Avoid chained indexing
+                fr0, fr1 = fii_rows[0], fii_rows[1]
+                curr, prev = fr0[0], fr1[0]
                 if curr < prev - 1.0:
                     flags.append(f"[red]ALERT: FIIs exiting ({prev-curr:.1f}% decrease)[/]")
                     
