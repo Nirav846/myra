@@ -60,10 +60,14 @@ class SectorManager:
                     ind_col = next((c for c in df.columns if 'INDUSTRY' in c.upper() and 'BASIC' not in c.upper()), None)
 
                     if sym_col and ind_col:
-                        for _, row in df.iterrows():
-                            symbol = str(row[sym_col]).upper().strip()
-                            raw_sec = str(row[sec_col]).strip() if sec_col else "Unknown"
-                            raw_ind = str(row[ind_col]).strip()
+                        # Fix 63: Use itertuples for performance
+                        sym_idx = df.columns.get_loc(sym_col)
+                        sec_idx = df.columns.get_loc(sec_col) if sec_col else -1
+                        ind_idx = df.columns.get_loc(ind_col)
+                        for row in df.itertuples(index=False):
+                            symbol = str(row[sym_idx]).upper().strip()
+                            raw_sec = str(row[sec_idx]).strip() if sec_idx != -1 else "Unknown"
+                            raw_ind = str(row[ind_idx]).strip()
                             results[symbol] = {
                                 "raw_sector": raw_sec,
                                 "raw_industry": raw_ind,
@@ -323,7 +327,9 @@ class SectorManager:
                       data["source"], data["confidence"], now, symbol))
                 updated += 1
             conn.commit()
-            print(f"[MYRA] Batch updated {updated} symbols from {data_map[symbols[0]]['source']}.")
+            first_sym_data = data_map.get(symbols[0], {})
+            source_name = first_sym_data.get("source", "Unknown")
+            print(f"[MYRA] Batch updated {updated} symbols from {source_name}.")
         except Exception as e: print(f"[!] Batch Error: {e}")
         finally: conn.close()
 

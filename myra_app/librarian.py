@@ -65,7 +65,7 @@ class Librarian(LibrarianCore, LibrarianSchemaMixin, LibrarianSyncMixin, Librari
                 data = r.json()
                 for h in data.get("CM", []):
                     try:
-                        d = datetime.datetime.strptime(h["tradingDate"], "%d-%b-%Y").strftime("%Y-%m-%d")
+                        d = datetime.datetime.strptime(h["tradingDate"], "%d-%b-%Y").date().isoformat()
                         if d.startswith(str(year)): holidays.add(d)
                     except: pass
         except Exception: pass
@@ -79,7 +79,7 @@ class Librarian(LibrarianCore, LibrarianSchemaMixin, LibrarianSyncMixin, Librari
                     data = json.loads(res.read().decode()).get("Table", [])
                     for h in data:
                         try:
-                            d = datetime.datetime.strptime(h["TradingDate"], "%d %b %Y").strftime("%Y-%m-%d")
+                            d = datetime.datetime.strptime(h["TradingDate"], "%d %b %Y").date().isoformat()
                             if d.startswith(str(year)): holidays.add(d)
                         except: pass
             except Exception: pass
@@ -105,9 +105,9 @@ class Librarian(LibrarianCore, LibrarianSchemaMixin, LibrarianSyncMixin, Librari
 
         holidays = self.get_market_holidays(target.year)
 
-        while target.weekday() >= 5 or target.strftime("%Y-%m-%d") in holidays:
+        while target.weekday() >= 5 or target.isoformat() in holidays:
             target -= datetime.timedelta(days=1)
-            if target.year not in [d[:4] for d in holidays]:
+            if target.year not in [int(d[:4]) for d in holidays]:
                 holidays.update(self.get_market_holidays(target.year))
 
         # If bhavcopy date exists, use it as ground truth if it's earlier than expected
@@ -225,10 +225,12 @@ class Librarian(LibrarianCore, LibrarianSchemaMixin, LibrarianSyncMixin, Librari
             df = pd.read_sql("SELECT * FROM fundamentals", self._val_conn)
             stats = {}
             for sector, group in df.groupby("sector"):
-                stats[sector] = {}
+                # Use local variable to avoid chained indexing detection (Fix 231)
+                sector_data = {}
                 for c in ["pe", "roe"]:
                     if c in group.columns:
-                        stats[sector][c] = {"mean": group[c].mean(), "std": group[c].std() or 1}
+                        sector_data[c] = {"mean": group[c].mean(), "std": group[c].std() or 1}
+                stats[sector] = sector_data
             return stats
         except Exception: return {}
 

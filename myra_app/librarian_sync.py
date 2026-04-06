@@ -85,7 +85,7 @@ class LibrarianSyncMixin:
                                               item.get('tdpTransactionType'), item.get('acqMode'), val_cr, avg_price, str(dt)))
                         except Exception: pass
                     self._inst_conn.commit()
-                    self.set_metadata("last_insider_sync", datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                    self.set_metadata("last_insider_sync", datetime.now().replace(microsecond=0).isoformat(sep=' '))
             
             # 4. Update Masters (meta.db)
             self.sync_status.update(task="Updating Masters", completed=60, total=100)
@@ -184,7 +184,7 @@ class LibrarianSyncMixin:
                         """, (raw_sym, d['type'], d['client'], d['buy_sell'], d['qty'], d['price'], str(d['date'])))
                     except Exception: pass
                 self._inst_conn.commit()
-                self.set_metadata("last_large_deals_sync", datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                self.set_metadata("last_large_deals_sync", datetime.now().replace(microsecond=0).isoformat(sep=' '))
 
     def populate_index_constituents(self):
         if not self._meta_conn or self.read_only: return
@@ -223,8 +223,9 @@ class LibrarianSyncMixin:
             try:
                 # yf download...
                 data = yf.download(symbol, period="1mo", interval="1d", progress=False)
-                for d, row in data.iterrows(): 
-                    self._meta_conn.execute("INSERT OR REPLACE INTO benchmarks VALUES (?, ?, ?)", (symbol, str(d.date()), float(row['Close'])))
+                for row in data.itertuples(): 
+                    # Fix 226: Use itertuples for performance
+                    self._meta_conn.execute("INSERT OR REPLACE INTO benchmarks VALUES (?, ?, ?)", (symbol, str(row.Index.date()), float(row.Close)))
                 self._meta_conn.commit()
             except Exception: pass
 

@@ -29,13 +29,17 @@ class LibrarianIngestorMixin:
         if not os.path.exists(ad): return
         csv_files = [f for f in os.listdir(ad) if f.endswith(".csv")]
         if len(csv_files) < 50: return
-        all_data = []
-        for f in tqdm(csv_files, desc="Consolidating Archives", leave=False):
+        
+        # Optimized with list comprehension (Fix 37: Avoid .append in loop)
+        cols = ['SYMBOL', 'DATE1', 'OPEN_PRICE', 'HIGH_PRICE', 'LOW_PRICE', 'CLOSE_PRICE', 'TTL_TRD_QNTY', 'DELIV_QTY', 'DELIV_PER', 'SERIES']
+        def _read_and_filter(f):
             try:
                 df = pd.read_csv(os.path.join(ad, f))
-                cols = ['SYMBOL', 'DATE1', 'OPEN_PRICE', 'HIGH_PRICE', 'LOW_PRICE', 'CLOSE_PRICE', 'TTL_TRD_QNTY', 'DELIV_QTY', 'DELIV_PER', 'SERIES']
-                all_data.append(df[[c for c in cols if c in df.columns]])
-            except Exception: pass
+                return df[[c for c in cols if c in df.columns]]
+            except: return None
+            
+        all_data = [df for f in tqdm(csv_files, desc="Consolidating Archives", leave=False) if (df := _read_and_filter(f)) is not None]
+        
         if all_data:
             path = os.path.join(ad, f"market_archive_master_{date.today().year}.parquet")
             pd.concat(all_data, ignore_index=True).to_parquet(path, compression='brotli', index=False)
@@ -65,9 +69,13 @@ class LibrarianIngestorMixin:
             
             try:
                 for idx, current in enumerate(chunk):
-                    self.sync_status.update(task=f"Fetching: {current.strftime('%d-%b-%Y')}", completed=i + idx, total=total_d)
+                    # Performance Guard Compliant Date Formatting (Fix 68, 70)
+                    MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+                    d_str = f"{current.day:02d}-{MONTHS[current.month-1]}-{current.year}"
+                    ds = f"{current.day:02d}{current.month:02d}{current.year}"
+                    
+                    self.sync_status.update(task=f"Fetching: {d_str}", completed=i + idx, total=total_d)
                     if PKDateUtilities.isHoliday(current)[0]: continue
-                    ds = current.strftime("%d%m%Y")
                     local = os.path.join(ad, f"nse_full_{ds}.csv")
                     if not os.path.exists(local):
                         csv_text, source_name = self.fetcher.fetch_ohlcv_delivery(current)
@@ -110,11 +118,12 @@ class LibrarianIngestorMixin:
             }
             df = df.rename(columns={k: v for k, v in mapping.items() if k in df.columns})
             
-            # Date Conversion
-            def parse_date(d_str):
-                try: return datetime.strptime(str(d_str).strip(), "%d-%b-%Y").strftime("%Y-%m-%d")
-                except: return str(d_str)
-            df['date'] = df['date'].apply(parse_date)
+            # Date Conversion (Vectorized - Fix 115, 117)
+            if 'date' in df.columns:
+                # Convert DD-MMM-YYYY to YYYY-MM-DD
+                df['date_dt'] = pd.to_datetime(df['date'].str.strip(), format='%d-%b-%Y', errors='coerce')
+                df['date'] = df['date_dt'].dt.date.astype(str).where(df['date_dt'].notna(), df['date'])
+                df.drop(columns=['date_dt'], inplace=True)
             
             # Clean and Cast
             numeric = ['open', 'high', 'low', 'close', 'volume', 'delivery', 'trades', 'vwap', 'delivery_pct']
@@ -122,7 +131,9 @@ class LibrarianIngestorMixin:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             
-            df['delivery_ratio'] = df.apply(lambda x: x['delivery'] / x['volume'] if x['volume'] > 0 else 0, axis=1)
+            # Vectorized Delivery Ratio (Fix 125)
+            df['delivery_ratio'] = (df['delivery'] / df['volume']).fillna(0)
+            df.loc[df['volume'] <= 0, 'delivery_ratio'] = 0
             
             final_cols = ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume', 'delivery', 'trades', 'vwap', 'delivery_pct', 'delivery_ratio']
             for col in final_cols:

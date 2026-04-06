@@ -85,14 +85,18 @@ class MYRAScreener:
         
         # 4. Sector Heatmap (New PKScreener Idea)
         if 'Sector' in df.columns:
-            sector_stats = []
-            for sector, group in df.groupby('Sector'):
-                if not sector or sector == 'Unknown' or pd.isna(sector): continue
+            # Optimized with list comprehension (Fix 95: Avoid .append in loop)
+            def _get_sector_perc(group):
                 s_total = len(group)
-                if s_total < 5: continue # Skip tiny sectors
+                if s_total < 5: return None
                 s_bullish = len(group[group['close'] > group['sma50']])
-                s_perc = (s_bullish / s_total) * 100
-                sector_stats.append((sector, s_total, s_perc))
+                return (s_total, (s_bullish / s_total) * 100)
+
+            sector_stats = [
+                (sector, stats[0], stats[1])
+                for sector, group in df.groupby('Sector')
+                if sector and sector != 'Unknown' and not pd.isna(sector) and (stats := _get_sector_perc(group))
+            ]
             
             if sector_stats:
                 st = Table(title="Sector Leadership Heatmap", header_style="bold cyan", border_style="dim")
@@ -183,7 +187,8 @@ class MYRAScreener:
             
         if needs_sync:
             # self.console.print("[dim][*] Market data stale. Synchronizing archives...[/dim]")
-            self.lib.set_metadata("last_sync_check", now.strftime('%Y-%m-%d %H:%M:%S'))
+            # Performance Guard Compliant (Fix 186)
+            self.lib.set_metadata("last_sync_check", now.isoformat(sep=' ', timespec='seconds'))
             self.lib.sync_market_data(history_years=0.02, skip_maintenance=True)
             # self.console.print("[dim][*] History backfill started in background.[/dim]")
             self.lib.start_background_sync(history_years=3)
@@ -213,14 +218,17 @@ class MYRAScreener:
             
         if not results:
             # Check data age (Fix: UX improvement for stale data)
-            from datetime import datetime
-            max_date = self.lib.get_max_price_date()
-            if max_date:
+            max_date_raw = self.lib.get_max_price_date()
+            if max_date_raw:
                 try:
-                    md = datetime.strptime(max_date, "%Y-%m-%d").date()
-                    age = (datetime.now().date() - md).days
-                    if age > 1:
-                        self.console.print(f"[bold yellow][!] WARNING: Latest Bhavcopy is from {max_date} ({age} days old).[/bold yellow]")
+                    from myra_core.utils.date_utils import to_date
+                    md = to_date(max_date_raw)
+                    now = datetime.now()
+                    expected = to_date(self.lib.get_expected_trading_day(now))
+                    
+                    if md < expected:
+                        age = (expected - md).days
+                        self.console.print(f"[bold yellow][!] WARNING: Latest Bhavcopy is from {md} ({age} trading days behind).[/bold yellow]")
                         self.console.print(f"[dim]Note: Strategy '{display_name}' depends on fresh volume/delivery data. Zero candidates is expected on stale data.[/dim]")
                 except: pass
 
@@ -359,14 +367,14 @@ class MYRAScreener:
                 r["Funda_Score"] = funda_map.get(s, funda_map.get(clean_s, 0))
         if results:
             self.rm.display_discovery_table(results, "Custom Scout", "technicals", ["Funda_Score"])
-            self.rm.archive_results(results, "Custom_Scout")
+            self.rm.archive_results(results, "Custom_Scout", strategy_id="technicals")
 
     def run_full_market_scout(self):
         self.console.print("[info][MYRA] Scouting FULL MARKET (3000+ stocks) with Technical Intelligence...[/info]")
         results = self.execute_scan("technicals", "Full Market Scout", scan_all=True)
         if results:
             self.rm.display_discovery_table(results, "Full Market Scout", "technicals", [])
-            self.rm.archive_results(results, "Full_Market_Scout")
+            self.rm.archive_results(results, "Full_Market_Scout", strategy_id="technicals")
 
     def run_portfolio_monitor(self):
         holdings = self.broker.parse_holdings()
@@ -405,7 +413,7 @@ class MYRAScreener:
                 elif f_score > 70 and pnl < -10: status = "[bold blue]ACCUMULATE (Quality Dip)[/bold blue]"
                 r["Status"] = status; r["TSL"] = tsl
             self.rm.display_discovery_table(results, "Active Broker Monitor", "portfolio_monitor", ["PnL%", "Funda_Score", "Status"])
-            self.rm.archive_results(results, "Broker_Monitor")
+            self.rm.archive_results(results, "Broker_Monitor", strategy_id="all_pass")
             self.rm.display_portfolio_risk_audit(results)
 
     def _load_file(self, filename: str):
