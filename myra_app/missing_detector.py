@@ -84,8 +84,6 @@ def detect_missing_candles(
 
     # 4. Gap Detection
     valid_days_cache = {}
-    missing_symbols = []
-    missing_dates = []
 
     # Pre-cache unique effective starts
     effective_starts = np.array(
@@ -100,22 +98,28 @@ def detect_missing_candles(
 
     empty_set = set()
 
-    for sym, effective_start in zip(active_symbols, effective_starts):
-        valid_days = valid_days_cache[effective_start]
-        sym_dates = existing_map.get(sym, empty_set)
+    # Construct dataframe and explode
+    df_missing_candidates = pd.DataFrame(
+        {"symbol": active_symbols, "effective_start": effective_starts}
+    )
 
-        missing = valid_days - sym_dates
+    # Vectorized mapping over rows avoiding iterrows/apply when possible
+    # We can use zip on arrays directly
+    missing_lists = [
+        list(valid_days_cache[es] - existing_map.get(sym, empty_set))
+        for sym, es in zip(active_symbols, effective_starts)
+    ]
 
-        if missing:
-            missing_symbols.extend([sym] * len(missing))
-            missing_dates.extend(missing)
+    df_missing_candidates["missing_date"] = missing_lists
+    # Remove rows with empty lists
+    df_missing_candidates = df_missing_candidates[
+        df_missing_candidates["missing_date"].str.len() > 0
+    ]
 
-    # 5. Final Report
-    if missing_symbols:
-        df_missing = pd.DataFrame(
-            {"symbol": missing_symbols, "missing_date": missing_dates},
-            index=range(len(missing_symbols)),
-        )
+    if not df_missing_candidates.empty:
+        df_missing = df_missing_candidates.explode("missing_date")[
+            ["symbol", "missing_date"]
+        ]
     else:
         df_missing = pd.DataFrame(columns=["symbol", "missing_date"])
     if not df_missing.empty:
