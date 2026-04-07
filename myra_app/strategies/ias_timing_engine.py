@@ -25,7 +25,11 @@ def run(df: pd.DataFrame, funda: dict) -> dict:
         sast_score, _ = _ias_manager._get_sast_score(symbol)
         delivery_score = _ias_manager._get_delivery_score(df)
 
-        if ias_score < 7.0 or sast_score < 7.0 or delivery_score < 7.0:
+        high_conviction = (
+            ias_score >= 7.0 and sast_score >= 7.0 and delivery_score >= 7.0
+        )
+
+        if funda.get("require_high_conviction", False) and not high_conviction:
             return {"signal": False}
 
         latest = df.iloc[-1]
@@ -141,10 +145,13 @@ def run(df: pd.DataFrame, funda: dict) -> dict:
             + 0.15 * min(relative_strength, 10)
         )
 
+        conviction_level = "High" if high_conviction else "Technical"
+
         return {
             "signal": True,
             "metrics": {
                 "Type": setup_type,
+                "Conviction": conviction_level,
                 "Entry": f"₹{round(entry_price, 2)}",
                 "SL": f"₹{round(stop_loss, 2)}",
                 "Score": round(entry_quality, 2),
