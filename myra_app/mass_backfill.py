@@ -48,7 +48,9 @@ def mass_backfill(db_path="technical.db", missing_csv="missing_data.csv"):
                 
                 # Fetch only necessary range
                 min_date = sym_gaps['missing_date'].min()
-                max_date = (datetime.strptime(sym_gaps['missing_date'].max(), "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+                # Performance Guard Compliant (Fix 51)
+                max_dt = datetime.strptime(sym_gaps['missing_date'].max(), "%Y-%m-%d") + timedelta(days=1)
+                max_date = max_dt.date().isoformat()
                 
                 data = yf.download(yf_sym, start=min_date, end=max_date, progress=False, interval="1d")
                 
@@ -59,15 +61,19 @@ def mass_backfill(db_path="technical.db", missing_csv="missing_data.csv"):
                     data.columns = data.columns.get_level_values(0)
                 data.reset_index(inplace=True)
                 
-                records = []
-                for _, row in data.iterrows():
-                    d_str = row['Date'].strftime("%Y-%m-%d")
-                    if d_str in set(sym_gaps['missing_date']):
-                        records.append((
+                # Optimized with list comprehension (Fix 63, 64, 66: Avoid .append in loop)
+                gap_dates = set(sym_gaps['missing_date'])
+                def _to_record(row):
+                    d_str = row.Date.date().isoformat()
+                    if d_str in gap_dates:
+                        return (
                             symbol, d_str,
-                            float(row['Open']), float(row['High']), float(row['Low']), float(row['Close']),
-                            int(row['Volume']), None, None, float(row['Close']), None, None
-                        ))
+                            float(row.Open), float(row.High), float(row.Low), float(row.Close),
+                            int(row.Volume), None, None, float(row.Close), None, None
+                        )
+                    return None
+
+                records = [r for row in data.itertuples(index=False) if (r := _to_record(row))]
                 
                 if records:
                     cursor.executemany("""
