@@ -41,7 +41,7 @@ The `DataAdapter` and `IndicatorManager` serve as the singular interface, abstra
 ## 🛠️ Tech Stack
 
 *   **Core Language:** Python
-*   **Databases:** SQLite (Sidecars) 
+*   **Databases:** SQLite (Sidecars)
 *   **Data Lake Storage:** Apache Parquet
 *   **Analytics & Quant:** `pandas`, `numpy`, `pandas_ta`
 *   **Machine Learning:** `xgboost`, `tensorflow` (Dilated CNNs)
@@ -109,18 +109,18 @@ MYRA/
 
 ## 🤝 Contribution Guidelines & Standards
 
-We welcome contributions, but MYRA is built on a strict engineering philosophy to maintain its edge. 
+We welcome contributions, but MYRA is built on a strict engineering philosophy to maintain its edge.
 
 ### Core Philosophy:
 > **Performance > Readability > Convenience**
 
-Before submitting a PR, you **must** read and adhere to `PROJECT_RULES.md`. 
+Before submitting a PR, you **must** read and adhere to `PROJECT_RULES.md`.
 
 **Key Mandates:**
 *   **No Loops:** `iterrows()`, `apply()` on large datasets, and `DataFrame.append()` inside loops are strictly banned. Use vectorized `.isin`, `.map`, and boolean masking.
 *   **Date Handling:** All dates must be native `datetime64[ns]`. Do not use `.strftime()` for comparisons.
 *   **Testing:** PRs must include tests and be fully deterministic. If you introduce a loop (only when vectorization is impossible), you must include a benchmark.
-*   **PR Titles:** 
+*   **PR Titles:**
     * Security: `🔒 [security fix description]`
     * Performance: `⚡ [performance improvement description]`
     * Testing: `🧪 [testing improvement description]`
