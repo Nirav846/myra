@@ -59,9 +59,8 @@ class PositionalScorer:
         # Vectorized optimization: Precompute ranks for the entire universe
         results_df = precompute_ranks(results_df)
 
-        results_df["MYRA_Score_v25"] = results_df.apply(
-            lambda row: self.compute_score(row, regime),
-            axis=1
-        )
+        # Optimized with itertuples (Fix 62: Avoid .apply on rows)
+        scores = [self.compute_score(row._asdict(), regime) for row in results_df.itertuples(index=False)]
+        results_df["MYRA_Score_v25"] = scores
 
         return results_df.sort_values(by="MYRA_Score_v25", ascending=False)
