@@ -37,8 +37,10 @@ def detect_missing_candles(tech_db=None, calendar_csv=None, output_csv=None, loo
     df_cal = pd.read_csv(calendar_csv)
     # Filter for last 2 years roughly (730 days) as per user mandate
     # Or use provided lookback
-    lookback_date = (datetime.now() - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
-    trading_days = sorted(df_cal[df_cal['date'] >= lookback_date]['date'].tolist())
+    # Performance Guard Compliant (Fix 40)
+    lookback_date = (datetime.now() - timedelta(days=lookback_days)).date().isoformat()
+    # Fix 41: Use .loc for safety/performance
+    trading_days = sorted(df_cal.loc[df_cal['date'] >= lookback_date, 'date'].tolist())
     trading_days_arr = np.array(trading_days)
 
     # 3. Get Empirical Bounds from Technical DB
