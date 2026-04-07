@@ -81,9 +81,8 @@ class ScreenerSource(BaseDataSource):
                 
                 # Headers: [Name, Date1, Date2, ...]
                 headers_row = rows[0].find_all(["th", "td"])
-                date_headers = []
-                for i in range(1, len(headers_row)):
-                    date_headers.append(headers_row[i].get_text().strip())
+                # Optimized with list comprehension (Fix 86: Avoid .append in loop)
+                date_headers = [h.get_text().strip() for h in headers_row[1:]]
                 
                 for row in rows[1:]:
                     m_tag = row.find(["th", "td"])
@@ -99,15 +98,16 @@ class ScreenerSource(BaseDataSource):
                         if d_val not in data_map: data_map[d_val] = {"report_date": d_val}
                         val = self._clean_val(td.get_text())
                         
-                        if "SALES" in m_name or "REVENUE" in m_name: data_map[d_val]["revenue"] = val
-                        elif "NET PROFIT" in m_name: data_map[d_val]["net_profit"] = val
-                        elif "EPS" in m_name: data_map[d_val]["eps"] = val
-                        elif "OPM" in m_name: data_map[d_val]["opm_pct"] = val
-                        elif "INTEREST" in m_name: data_map[d_val]["interest"] = val
+                        # Fix 102-106: Avoid chained indexing
+                        entry = data_map[d_val]
+                        if "SALES" in m_name or "REVENUE" in m_name: entry["revenue"] = val
+                        elif "NET PROFIT" in m_name: entry["net_profit"] = val
+                        elif "EPS" in m_name: entry["eps"] = val
+                        elif "OPM" in m_name: entry["opm_pct"] = val
+                        elif "INTEREST" in m_name: entry["interest"] = val
                 break
 
         # 4. Final Derived Merging & Sorting
-        final_list = []
         def sort_key(d_val):
             m = re.search(r'(\w+)\s+(\d{4})', d_val)
             if m: return f"{m.group(2)} {m.group(1)}"
@@ -115,8 +115,9 @@ class ScreenerSource(BaseDataSource):
 
         sorted_dates = sorted(data_map.keys(), key=sort_key, reverse=True)
         
-        for date_val in sorted_dates:
-            entry = data_map[date_val]
+        # Optimized with list comprehension (Fix 128: Avoid .append in loop)
+        def _to_final(d):
+            entry = data_map[d]
             # Merge top level metrics
             for k, v in top_metrics.items():
                 if entry.get(k) is None: entry[k] = v
@@ -124,8 +125,9 @@ class ScreenerSource(BaseDataSource):
             rev = entry.get("revenue")
             if rev and total_shares:
                 entry["sales_per_share"] = round((rev * 10000000) / total_shares, 2)
-            
-            final_list.append(entry)
+            return entry
+
+        final_list = [_to_final(d) for d in sorted_dates]
 
         if not final_list and top_metrics:
             top_metrics["report_date"] = "LATEST"

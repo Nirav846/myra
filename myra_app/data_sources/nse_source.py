@@ -15,7 +15,12 @@ class NSESource(BaseDataSource):
         
         json_data = r.json()
         try:
-            res = json_data["quoteSummary"]["result"][0]
+            # Fix 18: Avoid chained indexing
+            summary = json_data.get("quoteSummary", {})
+            results_list = summary.get("result", [])
+            if not results_list: raise Exception("No results in NSE data")
+            res = results_list[0]
+            
             fd = res.get("financialData", {})
             ks = res.get("defaultKeyStatistics", {})
         except (KeyError, IndexError):

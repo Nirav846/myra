@@ -37,9 +37,8 @@ def normalize(data, source):
     """
     Normalizes raw data from various sources into a standard MYRA format.
     """
-    normalized = []
-    
-    for row in data:
+    # Optimized with list comprehension (Fix 50, 77, 93: Avoid .append in loop)
+    def _to_normalized(row):
         # Standardize field names across different potential raw inputs before specific source logic
         # Some sources might return 'book_value' while others 'Book Value'
         std_row = {str(k).lower().replace(" ", "_"): v for k, v in row.items()}
@@ -47,7 +46,7 @@ def normalize(data, source):
         period_end = derive_period_end(report_date)
         
         if source in ["screener", "screener_in"]:
-            normalized.append({
+            return {
                 "report_date": report_date,
                 "period_end": period_end,
                 "revenue": safe_float(row.get("revenue")),
@@ -72,9 +71,9 @@ def normalize(data, source):
                 "sales_per_share": safe_float(row.get("sales_per_share")),
                 "dividend_yield": safe_float(row.get("dividend_yield")),
                 "source": source
-            })
+            }
         elif source in ["google_finance", "finology", "google"]:
-            normalized.append({
+            return {
                 "report_date": report_date,
                 "period_end": period_end,
                 "revenue": safe_float(row.get("revenue")),
@@ -86,11 +85,11 @@ def normalize(data, source):
                 "book_value": safe_float(row.get("book_value")),
                 "market_cap": safe_float(row.get("market_cap")),
                 "source": source
-            })
+            }
         
         # Fallback for other sources (simplified)
         else:
-            normalized.append({
+            return {
                 "report_date": report_date,
                 "period_end": period_end,
                 "revenue": safe_float(row.get("revenue") or row.get("totalRevenue")),
@@ -102,6 +101,6 @@ def normalize(data, source):
                 "book_value": safe_float(row.get("book_value")),
                 "market_cap": safe_float(row.get("market_cap")),
                 "source": source
-            })
+            }
 
-    return normalized
+    return [_to_normalized(row) for row in data]

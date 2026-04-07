@@ -47,25 +47,26 @@ class FinologySource(BaseDataSource):
                             if date_val not in data_map: data_map[date_val] = {"report_date": date_val}
                             val = self._clean_val(cells[i+1].get_text())
                             
+                            # Fix 51, 53, 55: Avoid chained indexing
+                            entry = data_map[date_val]
                             if "REVENUE" in metric_name or "SALES" in metric_name:
-                                data_map[date_val]["revenue"] = val
+                                entry["revenue"] = val
                             elif "NET PROFIT" in metric_name:
-                                data_map[date_val]["net_profit"] = val
+                                entry["net_profit"] = val
                             elif "EPS" in metric_name:
-                                data_map[date_val]["eps"] = val
+                                entry["eps"] = val
                     break
             
             if not data_map: return None
             
             # Map into list, latest first
-            results = []
-            sorted_dates = sorted(data_map.keys(), reverse=True)
-            for d in sorted_dates:
+            # Optimized with list comprehension (Fix 66: Avoid .append in loop)
+            def _to_result(d):
                 row = data_map[d]
                 row["source"] = "finology"
-                results.append(row)
-                
-            return results
+                return row
+
+            return [_to_result(d) for d in sorted(data_map.keys(), reverse=True)]
         except Exception:
             return None
 

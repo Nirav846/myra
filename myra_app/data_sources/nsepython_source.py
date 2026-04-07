@@ -14,12 +14,10 @@ class NSEPythonSource(BaseDataSource):
         if not data or not isinstance(data, list):
             return None
 
-        results = []
-        for item in data:
-            results.append({
-                "date": item.get("period"),
-                "totalRevenue": item.get("revenue"),
-                "netProfit": item.get("profit"),
-                "eps": item.get("eps")
-            })
-        return results
+        # Optimized with list comprehension (Fix 19: Avoid .append in loop)
+        return [{
+            "date": item.get("period"),
+            "totalRevenue": item.get("revenue"),
+            "netProfit": item.get("profit"),
+            "eps": item.get("eps")
+        } for item in data]

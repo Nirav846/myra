@@ -39,14 +39,18 @@ class SourceManager:
         
         # If rate limited, cool off for 1 hour. Otherwise 10 mins.
         cooldown = 3600 if is_rate_limit else 600
-        self.sources[name]["score"] -= 1
-        self.sources[name]["cooldown_until"] = time.time() + cooldown
+        # Fix 42, 43: Avoid chained indexing
+        source_entry = self.sources[name]
+        source_entry["score"] -= 1
+        source_entry["cooldown_until"] = time.time() + cooldown
         print(f"[!] Source {name} failing. Cooling off for {cooldown//60} mins.")
 
     def mark_success(self, name):
         if name not in self.sources:
             self.sources[name] = {"score": 5, "cooldown_until": 0}
-        self.sources[name]["score"] = min(10, self.sources[name]["score"] + 0.5)
+        # Fix 49: Avoid chained indexing
+        source_entry = self.sources[name]
+        source_entry["score"] = min(10, source_entry["score"] + 0.5)
 
 class BaseDataSource:
     def fetch(self, symbol):

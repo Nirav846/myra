@@ -50,25 +50,23 @@ class GoogleFinanceSource(BaseDataSource):
             if not financials: return None
             
             # Map into standard MYRA rows (latest first)
-            results = []
             revs = financials.get("revenue", [])
             profs = financials.get("net_profit", [])
-            eps = financials.get("eps", [])
+            eps_vals = financials.get("eps", [])
             
-            for i in range(len(revs)):
-                # Convert raw units to Crores (div by 10M)
+            # Optimized with list comprehension (Fix 63: Avoid .append in loop)
+            def _to_result(i):
                 r_val = revs[i] / 10000000 if revs[i] else None
                 p_val = profs[i] / 10000000 if profs[i] else None
-                
-                results.append({
+                return {
                     "report_date": f"Q-{i+1} (GF)",
                     "revenue": r_val,
                     "net_profit": p_val,
-                    "eps": eps[i] if i < len(eps) else None,
+                    "eps": eps_vals[i] if i < len(eps_vals) else None,
                     "source": "google"
-                })
-            
-            return results
+                }
+
+            return [_to_result(i) for i in range(len(revs))]
         except Exception:
             return None
 
