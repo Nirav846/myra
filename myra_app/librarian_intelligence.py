@@ -24,14 +24,17 @@ class LibrarianIntelligenceMixin:
         active_symbols = self.get_active_universe()
         if not active_symbols: return pd.DataFrame()
         
-        results = []
-        for sym in active_symbols:
+        # Optimized with list comprehension (Fix 34: Avoid .append in loop)
+        def _get_latest_indicator(sym):
             df = self.loader.indicators.load_indicators("precomputed", sym)
             if not df.empty:
                 if as_of_date:
                     df = df[df.index <= as_of_date]
                 if not df.empty:
-                    results.append(df.iloc[[-1]])
+                    return df.iloc[[-1]]
+            return None
+
+        results = [res for sym in active_symbols if (res := _get_latest_indicator(sym)) is not None]
         
         if not results: return pd.DataFrame()
         return pd.concat(results).reset_index()
