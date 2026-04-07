@@ -1,5 +1,6 @@
 import sys
 import logging
+
 sys.path.insert(0, ".")
 from myra_app.fetcher import DataFetcher
 
@@ -14,8 +15,10 @@ if trades:
 
 print("\nVerifying fetch_bhavcopy_with_retry...")
 from datetime import datetime, timedelta
+
 dt = datetime.now() - timedelta(days=2)
-while dt.weekday() >= 5: dt -= timedelta(days=1)
+while dt.weekday() >= 5:
+    dt -= timedelta(days=1)
 data, source = f.fetch_bhavcopy_with_retry(dt)
 if data:
     print(f"Bhavcopy fetched successfully from {source}")

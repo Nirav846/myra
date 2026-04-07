@@ -10,6 +10,7 @@ sys.modules["rich.panel"] = mock_rich.panel
 
 from myra_app.menu_navigation import MenuNavigator
 
+
 class TestSecurityFix(unittest.TestCase):
     def test_clear_screen_uses_console_clear(self):
         # Mock the console object
@@ -21,6 +22,7 @@ class TestSecurityFix(unittest.TestCase):
 
         # Verify console.clear() was called instead of os.system()
         mock_console.clear.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

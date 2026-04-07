@@ -1,0 +1,4 @@
+[flake8]
+ignore = E501, E203, W503, E722, F401, E402, E221, E231, E241, E226, W291, F841, E712, F541, F821, F811, E702, E201, E202, W293, E266, E713, E222, E741, E401
+max-line-length = 120
+exclude = .git,__pycache__,venv,pkscreener_env

@@ -1,6 +1,7 @@
 import datetime
 import pandas as pd
 
+
 def to_date(d):
     """
     Converts string (YYYY-MM-DD), datetime.datetime, or datetime.date to datetime.date.
@@ -14,8 +15,8 @@ def to_date(d):
         # Handle string parsing
         d = d.strip()
         # Handle datetime strings like "YYYY-MM-DD HH:MM:SS"
-        if ' ' in d:
-            d = d.split(' ')[0]
+        if " " in d:
+            d = d.split(" ")[0]
         try:
             return datetime.datetime.strptime(d, "%Y-%m-%d").date()
         except ValueError:
@@ -32,6 +33,7 @@ def to_date(d):
     else:
         raise TypeError(f"Unsupported type for to_date: {type(d)}")
 
+
 def ensure_date(d):
     """
     Strict version (used in critical systems).
@@ -40,6 +42,7 @@ def ensure_date(d):
     if not isinstance(d, datetime.date) or isinstance(d, datetime.datetime):
         raise TypeError(f"Expected datetime.date, got {type(d)}")
     return d
+
 
 def parse_dataframe_dates(df, column_list):
     """
@@ -51,5 +54,5 @@ def parse_dataframe_dates(df, column_list):
     for col in column_list:
         if col in df.columns:
             # We use pd.to_datetime and then extract the date component
-            df[col] = pd.to_datetime(df[col], errors='coerce').dt.date
+            df[col] = pd.to_datetime(df[col], errors="coerce").dt.date
     return df

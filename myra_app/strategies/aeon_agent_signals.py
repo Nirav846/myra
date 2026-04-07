@@ -2,12 +2,14 @@ import pandas as pd
 import numpy as np
 from myra_app.ml_engine import AEONEngine
 
+
 class Strategy:
     """
     AEON: Evolutionary SMC Agent (ML-1)
     Provides optimized conviction levels for Entry, Scale-in, and Exit
     based on historical 'Winning Genes'.
     """
+
     def __init__(self, librarian=None):
         self.name = "AEON Agent Signals"
         self.engine = None
@@ -23,25 +25,27 @@ class Strategy:
 
         # Get Agent's decision
         try:
-            conviction = self.engine.get_conviction(funda.get("symbol"), df, funda=funda)
+            conviction = self.engine.get_conviction(
+                funda.get("symbol"), df, funda=funda
+            )
         except Exception:
             conviction = "N/A"
-            
+
         # Map conviction level to Stars and SMC Phases
         smc_map = {
             "TACTICAL (25%)": "Basing",
             "CORE LOAD (50%)": "Basing",
-            "CONVICTION (100%)": "Ignition"
+            "CONVICTION (100%)": "Ignition",
         }
         stars_map = {
             "TACTICAL (25%)": "**",
             "CORE LOAD (50%)": "***",
-            "CONVICTION (100%)": "*****"
+            "CONVICTION (100%)": "*****",
         }
-        
+
         # HIDE EXIT NOISE: Only return True for actual signals
         has_signal = conviction not in ["EXIT / Stay Out", "N/A", "Unknown"]
-        
+
         # Calculate Floor Gap % (LTP vs D-POC)
         ltp = df["Close"].iloc[-1]
         dpoc = funda.get("d_poc", 0)
@@ -57,6 +61,6 @@ class Strategy:
                 "SMC": smc_map.get(conviction, "-"),
                 "Stars": stars_map.get(conviction, "*"),
                 "Floor_Gap%": floor_gap,
-                "Type": "ML-Agent"
-            }
+                "Type": "ML-Agent",
+            },
         }

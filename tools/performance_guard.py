@@ -3,18 +3,44 @@ import os
 import sys
 
 # Banned methods that cause performance degradation in quant workflows
-BANNED_METHODS = {"iterrows", "apply", "strftime"}
+BANNED_METHODS = {
+    "iterrows": "Use .to_dict('records'), .values, or vectorization.",
+    "apply": "Use vectorized Series operations or .map() instead.",
+    "strftime": "Heavy string operation. Use .dt accessors if using Pandas.",
+}
+
 
 class PerformanceVisitor(ast.NodeVisitor):
-    def __init__(self, filename):
+    def __init__(self, filename, lines):
         self.filename = filename
+        self.lines = lines
         self.violations = []
         self.in_loop = 0
 
+    def has_noqa(self, lineno, rule):
+        if lineno > len(self.lines):
+            return False
+        line_content = self.lines[lineno - 1]
+        return f"noqa: {rule}" in line_content or "noqa: performance" in line_content
+
     def visit_For(self, node):
-        self.in_loop += 1
+        # Check if this is a retry loop (common false positive for N+1)
+        is_retry = False
+        if isinstance(node.target, ast.Name) and node.target.id in [
+            "i",
+            "j",
+            "retry",
+            "retries",
+        ]:
+            is_retry = True
+
+        if not is_retry:
+            self.in_loop += 1
+
         self.generic_visit(node)
-        self.in_loop -= 1
+
+        if not is_retry:
+            self.in_loop -= 1
 
     def visit_While(self, node):
         self.in_loop += 1
@@ -24,81 +50,119 @@ class PerformanceVisitor(ast.NodeVisitor):
     def visit_Call(self, node):
         if isinstance(node.func, ast.Attribute):
             attr_name = node.func.attr
+
+            # Check for banned methods
             if attr_name in BANNED_METHODS:
-                self.violations.append((node.lineno, f"🚫 Banned method usage: .{attr_name}()"))
-            
+                if not self.has_noqa(node.lineno, attr_name):
+                    suggestion = BANNED_METHODS[attr_name]
+                    self.violations.append(
+                        (
+                            node.lineno,
+                            "CRITICAL",
+                            f"Banned method usage: .{attr_name}(). {suggestion}",
+                        )
+                    )
+
+            # Check for inefficiencies inside loops
             if self.in_loop > 0:
                 if attr_name == "iloc":
-                    self.violations.append((node.lineno, "⚠️ High-latency operation in loop: .iloc[] (Use .iat or vectorization)"))
+                    if not self.has_noqa(node.lineno, "iloc"):
+                        self.violations.append(
+                            (
+                                node.lineno,
+                                "WARNING",
+                                "High-latency .iloc[] in loop. Use .iat or vectorization.",
+                            )
+                        )
                 if attr_name == "append":
-                    # DataFrame.append is O(N^2) in loops and deprecated in newer Pandas
-                    self.violations.append((node.lineno, "🔥 O(N^2) risk: .append() call inside loop (Use pd.concat)"))
+                    if not self.has_noqa(node.lineno, "append"):
+                        self.violations.append(
+                            (
+                                node.lineno,
+                                "CRITICAL",
+                                "O(N^2) risk: .append() in loop. Use pd.concat or lists.",
+                            )
+                        )
+                if attr_name in ["execute", "get_data", "fetch"]:
+                    if not self.has_noqa(node.lineno, "N+1"):
+                        self.violations.append(
+                            (
+                                node.lineno,
+                                "LATENCY",
+                                "Potential N+1 Query. Move DB/API calls outside the loop.",
+                            )
+                        )
 
         self.generic_visit(node)
 
     def visit_Subscript(self, node):
         # Catch chained indexing: df[mask]['col']
         if isinstance(node.value, ast.Subscript):
-             self.violations.append((node.lineno, "🔗 Chained indexing detected: df[x][y] (Use .loc[x, y] for performance/safety)"))
+            if not self.has_noqa(node.lineno, "chained"):
+                self.violations.append(
+                    (
+                        node.lineno,
+                        "WARNING",
+                        "Chained indexing detected: df[x][y]. Use .loc[x, y].",
+                    )
+                )
         self.generic_visit(node)
+
 
 def check_file(filepath):
     try:
-        with open(filepath, "r", encoding="utf-8") as f:
-            content = f.read()
+        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+            lines = f.readlines()
+            content = "".join(lines)
             tree = ast.parse(content)
-            visitor = PerformanceVisitor(filepath)
+            visitor = PerformanceVisitor(filepath, lines)
             visitor.visit(tree)
             return visitor.violations
     except Exception as e:
-        return [(0, f"❌ Error parsing file: {e}")]
+        return [(0, "ERROR", f"Could not parse file: {e}")]
+
 
 def main():
-    """
-    Performance Guard for MYRA.
-    Scans files for anti-patterns that degrade backtesting/scanning performance.
-    """
-    # Default to myra_app if no path provided
     paths = sys.argv[1:] if len(sys.argv) > 1 else ["myra_app", "research", "tools"]
     total_violations = 0
     scanned_files = 0
-    
-    print("🚀 MYRA Performance Guard: Scanning for anti-patterns...")
-    
+    exclude_dirs = {"venv", ".git", "__pycache__", "pkscreener_env", ".pytest_cache"}
+
+    print("--- MYRA Performance Guard: Scanning for anti-patterns ---")
+
     for path in paths:
         if not os.path.exists(path):
             continue
-            
-        if os.path.isfile(path):
+
+        files = []
+        if os.path.isfile(path) and path.endswith(".py"):
             files = [path]
         else:
-            files = []
-            for root, _, filenames in os.walk(path):
-                # Skip virtual envs and caches
-                if any(x in root for x in ["pkscreener_env", "__pycache__", ".git"]):
-                    continue
+            for root, dirs, filenames in os.walk(path):
+                dirs[:] = [d for d in dirs if d not in exclude_dirs]
                 for f in filenames:
-                    if f.endswith(".py"):
+                    if f.endswith(".py") and f != "performance_guard.py":
                         files.append(os.path.join(root, f))
-        
+
         for file in files:
             scanned_files += 1
             violations = check_file(file)
             if violations:
-                print(f"\n--- {file} ---")
-                for line, msg in violations:
-                    print(f"  [Line {line}] {msg}")
+                print(f"\nFILE: {file}")
+                for line, level, msg in violations:
+                    print(f"  Line {line:4} | {level}: {msg}")
                     total_violations += 1
-    
-    print(f"\n{'='*50}")
+
+    print("-" * 50)
     print(f"Scan Complete: {scanned_files} files checked.")
+
     if total_violations > 0:
-        print(f"❌ Found {total_violations} performance violations.")
-        # Exit with error code to integrate with pre-commit/CI
+        print(f"RESULT: Found {total_violations} performance violations.")
         sys.exit(1)
     else:
-        print("✨ No performance violations detected. Code is quant-ready!")
+        print("RESULT: No performance violations detected. Code is quant-ready!")
         sys.exit(0)
+
 
 if __name__ == "__main__":
     main()

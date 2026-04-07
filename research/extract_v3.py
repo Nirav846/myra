@@ -1,11 +1,15 @@
-﻿import json
+import json
 import re
+
 try:
-    with open('temp_chatgpt.html', 'r', encoding='utf-8') as f:
+    with open("temp_chatgpt.html", "r", encoding="utf-8") as f:
         html_content = f.read()
-    
+
     # ChatGPT shares often store data in __NEXT_DATA__ script tag
-    match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', html_content)
+    match = re.search(
+        r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>',
+        html_content,
+    )
     if match:
         data = json.loads(match.group(1))
         # Navigate the JSON structure to find the messages
@@ -13,10 +17,10 @@ try:
         props = data.get("props", {})
         page_props = props.get("pageProps", {})
         shared_conv = page_props.get("sharedConversationResponse", {})
-        
+
         # Sometimes it is here
         mapping = shared_conv.get("mapping", {})
-        
+
         with open("chat_extracted.txt", "w", encoding="utf-8") as f_out:
             for node_id, node in mapping.items():
                 message = node.get("message")

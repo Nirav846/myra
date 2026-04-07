@@ -1,6 +1,6 @@
-
 try:
     from nsepython import nse_get_index_quote
+
     print("nsepython imported successfully.")
     data = nse_get_index_quote("NIFTY 50")
     print(f"Raw NIFTY 50 Data keys: {data.keys() if data else 'None'}")

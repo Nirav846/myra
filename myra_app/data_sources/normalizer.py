@@ -1,8 +1,10 @@
 from datetime import datetime
 import calendar
 
+
 def safe_float(val):
-    if val is None: return None
+    if val is None:
+        return None
     try:
         # Handle cases like "1,200.50", "15%", or "-"
         clean_val = str(val).replace(",", "").replace("%", "").strip()
@@ -12,9 +14,11 @@ def safe_float(val):
     except (ValueError, TypeError):
         return None
 
+
 def derive_period_end(report_date):
     """Converts 'Dec 2025' or '2025-12' to '2025-12-31'."""
-    if not report_date: return None
+    if not report_date:
+        return None
     try:
         # Handle 'Dec 2025'
         if len(report_date.split()) == 2:
@@ -30,13 +34,16 @@ def derive_period_end(report_date):
                 year, month = int(parts[0]), int(parts[1])
                 last_day = calendar.monthrange(year, month)[1]
                 return f"{year}-{month:02d}-{last_day}"
-    except Exception: pass
+    except Exception:
+        pass
     return report_date
+
 
 def normalize(data, source):
     """
     Normalizes raw data from various sources into a standard MYRA format.
     """
+
     # Optimized with list comprehension (Fix 50, 77, 93: Avoid .append in loop)
     def _to_normalized(row):
         # Standardize field names across different potential raw inputs before specific source logic
@@ -44,7 +51,7 @@ def normalize(data, source):
         std_row = {str(k).lower().replace(" ", "_"): v for k, v in row.items()}
         report_date = row.get("report_date") or row.get("date")
         period_end = derive_period_end(report_date)
-        
+
         if source in ["screener", "screener_in"]:
             return {
                 "report_date": report_date,
@@ -70,7 +77,7 @@ def normalize(data, source):
                 "market_cap": safe_float(row.get("market_cap")),
                 "sales_per_share": safe_float(row.get("sales_per_share")),
                 "dividend_yield": safe_float(row.get("dividend_yield")),
-                "source": source
+                "source": source,
             }
         elif source in ["google_finance", "finology", "google"]:
             return {
@@ -84,9 +91,9 @@ def normalize(data, source):
                 "debt": safe_float(row.get("debt")),
                 "book_value": safe_float(row.get("book_value")),
                 "market_cap": safe_float(row.get("market_cap")),
-                "source": source
+                "source": source,
             }
-        
+
         # Fallback for other sources (simplified)
         else:
             return {
@@ -100,7 +107,7 @@ def normalize(data, source):
                 "debt": safe_float(row.get("debt")),
                 "book_value": safe_float(row.get("book_value")),
                 "market_cap": safe_float(row.get("market_cap")),
-                "source": source
+                "source": source,
             }
 
     return [_to_normalized(row) for row in data]

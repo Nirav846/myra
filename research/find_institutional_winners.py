@@ -2,12 +2,13 @@ import os
 import duckdb
 import pandas as pd
 
+
 def find_institutional_winners():
-    db_path = os.path.join(os.getcwd(), 'results', 'Data', 'myra_market_data.db')
+    db_path = os.path.join(os.getcwd(), "results", "Data", "myra_market_data.db")
     conn = duckdb.connect(db_path, read_only=True)
-    
+
     print("--- [RESEARCH] Scanning for NIFTY 500 Winners (40%+ move in 60d) ---")
-    
+
     # Filter by NIFTY 500 and exclude outliers with unrealistic moves (e.g., > 300% in 60d)
     query = """
         WITH price_expansion AS (
@@ -39,6 +40,7 @@ def find_institutional_winners():
     else:
         print(f"Found {len(df)} Institutional Winners in NIFTY 500:")
         print(df.head(20).to_string(index=False))
+
 
 if __name__ == "__main__":
     find_institutional_winners()

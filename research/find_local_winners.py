@@ -2,12 +2,15 @@ import os
 import duckdb
 import pandas as pd
 
+
 def find_winners():
-    db_path = os.path.join(os.getcwd(), 'results', 'Data', 'myra_market_data.db')
+    db_path = os.path.join(os.getcwd(), "results", "Data", "myra_market_data.db")
     conn = duckdb.connect(db_path, read_only=True)
-    
-    print("--- [RESEARCH] Scanning Database for 40%+ Winners (Sept 2024 - March 2026) ---")
-    
+
+    print(
+        "--- [RESEARCH] Scanning Database for 40%+ Winners (Sept 2024 - March 2026) ---"
+    )
+
     # Calculate 60-day rolling returns for all symbols
     query = """
         WITH price_expansion AS (
@@ -37,6 +40,7 @@ def find_winners():
     else:
         print(f"Found {len(df)} potential 'Local Multi-baggers':")
         print(df.head(20).to_string(index=False))
+
 
 if __name__ == "__main__":
     find_winners()

@@ -1,11 +1,13 @@
 from rich.console import Console
 from rich.panel import Panel
 
+
 class MenuNavigator:
     """
     MYRA Menu Navigator (v1.0)
     Handles complex sub-menu navigation, breadcrumbs, and shortcut injection.
     """
+
     def __init__(self, console: Console):
         self.console = console
         self.breadcrumb = []
@@ -35,8 +37,10 @@ class MenuNavigator:
         self.console.print(f"\n[bold cyan]{title}:[/bold cyan]")
         for opt in options:
             self.console.print(f"  {opt}")
-        
-        return self.console.input("\n[bold yellow]Select Option > [/bold yellow]").upper()
+
+        return self.console.input(
+            "\n[bold yellow]Select Option > [/bold yellow]"
+        ).upper()
 
     def handle_shortcut(self, shortcut_str: str):
         """

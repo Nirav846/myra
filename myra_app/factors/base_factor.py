@@ -2,11 +2,13 @@
 from abc import ABC, abstractmethod
 import pandas as pd
 
+
 class BaseFactor(ABC):
     """
     Base class for all MYRA Factors.
     Each factor returns a normalized score from 0.0 to 1.0.
     """
+
     def __init__(self, weight=1.0):
         self.weight = weight
 

@@ -2,6 +2,7 @@
 import time
 import requests
 
+
 class RateLimiter:
     def __init__(self, rate_per_sec=2):
         self.delay = 1.0 / rate_per_sec
@@ -13,6 +14,7 @@ class RateLimiter:
         if elapsed < self.delay:
             time.sleep(self.delay - elapsed)
         self.last_call = time.time()
+
 
 class SourceManager:
     def __init__(self):
@@ -36,7 +38,7 @@ class SourceManager:
     def mark_failure(self, name, is_rate_limit=False):
         if name not in self.sources:
             self.sources[name] = {"score": 5, "cooldown_until": 0}
-        
+
         # If rate limited, cool off for 1 hour. Otherwise 10 mins.
         cooldown = 3600 if is_rate_limit else 600
         # Fix 42, 43: Avoid chained indexing
@@ -51,6 +53,7 @@ class SourceManager:
         # Fix 49: Avoid chained indexing
         source_entry = self.sources[name]
         source_entry["score"] = min(10, source_entry["score"] + 0.5)
+
 
 class BaseDataSource:
     def fetch(self, symbol):

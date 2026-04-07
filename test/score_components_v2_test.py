@@ -2,12 +2,16 @@ import unittest
 from unittest.mock import MagicMock, patch
 import sys
 
+
 # Mocking dependencies for environments where they are missing
 class MockNaN:
-    def __repr__(self): return "NaN"
+    def __repr__(self):
+        return "NaN"
+
 
 def mock_isna(val):
     return val is None or isinstance(val, MockNaN)
+
 
 # 1. Create Mocks
 mock_pd = MagicMock()
@@ -17,10 +21,10 @@ mock_np = MagicMock()
 mock_np.nan = MockNaN()
 
 # 2. Inject into sys.modules BEFORE any other imports
-if 'pandas' not in sys.modules:
-    sys.modules['pandas'] = mock_pd
-if 'numpy' not in sys.modules:
-    sys.modules['numpy'] = mock_np
+if "pandas" not in sys.modules:
+    sys.modules["pandas"] = mock_pd
+if "numpy" not in sys.modules:
+    sys.modules["numpy"] = mock_np
 
 # 3. Import (will get the mocks)
 import pandas as pd
@@ -28,10 +32,17 @@ import numpy as np
 
 # 4. Import the module under test (will also use the injected mocks)
 from myra_app.score_components_v2 import (
-    precompute_ranks, trend_score, stability_score, delivery_score,
-    liquidity_score, base_score, fundamental_score, valuation_score,
-    regime_adjustment
+    precompute_ranks,
+    trend_score,
+    stability_score,
+    delivery_score,
+    liquidity_score,
+    base_score,
+    fundamental_score,
+    valuation_score,
+    regime_adjustment,
 )
+
 
 class TestScoreComponentsV2(unittest.TestCase):
     def test_mock_setup(self):
@@ -44,7 +55,13 @@ class TestScoreComponentsV2(unittest.TestCase):
         """Verify that precompute_ranks calls .rank() on all target columns."""
         # Setup a mock DataFrame
         df = MagicMock()
-        df.columns = ["roe", "ProfitGrowth", "avg_delivery_20d", "avg_volume_20d", "smart_money_score"]
+        df.columns = [
+            "roe",
+            "ProfitGrowth",
+            "avg_delivery_20d",
+            "avg_volume_20d",
+            "smart_money_score",
+        ]
 
         # Mocking the __setitem__ and __getitem__ to simulate column ranking
         mock_series = MagicMock()
@@ -56,7 +73,7 @@ class TestScoreComponentsV2(unittest.TestCase):
         # Verify rank calls for all columns
         # roe, ProfitGrowth, avg_delivery_20d, avg_volume_20d, smart_money_score
         self.assertEqual(mock_series.rank.call_count, 5)
-        mock_series.rank.assert_called_with(pct=True, na_option='bottom')
+        mock_series.rank.assert_called_with(pct=True, na_option="bottom")
 
         # Verify that new rank columns are assigned (5 columns)
         self.assertEqual(df.__setitem__.call_count, 5)
@@ -126,7 +143,9 @@ class TestScoreComponentsV2(unittest.TestCase):
 
         # Both NaN
         row = {"_rank_sm_score": np.nan, "_rank_delivery": np.nan}
-        self.assertAlmostEqual(delivery_score(row), 0.3) # (0.3 * 0.6) + (0.3 * 0.4) = 0.3
+        self.assertAlmostEqual(
+            delivery_score(row), 0.3
+        )  # (0.3 * 0.6) + (0.3 * 0.4) = 0.3
 
         # Both None
         row = {"_rank_sm_score": None, "_rank_delivery": None}
@@ -176,7 +195,7 @@ class TestScoreComponentsV2(unittest.TestCase):
             "keltner_upper": 100,
             "keltner_lower": 80,
             "close": 90,
-            "atr5": 5 # close + atr5 = 95 < 100, close - atr5 = 85 > 80
+            "atr5": 5,  # close + atr5 = 95 < 100, close - atr5 = 85 > 80
         }
         self.assertEqual(base_score(row), 1.0)
 
@@ -186,7 +205,7 @@ class TestScoreComponentsV2(unittest.TestCase):
             "keltner_upper": 100,
             "keltner_lower": 80,
             "close": 90,
-            "atr5": 5
+            "atr5": 5,
         }
         self.assertEqual(base_score(row), 0.5)
 
@@ -252,5 +271,6 @@ class TestScoreComponentsV2(unittest.TestCase):
         # NEUTRAL / Other
         self.assertAlmostEqual(regime_adjustment(score, "NEUTRAL"), 0.5)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

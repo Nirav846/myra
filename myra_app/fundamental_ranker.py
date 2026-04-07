@@ -5,12 +5,14 @@ import sqlite3
 import os
 from datetime import date
 
+
 class FundamentalRanker:
     """
     MYRA Fundamental Ranking Engine (v1.1)
     Scores stocks based on Growth, Quality, Stability, and Risk.
     Uses SQLite (scoring.db) for caching and DuckDB for raw data processing.
     """
+
     def __init__(self, duck_conn, scoring_db_path="scoring.db"):
         self.duck_conn = duck_conn
         self.scoring_db_path = scoring_db_path
@@ -28,37 +30,51 @@ class FundamentalRanker:
         """
         print("[MYRA] Materializing Fundamental Scores...")
         df = self._calculate_all_scores_from_duck(symbols)
-        if df.empty: return
-        
+        if df.empty:
+            return
+
         conn_sq = self._get_scoring_conn()
-        if not conn_sq: return
-        
+        if not conn_sq:
+            return
+
         try:
             cursor = conn_sq.cursor()
             # Fix 38: Use .isoformat()
             today = date.today().isoformat()
-            
+
             # Optimized with list comprehension (Fix 41, 44: Avoid .append in loop)
             def _to_record(row):
                 score = row.Funda_Score
-                grade = 'A' if score >= 70 else 'B' if score >= 50 else 'C' if score >= 30 else 'D'
+                grade = (
+                    "A"
+                    if score >= 70
+                    else "B"
+                    if score >= 50
+                    else "C"
+                    if score >= 30
+                    else "D"
+                )
                 return (
-                    row.Stock, today, 
-                    float(getattr(row, 'Rev_Growth_Per', 0)), 
-                    float(getattr(row, 'ROE', 0)), 
-                    0.0, # stability placeholder
-                    float(getattr(row, 'Pledge_Pct', 0)),
+                    row.Stock,
+                    today,
+                    float(getattr(row, "Rev_Growth_Per", 0)),
+                    float(getattr(row, "ROE", 0)),
+                    0.0,  # stability placeholder
+                    float(getattr(row, "Pledge_Pct", 0)),
                     float(score),
-                    grade
+                    grade,
                 )
 
             records = [_to_record(row) for row in df.itertuples(index=False)]
-            
-            cursor.executemany("""
+
+            cursor.executemany(
+                """
                 INSERT OR REPLACE INTO fundamental_scores 
                 (symbol, date, growth_score, quality_score, stability_score, risk_score, total_funda_score, grade)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, records)
+            """,
+                records,
+            )
             conn_sq.commit()
             conn_sq.close()
             print(f"[+] Materialized {len(records)} scores to scoring.db")
@@ -66,11 +82,12 @@ class FundamentalRanker:
             print(f"[!] Materialization failed: {e}")
 
     def _calculate_all_scores_from_duck(self, symbols=None):
-        if not self.duck_conn: return pd.DataFrame()
-        
+        if not self.duck_conn:
+            return pd.DataFrame()
+
         sym_filter = ""
         if symbols:
-            sym_list = "', '".join([s.split('.')[0].upper() for s in symbols])
+            sym_list = "', '".join([s.split(".")[0].upper() for s in symbols])
             sym_filter = f"WHERE symbol IN ('{sym_list}')"
 
         query = f"""
@@ -152,14 +169,22 @@ class FundamentalRanker:
                 try:
                     where = ""
                     if symbols:
-                        sym_list = "', '".join([s.split('.')[0].upper() for s in symbols])
+                        sym_list = "', '".join(
+                            [s.split(".")[0].upper() for s in symbols]
+                        )
                         where = f"WHERE symbol IN ('{sym_list}')"
-                    
-                    df = pd.read_sql(f"SELECT symbol as Stock, total_funda_score as Funda_Score, grade as Grade FROM fundamental_scores {where} ORDER BY Funda_Score DESC", conn_sq)
+
+                    df = pd.read_sql(
+                        f"SELECT symbol as Stock, total_funda_score as Funda_Score, grade as Grade FROM fundamental_scores {where} ORDER BY Funda_Score DESC",
+                        conn_sq,
+                    )
                     conn_sq.close()
                     if not df.empty:
                         return df
-                except Exception: pass
+                except Exception:
+                    pass
 
         # Fallback to DuckDB calculation
-        return self._calculate_all_scores_from_duck(symbols).sort_values('Funda_Score', ascending=False)
+        return self._calculate_all_scores_from_duck(symbols).sort_values(
+            "Funda_Score", ascending=False
+        )

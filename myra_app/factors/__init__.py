@@ -6,5 +6,5 @@ from .ias_factor import IASFactor
 GLOBAL_FACTORS = {
     "rs": RSFactor(weight=0.3),
     "delivery": DeliveryFactor(weight=0.3),
-    "ias": IASFactor(weight=0.4)
+    "ias": IASFactor(weight=0.4),
 }

@@ -7,6 +7,7 @@ from tqdm import tqdm
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
+
 def analyze_factor_importance(lake_dir=os.path.join(PROJECT_ROOT, "data", "lake")):
     """
     Analyzes which factors actually lead to 3-month (60-day) forward returns.
@@ -17,27 +18,34 @@ def analyze_factor_importance(lake_dir=os.path.join(PROJECT_ROOT, "data", "lake"
         print("[!] No data in lake. Run DataExporter first.")
         return
 
-    all_correlations = []
-    
-    print(f"[*] Analyzing factor-alpha correlation across {len(files)} symbols...")
-    for f in tqdm(files):
+    # Optimized with list comprehension (Fix 39: Avoid .append in loop)
+    def _get_corr(f):
         try:
             df = pd.read_parquet(f)
-            if len(df) < 100: continue
-            
+            if len(df) < 100:
+                return None
+
             # 1. Target: 60-day Forward Returns
-            df['target_return'] = df['Close'].shift(-60) / df['Close'] - 1
-            
+            df["target_return"] = df["Close"].shift(-60) / df["Close"] - 1
+
             # 2. Factors (Computed on the fly for backtest)
-            df['f_delivery'] = df['delivery_percent'].rolling(5).mean()
-            df['f_rs'] = df['Close'] / df['Close'].shift(252)
-            df['f_volatility'] = (df['High'] - df['Low']).rolling(20).mean() / df['Close']
-            
+            df["f_delivery"] = df["delivery_percent"].rolling(5).mean()
+            df["f_rs"] = df["Close"] / df["Close"].shift(252)
+            df["f_volatility"] = (df["High"] - df["Low"]).rolling(20).mean() / df[
+                "Close"
+            ]
+
             # 3. Correlation
-            cols = ['f_delivery', 'f_rs', 'f_volatility']
-            corr = df[cols + ['target_return']].corr()['target_return'].drop('target_return')
-            all_correlations.append(corr)
-        except: continue
+            cols = ["f_delivery", "f_rs", "f_volatility"]
+            return (
+                df[cols + ["target_return"]]
+                .corr()["target_return"]
+                .drop("target_return")
+            )
+        except:
+            return None
+
+    all_correlations = [c for f in tqdm(files) if (c := _get_corr(f)) is not None]
 
     if all_correlations:
         results = pd.DataFrame(all_correlations).mean()
@@ -48,6 +56,7 @@ def analyze_factor_importance(lake_dir=os.path.join(PROJECT_ROOT, "data", "lake"
         print("------------------------------------------")
     else:
         print("[!] Insufficient data for correlation analysis.")
+
 
 if __name__ == "__main__":
     analyze_factor_importance()

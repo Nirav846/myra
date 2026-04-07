@@ -10,10 +10,13 @@ sys.path.insert(0, PROJECT_ROOT)
 
 from myra_app.librarian import Librarian
 
+
 def backfill_year(year: int):
     console = Console()
     lib = Librarian(console=console)
-    console.print(f"[bold cyan]--- [DATABASE EXPANSION] Target: Missing {year} Data ---[/bold cyan]")
+    console.print(
+        f"[bold cyan]--- [DATABASE EXPANSION] Target: Missing {year} Data ---[/bold cyan]"
+    )
 
     start_date = date(year, 1, 1)
 
@@ -32,9 +35,10 @@ def backfill_year(year: int):
     existing_dates = set()
     try:
         # Use simple date strings
-        start_str = start_date.strftime("%Y-%m-%d")
-        end_str = end_date.strftime("%Y-%m-%d")
-        
+        # Performance Guard Compliant (Fix 35, 36)
+        start_str = start_date.isoformat()
+        end_str = end_date.isoformat()
+
         # Modular Fix: Use technical_data from _tech_conn (Trilogy Architecture)
         conn = lib._tech_conn if lib._tech_conn else lib.conn
         if conn:
@@ -43,7 +47,9 @@ def backfill_year(year: int):
                 f"SELECT DISTINCT date FROM {table_name} WHERE date >= '{start_str}' AND date <= '{end_str}'"
             ).fetchall()
             existing_dates = {r[0] for r in res}
-            console.print(f"[info][*] Found {len(existing_dates)} days for {year} already in database.[/info]")
+            console.print(
+                f"[info][*] Found {len(existing_dates)} days for {year} already in database.[/info]"
+            )
     except Exception as e:
         console.print(f"[warning][!] Could not check existing dates: {e}[/warning]")
         pass
@@ -51,25 +57,29 @@ def backfill_year(year: int):
     # Ensure existing dates match the date objects formatting or parse them
     # the existing_dates from sqlite usually return strings like "2021-01-01"
     # convert target days to string to check in existing_dates
-    target_days = []
-    for d in trading_days:
-        if d.strftime("%Y-%m-%d") not in existing_dates:
-            target_days.append(d)
+    # Optimized with list comprehension (Fix 56, 57: Avoid .append in loop and .strftime)
+    target_days = [d for d in trading_days if d.isoformat() not in existing_dates]
 
     target_days.sort()
 
     if not target_days:
-        console.print(f"[success][✔] No missing days in {year}. Database is already complete for {year}.[/success]")
+        console.print(
+            f"[success][✔] No missing days in {year}. Database is already complete for {year}.[/success]"
+        )
         lib.close()
         return
 
-    console.print(f"[info][*] Target days to fetch for {year}: {len(target_days)}[/info]")
+    console.print(
+        f"[info][*] Target days to fetch for {year}: {len(target_days)}[/info]"
+    )
 
     try:
         # Process the target days using Librarian's internal fetch mechanism
         lib._fetch_range(target_days)
 
-        console.print(f"\n[success][✔] {year} BACKFILL COMPLETE. Synchronizing Indicators...[/success]")
+        console.print(
+            f"\n[success][✔] {year} BACKFILL COMPLETE. Synchronizing Indicators...[/success]"
+        )
         lib.update_indicator_history()
 
         # Final Verification
@@ -79,15 +89,20 @@ def backfill_year(year: int):
             stats = conn.execute(
                 f"SELECT COUNT(DISTINCT date) FROM {table_name} WHERE date >= '{start_str}' AND date <= '{end_str}'"
             ).fetchone()
-            console.print(f"[bold yellow][!] {year} Data: {stats[0]} trading days now in database.[/bold yellow]")
+            console.print(
+                f"[bold yellow][!] {year} Data: {stats[0]} trading days now in database.[/bold yellow]"
+            )
 
     except Exception as e:
         console.print(f"[error][!] Backfill Failed: {e}[/error]")
     finally:
         lib.close()
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Backfill missing historical data for a specific year.")
+    parser = argparse.ArgumentParser(
+        description="Backfill missing historical data for a specific year."
+    )
     parser.add_argument("year", type=int, help="The year to backfill (e.g., 2021)")
     args = parser.parse_args()
 

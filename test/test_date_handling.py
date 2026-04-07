@@ -4,11 +4,15 @@ import pandas as pd
 from unittest.mock import patch, MagicMock
 
 from myra_core.utils.date_utils import to_date, ensure_date, parse_dataframe_dates
-from myra_core.utils.trading_calendar import is_trading_day, get_previous_trading_day, get_expected_trading_day
+from myra_core.utils.trading_calendar import (
+    is_trading_day,
+    get_previous_trading_day,
+    get_expected_trading_day,
+)
 from myra_core.data.data_freshness import check_data_freshness
 
-class TestDateHandling(unittest.TestCase):
 
+class TestDateHandling(unittest.TestCase):
     def test_to_date_type_safety(self):
         """Phase 6: Type safety (Mix of str/date/datetime inputs -> no crash)"""
         # Test string parsing
@@ -40,19 +44,24 @@ class TestDateHandling(unittest.TestCase):
             ensure_date(datetime.datetime(2026, 4, 2))
 
     def test_parse_dataframe_dates(self):
-        df = pd.DataFrame({
-            'date_col1': ['2026-04-02', '2026-04-03'],
-            'date_col2': [datetime.datetime(2026, 4, 2), datetime.datetime(2026, 4, 3)]
-        })
-        df_parsed = parse_dataframe_dates(df, ['date_col1', 'date_col2'])
+        df = pd.DataFrame(
+            {
+                "date_col1": ["2026-04-02", "2026-04-03"],
+                "date_col2": [
+                    datetime.datetime(2026, 4, 2),
+                    datetime.datetime(2026, 4, 3),
+                ],
+            }
+        )
+        df_parsed = parse_dataframe_dates(df, ["date_col1", "date_col2"])
 
-        self.assertIsInstance(df_parsed['date_col1'].iloc[0], datetime.date)
-        self.assertIsInstance(df_parsed['date_col2'].iloc[0], datetime.date)
+        self.assertIsInstance(df_parsed["date_col1"].iloc[0], datetime.date)
+        self.assertIsInstance(df_parsed["date_col2"].iloc[0], datetime.date)
 
-    @patch('myra_core.utils.trading_calendar.get_market_holidays')
+    @patch("myra_core.utils.trading_calendar.get_market_holidays")
     def test_weekend_case(self, mock_get_holidays):
         """Phase 6: Weekend case. Input: Sunday. Expected trading day: Friday"""
-        mock_get_holidays.return_value = set() # No holidays
+        mock_get_holidays.return_value = set()  # No holidays
 
         # Sunday is 2026-04-05
         sunday = datetime.date(2026, 4, 5)
@@ -62,7 +71,7 @@ class TestDateHandling(unittest.TestCase):
         expected = datetime.date(2026, 4, 3)
         self.assertEqual(get_previous_trading_day(sunday), expected)
 
-    @patch('myra_core.utils.trading_calendar.get_market_holidays')
+    @patch("myra_core.utils.trading_calendar.get_market_holidays")
     def test_holiday_case(self, mock_get_holidays):
         """Phase 6: Holiday case. Input: Known NSE holiday. Expected: previous trading day"""
         # Let's say Friday is a holiday
@@ -105,5 +114,6 @@ class TestDateHandling(unittest.TestCase):
         self.assertEqual(result["lag_days"], 2)
         self.assertEqual(result["allowed_lag"], 1)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

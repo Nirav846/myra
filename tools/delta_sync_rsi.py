@@ -12,24 +12,28 @@ console = Console()
 screener = MYRAScreener(console)
 
 try:
-    console.print("[bold cyan][*] MYRA Repair: Adding RSI Support & Performing Delta Sync (2026-03-30)...[/bold cyan]")
-    
+    console.print(
+        "[bold cyan][*] MYRA Repair: Adding RSI Support & Performing Delta Sync (2026-03-30)...[/bold cyan]"
+    )
+
     # 1. Update Schema First (Ensure column exists)
     try:
-        screener.lib.conn.execute("ALTER TABLE calculated_indicators ADD COLUMN rsi DOUBLE")
+        screener.lib.conn.execute(
+            "ALTER TABLE calculated_indicators ADD COLUMN rsi DOUBLE"
+        )
         console.print("[dim][*] Added 'rsi' column to calculated_indicators.[/dim]")
     except Exception:
         # If exists, it will fail, which is fine
         pass
 
     target_date = "2026-03-30"
-    
+
     # 2. Re-run the heavy logic for the latest date (Surgical Delta)
     # Using the exact same logic from librarian_intelligence.py (which I just updated)
-    
+
     # We'll call update_indicator_history but we want it to be fast.
     # Actually, the best way is to run the query I just fixed but with a filter for the target date.
-    
+
     sql = f"""
         INSERT OR REPLACE INTO calculated_indicators
         WITH base_data AS (
@@ -136,16 +140,25 @@ try:
         FROM smc_final
         WHERE date = CAST('{target_date}' AS DATE)
     """
-    
-    with console.status(f"[bold magenta][*] Computing technicals with RSI for {target_date}...[/bold magenta]"):
+
+    with console.status(
+        f"[bold magenta][*] Computing technicals with RSI for {target_date}...[/bold magenta]"
+    ):
         screener.lib.conn.execute(sql)
-        
+
     # 3. Verify
-    count = screener.lib.conn.execute("SELECT COUNT(*) FROM calculated_indicators WHERE date = ? AND rsi IS NOT NULL", (target_date,)).fetchone()[0]
+    count = screener.lib.conn.execute(
+        "SELECT COUNT(*) FROM calculated_indicators WHERE date = ? AND rsi IS NOT NULL",
+        (target_date,),
+    ).fetchone()[0]
     if count > 0:
-        console.print(f"[success][✔] RSI Support Added: {count} symbols updated for {target_date}.[/success]")
+        console.print(
+            f"[success][✔] RSI Support Added: {count} symbols updated for {target_date}.[/success]"
+        )
     else:
-        console.print(f"[warning][!] RSI calculation failed for {target_date}.[/warning]")
+        console.print(
+            f"[warning][!] RSI calculation failed for {target_date}.[/warning]"
+        )
 
 finally:
     screener.close()

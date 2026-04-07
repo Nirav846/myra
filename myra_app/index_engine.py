@@ -19,6 +19,7 @@ try:
 except ImportError:
     nse_get_index_quote = None
 
+
 class IndexEngine:
     def __init__(self):
         self.cache = {}
@@ -33,10 +34,7 @@ class IndexEngine:
         return (datetime.now() - ts).total_seconds() < self.cache_expiry
 
     def _store_cache(self, key, data):
-        self.cache[key] = {
-            "data": data,
-            "timestamp": datetime.now()
-        }
+        self.cache[key] = {"data": data, "timestamp": datetime.now()}
 
     def get_nifty(self):
         key = "NIFTY"
@@ -54,30 +52,32 @@ class IndexEngine:
                         "last_price": float(data.get("lastPrice", 0)),
                         "change": float(data.get("change", 0)),
                         "pchange": float(data.get("pChange", 0)),
-                        "timestamp": datetime.now()
+                        "timestamp": datetime.now(),
                     }
                     self._store_cache(key, result)
                     return result
-            except Exception: pass
+            except Exception:
+                pass
 
         # 2. Fallback: YFinance
         if yf:
             try:
                 data = yf.download("^NSEI", period="2d", interval="1d", progress=False)
                 if not data.empty:
-                    latest = data['Close'].iloc[-1]
-                    prev = data['Close'].iloc[-2]
+                    latest = data["Close"].iloc[-1]
+                    prev = data["Close"].iloc[-2]
                     change = latest - prev
                     pchange = (change / prev) * 100
                     result = {
                         "last_price": round(float(latest), 2),
                         "change": round(float(change), 2),
                         "pchange": round(float(pchange), 2),
-                        "timestamp": datetime.now()
+                        "timestamp": datetime.now(),
                     }
                     self._store_cache(key, result)
                     return result
-            except Exception: pass
+            except Exception:
+                pass
 
         return self.cache.get(key, {}).get("data")
 
@@ -97,30 +97,34 @@ class IndexEngine:
                         "last_price": float(data.get("lastPrice", 0)),
                         "change": float(data.get("change", 0)),
                         "pchange": float(data.get("pChange", 0)),
-                        "timestamp": datetime.now()
+                        "timestamp": datetime.now(),
                     }
                     self._store_cache(key, result)
                     return result
-            except Exception: pass
+            except Exception:
+                pass
 
         # 2. Fallback: YFinance
         if yf:
             try:
-                data = yf.download("^INDIAVIX", period="2d", interval="1d", progress=False)
+                data = yf.download(
+                    "^INDIAVIX", period="2d", interval="1d", progress=False
+                )
                 if not data.empty:
-                    latest = data['Close'].iloc[-1]
-                    prev = data['Close'].iloc[-2]
+                    latest = data["Close"].iloc[-1]
+                    prev = data["Close"].iloc[-2]
                     change = latest - prev
                     pchange = (change / prev) * 100
                     result = {
                         "last_price": round(float(latest), 2),
                         "change": round(float(change), 2),
                         "pchange": round(float(pchange), 2),
-                        "timestamp": datetime.now()
+                        "timestamp": datetime.now(),
                     }
                     self._store_cache(key, result)
                     return result
-            except Exception: pass
+            except Exception:
+                pass
 
         return self.cache.get(key, {}).get("data")
 
@@ -131,30 +135,40 @@ class IndexEngine:
             # Fix 125: Avoid chained indexing
             entry = self.cache[key]
             return entry["data"]
-            
+
         indices = {
             "S&P 500": "^GSPC",
             "NASDAQ": "^IXIC",
             "Nikkei 225": "^N225",
-            "FTSE 100": "^FTSE"
+            "FTSE 100": "^FTSE",
         }
-        
-        if not yf: return None
-        
+
+        if not yf:
+            return None
+
         # Optimized with list comprehension (Fix 142: Avoid .append in loop)
         def _get_change(sym):
             try:
                 data = yf.download(sym, period="2d", interval="1d", progress=False)
                 if len(data) >= 2:
-                    return ((data['Close'].iloc[-1] / data['Close'].iloc[-2]) - 1) * 100
-            except: pass
+                    return ((data["Close"].iloc[-1] / data["Close"].iloc[-2]) - 1) * 100
+            except:
+                pass
             return None
 
-        results = [float(c) for s in indices.values() if (c := _get_change(s)) is not None]
-            
+        results = [
+            float(c) for s in indices.values() if (c := _get_change(s)) is not None
+        ]
+
         if results:
             avg_change = sum(results) / len(results)
-            vibe = "BULLISH" if avg_change > 0.5 else "BEARISH" if avg_change < -0.5 else "NEUTRAL"
+            vibe = (
+                "BULLISH"
+                if avg_change > 0.5
+                else "BEARISH"
+                if avg_change < -0.5
+                else "NEUTRAL"
+            )
             res = {"avg": round(avg_change, 2), "vibe": vibe}
             self._store_cache(key, res)
             return res
@@ -167,22 +181,32 @@ class IndexEngine:
             # Fix 157: Avoid chained indexing
             entry = self.cache[key]
             return entry["data"]
-            
-        if not yf: return None
+
+        if not yf:
+            return None
         try:
             data = yf.download("^NSEI", period="4mo", interval="1d", progress=False)
             if not data.empty:
-                latest = data['Close'].iloc[-1]
-                m1 = data['Close'].iloc[-22] if len(data) >= 22 else data['Close'].iloc[0]
-                m3 = data['Close'].iloc[-63] if len(data) >= 63 else data['Close'].iloc[0]
-                
+                latest = data["Close"].iloc[-1]
+                m1 = (
+                    data["Close"].iloc[-22]
+                    if len(data) >= 22
+                    else data["Close"].iloc[0]
+                )
+                m3 = (
+                    data["Close"].iloc[-63]
+                    if len(data) >= 63
+                    else data["Close"].iloc[0]
+                )
+
                 perf_1m = ((latest / m1) - 1) * 100
                 perf_3m = ((latest / m3) - 1) * 100
-                
+
                 res = {"1M": round(float(perf_1m), 1), "3M": round(float(perf_3m), 1)}
                 self._store_cache(key, res)
                 return res
-        except Exception: pass
+        except Exception:
+            pass
         return None
 
     def get_market_breadth(self, librarian=None):
@@ -193,7 +217,7 @@ class IndexEngine:
             entry = self.cache[key]
             return entry["data"]
 
-        if not librarian or not librarian.conn: 
+        if not librarian or not librarian.conn:
             return {"advances": 0, "declines": 0, "unchanged": 0}
 
         try:
@@ -224,7 +248,7 @@ class IndexEngine:
                     ) -- This part needs careful DuckDB SQL for 'latest' date per symbol
                 )
             """
-            
+
             # Refined SQL for DuckDB to get breadth of the MOST RECENT day in DB
             sql_refined = """
                 WITH latest_date AS (SELECT MAX(date) as d FROM prices),
@@ -241,17 +265,17 @@ class IndexEngine:
                     SUM(CASE WHEN close = prev_close THEN 1 ELSE 0 END) as unchanged
                 FROM data
             """
-            
+
             res = librarian.conn.execute(sql_refined).fetchone()
             if res:
                 result = {
                     "advances": int(res[0] or 0),
                     "declines": int(res[1] or 0),
-                    "unchanged": int(res[2] or 0)
+                    "unchanged": int(res[2] or 0),
                 }
                 self._store_cache(key, result)
                 return result
         except Exception:
             pass
-            
+
         return {"advances": 0, "declines": 0, "unchanged": 0}

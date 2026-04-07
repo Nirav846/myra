@@ -22,14 +22,16 @@ from myra_app.UI_Manager import draw_dashboard
 from myra_app.ml_engine import TrendForecaster
 
 # Define High-Vibe Dark Theme
-custom_theme = Theme({
-    "info": "cyan",
-    "warning": "yellow",
-    "error": "bold red",
-    "success": "bold green",
-    "stock": "bold yellow",
-    "stat": "bold magenta"
-})
+custom_theme = Theme(
+    {
+        "info": "cyan",
+        "warning": "yellow",
+        "error": "bold red",
+        "success": "bold green",
+        "stock": "bold yellow",
+        "stat": "bold magenta",
+    }
+)
 
 console = Console(theme=custom_theme, style="white on black")
 
@@ -48,45 +50,61 @@ GLOSSARY = """
  [magenta]Stars[/magenta]: ML-Confidence rank.
 """
 
+
 def show_glossary():
-    console.print(Panel(GLOSSARY, title="[bold white]MYRA Intelligence Glossary[/bold white]", border_style="dim", style="on black"))
+    console.print(
+        Panel(
+            GLOSSARY,
+            title="[bold white]MYRA Intelligence Glossary[/bold white]",
+            border_style="dim",
+            style="on black",
+        )
+    )
+
 
 def main():
     parser = argparse.ArgumentParser(description="MYRA")
     parser.add_argument("--options", help="Startup shortcuts (e.g., 26:1)")
-    parser.add_argument("--daily", action="store_true", help="Run Daily Routine and Exit")
+    parser.add_argument(
+        "--daily", action="store_true", help="Run Daily Routine and Exit"
+    )
     args, _ = parser.parse_known_args()
-    
+
     # Initialize Core Components
     screener = MYRAScreener(console)
     nav = MenuNavigator(console)
     tg = TelegramNotifier()
-    
+
     # Automated Modular Sync (Atomic Trilogy)
     console.print("[dim][*] Initiating Background Data Sync...[/dim]")
     screener.lib.start_background_sync()
-    
+
     # Model Warmup Thread
     forecaster = TrendForecaster(screener.lib)
     forecast_data = {"result": None}
-    
+
     def warmup():
         try:
             if forecaster.setup_engine():
                 forecast_data["result"] = forecaster.get_forecast()
-        except Exception: pass
-            
+        except Exception:
+            pass
+
     warmup_thread = threading.Thread(target=warmup, daemon=True)
     warmup_thread.start()
-    
+
     if args.daily:
         console.print("[bold green][*] Running Automated Daily Routine...[/bold green]")
         # 1. Elite Whale Tracker
-        res_whale = screener.execute_scan("whale_tracker", "Elite Whale Tracker (Daily)")
-        if res_whale: tg.send_scan_results("Elite Whale Tracker", res_whale)
+        res_whale = screener.execute_scan(
+            "whale_tracker", "Elite Whale Tracker (Daily)"
+        )
+        if res_whale:
+            tg.send_scan_results("Elite Whale Tracker", res_whale)
         # 2. Super-Scan
         res_super = screener.execute_scan("super_setup", "Super-Scan (Daily)")
-        if res_super: tg.send_scan_results("Super-Scan", res_super)
+        if res_super:
+            tg.send_scan_results("Super-Scan", res_super)
         screener.close()
         return
 
@@ -106,7 +124,11 @@ def main():
         "15": ("whale_tracker", "Elite Whale Tracker (ML)", "Whale_Conf"),
         "16": ("large_deal_momentum", "Institutional Deals", "Inst_Intensity"),
         "23": ("smart_money", "Smart Money Accumulation", "Deliv_Grow"),
-        "24": ("crash_resilience", "Crash Resilience (Underwater Ball)", "Absorp_Ratio"),
+        "24": (
+            "crash_resilience",
+            "Crash Resilience (Underwater Ball)",
+            "Absorp_Ratio",
+        ),
         "25": ("insider_signals", "Insider Conviction Radar", "Insider_Buy"),
         "27": ("bottom_hunter", "Multi-Year Bottom Hunter", None),
         "28": ("rs_momentum", "RS Momentum & Phelps Base", "Type"),
@@ -114,110 +136,165 @@ def main():
         "30": ("smart_money_ignition", "Smart Money Ignition (SMC-1)", "Ignition_Dist"),
         "31": ("aeon_agent_signals", "AEON Agent Signals (ML-1)", "AEON_Conviction"),
         "32": ("dilated_cnn_forecast", "Dilated CNN Forecast (ML-2)", "Forecast_Move%"),
-        "33": ("institutional_structural_flow", "Institutional Structural Flow (SMC-2)", "Structure"),
+        "33": (
+            "institutional_structural_flow",
+            "Institutional Structural Flow (SMC-2)",
+            "Structure",
+        ),
         "34": ("surpriver_v2", "NSE Surpriver v2 (Quant-Anomaly)", "Anomaly_Score"),
-        "35": ("multibagger_early", "Multibagger Early Detection (Quant)", ["Score", "RS_Raw", "Compression", "VWAP_Reclaim", "Divergence"]),
+        "35": (
+            "multibagger_early",
+            "Multibagger Early Detection (Quant)",
+            ["Score", "RS_Raw", "Compression", "VWAP_Reclaim", "Divergence"],
+        ),
         "A1": ("alpha_vcp", "VCP Base Breakout", "Tightness"),
         "A2": ("alpha_bear_trap", "Weekly Bear Trap Reversal", "Absorption"),
         "A3": ("alpha_rs_leader", "RS Leadership (Stage 2)", "RS_Rating"),
         "A4": ("alpha_earnings_drift", "Post-Earnings Alpha Drift", "Gap_Pct"),
         "A5": ("alpha_delivery_cluster", "Delivery Cluster Accumulation", "High_Days"),
         "A6": ("alpha_stage2_cont", "Stage 2 Trend Continuation", "Relative_Vol"),
-        "A7": ("alpha_supply_absorption", "Supply Absorption (Quiet Buying)", "Vol_Ratio"),
+        "A7": (
+            "alpha_supply_absorption",
+            "Supply Absorption (Quiet Buying)",
+            "Vol_Ratio",
+        ),
         "A8": ("alpha_liquidity_vacuum", "Liquidity Vacuum Move", "Breakout_Vol"),
         "A0": ("alpha_ranker", "Multi-Factor Alpha Ranker (IAS)", "IAS"),
-        "T": ("ias_timing_engine", "IAS + Entry Timing Engine", "Score")
+        "T": ("ias_timing_engine", "IAS + Entry Timing Engine", "Score"),
     }
-    
-    startup_choice, startup_sub = nav.handle_shortcut(args.options) if args.options else (None, None)
+
+    startup_choice, startup_sub = (
+        nav.handle_shortcut(args.options) if args.options else (None, None)
+    )
     breadth_text = "↗ 0 | ↘ 0"
     last_intel_update = 0
-    
+
     while True:
         try:
             now_ts = datetime.now().timestamp()
             if now_ts - last_intel_update > 60:
                 breadth = screener.lib.index_engine.get_market_breadth(screener.lib)
-                breadth_text = f"↗ {breadth['advances']} | ↘ {breadth['declines']}" if breadth else "↗ 0 | ↘ 0"
+                breadth_text = (
+                    f"↗ {breadth['advances']} | ↘ {breadth['declines']}"
+                    if breadth
+                    else "↗ 0 | ↘ 0"
+                )
                 last_intel_update = now_ts
 
             if not startup_choice:
                 nav.push("Home")
-                console.print(draw_dashboard(screener.lib, breadth_text, forecast=forecast_data["result"]))
-                raw_choice = console.input("\n[bold yellow]Select Option (or code e.g. 's SBIN') > [/bold yellow]").strip()
-                
+                console.print(
+                    draw_dashboard(
+                        screener.lib, breadth_text, forecast=forecast_data["result"]
+                    )
+                )
+                raw_choice = console.input(
+                    "\n[bold yellow]Select Option (or code e.g. 's SBIN') > [/bold yellow]"
+                ).strip()
+
                 # Interactive Short-codes (v4.0 Alpha)
                 if " " in raw_choice:
                     parts = raw_choice.split(" ")
                     cmd = parts[0].lower()
                     arg = parts[1].upper()
-                    
-                    if cmd == "s": # Quick Search/Deep-Dive
+
+                    if cmd == "s":  # Quick Search/Deep-Dive
                         console.print(f"[info][*] Direct Deep-Dive for {arg}...[/info]")
-                        res = screener.execute_scan("technicals", f"Deep Dive: {arg}", portfolio_symbols=[arg])
-                        if res: 
-                            screener.rm.display_discovery_table(res, f"Deep Dive: {arg}", "technicals", [])
-                            screener.rm.run_institutional_deep_dive(res, screener.lib.conn, screener.fetcher)
-                        nav.pop(); continue
-                    elif cmd == "b": # Quick Breadth
+                        res = screener.execute_scan(
+                            "technicals", f"Deep Dive: {arg}", portfolio_symbols=[arg]
+                        )
+                        if res:
+                            screener.rm.display_discovery_table(
+                                res, f"Deep Dive: {arg}", "technicals", []
+                            )
+                            screener.rm.run_institutional_deep_dive(
+                                res, screener.lib.conn, screener.fetcher
+                            )
+                        nav.pop()
+                        continue
+                    elif cmd == "b":  # Quick Breadth
                         console.print(f"[info][*] Breadth Radar for {arg}...[/info]")
                         res = screener.execute_scan("all_pass", f"Breadth: {arg}")
-                        if res: screener.rm.display_discovery_table(res, f"Breadth: {arg}", "all_pass", [])
-                        nav.pop(); continue
-                
+                        if res:
+                            screener.rm.display_discovery_table(
+                                res, f"Breadth: {arg}", "all_pass", []
+                            )
+                        nav.pop()
+                        continue
+
                 choice = raw_choice.upper()
-            else: 
+            else:
                 choice = startup_choice
                 startup_choice = None
-                
+
         except Exception as e:
             console.print(f"[error][!] UI Error: {e}[/error]")
             choice = "Z"
-            
+
         if choice == "Z":
             break
         elif choice == "M":
             # Watchdog Logic...
-            nav.pop(); continue
+            nav.pop()
+            continue
         elif choice == "A":
             nav.push("Alpha Intelligence")
             alpha_opts = [
-                "1 > VCP Base Breakout", "2 > Weekly Bear Trap", 
-                "3 > RS Leadership (Stage 2)", "4 > Post-Earnings Alpha Drift",
-                "5 > Delivery Cluster Accumulation", "6 > Stage 2 Trend Continuation",
-                "7 > Supply Absorption (Quiet Buying)", "8 > Liquidity Vacuum Move",
-                "0 > Multi-Factor Alpha Ranker (IAS)"
+                "1 > VCP Base Breakout",
+                "2 > Weekly Bear Trap",
+                "3 > RS Leadership (Stage 2)",
+                "4 > Post-Earnings Alpha Drift",
+                "5 > Delivery Cluster Accumulation",
+                "6 > Stage 2 Trend Continuation",
+                "7 > Supply Absorption (Quiet Buying)",
+                "8 > Liquidity Vacuum Move",
+                "0 > Multi-Factor Alpha Ranker (IAS)",
             ]
             a_choice = nav.render_menu("Alpha Intelligence Discovery", alpha_opts)
             if a_choice:
                 choice = f"A{a_choice}"
             else:
-                nav.pop(); continue
-        
+                nav.pop()
+                continue
+
         # Generic Strategy Handler
         if choice in strategies:
             s_id, s_name, s_sort = strategies[choice]
-            pd_in = console.input("\n[info]Backtest Date? (YYYY-MM-DD) [Enter for Today] > [/info]")
-            u_choice = console.input("[info]Universe? [Enter for Institutional Core, 1 for Full Market] > [/info]")
-            
+            pd_in = console.input(
+                "\n[info]Backtest Date? (YYYY-MM-DD) [Enter for Today] > [/info]"
+            )
+            u_choice = console.input(
+                "[info]Universe? [Enter for Institutional Core, 1 for Full Market] > [/info]"
+            )
+
             try:
-                res = screener.execute_scan(s_id, s_name, as_of_date=pd_in if pd_in else None, scan_all=(u_choice=="1"))
+                res = screener.execute_scan(
+                    s_id,
+                    s_name,
+                    as_of_date=pd_in if pd_in else None,
+                    scan_all=(u_choice == "1"),
+                )
                 if res:
                     screener.rm.display_discovery_table(res, s_name, s_id, [])
-                    screener.rm.archive_results(res, s_name)
+                    screener.rm.archive_results(res, s_name, strategy_id=s_id)
                     show_glossary()
                 else:
-                    console.print(f"[warning][!] No stocks found matching '{s_name}'.[/warning]")
+                    console.print(
+                        f"[warning][!] No stocks found matching '{s_name}'.[/warning]"
+                    )
             except Exception as e:
                 console.print(f"[error][!] Scan Failed: {e}[/error]")
         elif choice == "1":
             # Nested Technicals...
             pass
-            
+
         nav.pop()
 
     screener.close()
 
+
 if __name__ == "__main__":
-    try: main()
-    except KeyboardInterrupt: sys.exit(0)
+    try:
+        main()
+    except KeyboardInterrupt:
+        sys.exit(0)
