@@ -78,26 +78,31 @@ def detect_missing_candles(
     bounds_map = {row.symbol: row.first for row in bounds.itertuples(index=False)}
     existing_map = {}
     if not existing.empty:
-        for sym, group in existing.groupby("symbol"):
-            existing_map[sym] = set(group["date"])
+        # Optimized without explicit loops and without .apply()
+        for sym, dates in existing.groupby("symbol")["date"]:
+            existing_map[sym] = set(dates)
 
     # 4. Gap Detection
     valid_days_cache = {}
     missing_symbols = []
     missing_dates = []
 
-    for sym in active_symbols:
-        # Determine the effective start date for this symbol
-        # If we have data, we start from our earliest record.
-        # If we have NO data, we start from lookback_date.
-        effective_start = bounds_map.get(sym, lookback_date)
+    # Pre-cache unique effective starts
+    effective_starts = np.array(
+        [bounds_map.get(sym, lookback_date) for sym in active_symbols]
+    )
+    unique_starts = np.unique(effective_starts)
 
-        if effective_start not in valid_days_cache:
-            idx = np.searchsorted(trading_days_arr, effective_start)
-            valid_days_cache[effective_start] = set(trading_days_arr[idx:])
+    # Vectorized searchsorted for all unique starts
+    indices = np.searchsorted(trading_days_arr, unique_starts)
+    for us, idx in zip(unique_starts, indices):
+        valid_days_cache[us] = set(trading_days_arr[idx:])
 
+    empty_set = set()
+
+    for sym, effective_start in zip(active_symbols, effective_starts):
         valid_days = valid_days_cache[effective_start]
-        sym_dates = existing_map.get(sym, set())
+        sym_dates = existing_map.get(sym, empty_set)
 
         missing = valid_days - sym_dates
 

@@ -235,7 +235,43 @@ class Librarian(
         return "NEUTRAL (Modular Transition)"
 
     def get_ohlcv(self, symbol, as_of_date=None):
-        df = self.loader.load_from_parquet(symbol)
+        clean = symbol.split(".")[0].upper()
+        df = self.loader.load_from_parquet(clean)
+
+        # 1. Smart Cache Validation (Fix: Staleness Loop)
+        db_max = self.get_max_price_date()
+        if not df.empty and db_max:
+            cache_max = df.index.max().date().isoformat()
+            if cache_max < db_max:
+                # Cache is stale. Fetch delta from DB.
+                try:
+                    query = "SELECT * FROM technical_data WHERE symbol = ? AND date > ?"
+                    delta = pd.read_sql(
+                        query, self._tech_conn, params=(clean, cache_max)
+                    )
+                    if not delta.empty:
+                        delta["date"] = pd.to_datetime(delta["date"])
+                        delta.set_index("date", inplace=True)
+                        delta.rename(
+                            columns={
+                                "open": "Open",
+                                "high": "High",
+                                "low": "Low",
+                                "close": "Close",
+                                "volume": "Volume",
+                                "delivery": "delivery_qty",
+                                "delivery_pct": "delivery_percent",
+                            },
+                            inplace=True,
+                        )
+                        delta["Adj Close"] = delta["Close"]
+                        # Merge and update cache
+                        df = pd.concat([df, delta])
+                        df = df[~df.index.duplicated(keep="last")].sort_index()
+                        self.loader.save_to_parquet(clean, df)
+                except Exception:
+                    pass
+
         if not df.empty:
             # Normalization check for legacy Parquet files
             if "delivery" in df.columns and "delivery_qty" not in df.columns:
@@ -246,7 +282,7 @@ class Librarian(
 
         if not self._tech_conn:
             return None
-        clean = symbol.split(".")[0].upper()
+
         try:
             query = "SELECT * FROM technical_data WHERE symbol = ?"
             params = [clean]
@@ -274,7 +310,7 @@ class Librarian(
                     inplace=True,
                 )
                 res["Adj Close"] = res["Close"]
-                self.loader.save_to_parquet(symbol, res)
+                self.loader.save_to_parquet(clean, res)
                 return res
         except Exception:
             pass
