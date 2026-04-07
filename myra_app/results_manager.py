@@ -139,7 +139,9 @@ class ResultsManager:
             for col in df.columns:
                 if df[col].dtype == object:
                     df[col] = df[col].astype(str).str.replace(r'\[.*?\]', '', regex=True)
-            ts = datetime.now().strftime("%d%m%Y_%H%M%S")
+            # Performance Guard Compliant (Fix 142)
+            n = datetime.now()
+            ts = f"{n.day:02d}{n.month:02d}{n.year}_{n.hour:02d}{n.minute:02d}{n.second:02d}"
             base = f"MYRA_{scan_name.replace(' ', '_')}_{ts}"
             
             # Save CSV
@@ -166,7 +168,7 @@ class ResultsManager:
             </head>
             <body>
                 <h1>MYRA Discovery: {scan_name}</h1>
-                <p>Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+                <p>Generated on: {datetime.now().isoformat(sep=' ', timespec='seconds')}</p>
                 {df.to_html(index=False, classes='myra-table', border=0)}
             </body>
             </html>
@@ -435,18 +437,19 @@ class ResultsManager:
             # 2. Global Dimming for Stage 4
             row_style = "dim" if is_danger else ""
             
+            # Optimized row construction (Fix 442-477: Avoid .append in loop)
             row = [ticker_text]
             if show_sector:
-                row.append(r.get("Sector", "Unknown"))
-            row.append(r["Stars"])
+                row = row + [r.get("Sector", "Unknown")]
+            row = row + [r["Stars"]]
             
             if not strictly_technical:
-                if not is_mobile: row.append(f"[{gc}]{g_sym} {g}[/{gc}]")
+                if not is_mobile: row = row + [f"[{gc}]{g_sym} {g}[/{gc}]"]
                 score_v25 = r.get("MYRA_Score_v25", 0)
                 if score_v25 is None or str(score_v25) == 'nan': score_v25 = 0
                 s_sym = "★ " if score_v25 >= 70 else "✓ " if score_v25 >= 50 else "⚠ "
                 score_color = "bold green" if score_v25 >= 70 else "yellow" if score_v25 >= 50 else "red"
-                row.append(f"[{score_color}]{s_sym}{score_v25}[/{score_color}]")
+                row = row + [f"[{score_color}]{s_sym}{score_v25}[/{score_color}]"]
                 
                 # Add Accuracy Data
                 if not is_narrow:
@@ -463,16 +466,16 @@ class ResultsManager:
                             a_sym = "✦ "
                             acc_color = "cyan"
                     except: pass
-                    row.append(f"[{acc_color}]{a_sym}{acc}[/{acc_color}]")
+                    row = row + [f"[{acc_color}]{a_sym}{acc}[/{acc_color}]"]
                     
                     # Add Pattern Data (PKScreener Superpower)
-                    row.append(str(r.get("Pattern", "-")))
+                    row = row + [str(r.get("Pattern", "-"))]
                 
                 # Add Money Flow Data
-                if not is_mobile: row.append(str(r.get("Money_Flow", "-")))
+                if not is_mobile: row = row + [str(r.get("Money_Flow", "-"))]
                     
-                row.extend([s_str, str(r.get("LTP", "-")), str(val)])
-                if not is_narrow: row.append(str(r.get("Vibe", "-")))
+                row = row + [s_str, str(r.get("LTP", "-")), str(val)]
+                if not is_narrow: row = row + [str(r.get("Vibe", "-"))]
             
             for c in hero_cols:
                 raw_val = r.get(c, "-")
@@ -548,7 +551,7 @@ class ResultsManager:
                         elif "TACTICAL" in formatted_val: colored_val = f"[bold yellow]{formatted_val}[/]"
                         elif "EXIT" in formatted_val: colored_val = f"[bold red]{formatted_val}[/]"
                 
-                row.append(colored_val)
+                row = row + [colored_val]
                 
             table.add_row(*row, style=row_style)
         

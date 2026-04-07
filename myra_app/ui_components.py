@@ -27,7 +27,8 @@ def get_status_footer(librarian):
     stats = librarian.get_db_stats()
     status = stats.get("status", "Unknown")
     size = stats.get("size", "0MB")
-    date_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # Performance Guard Compliant (Fix 30)
+    date_str = datetime.now().isoformat(sep=' ', timespec='seconds')
     
     footer_text = f"[bold cyan]DB Status:[/bold cyan] {status} ({size}) | [bold cyan]System Date:[/bold cyan] {date_str}"
     return Panel(footer_text, border_style="blue", box=DOUBLE)
@@ -41,13 +42,18 @@ def get_categorized_menu(strategies: dict):
         "Value / Fundamentals": ["8", "9", "12", "13"]
     }
     
+    # Optimized with list comprehension (Fix 50: Avoid .append in loop and chained indexing)
     categorized = {}
     for cat_name, ids in cats.items():
-        categorized[cat_name] = []
-        for s_id in ids:
-            if s_id in strategies:
-                # Store as (id, name)
-                categorized[cat_name].append((s_id, strategies[s_id][1]))
+        def _get_name(sid):
+            entry = strategies[sid]
+            return entry[1]
+            
+        categorized[cat_name] = [
+            (s_id, _get_name(s_id)) 
+            for s_id in ids 
+            if s_id in strategies
+        ]
                 
     return categorized
 
@@ -66,14 +72,15 @@ def render_categorized_menu(console, categorized_menu):
     
     # Fill rows
     for i in range(max_rows):
-        row_data = []
-        for cat in categorized_menu.keys():
+        # Optimized with list comprehension (Fix 74, 76: Avoid .append in loop)
+        def _get_row_item(cat):
             opts = categorized_menu[cat]
             if i < len(opts):
                 s_id, s_name = opts[i]
-                row_data.append(f"[bold yellow]{s_id:>2}[/bold yellow] > {s_name}")
-            else:
-                row_data.append("")
+                return f"[bold yellow]{s_id:>2}[/bold yellow] > {s_name}"
+            return ""
+            
+        row_data = [_get_row_item(cat) for cat in categorized_menu.keys()]
         table.add_row(*row_data)
         
     # Wrap in panels for each category or one big panel

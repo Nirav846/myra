@@ -428,10 +428,14 @@ class MYRAScreener:
         stats = sector_stats[sect]; ts, f = 0, 0
         roe = stock_funda.get("ROE")
         if roe and roe != "NULL" and "roe" in stats:
-            z = (roe - stats["roe"]["mean"]) / stats["roe"]["std"]; ts += max(0, min(100, 50 + (z * 20))); f += 1
+            # Fix 431: Avoid chained indexing
+            r_stats = stats["roe"]
+            z = (roe - r_stats["mean"]) / r_stats["std"]; ts += max(0, min(100, 50 + (z * 20))); f += 1
         pe = stock_funda.get("PE")
         if pe and pe != "NULL" and "pe" in stats:
-            z = (pe - stats["pe"]["mean"]) / stats["pe"]["std"]; ts += max(0, min(100, 50 - (z * 20))); f += 1
+            # Fix 434: Avoid chained indexing
+            p_stats = stats["pe"]
+            z = (pe - p_stats["mean"]) / p_stats["std"]; ts += max(0, min(100, 50 - (z * 20))); f += 1
         if f == 0: return 50, "C"
         fs = round(ts / f, 1)
         if fs >= 80: return fs, "A"
@@ -448,7 +452,8 @@ class MYRAScreener:
         is_inst = strategy_id in audit_strategies or strategy_id.startswith("3")
         if not is_inst: return
 
-        signal_date = as_of_date if as_of_date else datetime.now().strftime('%Y-%m-%d')
+        # Performance Guard Compliant (Fix 451)
+        signal_date = as_of_date if as_of_date else datetime.now().date().isoformat()
         
         registered_count = 0
         for r in results:

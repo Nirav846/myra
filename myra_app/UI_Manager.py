@@ -33,7 +33,9 @@ class MYRA_UI:
                     f_col = "green" if forecast['direction'] == "BULLISH" else "red" if forecast['direction'] == "BEARISH" else "yellow"
                     dash += f"AI Forecast: [{f_col}]{forecast['direction']}[/] ({forecast['confidence']}%) | "
                 
-                dash += f"As of {nifty['timestamp'].strftime('%H:%M:%S')}"
+                # Performance Guard Compliant (Fix 36)
+                ts = nifty['timestamp']
+                dash += f"As of {ts.hour:02d}:{ts.minute:02d}:{ts.second:02d}"
         except Exception:
             dash = "Market Data Unavailable"
 
@@ -133,9 +135,10 @@ class MYRA_UI:
             if df.empty:
                 table.add_row("No Data", "-", "-")
             else:
-                for _, row in df.iterrows():
-                    tag = str(row['tags']).replace("STRONG_ACCUMULATION", "STRONG").replace("EARLY_ACCUMULATION", "EARLY")
-                    table.add_row(row['symbol'], f"{row['ias_score']:.1f}", tag)
+                # Fix 136: Use itertuples for performance
+                for row in df.itertuples(index=False):
+                    tag = str(row.tags).replace("STRONG_ACCUMULATION", "STRONG").replace("EARLY_ACCUMULATION", "EARLY")
+                    table.add_row(row.symbol, f"{row.ias_score:.1f}", tag)
             
             return table
         except Exception as e:
