@@ -593,14 +593,16 @@ class ResultsManager:
                     else str(tsl_val)
                 )
             else:
-                # Prioritize FVG Midpoint for Best Buy
-                val = (
-                    f"{float(entry_val):.2f}"
-                    if isinstance(entry_val, (float, int, np.number))
-                    else str(entry_val)
-                )
+                # Prioritize FVG Zone string for Best Buy, fallback to Entry price
+                fvg_zone = r.get("FVG_Zone", "None")
                 if fvg_zone != "None" and fvg_zone != "Wait":
-                    val = f"[bold green]{val}[/]"  # Highlight FVG-based entry
+                    val = f"[bold green]{fvg_zone}[/]"
+                else:
+                    val = (
+                        f"{float(entry_val):.2f}"
+                        if isinstance(entry_val, (float, int, np.number))
+                        else str(entry_val)
+                    )
 
             s = r.get("Stage", "-")
             s_str = f"↗ {s}" if "2" in s else f"↘ {s}" if "4" in s else s
