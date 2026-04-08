@@ -176,9 +176,25 @@ class MYRA_UI:
             else:
                 conn = librarian._gov_conn
 
-            # Query the latest scores
-            sql = "SELECT symbol, ias_score, tags FROM ias_history ORDER BY date DESC, ias_score DESC LIMIT 10"
-            df = pd.read_sql(sql, conn)
+            # Query the latest scores (Hardened v3.2: Only EQUITY)
+            from myra_app.librarian_core import LibrarianCore
+
+            meta_path = os.path.join(os.getcwd(), "db", LibrarianCore.DB_MAP["meta"])
+            try:
+                conn.execute(f"ATTACH DATABASE '{meta_path}' AS meta_db")
+                sql = """
+                    SELECT h.symbol, h.ias_score, h.tags 
+                    FROM ias_history h
+                    JOIN meta_db.symbols_master s ON h.symbol = s.symbol
+                    WHERE s.instrument_type = 'EQUITY' AND s.is_active = 1
+                    ORDER BY h.date DESC, h.ias_score DESC 
+                    LIMIT 10
+                """
+                df = pd.read_sql(sql, conn)
+            except Exception:
+                # Fallback if ATTACH fails
+                sql = "SELECT symbol, ias_score, tags FROM ias_history ORDER BY date DESC, ias_score DESC LIMIT 10"
+                df = pd.read_sql(sql, conn)
 
             table = Table(
                 title="[bold magenta]IAS Leaders (Institutional)[/]",
@@ -236,8 +252,24 @@ class MYRA_UI:
             else:
                 conn = librarian._gov_conn
 
-            sql = "SELECT symbol FROM ias_history WHERE ias_score >= 7.0 ORDER BY date DESC, ias_score DESC LIMIT 20"
-            df_ias = pd.read_sql(sql, conn)
+            # Hardened v3.2: Only EQUITY
+            from myra_app.librarian_core import LibrarianCore
+
+            meta_path = os.path.join(os.getcwd(), "db", LibrarianCore.DB_MAP["meta"])
+            try:
+                conn.execute(f"ATTACH DATABASE '{meta_path}' AS meta_db")
+                sql = """
+                    SELECT h.symbol 
+                    FROM ias_history h
+                    JOIN meta_db.symbols_master s ON h.symbol = s.symbol
+                    WHERE h.ias_score >= 7.0 AND s.instrument_type = 'EQUITY' AND s.is_active = 1
+                    ORDER BY h.date DESC, h.ias_score DESC 
+                    LIMIT 20
+                """
+                df_ias = pd.read_sql(sql, conn)
+            except Exception:
+                sql = "SELECT symbol FROM ias_history WHERE ias_score >= 7.0 ORDER BY date DESC, ias_score DESC LIMIT 20"
+                df_ias = pd.read_sql(sql, conn)
 
             table = Table(
                 title="[bold green]Timing Triggers (IAS >= 7)[/]",

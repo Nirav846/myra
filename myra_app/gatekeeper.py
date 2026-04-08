@@ -66,11 +66,12 @@ class Gatekeeper:
             # 5. Execution (DuckDB for RAM efficiency)
             tech_db = os.path.join("db", db_map["technical"])
             meta_db = os.path.join("db", db_map["meta"])
+            gov_db = os.path.join("db", db_map["governance"])
+
+            symbols_sql = "', '".join(etf_list)
 
             if os.path.exists(tech_db):
                 con_t = duckdb.connect(tech_db)
-                symbols_sql = "', '".join(etf_list)
-
                 # Check how many rows will be deleted
                 count_res = con_t.execute(
                     f"SELECT COUNT(*) FROM technical_data WHERE symbol IN ('{symbols_sql}')"
@@ -87,11 +88,22 @@ class Gatekeeper:
                     con_t.execute("VACUUM")
                 con_t.close()
 
+            if os.path.exists(gov_db):
+                try:
+                    con_g = duckdb.connect(gov_db)
+                    con_g.execute(
+                        f"DELETE FROM ias_history WHERE symbol IN ('{symbols_sql}')"
+                    )
+                    con_g.execute("VACUUM")
+                    con_g.close()
+                except Exception:
+                    pass
+
             if os.path.exists(meta_db):
                 con_m = duckdb.connect(meta_db)
                 # Mark as ETF and inactive
                 con_m.execute(
-                    f"UPDATE symbols_master SET instrument_type = 'ETF', is_active = 0 WHERE symbol IN ('{symbols_sql}')"
+                    f"UPDATE symbols_master SET instrument_type = 'ETF', is_active = 0, in_active_universe = 0 WHERE symbol IN ('{symbols_sql}')"
                 )
                 con_m.close()
 
