@@ -350,10 +350,10 @@ class MYRAScreener:
             if is_smc_scan or is_aeon_scan:
                 # Keep core identity but mask heavy fundamentals to avoid NULL noise in specialized scans
                 f_mask = {
-                    "PE": f.get("PE", "-"),
-                    "ROE": f.get("ROE", "-"),
-                    "Sector": f.get("Sector", "ML-Specialist"),
-                    "MCap": f.get("MCap", 0),
+                    "PE": f.get("PE", "-") or "-",
+                    "ROE": f.get("ROE", "-") or "-",
+                    "Sector": f.get("Sector") or "ML-Specialist",
+                    "MCap": f.get("MCap", 0) or 0,
                 }
                 r.update(f_mask)
             else:

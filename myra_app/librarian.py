@@ -385,10 +385,35 @@ class Librarian(
                         ]
 
                 d = dict(zip(self._funda_cols, res))
+
+                # FALLBACK: If sector is missing in valuation.db, check meta.db (Fix: Sector Unknown Loop)
+                if not d.get("sector") and self._meta_conn:
+                    try:
+                        m_res = self._meta_conn.execute(
+                            "SELECT sector FROM symbols_master WHERE symbol = ?",
+                            (clean,),
+                        ).fetchone()
+                        if m_res and m_res[0]:
+                            d["sector"] = m_res[0]
+                    except Exception:
+                        pass
+
                 # Return standardized casing for compatibility, but include all raw data
                 out = {k.title(): v for k, v in d.items()}
                 out.update(d)  # Keep original snake_case too
                 return out
         except Exception:
             pass
+
+        # FINAL FALLBACK: Even if no fundamentals exist, try to get at least the Sector from meta.db
+        if self._meta_conn:
+            try:
+                m_res = self._meta_conn.execute(
+                    "SELECT sector FROM symbols_master WHERE symbol = ?", (clean,)
+                ).fetchone()
+                if m_res and m_res[0]:
+                    return {"Sector": m_res[0], "sector": m_res[0]}
+            except Exception:
+                pass
+
         return {}

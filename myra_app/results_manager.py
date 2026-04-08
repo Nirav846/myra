@@ -623,8 +623,11 @@ class ResultsManager:
             # Optimized row construction (Fix 442-477: Avoid .append in loop)
             row = [ticker_text]
             if show_sector:
-                row = row + [r.get("Sector", "Unknown")]
-            row = row + [r["Stars"]]
+                sect = r.get("Sector", "Unknown")
+                row = row + [str(sect) if pd.notna(sect) else "Unknown"]
+
+            stars = r.get("Stars", "-")
+            row = row + [str(stars) if pd.notna(stars) else "-"]
 
             if not strictly_technical:
                 if not is_mobile:

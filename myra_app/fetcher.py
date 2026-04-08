@@ -1433,7 +1433,19 @@ class DataFetcher:
         if r.status_code != 200:
             return None
         soup = BeautifulSoup(r.text, "html.parser")
+
+        # 1. Scrape Sector/Industry from breadcrumb (Fix: Sector Unknown Loop)
+        sector_val = None
+        sub_p = soup.find("p", class_="sub")
+        if sub_p:
+            links = sub_p.find_all("a")
+            if links:
+                sector_val = links[0].get_text().strip()
+
         top_metrics = {}
+        if sector_val:
+            top_metrics["sector"] = sector_val
+
         for li in soup.find_all("li", class_=re.compile(r"flex.*")):
             n_tag, v_tag = li.find("span", class_="name"), li.find(
                 "span", class_="number"

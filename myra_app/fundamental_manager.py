@@ -138,6 +138,7 @@ class FundamentalManager:
             eps = latest.get("eps")
             bv = latest.get("book_value")
             mcap = latest.get("market_cap")
+            sect = latest.get("sector")
 
             # Calculate Growth Metrics
             profit_growth = 0
@@ -157,17 +158,18 @@ class FundamentalManager:
 
             v_conn.execute(
                 """
-                INSERT INTO fundamentals (symbol, pe, roe, eps, book_value, market_cap, last_updated)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO fundamentals (symbol, pe, roe, eps, book_value, market_cap, sector, last_updated)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (symbol) DO UPDATE SET
                     pe = EXCLUDED.pe,
                     roe = EXCLUDED.roe,
                     eps = EXCLUDED.eps,
                     book_value = EXCLUDED.book_value,
                     market_cap = COALESCE(EXCLUDED.market_cap, fundamentals.market_cap),
+                    sector = COALESCE(EXCLUDED.sector, fundamentals.sector),
                     last_updated = EXCLUDED.last_updated
             """,
-                (symbol_clean, pe, roe, eps, bv, mcap, date.today().isoformat()),
+                (symbol_clean, pe, roe, eps, bv, mcap, sect, date.today().isoformat()),
             )
 
             v_conn.commit()

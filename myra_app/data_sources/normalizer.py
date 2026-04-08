@@ -77,6 +77,7 @@ def normalize(data, source):
                 "market_cap": safe_float(row.get("market_cap")),
                 "sales_per_share": safe_float(row.get("sales_per_share")),
                 "dividend_yield": safe_float(row.get("dividend_yield")),
+                "sector": row.get("sector"),
                 "source": source,
             }
         elif source in ["google_finance", "finology", "google"]:
@@ -91,6 +92,7 @@ def normalize(data, source):
                 "debt": safe_float(row.get("debt")),
                 "book_value": safe_float(row.get("book_value")),
                 "market_cap": safe_float(row.get("market_cap")),
+                "sector": row.get("sector"),
                 "source": source,
             }
 
@@ -107,6 +109,7 @@ def normalize(data, source):
                 "debt": safe_float(row.get("debt")),
                 "book_value": safe_float(row.get("book_value")),
                 "market_cap": safe_float(row.get("market_cap")),
+                "sector": row.get("sector"),
                 "source": source,
             }
 
