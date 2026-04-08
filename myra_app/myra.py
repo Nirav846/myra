@@ -73,8 +73,8 @@ def main():
     # Initialize Core Components
     # --- Phase 3: Smart Gatekeeper (ETF Purge & Daily Sanitization) ---
     try:
-        from .librarian_core import LibrarianCore
-        from .gatekeeper import Gatekeeper
+        from myra_app.librarian_core import LibrarianCore
+        from myra_app.gatekeeper import Gatekeeper
 
         Gatekeeper.smart_gatekeeper(LibrarianCore.DB_MAP, console=console)
     except Exception as e:
