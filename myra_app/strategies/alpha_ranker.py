@@ -35,7 +35,12 @@ class Strategy:
                 }
 
             # High Conviction Trigger
-            if ias >= 5.0 and stage == "Stage 2":
+            high_conviction_req = funda.get("require_high_conviction", False)
+
+            if stage == "Stage 2":
+                if high_conviction_req and ias < 5.0:
+                    return {"signal": False}
+
                 return {
                     "signal": True,
                     "metrics": {
@@ -46,6 +51,8 @@ class Strategy:
                         if ias >= 8.0
                         else "HIGH"
                         if ias >= 7.0
+                        else "TECHNICAL_WATCH"
+                        if ias < 5.0
                         else "WATCH",
                     },
                 }
