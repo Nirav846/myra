@@ -71,6 +71,15 @@ def main():
     args, _ = parser.parse_known_args()
 
     # Initialize Core Components
+    # --- Phase 3: Smart Gatekeeper (ETF Purge & Daily Sanitization) ---
+    try:
+        from .librarian_core import LibrarianCore
+        from .gatekeeper import Gatekeeper
+
+        Gatekeeper.smart_gatekeeper(LibrarianCore.DB_MAP, console=console)
+    except Exception as e:
+        console.print(f"[warning][!] Gatekeeper initialization failed: {e}[/]")
+
     screener = MYRAScreener(console)
     nav = MenuNavigator(console)
     tg = TelegramNotifier()

@@ -200,7 +200,30 @@ class LibrarianIngestorMixin:
 
             # Series Filter
             if "SERIES" in df.columns:
-                df = df[df["SERIES"].str.strip().isin(["EQ", "BE", "BZ", "SM"])]
+                # --- TRILOGY ERA v3.2: Strict Ingestion Guardrails ---
+                # 1. Block Non-Equity Series
+                blacklist_series = ["MF", "IT", "EL"]
+                valid_series = ["EQ", "BE", "BZ", "SM"]
+                df = df[
+                    df["SERIES"].str.strip().isin(valid_series)
+                    & ~df["SERIES"].str.strip().isin(blacklist_series)
+                ]
+
+            # 2. Block Known ETFs and Funds (Metadata Check)
+            if not df.empty and self._meta_conn:
+                try:
+                    non_equity_res = self._meta_conn.execute(
+                        "SELECT symbol FROM symbols_master WHERE instrument_type != 'EQUITY'"
+                    ).fetchall()
+                    non_equity_syms = {r[0] for r in non_equity_res}
+                    df = df[~df["SYMBOL"].isin(non_equity_syms)]
+                except Exception:
+                    pass
+
+            # 3. Block Indices from Technical Data
+            indices = ["NIFTY 50", "NIFTY NEXT 50", "NIFTY 500", "NIFTY BANK"]
+            if not df.empty:
+                df = df[~df["SYMBOL"].isin(indices)]
 
             # Mapping
             mapping = {

@@ -371,7 +371,11 @@ class DataFetcher:
     }
 
     def __init__(self):
-        cache_path = os.path.join(os.getcwd(), "db", "network_cache.sqlite")
+        from .librarian_core import LibrarianCore
+
+        cache_path = os.path.join(
+            os.getcwd(), "db", LibrarianCore.DB_MAP["network_cache"]
+        )
         self.session = GhostSession(cache_path=cache_path)
 
         self.registry_path = os.path.join(os.getcwd(), "config", "myra_sources.json")

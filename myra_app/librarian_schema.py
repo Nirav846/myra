@@ -27,6 +27,7 @@ class LibrarianSchemaMixin:
             "confidence": "REAL",
             "last_updated_sector": "TEXT",
             "sector_locked": "INTEGER DEFAULT 0",
+            "instrument_type": "TEXT DEFAULT 'EQUITY'",
         }
         for col, col_type in columns.items():
             try:
@@ -59,6 +60,7 @@ class LibrarianSchemaMixin:
                     last_updated_sector TEXT,
                     sector_locked INTEGER DEFAULT 0,
                     is_active INTEGER DEFAULT 1,
+                    instrument_type TEXT DEFAULT 'EQUITY',
                     last_fundamental_update TEXT
                 )
             """,

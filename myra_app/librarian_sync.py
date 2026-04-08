@@ -128,7 +128,9 @@ class LibrarianSyncMixin:
             try:
                 from myra_app.sector_manager import SectorManager
 
-                sector_mgr = SectorManager(db_path=os.path.join(self.db_dir, "meta.db"))
+                sector_mgr = SectorManager(
+                    db_path=os.path.join(self.db_dir, self.DB_MAP["meta"])
+                )
                 sector_mgr.incremental_sync()
             except Exception as e:
                 if hasattr(self, "console"):

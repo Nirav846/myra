@@ -51,7 +51,9 @@ class DataAdapter:
                 df = pd.DataFrame()
         else:
             # Fallback direct connection
-            path = os.path.join(self.db_dir, "technical.db")
+            from .librarian_core import LibrarianCore
+
+            path = os.path.join(self.db_dir, LibrarianCore.DB_MAP["technical"])
             if not os.path.exists(path):
                 return pd.DataFrame()
 
@@ -129,8 +131,10 @@ class DataAdapter:
                     pass
             else:
                 # Direct SQL Fallback for valuation.db
-                path = os.path.join(self.db_dir, "valuation.db")
-                meta_path = os.path.join(self.db_dir, "meta.db")
+                from .librarian_core import LibrarianCore
+
+                path = os.path.join(self.db_dir, LibrarianCore.DB_MAP["valuation"])
+                meta_path = os.path.join(self.db_dir, LibrarianCore.DB_MAP["meta"])
                 if os.path.exists(path):
                     conn = sqlite3.connect(path)
                     try:

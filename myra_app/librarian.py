@@ -51,7 +51,7 @@ class Librarian(
 
         self.fundamental_ranker = FundamentalRanker(
             self._val_conn,
-            scoring_db_path=os.path.join(os.getcwd(), "db", "scoring.db"),
+            scoring_db_path=os.path.join(os.getcwd(), "db", self.DB_MAP["scoring"]),
         )
 
         if not self.read_only:
@@ -175,8 +175,8 @@ class Librarian(
         from myra_app.technical_audit import TechnicalAudit
 
         try:
-            tech_db = os.path.join(os.getcwd(), "db", "technical.db")
-            cal_db = os.path.join(os.getcwd(), "db", "calendar.db")
+            tech_db = os.path.join(os.getcwd(), "db", self.DB_MAP["technical"])
+            cal_db = os.path.join(os.getcwd(), "db", self.DB_MAP["calendar"])
             audit = TechnicalAudit(tech_db=tech_db, cal_db=cal_db)
             audit.run_audit()
         except Exception as e:

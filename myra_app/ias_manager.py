@@ -16,10 +16,12 @@ class IASManager:
     """
 
     def __init__(self, db_dir="db"):
+        from .librarian_core import LibrarianCore
+
         self.db_dir = db_dir
-        self.gov_db = os.path.join(db_dir, "governance.db")
-        self.tech_db = os.path.join(db_dir, "technical.db")
-        self.meta_db = os.path.join(db_dir, "meta.db")
+        self.gov_db = os.path.join(db_dir, LibrarianCore.DB_MAP["governance"])
+        self.tech_db = os.path.join(db_dir, LibrarianCore.DB_MAP["technical"])
+        self.meta_db = os.path.join(db_dir, LibrarianCore.DB_MAP["meta"])
         self.fetcher = DataFetcher()
 
     def calculate_ias(self, symbol, df=None):

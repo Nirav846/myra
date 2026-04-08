@@ -44,6 +44,18 @@ class LibrarianCore:
 
     _db_lock = threading.Lock()
 
+    # Standardized DB Map (TRILOGY ERA v3.2)
+    DB_MAP = {
+        "technical": "myra_technical.db",
+        "institutional": "myra_institutional.db",
+        "meta": "myra_metadata.db",
+        "valuation": "myra_valuation.db",
+        "governance": "myra_governance.db",
+        "network_cache": "myra_cache_network.db",
+        "scoring": "myra_scoring.db",
+        "calendar": "myra_calendar.db",
+    }
+
     def __init__(self, read_only=False, console=None, db_path=None):
         # Legacy DuckDB path (for fallback/migration validation)
         self.db_path = (
@@ -56,10 +68,11 @@ class LibrarianCore:
 
         # Connection Handles
         self.conn = None  # Legacy DuckDB
-        self._tech_conn = None  # technical.db
-        self._inst_conn = None  # institutional.db
-        self._meta_conn = None  # meta.db
-        self._val_conn = None  # valuation.db
+        self._tech_conn = None
+        self._inst_conn = None
+        self._meta_conn = None
+        self._val_conn = None
+        self._gov_conn = None
 
         self.sync_status = SyncStatus()
         self._is_syncing = False
@@ -103,12 +116,12 @@ class LibrarianCore:
                 print(f"[!] LibrarianCore: Failed to connect to {name}: {e}")
                 return None
 
-        # Fix 111, 112: Unroll loop to satisfy N+1 check
-        self._tech_conn = _get_conn("technical.db")
-        self._inst_conn = _get_conn("institutional.db")
-        self._meta_conn = _get_conn("meta.db")
-        self._val_conn = _get_conn("valuation.db")
-        self._gov_conn = _get_conn("governance.db")
+        # Standardized Connections via DB_MAP
+        self._tech_conn = _get_conn(self.DB_MAP["technical"])
+        self._inst_conn = _get_conn(self.DB_MAP["institutional"])
+        self._meta_conn = _get_conn(self.DB_MAP["meta"])
+        self._val_conn = _get_conn(self.DB_MAP["valuation"])
+        self._gov_conn = _get_conn(self.DB_MAP["governance"])
 
     def safe_execute(self, sql, params=None, conn=None, retries=5):
         """Thread-safe SQL execution for both DuckDB and SQLite."""

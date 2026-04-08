@@ -127,19 +127,40 @@ def _worker_task(payload):
     if _worker_adapter is None:
         return None
 
-    noise_keywords = [
-        "BEES",
-        "GOLD",
-        "SILVER",
-        "LIQUID",
-        "ETF",
-        "IETF",
-        "SDL",
-        "GSEC",
-        "CASH",
-    ]
-    if any(k in symbol.upper() for k in noise_keywords):
-        return None
+    # --- TRILOGY ERA v3.2: Metadata-Driven Filtering ---
+    # We now strictly rely on metadata.db classification.
+    # If a symbol is not 'EQUITY', we skip it.
+    try:
+        from .librarian_core import LibrarianCore
+
+        conn = sqlite3.connect(
+            os.path.join(os.getcwd(), "db", LibrarianCore.DB_MAP["meta"]),
+            timeout=10,
+            check_same_thread=False,
+        )
+        res = conn.execute(
+            "SELECT instrument_type FROM symbols_master WHERE symbol = ?",
+            (symbol.upper(),),
+        ).fetchone()
+        conn.close()
+
+        if res and res[0] != "EQUITY":
+            return None
+    except Exception:
+        # Fallback to standard check if metadata is missing/locked
+        noise_keywords = [
+            "BEES",
+            "GOLD",
+            "SILVER",
+            "LIQUID",
+            "ETF",
+            "IETF",
+            "SDL",
+            "GSEC",
+            "CASH",
+        ]
+        if any(k in symbol.upper() for k in noise_keywords):
+            return None
 
     try:
         # 10x Optimization: Dynamic Loading from Worker (On-Demand)
