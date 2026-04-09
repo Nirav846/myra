@@ -106,18 +106,36 @@ class LibrarianSchemaMixin:
 
         # --- 3. INSTITUTIONAL.DB (Smart Money) ---
         if self._inst_conn:
+            # FII/DII Quarter-over-Quarter History
             self.safe_execute(
                 """
-                CREATE TABLE IF NOT EXISTS insider_trades (
+                CREATE TABLE IF NOT EXISTS fii_dii_history (
                     symbol TEXT,
-                    acq_name TEXT,
-                    category TEXT,
-                    type TEXT,
-                    mode TEXT,
-                    value_cr REAL,
-                    avg_price REAL,
                     date TEXT,
-                    PRIMARY KEY (symbol, acq_name, date, value_cr)
+                    fii_pct REAL,
+                    dii_pct REAL,
+                    promoter_pct REAL,
+                    pledged_pct REAL,
+                    fii_change REAL,
+                    dii_change REAL,
+                    car_ratio REAL,
+                    is_hidden_accumulation INTEGER DEFAULT 0,
+                    PRIMARY KEY (symbol, date)
+                )
+            """,
+                conn=self._inst_conn,
+            )
+            # Concentrated Institutional Owners
+            self.safe_execute(
+                """
+                CREATE TABLE IF NOT EXISTS institutional_owners (
+                    symbol TEXT,
+                    owner_name TEXT,
+                    owner_type TEXT,
+                    shares_held INTEGER,
+                    pct_held REAL,
+                    date TEXT,
+                    PRIMARY KEY (symbol, owner_name, date)
                 )
             """,
                 conn=self._inst_conn,
@@ -131,6 +149,7 @@ class LibrarianSchemaMixin:
                     buy_sell TEXT,
                     qty INTEGER,
                     price REAL,
+                    value_cr REAL,
                     date TEXT,
                     PRIMARY KEY (symbol, client, date, qty, price)
                 )

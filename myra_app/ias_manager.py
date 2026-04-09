@@ -367,15 +367,9 @@ class IASManager:
                         f"[red]CRITICAL: Pledge increased by {curr-prev:.1f}%[/]"
                     )
 
-            # 2. Insider Sell Clusters: 3+ Sells in last 30 days
-            # Performance Guard Compliant (Fix 283)
-            thirty_days_ago = (datetime.now() - timedelta(days=30)).date().isoformat()
-            sql_sast = "SELECT COUNT(*) FROM sast_disclosures WHERE symbol = ? AND type = 'SELL' AND date >= ?"
-            sell_count = conn.execute(sql_sast, (symbol, thirty_days_ago)).fetchone()[0]
-            if sell_count >= 3:
-                flags.append(
-                    f"[yellow]WARNING: {sell_count} Insider Sell Disclosures in 30d[/]"
-                )
+            # 2. Insider Sell Clusters (DEPRECATED in v3.2)
+            # We now prioritize audited FII/DII flow in myra_institutional.db
+            pass
 
             # 3. Shareholding Drift: FII Exit > 1%
             sql_fii = "SELECT fii_pct FROM shareholding_history WHERE symbol = ? ORDER BY date DESC LIMIT 2"

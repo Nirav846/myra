@@ -57,69 +57,7 @@ class LibrarianSyncMixin:
             self.sync_status.update(task="Syncing Benchmarks", completed=30, total=100)
             self._sync_benchmark()
 
-            # 3. Insider Trades (institutional.db)
-            self.sync_status.update(
-                task="Syncing Insider Trades", completed=40, total=100
-            )
-            ls_str = self.get_metadata("last_insider_sync") or "1900-01-01 00:00:00"
-            ls = datetime.strptime(ls_str, "%Y-%m-%d %H:%M:%S")
-            if (datetime.now() - ls).total_seconds() > 14400:
-                trades = self.fetcher.fetch_insider_trades(days=30)
-                if self._inst_conn:
-                    today = date.today()
-
-                    # Optimized with executemany (Fix 99: Avoid execute in loop)
-                    def _to_trade(item):
-                        try:
-                            val = float(item.get("secVal", 0))
-                            qty = float(item.get("secAcq", 0))
-                            avg_price = round(val / qty, 2) if qty > 0 else 0
-                            val_cr = val / 10000000
-                            raw_dt = item.get("intimDt", item.get("date"))
-                            try:
-                                dt = datetime.strptime(raw_dt, "%d-%b-%Y").date()
-                            except ValueError:
-                                dt = pd.to_datetime(raw_dt, errors="coerce").date()
-                            if pd.isna(dt) or dt > today:
-                                return None
-
-                            raw_sym = (
-                                str(item.get("symbol", ""))
-                                .upper()
-                                .strip()
-                                .replace(" AND ", "&")
-                            )
-                            if "M_M" in raw_sym or "M M" in raw_sym:
-                                raw_sym = "M&M"
-                            raw_sym = raw_sym.replace("_", "-")
-                            return (
-                                raw_sym,
-                                item.get("acqName"),
-                                item.get("personCategory"),
-                                item.get("tdpTransactionType"),
-                                item.get("acqMode"),
-                                val_cr,
-                                avg_price,
-                                str(dt),
-                            )
-                        except:
-                            return None
-
-                    records = [
-                        r for item in trades if (r := _to_trade(item)) is not None
-                    ]
-                    if records:
-                        self._inst_conn.executemany(
-                            "INSERT OR REPLACE INTO insider_trades VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                            records,
-                        )
-                    self._inst_conn.commit()
-                    self.set_metadata(
-                        "last_insider_sync",
-                        datetime.now().replace(microsecond=0).isoformat(sep=" "),
-                    )
-
-            # 4. Update Masters (meta.db)
+            # 3. Update Masters (meta.db)
             self.sync_status.update(task="Updating Masters", completed=60, total=100)
             self.populate_index_constituents()
             self.update_symbols_master()

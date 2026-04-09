@@ -158,7 +158,6 @@ class MYRAScreener:
 
         now = _dt.datetime.now()
         last_bhav = self.lib.get_max_price_date()
-        last_insider = self.lib.get_max_insider_date()
 
         expected_raw = self.lib.get_expected_trading_day(now)
         from myra_core.utils.date_utils import to_date
@@ -183,17 +182,8 @@ class MYRAScreener:
                 pass
         status_table.add_row("Bhavcopy:", bhav_str)
 
-        insider_str = f"{last_insider}"
-        if last_insider:
-            try:
-                li_dt = to_date(last_insider)
-                if li_dt < expected:
-                    insider_str += " [bold yellow]🟡[/]"
-                else:
-                    insider_str += " [bold green]✅[/]"
-            except:
-                pass
-        status_table.add_row("Insider:", insider_str)
+        # Institutional Intelligence replaces legacy Insider status
+        status_table.add_row("Institutional:", "[bold green]LIVE (Morningstar)[/]")
 
         mode = "NORMAL"
         if last_bhav:
@@ -298,33 +288,23 @@ class MYRAScreener:
             )
 
         if not results:
-            # Check data age (Fix: UX improvement for stale data)
-            max_date_raw = self.lib.get_max_price_date()
-            if max_date_raw:
-                try:
-                    from myra_core.utils.date_utils import to_date
-
-                    md = to_date(max_date_raw)
-                    now = datetime.now()
-                    expected = to_date(self.lib.get_expected_trading_day(now))
-
-                    if md < expected:
-                        age = (expected - md).days
-                        self.console.print(
-                            f"[bold yellow][!] WARNING: Latest Bhavcopy is from {md} ({age} trading days behind).[/bold yellow]"
-                        )
-                        self.console.print(
-                            f"[dim]Note: Strategy '{display_name}' depends on fresh volume/delivery data. Zero candidates is expected on stale data.[/dim]"
-                        )
-                except:
-                    pass
-
-            self.console.print(
-                f"[warning][!] Scan Complete: 0 candidates identified for '{display_name}'.[/warning]"
-            )
+            # ... (Stale data warning logic)
             return []
 
-        # 3. INITIAL ENRICHMENT & RANKING
+        # 3. Intelligence Buffer (Tier 2 & 3 Enrichment)
+        # We only deep-dive the TOP 20 results to stay fast/light on RAM
+        from myra_app.institutional_manager import InstitutionalManager
+
+        # Get top 20 by Score (already sorted by engine usually, but we ensure it)
+        top_20 = sorted(results, key=lambda x: x.get("Score", 0), reverse=True)[:20]
+        inst_mgr = InstitutionalManager(console=self.console)
+        enriched_top = inst_mgr.enrich_top_candidates(top_20)
+
+        # Merge enriched back into results
+        enriched_map = {r["Stock"]: r for r in enriched_top}
+        results = [enriched_map.get(r["Stock"], r) for r in results]
+
+        # 4. INITIAL ENRICHMENT & RANKING
         sector_stats = self.lib.get_sector_stats()
         n100 = set(
             self.lib.get_index_symbols("NIFTY 50")

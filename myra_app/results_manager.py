@@ -271,6 +271,7 @@ class ResultsManager:
             "- **Volatility Compression (VCP)**: Indicates short-term risk is low and an explosive expansion is likely.",
             "- **Institutional Absorption**: Measures delivery volume vs norms. >100% means Smart Money accumulation.",
             "- **CHoCH (Change of Character)**: Structural shift signaling potential trend reversal.",
+            "- **Best Buy (FVG Zone)**: The price range where institutional fair value gaps exist. Buying within this zone offers the highest probability of institutional support.",
             "",
             "Please perform a deep fundamental and macro 'Second Opinion' for these stocks:",
             "",
@@ -287,6 +288,7 @@ class ResultsManager:
 
             # Institutional DNA
             dna = f"LTP: {r.get('LTP','-')}, Stage: {r.get('Stage','-')}, MCap: {r.get('MCap','UNKNOWN')}, SM_Score: {r.get('smart_money_score',0)}"
+            ms_intel = f"MStar: {r.get('MStar','-')}, Fair Value: {r.get('Fair_Val','-')}, Whale: {r.get('Whale_Conv','Low')}, CAR: {r.get('CAR',0.0)}"
 
             # Gather special footprints (Fix 230-245: Avoid .append in loop)
             avg_buy = r.get("avg_buy_60d")
@@ -302,6 +304,12 @@ class ResultsManager:
                 footprints = [f"Insider Cost Basis: {avg_buy}"]
                 if ltp_val < float(avg_buy):
                     footprints = footprints + ["**UNDERWATER ENTRY SIGNAL**"]
+
+            # Hidden Accumulation Footprint
+            if r.get("Hidden_Acc") == "YES":
+                footprints = footprints + [
+                    "**HIDDEN INSTITUTIONAL ACCUMULATION (Price down, FII up)**"
+                ]
 
             # Vectorized flags
             flags = [
@@ -332,6 +340,7 @@ class ResultsManager:
                 [
                     f"### {sym}",
                     f"- **Institutional DNA**: {dna}",
+                    f"- **Morningstar Intel**: {ms_intel}",
                     f"- **Institutional Footprint**: {', '.join(footprints)}"
                     if footprints
                     else "- **Institutional Footprint**: None",
@@ -505,7 +514,20 @@ class ResultsManager:
             table.add_column(
                 "Sector", style="dim cyan", no_wrap=True, header_style="bold yellow"
             )
-        table.add_column("Rating", justify="center", header_style="bold yellow")
+        table.add_column(
+            "Rating", justify="center", header_style="bold yellow", min_width=6
+        )
+        # Institutional Alpha Group (Smart Money)
+        table.add_column(
+            "MStar", justify="center", style="yellow", header_style="bold magenta"
+        )
+        table.add_column(
+            "CAR", justify="right", style="bold cyan", header_style="bold magenta"
+        )
+        table.add_column(
+            "Whale", justify="center", style="dim", header_style="bold magenta"
+        )
+        table.add_column("Hidden_Acc", justify="center", header_style="bold magenta")
 
         if not strictly_technical:
             if not is_mobile:
@@ -537,9 +559,15 @@ class ResultsManager:
                 "Stage", style="bold magenta", justify="center", header_style="cyan"
             )
             table.add_column("LTP", justify="right", header_style="cyan")
+            table.add_column(
+                "Fair_Val",
+                justify="right",
+                style="bold green",
+                header_style="bold magenta",
+            )
 
             # Tactical Zone (Green)
-            mid_col = "FVG Zone" if strategy_id == "bottom_hunter" else "Best Buy"
+            mid_col = "Best Buy"
             table.add_column(
                 mid_col, style="green", justify="center", header_style="bold green"
             )
@@ -593,16 +621,12 @@ class ResultsManager:
                     else str(tsl_val)
                 )
             else:
-                # Prioritize FVG Zone string for Best Buy, fallback to Entry price
+                # System-wide: Best Buy = FVG Zone (Mandate)
                 fvg_zone = r.get("FVG_Zone", "None")
-                if fvg_zone != "None" and fvg_zone != "Wait":
+                if fvg_zone != "None" and fvg_zone != "Wait" and fvg_zone != "-":
                     val = f"[bold green]{fvg_zone}[/]"
                 else:
-                    val = (
-                        f"{float(entry_val):.2f}"
-                        if isinstance(entry_val, (float, int, np.number))
-                        else str(entry_val)
-                    )
+                    val = "[dim]- Wait -[/dim]"
 
             s = r.get("Stage", "-")
             s_str = f"↗ {s}" if "2" in s else f"↘ {s}" if "4" in s else s
@@ -628,6 +652,23 @@ class ResultsManager:
 
             stars = r.get("Stars", "-")
             row = row + [str(stars) if pd.notna(stars) else "-"]
+
+            # Whale Conviction logic (Human Friendly)
+            w_conv = str(r.get("Whale_Conv", "Low"))
+            if w_conv == "HIGH":
+                w_conv = "[bold green]HIGH[/]"
+            elif w_conv == "Medium":
+                w_conv = "[bold yellow]Med[/]"
+            else:
+                w_conv = "[dim]Low[/]"
+
+            # Smart Metrics (v3.2 Institutional Alpha)
+            row = row + [
+                str(r.get("MStar", "-")),
+                str(r.get("CAR", 0.0)),
+                w_conv,
+                "[bold green]YES[/]" if r.get("Hidden_Acc") == "YES" else "NO",
+            ]
 
             if not strictly_technical:
                 if not is_mobile:
@@ -683,7 +724,29 @@ class ResultsManager:
                 if not is_mobile:
                     row = row + [str(r.get("Money_Flow", "-"))]
 
-                row = row + [s_str, str(r.get("LTP", "-")), str(val)]
+                # LTP and Fair Value Comparison (Human Friendly)
+                fv_raw = r.get("Fair_Val", 0)
+                ltp_num = 0
+                try:
+                    ltp_num = float(str(ltp).replace(",", ""))
+                except:
+                    pass
+
+                fv_num = 0
+                try:
+                    fv_num = float(str(fv_raw).replace(",", ""))
+                except:
+                    pass
+
+                fv_str = str(fv_raw)
+                if fv_num > 0 and ltp_num > 0:
+                    upside = ((fv_num - ltp_num) / ltp_num) * 100
+                    if fv_num > ltp_num:
+                        fv_str = f"[bold green]{fv_num:.2f}[/]"
+                    else:
+                        fv_str = f"[bold red]{fv_num:.2f}[/]"
+
+                row = row + [s_str, str(ltp), fv_str, str(val)]
                 if not is_narrow:
                     row = row + [str(r.get("Vibe", "-"))]
 

@@ -195,17 +195,6 @@ class Librarian(
         res = self._tech_conn.execute("SELECT MAX(date) FROM technical_data").fetchone()
         return res[0] if res else None
 
-    def get_max_insider_date(self):
-        if not self._inst_conn:
-            return None
-        try:
-            res = self._inst_conn.execute(
-                "SELECT MAX(date) FROM insider_trades"
-            ).fetchone()
-            return res[0] if res else None
-        except Exception:
-            return None
-
     def get_all_symbols(self):
         if not self._meta_conn:
             return []

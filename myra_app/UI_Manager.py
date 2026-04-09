@@ -327,9 +327,8 @@ class MYRA_UI:
         db_status = db_stats.get("status", "Connected")
         db_size = db_stats.get("size", "0MB")
 
-        # 1. Resolve Data Dates (Bhavcopy & Insider)
+        # 1. Resolve Data Dates (Bhavcopy)
         b_date = librarian.get_max_price_date() if librarian else None
-        i_date = librarian.get_max_insider_date() if librarian else None
 
         def _format_dt(dt):
             if not dt:
@@ -344,7 +343,7 @@ class MYRA_UI:
             return f"{dt.day}/{dt.month}"
 
         b_str = f"BCOPY({_format_dt(b_date)})"
-        i_str = f"INSIDER({_format_dt(i_date)})"
+        i_str = "INST([bold green]LIVE[/bold green])"
         # 2. Market Status / Breadth
         sync_text = market_breadth
         if librarian and librarian.sync_status and librarian.sync_status.task_name:

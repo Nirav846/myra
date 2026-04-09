@@ -45,6 +45,14 @@ GLOSSARY = """
  [green]D-POC[/green]: Base price of institutional accumulation.
  [yellow]Absorption[/yellow]: Intensity of institutional buying.
 
+[bold cyan]Institutional Intelligence (Morningstar):[/bold cyan]
+ [magenta]MStar[/magenta]: Quantitative Star Rating (1-5 stars).
+ [magenta]CAR[/magenta]: Capital Absorption Ratio. Institutional flow relative to ADTV.
+ [magenta]Whale[/magenta]: Conviction level of institutional buying (Top 5 funds proxy).
+ [magenta]Hidden_Acc[/magenta]: Hidden Accumulation (Price down, but FII up).
+ [magenta]Fair_Val[/magenta]: Morningstar Intrinsic Fair Value estimate.
+ [green]Best Buy[/green]: Institutional Fair Value Gap (FVG) Zone.
+
 [bold cyan]ML-1 (AEON Evolutionary Agent):[/bold cyan]
  [magenta]Conviction[/magenta]: AI-ranked load levels (25%, 50%, 100%).
  [magenta]Stars[/magenta]: ML-Confidence rank.
@@ -138,7 +146,7 @@ def main():
             "Crash Resilience (Underwater Ball)",
             "Absorp_Ratio",
         ),
-        "25": ("insider_signals", "Insider Conviction Radar", "Insider_Buy"),
+        "25": ("institutional_alpha", "Institutional Alpha Radar", "CAR"),
         "27": ("bottom_hunter", "Multi-Year Bottom Hunter", None),
         "28": ("rs_momentum", "RS Momentum & Phelps Base", "Type"),
         "29": ("fakeout_analyzer", "Morning Fakeout Radar", "Type"),
