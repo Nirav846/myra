@@ -128,7 +128,17 @@ class FundamentalRanker:
             SELECT 
                 symbol,
                 AVG(CASE WHEN prev_revenue > 0 THEN (revenue - prev_revenue)/prev_revenue ELSE 0 END) * 100 as rev_growth,
-                AVG(CASE WHEN prev_profit > 0 THEN (net_profit - prev_profit)/prev_profit ELSE 0 END) * 100 as profit_growth,
+                AVG(
+                    CASE
+                        -- Hard cap for full turnaround (negative to positive)
+                        WHEN prev_profit < 0 AND net_profit > 0 THEN 100.0
+                        -- Reduced loss (negative to less negative)
+                        WHEN prev_profit < 0 AND net_profit < 0 THEN ((net_profit - prev_profit) / ABS(prev_profit)) * 100.0
+                        -- Standard growth
+                        WHEN prev_profit > 0 THEN ((net_profit - prev_profit) / prev_profit) * 100.0
+                        ELSE 0.0
+                    END
+                ) AS profit_growth,
                 AVG(CASE WHEN prev_sps > 0 THEN (sales_per_share - prev_sps)/prev_sps ELSE 0 END) * 100 as sps_growth,
                 AVG(roce) as avg_roce
             FROM growth_calc
