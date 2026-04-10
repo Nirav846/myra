@@ -9,7 +9,7 @@ MYRA is a specialized stock screening and research analytics platform designed f
 - **Storage:** Parquet (Indicator Lake for strategy results to prevent schema contention).
 - **Libraries:** PKNSETools, morningstartools, PKDevTools (Authoritative sources for NSE data).
 - **Analytics:** pandas, numpy, xgboost, tensorflow (Dilated CNN), pandas_ta.
-- **UI/CLI:** rich, tqdm (High-fidelity CLI terminal experience).
+- **UI/CLI:** rich, myra_log (for minimalist CLI terminal experience).
 
 ## Core Features
 - **Atomic Trilogy Architecture:** Specialized SQLite sidecars to prevent file locking and schema contention.

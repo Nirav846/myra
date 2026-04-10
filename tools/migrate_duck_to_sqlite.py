@@ -3,7 +3,14 @@ import duckdb
 import os
 import pandas as pd
 import numpy as np
-from tqdm import tqdm
+import sys
+import os
+
+# Fix path
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
+
+from myra_core.utils.myra_log import myra_log
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
@@ -33,9 +40,9 @@ def migrate_duckdb_to_sqlite():
 
     stats = {"migrated": 0, "errors": 0}
 
-    pbar = tqdm(total=total_rows, desc="Migrating")
     while True:
         try:
+            myra_log(stats["migrated"], total_rows, desc="Migrating")
             query = f"""
                 SELECT 
                     symbol, 
@@ -90,7 +97,6 @@ def migrate_duckdb_to_sqlite():
             sqlite_conn.commit()
 
             stats["migrated"] += len(df_chunk)
-            pbar.update(len(df_chunk))
             offset += chunk_size
 
         except Exception as e:
@@ -98,7 +104,7 @@ def migrate_duckdb_to_sqlite():
             stats["errors"] += 1
             break
 
-    pbar.close()
+    myra_log(total_rows, total_rows, desc="Migrating")
     duck_conn.close()
     sqlite_conn.close()
 

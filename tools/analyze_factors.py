@@ -3,7 +3,14 @@ import os
 import pandas as pd
 import numpy as np
 import glob
-from tqdm import tqdm
+import sys
+import os
+
+# Fix path
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
+
+from myra_core.utils.myra_log import myra_log
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
@@ -45,7 +52,13 @@ def analyze_factor_importance(lake_dir=os.path.join(PROJECT_ROOT, "data", "lake"
         except:
             return None
 
-    all_correlations = [c for f in tqdm(files) if (c := _get_corr(f)) is not None]
+    total_files = len(files)
+    all_correlations = [
+        c
+        for i, f in enumerate(files, 1)
+        if (myra_log(i, total_files, desc="Analyzing Factors")) is not None
+        and (c := _get_corr(f)) is not None
+    ]
 
     if all_correlations:
         results = pd.DataFrame(all_correlations).mean()

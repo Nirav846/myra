@@ -12,7 +12,7 @@ if BASE_DIR not in sys.path:
     sys.path.append(BASE_DIR)
 
 from myra_app.ml_engine import EvolutionaryAgent, AEONEngine
-from tqdm import tqdm
+from myra_core.utils.myra_log import myra_log
 
 
 def run_standalone_backtest():
@@ -58,7 +58,9 @@ def run_standalone_backtest():
         f"[*] Standalone Backtest: {len(symbols)} stocks over {len(trading_days)} days..."
     )
 
-    for day in tqdm(trading_days):
+    total_days = len(trading_days)
+    for i, day in enumerate(trading_days, 1):
+        myra_log(i, total_days, desc="AEON Backtest")
         # Performance Guard Compliant (Fix 51)
         day_str = day.date().isoformat() if hasattr(day, "date") else str(day)
 

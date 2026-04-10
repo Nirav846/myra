@@ -10,7 +10,7 @@ from myra_app.fundamental_manager import FundamentalManager
 from myra_app.librarian import Librarian
 from myra_app.fetcher import DataFetcher
 from rich.console import Console
-from tqdm import tqdm
+from myra_core.utils.myra_log import myra_log
 
 
 def run_2026_ingest():
@@ -51,7 +51,9 @@ def run_2026_ingest():
         )
         return
 
-    for symbol in tqdm(stale_stocks, desc="Ingesting 2026 Fundamentals"):
+    total_stale = len(stale_stocks)
+    for i, symbol in enumerate(stale_stocks, 1):
+        myra_log(i, total_stale, desc="Ingesting Fundamentals")
         try:
             success = fm.fetch_fundamentals(symbol)
             if success:

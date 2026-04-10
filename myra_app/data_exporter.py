@@ -2,8 +2,8 @@
 import os
 import pandas as pd
 import sqlite3
-from tqdm import tqdm
 from datetime import datetime
+from myra_core.utils.myra_log import myra_log
 
 
 class DataExporter:
@@ -38,7 +38,9 @@ class DataExporter:
 
         print(f"[*] Exporting {len(symbols)} symbols to {self.export_dir}...")
 
-        for symbol in tqdm(symbols, desc="Exporting"):
+        total_symbols = len(symbols)
+        for i, symbol in enumerate(symbols):
+            myra_log(i + 1, total_symbols, desc="Exporting")
             try:
                 # 1. Fetch full history for symbol
                 df = pd.read_sql(

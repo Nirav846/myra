@@ -5,7 +5,7 @@ import numpy as np
 from datetime import datetime, timedelta
 from myra_app.screener import MYRAScreener
 from rich.console import Console
-from tqdm import tqdm
+from myra_core.utils.myra_log import myra_log
 
 console = Console()
 
@@ -36,7 +36,9 @@ def run_backtest():
     print(f"[*] Starting AEON 3-Month Performance Audit ({len(trading_days)} days)...")
 
     # 2. Iterate through each trading day
-    for day in tqdm(trading_days):
+    total_days = len(trading_days)
+    for i, day in enumerate(trading_days, 1):
+        myra_log(i, total_days, desc="AEON Backtest")
         # Convert Timestamp to string YYYY-MM-DD
         # Performance Guard Compliant (Fix 40)
         day_str = day.date().isoformat() if hasattr(day, "date") else str(day)

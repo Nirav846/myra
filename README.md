@@ -45,7 +45,7 @@ The `DataAdapter` and `IndicatorManager` serve as the singular interface, abstra
 *   **Data Lake Storage:** Apache Parquet
 *   **Analytics & Quant:** `pandas`, `numpy`, `pandas_ta`
 *   **Machine Learning:** `xgboost`, `tensorflow` (Dilated CNNs)
-*   **UI / CLI Experience:** `rich`, `tqdm` (for high-fidelity terminal interactions)
+*   **UI / CLI Experience:** `rich`, `myra_log` (for minimalist terminal interactions)
 *   **NSE Data:** `PKNSETools`, `PKDevTools`, `morningstartools`
 *   *(Note: DuckDB integration has been officially deprecated in v3.0)*
 

@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 import pandas as pd
 import numpy as np
 import pandas_ta as ta
-from tqdm import tqdm
+from myra_core.utils.myra_log import myra_log
 
 
 class LibrarianIntelligenceMixin:
@@ -80,7 +80,9 @@ class LibrarianIntelligenceMixin:
             f"[MYRA] Updating Virtual Indicator Lake for {len(active_symbols)} symbols..."
         )
 
-        for sym in tqdm(active_symbols, desc="Precomputing"):
+        total_syms = len(active_symbols)
+        for i, sym in enumerate(active_symbols, 1):
+            myra_log(i, total_syms, desc="Precomputing")
             try:
                 # 1. Load Price History (uses technical.db or Parquet)
                 df = self.get_ohlcv(sym)

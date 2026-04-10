@@ -15,8 +15,8 @@ import pandas as pd
 import numpy as np
 from datetime import date, datetime
 from typing import List, Dict, Any
-from tqdm import tqdm
 from myra_app.data_adapter import DataAdapter
+from myra_core.utils.myra_log import myra_log
 
 # Suppress warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -772,6 +772,8 @@ class Engine:
                 wd.poke()
                 yield item
 
+        total_symbols = len(payloads)
+        current_symbol = 0
         try:
             # Proper Multiprocessing Pool with initializer fixes the 0/680 failure
             with multiprocessing.Pool(
@@ -779,20 +781,19 @@ class Engine:
                 initializer=init_worker,
                 initargs=(strategy_name, lib.db_path),
             ) as pool:
-                # Use list comprehension to avoid .append in loop (Fix 535)
-                # We wrap the iterator to ensure watchdog.poke() is called per result
                 raw_it = pool.imap(_worker_task, payloads)
                 results = [
                     res
-                    for res in tqdm(
-                        poked_results(raw_it, watchdog),
-                        total=num_stocks,
-                        desc="Scanning",
-                        unit="stock",
-                        leave=False,
-                        disable=silent,
+                    for res, _ in zip(
+                        poked_results(raw_it, watchdog), range(total_symbols)
                     )
-                    if res
+                    if (
+                        res
+                        and not (current_symbol := current_symbol + 1)
+                        and (not silent and myra_log(current_symbol, total_symbols))
+                        is None
+                    )
+                    or res
                 ]
 
         except KeyboardInterrupt:

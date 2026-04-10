@@ -3,8 +3,8 @@ import pandas as pd
 import sqlite3
 import yfinance as yf
 from datetime import datetime, timedelta
-from tqdm import tqdm
 import time
+from myra_core.utils.myra_log import myra_log
 from myra_app.librarian import Librarian
 
 
@@ -42,7 +42,9 @@ def mass_backfill(db_path="technical.db", missing_csv="missing_data.csv"):
         batch = symbols_to_fix[i : i + batch_size]
         print(f"\n[Batch {i//batch_size + 1}] Processing {len(batch)} symbols...")
 
-        for symbol in tqdm(batch, desc="Backfilling"):
+        total_batch = len(batch)
+        for idx, symbol in enumerate(batch, 1):
+            myra_log(idx, total_batch, desc="Backfilling")
             try:
                 yf_sym = f"{symbol}.NS"
                 sym_gaps = grouped.get_group(symbol)

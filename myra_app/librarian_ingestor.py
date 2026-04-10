@@ -9,7 +9,7 @@ import pandas as pd
 import sqlite3
 from datetime import date, datetime, timedelta
 from myra_core.date_utils import PKDateUtilities
-from tqdm import tqdm
+from myra_core.utils.myra_log import myra_log
 
 
 class LibrarianIngestorMixin:
@@ -76,10 +76,12 @@ class LibrarianIngestorMixin:
             except:
                 return None
 
+        total_files = len(csv_files)
         all_data = [
             df
-            for f in tqdm(csv_files, desc="Consolidating Archives", leave=False)
-            if (df := _read_and_filter(f)) is not None
+            for idx, f in enumerate(csv_files, 1)
+            if (myra_log(idx, total_files, desc="Consolidating Archives")) is not None
+            and (df := _read_and_filter(f)) is not None
         ]
 
         if all_data:

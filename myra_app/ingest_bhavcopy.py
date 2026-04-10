@@ -3,7 +3,7 @@ import pandas as pd
 import sqlite3
 import glob
 from datetime import datetime
-from tqdm import tqdm
+from myra_core.utils.myra_log import myra_log
 
 
 def ingest_bhavcopies(csv_folder, db_path="db/technical.db", batch_size=5000):
@@ -28,7 +28,9 @@ def ingest_bhavcopies(csv_folder, db_path="db/technical.db", batch_size=5000):
     stats = {"processed": 0, "inserted": 0, "duplicates": 0, "errors": 0}
 
     first_file = True
-    for file_path in tqdm(csv_files, desc="Ingesting files"):
+    total_files = len(csv_files)
+    for i, file_path in enumerate(csv_files, 1):
+        myra_log(i, total_files, desc="Ingesting files")
         try:
             df = pd.read_csv(file_path)
 

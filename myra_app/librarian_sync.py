@@ -10,7 +10,6 @@ import threading
 import duckdb
 import pandas as pd
 from datetime import date, datetime, timedelta
-from tqdm import tqdm
 import concurrent.futures
 
 try:

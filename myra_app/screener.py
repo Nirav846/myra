@@ -7,13 +7,13 @@ import warnings
 warnings.filterwarnings("ignore", message=".*deprecated now, and have no effect.*")
 from rich.console import Console
 from rich.panel import Panel
-from tqdm import tqdm
 from myra_app.librarian import Librarian
 from myra_app.engine import Engine
 from myra_app.results_manager import ResultsManager
 from myra_app.broker_parser import BrokerParser
 from myra_app.fundamental_ranker import FundamentalRanker
 from myra_app.positional_engine import PositionalScorer
+from myra_core.utils.myra_log import myra_log
 
 
 class MYRAScreener:
@@ -275,14 +275,11 @@ class MYRAScreener:
                 if not symbols:
                     symbols = self.lib.get_all_symbols()
 
-        # DEBUG: Check symbols
-        # self.console.print(f"[dim]DEBUG: Resolved {len(symbols)} symbols for scan.[/dim]")
+            # DEBUG: Check symbols
+            # self.console.print(f"[dim]DEBUG: Resolved {len(symbols)} symbols for scan.[/dim]")
 
-        # 2. TECHNICAL SCAN
-        with self.console.status(
-            f"[bold magenta][MYRA] Computing Technical Intelligence for {len(symbols)} stocks...[/bold magenta]",
-            spinner="dots",
-        ):
+            # 2. TECHNICAL SCAN
+
             results, payload_map = self.engine.run_scan(
                 symbols, strategy_id, as_of_date=as_of_date
             )
@@ -429,13 +426,15 @@ class MYRAScreener:
             top_20_symbols
         )
 
-        for r in tqdm(top_20, desc="Deep Fundamental Audit", leave=False):
+        total_top = len(top_20)
+        for i, r in enumerate(top_20):
             sym = r["Stock"]
             sym_clean = sym.split(".")[0].upper()
             r["F_Score"] = bulk_f_scores.get(sym_clean, 0)
             r["graham_number"] = bulk_val_metrics.get(sym_clean, {}).get(
                 "graham_number", 0
             )
+            myra_log(i + 1, total_top, desc="Deep Fundamental Audit")
 
         # 5. FINAL POSITIONAL SCORING
         res_df = pd.DataFrame(results)
@@ -456,12 +455,14 @@ class MYRAScreener:
 
         # 6. ENRICH FINAL TOP CANDIDATES WITH ACCURACY
         top_cand = final_results[:20]
-        for r in tqdm(top_cand, desc="Calculating Success Probability", leave=False):
+        total_cand = len(top_cand)
+        for i, r in enumerate(top_cand):
             s = r["Stock"]
             if s in payload_map:
                 r["Accuracy"] = self.engine.calculate_accuracy(
                     s, strategy_id, payload_map[s], funda_map.get(s, {})
                 )
+            myra_log(i + 1, total_cand, desc="Success Probability")
 
         # 7. REGISTER SIGNALS FOR AUDIT (Trust Loop)
         self._register_signals(final_results, strategy_id, as_of_date)

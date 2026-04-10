@@ -3,7 +3,7 @@ import duckdb
 import os
 import pandas as pd
 import numpy as np
-from tqdm import tqdm
+from myra_core.utils.myra_log import myra_log
 
 
 def migrate_valuation():

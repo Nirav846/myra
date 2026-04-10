@@ -3,10 +3,10 @@ import sys
 import pandas as pd
 import sqlite3
 from datetime import datetime
-from tqdm import tqdm
 import time
 from io import StringIO
 import concurrent.futures
+from myra_core.utils.myra_log import myra_log
 
 # Fix path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -139,12 +139,10 @@ def backfill_missing_data(
             for d in missing_dates
         }
 
-        for future in tqdm(
-            concurrent.futures.as_completed(future_to_date),
-            total=len(missing_dates),
-            desc="Recovering",
-        ):
-            d_str = future_to_date[future]
+        total_dates = len(missing_dates)
+        for i, future in enumerate(concurrent.futures.as_completed(future_to_date)):
+            myra_log(i + 1, total_dates, desc="Recovering")
+
             try:
                 csv_text, date_processed = future.result()
                 if csv_text:
