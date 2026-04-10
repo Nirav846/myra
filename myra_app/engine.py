@@ -289,7 +289,7 @@ def _worker_task(payload):
                     stars += 1
                 if funda.get("smart_money_score", 0) > 0.7:
                     stars += 1
-                res_payload["Stars"] = "*" * min(5, stars)
+                res_payload["Stars"] = "*" * int(min(5, stars))
 
                 return res_payload
             return None
