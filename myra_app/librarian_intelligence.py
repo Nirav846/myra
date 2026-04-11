@@ -9,7 +9,6 @@ import logging
 logger = logging.getLogger(__name__)
 import pandas as pd
 import numpy as np
-import pandas_ta as ta
 from myra_core.utils.myra_log import myra_log
 
 

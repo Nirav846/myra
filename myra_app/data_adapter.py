@@ -238,7 +238,6 @@ class DataAdapter:
         if df.empty or len(df) < 20:
             return df
         try:
-            import pandas_ta as ta
 
             # Determine which indicators need to be computed
             missing_ta = []

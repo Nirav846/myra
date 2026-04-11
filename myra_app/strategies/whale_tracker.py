@@ -1,7 +1,6 @@
 import os
 import pandas as pd
 import numpy as np
-import pandas_ta as ta
 import warnings
 import joblib
 from datetime import datetime, timedelta
