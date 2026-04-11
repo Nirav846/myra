@@ -7,6 +7,7 @@ import os
 import sys
 import argparse
 from datetime import datetime
+import pandas as pd
 from rich.console import Console
 from rich.panel import Panel
 from rich.theme import Theme
@@ -20,6 +21,7 @@ from myra_app.menu_navigation import MenuNavigator
 from myra_app.telegram_notifier import TelegramNotifier
 from myra_app.UI_Manager import draw_dashboard
 from myra_app.ml_engine import TrendForecaster
+from myra_app.tui_app import MyraDashboard
 
 # Define High-Vibe Dark Theme
 custom_theme = Theme(
@@ -122,6 +124,14 @@ def main():
         res_super = screener.execute_scan("super_setup", "Super-Scan (Daily)")
         if res_super:
             tg.send_scan_results("Super-Scan", res_super)
+
+        # 3. Launch TUI Dashboard
+        all_results = (res_whale or []) + (res_super or [])
+        if all_results:
+            final_df = pd.DataFrame(all_results)
+            console.print("[bold green][*] Launching MYRA Interactive TUI Dashboard...[/bold green]")
+            MyraDashboard(final_df).run()
+
         screener.close()
         return
 
