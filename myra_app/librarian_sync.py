@@ -29,6 +29,14 @@ class LibrarianSyncMixin:
         try:
             self.sync_status.update(task="Initializing Sync", completed=0, total=100)
 
+            # Update ISIN Bridge before Bhavcopy extraction
+            try:
+                from myra_app.isin_mapper import update_isin_bridge
+                update_isin_bridge()
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning("ISIN update failed, falling back to yesterday's cache")
+
             # 1. Fetch Price Archives (Populates technical.db & DuckDB cache)
             # existing_dates should check technical.db
             existing_dates = set()

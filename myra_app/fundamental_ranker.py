@@ -90,6 +90,10 @@ class FundamentalRanker:
             sym_list = "', '".join([s.split(".")[0].upper() for s in symbols])
             sym_filter = f"WHERE symbol IN ('{sym_list}')"
 
+        # Check for ISIN bridge
+        isin_bridge_path = os.path.join(os.getcwd(), 'data', 'isin_bridge.parquet')
+        has_isin = os.path.exists(isin_bridge_path)
+
         query = f"""
         WITH base AS (
             SELECT *,
@@ -144,26 +148,53 @@ class FundamentalRanker:
             FROM growth_calc
             GROUP BY symbol
         )
-        SELECT 
-            a.symbol as Stock,
-            COALESCE(a.rev_growth, 0) as Rev_Growth_Per,
-            COALESCE(a.sps_growth, 0) as SPS_Growth_Per,
-            COALESCE(a.avg_roce, 0) as ROCE,
-            COALESCE(l.roe, 0) as ROE,
-            COALESCE(l.stock_pe, 0) as PE,
-            COALESCE(l.industry_pe, 0) as Ind_PE,
-            COALESCE(l.pledged_pct, 0) as Pledge_Pct,
-            (
-                COALESCE((CASE WHEN a.sps_growth > 20 THEN 20 WHEN a.sps_growth > 10 THEN 10 ELSE 5 END), 5) +
-                COALESCE((CASE WHEN a.avg_roce > 20 THEN 15 WHEN a.avg_roce > 15 THEN 10 ELSE 5 END), 5) +
-                COALESCE((CASE WHEN l.roe > 15 THEN 15 WHEN l.roe > 10 THEN 10 ELSE 5 END), 5) +
-                COALESCE((CASE WHEN l.stock_pe > 0 AND l.stock_pe < l.industry_pe THEN 20 WHEN l.stock_pe > 0 AND l.stock_pe < (l.industry_pe * 1.2) THEN 10 ELSE 0 END), 0) +
-                COALESCE((CASE WHEN l.opm_pct > 20 THEN 10 WHEN l.opm_pct > 10 THEN 5 ELSE 0 END), 0) +
-                COALESCE((CASE WHEN l.pledged_pct > 20 THEN -30 WHEN l.pledged_pct > 5 THEN -10 ELSE 0 END), 0)
-            ) as Funda_Score
-        FROM agg_scores a
-        JOIN latest_snapshot l ON a.symbol = l.symbol AND l.rn = 1
         """
+        if has_isin:
+            query += f"""
+            SELECT
+                a.symbol as Stock,
+                COALESCE(a.rev_growth, 0) as Rev_Growth_Per,
+                COALESCE(a.sps_growth, 0) as SPS_Growth_Per,
+                COALESCE(a.avg_roce, 0) as ROCE,
+                COALESCE(l.roe, 0) as ROE,
+                COALESCE(l.stock_pe, 0) as PE,
+                COALESCE(l.industry_pe, 0) as Ind_PE,
+                COALESCE(l.pledged_pct, 0) as Pledge_Pct,
+                (
+                    COALESCE((CASE WHEN a.sps_growth > 20 THEN 20 WHEN a.sps_growth > 10 THEN 10 ELSE 5 END), 5) +
+                    COALESCE((CASE WHEN a.avg_roce > 20 THEN 15 WHEN a.avg_roce > 15 THEN 10 ELSE 5 END), 5) +
+                    COALESCE((CASE WHEN l.roe > 15 THEN 15 WHEN l.roe > 10 THEN 10 ELSE 5 END), 5) +
+                    COALESCE((CASE WHEN l.stock_pe > 0 AND l.stock_pe < l.industry_pe THEN 20 WHEN l.stock_pe > 0 AND l.stock_pe < (l.industry_pe * 1.2) THEN 10 ELSE 0 END), 0) +
+                    COALESCE((CASE WHEN l.opm_pct > 20 THEN 10 WHEN l.opm_pct > 10 THEN 5 ELSE 0 END), 0) +
+                    COALESCE((CASE WHEN l.pledged_pct > 20 THEN -30 WHEN l.pledged_pct > 5 THEN -10 ELSE 0 END), 0)
+                ) as Funda_Score
+            FROM agg_scores a
+            LEFT JOIN read_parquet('{isin_bridge_path}') b_a ON a.symbol = b_a.SYMBOL
+            JOIN latest_snapshot l ON COALESCE(b_a.ISIN, a.symbol) = COALESCE((SELECT ISIN FROM read_parquet('{isin_bridge_path}') WHERE SYMBOL = l.symbol), l.symbol) AND l.rn = 1
+            """
+        else:
+            query += """
+            SELECT
+                a.symbol as Stock,
+                COALESCE(a.rev_growth, 0) as Rev_Growth_Per,
+                COALESCE(a.sps_growth, 0) as SPS_Growth_Per,
+                COALESCE(a.avg_roce, 0) as ROCE,
+                COALESCE(l.roe, 0) as ROE,
+                COALESCE(l.stock_pe, 0) as PE,
+                COALESCE(l.industry_pe, 0) as Ind_PE,
+                COALESCE(l.pledged_pct, 0) as Pledge_Pct,
+                (
+                    COALESCE((CASE WHEN a.sps_growth > 20 THEN 20 WHEN a.sps_growth > 10 THEN 10 ELSE 5 END), 5) +
+                    COALESCE((CASE WHEN a.avg_roce > 20 THEN 15 WHEN a.avg_roce > 15 THEN 10 ELSE 5 END), 5) +
+                    COALESCE((CASE WHEN l.roe > 15 THEN 15 WHEN l.roe > 10 THEN 10 ELSE 5 END), 5) +
+                    COALESCE((CASE WHEN l.stock_pe > 0 AND l.stock_pe < l.industry_pe THEN 20 WHEN l.stock_pe > 0 AND l.stock_pe < (l.industry_pe * 1.2) THEN 10 ELSE 0 END), 0) +
+                    COALESCE((CASE WHEN l.opm_pct > 20 THEN 10 WHEN l.opm_pct > 10 THEN 5 ELSE 0 END), 0) +
+                    COALESCE((CASE WHEN l.pledged_pct > 20 THEN -30 WHEN l.pledged_pct > 5 THEN -10 ELSE 0 END), 0)
+                ) as Funda_Score
+            FROM agg_scores a
+            JOIN latest_snapshot l ON a.symbol = l.symbol AND l.rn = 1
+            """
+
         try:
             return self.duck_conn.execute(query).df()
         except Exception:
