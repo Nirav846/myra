@@ -28,7 +28,8 @@ class TestGrahamData(unittest.TestCase):
             )
         """
         )
-        self.fm = FundamentalManager(db_conn=self.conn)
+        self.fm = FundamentalManager()
+        self.fm.set_connection(self.conn)
 
     def tearDown(self):
         self.conn.close()
