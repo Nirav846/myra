@@ -8,6 +8,7 @@ import sys
 import argparse
 from datetime import datetime
 import pandas as pd
+from myra_app.tui_app import MyraDashboard
 from rich.console import Console
 from rich.panel import Panel
 from rich.theme import Theme
@@ -129,7 +130,9 @@ def main():
         all_results = (res_whale or []) + (res_super or [])
         if all_results:
             final_df = pd.DataFrame(all_results)
-            console.print("[bold green][*] Launching MYRA Interactive TUI Dashboard...[/bold green]")
+            console.print(
+                "[bold green][*] Launching MYRA Interactive TUI Dashboard...[/bold green]"
+            )
             MyraDashboard(final_df).run()
 
         screener.close()
@@ -301,16 +304,19 @@ def main():
                     as_of_date=pd_in if pd_in else None,
                     scan_all=(u_choice == "1"),
                 )
+
                 if res:
-                    screener.rm.display_discovery_table(res, s_name, s_id, [])
                     screener.rm.archive_results(res, s_name, strategy_id=s_id)
-                    show_glossary()
+                    df_results = pd.DataFrame(res)
+                    app = MyraDashboard(df_results)
+                    app.run()
                 else:
                     console.print(
                         f"[warning][!] No stocks found matching '{s_name}'.[/warning]"
                     )
             except Exception as e:
                 console.print(f"[error][!] Scan Failed: {e}[/error]")
+
         elif choice == "1":
             # Nested Technicals...
             pass

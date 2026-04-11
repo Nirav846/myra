@@ -390,7 +390,13 @@ class MYRAScreener:
 
             # Format Inst_Intensity for UI
             intens = r.get("Inst_Intensity", 0)
-            r["Inst_Intensity"] = f"{intens}%" if intens > 0 else "-"
+            # Safely convert the snapshot string to a number for comparison
+            try:
+                intens_val = float(intens)
+            except (ValueError, TypeError):
+                intens_val = 0
+
+            r["Inst_Intensity"] = f"{int(intens_val)}%" if intens_val > 0 else "-"
 
             # Tactics
             tactics = r.get("tactics", {})
