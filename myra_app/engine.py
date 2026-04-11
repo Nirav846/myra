@@ -464,7 +464,7 @@ class Engine:
                     print(
                         f"[MYRA] No Snapshot found. Targeting last trading day: {last_trading_day}"
                     )
-                as_of_date = last_trading_day.date().isoformat()
+                as_of_date = last_trading_day.date().isoformat() if hasattr(last_trading_day, 'date') else last_trading_day.isoformat()
             else:
                 return [], {"status": "HOLIDAY_NO_DATA"}
 

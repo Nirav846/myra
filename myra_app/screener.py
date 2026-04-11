@@ -275,27 +275,27 @@ class MYRAScreener:
                 if not symbols:
                     symbols = self.lib.get_all_symbols()
 
-            # DEBUG: Check symbols
-            # self.console.print(f"[dim]DEBUG: Resolved {len(symbols)} symbols for scan.[/dim]")
+        # DEBUG: Check symbols
+        # self.console.print(f"[dim]DEBUG: Resolved {len(symbols)} symbols for scan.[/dim]")
 
-            # 2. TECHNICAL SCAN
-
-            results, payload_map = self.engine.run_scan(
-                symbols, strategy_id, as_of_date=as_of_date
-            )
+        # 2. TECHNICAL SCAN
+        results, payload_map = self.engine.run_scan(
+            symbols, strategy_id, as_of_date=as_of_date
+        )
 
         if not results:
             # ... (Stale data warning logic)
             return []
 
-        # 3. Intelligence Buffer (Tier 2 & 3 Enrichment)
+        # 3. Intelligence Buffer & Feature Enrichment (Tier 2 & 3)
         # We only deep-dive the TOP 20 results to stay fast/light on RAM
-        from myra_app.institutional_manager import InstitutionalManager
+        from myra_app.utils.feature_enricher import FeatureEnricher
 
         # Get top 20 by Score (already sorted by engine usually, but we ensure it)
         top_20 = sorted(results, key=lambda x: x.get("Score", 0), reverse=True)[:20]
-        inst_mgr = InstitutionalManager(console=self.console)
-        enriched_top = inst_mgr.enrich_top_candidates(top_20)
+
+        enricher = FeatureEnricher(self.lib)
+        enriched_top = enricher.enrich(top_20)
 
         # Merge enriched back into results
         enriched_map = {r["Stock"]: r for r in enriched_top}
@@ -423,24 +423,7 @@ class MYRAScreener:
 
         # 4. SELECT TOP CANDIDATES FOR DEEP FUNDAMENTAL AUDIT (PKScreener Superpower)
         results.sort(key=lambda x: x.get("MYRA_Score", 0), reverse=True)
-        top_20 = results[:20]
-
-        # Optimization: Fetch F-Score and Graham Numbers in bulk to prevent N+1 Queries
-        top_20_symbols = [r["Stock"] for r in top_20]
-        bulk_f_scores = self.lib.fundamental_manager.get_bulk_f_scores(top_20_symbols)
-        bulk_val_metrics = self.lib.fundamental_manager.get_bulk_valuation_metrics(
-            top_20_symbols
-        )
-
-        total_top = len(top_20)
-        for i, r in enumerate(top_20):
-            sym = r["Stock"]
-            sym_clean = sym.split(".")[0].upper()
-            r["F_Score"] = bulk_f_scores.get(sym_clean, 0)
-            r["graham_number"] = bulk_val_metrics.get(sym_clean, {}).get(
-                "graham_number", 0
-            )
-            myra_log(i + 1, total_top, desc="Deep Fundamental Audit")
+        # Deep audit (F_Score, Graham) is now handled earlier by FeatureEnricher in Polars
 
         # 5. FINAL POSITIONAL SCORING
         res_df = pd.DataFrame(results)

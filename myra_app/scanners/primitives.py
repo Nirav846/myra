@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-import pandas_ta as ta
 
 
 def run_scanner(df: pd.DataFrame, scanner_id: str, funda: dict = {}) -> bool:

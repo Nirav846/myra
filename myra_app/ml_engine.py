@@ -4,7 +4,6 @@ import xgboost as xgb
 import os
 import joblib
 import yfinance as yf
-import pandas_ta as ta
 
 
 class NiftyDataPipeline:
