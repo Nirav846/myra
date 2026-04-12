@@ -1,15 +1,7 @@
-# MYRA Weekly Strategy: Institutional Squeeze
-metadata:
-  name: "Institutional_Accumulation"
-  regime: "Swing"
-
-# Pull these levers to filter the market
 filters:
   volatility:
-    max_compression_score: 0.70  # Lower = tighter base
+    max_compression_score: 0.85
   delivery:
-    min_delivery_divergence: 1.25 # Higher = more institutional buying
+    min_delivery_divergence: 0.80  # Set to 0.80 to be safe
   volume:
-    min_relative_volume: 1.50     # Higher = more active interest
-  alpha:
-    min_nifty_outperformance: 0.01 # Must be beating the index
+    min_relative_volume: 1.0       # Set to 1.0 to see more stocks
