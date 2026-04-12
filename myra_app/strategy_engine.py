@@ -15,35 +15,33 @@ def load_config(yaml_path):
 
 
 def apply_dynamic_filters(df, filters_config):
-    exprs = []
-    for category, category_filters in filters_config.items():
-        for key, value in category_filters.items():
-            if key.startswith("min_"):
-                col_name = key[4:]
-            elif key.startswith("max_"):
-                col_name = key[4:]
-            else:
-                col_name = key
+    def resolve_col(category, key, df_columns):
+        col_name = key[4:] if key.startswith(("min_", "max_")) else key
+        if col_name in df_columns:
+            return col_name
+        if f"{category}_{col_name}" in df_columns:
+            return f"{category}_{col_name}"
+        matching_cols = [c for c in df_columns if col_name in c]
+        if matching_cols:
+            return matching_cols[0]
+        return col_name
 
-            # Try to resolve to the exact column name
-            resolved_col = col_name
-            if resolved_col not in df.columns:
-                # Try prefixing with category_
-                if f"{category}_{col_name}" in df.columns:
-                    resolved_col = f"{category}_{col_name}"
-                else:
-                    # Look for substring match
-                    matching_cols = [c for c in df.columns if col_name in c]
-                    if matching_cols:
-                        resolved_col = matching_cols[0]
-
-            if key.startswith("min_"):
-                exprs.append(pl.col(resolved_col) >= value)
-            elif key.startswith("max_"):
-                exprs.append(pl.col(resolved_col) <= value)
-            else:
-                exprs.append(pl.col(resolved_col) == value)
-    return df.filter(exprs)
+    exprs = [
+        (
+            pl.col(resolve_col(category, key, df.columns)) >= value
+            if key.startswith("min_")
+            else (
+                pl.col(resolve_col(category, key, df.columns)) <= value
+                if key.startswith("max_")
+                else pl.col(resolve_col(category, key, df.columns)) == value
+            )
+        )
+        for category, category_filters in filters_config.items()
+        for key, value in category_filters.items()
+    ]
+    if not exprs:
+        return df
+    return df.filter(*exprs)
 
 
 def run_strategy():
