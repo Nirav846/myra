@@ -2,26 +2,34 @@ import unittest
 from unittest.mock import MagicMock, patch
 import sys
 
-# Mock rich before importing MenuNavigator
-mock_rich = MagicMock()
-sys.modules["rich"] = mock_rich
-sys.modules["rich.console"] = mock_rich.console
-sys.modules["rich.panel"] = mock_rich.panel
-
-from myra_app.menu_navigation import MenuNavigator
-
-
 class TestSecurityFix(unittest.TestCase):
     def test_clear_screen_uses_console_clear(self):
-        # Mock the console object
+        # We need to temporarily mock rich and its submodules
+        # We use patch.dict on sys.modules to ensure safe cleanup
+        mock_rich = MagicMock()
         mock_console = MagicMock()
-        navigator = MenuNavigator(mock_console)
+        mock_panel = MagicMock()
 
-        # Call clear_screen
-        navigator.clear_screen()
+        with patch.dict(
+            "sys.modules",
+            {
+                "rich": mock_rich,
+                "rich.console": mock_console,
+                "rich.panel": mock_panel
+            }
+        ):
+            # Import inside the context manager
+            from myra_app.menu_navigation import MenuNavigator
 
-        # Verify console.clear() was called instead of os.system()
-        mock_console.clear.assert_called_once()
+            # Mock the console object passed to navigator
+            mock_navigator_console = MagicMock()
+            navigator = MenuNavigator(mock_navigator_console)
+
+            # Call clear_screen
+            navigator.clear_screen()
+
+            # Verify console.clear() was called instead of os.system()
+            mock_navigator_console.clear.assert_called_once()
 
 
 if __name__ == "__main__":

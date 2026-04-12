@@ -4,6 +4,7 @@ MYRA Librarian Sync Layer (TRILOGY ERA)
 Handles background orchestration across modular sidecars.
 Routes data to technical.db, institutional.db, meta.db, and valuation.db.
 """
+
 import sys
 import os
 import threading
@@ -31,10 +32,14 @@ class LibrarianSyncMixin:
             # Update ISIN Bridge before Bhavcopy extraction
             try:
                 from myra_app.isin_mapper import update_isin_bridge
+
                 update_isin_bridge()
             except Exception as e:
                 import logging
-                logging.getLogger(__name__).warning("ISIN update failed, falling back to yesterday's cache")
+
+                logging.getLogger(__name__).warning(
+                    "ISIN update failed, falling back to yesterday's cache"
+                )
 
             # 1. Fetch Price Archives (Populates technical.db & DuckDB cache)
             # existing_dates should check technical.db
@@ -55,6 +60,19 @@ class LibrarianSyncMixin:
             self._fetch_archives(
                 start_date=ts, end_date=fe, existing_dates=existing_dates
             )
+            # Post-Fetch / Pre-Load Feature Enrichment Integration
+            try:
+                from myra_app.feature_enrichment import process_enrichment_pipeline
+
+                if self.conn:
+                    self.sync_status.update(
+                        task="Enriching Market Data", completed=25, total=100
+                    )
+                    process_enrichment_pipeline(self.conn)
+            except Exception as e:
+                import logging
+
+                logging.getLogger(__name__).warning(f"Feature enrichment failed: {e}")
 
             if skip_maintenance:
                 self.sync_status.update(task="", completed=0, total=0)
