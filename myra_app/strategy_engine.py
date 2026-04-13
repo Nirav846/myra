@@ -55,7 +55,9 @@ def run_strategy():
 
     # 2. Fetch Data (10-day window for relative calculations)
     query = """
-    SELECT symbol, date, close, high, low, delivery, delivery_pct 
+    SELECT symbol, date, close, high, low, delivery, delivery_pct,
+           AVG(delivery) OVER (PARTITION BY symbol ORDER BY date ROWS BETWEEN 9 PRECEDING AND CURRENT ROW) as avg_10d_delivery,
+           delivery_pct - LAG(delivery_pct) OVER (PARTITION BY symbol ORDER BY date) as sql_delivery_divergence
     FROM technical_data 
     WHERE date IN (SELECT DISTINCT date FROM technical_data ORDER BY date DESC LIMIT 10)
     """
@@ -77,10 +79,10 @@ def run_strategy():
             ((pl.col("high") - pl.col("low")) / pl.col("close")).alias("volatility_compression_score"),
             
             # Institutional Intensity: Current delivery vs 10-day average
-            (pl.col("delivery") / pl.col("delivery").mean().over("symbol")).alias("relative_volume_score"),
+            (pl.col("delivery") / pl.col("avg_10d_delivery")).alias("relative_volume_score"),
             
             # Delivery Divergence: DoD change in delivery percentage
-            (pl.col("delivery_pct") - pl.col("delivery_pct").shift(1).over("symbol")).alias("delivery_divergence_score"),
+            pl.col("sql_delivery_divergence").alias("delivery_divergence_score"),
             
             # Relative Strength: Stock performance relative to Nifty 50
             (pl.col("close") / nifty_benchmark).alias("nifty_outperformance_score")

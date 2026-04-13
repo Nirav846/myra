@@ -170,7 +170,12 @@ class FundamentalRanker:
                 ) as Funda_Score
             FROM agg_scores a
             LEFT JOIN read_parquet('{isin_bridge_path}') b_a ON a.symbol = b_a.SYMBOL
-            JOIN latest_snapshot l ON COALESCE(b_a.ISIN, a.symbol) = COALESCE((SELECT ISIN FROM read_parquet('{isin_bridge_path}') WHERE SYMBOL = l.symbol), l.symbol) AND l.rn = 1
+            JOIN (
+                SELECT ls.*, COALESCE(b.ISIN, ls.symbol) as join_isin
+                FROM latest_snapshot ls
+                LEFT JOIN read_parquet('{isin_bridge_path}') b ON ls.symbol = b.SYMBOL
+                WHERE ls.rn = 1
+            ) l ON COALESCE(b_a.ISIN, a.symbol) = l.join_isin
             """
         else:
             query += """
