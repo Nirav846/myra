@@ -72,17 +72,23 @@ def enrich_features(df: pl.DataFrame, nifty_df: pl.DataFrame) -> pl.DataFrame:
             (
                 pl.col("delivery_qty")
                 / pl.col("delivery_qty").rolling_mean(100, min_periods=1).over("symbol")
-            ).alias("delivery_divergence_score"),
+            )
+            .fill_nan(1.0)
+            .alias("delivery_divergence_score"),
             (
                 (pl.col("high") - pl.col("low"))
                 / (pl.col("high") - pl.col("low"))
                 .rolling_mean(50, min_periods=1)
                 .over("symbol")
-            ).alias("volatility_compression_score"),
+            )
+            .fill_nan(1.0)
+            .alias("volatility_compression_score"),
             (
                 pl.col("volume")
                 / pl.col("volume").rolling_mean(50, min_periods=1).over("symbol")
-            ).alias("relative_volume_score"),
+            )
+            .fill_nan(1.0)
+            .alias("relative_volume_score"),
             (pl.col("stock_return") - pl.col("market_return"))
             .fill_nan(0.0)
             .alias("nifty_outperformance_score"),
