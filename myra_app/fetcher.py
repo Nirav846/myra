@@ -97,30 +97,41 @@ class GhostSession:
         ).hexdigest()
         expiry = datetime.now() + timedelta(seconds=expire_seconds)
         data_hash = hashlib.md5(value).hexdigest() if value else None
-        try:
-            conn = sqlite3.connect(self.cache_path, timeout=20)
-            conn.execute("PRAGMA journal_mode=WAL;")  # Fix 6: Prevent locking
+        for attempt in range(3):
+            conn = None
             try:
-                conn.execute(
-                    "INSERT OR REPLACE INTO cache VALUES (?, ?, ?, ?)",
-                    (key, value, expiry, data_hash),
-                )
-            except sqlite3.OperationalError as e:
-                if "table cache has 3 columns but 4 values were supplied" in str(e):
-                    logger.warning(
-                        "Cache schema mismatch detected during INSERT. Falling back to 3-column insert."
-                    )
+                conn = sqlite3.connect(self.cache_path, timeout=20)
+                conn.execute("PRAGMA journal_mode=WAL;")  # Fix 6: Prevent locking
+                try:
                     conn.execute(
-                        "INSERT OR REPLACE INTO cache (key, value, expiry) VALUES (?, ?, ?)",
-                        (key, value, expiry),
+                        "INSERT OR REPLACE INTO cache VALUES (?, ?, ?, ?)",
+                        (key, value, expiry, data_hash),
                     )
-                else:
-                    raise
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            logger.error(f"Unexpected error in _set_cache: {e}", exc_info=True)
-            pass
+                except sqlite3.OperationalError as e:
+                    if "table cache has 3 columns but 4 values were supplied" in str(e):
+                        logger.warning(
+                            "Cache schema mismatch detected during INSERT. Falling back to 3-column insert."
+                        )
+                        conn.execute(
+                            "INSERT OR REPLACE INTO cache (key, value, expiry) VALUES (?, ?, ?)",
+                            (key, value, expiry),
+                        )
+                    else:
+                        raise
+                conn.commit()
+                break
+            except sqlite3.OperationalError as e:
+                if "database is locked" in str(e).lower() and attempt < 2:
+                    time.sleep(2 ** attempt)
+                    continue
+                logger.error(f"Operational error in _set_cache: {e}", exc_info=True)
+                break
+            except Exception as e:
+                logger.error(f"Unexpected error in _set_cache: {e}", exc_info=True)
+                break
+            finally:
+                if conn:
+                    conn.close()
 
     def get(self, url, params=None, headers=None, timeout=30, bypass_cache=False):
         """Standardized GET with Requests-First resilience (Fix 5)."""
@@ -997,8 +1008,16 @@ class DataFetcher:
         return None, None
 
     def _merge_zip_mto(self, zip_content, mto_text, current_date):
-        with zipfile.ZipFile(io.BytesIO(zip_content)) as z:
-            df_bhav = pd.read_csv(z.open(z.namelist()[0]))
+        if zip_content and b"<html" in zip_content[:200].lower():
+            logger.critical("NSE WAF/Captcha block detected: zip_content is HTML.")
+            return None
+
+        try:
+            with zipfile.ZipFile(io.BytesIO(zip_content)) as z:
+                df_bhav = pd.read_csv(z.open(z.namelist()[0]))
+        except zipfile.BadZipFile:
+            logger.error("Failed to extract zip_content: BadZipFile")
+            return None
 
         # Mapping
         if "TckrSymb" in df_bhav.columns:
