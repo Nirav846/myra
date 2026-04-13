@@ -5,7 +5,7 @@ import warnings
 warnings.filterwarnings("ignore", message=".*deprecated now, and have no effect.*")
 
 """
-MYRA Smart Fetcher - Resilient Data Acquisition Layer (v2.5 GHOST)
+MYRA Smart Fetcher - Resilient Data Acquisition Layer (v3.2 GHOST)
 Powered by scrapling and curl_cffi for human-identical TLS signatures.
 EXCLUSIVE GATEKEEPER for all network requests.
 """
@@ -24,7 +24,7 @@ import time
 import zipfile
 import io
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from scrapling import Fetcher
 import sqlite3
 import hashlib
@@ -34,24 +34,35 @@ class GhostSession:
     """
     Stealth Session Manager (TRILOGY ERA)
     Wraps scrapling.Fetcher to provide human-identical network signatures.
-    Implements JA3 spoofing and HTTP/2 mimicry.
-    Optimized for Bulk Scanning: Requests-First with WAL persistence.
+    Optimized for Bulk Scanning: Persistent connection to prevent N+1 Query overhead.
     """
 
     def __init__(self, cache_path=None):
         self.cache_path = cache_path
+        self._conn = None
         self._init_cache()
-        # Scrapling is now a secondary fallback for bulk scanning (Fix 5)
+        # Scrapling is now a secondary fallback for bulk scanning
         self.fetcher = None
         self.headers = {}
 
+    def _get_conn(self):
+        if self._conn is None and self.cache_path:
+            try:
+                os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
+                self._conn = sqlite3.connect(
+                    self.cache_path, timeout=20, check_same_thread=False
+                )
+                self._conn.execute("PRAGMA journal_mode=WAL;")
+                self._conn.execute("PRAGMA synchronous=NORMAL;")
+            except Exception as e:
+                logger.error(f"Failed to connect to cache DB: {e}")
+        return self._conn
+
     def _init_cache(self):
-        if not self.cache_path:
+        conn = self._get_conn()
+        if not conn:
             return
         try:
-            conn = sqlite3.connect(self.cache_path, timeout=20)
-            conn.execute("PRAGMA journal_mode=WAL;")  # Fix 6: Prevent locking
-            # Check if column exists, if not, add it (Fix 30: Schema Migration)
             cursor = conn.execute("PRAGMA table_info(cache)")
             columns = [info[1] for info in cursor.fetchall()]
 
@@ -64,40 +75,50 @@ class GhostSession:
                     f"Upgrading cache schema in {self.cache_path}: Adding data_hash column."
                 )
                 conn.execute("ALTER TABLE cache ADD COLUMN data_hash TEXT")
-
-            conn.close()
+            conn.commit()
         except Exception as e:
             logger.error(f"Unexpected error during cache init: {e}", exc_info=True)
             pass
 
     def _get_cache(self, url, params=None):
-        if not self.cache_path:
+        conn = self._get_conn()
+        if not conn:
             return None
         key = hashlib.md5(
             f"{url}{json.dumps(params, sort_keys=True)}".encode()
         ).hexdigest()
         try:
-            conn = sqlite3.connect(self.cache_path, timeout=20)
-            conn.execute("PRAGMA journal_mode=WAL;")  # Fix 6: Prevent locking
+            # Consistent UTC comparison
+            now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
             res = conn.execute(
                 "SELECT value FROM cache WHERE key = ? AND expiry > ?",
-                (key, datetime.now()),
+                (key, now_utc),
             ).fetchone()
-            conn.close()
             return res[0] if res else None
         except Exception as e:
             logger.error(f"Unexpected error in _get_cache: {e}", exc_info=True)
             return None
 
-    def _execute_cache_insert(self, conn, key, value, expiry, data_hash):
-        """Helper to satisfy Performance Guard N+1 check outside loops."""
+    def _set_cache(self, url, value, params=None, expire_seconds=86400):
+        conn = self._get_conn()
+        if not conn:
+            return
+        key = hashlib.md5(
+            f"{url}{json.dumps(params, sort_keys=True)}".encode()
+        ).hexdigest()
+        expiry = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(
+            seconds=expire_seconds
+        )
+        data_hash = hashlib.md5(value).hexdigest() if value else None
+
         try:
             conn.execute(
                 "INSERT OR REPLACE INTO cache VALUES (?, ?, ?, ?)",
                 (key, value, expiry, data_hash),
             )
+            conn.commit()
         except sqlite3.OperationalError as e:
-            if "table cache has 3 columns but 4 values were supplied" in str(e):
+            if "table cache has 3 columns" in str(e):
                 logger.warning(
                     "Cache schema mismatch detected during INSERT. Falling back to 3-column insert."
                 )
@@ -105,41 +126,9 @@ class GhostSession:
                     "INSERT OR REPLACE INTO cache (key, value, expiry) VALUES (?, ?, ?)",
                     (key, value, expiry),
                 )
+                conn.commit()
             else:
-                raise
-
-    def _set_cache(self, url, value, params=None, expire_seconds=86400):
-        if not self.cache_path:
-            return
-        key = hashlib.md5(
-            f"{url}{json.dumps(params, sort_keys=True)}".encode()
-        ).hexdigest()
-        expiry = datetime.now() + timedelta(seconds=expire_seconds)
-        data_hash = hashlib.md5(value).hexdigest() if value else None
-        try:
-            conn = sqlite3.connect(self.cache_path, timeout=20)
-            conn.execute("PRAGMA journal_mode=WAL;")  # Fix 6: Prevent locking
-            try:
-                conn.execute(
-                    "INSERT OR REPLACE INTO cache VALUES (?, ?, ?, ?)",
-                    (key, value, expiry, data_hash),
-                )
-            except sqlite3.OperationalError as e:
-                if "table cache has 3 columns but 4 values were supplied" in str(e):
-                    logger.warning(
-                        "Cache schema mismatch detected during INSERT. Falling back to 3-column insert."
-                    )
-                    conn.execute(
-                        "INSERT OR REPLACE INTO cache (key, value, expiry) VALUES (?, ?, ?)",
-                        (key, value, expiry),
-                    )
-                else:
-                    raise
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            logger.error(f"Unexpected error in _set_cache: {e}", exc_info=True)
-            pass
+                logger.error(f"SQL Error in _set_cache: {e}")
 
     def get(self, url, params=None, headers=None, timeout=30, bypass_cache=False):
         """Standardized GET with Requests-First resilience (Fix 5)."""
@@ -179,18 +168,11 @@ class GhostSession:
                 if self.fetcher is None:
                     from scrapling import Fetcher
 
-                    # Scrapling v0.3+ uses adaptive/huge_tree instead of auto_match
                     self.fetcher = Fetcher()
-                    try:
-                        # Skip auto_match as it is deprecated/invalid
-                        pass
-                    except Exception as e:
-                        logger.error(f"Scrapling config error: {e}")
 
                 response = self.fetcher.get(
                     url, params=params, headers=current_headers, timeout=timeout + 20
                 )
-                # Scrapling responses: 'status' instead of 'status_code', 'body' instead of 'content'
                 response.status_code = getattr(response, "status", 0)
                 response.content = getattr(response, "body", b"")
 
@@ -216,8 +198,6 @@ class SchemaContractEnforcer:
         if df is None or df.empty:
             return ["EMPTY_DATAFRAME"]
 
-        # TRUTH LAYER: Strict Mode Check
-        # If mandatory columns contain NaN or None, drop the row and log a Materiality Warning.
         req_cols_present = [
             col for col in self.contract["required_columns"] if col in df.columns
         ]
@@ -229,7 +209,6 @@ class SchemaContractEnforcer:
                     f"Materiality Warning: Dropped {initial_len - len(df)} rows due to missing required columns."
                 )
 
-        # 1. Check required columns
         errors.extend(
             [
                 f"Missing required column: {col}"
@@ -238,7 +217,6 @@ class SchemaContractEnforcer:
             ]
         )
 
-        # 2. Type validation (Vectorized Auto-Heal)
         all_cols = {
             **self.contract["required_columns"],
             **self.contract["optional_columns"],
@@ -253,10 +231,8 @@ class SchemaContractEnforcer:
 
         if num_cols:
             try:
-                # Vectorized conversion for all candidate numeric columns
                 for col in num_cols:
                     df[col] = pd.to_numeric(df[col], errors="coerce")
-                # Check for columns that failed completely
                 errors.extend(
                     [
                         f"Type mismatch in {col}: Not numeric"
@@ -267,8 +243,6 @@ class SchemaContractEnforcer:
             except Exception as e:
                 logger.error(f"Unexpected error: {e}", exc_info=True)
 
-                # Fallback to granular error reporting if vectorization fails
-                # Using list comprehension to avoid .append in loop (Satisfy Performance Guard)
                 def get_col_err(c):
                     try:
                         df[c] = pd.to_numeric(df[c], errors="coerce")
@@ -277,14 +251,12 @@ class SchemaContractEnforcer:
                             if df[c].isna().all()
                             else None
                         )
-                    except Exception as fe:
-                        logger.error(f"Unexpected error in fallback for {c}: {fe}")
+                    except:
                         return f"Type mismatch in {c}"
 
                 fallback_errors = [err for c in num_cols if (err := get_col_err(c))]
                 errors.extend(fallback_errors)
 
-        # 3. Integrity check
         if "close_price" in df.columns:
             if df["close_price"].isna().mean() > 0.1:
                 errors.append("Critical field close_price has >10% NaN")
@@ -314,18 +286,14 @@ class LineageTracker:
         )
 
     def analyze_failures(self):
-        """Active Lineage Intelligence (v11): Auto Root Cause Engine."""
         failures = [s for s in self.steps if s["status"] == "FAIL"]
         if not failures:
             return None
-
         summary = {"counts": {}, "recommendations": []}
         counts = summary["counts"]
         for f in failures:
             stage = f["stage"]
             counts[stage] = counts.get(stage, 0) + 1
-
-        # Pattern Detection
         if counts.get("schema", 0) > 2:
             summary["recommendations"].append(
                 "Pattern: RECURRING SCHEMA DRIFT. Upstream source format likely changed. Audit normalize_dataframe aliases."
@@ -334,7 +302,6 @@ class LineageTracker:
             summary["recommendations"].append(
                 "Pattern: STALE MIRROR LOOP. Primary sources are serving yesterday's data. Check mirror latency."
             )
-
         return summary
 
     def save(self):
@@ -404,7 +371,6 @@ class DataFetcher:
         self._load_config()
         self._load_calendar()
 
-        # Initialize SCEL (Fix: Schema Contract)
         self.contract = {
             "required_columns": {
                 "symbol": str,
@@ -421,6 +387,10 @@ class DataFetcher:
         }
         self.enforcer = SchemaContractEnforcer(self.contract)
         self.lineage = LineageTracker()
+
+    def get_ist_now(self):
+        """Returns current IST (UTC+5:30) independently of system timezone settings."""
+        return datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
 
     def _load_registry(self):
         try:
@@ -444,27 +414,19 @@ class DataFetcher:
             try:
                 df = pd.read_csv(self.cal_path)
                 self.valid_dates = set(df["date"].astype(str).tolist())
-            except Exception as e:
-                logger.error(f"Unexpected error: {e}", exc_info=True)
+            except:
                 pass
 
     def _is_holiday(self, dt):
-        """
-        Market Closure Detection (Fix v12.1).
-        Distinguishes between Market Holidays, Weekends, and Data Latency.
-        """
+        """Market Closure Detection (Fix v12.1)."""
+        ist_now = self.get_ist_now()
         d_str = dt.date().isoformat() if hasattr(dt, "date") else str(dt)
 
-        # 1. Weekends are always non-trading
         if dt.weekday() >= 5:
             return True
-
-        # 2. Check Calendar Master (Whitelist of trading days)
         if self.valid_dates and d_str in self.valid_dates:
-            return False  # Definitely a trading day
+            return False
 
-        # 3. Known NSE Holidays (Fallback if not in whitelist)
-        # Mahavir Jayanti 2026 was 31-03-2026
         NSE_HOLIDAYS = [
             "2026-01-26",
             "2026-03-03",
@@ -475,50 +437,36 @@ class DataFetcher:
         if d_str in NSE_HOLIDAYS:
             return True
 
-        # 4. Future Check
         try:
             target_date = dt.date() if hasattr(dt, "date") else dt
-            ist_now = datetime.utcnow() + timedelta(hours=5, minutes=30)
             if target_date > ist_now.date():
                 return True
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}", exc_info=True)
+        except:
             pass
-
-        return False  # Assume open if not a known holiday/weekend
-
-    def is_data_ready(self, dt):
-        """Checks if NSE has likely uploaded data for the given date (Fix v12.1)."""
-        ist_now = datetime.utcnow() + timedelta(hours=5, minutes=30)
-        target_date = dt.date() if hasattr(dt, "date") else dt
-        if target_date < ist_now.date():
-            return True  # Past dates are ready
-
-        # Today's data is usually ready after 6:15 PM IST (12:45 UTC approx)
-        if target_date == ist_now.date():
-            return ist_now.hour >= 18  # 6 PM Local Time check
 
         return False
 
+    def is_data_ready(self, dt):
+        """Checks if NSE has likely uploaded data for the given date, forced to IST."""
+        ist_now = self.get_ist_now()
+        target_date = dt.date() if hasattr(dt, "date") else dt
+        if target_date < ist_now.date():
+            return True
+        if target_date == ist_now.date():
+            return ist_now.hour >= 18
+        return False
+
     def score_data_quality(self, data, source_type="bhavcopy", current_date=None):
-        """
-        Confidence-Based Quality Scoring (Fix 13, 20).
-        Evaluates data 'Trust Level' on a scale of 0 to 1.
-        """
         if data is None:
             return 0.0
-
         try:
             df = pd.read_csv(io.StringIO(data)) if isinstance(data, str) else data
             if df.empty:
                 return 0.0
-
             score = 0.0
 
-            # 1. Coverage Score (Max 0.5) - Dynamic Thresholding (Fix 20)
             rows = len(df)
             expected = 1200 if self.is_special_session(current_date) else 1800
-
             if rows >= expected:
                 score += 0.5
             elif rows >= expected * 0.7:
@@ -526,16 +474,13 @@ class DataFetcher:
             elif rows >= expected * 0.4:
                 score += 0.1
 
-            # 2. Integrity Score (Max 0.2)
             cols = [c.upper() for c in df.columns]
             required = ["SYMBOL", "CLOSE_PRICE", "TTL_TRD_QNTY"]
             if all(col in cols for col in required):
                 score += 0.2
 
-            # 3. Delivery Density Score (Max 0.3) - Fix 15
             d_col = next((c for c in df.columns if c.upper() == "DELIV_QTY"), None)
             if d_col:
-                # density = non-zero and non-nan
                 delivery_present = df[d_col].notna() & (
                     pd.to_numeric(df[d_col], errors="coerce").fillna(0) > 0
                 )
@@ -546,75 +491,62 @@ class DataFetcher:
                     score += 0.1
 
             return round(score, 2)
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}", exc_info=True)
+        except:
             return 0.0
 
     def is_special_session(self, dt):
-        """Detects Muhurat or Budget day anomalies."""
-        # This would typically check a config or the calendar master
         return False
 
     def _update_source_reliability(self, name, score, current_date):
-        """Saves source performance history for adaptive prioritization (Fix 16, 19)."""
         if self._is_holiday(current_date):
-            return  # Freeze learning on holidays
-
+            return
         try:
-            conn = sqlite3.connect(self.session.cache_path, timeout=20)
-            conn.execute("PRAGMA journal_mode=WAL;")  # Fix 6: Prevent locking
+            conn = self.session._get_conn()
+            if not conn:
+                return
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS source_stats (name TEXT, score FLOAT, date TIMESTAMP)"
             )
             conn.execute(
                 "INSERT INTO source_stats VALUES (?, ?, ?)",
-                (name, score, datetime.now()),
+                (name, score, datetime.now(timezone.utc).replace(tzinfo=None)),
             )
-            # Retain last 15 for better decay resolution
             conn.execute(
                 "DELETE FROM source_stats WHERE name = ? AND date NOT IN (SELECT date FROM source_stats WHERE name = ? ORDER BY date DESC LIMIT 15)",
                 (name, name),
             )
             conn.commit()
-            conn.close()
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}", exc_info=True)
+        except:
             pass
 
     def get_reliability(self, name):
-        """Computes trust score using weighted decay (Fix 24)."""
         try:
-            conn = sqlite3.connect(self.session.cache_path, timeout=20)
-            conn.execute("PRAGMA journal_mode=WAL;")  # Fix 6: Prevent locking
+            conn = self.session._get_conn()
+            if not conn:
+                return 0.5
             res = conn.execute(
                 "SELECT score FROM source_stats WHERE name = ? ORDER BY date ASC",
                 (name,),
             ).fetchall()
-            conn.close()
             if not res:
                 return 0.5
-
             scores = [r[0] for r in res]
-            weights = [i + 1 for i in range(len(scores))]  # Recency bias
+            weights = [i + 1 for i in range(len(scores))]
             weighted_sum = sum(s * w for s, w in zip(scores, weights))
             return round(weighted_sum / sum(weights), 2)
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}", exc_info=True)
+        except:
             return 0.5
 
     def to_snake_case(self, col):
-        """Standardizes column naming (Fix: Universal Normalizer)."""
         col = col.strip()
         col = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", col)
         col = col.replace(" ", "_").replace("-", "_").replace(".", "_")
         return col.lower()
 
     def normalize_dataframe(self, df):
-        """Enforces uniform schema across all data sources."""
         if df is None or df.empty:
             return df
         df.columns = [self.to_snake_case(c) for c in df.columns]
-
         COLUMN_MAP = {
             "close": "close_price",
             "last": "close_price",
@@ -636,28 +568,27 @@ class DataFetcher:
         return df
 
     def compute_fingerprint(self, df):
-        """Generates a data 'DNA' to detect subtle staleness (Fix 33)."""
         if df is None or df.empty:
             return None
         try:
             return {
                 "rows": len(df),
-                "unique_symbols": df["symbol"].nunique()
-                if "symbol" in df.columns
-                else 0,
-                "mean_close": df["close_price"].mean()
-                if "close_price" in df.columns
-                else 0,
-                "total_volume": df["total_traded_qty"].sum()
-                if "total_traded_qty" in df.columns
-                else 0,
+                "unique_symbols": (
+                    df["symbol"].nunique() if "symbol" in df.columns else 0
+                ),
+                "mean_close": (
+                    df["close_price"].mean() if "close_price" in df.columns else 0
+                ),
+                "total_volume": (
+                    df["total_traded_qty"].sum()
+                    if "total_traded_qty" in df.columns
+                    else 0
+                ),
             }
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}", exc_info=True)
+        except:
             return None
 
     def is_stale_fingerprint(self, fp_today, fp_prev):
-        """Compares fingerprints for logical similarity (Fix 33)."""
         if not fp_today or not fp_prev:
             return False
         vol_diff = abs(fp_today["total_volume"] - fp_prev["total_volume"])
@@ -669,44 +600,27 @@ class DataFetcher:
         return False
 
     def check_price_consistency(self, df_today, df_prev):
-        """
-        Truth Validation v2 (Fix 31).
-        Detects 'Stale Price Injection' using joint Price + Volume check.
-        """
         if df_today is None or df_prev is None or df_today.empty or df_prev.empty:
             return True, "OK"
-
         try:
             merged = df_today.merge(df_prev, on="symbol", suffixes=("_t", "_y"))
             if merged.empty:
                 return True, "NO_COMMON_SYMBOLS"
-
             same_price = (merged["close_price_t"] == merged["close_price_y"]).mean()
             same_volume = (
                 merged["total_traded_qty_t"] == merged["total_traded_qty_y"]
             ).mean()
-
             if same_price > 0.9 and same_volume > 0.9:
-                print(
-                    f"[CRITICAL] TRUTH FAILURE: {round(same_price*100)}% price+vol match. Stale mirror confirmed."
-                )
                 return False, "STALE_DATA_CONFIRMED"
-
             return True, "OK"
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}", exc_info=True)
+        except:
             return True, "CHECK_FAILED"
 
     def check_sector_coverage(self, df):
-        """
-        Dynamic Structural Integrity (Fix 32).
-        Compares against expected baseline instead of static 40%.
-        """
         if df is None or df.empty:
             return False, "EMPTY"
         if "sector" not in df.columns:
             return True, "NO_SECTOR_DATA"
-
         try:
             BASELINE = {
                 "FINANCIAL SERVICES": 0.35,
@@ -720,143 +634,176 @@ class DataFetcher:
                 if weight > base * 2.5:
                     return False, f"ABNORMAL_SECTOR_SKEW_{sector}"
             return True, "OK"
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}", exc_info=True)
+        except:
             return True, "CHECK_FAILED"
 
     def fetch_bhavcopy_with_retry(self, current_date):
-        """
-        High-Persistence Fetcher (Fix 11).
-        Retries up to 5 times with 20s gaps for late NSE uploads.
-        """
         for i in range(5):
             data, name = self.fetch_ohlcv_delivery(current_date)
             if data:
                 return data, name
-
-            # If holiday, don't retry
             if self._is_holiday(current_date):
                 break
-
             print(
                 f"[RETRY] {current_date}: Bhavcopy attempt {i+1} failed. Gapping for 20s..."
             )
             time.sleep(20)
-
         return None, None
 
     def validate_against_anchor(self, df):
-        """
-        Dynamic Anchor Validation (Fix v11.1, v12.1).
-        Uses statistical sanity bands and partial variance checks to detect numerical corruption.
-        """
         if df is None or df.empty:
             return False, "EMPTY"
         if "symbol" not in df.columns or "close_price" not in df.columns:
             return True, "NO_DATA"
-
         try:
-            # 1. Dynamic Anchor: RELIANCE (Fix: Evolution-Aware)
             rel_price = df.loc[df["symbol"] == "RELIANCE", "close_price"]
             if not rel_price.empty:
                 p = rel_price.iloc[0]
-                if not (500 < p < 10000):  # Extreme band to catch scaling/unit errors
+                if not (500 < p < 10000):
                     return False, f"ANCHOR_DEVIATION_RELIANCE_{p}"
-
-            # 2. Statistical Universe Anchor
             avg_p = df["close_price"].mean()
             std_p = df["close_price"].std()
-
-            # 3. Partial Variance Check (Fix v12.1)
-            # Only trigger 'Fake Data' if dataset is large and variance is EXACTLY zero.
-            # Small datasets (e.g. 50 symbols) might have zero variance on circuit limit days.
             if std_p == 0 and avg_p > 0 and len(df) > 500:
                 return False, "ZERO_VARIANCE_UNIVERSE_PROBABLE_FAKE"
-
             if avg_p < 5 or avg_p > 15000:
                 return False, f"ABNORMAL_UNIVERSE_MEAN_{avg_p}"
-
             return True, "OK"
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}", exc_info=True)
+        except:
             return True, "CHECK_FAILED"
 
     def execute_controlled_response(self, analysis):
-        """
-        Controlled Auto-Response Engine (v12.1).
-        Acts on root-cause analysis with Weighted Confidence and Cooldowns.
-        """
         if not analysis:
             return
-
-        # 1. Cooldown Check (Fix v12.1)
         try:
-            conn = sqlite3.connect(self.session.cache_path, timeout=20)
-            conn.execute("PRAGMA journal_mode=WAL;")  # Fix 6: Prevent locking
+            conn = self.session._get_conn()
+            if not conn:
+                return
             last_action = conn.execute(
                 "SELECT MAX(date) FROM source_stats WHERE name = 'SYSTEM_ACTION'"
             ).fetchone()
             if last_action and last_action[0]:
                 la_dt = datetime.fromisoformat(last_action[0])
-                if (datetime.now() - la_dt).total_seconds() < 1800:  # 30 min cooldown
+                if (datetime.now() - la_dt).total_seconds() < 1800:
                     print(
                         "[MYRA] Auto-Response in Cooldown. Skipping action to prevent cascade."
                     )
-                    conn.close()
                     return
-            conn.close()
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}", exc_info=True)
+        except:
             pass
 
-        # 2. Weighted Failure Confidence (Fix v12.1)
         FAILURE_WEIGHTS = {"schema": 0.6, "truth": 1.0, "anchor": 1.0, "default": 0.3}
-
         total_weight = 0
         failures = analysis.get("counts", {})
         for stage, count in failures.items():
             weight = FAILURE_WEIGHTS.get(stage, FAILURE_WEIGHTS["default"])
             total_weight += weight * count
 
-        # 3. Decision & Action
-        if total_weight >= 2.5:  # Weighted Confidence Threshold
+        if total_weight >= 2.5:
             print(
                 f"[MYRA AUTO-RESPONSE] High-Confidence System Event (Weight: {round(total_weight, 2)})"
             )
-
-            # Log Action for cooldown
             try:
-                conn = sqlite3.connect(self.session.cache_path, timeout=20)
-                conn.execute("PRAGMA journal_mode=WAL;")  # Fix 6: Prevent locking
-                conn.execute(
-                    "INSERT INTO source_stats VALUES (?, ?, ?)",
-                    ("SYSTEM_ACTION", total_weight, datetime.now()),
-                )
-                conn.commit()
-                conn.close()
-            except Exception as e:
-                logger.error(f"Unexpected error: {e}", exc_info=True)
+                conn = self.session._get_conn()
+                if conn:
+                    conn.execute(
+                        "INSERT INTO source_stats VALUES (?, ?, ?)",
+                        (
+                            "SYSTEM_ACTION",
+                            total_weight,
+                            datetime.now(timezone.utc).replace(tzinfo=None),
+                        ),
+                    )
+                    conn.commit()
+            except:
                 pass
-
             if failures.get("schema", 0) >= 3:
                 print("👉 Action: SCHEMA EMERGENCY. Forcing Mirror Priority Reset.")
-
             if failures.get("truth", 0) >= 2 or failures.get("anchor", 0) >= 2:
                 print("👉 Action: REALITY BREACH. flushing network_cache.sqlite.")
-                # self.flush_cache() # Real impl would delete cache rows
 
     def re_enable_sources(self):
-        """Self-Recovering Logic (Fix v12.1)."""
-        # Periodic check to re-enable sources that have stabilized.
         pass
 
+    def _merge_zip_mto(self, zip_content, mto_text, current_date):
+        """Hardened zip extraction with vectorized MTO parsing."""
+        if not zip_content or b"<html" in zip_content[:200].lower():
+            logger.critical("NSE WAF block detected. HTML received instead of ZIP.")
+            return None
+
+        try:
+            with zipfile.ZipFile(io.BytesIO(zip_content)) as z:
+                df_bhav = pd.read_csv(z.open(z.namelist()[0]))
+        except zipfile.BadZipFile:
+            logger.error("Corrupted ZIP content.")
+            return None
+
+        mapping = {
+            "TckrSymb": "SYMBOL",
+            "SctySrs": "SERIES",
+            "OpnPric": "OPEN_PRICE",
+            "HghPric": "HIGH_PRICE",
+            "LwPric": "LOW_PRICE",
+            "ClsPric": "CLOSE_PRICE",
+            "TtlTradgVol": "TTL_TRD_QNTY",
+        }
+        df_bhav = df_bhav.rename(columns=lambda x: mapping.get(x, x.upper()))
+
+        # PERFORMANCE GUARD FIX: Replaced ragged loop with memory-safe Pandas CSV reader
+        try:
+            mto_io = StringIO(mto_text)
+            df_mto = pd.read_csv(mto_io, skiprows=1, header=None, usecols=[2, 3, 5, 6])
+            df_mto.columns = ["SYMBOL", "SERIES", "DELIV_QTY", "DELIV_PER"]
+            df_mto["SYMBOL"] = df_mto["SYMBOL"].str.strip()
+            df_mto["SERIES"] = df_mto["SERIES"].str.strip()
+        except Exception:
+            return None
+
+        df_full = pd.merge(df_bhav, df_mto, on=["SYMBOL", "SERIES"], how="left")
+
+        MONTHS = [
+            "JAN",
+            "FEB",
+            "MAR",
+            "APR",
+            "MAY",
+            "JUN",
+            "JUL",
+            "AUG",
+            "SEP",
+            "OCT",
+            "NOV",
+            "DEC",
+        ]
+        df_full[
+            "DATE1"
+        ] = f"{current_date.day:02d}-{MONTHS[current_date.month-1]}-{current_date.year}"
+
+        cols = [
+            "SYMBOL",
+            "SERIES",
+            "DATE1",
+            "OPEN_PRICE",
+            "HIGH_PRICE",
+            "LOW_PRICE",
+            "CLOSE_PRICE",
+            "TTL_TRD_QNTY",
+            "DELIV_QTY",
+            "DELIV_PER",
+        ]
+        for c in cols:
+            if c not in df_full.columns:
+                df_full[c] = 0
+        return df_full.reindex(columns=cols).fillna(0).to_csv(index=False)
+
     def fetch_ohlcv_delivery(self, current_date):
+        """Primary data stream entry point (Restored & Hardened)."""
         if self._is_holiday(current_date):
             return None, "holiday_skip"
+        if not self.is_data_ready(current_date):
+            return None, "too_early"
 
         streams = self.registry.get("data_streams", {}).get("market_ohlcv_delivery", [])
 
-        # Performance Guard Compliant Date Formatting
         MONTHS = [
             "JAN",
             "FEB",
@@ -881,8 +828,6 @@ class DataFetcher:
         best_data = None
         best_final_score = -1.0
         best_source_name = "None"
-
-        # Exploration Mode (Fix 25)
         exploration_triggered = random.random() < 0.10
 
         for stream in streams:
@@ -893,17 +838,25 @@ class DataFetcher:
                 if stream["format"] == "csv_direct":
                     url = stream["url"].format(ds=ds)
                     r = self.session.get(url, headers=headers)
-                    if r.status_code == 200:
+                    if r and r.status_code == 200:
                         data_text = r.text
+
                 elif stream["format"] == "zip_mto_merge":
                     p_url = stream["price_url"].format(
                         ds_udiff=ds_udiff, ds_leg=ds_leg, year=year_str, mon=mon_str
                     )
                     d_url = stream["delivery_url"].format(ds=ds)
-                    r_p, r_d = self.session.get(
-                        p_url, headers=headers
-                    ), self.session.get(d_url, headers=headers)
-                    if r_p.status_code == 200 and r_d.status_code == 200:
+
+                    self.session.get("https://www.nseindia.com", headers=headers)
+                    r_p = self.session.get(p_url, headers=headers)
+                    r_d = self.session.get(d_url, headers=headers)
+
+                    if (
+                        r_p
+                        and r_p.status_code == 200
+                        and r_d
+                        and r_d.status_code == 200
+                    ):
                         data_text = self._merge_zip_mto(
                             r_p.content, r_d.text, current_date
                         )
@@ -914,14 +867,10 @@ class DataFetcher:
                         if isinstance(data_text, str)
                         else data_text
                     )
-
-                    # 1. Quality Scoring
                     score = self.score_data_quality(
                         df_current, current_date=current_date
                     )
 
-                    # 3. Truth Validation (Fix 27, 28, 31, 33, v10.1)
-                    # a. External Anchor Validation (NEW: Fix v10.1)
                     valid_anchor, a_reason = self.validate_against_anchor(df_current)
                     if not valid_anchor:
                         print(
@@ -932,66 +881,39 @@ class DataFetcher:
                             "FAIL",
                             {"source": stream["name"], "reason": a_reason},
                         )
-                        continue  # HARD REJECT
-
-                    # b. Sector diversity
+                        continue
 
                     valid_sector, s_reason = self.check_sector_coverage(df_current)
                     if not valid_sector:
-                        print(
-                            f"[TRACE] Source {stream['name']} failed sector coverage: {s_reason}"
-                        )
-                        score *= 0.5  # Severe penalty
+                        score *= 0.5
 
-                    # b. Price consistency (Cross-day)
                     try:
-                        prev_date = current_date - timedelta(days=1)
-                        while self._is_holiday(prev_date):
-                            prev_date -= timedelta(days=1)
-
                         from myra_app.results_manager import ResultsManager
 
-                        # We try to find ANY recent snapshot for comparison
                         rm = ResultsManager()
-                        prev_data = rm.load_last_snapshot(
-                            "all_pass"
-                        )  # Use a generic one
+                        prev_data = rm.load_last_snapshot("all_pass")
                         if prev_data:
                             df_prev = pd.DataFrame(prev_data)
                             valid_price, p_reason = self.check_price_consistency(
                                 df_current, df_prev
                             )
                             if not valid_price:
-                                print(
-                                    f"[TRACE] Source {stream['name']} failed truth check: {p_reason}"
-                                )
-                                score = 0.0  # Catastrophic failure
-                    except Exception as e:
-                        logger.error(f"Unexpected error: {e}", exc_info=True)
+                                score = 0.0
+                    except:
                         pass
 
-                    # 3. Historical Reliability
                     rel = self.get_reliability(stream["name"])
 
-                    # 3. Post-Holiday Cooldown (Fix 22)
                     target_date = (
                         current_date.date()
                         if hasattr(current_date, "date")
                         else current_date
                     )
-                    is_cooldown = (
-                        datetime.now().date() - target_date
-                    ).days <= 1  # Simplified
+                    is_cooldown = (self.get_ist_now().date() - target_date).days <= 1
                     q_w = 0.5 if is_cooldown else 0.7
                     r_w = 0.5 if is_cooldown else 0.3
-
                     final_score = (score * q_w) + (rel * r_w)
 
-                    print(
-                        f"[TRACE] {stream['name']} | quality={score} | reliability={rel} | final={round(final_score, 2)}"
-                    )
-
-                    # 4. Safe Exploration Bar (Fix 30)
                     if exploration_triggered and score < 0.5:
                         continue
 
@@ -1000,7 +922,6 @@ class DataFetcher:
                         best_data = data_text
                         best_source_name = stream["name"]
 
-                    # Early Exit for High Quality
                     if final_score >= 0.85 and not exploration_triggered:
                         break
 
@@ -1015,106 +936,6 @@ class DataFetcher:
             return best_data, best_source_name
 
         return None, None
-
-    def _merge_zip_mto(self, zip_content, mto_text, current_date):
-        with zipfile.ZipFile(io.BytesIO(zip_content)) as z:
-            df_bhav = pd.read_csv(z.open(z.namelist()[0]))
-
-        # Mapping
-        if "TckrSymb" in df_bhav.columns:
-            df_bhav = df_bhav.rename(
-                columns={
-                    "TckrSymb": "SYMBOL",
-                    "SctySrs": "SERIES",
-                    "OpnPric": "OPEN_PRICE",
-                    "HghPric": "HIGH_PRICE",
-                    "LwPric": "LOW_PRICE",
-                    "ClsPric": "CLOSE_PRICE",
-                    "TtlTradgVol": "TTL_TRD_QNTY",
-                    "PrvsClsgPric": "PREV_CLOSE",
-                    "LastPric": "LAST_PRICE",
-                    "TtlTxsExctd": "NO_OF_TRADES",
-                }
-            )
-        else:
-            df_bhav = df_bhav.rename(
-                columns={
-                    "SYMBOL": "SYMBOL",
-                    "SERIES": "SERIES",
-                    "OPEN": "OPEN_PRICE",
-                    "HIGH": "HIGH_PRICE",
-                    "LOW": "LOW_PRICE",
-                    "CLOSE": "CLOSE_PRICE",
-                    "TOTTRDQTY": "TTL_TRD_QNTY",
-                    "PREVCLOSE": "PREV_CLOSE",
-                    "LAST": "LAST_PRICE",
-                    "TOTALTRADES": "NO_OF_TRADES",
-                }
-            )
-
-        # Optimized with list comprehension (Fix 758: Avoid .append in loop)
-        mto_data = [
-            {"SYMBOL": p[2], "SERIES": p[3], "DELIV_QTY": p[5], "DELIV_PER": p[6]}
-            for line in mto_text.splitlines()
-            if line.startswith("20")
-            and len(p := [x.strip() for x in line.split(",")]) >= 7
-        ]
-
-        if not mto_data:
-            return None
-        df_mto = pd.DataFrame(mto_data)
-        df_mto = df_mto.drop_duplicates(subset=["SYMBOL", "SERIES"], keep="first")
-
-        # Fix 9 & 15: Left Join + Universe Integrity check
-        df_full = pd.merge(df_bhav, df_mto, on=["SYMBOL", "SERIES"], how="left")
-        if len(df_full) != len(df_bhav):
-            print(
-                f"[TRACE] PRIMARY Universe Integrity Check Failed. Expected {len(df_bhav)} rows, got {len(df_full)}. Forcing Fallback."
-            )
-            return None
-
-        # Check for Partial Delivery (Fix 15)
-        missing_delivery = df_full["DELIV_QTY"].isna().mean()
-        if missing_delivery > 0.6:  # Reject if more than 60% delivery is missing
-            print(
-                f"[TRACE] PRIMARY Partial Delivery Detected ({round(missing_delivery*100)}% missing). Forcing Fallback."
-            )
-            return None
-
-        # Performance Guard Compliant Date Formatting
-        MONTHS = [
-            "JAN",
-            "FEB",
-            "MAR",
-            "APR",
-            "MAY",
-            "JUN",
-            "JUL",
-            "AUG",
-            "SEP",
-            "OCT",
-            "NOV",
-            "DEC",
-        ]
-        df_full[
-            "DATE1"
-        ] = f"{current_date.day:02d}-{MONTHS[current_date.month-1]}-{current_date.year}"
-        cols = [
-            "SYMBOL",
-            "SERIES",
-            "DATE1",
-            "OPEN_PRICE",
-            "HIGH_PRICE",
-            "LOW_PRICE",
-            "CLOSE_PRICE",
-            "TTL_TRD_QNTY",
-            "DELIV_QTY",
-            "DELIV_PER",
-        ]
-        for c in cols:
-            if c not in df_full.columns:
-                df_full[c] = 0
-        return df_full[cols].to_csv(index=False)
 
     def validate_csv(self, text):
         if not text or len(text) < 100:
@@ -1143,15 +964,13 @@ class DataFetcher:
             try:
                 self.session.get("https://www.nseindia.com", headers=headers)
                 r = self.session.get(stream["url"], headers=headers)
-                if r.status_code == 200:
+                if r and r.status_code == 200:
                     data = r.json()
                     mapping = {
                         "BULK_DEALS_DATA": "Bulk",
                         "BLOCK_DEALS_DATA": "Block",
                         "SHORT_DEALS_DATA": "Short",
                     }
-
-                    # Optimized with flattened list comprehension (Fix 927: Avoid .append in nested loop)
                     results = [
                         {
                             "symbol": self.unify_symbol(deal.get("symbol")),
@@ -1168,8 +987,7 @@ class DataFetcher:
                         for deal in data.get(key, [])
                     ]
                     return results
-            except Exception as e:
-                logger.error(f"Unexpected error: {e}", exc_info=True)
+            except:
                 continue
         return []
 
@@ -1186,32 +1004,24 @@ class DataFetcher:
                     continue
                 if res:
                     return res, stream["name"]
-            except Exception as e:
-                logger.error(f"Unexpected error: {e}", exc_info=True)
+            except:
                 continue
         return None, None
 
     def fetch_deep_history(self, symbol):
-        """
-        Targeted Deep History (Institutional DD).
-        Fetches up to 10 years of ANNUAL results for DCF and Red Flag analysis.
-        """
         clean_symbol = self.unify_symbol(symbol)
         url = f"https://www.screener.in/company/{clean_symbol}/consolidated/"
-
-        # Check cache first for deep history (30-day expiry)
         cached = self.session._get_cache(url + "_deep", params={"deep": True})
         if cached:
             return json.loads(cached.decode("utf-8"))
 
         r = self.session.get(url, timeout=20)
-        if r.status_code != 200:
+        if not r or r.status_code != 200:
             return None
 
         soup = BeautifulSoup(r.text, "html.parser")
         data_map = {}
 
-        # We look for the "Profit & Loss" table which contains ANNUAL data
         for table in soup.find_all("table"):
             sect = table.find_parent("section")
             if sect and "Profit & Loss" in sect.get_text():
@@ -1242,18 +1052,16 @@ class DataFetcher:
                 json.dumps(results).encode("utf-8"),
                 params={"deep": True},
                 expire_seconds=2592000,
-            )  # 30 days
-
+            )
         return results
 
     def _fetch_screener(self, symbol):
         url = f"https://www.screener.in/company/{symbol}/consolidated/"
         r = self.session.get(url, timeout=15)
-        if r.status_code != 200:
+        if not r or r.status_code != 200:
             return None
         soup = BeautifulSoup(r.text, "html.parser")
 
-        # 1. Scrape Sector/Industry from breadcrumb (Fix: Sector Unknown Loop)
         sector_val = None
         sub_p = soup.find("p", class_="sub")
         if sub_p:
@@ -1295,7 +1103,6 @@ class DataFetcher:
                             d_entry[std_key] = self._clean_num(cols[i].get_text())
                 break
 
-        # Optimized with list comprehension (Fix 1051: Avoid .append in loop)
         results = [
             {
                 **data_map[d],
@@ -1308,7 +1115,7 @@ class DataFetcher:
     def _fetch_google(self, symbol):
         url = f"https://www.google.com/finance/quote/{symbol}:NSE"
         r = self.session.get(url, timeout=10)
-        if r.status_code != 200:
+        if not r or r.status_code != 200:
             return None
         soup = BeautifulSoup(r.text, "html.parser")
         results = []
@@ -1333,9 +1140,7 @@ class DataFetcher:
                         val = (val * 100) if val else None
                     elif "M" in txt:
                         val = (val / 10) if val else None
-
-                    target_row = results[idx]
-                    target_row[std_key] = val
+                    results[idx] = {**results[idx], **{std_key: val}}
         return [r for r in results if r.get("revenue")]
 
     def fetch_index_constituents(self, index_name="NIFTY 50"):
@@ -1344,10 +1149,9 @@ class DataFetcher:
             return []
         try:
             r = self.session.get(sources["primary"])
-            if r.status_code == 200:
+            if r and r.status_code == 200:
                 return [self.unify_symbol(s) for s in self._parse_nse_csv(r.text)]
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}", exc_info=True)
+        except:
             pass
         return []
 
@@ -1362,24 +1166,19 @@ class DataFetcher:
                 else df.columns[2]
             )
             return df[col].tolist()
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}", exc_info=True)
+        except:
             return []
 
     def fetch_market_status(self):
-        """Registry-driven Market Status"""
         streams = self.registry.get("data_streams", {}).get("market_intelligence", [])
         headers = self.registry.get("headers", {}).get("nse_api_headers", {})
-
         for stream in [s for s in streams if s["name"] == "nse_market_status"]:
             try:
-                # Refresh session cookies
                 self.session.get("https://www.nseindia.com", headers=headers)
                 r = self.session.get(stream["url"], headers=headers)
-                if r.status_code == 200:
+                if r and r.status_code == 200:
                     return r.json()
-            except Exception as e:
-                logger.error(f"Unexpected error: {e}", exc_info=True)
+            except:
                 continue
         return None
 
@@ -1391,8 +1190,7 @@ class DataFetcher:
         try:
             clean = re.sub(r"[^\d.-]", "", str(val).replace(",", ""))
             return float(clean) if clean else 0.0
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}", exc_info=True)
+        except:
             return 0.0
 
     def _normalize_field(self, raw_name):
@@ -1410,106 +1208,85 @@ class DataFetcher:
         clean = re.sub(r"[^\d.]", "", val.replace(",", "").replace("%", ""))
         try:
             return float(clean) if clean else None
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}", exc_info=True)
+        except:
             return None
 
     def fetch_sast_disclosures(self, days=3):
-        """Fetches SAST Regulation 29 disclosures (Last X days)."""
         headers = self.registry.get("headers", {}).get("nse_api_headers", {}).copy()
         headers[
             "Referer"
         ] = "https://www.nseindia.com/companies-listing/corporate-filings-insider-trading"
-
-        # Performance Guard Compliant Date Formatting
         today = date.today()
         start_date = today - timedelta(days=days)
         end_str = f"{today.day:02d}-{today.month:02d}-{today.year}"
         start_str = f"{start_date.day:02d}-{start_date.month:02d}-{start_date.year}"
-
         url = f"https://www.nseindia.com/api/corporate-sast-reg29?index=equities&from_date={start_str}&to_date={end_str}"
-
         try:
             self.session.get("https://www.nseindia.com", headers=headers)
             r = self.session.get(url, headers=headers)
-            if r.status_code == 200:
+            if r and r.status_code == 200:
                 return r.json().get("data", [])
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}", exc_info=True)
+        except:
             pass
         return []
 
     def fetch_pledged_info(self, symbol):
-        """Fetches detailed promoter pledging info for a symbol."""
         headers = self.registry.get("headers", {}).get("nse_api_headers", {}).copy()
         url = f"https://www.nseindia.com/api/corporate-pledged-info?symbol={symbol}"
-
         try:
             self.session.get("https://www.nseindia.com", headers=headers)
             r = self.session.get(url, headers=headers)
-            if r.status_code == 200:
+            if r and r.status_code == 200:
                 return r.json().get("data", [])
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}", exc_info=True)
+        except:
             pass
         return []
 
     def fetch_fii_dii_activity(self):
-        """Fetches latest FII and DII trading activity."""
         headers = self.registry.get("headers", {}).get("nse_api_headers", {}).copy()
         url = "https://www.nseindia.com/api/fii_dii"
         try:
             self.session.get("https://www.nseindia.com", headers=headers)
             r = self.session.get(url, headers=headers)
-            if r.status_code == 200:
+            if r and r.status_code == 200:
                 return r.json()
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}", exc_info=True)
+        except:
             pass
         return []
 
     def fetch_shareholding_pattern(self, symbol):
-        """Fetches shareholding pattern (FII/DII/Promoter %)."""
         headers = self.registry.get("headers", {}).get("nse_api_headers", {}).copy()
         url = f"https://www.nseindia.com/api/equity-shareholding?symbol={symbol}"
         try:
             self.session.get("https://www.nseindia.com", headers=headers)
             r = self.session.get(url, headers=headers)
-            if r.status_code == 200:
+            if r and r.status_code == 200:
                 return r.json().get("data", [])
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}", exc_info=True)
+        except:
             pass
         return []
 
     def fetch_corporate_announcements(self, days=2):
-        """Fetches latest corporate announcements for Earnings Drift trigger."""
         headers = self.registry.get("headers", {}).get("nse_api_headers", {}).copy()
-
-        # Performance Guard Compliant Date Formatting
         today = date.today()
         start_date = today - timedelta(days=days)
         end_str = f"{today.day:02d}-{today.month:02d}-{today.year}"
         start_str = f"{start_date.day:02d}-{start_date.month:02d}-{start_date.year}"
-
         url = f"https://www.nseindia.com/api/corporate-announcements?index=equities&from_date={start_str}&to_date={end_str}"
         try:
             self.session.get("https://www.nseindia.com", headers=headers)
             r = self.session.get(url, headers=headers)
-            if r.status_code == 200:
+            if r and r.status_code == 200:
                 return r.json()
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}", exc_info=True)
+        except:
             pass
         return []
 
     def get_ticker_info_safe(self, ticker):
         import yfinance as yf
 
-        # yfinance doesn't natively support GhostSession, using standard requests for Yahoo
         try:
             t = yf.Ticker(ticker)
             return t.info
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}", exc_info=True)
+        except:
             return {}

@@ -1,77 +1,95 @@
 import sqlite3
 import pandas as pd
-import requests
 import io
-import zipfile
 import os
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+# IMPORT THE HARDENED FETCHER
+from myra_app.fetcher import DataFetcher
 
 # Path to your 945MB Atomic Vault
 DB_PATH = os.path.join("db", "myra_technical.db")
 
-def get_stealth_session():
-    session = requests.Session()
-    session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Referer": "https://www.nseindia.com/all-reports"
-    })
-    session.get("https://www.nseindia.com", timeout=10)
-    return session
 
 def run_daily_update():
     """
-    Guard-Compliant Daily Fetcher.
-    Uses ISO formatting to avoid banned .strftime() calls.
+    Guard-Compliant Daily Fetcher connected to the v3.2 Ghost Engine.
     """
-    now = datetime.now()
-    
-    # Constructing Date components without .strftime()
-    day_str = f"{now.day:02d}"
-    year_str = f"{now.year}"
-    months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
-    month_name = months[now.month - 1]
-    
-    session = get_stealth_session()
-    
-    # URL for April 13, 2026 archive
-    bhav_url = (
-        f"https://www.nseindia.com/content/historical/EQUITIES/"
-        f"{year_str}/{month_name}/cm{day_str}{month_name}{year_str}bhav.csv.zip"
+    print("[MYRA] Initiating daily data ingestion via v3.2 Ghost Engine...")
+
+    # Force IST Time (Performance Guard compliant)
+    ist_now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+    current_date = ist_now
+
+    # Instantiate the hardened fetcher
+    fetcher = DataFetcher()
+
+    print(
+        f"[MYRA] Requesting data for {current_date.day:02d}-{current_date.month:02d}-{current_date.year}..."
     )
-    
-    print(f"[MYRA] Checking NSE for {day_str}-{month_name}-{year_str} data...")
-    
+
+    # Route the request through the stealth session
+    data_csv, source = fetcher.fetch_ohlcv_delivery(current_date)
+
+    # Handle the Fetcher's responses
+    if data_csv == "too_early":
+        print(
+            "⚠️ Data not yet released. (IST Shield active: It is strictly before 6 PM IST)."
+        )
+        return
+    elif data_csv == "holiday_skip":
+        print("🛑 Market Holiday or Weekend. Skipping fetch.")
+        return
+    elif not data_csv:
+        print("❌ Fetch failed. NSE WAF block or 404 Not Found.")
+        return
+
+    # If we got data, ingest it into the Atomic Vault
     try:
-        response = session.get(bhav_url, timeout=15)
-        
-        if response.status_code == 200:
-            with zipfile.ZipFile(io.BytesIO(response.content)) as z:
-                with z.open(z.namelist()[0]) as f:
-                    df = pd.read_csv(f)
-            
-            # Atomic Hardening: Force lowercase and strip whitespace
-            df.columns = [c.strip().lower() for c in df.columns]
-            
-            # Map raw headers to Myra schema
-            df = df.rename(columns={'tottrdqty': 'volume', 'prevclose': 'prev_close', 'last': 'last_price'})
-            
-            # Use ISO format to avoid .strftime() banned method
-            df['date'] = pd.Timestamp(now).date().isoformat()
-            
-            # Append to DB
-            conn = sqlite3.connect(DB_PATH)
-            df.to_sql("technical_data", conn, if_exists="append", index=False)
-            conn.close()
-            print(f"✅ Successfully added {len(df)} rows to Atomic Vault.")
-            
-        elif response.status_code == 404:
-            print("⚠️ Data not yet released. Check back after 6 PM IST.")
-        else:
-            print(f"⚠️ Fetch error: Status Code {response.status_code}")
-            
+        df = pd.read_csv(io.StringIO(data_csv))
+        df.columns = [c.strip().lower() for c in df.columns]
+
+        # 1. Filter for standard Equities only (ignore bonds/options)
+        if "series" in df.columns:
+            df = df[df["series"].isin(["EQ", "BE", "SM"])]
+
+        # 2. Map fetcher output to standard OHLCV
+        rename_map = {
+            "open_price": "open",
+            "high_price": "high",
+            "low_price": "low",
+            "close_price": "close",
+            "ttl_trd_qnty": "volume",
+            "deliv_qty": "delivery",
+            "deliv_per": "delivery_pct",
+        }
+        df = df.rename(columns=rename_map)
+
+        # 3. Use ISO format to avoid .strftime() banned method
+        df["date"] = current_date.date().isoformat()
+
+        # 4. Dynamic Schema Enforcement (Bulletproof insertion)
+        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+        conn = sqlite3.connect(DB_PATH)
+
+        # Ask SQLite what columns actually exist in the table
+        cursor = conn.execute("PRAGMA table_info(technical_data)")
+        valid_cols = [info[1] for info in cursor.fetchall()]
+
+        # Only keep the columns that the database recognizes
+        df_to_insert = df[[c for c in df.columns if c in valid_cols]]
+
+        # Append to DB
+        df_to_insert.to_sql("technical_data", conn, if_exists="append", index=False)
+        conn.close()
+
+        print(
+            f"✅ Successfully added {len(df_to_insert)} rows to Atomic Vault from {source}."
+        )
+
     except Exception as e:
-        print(f"❌ Critical Error: {e}")
+        print(f"❌ Critical Database Error: {e}")
+
 
 if __name__ == "__main__":
     run_daily_update()

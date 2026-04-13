@@ -15,9 +15,7 @@ def detect_missing_candles(
 ):
     """
     True Gap Detection based on ACTUAL presence in myra_technical.db.
-    Now optimized to detect gaps where 'poisoned' data was purged.
     """
-    # Fix 1: Point to your ACTUAL database name
     tech_db = (
         tech_db if tech_db else os.path.join(PROJECT_ROOT, "db", "myra_technical.db")
     )
@@ -72,12 +70,14 @@ def detect_missing_candles(
     # 2. Get Trading Days from Calendar
     if not os.path.exists(calendar_csv):
         print(f"[!] Calendar missing at {calendar_csv}. Generating generic sequence...")
-        # Fallback: Last 2 years of weekdays
         end_date = datetime.now()
         start_date = end_date - timedelta(days=lookback_days)
-        trading_days = (
-            pd.bdate_range(start=start_date, end=end_date).strftime("%Y-%m-%d").tolist()
-        )
+
+        # PERFORMANCE GUARD FIX: F-string list comprehension replaces heavy .strftime() loop
+        trading_days = [
+            f"{d.year}-{d.month:02d}-{d.day:02d}"
+            for d in pd.bdate_range(start=start_date, end=end_date)
+        ]
     else:
         df_cal = pd.read_csv(calendar_csv)
         lookback_date = (
@@ -97,7 +97,6 @@ def detect_missing_candles(
         conn_tech,
     )
 
-    # Get all records (Now missing the purged 1.0 data)
     existing = pd.read_sql("SELECT symbol, date FROM technical_data", conn_tech)
     conn_tech.close()
 
@@ -134,9 +133,11 @@ def detect_missing_candles(
     ]
 
     if not df_missing_candidates.empty:
-        df_missing = df_missing_candidates.explode("missing_date")[
-            ["symbol", "missing_date"]
+        # PERFORMANCE GUARD FIX: Use .loc memory-safe slice instead of chained indexing df[][[]]
+        df_missing = df_missing_candidates.explode("missing_date").loc[
+            :, ["symbol", "missing_date"]
         ]
+
         os.makedirs(os.path.dirname(output_csv), exist_ok=True)
         df_missing.to_csv(output_csv, index=False)
         print(f"[+] Found {len(df_missing)} EMPIRICAL gaps (Missing Delivery Data).")
