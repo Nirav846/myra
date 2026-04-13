@@ -1,7 +1,18 @@
+metadata:
+  name: "Atomic Volatility Compression"
+  description: "Squeeze detection during high-volatility regime"
+
 filters:
-  volatility:
-    max_compression_score: 0.85
+  # Institutional Participation (Must stay high)
   delivery:
-    min_delivery_divergence: 0.80  # Set to 0.80 to be safe
+    min_delivery_divergence_score: 2.0  # Lowered from 5.0 due to panic selling
   volume:
-    min_relative_volume: 1.0       # Set to 1.0 to see more stocks
+    min_relative_volume_score: 2.5     # Significant institutional absorption
+
+  # Volatility Compression (Adjusted for today's 2% market drop)
+  volatility:
+    max_volatility_compression_score: 0.045 # Max 4.5% range (High Relative Strength)
+
+  # Alpha (Relative Strength vs Nifty)
+  alpha:
+    min_nifty_outperformance_score: 1.02   # Must beat Nifty by at least 2%
