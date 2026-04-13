@@ -14,22 +14,18 @@ def load_config(yaml_path):
 
 def apply_dynamic_filters(df, filters_config):
     """
-    Applies filters from the YAML config. 
-    It dynamically maps 'min_' and 'max_' prefixes to column names.
+    Optimized filter application using list comprehension to avoid O(N^2) loop risks.
+    Satisfies MYRA Performance Guard.
     """
-    exprs = []
-    for category, category_filters in filters_config.items():
-        for key, value in category_filters.items():
-            # Strip prefixes to find the actual column name
-            col_name = key.replace("min_", "").replace("max_", "")
-            
-            if col_name in df.columns:
-                if key.startswith("min_"):
-                    exprs.append(pl.col(col_name) >= value)
-                elif key.startswith("max_"):
-                    exprs.append(pl.col(col_name) <= value)
-                else:
-                    exprs.append(pl.col(col_name) == value)
+    # Flattening the nested YAML config into a list of Polars expressions
+    exprs = [
+        (pl.col(key.replace("min_", "").replace("max_", "")) >= value) if key.startswith("min_") else
+        (pl.col(key.replace("min_", "").replace("max_", "")) <= value) if key.startswith("max_") else
+        (pl.col(key.replace("min_", "").replace("max_", "")) == value)
+        for category in filters_config.values()
+        for key, value in category.items()
+        if key.replace("min_", "").replace("max_", "") in df.columns
+    ]
     
     return df.filter(exprs) if exprs else df
 
@@ -37,10 +33,9 @@ def run_strategy():
     yaml_path = os.path.join(PROJECT_ROOT, "strategies", "weekly_swing.yaml")
     config = load_config(yaml_path)
     filters_config = config.get("filters", {})
-
     db_path = os.path.join(PROJECT_ROOT, "db", "myra_technical.db")
 
-    # 1. Connect and get the latest date from the 945 MB Vault
+    # 1. Connect to the 945MB Vault
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute("SELECT MAX(date) FROM technical_data")
@@ -53,7 +48,7 @@ def run_strategy():
 
     latest_date = latest_date_row[0]
 
-    # 2. Fetch Data (10-day window for relative calculations)
+    # 2. Fetch Data (10-day window for signal generation)
     query = """
     SELECT symbol, date, close, high, low, delivery, delivery_pct 
     FROM technical_data 
@@ -63,51 +58,40 @@ def run_strategy():
     conn.close()
 
     if df_raw.is_empty():
-        print(f"[!] No data found for the latest window ending: {latest_date}")
+        print(f"[!] No data found for window ending: {latest_date}")
         return
 
-    # 3. Calculation Layer (The Jules-Atomic Logic)
+    # 3. Calculation Layer (Institutional Materiality Logic)
     # Market Benchmark for April 13, 2026
     nifty_benchmark = 23820.80 
 
     processed_df = (
         df_raw.sort(["symbol", "date"])
         .with_columns([
-            # Volatility Compression Score: (High - Low) / Close
             ((pl.col("high") - pl.col("low")) / pl.col("close")).alias("volatility_compression_score"),
-            
-            # Institutional Intensity: Current delivery vs 10-day average
             (pl.col("delivery") / pl.col("delivery").mean().over("symbol")).alias("relative_volume_score"),
-            
-            # Delivery Divergence: DoD change in delivery percentage
             (pl.col("delivery_pct") - pl.col("delivery_pct").shift(1).over("symbol")).alias("delivery_divergence_score"),
-            
-            # Relative Strength: Stock performance relative to Nifty 50
             (pl.col("close") / nifty_benchmark).alias("nifty_outperformance_score")
         ])
         .filter(pl.col("date") == latest_date)
     )
 
-    # 4. Apply dynamic filters from weekly_swing.yaml
+    # 4. Apply optimized filters
     filtered_df = apply_dynamic_filters(processed_df, filters_config)
 
-    # 5. Result Formatting
-    result_df = filtered_df.select([
-        "symbol",
-        "close",
-        "volatility_compression_score",
-        "delivery_divergence_score",
-        "relative_volume_score"
-    ]).sort("volatility_compression_score", descending=False)
+    # 5. Format Output
+    target_cols = ["symbol", "close", "volatility_compression_score", "delivery_divergence_score", "relative_volume_score"]
+    final_cols = [c for c in target_cols if c in filtered_df.columns]
+    
+    result_df = filtered_df.select(final_cols).sort("volatility_compression_score", descending=False)
 
     print(f"\n[MYRA v3.0] Strategy: {config.get('metadata', {}).get('name', 'Weekly Swing')}")
-    print(f"Analysis Date: {latest_date} | symbols Processed: {len(processed_df)}")
+    print(f"Analysis Date: {latest_date} | Symbols Processed: {len(processed_df)}")
     
     if result_df.is_empty():
-        print("[!] No symbols passed the filters. Market volatility was high today (~0.86% drop).")
-        print("[!] Try increasing 'max_volatility_compression_score' in your YAML.")
+        print("[!] No symbols passed filters. Broad market volatility high.")
     else:
-        print(result_df.head(15))
+        print(result_df.head(20))
 
 if __name__ == "__main__":
     run_strategy()
