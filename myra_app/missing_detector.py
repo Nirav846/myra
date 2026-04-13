@@ -101,7 +101,7 @@ def detect_missing_candles(
     existing = pd.read_sql("SELECT symbol, date FROM technical_data", conn_tech)
     conn_tech.close()
 
-    bounds_map = {row.symbol: row.first for row in bounds.itertuples(index=False)}
+    bounds_map = dict(zip(bounds["symbol"], bounds["first"]))
     existing_map = {}
     if not existing.empty:
         for sym, dates in existing.groupby("symbol")["date"]:
