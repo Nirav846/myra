@@ -197,8 +197,8 @@ def backfill_missing_data(
 
                     records = [
                         r
-                        for row in df_bhav.itertuples(index=False)
-                        if (r := _to_record(row._asdict()))
+                        for row in df_bhav.to_dict('records')
+                        if (r := _to_record(row))
                     ]
 
                     if records:
