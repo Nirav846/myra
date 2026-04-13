@@ -1,12 +1,33 @@
 # MYRA Deep-Dive Technical Audit Report
 
-## 1. Data Ingestion & API Resiliency
+## Part 1: Feature Verification Report (User Request)
+
+Based on a thorough review of the current MYRA codebase, the following requested features have been verified:
+
+### 1. ETF and ISIN Exclusion Logics
+*   **Status: Implemented & Active**
+*   **Details:**
+    *   **ISIN Mapping:** The `isin_mapper.py` utility successfully bridges historical ISINs to symbols and creates an `isin_bridge.parquet` file, which is actively utilized in `fundamental_ranker.py` to join datasets securely.
+    *   **ETF Exclusion:** The system features a robust, multi-layered ETF filter. `librarian_ingestor.py` actively screens out known non-equity and ETF symbols during the primary SQLite ingestion using `meta.db`. Furthermore, `gatekeeper.py` features a dedicated "smart gatekeeper" that reads `MW-ETF-*.csv` files, purges ETF rows from `technical_data`, clears them from the `ias_history`, and marks them as `ETF` and `is_active = 0` in `symbols_master`.
+
+### 2. Market Timing and Holiday Awareness
+*   **Status: Implemented & Active**
+*   **Details:**
+    *   **Market Timing:** The `DataFetcher.is_data_ready(dt)` function in `fetcher.py` actively prevents premature fetching. It correctly assumes that the current day's NSE data is only ready after 6:00 PM IST (`now.hour >= 18`).
+    *   **Holiday Awareness:** The `DataFetcher._is_holiday(dt)` function successfully detects weekends (Saturday/Sunday), reads from a whitelist in `trading_calendar_master.csv`, and includes a fallback hardcoded list of known NSE holidays (`NSE_HOLIDAYS`), preventing the system from incorrectly assuming missing files for closed days.
+
+
+---
+
+## Part 2: Deep-Dive Technical Audit
+
+### 1. Data Ingestion & API Resiliency
 **Severity:** High
-**Location:** `myra_app/fetcher.py` -> `DataFetcher._merge_zip_mto()`
+**Location:** `myra_app/fetcher.py` -> `DataFetcher._merge_zip_mto()` and `daily_ingestor.py`
 **The Vulnerability:**
-The function directly attempts to extract the zip file using `zipfile.ZipFile(io.BytesIO(zip_content))`. If the NSE WAF blocks the request and returns an HTML page (with a 200 OK status, which is a common defense mechanism on NSE), or if the file is corrupted during download, `zipfile.BadZipFile` is raised. This exception is not caught within the method and will propagate up, crashing the entire daily ingestion batch job instead of gracefully skipping, logging, or retrying the specific fetch.
+When fetching the ZIP Bhavcopy directly from NSE, the system passes the response content directly to `zipfile.ZipFile(io.BytesIO(r.content))`. If the NSE WAF blocks the request (often returning a 200 OK with an HTML captcha or block page) or if the zip file is truncated, this throws a `zipfile.BadZipFile` exception. In `daily_ingestor.py` and `fetcher.py`, this error propagates and fails the entire daily batch process rather than gracefully falling back or identifying the WAF block.
 **Actionable Fix:**
-Implement a `try/except` block specifically for Zip decompression and validate the MIME type before parsing.
+Wrap the zip extraction in a `try/except` block specifically checking for `BadZipFile` and `HTTP` response headers for content-type.
 ```python
 # Python Actionable Fix
 try:
@@ -17,57 +38,30 @@ except zipfile.BadZipFile:
     return None
 ```
 
-## 2. Data Merging & Integrity Risks
+### 2. Data Merging & Integrity Risks
 **Severity:** Medium
-**Location:** `myra_app/fundamental_ranker.py` -> `_calculate_all_scores_from_duck()`
+**Location:** `myra_app/fundamental_ranker.py` -> DuckDB Query inside `_calculate_all_scores_from_duck()`
 **The Vulnerability:**
-The DuckDB query uses an exact match join `JOIN latest_snapshot l ON a.symbol = l.symbol`. When corporate actions result in symbol changes (e.g., stock splits, ticker name changes), the historical fundamental data recorded under the old symbol will not match the new symbol's `latest_snapshot`. This breaks the temporal alignment, leading to orphaned historical data, incomplete records, and skipped equities during the daily run.
+The query joins recent data with historical snapshots using `JOIN latest_snapshot l ON a.symbol = l.symbol`. Corporate actions (stock splits, symbol name changes) will break this exact string matching over time. When a ticker changes, the historical fundamental data under the old ticker will be orphaned, and the system will silently drop or restart the equity's ranking history.
 **Actionable Fix:**
-Introduce a `symbol_mapping` lookup table or alias map to resolve ticker changes dynamically during the DuckDB query.
+Use the `isin_bridge.parquet` as the absolute primary key for temporal joins instead of relying solely on the ticker symbol.
 ```sql
 -- DuckDB Actionable Fix
+-- Map everything to ISIN first, then aggregate over time to ensure continuous lineage regardless of ticker changes.
 WITH mapped_base AS (
-    SELECT COALESCE(sm.new_symbol, f.symbol) AS symbol, f.*
+    SELECT COALESCE(b.ISIN, f.symbol) AS uid, f.*
     FROM fundamentals_quarterly f
-    LEFT JOIN symbol_master_changes sm ON f.symbol = sm.old_symbol
+    LEFT JOIN read_parquet('data/isin_bridge.parquet') b ON f.symbol = b.SYMBOL
 )
--- Use mapped_base for aggregations and joins to maintain unbroken lineage
 ```
 
-## 3. Performance & Memory Management
-**Severity:** High
-**Location:** `myra_app/positional_engine.py` -> `PositionalScorer.rank()`
-**The Vulnerability:**
-Although the code avoids the banned `.iterrows()` by using `.itertuples(index=False)`, it still iterates over the entire `results_df` dataframe to build dictionaries via `row._asdict()` and sequentially calls a scalar `compute_score()` function for thousands of equities. This hidden Python loop violates the project's strict vectorization rule and causes a massive bottleneck during batch processing, as Python function call overhead scales linearly O(N).
-**Actionable Fix:**
-Translate the `compute_score` logic into a fully vectorized Polars or DuckDB pipeline.
-```python
-# Polars Actionable Fix
-import polars as pl
-
-def rank_vectorized(df: pl.DataFrame, regime: float) -> pl.DataFrame:
-    # Vectorized score computation without any Python loops
-    return df.with_columns(
-        MYRA_Score_v25=(
-            (pl.col("trend_score") * 0.25 + pl.col("stability_score") * 0.15 +
-             pl.col("delivery_score") * 0.20 + pl.col("liquidity_score") * 0.10 +
-             pl.col("base_score") * 0.10) * 0.7 + (pl.col("fundamental_score") * 0.3)
-        ) * regime
-    ).with_columns(
-        # Vectorized drawdown penalty filter
-        MYRA_Score_v25=pl.when(pl.col("drawdown") > 0.4).then(pl.col("MYRA_Score_v25") * 0.8)
-        .when(pl.col("drawdown") > 0.2).then(pl.col("MYRA_Score_v25") * 0.95)
-        .otherwise(pl.col("MYRA_Score_v25")).round(1)
-    ).sort("MYRA_Score_v25", descending=True)
-```
-
-## 4. Error Handling & State Logging
+### 3. Error Handling & State Logging
 **Severity:** Medium
 **Location:** `myra_app/fetcher.py` -> `GhostSession._set_cache()`
 **The Vulnerability:**
-The caching logic wraps the SQLite insertion in a broad `try...except Exception as e: pass`. In a high-concurrency batch ingestion setting, if the SQLite DB is locked or out of disk space, it will silently fail without persisting the cache. This forces the fetcher to make redundant network API calls on subsequent requests, eventually triggering rate limits or bans from Morningstar and NSE endpoints, without any alerts in the state logs.
+The SQLite WAL cache persistence wraps its `INSERT OR REPLACE` query inside a broad `try... except Exception as e: pass` or `logger.error` block without retrying. If the database is locked due to concurrent thread access (`sqlite3.OperationalError: database is locked`), the cache silently fails to persist. This forces the engine to redundantly fetch the same URL on the next scan, severely increasing the likelihood of an NSE or Morningstar IP ban.
 **Actionable Fix:**
-Implement exponential backoff for DB locking and actively log or raise exceptions for unrecoverable errors.
+Implement exponential backoff specifically for SQLite lock errors.
 ```python
 # Actionable Fix
 import time
@@ -79,21 +73,21 @@ for attempt in range(3):
         break
     except sqlite3.OperationalError as e:
         if "database is locked" in str(e):
-            time.sleep(2 ** attempt)  # Exponential backoff
+            time.sleep(1 + attempt)  # Exponential backoff
         else:
             logger.error(f"Unrecoverable DB Cache Error: {e}")
             break
 ```
 
-## 5. Technical Debt & Architecture
+### 4. Technical Debt & Architecture
 **Severity:** High
 **Location:** `myra_app/data_adapter.py` -> `DataAdapter.compute_common_indicators()`
 **The Vulnerability:**
-The adapter uses `pandas_ta` to dynamically calculate indicators (SMA, RSI, ATR) on the fly during data fetching inside the `get_price_df` pipeline. This directly violates the project's core rule: *"Precompute > Recompute: Cache indicators in the Parquet Lake."* It introduces severe technical debt by redundantly recalculating the same metrics across multiple scans or symbols on each run, ballooning memory usage and destroying scaling efficiency.
+Despite the README's declaration of an "Atomic Trilogy" and "Parquet Indicator Lake," `DataAdapter` uses `pandas_ta` to compute moving averages, RSI, and ATR *dynamically on-the-fly* for the fetched dataframe (`df.ta.study()`). This redundant recalculation introduces massive technical debt, wastes CPU cycles, creates memory spikes when querying thousands of symbols, and violates the architectural rule to read precomputed indicators from the Parquet lake.
 **Actionable Fix:**
-Strip dynamic calculations from the data adapter and strict-route requests to query precomputed indicators via DuckDB from the Parquet lake.
+Refactor the Adapter to strictly fetch indicators from `myra_app/librarian_core.py`'s Parquet loader and remove dynamic `pandas_ta` computations from the read-path.
 ```python
-# DuckDB Actionable Fix (Parquet Lake Route)
+# Polars/DuckDB Actionable Fix (Parquet Lake Route)
 def get_indicators(symbol):
     query = f"""
     SELECT date, RSI, sma20, sma50, sma150, sma200, atr20
@@ -102,13 +96,29 @@ def get_indicators(symbol):
     return duckdb.execute(query).df()
 ```
 
-## 6. Scanner Logic & Screening Accuracy
-**Severity:** Critical
-**Location:** `myra_app/fundamental_ranker.py` -> DuckDB Query inside `_calculate_all_scores_from_duck()`
+### 5. Performance & Memory Management
+**Severity:** High
+**Location:** `myra_app/strategy_engine.py` -> `run_strategy()`
 **The Vulnerability:**
-The DuckDB SQL used to calculate quarterly profit growth contains the following condition: `AVG(CASE WHEN prev_revenue > 0 THEN (revenue - prev_revenue)/prev_revenue ELSE 0 END)`. This effectively assigns a flat `0%` growth score to any company recovering from a negative revenue or net profit state. It completely filters out valid turnaround stocks (companies shifting from massive losses to positive earnings). Additionally, if `prev_revenue` is tiny, it produces highly distorted, massive percentage spikes.
+The strategy engine pulls a 10-day window for *all symbols* into memory via `pl.read_database` to calculate a single day's relative volume score and delivery divergence. While Polars is fast, pulling 10 days of raw technical data for 4,000+ equities into RAM just to filter down to the `latest_date` is highly inefficient and risks memory exhaustion on constrained hardware (like the specified AMD APU).
 **Actionable Fix:**
-Deploy a mathematically sound calculation that accounts for negative baseline turnarounds and caps outliers.
+Leverage SQLite Window Functions in the SQL layer *before* it hits Polars, pushing the computation down to the database and retrieving only the final row per symbol.
+```sql
+-- SQLite Actionable Fix
+SELECT symbol, date, close, high, low, delivery, delivery_pct,
+       AVG(delivery) OVER (PARTITION BY symbol ORDER BY date ROWS BETWEEN 9 PRECEDING AND CURRENT ROW) as avg_10d_delivery,
+       delivery_pct - LAG(delivery_pct) OVER (PARTITION BY symbol ORDER BY date) as delivery_divergence
+FROM technical_data
+WHERE date IN (SELECT DISTINCT date FROM technical_data ORDER BY date DESC LIMIT 10)
+```
+
+### 6. Scanner Logic & Screening Accuracy
+**Severity:** Critical
+**Location:** `myra_app/fundamental_manager.py` -> `fetch_fundamentals()` (Growth Metrics)
+**The Vulnerability:**
+The logic calculating `sales_growth` and `profit_growth` uses a basic division: `((l_profit - p_profit) / abs(p_profit)) * 100`. If a company is a turnaround stock (e.g., recovering from a massive loss of -100 to a profit of 10), the absolute denominator results in highly distorted, massive percentage spikes. Alternatively, if `prev` metrics are zero, the system skips it (`p_profit != 0`). This causes edge cases to produce infinite/NaN returns or silently omit highly lucrative turnaround companies.
+**Actionable Fix:**
+Implement a mathematically sound bounds-capped calculation for turnaround growth using vectorized logic in Polars/DuckDB.
 ```sql
 -- DuckDB Actionable Fix
 AVG(
