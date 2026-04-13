@@ -146,15 +146,19 @@ class FundamentalManager:
             if prev:
                 l_profit = latest.get("net_profit")
                 p_profit = prev.get("net_profit")
-                if l_profit and p_profit and p_profit != 0:
-                    profit_growth = round(
-                        ((l_profit - p_profit) / abs(p_profit)) * 100, 2
-                    )
+                if l_profit is not None and p_profit is not None:
+                    if p_profit <= 0 and l_profit > 0:
+                        profit_growth = 100.0
+                    elif p_profit != 0:
+                        profit_growth = round(((l_profit - p_profit) / abs(p_profit)) * 100, 2)
 
                 l_rev = latest.get("revenue")
                 p_rev = prev.get("revenue")
-                if l_rev and p_rev and p_rev != 0:
-                    sales_growth = round(((l_rev - p_rev) / p_rev) * 100, 2)
+                if l_rev is not None and p_rev is not None:
+                    if p_rev <= 0 and l_rev > 0:
+                        sales_growth = 100.0
+                    elif p_rev != 0:
+                        sales_growth = round(((l_rev - p_rev) / abs(p_rev)) * 100, 2)
 
             v_conn.execute(
                 """
