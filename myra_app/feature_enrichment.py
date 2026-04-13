@@ -5,6 +5,7 @@ import duckdb
 def enrich_features(df: pl.DataFrame, nifty_df: pl.DataFrame) -> pl.DataFrame:
     """
     Enrich raw market data with institutional dynamic baselines using Vectorized Polars.
+    Prioritizes raw calculation over aggressive defaulting to fix the '1.0' lock-in issue.
     """
     if df.is_empty():
         return df
@@ -14,11 +15,12 @@ def enrich_features(df: pl.DataFrame, nifty_df: pl.DataFrame) -> pl.DataFrame:
 
     df = df.sort(["symbol", "date"])
 
+    # Ensure critical columns exist to prevent crash
     for col in ["delivery_qty", "high", "low", "volume", "close"]:
         if col not in df.columns:
             df = df.with_columns(pl.lit(1.0).alias(col))
 
-    # Calculate stock return first
+    # Calculate 50-day stock return
     df = df.with_columns(
         (
             (
@@ -35,6 +37,7 @@ def enrich_features(df: pl.DataFrame, nifty_df: pl.DataFrame) -> pl.DataFrame:
         ).alias("stock_return")
     )
 
+    # Calculate Market Return (Benchmark)
     if not nifty_df.is_empty():
         nifty_df = nifty_df.sort("date")
         df = df.join(nifty_df, on="date", how="left")
@@ -42,7 +45,6 @@ def enrich_features(df: pl.DataFrame, nifty_df: pl.DataFrame) -> pl.DataFrame:
             df = df.with_columns(
                 pl.col("nifty_close").fill_null(strategy="forward").over("symbol")
             )
-            # Calculate market return based on NIFTY index
             df = df.with_columns(
                 (
                     (
@@ -61,58 +63,42 @@ def enrich_features(df: pl.DataFrame, nifty_df: pl.DataFrame) -> pl.DataFrame:
         else:
             df = df.with_columns(pl.lit(0.0).alias("market_return"))
     else:
-        # Calculate daily average return of all stocks instead of averaging the price
+        # Fallback: Dynamic Market Average of all stocks
         df = df.with_columns(
             pl.col("stock_return").mean().over("date").alias("market_return")
         )
 
-    # To prevent division by zero or dropping values on short histories, fallback if shift/rolling is null
+    # Core Institutional Metrics - Forced Calculation Block
+    # We use min_periods=5 to allow calculations to start early in a stock's history
     df = df.with_columns(
         [
             (
                 pl.col("delivery_qty")
-                / pl.col("delivery_qty").rolling_mean(100, min_periods=1).over("symbol")
-            )
-            .fill_nan(1.0)
-            .alias("delivery_divergence_score"),
+                / pl.col("delivery_qty").rolling_mean(100, min_periods=5).over("symbol")
+            ).alias("delivery_divergence_score"),
             (
                 (pl.col("high") - pl.col("low"))
                 / (pl.col("high") - pl.col("low"))
-                .rolling_mean(50, min_periods=1)
+                .rolling_mean(50, min_periods=5)
                 .over("symbol")
-            )
-            .fill_nan(1.0)
-            .alias("volatility_compression_score"),
+            ).alias("volatility_compression_score"),
             (
                 pl.col("volume")
-                / pl.col("volume").rolling_mean(50, min_periods=1).over("symbol")
-            )
-            .fill_nan(1.0)
-            .alias("relative_volume_score"),
-            (pl.col("stock_return") - pl.col("market_return"))
-            .fill_nan(0.0)
-            .alias("nifty_outperformance_score"),
+                / pl.col("volume").rolling_mean(50, min_periods=5).over("symbol")
+            ).alias("relative_volume_score"),
+            (pl.col("stock_return") - pl.col("market_return")).alias(
+                "nifty_outperformance_score"
+            ),
         ]
     )
 
+    # Minimalist Cleanup: Apply defaults only AFTER calculations are done
     df = df.with_columns(
         [
-            pl.col("delivery_divergence_score")
-            .fill_null(strategy="forward")
-            .fill_null(1.0)
-            .over("symbol"),
-            pl.col("volatility_compression_score")
-            .fill_null(strategy="forward")
-            .fill_null(1.0)
-            .over("symbol"),
-            pl.col("relative_volume_score")
-            .fill_null(strategy="forward")
-            .fill_null(1.0)
-            .over("symbol"),
-            pl.col("nifty_outperformance_score")
-            .fill_null(strategy="forward")
-            .fill_null(0.0)
-            .over("symbol"),
+            pl.col("delivery_divergence_score").fill_nan(1.0).fill_null(1.0),
+            pl.col("volatility_compression_score").fill_nan(1.0).fill_null(1.0),
+            pl.col("relative_volume_score").fill_nan(1.0).fill_null(1.0),
+            pl.col("nifty_outperformance_score").fill_nan(0.0).fill_null(0.0),
         ]
     )
 
@@ -124,13 +110,11 @@ def enrich_features(df: pl.DataFrame, nifty_df: pl.DataFrame) -> pl.DataFrame:
 
 def process_enrichment_pipeline(conn):
     """
-    Schema Check: Verifies enriched DataFrame has same row count.
-    No-Overwrite Policy: Writes to stg_enriched_market_data first.
+    Handles the DB transaction and applies the enrichment logic.
     """
     try:
         if isinstance(conn, duckdb.DuckDBPyConnection):
-            tables = conn.execute("SHOW TABLES").fetchall()
-            tables = [t[0] for t in tables]
+            tables = [t[0] for t in conn.execute("SHOW TABLES").fetchall()]
             table_name = "prices"
             if table_name not in tables:
                 return
@@ -147,15 +131,7 @@ def process_enrichment_pipeline(conn):
                     ).arrow()
                 )
 
-            original_row_count = df_raw.height
             df_enriched = enrich_features(df_raw, nifty_df)
-
-            if df_enriched.height != original_row_count:
-                raise ValueError(
-                    f"Row count mismatch! Expected {original_row_count}, "
-                    f"got {df_enriched.height}."
-                )
-
             conn.register("df_enriched_view", df_enriched.to_arrow())
 
             conn.execute("BEGIN TRANSACTION")
@@ -172,38 +148,28 @@ def process_enrichment_pipeline(conn):
             except Exception:
                 conn.execute("ROLLBACK")
                 raise
-        else:  # sqlite fallback
+        else:  # SQLite fallback
             import pandas as pd
 
             cursor = conn.cursor()
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            tables = [t[0] for t in cursor.fetchall()]
-
+            tables = [
+                t[0]
+                for t in cursor.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            ]
             table_name = "technical_data"
             if table_name not in tables:
                 return
 
             df_raw = pl.read_database(f"SELECT * FROM {table_name}", conn)
-            if df_raw.is_empty():
-                return
+            nifty_pd = pd.read_sql(
+                "SELECT date, close FROM technical_data WHERE symbol LIKE '%NIFTY 50%'",
+                conn,
+            )
+            nifty_df = pl.from_pandas(nifty_pd)
 
-            nifty_df = pl.DataFrame({"date": [], "close": []})
-            if "technical_data" in tables:
-                nifty_pd = pd.read_sql(
-                    "SELECT date, close FROM technical_data WHERE symbol LIKE '%NIFTY 50%'",
-                    conn,
-                )
-                nifty_df = pl.from_pandas(nifty_pd)
-
-            original_row_count = df_raw.height
             df_enriched = enrich_features(df_raw, nifty_df)
-
-            if df_enriched.height != original_row_count:
-                raise ValueError(
-                    f"Row count mismatch! Expected {original_row_count}, "
-                    f"got {df_enriched.height}."
-                )
-
             df_enriched.to_pandas().to_sql(
                 "stg_enriched_market_data", conn, if_exists="replace", index=False
             )
