@@ -35,13 +35,14 @@ def to_date(d):
 
 
 def ensure_date(d):
-    """
-    Strict version (used in critical systems).
-    Asserts type correctness and returns it.
-    """
-    if not isinstance(d, datetime.date) or isinstance(d, datetime.datetime):
-        raise TypeError(f"Expected datetime.date, got {type(d)}")
-    return d
+    """Ensures the input is converted to a date, raising ValueError if impossible."""
+    try:
+        result = to_date(d)
+        if result is None:
+            raise ValueError(f"Could not convert to date: {d}")
+        return result
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"Could not convert to date: {d}") from e
 
 
 def parse_dataframe_dates(df, column_list):

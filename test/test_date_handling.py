@@ -37,11 +37,34 @@ class TestDateHandling(unittest.TestCase):
             to_date(123)
 
     def test_ensure_date(self):
-        d = datetime.date(2026, 4, 2)
-        self.assertEqual(ensure_date(d), d)
+        """Test ensure_date converts various inputs to datetime.date."""
+        expected = datetime.date(2026, 4, 2)
 
-        with self.assertRaises(TypeError):
-            ensure_date(datetime.datetime(2026, 4, 2))
+        # Test valid date object
+        self.assertEqual(ensure_date(expected), expected)
+
+        # Test valid string
+        self.assertEqual(ensure_date("2026-04-02"), expected)
+
+        # Test valid datetime object
+        self.assertEqual(ensure_date(datetime.datetime(2026, 4, 2, 12, 0)), expected)
+
+        # Test valid pandas Timestamp (mocked)
+        ts = pd.Timestamp("2026-04-02")
+        self.assertEqual(ensure_date(ts), expected)
+
+        # Test edge cases and error conditions
+        with self.assertRaises(ValueError):
+            ensure_date(None)
+
+        with self.assertRaises(ValueError):
+            ensure_date("not-a-date")
+
+        with self.assertRaises(ValueError):
+            ensure_date(123)
+
+        with self.assertRaises(ValueError):
+            ensure_date([])
 
     def test_parse_dataframe_dates(self):
         df = pd.DataFrame(
