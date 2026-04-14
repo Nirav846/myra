@@ -181,7 +181,7 @@ class MYRA_UI:
 
             meta_path = os.path.join(os.getcwd(), "db", LibrarianCore.DB_MAP["meta"])
             try:
-                conn.execute(f"ATTACH DATABASE '{meta_path}' AS meta_db")
+                conn.execute("ATTACH DATABASE ? AS meta_db", (meta_path,))
                 sql = """
                     SELECT h.symbol, h.ias_score, h.tags 
                     FROM ias_history h
@@ -257,7 +257,7 @@ class MYRA_UI:
 
             meta_path = os.path.join(os.getcwd(), "db", LibrarianCore.DB_MAP["meta"])
             try:
-                conn.execute(f"ATTACH DATABASE '{meta_path}' AS meta_db")
+                conn.execute("ATTACH DATABASE ? AS meta_db", (meta_path,))
                 sql = """
                     SELECT h.symbol 
                     FROM ias_history h

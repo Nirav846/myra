@@ -18,7 +18,7 @@ def merge_caches():
             "CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value BLOB, expiry TIMESTAMP)"
         )
 
-        conn.execute(f"ATTACH '{c2_path}' AS req")
+        conn.execute("ATTACH ? AS req", (c2_path,))
         conn.execute("INSERT OR IGNORE INTO cache SELECT * FROM req.cache")
         conn.commit()
         conn.close()
