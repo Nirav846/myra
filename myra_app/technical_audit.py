@@ -70,7 +70,50 @@ class TechnicalAudit:
 
         conn_t.close()
         conn_c.close()
+
+        score = self.system_health_summary()
+        print(f"[*] System Health Score: {score:.2f}%")
         print("[+] Audit Complete.")
+
+    def system_health_summary(self) -> float:
+        """
+        Returns a System Health Score based on the percentage of symbols
+        that have valid delivery data on the latest date.
+        """
+        if not os.path.exists(self.tech_db):
+            return 0.0
+
+        conn = sqlite3.connect(self.tech_db)
+        try:
+            latest_date_query = "SELECT MAX(date) FROM technical_data"
+            latest_date_df = pd.read_sql(latest_date_query, conn)
+
+            if latest_date_df.empty or latest_date_df.iloc[0, 0] is None:
+                return 0.0
+
+            latest_date = latest_date_df.iloc[0, 0]
+
+            total_symbols_query = (
+                "SELECT COUNT(DISTINCT symbol) FROM technical_data WHERE date = ?"
+            )
+            total_symbols = pd.read_sql(
+                total_symbols_query, conn, params=(latest_date,)
+            ).iloc[0, 0]
+
+            if total_symbols == 0:
+                return 0.0
+
+            valid_delivery_query = "SELECT COUNT(DISTINCT symbol) FROM technical_data WHERE date = ? AND delivery > 0 AND delivery IS NOT NULL"
+            valid_delivery_symbols = pd.read_sql(
+                valid_delivery_query, conn, params=(latest_date,)
+            ).iloc[0, 0]
+
+            return (valid_delivery_symbols / total_symbols) * 100.0
+
+        except Exception:
+            return 0.0
+        finally:
+            conn.close()
 
 
 if __name__ == "__main__":

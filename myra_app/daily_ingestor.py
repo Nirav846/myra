@@ -2,6 +2,7 @@ import sqlite3
 import pandas as pd
 import io
 import os
+import json
 from datetime import datetime, timezone, timedelta
 
 # IMPORT THE HARDENED FETCHER
@@ -86,6 +87,28 @@ def run_daily_update():
         print(
             f"✅ Successfully added {len(df_to_insert)} rows to Atomic Vault from {source}."
         )
+
+        # Generate Data Confidence Sync Manifest
+        try:
+            missing_delivery_mask = df_to_insert["delivery"].isna() | (
+                df_to_insert["delivery"] == 0
+            )
+            missing_symbols = (
+                df_to_insert[missing_delivery_mask]["symbol"].tolist()
+                if "symbol" in df_to_insert.columns
+                else []
+            )
+
+            manifest_payload = {
+                "last_sync_date": current_date.date().isoformat(),
+                "total_symbols_processed": len(df_to_insert),
+                "missing_delivery_list": missing_symbols,
+            }
+
+            with open("data_sync_manifest.json", "w") as f:
+                json.dump(manifest_payload, f, indent=4)
+        except Exception as e:
+            print(f"⚠️ Warning: Could not save data_sync_manifest.json. Error: {e}")
 
     except Exception as e:
         print(f"❌ Critical Database Error: {e}")
