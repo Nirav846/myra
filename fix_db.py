@@ -1,9 +1,12 @@
+import os
+
 import duckdb
 import polars as pl
 from myra_app.feature_enrichment import enrich_features
+from myra_app.librarian_core import LibrarianCore
 
 # 1. Connect
-con = duckdb.connect("db/myra_technical.db")
+con = duckdb.connect(os.path.join("db", LibrarianCore.DB_MAP["technical"]))
 
 # 2. Load Data
 print("Reading data from technical_data...")

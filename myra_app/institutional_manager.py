@@ -186,7 +186,7 @@ class InstitutionalManager:
         return metrics
 
     def _persist_institutional_data(self, symbol, metrics, mstar_rating):
-        """Saves derived metrics to myra_institutional.db."""
+        """Saves derived metrics to the institutional database."""
         try:
             conn = sqlite3.connect(self.inst_db)
             now = datetime.now().date().isoformat()

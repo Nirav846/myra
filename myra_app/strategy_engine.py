@@ -5,6 +5,8 @@ import sys
 import polars as pl
 import yaml
 
+from myra_app.librarian_core import LibrarianCore
+
 # Ensure PROJECT_ROOT is in path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, PROJECT_ROOT)
@@ -38,7 +40,7 @@ def run_strategy():
     yaml_path = os.path.join(PROJECT_ROOT, "strategies", "weekly_swing.yaml")
     config = load_config(yaml_path)
     filters_config = config.get("filters", {})
-    db_path = os.path.join(PROJECT_ROOT, "db", "myra_technical.db")
+    db_path = os.path.join(PROJECT_ROOT, "db", LibrarianCore.DB_MAP["technical"])
 
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()

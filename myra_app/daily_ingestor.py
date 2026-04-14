@@ -7,9 +7,10 @@ from datetime import datetime, timezone, timedelta
 
 # IMPORT THE HARDENED FETCHER
 from myra_app.fetcher import DataFetcher
+from myra_app.librarian_core import LibrarianCore
 
 # Path to your 945MB Atomic Vault
-DB_PATH = os.path.join("db", "myra_technical.db")
+DB_PATH = os.path.join("db", LibrarianCore.DB_MAP["technical"])
 
 
 def run_daily_update():

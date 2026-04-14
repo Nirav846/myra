@@ -1,10 +1,14 @@
 import os
 import pandas as pd
 import sqlite3
+import sys
 
 # Absolute paths to ensure it works regardless of where you run it
 BASE_DIR = r"D:\01screener\Myra"
-DB_PATH = os.path.join(BASE_DIR, "db", "myra_technical.db")
+sys.path.insert(0, BASE_DIR)
+from myra_app.librarian_core import LibrarianCore
+
+DB_PATH = os.path.join(BASE_DIR, "db", LibrarianCore.DB_MAP["technical"])
 ARCHIVE_DIR = os.path.join(BASE_DIR, "data", "Market_Archives")
 
 def ingest_all_offline():
@@ -84,7 +88,7 @@ def ingest_all_offline():
             print(f"[!] Error processing {filename}: {e}")
 
     conn.close()
-    print(f"\n[SUCCESS] Added {total_added} institutional rows to myra_technical.db")
+    print(f"\n[SUCCESS] Added {total_added} institutional rows to {LibrarianCore.DB_MAP['technical']}")
 
 if __name__ == "__main__":
     ingest_all_offline()
