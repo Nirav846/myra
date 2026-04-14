@@ -88,6 +88,12 @@ class DataAdapter:
         if df.empty:
             return df
 
+        if "delivery" in df.columns:
+            if df["delivery"].isna().any() or (df["delivery"] == 0).all():
+                logging.critical(
+                    f"Missing or zero delivery data found for {symbol_clean} in the requested window."
+                )
+
         # 1. Attempt to load pre-computed indicators from Parquet Lake
         if self.librarian and not df.empty:
             try:
