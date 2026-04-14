@@ -748,14 +748,39 @@ class DataFetcher:
         }
         df_bhav = df_bhav.rename(columns=lambda x: mapping.get(x, x.upper()))
 
-        # PERFORMANCE GUARD FIX: Replaced ragged loop with memory-safe Pandas CSV reader
+        # PERFORMANCE GUARD FIX: Robust vectorized MTO parsing (v9.0 Resilience)
         try:
             mto_io = StringIO(mto_text)
-            df_mto = pd.read_csv(mto_io, skiprows=1, header=None, usecols=[2, 3, 5, 6])
+            # Read with names=range(10) to force schema to accommodate all columns (Record 50)
+            # and prevent short Record 10/20 from causing bad line truncation.
+            df_mto = pd.read_csv(mto_io, header=None, names=range(10), on_bad_lines="skip")
+
+            # Vectorized filtering: Extract valid data rows (avoiding record type assumptions).
+            # We target rows with enough columns where delivery metrics (indices 5 & 6) are numeric.
+            if df_mto.shape[1] < 7:
+                logger.error("MTO text format invalid: insufficient columns.")
+                return None
+
+            df_mto = df_mto[
+                pd.to_numeric(df_mto.iloc[:, 5], errors="coerce").notna()
+                & pd.to_numeric(df_mto.iloc[:, 6], errors="coerce").notna()
+            ].copy()
+
+            if df_mto.empty:
+                logger.warning("MTO parsing resulted in empty DataFrame.")
+                return None
+
+            # Select confirmed indices: 2=SYMBOL, 3=SERIES, 5=DELIV_QTY, 6=DELIV_PER
+            df_mto = df_mto.iloc[:, [2, 3, 5, 6]]
             df_mto.columns = ["SYMBOL", "SERIES", "DELIV_QTY", "DELIV_PER"]
-            df_mto["SYMBOL"] = df_mto["SYMBOL"].str.strip()
-            df_mto["SERIES"] = df_mto["SERIES"].str.strip()
-        except Exception:
+
+            # Vectorized cleaning and type conversion
+            df_mto["SYMBOL"] = df_mto["SYMBOL"].str.strip().str.upper()
+            df_mto["SERIES"] = df_mto["SERIES"].str.strip().str.upper()
+            df_mto["DELIV_QTY"] = pd.to_numeric(df_mto["DELIV_QTY"], errors="coerce")
+            df_mto["DELIV_PER"] = pd.to_numeric(df_mto["DELIV_PER"], errors="coerce")
+        except Exception as e:
+            logger.error(f"Failed to parse MTO text: {e}")
             return None
 
         df_full = pd.merge(df_bhav, df_mto, on=["SYMBOL", "SERIES"], how="left")
