@@ -10,8 +10,10 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 
+from myra_app.librarian_core import LibrarianCore
+
 # --- CONFIG ---
-DB_PATH = "db/myra_technical.db"
+DB_PATH = os.path.join("db", LibrarianCore.DB_MAP["technical"])
 ARCHIVE_DIR = "data/Market_Archives"
 os.makedirs(ARCHIVE_DIR, exist_ok=True)
 

@@ -4,12 +4,15 @@ import sqlite3
 import glob
 from datetime import datetime
 from myra_core.utils.myra_log import myra_log
+from myra_app.librarian_core import LibrarianCore
 
-
-def ingest_bhavcopies(csv_folder, db_path="db/myra_technical.db"):
+def ingest_bhavcopies(csv_folder, db_path=None):
     """
     STRICT DELIVERY INGESTION: Rejects any data lacking institutional footprint.
     """
+    if db_path is None:
+        db_path = os.path.join("db", LibrarianCore.DB_MAP["technical"])
+
     if not os.path.exists(db_path):
         print(f"[!] Database {db_path} not found.")
         return

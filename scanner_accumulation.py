@@ -1,7 +1,10 @@
+import os
 import sqlite3
 import pandas as pd
 
-DB_PATH = "db/myra_technical.db"
+from myra_app.librarian_core import LibrarianCore
+
+DB_PATH = os.path.join("db", LibrarianCore.DB_MAP["technical"])
 
 def scan_institutional_accumulation(lookback=5):
     conn = sqlite3.connect(DB_PATH)

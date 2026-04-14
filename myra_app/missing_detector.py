@@ -4,6 +4,8 @@ import os
 import sys
 from datetime import datetime, timedelta
 
+from myra_app.librarian_core import LibrarianCore
+
 # Fix path - Ensures MYRA can find its internal modules
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "."))
 if PROJECT_ROOT not in sys.path:
@@ -14,12 +16,12 @@ def detect_missing_candles(
     tech_db=None, calendar_csv=None, output_csv=None, lookback_days=1000
 ):
     """
-    True Gap Detection based on ACTUAL presence in myra_technical.db.
+    True Gap Detection based on ACTUAL presence in the technical db.
     """
     tech_db = (
-        tech_db if tech_db else os.path.join(PROJECT_ROOT, "db", "myra_technical.db")
+        tech_db if tech_db else os.path.join(PROJECT_ROOT, "db", LibrarianCore.DB_MAP["technical"])
     )
-    meta_db = os.path.join(PROJECT_ROOT, "db", "meta.db")
+    meta_db = os.path.join(PROJECT_ROOT, "db", LibrarianCore.DB_MAP["meta"])
 
     calendar_csv = (
         calendar_csv

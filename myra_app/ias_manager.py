@@ -368,7 +368,7 @@ class IASManager:
                     )
 
             # 2. Insider Sell Clusters (DEPRECATED in v3.2)
-            # We now prioritize audited FII/DII flow in myra_institutional.db
+            # We now prioritize audited FII/DII flow in the institutional database
             pass
 
             # 3. Shareholding Drift: FII Exit > 1%
