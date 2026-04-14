@@ -2,8 +2,6 @@ import os
 import sqlite3
 import json
 import requests
-import pandas as pd
-import numpy as np
 from datetime import datetime
 from rich.console import Console
 from PKNSETools.morningstartools import Stock
@@ -97,7 +95,7 @@ class InstitutionalManager:
                 self._persist_institutional_data(symbol, metrics, mstar_rating)
 
                 enriched = enriched + [r]
-            except Exception as e:
+            except Exception:
                 # self.console.print(f"[dim red][!] Failed to enrich {symbol}: {e}[/]")
                 enriched = enriched + [r]  # Keep original if enrichment fails
 
