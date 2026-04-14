@@ -28,7 +28,7 @@ class IndexEngine:
     def _is_cache_valid(self, key):
         if key not in self.cache:
             return False
-        # Fix 30: Avoid chained indexing
+        # Avoid chained indexing (Fix 30)
         entry = self.cache[key]
         ts = entry["timestamp"]
         return (datetime.now() - ts).total_seconds() < self.cache_expiry
@@ -64,8 +64,10 @@ class IndexEngine:
             try:
                 data = yf.download("^NSEI", period="2d", interval="1d", progress=False)
                 if not data.empty:
-                    latest = data["Close"].iloc[-1]
-                    prev = data["Close"].iloc[-2]
+                    # Avoid chained indexing (Fix 42)
+                    close_prices = data["Close"]
+                    latest = close_prices.iloc[-1]
+                    prev = close_prices.iloc[-2]
                     change = latest - prev
                     pchange = (change / prev) * 100
                     result = {
@@ -79,7 +81,9 @@ class IndexEngine:
             except Exception:
                 pass
 
-        return self.cache.get(key, {}).get("data")
+        # Avoid chained indexing (Fix 42)
+        entry = self.cache.get(key, {})
+        return entry.get("data")
 
     def get_vix(self):
         key = "VIX"
@@ -111,8 +115,10 @@ class IndexEngine:
                     "^INDIAVIX", period="2d", interval="1d", progress=False
                 )
                 if not data.empty:
-                    latest = data["Close"].iloc[-1]
-                    prev = data["Close"].iloc[-2]
+                    # Avoid chained indexing (Fix 83)
+                    close_prices = data["Close"]
+                    latest = close_prices.iloc[-1]
+                    prev = close_prices.iloc[-2]
                     change = latest - prev
                     pchange = (change / prev) * 100
                     result = {
@@ -126,7 +132,9 @@ class IndexEngine:
             except Exception:
                 pass
 
-        return self.cache.get(key, {}).get("data")
+        # Avoid chained indexing (Fix 83)
+        entry = self.cache.get(key, {})
+        return entry.get("data")
 
     def get_global_vibe(self):
         """Fetches performance of major world indices for global context"""
@@ -151,7 +159,9 @@ class IndexEngine:
             try:
                 data = yf.download(sym, period="2d", interval="1d", progress=False)
                 if len(data) >= 2:
-                    return ((data["Close"].iloc[-1] / data["Close"].iloc[-2]) - 1) * 100
+                    # Avoid chained indexing (Fix 142)
+                    close_prices = data["Close"]
+                    return ((close_prices.iloc[-1] / close_prices.iloc[-2]) - 1) * 100
             except:
                 pass
             return None
@@ -187,16 +197,18 @@ class IndexEngine:
         try:
             data = yf.download("^NSEI", period="4mo", interval="1d", progress=False)
             if not data.empty:
-                latest = data["Close"].iloc[-1]
+                # Avoid chained indexing (Fix 157)
+                close_prices = data["Close"]
+                latest = close_prices.iloc[-1]
                 m1 = (
-                    data["Close"].iloc[-22]
-                    if len(data) >= 22
-                    else data["Close"].iloc[0]
+                    close_prices.iloc[-22]
+                    if len(close_prices) >= 22
+                    else close_prices.iloc[0]
                 )
                 m3 = (
-                    data["Close"].iloc[-63]
-                    if len(data) >= 63
-                    else data["Close"].iloc[0]
+                    close_prices.iloc[-63]
+                    if len(close_prices) >= 63
+                    else close_prices.iloc[0]
                 )
 
                 perf_1m = ((latest / m1) - 1) * 100
@@ -213,7 +225,7 @@ class IndexEngine:
         """Returns advance/decline counts for the full market (Local-First)"""
         key = "BREADTH"
         if self._is_cache_valid(key):
-            # Fix 180: Avoid chained indexing
+            # Avoid chained indexing (Fix 180)
             entry = self.cache[key]
             return entry["data"]
 
