@@ -1,12 +1,15 @@
 import sqlite3
 import os
 
+from myra_app.librarian_core import LibrarianCore
 
-def create_technical_db(db_path="technical.db"):
+def create_technical_db(db_path=None):
     """
     Creates the modular Technical Database (SQLite) for MYRA.
     Schema designed for high-performance time-series ingestion.
     """
+    if db_path is None:
+        db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "db", LibrarianCore.DB_MAP["technical"])
     print(f"[MYRA] Initializing Technical DB at {db_path}...")
 
     conn = sqlite3.connect(db_path)
@@ -18,16 +21,12 @@ def create_technical_db(db_path="technical.db"):
         CREATE TABLE IF NOT EXISTS technical_data (
             symbol TEXT NOT NULL,
             date TEXT NOT NULL,
-            open REAL,
+            close REAL,
             high REAL,
             low REAL,
-            close REAL,
             volume INTEGER,
             delivery INTEGER,
-            trades INTEGER,
-            vwap REAL,
             delivery_pct REAL,
-            delivery_ratio REAL,
             PRIMARY KEY (symbol, date)
         )
     """
