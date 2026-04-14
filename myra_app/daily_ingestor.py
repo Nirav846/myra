@@ -1,4 +1,5 @@
 import sqlite3
+import sys
 import pandas as pd
 import io
 import os
@@ -22,6 +23,32 @@ def run_daily_update():
     # Force IST Time (Performance Guard compliant)
     ist_now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
     current_date = ist_now
+
+    # Pre-flight check for market holidays using myra_calendar.db
+    calendar_db_path = os.path.join("db", LibrarianCore.DB_MAP["calendar"])
+    if os.path.exists(calendar_db_path):
+        try:
+            with sqlite3.connect(calendar_db_path) as cal_conn:
+                date_str = current_date.date().isoformat()
+                cal_res = cal_conn.execute(
+                    "SELECT is_trading_day, holiday_name FROM market_calendar WHERE date = ?",
+                    (date_str,)
+                ).fetchone()
+
+                is_trading = True
+                holiday_reason = ""
+                if cal_res:
+                    is_trading = bool(cal_res[0])
+                    holiday_reason = cal_res[1]
+                elif current_date.weekday() >= 5:
+                    is_trading = False
+                    holiday_reason = "Weekend"
+
+                if not is_trading:
+                    print(f"[INFO] Market is closed on {date_str} ({holiday_reason or 'Holiday'}). Skipping fetch.")
+                    sys.exit(0)
+        except Exception as e:
+            print(f"⚠️ Warning: Could not query calendar DB: {e}")
 
     # Instantiate the hardened fetcher
     fetcher = DataFetcher()
