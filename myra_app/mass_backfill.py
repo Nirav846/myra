@@ -43,6 +43,7 @@ def mass_backfill(db_path="technical.db", missing_csv="missing_data.csv"):
         print(f"\n[Batch {i//batch_size + 1}] Processing {len(batch)} symbols...")
 
         total_batch = len(batch)
+        batch_records = []
         for idx, symbol in enumerate(batch, 1):
             myra_log(idx, total_batch, desc="Backfilling")
             try:
@@ -95,22 +96,26 @@ def mass_backfill(db_path="technical.db", missing_csv="missing_data.csv"):
                 ]
 
                 if records:
-                    cursor.executemany(
-                        """
-                        INSERT OR IGNORE INTO technical_data 
-                        (symbol, date, open, high, low, close, volume, delivery, trades, vwap, delivery_pct, delivery_ratio)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                        records,
-                    )
-                    conn.commit()
-                    stats["rows"] += len(records)
+                    batch_records.extend(records)
 
                 stats["processed"] += 1
                 time.sleep(0.2)  # Micro-throttle
 
             except Exception:
                 stats["errors"] += 1
+
+        # PERFORMANCE GUARD: Batched database insertion outside symbol loop
+        if batch_records:
+            cursor.executemany(
+                """
+                INSERT OR IGNORE INTO technical_data
+                (symbol, date, open, high, low, close, volume, delivery, trades, vwap, delivery_pct, delivery_ratio)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+                batch_records,
+            )
+            conn.commit()
+            stats["rows"] += len(batch_records)
 
         print(f"Batch Complete. Total Rows Added: {stats['rows']}")
         print("Pausing for 5s to avoid rate limits...")
