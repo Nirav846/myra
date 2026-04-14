@@ -9,7 +9,7 @@ def force_refresh():
         print("Success: Indicators recalculated.")
 
         # Verify
-        max_p = lib.conn.execute("SELECT MAX(date) FROM prices").fetchone()[0]
+        max_p = lib.conn.execute("SELECT MAX(date) FROM technical_data").fetchone()[0]
         max_i = lib.conn.execute(
             "SELECT MAX(date) FROM calculated_indicators"
         ).fetchone()[0]
