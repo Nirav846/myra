@@ -1,9 +1,9 @@
-# myra_app/fundamental_ranker.py
+import os
+import sqlite3
+from datetime import date
+
 import duckdb
 import pandas as pd
-import sqlite3
-import os
-from datetime import date
 
 
 class FundamentalRanker:
@@ -39,10 +39,8 @@ class FundamentalRanker:
 
         try:
             cursor = conn_sq.cursor()
-            # Fix 38: Use .isoformat()
             today = date.today().isoformat()
 
-            # Optimized with list comprehension (Fix 41, 44: Avoid .append in loop)
             def _to_record(row):
                 score = row.Funda_Score
                 grade = (
@@ -90,8 +88,7 @@ class FundamentalRanker:
             sym_list = "', '".join([s.split(".")[0].upper() for s in symbols])
             sym_filter = f"WHERE symbol IN ('{sym_list}')"
 
-        # Check for ISIN bridge
-        isin_bridge_path = os.path.join(os.getcwd(), 'data', 'isin_bridge.parquet')
+        isin_bridge_path = os.path.join(os.getcwd(), "data", "isin_bridge.parquet")
         has_isin = os.path.exists(isin_bridge_path)
 
         query = f"""
@@ -134,12 +131,8 @@ class FundamentalRanker:
                 AVG(CASE WHEN prev_revenue > 0 THEN (revenue - prev_revenue)/prev_revenue ELSE 0 END) * 100 as rev_growth,
                 AVG(
                     CASE
-                        -- Hard cap for full turnaround (negative to positive)
-                        WHEN prev_profit < 0 AND net_profit > 0 THEN 100.0
-                        -- Reduced loss (negative to less negative)
-                        WHEN prev_profit < 0 AND net_profit < 0 THEN ((net_profit - prev_profit) / ABS(prev_profit)) * 100.0
-                        -- Standard growth
-                        WHEN prev_profit > 0 THEN ((net_profit - prev_profit) / prev_profit) * 100.0
+                        WHEN prev_profit <= 0 AND net_profit > 0 THEN 100.0
+                        WHEN prev_profit != 0 THEN ((net_profit - prev_profit) / ABS(prev_profit)) * 100.0
                         ELSE 0.0
                     END
                 ) AS profit_growth,

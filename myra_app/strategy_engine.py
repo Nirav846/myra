@@ -1,8 +1,9 @@
-import sqlite3
-import yaml
-import polars as pl
 import os
+import sqlite3
 import sys
+
+import polars as pl
+import yaml
 
 # Ensure PROJECT_ROOT is in path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -67,12 +68,13 @@ def run_strategy():
     FROM technical_data 
     WHERE date IN (SELECT DISTINCT date FROM technical_data ORDER BY date DESC LIMIT 10)
       
-      -- UNIVERSE FILTER: Wipe out Penny Stocks, Illiquidity, and ETFs
+    -- UNIVERSE FILTER: Wipe out Penny Stocks, Illiquidity, and ETFs
       AND close >= 50
       AND volume >= 100000
       AND symbol NOT LIKE '%ETF%'
       AND symbol NOT LIKE '%BEES%'
       AND symbol NOT LIKE '%NIFTY%'
+      AND delivery IS NOT NULL AND delivery > 0
       
     WINDOW w_10 AS (PARTITION BY symbol ORDER BY date ROWS BETWEEN 9 PRECEDING AND CURRENT ROW),
            w_order AS (PARTITION BY symbol ORDER BY date)

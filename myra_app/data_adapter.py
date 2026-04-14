@@ -1,9 +1,11 @@
+import logging
 import os
-import pandas as pd
-import numpy as np
-import threading
 import sqlite3
-from typing import Dict, Any
+import threading
+from typing import Any, Dict
+
+import pandas as pd
+import pandas_ta as ta
 
 
 class DataAdapter:
@@ -46,7 +48,6 @@ class DataAdapter:
         # Route to Librarian if available, else connect directly
         if self.librarian:
             df = self.librarian.get_ohlcv(symbol_clean, as_of_date=as_of_date)
-            # Ensure df is actually a DataFrame
             if df is None:
                 df = pd.DataFrame()
         else:
@@ -79,7 +80,7 @@ class DataAdapter:
                         "volume": "Volume",
                     }
                     df.rename(columns=rename_map, inplace=True)
-            except:
+            except Exception:
                 df = pd.DataFrame()
             finally:
                 conn.close()
@@ -87,14 +88,26 @@ class DataAdapter:
         if df.empty:
             return df
 
-        # Ensure minimal technical consistency
+        # 1. Attempt to load pre-computed indicators from Parquet Lake
+        if self.librarian and not df.empty:
+            try:
+                ind_df = self.librarian.loader.indicators.load_indicators(
+                    "precomputed", symbol_clean
+                )
+                if not ind_df.empty:
+                    # Merge indicators on the date index
+                    df = df.join(ind_df, how="left")
+            except Exception as e:
+                logging.debug(f"Parquet load skipped for {symbol_clean}: {e}")
+
+        # 2. Lazy Fallback Check & Technical Consistency
         df = self.compute_common_indicators(df)
 
         with self._lock:
             if len(self._price_cache) > 500:
                 try:
                     self._price_cache.pop(next(iter(self._price_cache)))
-                except:
+                except Exception:
                     pass
             self._price_cache[cache_key] = df
 
@@ -127,7 +140,7 @@ class DataAdapter:
                     if meta:
                         funda["Sector"] = meta[0] or "Unknown"
                         funda["Industry"] = meta[1] or "Unknown"
-                except:
+                except Exception:
                     pass
             else:
                 # Direct SQL Fallback for valuation.db
@@ -146,7 +159,7 @@ class DataAdapter:
                             cursor = conn.execute("PRAGMA table_info('fundamentals')")
                             cols = [row[1] for row in cursor.fetchall()]
                             funda.update(dict(zip(cols, res)))
-                    except:
+                    except Exception:
                         pass
                     finally:
                         conn.close()
@@ -164,7 +177,7 @@ class DataAdapter:
                         if m_res:
                             funda["Sector"] = m_res[0] or "Unknown"
                             funda["Industry"] = m_res[1] or "Unknown"
-                    except:
+                    except Exception:
                         pass
                     finally:
                         conn_m.close()
@@ -177,9 +190,7 @@ class DataAdapter:
             )
             if not indicators_df.empty:
                 # Merge latest row into funda dict
-                # Case-insensitive mapping for RDV / money_flow
                 latest = indicators_df.iloc[-1].to_dict()
-                # Map case variations to standard keys expected by strategies
                 mapping = {
                     "rdv": "RDV",
                     "RDV": "RDV",
@@ -238,13 +249,10 @@ class DataAdapter:
         if df.empty or len(df) < 20:
             return df
         try:
-
-            # Determine which indicators need to be computed
             missing_ta = []
             if "RSI" not in df.columns:
                 missing_ta.append({"kind": "rsi", "length": 14})
 
-            # Vectorized detection for SMA and ATR
             missing_ta.extend(
                 [
                     {"kind": "sma", "length": length}
@@ -259,13 +267,14 @@ class DataAdapter:
             if not missing_ta:
                 return df
 
-            # Create a Strategy/Study to compute them all in one pass
-            study = ta.Study(name="CommonIndicators", cores=0, ta=missing_ta)
+            # Lazy Fallback Warning
+            logging.warning(
+                f"[MYRA Memory System] Lazy Fallback triggered: Missing indicators {missing_ta} in Parquet. Computing dynamically."
+            )
 
-            # Compute indicators
+            study = ta.Study(name="CommonIndicators", cores=0, ta=missing_ta)
             df.ta.study(study)
 
-            # Rename pandas_ta generated columns back to our standard format
             rename_map = {
                 "RSI_14": "RSI",
                 "SMA_20": "sma20",
@@ -274,14 +283,14 @@ class DataAdapter:
                 "SMA_200": "sma200",
                 "ATRr_20": "atr20",
             }
-            # Only rename columns that were actually created
             df.rename(
                 columns={k: v for k, v in rename_map.items() if k in df.columns},
                 inplace=True,
             )
 
             return df
-        except:
+        except Exception as e:
+            logging.error(f"Dynamic TA calculation failed: {e}")
             return df
 
     def get_lookback_for_scanner(self, sid: str) -> int:
@@ -312,7 +321,8 @@ class DataAdapter:
 
             ias_mgr = IASManager(db_dir=self.db_dir)
             if df is None:
-                df = self.get_ohlcv(symbol)
+                # Assuming get_price_df instead of get_ohlcv based on context
+                df = self.get_price_df(symbol)
             return ias_mgr.calculate_ias(symbol, df)
-        except:
+        except Exception:
             return 0.0, "ERROR"
