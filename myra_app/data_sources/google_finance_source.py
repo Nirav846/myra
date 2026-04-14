@@ -7,6 +7,8 @@ from .base import BaseDataSource
 
 class GoogleFinanceSource(BaseDataSource):
     BASE_URL = "https://www.google.com/finance/quote/{}:NSE"
+    # Pre-computed labels for report dates to avoid dynamic string concatenation in parsing loops.
+    REPORT_DATE_LABELS = [f"Q-{i+1} (GF)" for i in range(12)]
 
     def fetch(self, symbol):
         clean_symbol = symbol.split(".")[0].upper()
@@ -62,8 +64,15 @@ class GoogleFinanceSource(BaseDataSource):
             def _to_result(i):
                 r_val = revs[i] / 10000000 if revs[i] else None
                 p_val = profs[i] / 10000000 if profs[i] else None
+
+                # Optimization: Use pre-computed labels if available, otherwise fallback to f-string.
+                if i < len(self.REPORT_DATE_LABELS):
+                    report_date = self.REPORT_DATE_LABELS[i]
+                else:
+                    report_date = f"Q-{i+1} (GF)"
+
                 return {
-                    "report_date": f"Q-{i+1} (GF)",
+                    "report_date": report_date,
                     "revenue": r_val,
                     "net_profit": p_val,
                     "eps": eps_vals[i] if i < len(eps_vals) else None,
