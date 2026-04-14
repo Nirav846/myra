@@ -116,10 +116,13 @@ def process_enrichment_pipeline(conn):
         if isinstance(conn, duckdb.DuckDBPyConnection):
             tables = [t[0] for t in conn.execute("SHOW TABLES").fetchall()]
             table_name = "prices"
+            valid_tables = ["prices", "technical_data", "calculated_indicators", "fundamentals"]
+            if table_name not in valid_tables:
+                raise ValueError("Invalid table name")
             if table_name not in tables:
                 return
 
-            df_raw = pl.from_arrow(conn.execute(f"SELECT * FROM {table_name}").arrow())
+            df_raw = pl.from_arrow(conn.execute(f"SELECT * FROM {table_name}").arrow())  # noqa: S608
             if df_raw.is_empty():
                 return
 
@@ -140,9 +143,9 @@ def process_enrichment_pipeline(conn):
                 conn.execute(
                     "CREATE TABLE stg_enriched_market_data AS SELECT * FROM df_enriched_view"
                 )
-                conn.execute(f"DROP TABLE {table_name}")
+                conn.execute(f"DROP TABLE {table_name}")  # noqa: S608
                 conn.execute(
-                    f"ALTER TABLE stg_enriched_market_data RENAME TO {table_name}"
+                    f"ALTER TABLE stg_enriched_market_data RENAME TO {table_name}"  # noqa: S608
                 )
                 conn.execute("COMMIT")
             except Exception:
@@ -159,10 +162,13 @@ def process_enrichment_pipeline(conn):
                 ).fetchall()
             ]
             table_name = "technical_data"
+            valid_tables = ["prices", "technical_data", "calculated_indicators", "fundamentals"]
+            if table_name not in valid_tables:
+                raise ValueError("Invalid table name")
             if table_name not in tables:
                 return
 
-            df_raw = pl.read_database(f"SELECT * FROM {table_name}", conn)
+            df_raw = pl.read_database(f"SELECT * FROM {table_name}", conn)  # noqa: S608
             nifty_pd = pd.read_sql(
                 "SELECT date, close FROM technical_data WHERE symbol LIKE '%NIFTY 50%'",
                 conn,
@@ -176,9 +182,9 @@ def process_enrichment_pipeline(conn):
 
             cursor.execute("BEGIN TRANSACTION")
             try:
-                cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+                cursor.execute(f"DROP TABLE IF EXISTS {table_name}")  # noqa: S608
                 cursor.execute(
-                    f"ALTER TABLE stg_enriched_market_data RENAME TO {table_name}"
+                    f"ALTER TABLE stg_enriched_market_data RENAME TO {table_name}"  # noqa: S608
                 )
                 cursor.execute("COMMIT")
             except Exception:

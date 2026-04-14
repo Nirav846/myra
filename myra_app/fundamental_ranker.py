@@ -2,7 +2,6 @@ import os
 import sqlite3
 from datetime import date
 
-import duckdb
 import pandas as pd
 
 

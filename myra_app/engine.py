@@ -128,39 +128,20 @@ def _worker_task(payload):
         return None
 
     # --- TRILOGY ERA v3.2: Metadata-Driven Filtering ---
-    # We now strictly rely on metadata.db classification.
-    # If a symbol is not 'EQUITY', we skip it.
-    try:
-        from .librarian_core import LibrarianCore
-
-        conn = sqlite3.connect(
-            os.path.join(os.getcwd(), "db", LibrarianCore.DB_MAP["meta"]),
-            timeout=10,
-            check_same_thread=False,
-        )
-        res = conn.execute(
-            "SELECT instrument_type FROM symbols_master WHERE symbol = ?",
-            (symbol.upper(),),
-        ).fetchone()
-        conn.close()
-
-        if res and res[0] != "EQUITY":
-            return None
-    except Exception:
-        # Fallback to standard check if metadata is missing/locked
-        noise_keywords = [
-            "BEES",
-            "GOLD",
-            "SILVER",
-            "LIQUID",
-            "ETF",
-            "IETF",
-            "SDL",
-            "GSEC",
-            "CASH",
-        ]
-        if any(k in symbol.upper() for k in noise_keywords):
-            return None
+    # This check has been moved outside the worker loop to prevent N+1 DB queries.
+    noise_keywords = [
+        "BEES",
+        "GOLD",
+        "SILVER",
+        "LIQUID",
+        "ETF",
+        "IETF",
+        "SDL",
+        "GSEC",
+        "CASH",
+    ]
+    if any(k in symbol.upper() for k in noise_keywords):
+        return None
 
     try:
         # 10x Optimization: Dynamic Loading from Worker (On-Demand)
@@ -743,6 +724,25 @@ class Engine:
                 if symbols
                 else [s.split(".")[0].upper() for s in lib.get_active_universe()]
             )
+
+            # Bulk fetch metadata instrument types to avoid N+1 queries in _worker_task
+            try:
+                from myra_app.librarian_core import LibrarianCore
+                import sqlite3
+                import os
+                import pandas as pd
+
+                meta_conn = sqlite3.connect(
+                    os.path.join(os.getcwd(), "db", LibrarianCore.DB_MAP["meta"]),
+                    timeout=10,
+                    check_same_thread=False,
+                )
+                meta_df = pd.read_sql("SELECT symbol, instrument_type FROM symbols_master", meta_conn)
+                meta_conn.close()
+                equity_symbols = set(meta_df.loc[meta_df['instrument_type'] == 'EQUITY', 'symbol'].str.upper())
+                target_symbols = [s for s in target_symbols if s in equity_symbols]
+            except Exception:
+                pass
 
             # Vectorized payload generation (Fix 515: Avoid .append in loop)
             payloads = [
