@@ -88,7 +88,10 @@ class MYRA_UI:
         missing_delivery_list = data.get("missing_delivery_list", [])
 
         if total_symbols_processed > 0:
-            score = ((total_symbols_processed - len(missing_delivery_list)) / total_symbols_processed) * 100
+            score = (
+                (total_symbols_processed - len(missing_delivery_list))
+                / total_symbols_processed
+            ) * 100
         else:
             score = 0.0
 
@@ -441,3 +444,21 @@ def draw_dashboard(librarian, breadth_text="↗ 0 | ↘ 0", forecast=None):
     layout["footer"].update(MYRA_UI.get_footer(librarian, breadth_text, forecast))
 
     return layout
+
+
+# --- EXECUTION TRIGGER ---
+if __name__ == "__main__":
+    try:
+        from myra_app.librarian_core import LibrarianCore
+
+        librarian = LibrarianCore()
+    except Exception as e:
+        # Fallback if LibrarianCore fails to load or isn't set up perfectly yet
+        console.print(
+            f"[dim yellow]Running UI without full LibrarianCore connection ({e})[/]"
+        )
+        librarian = None
+
+    # Draw and print the full layout to the terminal
+    ui_layout = draw_dashboard(librarian)
+    console.print(ui_layout)
