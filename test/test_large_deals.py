@@ -1,6 +1,5 @@
 import unittest
-from unittest.mock import MagicMock
-import duckdb
+from unittest.mock import MagicMock, patch
 import os
 from datetime import date
 from myra_app.librarian import Librarian
@@ -9,14 +8,21 @@ from myra_app.fetcher import DataFetcher
 
 class TestLargeDeals(unittest.TestCase):
     def setUp(self):
-        self.db_path = "test_large_deals.db"
+        self.db_name = "test_large_deals.db"
+        self.db_dir = os.path.join(os.getcwd(), "db")
+        os.makedirs(self.db_dir, exist_ok=True)
+        self.db_path = os.path.join(self.db_dir, self.db_name)
+
         if os.path.exists(self.db_path):
             os.remove(self.db_path)
 
+        # Patch Librarian DB_MAP to use test database for institutional
+        self.patcher = patch.dict(Librarian.DB_MAP, {"institutional": self.db_name})
+        self.patcher.start()
+
         # Initialize Librarian with test DB
-        self.lib = Librarian()
-        self.lib.db_path = self.db_path
-        self.lib.connect()
+        self.lib = Librarian(read_only=False)
+        self.lib._create_tables()
 
         # Mock fetcher
         self.fetcher = DataFetcher()
@@ -24,8 +30,12 @@ class TestLargeDeals(unittest.TestCase):
 
     def tearDown(self):
         self.lib.close()
+        self.patcher.stop()
         if os.path.exists(self.db_path):
-            os.remove(self.db_path)
+            try:
+                os.remove(self.db_path)
+            except Exception:
+                pass
 
     def test_large_deals_population(self):
         # 1. Setup mock data
@@ -37,7 +47,8 @@ class TestLargeDeals(unittest.TestCase):
                 "buy_sell": "BUY",
                 "qty": 1000000,
                 "price": 2500.50,
-                "date": date.today(),
+                "value_cr": 250.05,
+                "date": date.today().isoformat(),
             },
             {
                 "symbol": "TCS",
@@ -46,20 +57,17 @@ class TestLargeDeals(unittest.TestCase):
                 "buy_sell": "SELL",
                 "qty": 500000,
                 "price": 3400.00,
-                "date": date.today(),
+                "value_cr": 170.00,
+                "date": date.today().isoformat(),
             },
         ]
         self.fetcher.fetch_large_deals.return_value = mock_deals
 
-        # 2. Implementation: We need a way to trigger the sync of large deals in librarian
-        # Looking at librarian.py, it seems it doesn't have a sync_large_deals method yet?
-        # I'll check librarian.py again.
-
-        # For now, let's assume we implement it or use raw SQL to test table existence
+        # 2. Implementation: Insert mock data into new schema
         for deal in mock_deals:
-            self.lib.conn.execute(  # noqa: performance
+            self.lib._inst_conn.execute(  # noqa: performance
                 """
-                INSERT OR REPLACE INTO large_deals VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO large_deals VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     deal["symbol"],
@@ -68,12 +76,14 @@ class TestLargeDeals(unittest.TestCase):
                     deal["buy_sell"],
                     deal["qty"],
                     deal["price"],
+                    deal["value_cr"],
                     deal["date"],
-                ),
+                )
             )
+        self.lib._inst_conn.commit()
 
         # 3. Verify
-        res = self.lib.conn.execute(
+        res = self.lib._inst_conn.execute(
             "SELECT * FROM large_deals WHERE symbol='RELIANCE'"
         ).fetchone()
         self.assertIsNotNone(res)
