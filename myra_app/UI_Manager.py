@@ -7,6 +7,7 @@ from datetime import datetime
 import pandas as pd
 import sqlite3
 import os
+import json
 
 console = Console()
 
@@ -52,11 +53,50 @@ class MYRA_UI:
         except Exception:
             dash = "Market Data Unavailable"
 
+        # 3. System Health Dashboard
+        health = MYRA_UI.get_health_metrics()
+        if health["total"] > 0:
+            score = health["score"]
+            missing = health["missing"]
+            h_col = "green" if score >= 95 else "yellow" if score >= 90 else "red"
+            health_str = f" | System Health Score: [{h_col}]{score:.2f}%[/]"
+            if missing > 0:
+                health_str += f" [red](Alert: {missing} skips)[/]"
+            dash += health_str
+
         header_table = Table.grid(expand=True)
         header_table.add_row(logo)
         header_table.add_row(Text.from_markup(dash))
 
         return Panel(header_table, border_style="bright_magenta", expand=True)
+
+    @staticmethod
+    def get_health_metrics():
+        manifest_path = "data_sync_manifest.json"
+        metrics = {"score": 0.0, "total": 0, "missing": 0}
+
+        if not os.path.exists(manifest_path):
+            return metrics
+
+        try:
+            with open(manifest_path, "r") as f:
+                data = json.load(f)
+        except Exception:
+            return metrics
+
+        total_symbols_processed = data.get("total_symbols_processed", 0)
+        missing_delivery_list = data.get("missing_delivery_list", [])
+
+        if total_symbols_processed > 0:
+            score = ((total_symbols_processed - len(missing_delivery_list)) / total_symbols_processed) * 100
+        else:
+            score = 0.0
+
+        metrics["score"] = score
+        metrics["total"] = total_symbols_processed
+        metrics["missing"] = len(missing_delivery_list)
+
+        return metrics
 
     @staticmethod
     def get_menu_grid():
