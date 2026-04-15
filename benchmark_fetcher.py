@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 import time
 from myra_app.fetcher import SchemaContractEnforcer
 
