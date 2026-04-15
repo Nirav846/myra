@@ -18,6 +18,7 @@ class DataAdapter:
     _lock = threading.Lock()
     _price_cache = {}  # (symbol, lookback, as_of_date) -> df
     _funda_cache = {}  # symbol -> funda_dict
+    _funda_cols = None
 
     def __new__(cls, *args, **kwargs):
         with cls._lock:
@@ -132,36 +133,39 @@ class DataAdapter:
             path = os.path.join(self.db_dir, LibrarianCore.DB_MAP["valuation"])
             meta_path = os.path.join(self.db_dir, LibrarianCore.DB_MAP["meta"])
             if os.path.exists(path):
-                conn = sqlite3.connect(path)
+                conn = sqlite3.connect(path, check_same_thread=False)
+                conn.execute("PRAGMA journal_mode=WAL;")
                 try:
                     res = conn.execute(
                         "SELECT * FROM fundamentals WHERE symbol = ?",
                         (symbol_clean,),
                     ).fetchone()
                     if res:
-                        cursor = conn.execute("PRAGMA table_info('fundamentals')")
-                        cols = [row[1] for row in cursor.fetchall()]
-                        funda.update(dict(zip(cols, res)))
-                except Exception:
-                    pass
+                        if not self._funda_cols:
+                            cursor = conn.execute("PRAGMA table_info('fundamentals')")
+                            self._funda_cols = [row[1] for row in cursor.fetchall()]
+                        funda.update(dict(zip(self._funda_cols, res)))
+                except Exception as e:
+                    logging.debug(f"Error fetching fundamentals: {e}")
                 finally:
                     conn.close()
 
             # Fetch Sector from meta.db if not already in funda
             if os.path.exists(meta_path) and (
-                not funda.get("Sector") or funda.get("Sector") == "Unknown"
+                not funda.get("sector") or funda.get("sector") == "Unknown"
             ):
-                conn_m = sqlite3.connect(meta_path)
+                conn_m = sqlite3.connect(meta_path, check_same_thread=False)
+                conn_m.execute("PRAGMA journal_mode=WAL;")
                 try:
                     m_res = conn_m.execute(
                         "SELECT sector, industry FROM symbols_master WHERE symbol = ?",
                         (symbol_clean,),
                     ).fetchone()
                     if m_res:
-                        funda["Sector"] = m_res[0] or "Unknown"
-                        funda["Industry"] = m_res[1] or "Unknown"
-                except Exception:
-                    pass
+                        funda["sector"] = m_res[0] or "Unknown"
+                        funda["industry"] = m_res[1] or "Unknown"
+                except Exception as e:
+                    logging.debug(f"Error fetching sector: {e}")
                 finally:
                     conn_m.close()
 
