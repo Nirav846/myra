@@ -180,13 +180,15 @@ def process_enrichment_pipeline(conn):
                 "stg_enriched_market_data", conn, if_exists="replace", index=False
             )
 
-            cursor.execute("BEGIN TRANSACTION")
             try:
-                cursor.execute(f"DROP TABLE IF EXISTS {table_name}")  # noqa: S608
-                cursor.execute(
-                    f"ALTER TABLE stg_enriched_market_data RENAME TO {table_name}"  # noqa: S608
+                cursor.executescript(
+                    f"""
+                    BEGIN TRANSACTION;
+                    DROP TABLE IF EXISTS {table_name};
+                    ALTER TABLE stg_enriched_market_data RENAME TO {table_name};
+                    COMMIT;
+                    """  # noqa: S608
                 )
-                cursor.execute("COMMIT")
             except Exception:
                 cursor.execute("ROLLBACK")
                 raise
