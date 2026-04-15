@@ -364,14 +364,14 @@ class MYRA_UI:
     def get_footer(librarian, market_breadth="↗ 0 | ↘ 0", forecast=None):
         db_stats = (
             librarian.get_db_stats()
-            if librarian
-            else {"status": "Connected", "size": "0MB"}
+            if librarian and hasattr(librarian, 'get_db_stats')
+            else {"status": "Connected (Core)", "size": "-"}
         )
         db_status = db_stats.get("status", "Connected")
         db_size = db_stats.get("size", "0MB")
 
         # 1. Resolve Data Dates (Bhavcopy)
-        b_date = librarian.get_max_price_date() if librarian else None
+        b_date = librarian.get_max_price_date() if librarian and hasattr(librarian, 'get_max_price_date') else None
 
         def _format_dt(dt):
             if not dt:
@@ -389,7 +389,7 @@ class MYRA_UI:
         i_str = "INST([bold green]LIVE[/bold green])"
         # 2. Market Status / Breadth
         sync_text = market_breadth
-        if librarian and librarian.sync_status and librarian.sync_status.task_name:
+        if librarian and hasattr(librarian, 'sync_status') and librarian.sync_status and hasattr(librarian.sync_status, 'task_name') and librarian.sync_status.task_name:
             st = librarian.sync_status
             sync_text = f"[bold cyan]Sync:[/] {st.task_name} ({st.percentage}%)"
 
