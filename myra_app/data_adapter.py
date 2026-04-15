@@ -126,61 +126,44 @@ class DataAdapter:
                 funda = {"symbol": symbol_clean}
 
         if len(funda) <= 1:  # Only symbol is present
-            # 1. Try Librarian (Unified Interface)
-            if self.librarian:
-                lib_funda = self.librarian.get_fundamentals(symbol_clean)
-                if lib_funda:
-                    funda.update(lib_funda)
-                # Sector Intelligence: Fetch from meta.db via Librarian
+            # Direct SQL Fetch for valuation.db and meta.db
+            from .librarian_core import LibrarianCore
+
+            path = os.path.join(self.db_dir, LibrarianCore.DB_MAP["valuation"])
+            meta_path = os.path.join(self.db_dir, LibrarianCore.DB_MAP["meta"])
+            if os.path.exists(path):
+                conn = sqlite3.connect(path)
                 try:
-                    meta = self.librarian._meta_conn.execute(
+                    res = conn.execute(
+                        "SELECT * FROM fundamentals WHERE symbol = ?",
+                        (symbol_clean,),
+                    ).fetchone()
+                    if res:
+                        cursor = conn.execute("PRAGMA table_info('fundamentals')")
+                        cols = [row[1] for row in cursor.fetchall()]
+                        funda.update(dict(zip(cols, res)))
+                except Exception:
+                    pass
+                finally:
+                    conn.close()
+
+            # Fetch Sector from meta.db if not already in funda
+            if os.path.exists(meta_path) and (
+                not funda.get("Sector") or funda.get("Sector") == "Unknown"
+            ):
+                conn_m = sqlite3.connect(meta_path)
+                try:
+                    m_res = conn_m.execute(
                         "SELECT sector, industry FROM symbols_master WHERE symbol = ?",
                         (symbol_clean,),
                     ).fetchone()
-                    if meta:
-                        funda["Sector"] = meta[0] or "Unknown"
-                        funda["Industry"] = meta[1] or "Unknown"
+                    if m_res:
+                        funda["Sector"] = m_res[0] or "Unknown"
+                        funda["Industry"] = m_res[1] or "Unknown"
                 except Exception:
                     pass
-            else:
-                # Direct SQL Fallback for valuation.db
-                from .librarian_core import LibrarianCore
-
-                path = os.path.join(self.db_dir, LibrarianCore.DB_MAP["valuation"])
-                meta_path = os.path.join(self.db_dir, LibrarianCore.DB_MAP["meta"])
-                if os.path.exists(path):
-                    conn = sqlite3.connect(path)
-                    try:
-                        res = conn.execute(
-                            "SELECT * FROM fundamentals WHERE symbol = ?",
-                            (symbol_clean,),
-                        ).fetchone()
-                        if res:
-                            cursor = conn.execute("PRAGMA table_info('fundamentals')")
-                            cols = [row[1] for row in cursor.fetchall()]
-                            funda.update(dict(zip(cols, res)))
-                    except Exception:
-                        pass
-                    finally:
-                        conn.close()
-
-                # Fetch Sector from meta.db if not already in funda
-                if os.path.exists(meta_path) and (
-                    not funda.get("Sector") or funda.get("Sector") == "Unknown"
-                ):
-                    conn_m = sqlite3.connect(meta_path)
-                    try:
-                        m_res = conn_m.execute(
-                            "SELECT sector, industry FROM symbols_master WHERE symbol = ?",
-                            (symbol_clean,),
-                        ).fetchone()
-                        if m_res:
-                            funda["Sector"] = m_res[0] or "Unknown"
-                            funda["Industry"] = m_res[1] or "Unknown"
-                    except Exception:
-                        pass
-                    finally:
-                        conn_m.close()
+                finally:
+                    conn_m.close()
 
         # 2. Indicators from Parquet Lake (Virtual Join)
         if self.librarian:
