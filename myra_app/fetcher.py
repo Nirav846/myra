@@ -745,6 +745,12 @@ class DataFetcher:
             "LwPric": "LOW_PRICE",
             "ClsPric": "CLOSE_PRICE",
             "TtlTradgVol": "TTL_TRD_QNTY",
+            "TOTTRDQTY": "TTL_TRD_QNTY",
+            "CLOSE": "CLOSE_PRICE",
+            "OPEN": "OPEN_PRICE",
+            "HIGH": "HIGH_PRICE",
+            "LOW": "LOW_PRICE",
+            "TIMESTAMP": "DATE1",
         }
         df_bhav = df_bhav.rename(columns=lambda x: mapping.get(x, x.upper()))
 
@@ -753,18 +759,16 @@ class DataFetcher:
             mto_io = StringIO(mto_text)
             # Read with names=range(10) to force schema to accommodate all columns (Record 50)
             # and prevent short Record 10/20 from causing bad line truncation.
-            df_mto = pd.read_csv(mto_io, header=None, names=range(10), on_bad_lines="skip")
+            df_mto = pd.read_csv(
+                mto_io, header=None, names=range(10), on_bad_lines="skip"
+            )
 
             # Vectorized filtering: Extract valid data rows (avoiding record type assumptions).
             # We target rows with enough columns where delivery metrics (indices 5 & 6) are numeric.
-            if df_mto.shape[1] < 7:
-                logger.error("MTO text format invalid: insufficient columns.")
-                return None
-
-            df_mto = df_mto[
-                pd.to_numeric(df_mto.iloc[:, 5], errors="coerce").notna()
-                & pd.to_numeric(df_mto.iloc[:, 6], errors="coerce").notna()
-            ].copy()
+            mask = pd.to_numeric(df_mto.iloc[:, 5], errors="coerce").notna() & pd.to_numeric(
+                df_mto.iloc[:, 6], errors="coerce"
+            ).notna()
+            df_mto = df_mto[mask].copy()
 
             if df_mto.empty:
                 logger.warning("MTO parsing resulted in empty DataFrame.")
@@ -775,8 +779,8 @@ class DataFetcher:
             df_mto.columns = ["SYMBOL", "SERIES", "DELIV_QTY", "DELIV_PER"]
 
             # Vectorized cleaning and type conversion
-            df_mto["SYMBOL"] = df_mto["SYMBOL"].str.strip().str.upper()
-            df_mto["SERIES"] = df_mto["SERIES"].str.strip().str.upper()
+            df_mto["SYMBOL"] = df_mto["SYMBOL"].astype(str).str.strip().str.upper()
+            df_mto["SERIES"] = df_mto["SERIES"].astype(str).str.strip().str.upper()
             df_mto["DELIV_QTY"] = pd.to_numeric(df_mto["DELIV_QTY"], errors="coerce")
             df_mto["DELIV_PER"] = pd.to_numeric(df_mto["DELIV_PER"], errors="coerce")
         except Exception as e:
