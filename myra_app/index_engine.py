@@ -43,43 +43,37 @@ class IndexEngine:
             entry = self.cache[key]
             return entry["data"]
 
-        # 1. Primary: NSE Direct (if nsepython works)
-        if nse_get_index_quote:
-            try:
-                data = nse_get_index_quote("NIFTY 50")
-                if data:
-                    result = {
-                        "last_price": float(data.get("lastPrice", 0)),
-                        "change": float(data.get("change", 0)),
-                        "pchange": float(data.get("pChange", 0)),
-                        "timestamp": datetime.now(),
-                    }
-                    self._store_cache(key, result)
-                    return result
-            except Exception:
-                pass
+        # Query Local SQLite DB instead of external APIs
+        import os
+        import sqlite3
+        from myra_app.librarian_core import LibrarianCore
 
-        # 2. Fallback: YFinance
-        if yf:
+        db_path = os.path.join(os.getcwd(), "db", LibrarianCore.DB_MAP["technical"])
+        if os.path.exists(db_path):
+            conn = sqlite3.connect(db_path)
             try:
-                data = yf.download("^NSEI", period="2d", interval="1d", progress=False)
-                if not data.empty:
-                    # Avoid chained indexing (Fix 42)
-                    close_prices = data["Close"]
-                    latest = close_prices.iloc[-1]
-                    prev = close_prices.iloc[-2]
+                # Fetch last 2 rows for NIFTY (^NSEI)
+                sql = "SELECT close FROM technical_data WHERE symbol = '^NSEI' ORDER BY date DESC LIMIT 2"
+                res = conn.execute(sql).fetchall()
+                if len(res) == 2:
+                    row_0 = res[0]
+                    row_1 = res[1]
+                    latest = float(row_0[0])
+                    prev = float(row_1[0])
                     change = latest - prev
-                    pchange = (change / prev) * 100
+                    pchange = (change / prev) * 100 if prev != 0 else 0
                     result = {
-                        "last_price": round(float(latest), 2),
-                        "change": round(float(change), 2),
-                        "pchange": round(float(pchange), 2),
+                        "last_price": round(latest, 2),
+                        "change": round(change, 2),
+                        "pchange": round(pchange, 2),
                         "timestamp": datetime.now(),
                     }
                     self._store_cache(key, result)
                     return result
             except Exception:
                 pass
+            finally:
+                conn.close()
 
         # Avoid chained indexing (Fix 42)
         entry = self.cache.get(key, {})
@@ -92,45 +86,37 @@ class IndexEngine:
             entry = self.cache[key]
             return entry["data"]
 
-        # 1. Primary: NSE Direct
-        if nse_get_index_quote:
-            try:
-                data = nse_get_index_quote("INDIA VIX")
-                if data:
-                    result = {
-                        "last_price": float(data.get("lastPrice", 0)),
-                        "change": float(data.get("change", 0)),
-                        "pchange": float(data.get("pChange", 0)),
-                        "timestamp": datetime.now(),
-                    }
-                    self._store_cache(key, result)
-                    return result
-            except Exception:
-                pass
+        # Query Local SQLite DB instead of external APIs
+        import os
+        import sqlite3
+        from myra_app.librarian_core import LibrarianCore
 
-        # 2. Fallback: YFinance
-        if yf:
+        db_path = os.path.join(os.getcwd(), "db", LibrarianCore.DB_MAP["technical"])
+        if os.path.exists(db_path):
+            conn = sqlite3.connect(db_path)
             try:
-                data = yf.download(
-                    "^INDIAVIX", period="2d", interval="1d", progress=False
-                )
-                if not data.empty:
-                    # Avoid chained indexing (Fix 83)
-                    close_prices = data["Close"]
-                    latest = close_prices.iloc[-1]
-                    prev = close_prices.iloc[-2]
+                # Fetch last 2 rows for INDIA VIX (^INDIAVIX)
+                sql = "SELECT close FROM technical_data WHERE symbol = '^INDIAVIX' ORDER BY date DESC LIMIT 2"
+                res = conn.execute(sql).fetchall()
+                if len(res) == 2:
+                    row_0 = res[0]
+                    row_1 = res[1]
+                    latest = float(row_0[0])
+                    prev = float(row_1[0])
                     change = latest - prev
-                    pchange = (change / prev) * 100
+                    pchange = (change / prev) * 100 if prev != 0 else 0
                     result = {
-                        "last_price": round(float(latest), 2),
-                        "change": round(float(change), 2),
-                        "pchange": round(float(pchange), 2),
+                        "last_price": round(latest, 2),
+                        "change": round(change, 2),
+                        "pchange": round(pchange, 2),
                         "timestamp": datetime.now(),
                     }
                     self._store_cache(key, result)
                     return result
             except Exception:
                 pass
+            finally:
+                conn.close()
 
         # Avoid chained indexing (Fix 83)
         entry = self.cache.get(key, {})
