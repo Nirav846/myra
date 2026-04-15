@@ -45,45 +45,39 @@ class DataAdapter:
             if cache_key in self._price_cache:
                 return self._price_cache[cache_key].copy()
 
-        # Route to Librarian if available, else connect directly
-        if self.librarian:
-            df = self.librarian.get_ohlcv(symbol_clean, as_of_date=as_of_date)
-            if df is None:
-                df = pd.DataFrame()
-        else:
-            # Fallback direct connection
-            from .librarian_core import LibrarianCore
+        # Connect directly to SQLite Technical Database
+        from .librarian_core import LibrarianCore
 
-            path = os.path.join(self.db_dir, LibrarianCore.DB_MAP["technical"])
-            if not os.path.exists(path):
-                return pd.DataFrame()
+        path = os.path.join(self.db_dir, LibrarianCore.DB_MAP["technical"])
+        if not os.path.exists(path):
+            return pd.DataFrame()
 
-            conn = sqlite3.connect(path)
-            try:
-                where = "WHERE symbol = ?"
-                params = [symbol_clean]
-                if as_of_date:
-                    where += " AND date <= ?"
-                    params.append(as_of_date)
+        conn = sqlite3.connect(path)
+        try:
+            where = "WHERE symbol = ?"
+            params = [symbol_clean]
+            if as_of_date:
+                where += " AND date <= ?"
+                params.append(as_of_date)
 
-                sql = f"SELECT * FROM technical_data {where} ORDER BY date DESC LIMIT {fetch_limit}"
-                df = pd.read_sql(sql, conn, params=params)
-                if not df.empty:
-                    df = df.sort_values("date")
-                    df["date"] = pd.to_datetime(df["date"])
-                    df.set_index("date", inplace=True)
-                    rename_map = {
-                        "open": "Open",
-                        "high": "High",
-                        "low": "Low",
-                        "close": "Close",
-                        "volume": "Volume",
-                    }
-                    df.rename(columns=rename_map, inplace=True)
-            except Exception:
-                df = pd.DataFrame()
-            finally:
-                conn.close()
+            sql = f"SELECT * FROM technical_data {where} ORDER BY date DESC LIMIT {fetch_limit}"
+            df = pd.read_sql(sql, conn, params=params)
+            if not df.empty:
+                df = df.sort_values("date")
+                df["date"] = pd.to_datetime(df["date"])
+                df.set_index("date", inplace=True)
+                rename_map = {
+                    "open": "Open",
+                    "high": "High",
+                    "low": "Low",
+                    "close": "Close",
+                    "volume": "Volume",
+                }
+                df.rename(columns=rename_map, inplace=True)
+        except Exception:
+            df = pd.DataFrame()
+        finally:
+            conn.close()
 
         if df.empty:
             return df
