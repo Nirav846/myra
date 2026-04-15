@@ -122,7 +122,7 @@ def run_daily_update():
                 df_to_insert["delivery"] == 0
             )
             missing_symbols = (
-                df_to_insert[missing_delivery_mask]["symbol"].tolist()
+                df_to_insert.loc[missing_delivery_mask, "symbol"].tolist()
                 if "symbol" in df_to_insert.columns
                 else []
             )
