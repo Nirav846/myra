@@ -89,18 +89,6 @@ class DataAdapter:
                     f"Missing or zero delivery data found for {symbol_clean} in the requested window."
                 )
 
-        # 1. Attempt to load pre-computed indicators from Parquet Lake
-        if self.librarian and not df.empty:
-            try:
-                ind_df = self.librarian.loader.indicators.load_indicators(
-                    "precomputed", symbol_clean
-                )
-                if not ind_df.empty:
-                    # Merge indicators on the date index
-                    df = df.join(ind_df, how="left")
-            except Exception as e:
-                logging.debug(f"Parquet load skipped for {symbol_clean}: {e}")
-
         # 2. Lazy Fallback Check & Technical Consistency
         df = self.compute_common_indicators(df)
 
@@ -168,32 +156,6 @@ class DataAdapter:
                     logging.debug(f"Error fetching sector: {e}")
                 finally:
                     conn_m.close()
-
-        # 2. Indicators from Parquet Lake (Virtual Join)
-        if self.librarian:
-            # Check for indicators in the Lake (Strategy: precomputed)
-            indicators_df = self.librarian.loader.indicators.load_indicators(
-                "precomputed", symbol_clean
-            )
-            if not indicators_df.empty:
-                # Merge latest row into funda dict
-                latest = indicators_df.iloc[-1].to_dict()
-                mapping = {
-                    "rdv": "RDV",
-                    "RDV": "RDV",
-                    "money_flow_cr": "money_flow_cr",
-                    "Money_Flow_Cr": "money_flow_cr",
-                    "smc_phase": "smc_phase",
-                    "smart_money_score": "smart_money_score",
-                    "sma150": "sma150",
-                    "sma50": "sma50",
-                    "sma200": "sma200",
-                }
-                for k, v in latest.items():
-                    if k in mapping:
-                        funda[mapping[k]] = v
-                    else:
-                        funda[k] = v
 
         # 3. SELF-HEALING: Compute missing metrics from DF
         if df is not None and not df.empty:
