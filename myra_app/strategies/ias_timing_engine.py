@@ -11,7 +11,7 @@ def run(df: pd.DataFrame, funda: dict) -> dict:
     IAS + Entry Timing Engine
     Detects high-conviction setups using IAS and pinpoints entry using specific technical triggers.
     """
-    if df is None or len(df) < 40:
+    if df is None or df.empty or len(df) < 40:
         return {"signal": False}
 
     try:
@@ -20,10 +20,19 @@ def run(df: pd.DataFrame, funda: dict) -> dict:
         if not symbol:
             return {"signal": False}
 
+        # Handle TitleCase legacy dependencies
+        df_legacy = df.rename(columns={
+            "open": "Open",
+            "high": "High",
+            "low": "Low",
+            "close": "Close",
+            "volume": "Volume"
+        })
+
         # Stage 1: Setup Filter
-        ias_score, _ = _ias_manager.calculate_ias(symbol, df)
+        ias_score, _ = _ias_manager.calculate_ias(symbol, df_legacy)
         sast_score, _ = _ias_manager._get_sast_score(symbol)
-        delivery_score = _ias_manager._get_delivery_score(df)
+        delivery_score = _ias_manager._get_delivery_score(df_legacy)
 
         high_conviction = (
             ias_score >= 7.0 and sast_score >= 7.0 and delivery_score >= 7.0
@@ -33,18 +42,26 @@ def run(df: pd.DataFrame, funda: dict) -> dict:
             return {"signal": False}
 
         latest = df.iloc[-1]
-        close = latest["Close"]
-        high = latest["High"]
-        low = latest["Low"]
-        open_price = latest["Open"]
-        vol = latest["Volume"]
+
+        # Check if columns are lowercase or TitleCase (to handle tests or missing renames)
+        col_c = "close" if "close" in df.columns else "Close"
+        col_h = "high" if "high" in df.columns else "High"
+        col_l = "low" if "low" in df.columns else "Low"
+        col_o = "open" if "open" in df.columns else "Open"
+        col_v = "volume" if "volume" in df.columns else "Volume"
+
+        close = latest[col_c]
+        high = latest[col_h]
+        low = latest[col_l]
+        open_price = latest[col_o]
+        vol = latest[col_v]
 
         # Helper metrics
-        avg_vol_20d = df["Volume"].iloc[-20:].mean()
-        avg_vol_10d = df["Volume"].iloc[-10:].mean()
-        base_high = df["High"].iloc[-21:-1].max()
-        base_low = df["Low"].iloc[-21:-1].min()
-        high_20d = df["High"].iloc[-20:].max()
+        avg_vol_20d = df[col_v].iloc[-20:].mean()
+        avg_vol_10d = df[col_v].iloc[-10:].mean()
+        base_high = df[col_h].iloc[-21:-1].max()
+        base_low = df[col_l].iloc[-21:-1].min()
+        high_20d = df[col_h].iloc[-20:].max()
 
         # Delivery pct from df or funda
         if "delivery_pct" in df.columns:
@@ -55,7 +72,7 @@ def run(df: pd.DataFrame, funda: dict) -> dict:
             delivery_pct = funda.get("delivery_percent", 0)
 
         # ATR calculation
-        ranges = df["High"] - df["Low"]
+        ranges = df[col_h] - df[col_l]
         atr_5 = ranges.iloc[-5:].mean()
         atr_20 = ranges.iloc[-20:].mean()
 
@@ -63,14 +80,14 @@ def run(df: pd.DataFrame, funda: dict) -> dict:
         if "sma20" in df.columns:
             ema_20 = df["sma20"].iloc[-1]  # Fallback to SMA
         else:
-            ema_20 = df["Close"].ewm(span=20, adjust=False).mean().iloc[-1]
+            ema_20 = df[col_c].ewm(span=20, adjust=False).mean().iloc[-1]
 
         if "VWAP" in df.columns:
             vwap = latest["VWAP"]
         else:
-            tp = (df["High"] + df["Low"] + df["Close"]) / 3
-            vwap = (tp * df["Volume"]).rolling(window=20).sum().iloc[-1] / df[
-                "Volume"
+            tp = (df[col_h] + df[col_l] + df[col_c]) / 3
+            vwap = (tp * df[col_v]).rolling(window=20).sum().iloc[-1] / df[
+                col_v
             ].rolling(window=20).sum().iloc[-1]
 
         # Stage 2: Trigger Engine
@@ -93,7 +110,7 @@ def run(df: pd.DataFrame, funda: dict) -> dict:
         )
 
         # C. Bear trap / failed breakdown entry
-        support_level = df["Low"].iloc[-21:-1].min()
+        support_level = df[col_l].iloc[-21:-1].min()
         body_size = abs(close - open_price)
         wick_lower = min(open_price, close) - low
 

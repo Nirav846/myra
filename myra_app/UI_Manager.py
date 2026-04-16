@@ -335,7 +335,7 @@ class MYRA_UI:
             count = 0
 
             for symbol in df_ias["symbol"]:
-                df = adapter.get_price_df(symbol, lookback_days=40)
+                df = adapter.get_technical_history(symbol, days=150)
                 if df.empty:
                     continue
                 funda = adapter.get_latest_funda(symbol, df)
