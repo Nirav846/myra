@@ -2,57 +2,34 @@ import pandas as pd
 import numpy as np
 
 class Strategy:
-    """
-    Multibagger Early Detection Scanner (v6.2 - INSTITUTIONAL SNIPER)
-    Hardened to extract purely scalar values to prevent Truth Value Ambiguity.
-    """
-
-    def __init__(self, librarian=None):
+    def __init__(self):
         self.name = "Multibagger Early Detection"
-        self.librarian = librarian
 
     def run(self, df: pd.DataFrame, funda: dict) -> dict:
-        # --- STEP 1: DATA CONFORMITY ---
         if df.empty or len(df) < 60:
-            return {"signal": False, "reason": "insufficient_data"}
-
-        # Force lowercase keys to CamelCase safely
-        rename_map = {
-            "open": "Open", "high": "High", "low": "Low", 
-            "close": "Close", "volume": "Volume"
-        }
-        df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns}, inplace=True)
+            return {"signal": False}
 
         try:
-            # --- STEP 2: TREND & MOMENTUM ---
-            # Ensure ltp is explicitly a scalar float
-            ltp = float(df["Close"].iloc[-1])
+            ltp = float(df["close"].iloc[-1])
             
-            # EMA Trend (20/50)
-            ema20 = df["Close"].ewm(span=20, adjust=False).mean()
-            ema50 = df["Close"].ewm(span=50, adjust=False).mean()
-            
+            ema20 = df["close"].ewm(span=20, adjust=False).mean()
+            ema50 = df["close"].ewm(span=50, adjust=False).mean()
             val_ema20 = float(ema20.iloc[-1])
             val_ema50 = float(ema50.iloc[-1])
-            
-            # Explicitly separated boolean logic
             ema_trend = bool((ltp > val_ema20) and (val_ema20 > val_ema50))
 
-            # --- STEP 3: BULLISH RSI DIVERGENCE ---
-            delta = df["Close"].diff()
+            delta = df["close"].diff()
             gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
             rs = gain / loss
             df["rsi"] = 100 - (100 / (1+rs))
 
             rsi_min = float(df["rsi"].iloc[-20:-1].min())
-            price_min = float(df["Close"].iloc[-20:-1].min())
+            price_min = float(df["close"].iloc[-20:-1].min())
             curr_rsi = float(df["rsi"].iloc[-1])
-            
             has_rsi_divergence = bool((curr_rsi > rsi_min) and (ltp <= price_min))
 
-            # --- STEP 4: RS vs INDEX (THE FIX) ---
-            # Safely extract rs_rating whether it's a number, a Series, or an array
+            # THE SERIES FIX (Restored)
             rs_raw = funda.get("rs_rating", 0)
             if isinstance(rs_raw, pd.Series):
                 rs_val = float(rs_raw.iloc[-1]) if not rs_raw.empty else 0.0
@@ -62,17 +39,13 @@ class Strategy:
                 rs_val = float(rs_raw) if rs_raw else 0.0
                 
             is_strong_rs = bool(rs_val > 70)
-
-            # --- STEP 5: VCP / TIGHTNESS ---
-            std20 = float(df["Close"].iloc[-20:].std())
+            std20 = float(df["close"].iloc[-20:].std())
             is_compressing = bool((std20 / ltp) < 0.02)  
 
-            # --- STEP 6: VWAP RECLAIM ---
-            vwap_20 = (df["Close"] * df["Volume"]).rolling(20).sum() / df["Volume"].rolling(20).sum()
+            vwap_20 = (df["close"] * df["volume"]).rolling(20).sum() / df["volume"].rolling(20).sum()
             curr_vwap = float(vwap_20.iloc[-1])
             is_vwap_reclaim = bool(ltp > curr_vwap)
 
-            # --- FINAL SCORING ---
             score = 0
             if ema_trend: score += 30
             if is_strong_rs: score += 20
@@ -81,10 +54,10 @@ class Strategy:
             if has_rsi_divergence: score += 15
 
             if score >= 65:  
-                recent_high = float(df["High"].iloc[-5:].max())
+                recent_high = float(df["high"].iloc[-5:].max())
                 entry_price = round(max(ltp * 1.005, recent_high), 2)
-                atr_val = float((df["High"] - df["Low"]).iloc[-14:].mean())
-                sl_price = round(max(float(df["Low"].iloc[-10:].min()), ltp - (1.5 * atr_val)), 2)
+                atr_val = float((df["high"] - df["low"]).iloc[-14:].mean())
+                sl_price = round(max(float(df["low"].iloc[-10:].min()), ltp - (1.5 * atr_val)), 2)
 
                 return {
                     "signal": True,
@@ -98,8 +71,7 @@ class Strategy:
                         "SL": sl_price,
                     },
                 }
-
-        except Exception as e:
+        except Exception:
             pass
 
         return {"signal": False}
