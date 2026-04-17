@@ -92,7 +92,7 @@ def ingest_bhavcopies(csv_folder, db_path=None):
                 ]
             ].values.tolist()
             cursor.executemany(
-                "INSERT OR IGNORE INTO technical_data (symbol, date, open, high, low, close, volume, delivery, delivery_ratio) VALUES (?,?,?,?,?,?,?,?,?)",
+                "INSERT OR REPLACE INTO technical_data (symbol, date, open, high, low, close, volume, delivery, delivery_ratio) VALUES (?,?,?,?,?,?,?,?,?)",
                 records,
             )
             stats["inserted"] += cursor.rowcount

@@ -866,6 +866,7 @@ class DataFetcher:
 
                 if stream["format"] == "csv_direct":
                     url = stream["url"].format(ds=ds)
+                    self.session.get("https://www.nseindia.com", headers=headers)
                     r = self.session.get(url, headers=headers)
                     if r and r.status_code == 200:
                         data_text = r.text
