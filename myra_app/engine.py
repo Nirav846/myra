@@ -207,9 +207,13 @@ def _worker_task(payload):
             pass
 
         # SMC-2: Real-Time Structural Flow (SMC v2.0)
-        df_lower = df.rename(columns=lambda x: x.lower())
-        fvg_signals = SMCManager.calculate_fvg(df_lower)
-        bos_signals, choch_signals = SMCManager.calculate_market_structure(df_lower)
+        # Fix: We select only the original columns to avoid "Double Column" ambiguity
+        base_cols = ["Open", "High", "Low", "Close", "Volume"]
+        df_smc = df[base_cols].copy()
+        df_smc.columns = [c.lower() for c in df_smc.columns]
+        
+        fvg_signals = SMCManager.calculate_fvg(df_smc)
+        bos_signals, choch_signals = SMCManager.calculate_market_structure(df_smc)
 
         # Update funda with the latest structural footprints
         funda["fvg"] = fvg_signals.iloc[-1] if not fvg_signals.empty else 0
@@ -217,23 +221,11 @@ def _worker_task(payload):
         funda["choch"] = choch_signals.iloc[-1] if not choch_signals.empty else 0
 
         # SMC-2: Fair Value Gap (FVG) Buy Zone
-        fvg_zone = SMCManager.get_fvg_buy_zone(df)
+        fvg_zone = SMCManager.get_fvg_buy_zone(df) # Uses original df
         fvg_mid = fvg_zone["mid"] if fvg_zone else None
 
         funda["fvg_zone"] = fvg_zone
         funda["fvg_active"] = 1 if fvg_zone else 0
-        funda["active_sid"] = strategy_name
-
-        # 1. CLASS-BASED STRATEGY SUPPORT
-        if hasattr(_worker_strategy, "Strategy"):
-            strat_instance = _worker_strategy.Strategy()
-            res = strat_instance.run(df, funda)
-        # 2. PRIMITIVE SCANNER SUPPORT (Now with OR logic)
-        elif hasattr(_worker_strategy, "run_scanner"):
-            sid = funda.get("active_sid")
-            if not sid:
-                return None
-
             passed = False
             if "|" in sid:
                 sids = sid.split("|")
