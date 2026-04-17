@@ -19,25 +19,29 @@ def run(df: pd.DataFrame, funda: dict) -> dict:
         ltp = df["Close"].iloc[-1]
         prev_close = df["Close"].iloc[-2]
 
-        # ==========================================
-        # TEST MODE: Lowered thresholds to catch normal volume
-        # We only look for a tiny 1.1x bump instead of a massive 1.5x spike
-        # ==========================================
+        # 1. THE TRADITIONAL SPIKE (Green Day + Spike)
         is_green_spike = (
-            latest_del > (latest_avg * 1.1) and latest_del > 10 and ltp >= prev_close
+            latest_del > (latest_avg * 1.5) and latest_del > 30 and ltp >= prev_close
         )
 
-        if is_green_spike:
+        # 2. THE ABSORPTION SPIKE (Red Day + Spike at Bottom)
+        # If at bottom, we only need 1.8x spike to flag institutional interest.
+        absorp_thresh = 1.8 if is_at_bottom else 2.5
+        is_red_absorption = (
+            latest_del > (latest_avg * absorp_thresh) and latest_del > 35
+        )
+
+        if is_green_spike or is_red_absorption:
+            status = "GREEN SPIKE" if is_green_spike else "BOTTOM ABSORPTION"
             return {
                 "signal": True,
                 "metrics": {
                     "LTP": round(ltp, 2),
-                    "Spike": "TEST MODE SPIKE",
+                    "Spike": status,
                     "Del%": f"{round(latest_del, 1)}%",
                     "AvgDel%": f"{round(latest_avg, 1)}%",
                 },
             }
-
     except Exception:
         pass
     return {"signal": False}
