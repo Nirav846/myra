@@ -16,41 +16,34 @@ class LibrarianIntelligenceMixin:
     def precompute_indicators(self, as_of_date=None):
         """
         Unified API for retrieving indicators via Parquet Lake.
-        Fix: Removed local variable shadowing for 'pd'.
+        Fixed: Removed list comprehension to solve 'pd' scoping issues permanently.
         """
         active_symbols = self.get_active_universe()
         if not active_symbols:
             return pd.DataFrame()
 
-        results = []
-        for symbol_name in active_symbols:
+        results_list = []
+        for sym in active_symbols:
             try:
                 # Load from Parquet Lake
-                df_node = self.loader.indicators.load_indicators("precomputed", symbol_name)
+                df_node = self.loader.indicators.load_indicators("precomputed", sym)
                 
                 if df_node is not None and not df_node.empty:
                     if as_of_date:
-                        # Filter for historical backtesting
                         df_node = df_node[df_node.index <= as_of_date]
                     
                     if not df_node.empty:
-                        # Grab the latest state for the Turbo DataFrame
-                        results.append(df_node.iloc[[-1]])
+                        # Append the last row (latest state)
+                        results_list.append(df_node.iloc[[-1]])
             except Exception as e:
-                logger.debug(f"Indicator load failed for {symbol_name}: {e}")
+                logger.debug(f"Failed to load indicator for {sym}: {e}")
                 continue
 
-        if not results:
+        if not results_list:
             return pd.DataFrame()
 
-        # Fix for FutureWarning: Ensure no empty DFs are passed to concat
-        valid_results = [r for r in results if not r.empty]
-        if not valid_results:
-            return pd.DataFrame()
-
-        import pandas as pd  # <--- ADD THIS EXACTLY HERE
-        final_df = pd.concat(valid_results, axis=0, ignore_index=False)
-        return final_df.reset_index()
+        # Concatenate valid DataFrames
+        return pd.concat(results_list, axis=0).reset_index()
 
     def update_indicator_history(self):
         """
