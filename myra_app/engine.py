@@ -160,13 +160,13 @@ def _worker_task(payload):
             for variant in delivery_variants:
                 df[variant] = df[actual_col]
 
-        # --- REFRESHED CASE-SAFE STAGE CALCULATION ---
+        # Calculate Stage (Case-Safe & Float-Hardened)
         sma150_col = next((c for c in ["sma150", "SMA150"] if c in df.columns), None)
         sma50_col = next((c for c in ["sma50", "SMA50"] if c in df.columns), None)
         
-        sma150 = df[sma150_col].iloc[-1] if sma150_col else 0
-        sma50 = df[sma50_col].iloc[-1] if sma50_col else 0
-        close_price = df["Close"].iloc[-1]
+        sma150 = float(df[sma150_col].iloc[-1]) if sma150_col else 0
+        sma50 = float(df[sma50_col].iloc[-1]) if sma50_col else 0
+        close_price = float(df["Close"].iloc[-1])
         
         stage = "Stage 4"
         if sma150 > 0:
@@ -191,7 +191,7 @@ def _worker_task(payload):
         except Exception:
             pass
 
-        # --- SMC FIX: ISOLATED COLUMNS ---
+        # --- SMC FIX: ISOLATED COLUMNS (Stops Truth Value Ambiguity) ---
         base_cols = ["Open", "High", "Low", "Close", "Volume"]
         df_smc = df[base_cols].copy()
         df_smc.columns = [c.lower() for c in df_smc.columns]
@@ -327,7 +327,9 @@ class Engine:
             if is_primitive:
                 strat_mod = importlib.import_module("myra_app.scanners.primitives")
             else:
-                safe_name = str(strategy_name).lower().replace(" ", "_").replace("-", "_").split("(")[0].strip()
+                # Splits BEFORE replacing spaces to avoid trailing underscores
+                clean_base = str(strategy_name).split("(")[0].strip()
+                safe_name = clean_base.lower().replace(" ", "_").replace("-", "_")
                 strat_mod = importlib.import_module(f"myra_app.strategies.{safe_name}")
 
             max_idx = len(df) - 10
