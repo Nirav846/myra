@@ -205,12 +205,7 @@ def _worker_task(payload):
 
         funda["fvg_zone"] = fvg_zone
         funda["fvg_active"] = 1 if fvg_zone else 0
-        funda["active_sid"] = (
-            strategy_name
-            if strategy_name.isdigit()
-            or ("|" in strategy_name)
-            else None
-        )
+        funda["active_sid"] = strategy_name
 
         # 1. CLASS-BASED STRATEGY SUPPORT
         if hasattr(_worker_strategy, "Strategy"):
