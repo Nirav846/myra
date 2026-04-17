@@ -95,7 +95,7 @@ def init_worker(strategy_name, db_path=None):
 
     # Separation: 101+ or piped primitives are Scanners, others are Strategies
     is_primitive = False
-    if strategy_name.isdigit() and int(strategy_name) >= 101:
+    if strategy_name.isdigit():
         is_primitive = True
     elif "|" in strategy_name:
         is_primitive = True  # e.g. 109|110|111
@@ -199,7 +199,7 @@ def _worker_task(payload):
         funda["fvg_active"] = 1 if fvg_zone else 0
         funda["active_sid"] = (
             strategy_name
-            if (strategy_name.isdigit() and int(strategy_name) >= 101)
+            if strategy_name.isdigit()
             or ("|" in strategy_name)
             else None
         )
@@ -335,9 +335,7 @@ class Engine:
         try:
             success = 0
             count = 0
-            is_primitive = (strategy_name.isdigit() and int(strategy_name) >= 101) or (
-                "|" in strategy_name
-            )
+            is_primitive = strategy_name.isdigit() or ("|" in strategy_name)
             if is_primitive:
                 strat_mod = importlib.import_module("myra_app.scanners.primitives")
             else:
