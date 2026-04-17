@@ -161,28 +161,45 @@ def _worker_task(payload):
         if df is None or df.empty:
             return None
 
-        # Calculate Stage
-        sma150 = df["sma150"].iloc[-1] if "sma150" in df.columns else 0
-        sma50 = df["sma50"].iloc[-1] if "sma50" in df.columns else 0
+        # --- UNIVERSAL CASE-INSENSITIVE COMPATIBILITY LAYER ---
+        # 1. Create lowercase copies of the primary OHLCV columns
+        for col in ["Open", "High", "Low", "Close", "Volume"]:
+            if col in df.columns:
+                df[col.lower()] = df[col]
+        
+        # 2. Map delivery column variations to ensure all strategies see them
+        delivery_variants = ["DeliveryPct", "delivery_pct", "delivery_percent"]
+        actual_col = next((c for c in delivery_variants if c in df.columns), None)
+        if actual_col:
+            for variant in delivery_variants:
+                df[variant] = df[actual_col]
+
+        # --- REFRESHED CASE-SAFE STAGE CALCULATION ---
+        # Checks for both sma150/SMA150 and sma50/SMA50
+        sma150_col = next((c for c in ["sma150", "SMA150"] if c in df.columns), None)
+        sma50_col = next((c for c in ["sma50", "SMA50"] if c in df.columns), None)
+        
+        sma150 = df[sma150_col].iloc[-1] if sma150_col else 0
+        sma50 = df[sma50_col].iloc[-1] if sma50_col else 0
         close_price = df["Close"].iloc[-1]
+        
         stage = "Stage 4"
-        if sma150 and sma150 > 0:
+        if sma150 > 0:
             if close_price > sma150:
                 stage = "Stage 2" if sma50 > sma150 else "Stage 1"
             else:
                 stage = "Stage 4" if sma50 < sma150 else "Stage 3"
+        
         funda["Stage"] = stage
         funda["symbol"] = symbol
 
         # Pattern detection (PKScreener Superpower)
         from myra_app.scanners.patterns import PatternScout
-
         pattern = PatternScout().get_latest_pattern(df)
 
         # 10x Factor Scoring (New v4.0 Alpha)
         try:
             from myra_app.factor_engine import FactorEngine
-
             fe = FactorEngine()
             factor_scores = fe.score_symbol(df, funda)
             funda.update(factor_scores)
