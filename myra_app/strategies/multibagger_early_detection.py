@@ -29,14 +29,18 @@ class Strategy:
             curr_rsi = float(df["rsi"].iloc[-1])
             has_rsi_divergence = bool((curr_rsi > rsi_min) and (ltp <= price_min))
 
-            # THE SERIES FIX (Restored)
+            # --- THE DIRTY DATA FIX ---
             rs_raw = funda.get("rs_rating", 0)
             if isinstance(rs_raw, pd.Series):
                 rs_val = float(rs_raw.iloc[-1]) if not rs_raw.empty else 0.0
             elif isinstance(rs_raw, (np.ndarray, list)):
                 rs_val = float(rs_raw[-1]) if len(rs_raw) > 0 else 0.0
             else:
-                rs_val = float(rs_raw) if rs_raw else 0.0
+                # Safely catch APIs that return "N/A" or "-" 
+                try:
+                    rs_val = float(rs_raw) if rs_raw else 0.0
+                except ValueError:
+                    rs_val = 0.0
                 
             is_strong_rs = bool(rs_val > 70)
             std20 = float(df["close"].iloc[-20:].std())
@@ -53,7 +57,8 @@ class Strategy:
             if is_compressing: score += 15
             if has_rsi_divergence: score += 15
 
-            if score >= 65:  
+            # --- DIAGNOSTIC OVERRIDE (Forced Output) ---
+            if score >= 0:  
                 recent_high = float(df["high"].iloc[-5:].max())
                 entry_price = round(max(ltp * 1.005, recent_high), 2)
                 atr_val = float((df["high"] - df["low"]).iloc[-14:].mean())
@@ -71,7 +76,9 @@ class Strategy:
                         "SL": sl_price,
                     },
                 }
-        except Exception:
+        except Exception as e:
+            # --- UN-GAGGED ERROR REPORTING ---
+            print(f"\n[STRATEGY CRASH] {funda.get('symbol', 'Unknown')} failed inside logic: {e}")
             pass
 
         return {"signal": False}
