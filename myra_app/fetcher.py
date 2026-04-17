@@ -869,7 +869,7 @@ class DataFetcher:
                     self.session.get("https://www.nseindia.com", headers=headers)
                     r = self.session.get(url, headers=headers)
                     if r and r.status_code == 404:
-                        logger.error("File not yet published by NSE")
+                        logger.warning("File not yet published by NSE")
                         continue
                     if r and r.status_code == 200:
                         data_text = r.text
@@ -885,7 +885,7 @@ class DataFetcher:
                     r_d = self.session.get(d_url, headers=headers)
 
                     if (r_p and r_p.status_code == 404) or (r_d and r_d.status_code == 404):
-                        logger.error("File not yet published by NSE")
+                        logger.warning("File not yet published by NSE")
                         continue
 
                     if (
