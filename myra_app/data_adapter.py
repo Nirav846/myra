@@ -39,6 +39,26 @@ class DataAdapter:
         conn.execute("PRAGMA journal_mode=WAL;")
         return conn
 
+    def get_lookback_for_scanner(self, strategy_name: str) -> int:
+        """
+        Determines the required lookback period based on the scanner type.
+        """
+        if not strategy_name:
+            return 252
+
+        s_name = str(strategy_name)
+
+        # Multibagger / Long-term setups need deep history
+        if s_name == "35" or "Multibagger" in s_name:
+            return 756  # 3 years
+        
+        # RS Scanners need at least a year
+        if s_name in ["3", "28", "12"] or "RS" in s_name:
+            return 300
+
+        # Default for short-term setups (Delivery Spikes, Breakouts, etc.)
+        return 252  # 1 year
+
     def get_price_df(
         self, symbol: str, lookback_days: int = 252, as_of_date: str = None
     ) -> pd.DataFrame:
