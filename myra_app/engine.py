@@ -101,8 +101,10 @@ def init_worker(strategy_name, db_path=None):
     except Exception as e:
         print(f"[WORKER INIT ERROR] Adapter failed: {e}")
 
-    # 2. SANITIZE NAME ("Delivery Spikes" -> "delivery_spikes")
-    safe_name = str(strategy_name).lower().replace(" ", "_").replace("-", "_").split("(")[0].strip()
+    # 2. SANITIZE NAME (Robust version: handles "Multibagger Early Detection (Quant)")
+    # Splits first, THEN cleans, to avoid trailing underscores from spaces before brackets
+    clean_base = str(strategy_name).split("(")[0].strip()
+    safe_name = clean_base.lower().replace(" ", "_").replace("-", "_")
 
     # 3. ROUTE TO CORRECT MODULE (Removed the 101 restriction)
     is_primitive = False
