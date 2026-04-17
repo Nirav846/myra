@@ -102,6 +102,71 @@ class DataAdapter:
 
         return df.copy()
 
+    def get_technical_history(
+        self, symbol: str, days: int = 150, as_of_date: str = None
+    ) -> pd.DataFrame:
+        """
+        Fetches OHLCV + Delivery data from Technical SQLite DB, preserving lowercase schema.
+        Properly handles string dates to datetime and sorts them.
+        """
+        symbol_clean = symbol.split(".")[0].upper()
+        fetch_limit = max(days, 200) + 20
+        cache_key = (f"{symbol_clean}_tech", days, as_of_date)
+
+        with self._lock:
+            if cache_key in self._price_cache:
+                return self._price_cache[cache_key].copy()
+
+        from .librarian_core import LibrarianCore
+
+        path = os.path.join(self.db_dir, LibrarianCore.DB_MAP["technical"])
+        if not os.path.exists(path):
+            return pd.DataFrame()
+
+        conn = sqlite3.connect(path)
+        try:
+            where = "WHERE symbol = ?"
+            params = [symbol_clean]
+            if as_of_date:
+                where += " AND date <= ?"
+                params.append(as_of_date)
+
+            sql = f"SELECT * FROM technical_data {where} LIMIT {fetch_limit}"
+            df = pd.read_sql(sql, conn, params=params)
+
+            if not df.empty:
+                # Proper conversion logic for date parsing and sorting
+                df["date"] = pd.to_datetime(df["date"], format="%d-%b-%Y", errors="coerce")
+
+                # Fallback if the format wasn't mixed (e.g. ISO)
+                if df["date"].isna().all():
+                     df["date"] = pd.to_datetime(pd.read_sql(sql, conn, params=params)["date"])
+
+                df = df.dropna(subset=["date"]).sort_values("date")
+                df.set_index("date", inplace=True)
+
+        except Exception as e:
+            logging.error(f"Error fetching technical history for {symbol_clean}: {e}")
+            df = pd.DataFrame()
+        finally:
+            conn.close()
+
+        if df.empty:
+            return df
+
+        df = self.compute_common_indicators(df)
+
+        with self._lock:
+            if len(self._price_cache) > 500:
+                try:
+                    self._price_cache.pop(next(iter(self._price_cache)))
+                except Exception:
+                    pass
+            self._price_cache[cache_key] = df
+
+        return df.copy()
+
+
     def get_latest_funda(self, symbol: str, df: pd.DataFrame = None) -> Dict[str, Any]:
         """
         Fetches precomputed fundamentals from valuation.db and indicators from Parquet Lake.
