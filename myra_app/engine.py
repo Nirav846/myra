@@ -94,7 +94,6 @@ def init_worker(strategy_name, db_path=None):
     warnings.filterwarnings("ignore", category=UserWarning)
 
     # 1. INITIALIZE ADAPTER FIRST
-    # If we don't do this first, an import error will kill the whole worker
     try:
         from myra_app.librarian import Librarian
         lib = Librarian(read_only=True, db_path=db_path)
@@ -103,10 +102,9 @@ def init_worker(strategy_name, db_path=None):
         print(f"[WORKER INIT ERROR] Adapter failed: {e}")
 
     # 2. SANITIZE NAME ("Delivery Spikes" -> "delivery_spikes")
-    # This ensures it correctly targets your delivery_spikes.py file
     safe_name = str(strategy_name).lower().replace(" ", "_").replace("-", "_").split("(")[0].strip()
 
-    # 3. ROUTE TO CORRECT MODULE
+    # 3. ROUTE TO CORRECT MODULE (Removed the 101 restriction)
     is_primitive = False
     if str(strategy_name).isdigit() or "|" in str(strategy_name):
         is_primitive = True
@@ -116,10 +114,8 @@ def init_worker(strategy_name, db_path=None):
             _worker_strategy = importlib.import_module("myra_app.scanners.primitives")
         else:
             try:
-                # Attempt to load your custom file (e.g., myra_app.strategies.delivery_spikes)
                 _worker_strategy = importlib.import_module(f"myra_app.strategies.{safe_name}")
             except ModuleNotFoundError:
-                # Fallback just in case
                 _worker_strategy = importlib.import_module("myra_app.scanners.primitives")
     except Exception:
         pass
@@ -129,30 +125,20 @@ def _worker_task(payload):
     global _worker_strategy, _worker_adapter
     symbol, strategy_name, as_of_date, funda = payload
 
-    # Ensure worker is initialized (Fallback for non-Pool environments)
+    # Ensure worker is initialized
     if _worker_adapter is None:
         init_worker(strategy_name)
     if _worker_adapter is None:
         return None
 
-    # --- TRILOGY ERA v3.2: Metadata-Driven Filtering ---
-    # This check has been moved outside the worker loop to prevent N+1 DB queries.
     noise_keywords = [
-        "BEES",
-        "GOLD",
-        "SILVER",
-        "LIQUID",
-        "ETF",
-        "IETF",
-        "SDL",
-        "GSEC",
-        "CASH",
+        "BEES", "GOLD", "SILVER", "LIQUID", "ETF", 
+        "IETF", "SDL", "GSEC", "CASH"
     ]
     if any(k in symbol.upper() for k in noise_keywords):
         return None
 
     try:
-        # 10x Optimization: Dynamic Loading from Worker (On-Demand)
         lookback = _worker_adapter.get_lookback_for_scanner(strategy_name)
         df = _worker_adapter.get_price_df(
             symbol, lookback_days=lookback, as_of_date=as_of_date
@@ -162,12 +148,10 @@ def _worker_task(payload):
             return None
 
         # --- UNIVERSAL CASE-INSENSITIVE COMPATIBILITY LAYER ---
-        # 1. Create lowercase copies of the primary OHLCV columns
         for col in ["Open", "High", "Low", "Close", "Volume"]:
             if col in df.columns:
                 df[col.lower()] = df[col]
         
-        # 2. Map delivery column variations to ensure all strategies see them
         delivery_variants = ["DeliveryPct", "delivery_pct", "delivery_percent"]
         actual_col = next((c for c in delivery_variants if c in df.columns), None)
         if actual_col:
@@ -175,7 +159,6 @@ def _worker_task(payload):
                 df[variant] = df[actual_col]
 
         # --- REFRESHED CASE-SAFE STAGE CALCULATION ---
-        # Checks for both sma150/SMA150 and sma50/SMA50
         sma150_col = next((c for c in ["sma150", "SMA150"] if c in df.columns), None)
         sma50_col = next((c for c in ["sma50", "SMA50"] if c in df.columns), None)
         
@@ -193,11 +176,11 @@ def _worker_task(payload):
         funda["Stage"] = stage
         funda["symbol"] = symbol
 
-        # Pattern detection (PKScreener Superpower)
+        # Pattern detection
         from myra_app.scanners.patterns import PatternScout
         pattern = PatternScout().get_latest_pattern(df)
 
-        # 10x Factor Scoring (New v4.0 Alpha)
+        # Factor Scoring
         try:
             from myra_app.factor_engine import FactorEngine
             fe = FactorEngine()
@@ -206,8 +189,7 @@ def _worker_task(payload):
         except Exception:
             pass
 
-        # SMC-2: Real-Time Structural Flow (SMC v2.0)
-        # Fix: We select only the original columns to avoid "Double Column" ambiguity
+        # --- SMC FIX: ISOLATED COLUMNS ---
         base_cols = ["Open", "High", "Low", "Close", "Volume"]
         df_smc = df[base_cols].copy()
         df_smc.columns = [c.lower() for c in df_smc.columns]
@@ -215,27 +197,37 @@ def _worker_task(payload):
         fvg_signals = SMCManager.calculate_fvg(df_smc)
         bos_signals, choch_signals = SMCManager.calculate_market_structure(df_smc)
 
-        # Update funda with the latest structural footprints
         funda["fvg"] = fvg_signals.iloc[-1] if not fvg_signals.empty else 0
         funda["bos"] = bos_signals.iloc[-1] if not bos_signals.empty else 0
         funda["choch"] = choch_signals.iloc[-1] if not choch_signals.empty else 0
 
-        # SMC-2: Fair Value Gap (FVG) Buy Zone
-        fvg_zone = SMCManager.get_fvg_buy_zone(df) # Uses original df
+        fvg_zone = SMCManager.get_fvg_buy_zone(df)
         fvg_mid = fvg_zone["mid"] if fvg_zone else None
 
         funda["fvg_zone"] = fvg_zone
         funda["fvg_active"] = 1 if fvg_zone else 0
+        
+        # Accept string strategy names properly
+        funda["active_sid"] = strategy_name
+
+        # 1. CLASS-BASED STRATEGY SUPPORT
+        if hasattr(_worker_strategy, "Strategy"):
+            strat_instance = _worker_strategy.Strategy()
+            res = strat_instance.run(df, funda)
+            
+        # 2. PRIMITIVE SCANNER SUPPORT
+        elif hasattr(_worker_strategy, "run_scanner"):
+            sid = funda.get("active_sid")
+            if not sid:
+                return None
+
             passed = False
-            if "|" in sid:
-                sids = sid.split("|")
-                if any(
-                    _worker_strategy.run_scanner(df, s.strip(), funda=funda)
-                    for s in sids
-                ):
+            if "|" in str(sid):
+                sids = str(sid).split("|")
+                if any(_worker_strategy.run_scanner(df, s.strip(), funda=funda) for s in sids):
                     passed = True
             else:
-                if _worker_strategy.run_scanner(df, sid, funda=funda):
+                if _worker_strategy.run_scanner(df, str(sid), funda=funda):
                     passed = True
 
             if passed:
@@ -246,9 +238,7 @@ def _worker_task(payload):
                     "Pattern": pattern,
                     "SL": funda.get("SL", 0),
                     "Entry": fvg_mid if fvg_mid else funda.get("LTP", 0),
-                    "FVG_Zone": f"{round(fvg_zone['bottom'], 2)} - {round(fvg_zone['top'], 2)}"
-                    if fvg_zone
-                    else "None",
+                    "FVG_Zone": f"{round(fvg_zone['bottom'], 2)} - {round(fvg_zone['top'], 2)}" if fvg_zone else "None",
                     "Risk_Per": funda.get("Risk_Per", 0),
                     "Closing_Vibe": funda.get("Closing_Vibe", "-"),
                     "Consensus": funda.get("Consensus", 0),
@@ -258,30 +248,19 @@ def _worker_task(payload):
                     "D-POC": round(funda.get("d_poc", 0), 2),
                     "POC_Dist": f"{round(((df['Close'].iloc[-1] - funda.get('d_poc', 0)) / (funda.get('d_poc', 1) if funda.get('d_poc', 0) > 0 else 1) * 100), 2)}%",
                     "Absorption": f"{round(funda.get('Absorp_Ratio', 0) * 100)}%",
-                    "Tightness": f"{round(funda.get('std20', 0) / df['Close'].iloc[-1] * 100, 2)}%"
-                    if df["Close"].iloc[-1] > 0
-                    else "0%",
+                    "Tightness": f"{round(funda.get('std20', 0) / df['Close'].iloc[-1] * 100, 2)}%" if df["Close"].iloc[-1] > 0 else "0%",
                     "Deliv_Pct": f"{round(funda.get('delivery_percent', 0))}%",
-                    "Confluence": "High"
-                    if funda.get("Consensus", 0) >= 4
-                    else "Moderate"
-                    if funda.get("Consensus", 0) >= 2
-                    else "Low",
+                    "Confluence": "High" if funda.get("Consensus", 0) >= 4 else "Moderate" if funda.get("Consensus", 0) >= 2 else "Low",
                     **funda,
                 }
 
                 res_payload["Money_Flow"] = f"₹{round(funda.get('money_flow_cr', 0))}Cr"
 
-                # Dynamic Star Logic
                 stars = 1
-                if res_payload["Weekly_Div"] == "YES":
-                    stars += 1
-                if "3Y" in res_payload["Support"]:
-                    stars += 1
-                if funda.get("RDV", 0) > 1.5 and funda.get("VIX_Stable") == True:
-                    stars += 1
-                if funda.get("smart_money_score", 0) > 0.7:
-                    stars += 1
+                if res_payload.get("Weekly_Div", "NO") == "YES": stars += 1
+                if "3Y" in res_payload.get("Support", ""): stars += 1
+                if funda.get("RDV", 0) > 1.5 and funda.get("VIX_Stable") == True: stars += 1
+                if funda.get("smart_money_score", 0) > 0.7: stars += 1
                 res_payload["Stars"] = "*" * int(min(5, stars))
 
                 return res_payload
@@ -289,20 +268,19 @@ def _worker_task(payload):
         else:
             res = _worker_strategy.run(df, funda)
 
+        # FINAL RETURN BLOCK
         if res and res.get("signal"):
             fallback_entry = round(df["Close"].iloc[-1] * 1.005, 2)
             entry_price = fvg_mid if fvg_mid else fallback_entry
 
             res_dict = {
                 "Stock": symbol,
-                "Stage": funda.get("Stage", "-"),
+                "Stage": stage,
                 "LTP": round(df["Close"].iloc[-1], 2),
                 "Pattern": pattern,
                 "SL": funda.get("SL", 0),
                 "Entry": entry_price,
-                "FVG_Zone": f"{round(fvg_zone['bottom'], 2)} - {round(fvg_zone['top'], 2)}"
-                if fvg_zone
-                else "None",
+                "FVG_Zone": f"{round(fvg_zone['bottom'], 2)} - {round(fvg_zone['top'], 2)}" if fvg_zone else "None",
                 "Risk_Per": funda.get("Risk_Per", 0),
                 "Closing_Vibe": funda.get("Closing_Vibe", "-"),
                 "Consensus": funda.get("Consensus", 0),
@@ -313,13 +291,12 @@ def _worker_task(payload):
             res_dict["Money_Flow"] = f"₹{round(funda.get('money_flow_cr', 0))}Cr"
             return res_dict
 
-        # SAFE FALLBACK: If the stock doesn't trigger the signal, silently skip it.
         return None
 
     except Exception as e:
         import traceback
         print(f"\n[WORKER CRASH] Symbol {payload[0]} failed: {str(e)}")
-        traceback.print_exc()
+        # traceback.print_exc()
         return None
 
 
@@ -330,10 +307,6 @@ class Engine:
     def calculate_accuracy(
         self, symbol: str, strategy_name: str, df: pd.DataFrame = None, funda: dict = {}
     ) -> str:
-        """
-        PKScreener Superpower: Historical Success Rate.
-        Calculates how many times this strategy yielded >3% in the last 10 occurrences.
-        """
         if df is None or df.empty:
             try:
                 adapter = DataAdapter(librarian=self.librarian)
@@ -347,13 +320,14 @@ class Engine:
         try:
             success = 0
             count = 0
-            is_primitive = strategy_name.isdigit() or ("|" in strategy_name)
+            # Removed the 101 restriction here too
+            is_primitive = str(strategy_name).isdigit() or ("|" in str(strategy_name))
+            
             if is_primitive:
                 strat_mod = importlib.import_module("myra_app.scanners.primitives")
             else:
-                strat_mod = importlib.import_module(
-                    f"myra_app.strategies.{strategy_name}"
-                )
+                safe_name = str(strategy_name).lower().replace(" ", "_").replace("-", "_").split("(")[0].strip()
+                strat_mod = importlib.import_module(f"myra_app.strategies.{safe_name}")
 
             max_idx = len(df) - 10
             for i in range(max_idx, max(20, max_idx - 60), -1):
@@ -363,15 +337,15 @@ class Engine:
                 hist_df = df.iloc[:i]
                 trigger = False
                 if is_primitive:
-                    if "|" in strategy_name:
-                        sids = strategy_name.split("|")
+                    if "|" in str(strategy_name):
+                        sids = str(strategy_name).split("|")
                         trigger = any(
                             strat_mod.run_scanner(hist_df, s.strip(), funda=funda)
                             for s in sids
                         )
                     else:
                         trigger = strat_mod.run_scanner(
-                            hist_df, strategy_name, funda=funda
+                            hist_df, str(strategy_name), funda=funda
                         )
                 elif hasattr(strat_mod, "run"):
                     res = strat_mod.run(hist_df, funda)
@@ -395,7 +369,6 @@ class Engine:
             return "N/A"
 
     def _is_vix_stable(self, lib) -> bool:
-        """Dynamic VIX Sentiment Check"""
         try:
             if not lib._meta_conn:
                 return True
@@ -430,22 +403,16 @@ class Engine:
         if not lib.conn:
             lib.connect()
 
-        # 0. HOLIDAY SHORT-CIRCUIT (Fix 21)
         from myra_core.utils.date_utils import to_date
-
         target_date = to_date(as_of_date) if as_of_date else date.today()
         from myra_app.fetcher import DataFetcher
-
         fetcher = DataFetcher()
 
         if fetcher._is_holiday(target_date):
             if not silent:
-                print(
-                    f"[MYRA] {target_date} is a Market Holiday. Attempting Snapshot..."
-                )
+                print(f"[MYRA] {target_date} is a Market Holiday. Attempting Snapshot...")
             try:
                 from myra_app.results_manager import ResultsManager
-
                 rm = ResultsManager()
                 snapshot = rm.load_last_snapshot(strategy_name)
                 if snapshot:
@@ -458,9 +425,7 @@ class Engine:
             if not as_of_date:
                 last_trading_day = lib.get_expected_trading_day(datetime.now())
                 if not silent:
-                    print(
-                        f"[MYRA] No Snapshot found. Targeting last trading day: {last_trading_day}"
-                    )
+                    print(f"[MYRA] No Snapshot found. Targeting last trading day: {last_trading_day}")
                 as_of_date = last_trading_day.date().isoformat() if hasattr(last_trading_day, 'date') else last_trading_day.isoformat()
             else:
                 return [], {"status": "HOLIDAY_NO_DATA"}
@@ -473,14 +438,11 @@ class Engine:
             cache_df = lib.precompute_indicators(as_of_date=as_of_date)
             if cache_df.empty:
                 if not silent:
-                    print(
-                        "[!] No precomputed indicators found. Database might be stale."
-                    )
+                    print("[!] No precomputed indicators found. Database might be stale.")
                 return [], {}
 
             regime = lib.get_market_regime()
             from myra_app.strategies.base_strategy import MarketMoodHelper
-
             mood = MarketMoodHelper().get_market_mood(lib)
             vix_stable = self._is_vix_stable(lib)
 
@@ -565,20 +527,13 @@ class Engine:
                     s, {"buy_latest": 0, "total_60d": 0, "avg_buy_60d": 0, "accel": 0}
                 )
 
-                # Sanitize all cache retrievals to handle None/NaN values (Fix: NoneType comparison error)
                 buy_val = deal_map.get(s, 0) or 0
                 mcap = f.get("market_cap", 0) if f.get("market_cap") is not None else 0
                 intensity = round((buy_val / mcap * 100), 2) if mcap > 0 else 0
 
-                rel_spread = (
-                    c.get("rel_spread", 1.0) if c.get("rel_spread") is not None else 1.0
-                )
+                rel_spread = c.get("rel_spread", 1.0) if c.get("rel_spread") is not None else 1.0
                 rel_vol = c.get("rel_vol", 1.0) if c.get("rel_vol") is not None else 1.0
-                del_pct = (
-                    c.get("delivery_percent", 0)
-                    if c.get("delivery_percent") is not None
-                    else 0
-                )
+                del_pct = c.get("delivery_percent", 0) if c.get("delivery_percent") is not None else 0
                 vsa_intensity = round((rel_spread / max(0.1, rel_vol)) * del_pct, 2)
 
                 sma150 = c.get("sma150", 0) if c.get("sma150") is not None else 0
@@ -606,11 +561,7 @@ class Engine:
                 if (high_price - low_price) != 0:
                     cl_vibe = (
                         "Accumulation"
-                        if (
-                            (2 * close_price - high_price - low_price)
-                            / (high_price - low_price)
-                        )
-                        > 0
+                        if ((2 * close_price - high_price - low_price) / (high_price - low_price)) > 0
                         else "Distribution"
                     )
 
@@ -654,83 +605,43 @@ class Engine:
                     "low_1y": c.get("low_1y", 0) if c.get("low_1y") is not None else 0,
                     "low_2y": c.get("low_2y", 0) if c.get("low_2y") is not None else 0,
                     "low_3y": c.get("low_3y", 0) if c.get("low_3y") is not None else 0,
-                    "vol_sma50": c.get("vol_sma50", 1)
-                    if c.get("vol_sma50") is not None
-                    else 1,
-                    "deliv_sma50": c.get("deliv_sma50", 1)
-                    if c.get("deliv_sma50") is not None
-                    else 1,
-                    "AD_Flow": c.get("ad_flow", 0)
-                    if c.get("ad_flow") is not None
-                    else 0,
-                    "Absorp_Ratio": c.get("absorp_ratio", 0)
-                    if c.get("absorp_ratio") is not None
-                    else 0,
+                    "vol_sma50": c.get("vol_sma50", 1) if c.get("vol_sma50") is not None else 1,
+                    "deliv_sma50": c.get("deliv_sma50", 1) if c.get("deliv_sma50") is not None else 1,
+                    "AD_Flow": c.get("ad_flow", 0) if c.get("ad_flow") is not None else 0,
+                    "Absorp_Ratio": c.get("absorp_ratio", 0) if c.get("absorp_ratio") is not None else 0,
                     "sma200": c.get("sma200", 0) if c.get("sma200") is not None else 0,
                     "sma150": sma150,
                     "sma50": sma50,
-                    "high_2y": c.get("high_2y", 0)
-                    if c.get("high_2y") is not None
-                    else 0,
+                    "high_2y": c.get("high_2y", 0) if c.get("high_2y") is not None else 0,
                     "cpr_bc": c.get("cpr_bc", 0) if c.get("cpr_bc") is not None else 0,
                     "cpr_tc": c.get("cpr_tc", 0) if c.get("cpr_tc") is not None else 0,
-                    "keltner_upper": c.get("keltner_upper", 0)
-                    if c.get("keltner_upper") is not None
-                    else 0,
-                    "keltner_lower": c.get("keltner_lower", 0)
-                    if c.get("keltner_lower") is not None
-                    else 0,
+                    "keltner_upper": c.get("keltner_upper", 0) if c.get("keltner_upper") is not None else 0,
+                    "keltner_lower": c.get("keltner_lower", 0) if c.get("keltner_lower") is not None else 0,
                     "rel_spread": rel_spread,
                     "rel_vol": rel_vol,
-                    "closing_pos": c.get("closing_pos", 0.5)
-                    if c.get("closing_pos") is not None
-                    else 0.5,
+                    "closing_pos": c.get("closing_pos", 0.5) if c.get("closing_pos") is not None else 0.5,
                     "VSA_Intensity": vsa_intensity,
-                    "pct_above_ma50_60d": c.get("pct_above_ma50_60d", 0)
-                    if c.get("pct_above_ma50_60d") is not None
-                    else 0,
-                    "avg_volume_20d": c.get("avg_volume_20d", 0)
-                    if c.get("avg_volume_20d") is not None
-                    else 0,
-                    "avg_delivery_20d": c.get("avg_delivery_20d", 0)
-                    if c.get("avg_delivery_20d") is not None
-                    else 0,
-                    "delivery_qty": c.get("delivery_qty", 0)
-                    if c.get("delivery_qty") is not None
-                    else 0,
-                    "delivery_percent": c.get("delivery_percent", 0)
-                    if c.get("delivery_percent") is not None
-                    else 0,
+                    "pct_above_ma50_60d": c.get("pct_above_ma50_60d", 0) if c.get("pct_above_ma50_60d") is not None else 0,
+                    "avg_volume_20d": c.get("avg_volume_20d", 0) if c.get("avg_volume_20d") is not None else 0,
+                    "avg_delivery_20d": c.get("avg_delivery_20d", 0) if c.get("avg_delivery_20d") is not None else 0,
+                    "delivery_qty": c.get("delivery_qty", 0) if c.get("delivery_qty") is not None else 0,
+                    "delivery_percent": c.get("delivery_percent", 0) if c.get("delivery_percent") is not None else 0,
                     "RDV": c.get("rdv", 0) if c.get("rdv") is not None else 0,
                     "ATR14": c.get("atr14", 0) if c.get("atr14") is not None else 0,
                     "Squeeze": c.get("squeeze_flag", False),
-                    "smart_money_score": c.get("smart_money_score", 0)
-                    if c.get("smart_money_score") is not None
-                    else 0,
-                    "smc_phase": c.get("smc_phase", 0)
-                    if c.get("smc_phase") is not None
-                    else 0,
+                    "smart_money_score": c.get("smart_money_score", 0) if c.get("smart_money_score") is not None else 0,
+                    "smc_phase": c.get("smc_phase", 0) if c.get("smc_phase") is not None else 0,
                     "d_poc": c.get("d_poc", 0) if c.get("d_poc") is not None else 0,
                     "choch": c.get("choch", 0) if c.get("choch") is not None else 0,
                     "bos": c.get("bos", 0) if c.get("bos") is not None else 0,
                     "fvg": c.get("fvg", 0) if c.get("fvg") is not None else 0,
                     "std20": c.get("std20", 0) if c.get("std20") is not None else 0,
-                    "atr_pct": c.get("atr_pct", 0)
-                    if c.get("atr_pct") is not None
-                    else 0,
+                    "atr_pct": c.get("atr_pct", 0) if c.get("atr_pct") is not None else 0,
                     "atr5": atr5,
-                    "drawdown": c.get("drawdown", 0)
-                    if c.get("drawdown") is not None
-                    else 0,
-                    "money_flow_cr": c.get("money_flow_cr", 0)
-                    if c.get("money_flow_cr") is not None
-                    else 0,
-                    "EPS_Latest": c.get("eps_latest", f.get("eps", 0))
-                    if c.get("eps_latest", f.get("eps", 0)) is not None
-                    else 0,
-                    "BVPS_Latest": c.get("bvps_latest", f.get("book_value", 0))
-                    if c.get("bvps_latest", f.get("book_value", 0)) is not None
-                    else 0,
+                    "drawdown": c.get("drawdown", 0) if c.get("drawdown") is not None else 0,
+                    "money_flow_cr": c.get("money_flow_cr", 0) if c.get("money_flow_cr") is not None else 0,
+                    "EPS_Latest": c.get("eps_latest", f.get("eps", 0)) if c.get("eps_latest", f.get("eps", 0)) is not None else 0,
+                    "BVPS_Latest": c.get("bvps_latest", f.get("book_value", 0)) if c.get("bvps_latest", f.get("book_value", 0)) is not None else 0,
                     "atr20": atr20,
                     "avg_buy_60d": i.get("avg_buy_60d", 0) or 0,
                 }
@@ -741,7 +652,6 @@ class Engine:
                 else [s.split(".")[0].upper() for s in lib.get_active_universe()]
             )
 
-            # Bulk fetch metadata instrument types to avoid N+1 queries in _worker_task
             try:
                 from myra_app.librarian_core import LibrarianCore
                 import sqlite3
@@ -759,7 +669,6 @@ class Engine:
             except Exception:
                 pass
 
-            # Vectorized payload generation (Fix 515: Avoid .append in loop)
             payloads = [
                 (s, strategy_name, as_of_date, funda_map.get(s, {"symbol": s}))
                 for s in target_symbols
@@ -770,12 +679,9 @@ class Engine:
                 print(f"[!] Turbo Load failed: {e}")
             return [], {}
 
-        # 5. ANALYZE WITH FAULT TOLERANCE (Fix 4, 7, 10)
         num_stocks = len(payloads)
         if not silent:
-            print(
-                f"[MYRA] Analyzing {num_stocks} stocks with Institutional Resilience..."
-            )
+            print(f"[MYRA] Analyzing {num_stocks} stocks with Institutional Resilience...")
 
         watchdog = ScanWatchdog(timeout=120)
         watchdog.start()
@@ -790,7 +696,6 @@ class Engine:
         total_symbols = len(payloads)
         current_symbol = 0
         try:
-            # Proper Multiprocessing Pool with initializer fixes the 0/680 failure
             with multiprocessing.Pool(
                 processes=max_workers,
                 initializer=init_worker,
@@ -823,19 +728,14 @@ class Engine:
             watchdog.stop()
 
         valid_results = len(results)
-        # Safety fuse adjusted for holiday scans (where volume might be zero for many)
         if num_stocks > 20 and valid_results == 0:
             if not silent:
-                print(
-                    f"\n[CRITICAL] Data Integrity Failure: 0/{num_stocks} results produced. Aborting."
-                )
+                print(f"\n[CRITICAL] Data Integrity Failure: 0/{num_stocks} results produced. Aborting.")
             return [], {"error": "CATASTROPHIC_PIPELINE_FAILURE"}
 
         if not silent:
             elapsed = time.time() - start_time
-            print(
-                f"[MYRA] Scan completed in {elapsed:.2f}s ({num_stocks} stocks, {elapsed/max(1,num_stocks):.3f}s/stock)"
-            )
+            print(f"[MYRA] Scan completed in {elapsed:.2f}s ({num_stocks} stocks, {elapsed/max(1,num_stocks):.3f}s/stock)")
 
         try:
             lineage_path = self.fetcher.lineage.save()
@@ -855,10 +755,6 @@ class SMCManager:
 
     @staticmethod
     def calculate_fvg(df):
-        """
-        Detects Fair Value Gaps (FVG) with tolerance (0.2%).
-        Returns a Series where 1=Bullish FVG, -1=Bearish FVG.
-        """
         if len(df) < 3:
             return pd.Series(0, index=df.index)
 
@@ -866,26 +762,21 @@ class SMCManager:
         highs = df["high"].values
         lows = df["low"].values
 
-        gap_threshold = 0.002  # 0.2% tolerance for 'institutional footprint'
+        gap_threshold = 0.002  
 
         for i in range(2, len(df)):
-            if lows[i] > highs[i - 2] * (1 - gap_threshold):  # Bullish
+            if lows[i] > highs[i - 2] * (1 - gap_threshold):
                 fvg[i] = 1
-            elif highs[i] < lows[i - 2] * (1 + gap_threshold):  # Bearish
+            elif highs[i] < lows[i - 2] * (1 + gap_threshold):
                 fvg[i] = -1
         return pd.Series(fvg, index=df.index)
 
     @staticmethod
     def get_fvg_buy_zone(df):
-        """
-        Returns the nearest UNMITIGATED Bullish FVG that is BELOW current price.
-        Institutional Magnet logic: Zone is valid until price closes 1.5% below the bottom (SMC v2.0).
-        """
         if len(df) < 3:
             return None
 
         try:
-            # Case-insensitive column resolution
             cols = {c.lower(): c for c in df.columns}
             h_col = cols.get("high")
             l_col = cols.get("low")
@@ -898,23 +789,18 @@ class SMCManager:
             closes = df[c_col].values
             ltp = closes[-1]
 
-            # 3-year lookback (756 trading days)
             for i in range(len(df) - 1, max(2, len(df) - 756), -1):
-                if lows[i] > highs[i - 2]:  # Bullish FVG
+                if lows[i] > highs[i - 2]:
                     bottom = highs[i - 2]
                     top = lows[i]
                     mid = (top + bottom) / 2
 
-                    # 1. Must be BELOW current price to be a 'Support' Floor
                     if ltp < bottom:
                         continue
 
-                    # 2. Mitigation Check: Has price CLOSED > 1.5% below bottom since formation?
                     is_dead = False
                     for j in range(i + 1, len(df)):
-                        if closes[j] < (
-                            bottom * 0.985
-                        ):  # 1.5% buffer for 'structural sweeps'
+                        if closes[j] < (bottom * 0.985):
                             is_dead = True
                             break
 
@@ -926,10 +812,6 @@ class SMCManager:
 
     @staticmethod
     def calculate_market_structure(df, window=3):
-        """
-        Detects Market Structure shifts (BOS and CHoCH) using Lagging Pivot Confirmation.
-        SMC v2.0: Prevents future-peeking by confirming pivots with a 'window' lag.
-        """
         if len(df) < window * 2 + 2:
             return pd.Series(0, index=df.index), pd.Series(0, index=df.index)
 
@@ -939,47 +821,42 @@ class SMCManager:
         last_high = np.nan
         last_low = np.nan
         last_swing_index = 0
-        trend = 0  # 1 for up, -1 for down
+        trend = 0
 
         c_prices = df["close"].values
         h_prices = df["high"].values
         l_prices = df["low"].values
 
         for i in range(len(df)):
-            # Lagging Pivot Confirmation: At index i, we can confirm a pivot at index (i - window)
             conf_idx = i - window
             if conf_idx >= window:
-                # Was conf_idx a Swing High?
                 window_slice_h = h_prices[conf_idx - window : conf_idx + window + 1]
                 if h_prices[conf_idx] == np.max(window_slice_h):
                     last_high = h_prices[conf_idx]
-                    last_swing_index = i  # Refresh memory timer
+                    last_swing_index = i
 
-                # Was conf_idx a Swing Low?
                 window_slice_l = l_prices[conf_idx - window : conf_idx + window + 1]
                 if l_prices[conf_idx] == np.min(window_slice_l):
                     last_low = l_prices[conf_idx]
                     last_swing_index = i
 
-            # Stale Structure Reset: Increased to 60 days (SMC v2.0)
             if i - last_swing_index > 60:
                 last_high = np.nan
                 last_low = np.nan
 
-            if trend == 1:  # Uptrend
+            if trend == 1:
                 if not np.isnan(last_high) and c_prices[i] > last_high:
                     bos[i] = 1
-                    # Note: We don't update last_high here; it only updates on new confirmed pivots
                 elif not np.isnan(last_low) and c_prices[i] < last_low:
-                    choch[i] = -1  # Trend flipped to Down
+                    choch[i] = -1
                     trend = -1
-            elif trend == -1:  # Downtrend
+            elif trend == -1:
                 if not np.isnan(last_low) and c_prices[i] < last_low:
                     bos[i] = -1
                 elif not np.isnan(last_high) and c_prices[i] > last_high:
-                    choch[i] = 1  # Trend flipped to Up
+                    choch[i] = 1
                     trend = 1
-            else:  # Trend Detection (Initialization)
+            else:
                 if not np.isnan(last_high) and c_prices[i] > last_high:
                     trend = 1
                 if not np.isnan(last_low) and c_prices[i] < last_low:
@@ -989,20 +866,16 @@ class SMCManager:
 
     @staticmethod
     def calculate_d_poc(df, buckets=50):
-        """Finds the price level with the highest cumulative delivery over the window."""
         if df.empty or "close" not in df.columns or "delivery_qty" not in df.columns:
             return 0.0
 
         try:
-            # Drop NaNs to prevent histogram failure
             valid_df = df.dropna(subset=["close", "delivery_qty"])
             if valid_df.empty:
                 return 0.0
 
             prices = valid_df["close"].values
             delivery = valid_df["delivery_qty"].values
-
-            # Ensure we have a price range
             delivery = delivery.astype(float)
             p_min, p_max = prices.min(), prices.max()
             if p_max == p_min:
@@ -1012,32 +885,25 @@ class SMCManager:
                 prices, bins=buckets, range=(p_min, p_max), weights=delivery
             )
 
-            # Find the bin with maximum delivery
             max_idx = np.argmax(hist)
             d_poc = (bin_edges[max_idx] + bin_edges[max_idx + 1]) / 2
 
-            # Final sanity check - if d_poc is 0 but price isn't, something is wrong
             if d_poc == 0 and p_min > 0:
-                return float(prices[-1])  # Fallback to LTP
+                return float(prices[-1])
 
             return float(d_poc)
-
         except Exception:
-            # print(f"DEBUG: calculate_d_poc Error: {e}")
             return 0.0
 
     @staticmethod
     def get_confluence_score(df):
-        """Calculates multi-dilation trend confluence (scales 2, 4, 8)."""
         if len(df) < 40:
             return 0.0
 
         try:
-            # Simple returns to stay fast
             returns = np.log(df["close"] / df["close"].shift(1)).dropna()
 
             def dilated_mean(series, dilation, window=5):
-                # Vectorized slice and mean
                 subset = series.iloc[-window * dilation :: dilation]
                 return subset.mean() if not subset.empty else 0.0
 
@@ -1051,11 +917,6 @@ class SMCManager:
 
     @staticmethod
     def get_smc_phase(df, d_poc, confluence, funda={}):
-        """
-        Determines the SMC Phase:
-        Phase 1: Accumulation Base (Near D-POC, tight volatility, Volume Dry-up)
-        Phase 2: Ignition Trigger (Breakout from D-POC + Volume)
-        """
         if df.empty or d_poc == 0:
             return 0
 
@@ -1065,26 +926,13 @@ class SMCManager:
             vol_last = df["volume"].iloc[-1]
             high_60 = df["close"].rolling(60).max().iloc[-1]
 
-            # Phase 2: Ignition Trigger
-            # Price > D-POC * 1.03 AND Price > 60D High AND Vol > 1.5x Avg AND Confluence > 0
-            if (
-                ltp > (d_poc * 1.03)
-                and ltp >= high_60
-                and vol_last > (avg_vol_20 * 1.5)
-                and confluence > 0
-            ):
+            if (ltp > (d_poc * 1.03) and ltp >= high_60 and vol_last > (avg_vol_20 * 1.5) and confluence > 0):
                 return 2
 
-            # Phase 1: Accumulation Base (Basing)
-            # 1. Price near D-POC (within 2%)
             price_near_poc = abs(ltp - d_poc) / d_poc <= 0.02
-
-            # 2. Tight Volatility (Stricter: < 1.5% of price)
             std20 = funda.get("std20", 0)
             tightness = (std20 / ltp * 100) if ltp > 0 else 100
             is_tight = tightness < 1.5
-
-            # 3. Volume Dry-up (Volume < 60% of 20d Avg)
             volume_dryup = vol_last < (avg_vol_20 * 0.6)
 
             if price_near_poc and is_tight and volume_dryup:
