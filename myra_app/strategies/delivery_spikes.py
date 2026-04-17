@@ -1,18 +1,19 @@
 import pandas as pd
 import numpy as np
 
-
 def run(df: pd.DataFrame, funda: dict) -> dict:
     """
     Strategy: Institutional Delivery Spikes (Absorption v3)
     Flags massive delivery spikes relative to recent average.
     Highly sensitive to bottom-fishing when used in pipes.
     """
-    if "delivery_percent" not in df.columns or len(df) < 50:
+    # FIX: Check for the correct CamelCase column from DataAdapter
+    if "DeliveryPct" not in df.columns or len(df) < 50:
         return {"signal": False}
 
     try:
-        df["del_per"] = pd.to_numeric(df["delivery_percent"], errors="coerce").fillna(0)
+        # FIX: Use the correct column name here too
+        df["del_per"] = pd.to_numeric(df["DeliveryPct"], errors="coerce").fillna(0)
 
         # We look at 20-day average delivery
         avg_del = df["del_per"].rolling(window=20).mean()
