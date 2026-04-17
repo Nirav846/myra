@@ -4,7 +4,7 @@ import numpy as np
 class Strategy:
     """
     Multibagger Early Detection Scanner (v6.2 - INSTITUTIONAL SNIPER)
-    Standardized for CamelCase Data Adapter Compliance.
+    Hardened to extract purely scalar values to prevent Truth Value Ambiguity.
     """
 
     def __init__(self, librarian=None):
@@ -16,74 +16,90 @@ class Strategy:
         if df.empty or len(df) < 60:
             return {"signal": False, "reason": "insufficient_data"}
 
-        # Force lowercase keys to CamelCase to ensure old logic doesn't break
+        # Force lowercase keys to CamelCase safely
         rename_map = {
             "open": "Open", "high": "High", "low": "Low", 
             "close": "Close", "volume": "Volume"
         }
         df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns}, inplace=True)
 
-        # --- STEP 2: TREND & MOMENTUM (Hardened) ---
-        ltp = df["Close"].iloc[-1]
-        
-        # EMA Trend (20/50)
-        ema20 = df["Close"].ewm(span=20, adjust=False).mean()
-        ema50 = df["Close"].ewm(span=50, adjust=False).mean()
-        ema_trend = ltp > ema20.iloc[-1] > ema50.iloc[-1]
+        try:
+            # --- STEP 2: TREND & MOMENTUM ---
+            # Ensure ltp is explicitly a scalar float
+            ltp = float(df["Close"].iloc[-1])
+            
+            # EMA Trend (20/50)
+            ema20 = df["Close"].ewm(span=20, adjust=False).mean()
+            ema50 = df["Close"].ewm(span=50, adjust=False).mean()
+            
+            val_ema20 = float(ema20.iloc[-1])
+            val_ema50 = float(ema50.iloc[-1])
+            
+            # Explicitly separated boolean logic
+            ema_trend = bool((ltp > val_ema20) and (val_ema20 > val_ema50))
 
-        # --- STEP 3: BULLISH RSI DIVERGENCE ---
-        # Coiled Spring Detection
-        delta = df["Close"].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1+rs))
-        df["rsi"] = rsi
+            # --- STEP 3: BULLISH RSI DIVERGENCE ---
+            delta = df["Close"].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            rs = gain / loss
+            df["rsi"] = 100 - (100 / (1+rs))
 
-        # Detect divergence in last 20 days
-        rsi_min = df["rsi"].iloc[-20:-1].min()
-        price_min = df["Close"].iloc[-20:-1].min()
-        has_rsi_divergence = (df["rsi"].iloc[-1] > rsi_min) and (ltp <= price_min)
+            rsi_min = float(df["rsi"].iloc[-20:-1].min())
+            price_min = float(df["Close"].iloc[-20:-1].min())
+            curr_rsi = float(df["rsi"].iloc[-1])
+            
+            has_rsi_divergence = bool((curr_rsi > rsi_min) and (ltp <= price_min))
 
-        # --- STEP 4: RS vs INDEX ---
-        rs_raw = funda.get("rs_rating", 0)
-        is_strong_rs = rs_raw > 70
+            # --- STEP 4: RS vs INDEX (THE FIX) ---
+            # Safely extract rs_rating whether it's a number, a Series, or an array
+            rs_raw = funda.get("rs_rating", 0)
+            if isinstance(rs_raw, pd.Series):
+                rs_val = float(rs_raw.iloc[-1]) if not rs_raw.empty else 0.0
+            elif isinstance(rs_raw, (np.ndarray, list)):
+                rs_val = float(rs_raw[-1]) if len(rs_raw) > 0 else 0.0
+            else:
+                rs_val = float(rs_raw) if rs_raw else 0.0
+                
+            is_strong_rs = bool(rs_val > 70)
 
-        # --- STEP 5: VCP / TIGHTNESS ---
-        std20 = df["Close"].iloc[-20:].std()
-        is_compressing = (std20 / ltp) < 0.02  # Less than 2% volatility
+            # --- STEP 5: VCP / TIGHTNESS ---
+            std20 = float(df["Close"].iloc[-20:].std())
+            is_compressing = bool((std20 / ltp) < 0.02)  
 
-        # --- STEP 6: VWAP RECLAIM ---
-        # 20-day Volume Weighted Average Price
-        vwap_20 = (df["Close"] * df["Volume"]).rolling(20).sum() / df["Volume"].rolling(20).sum()
-        is_vwap_reclaim = ltp > vwap_20.iloc[-1]
+            # --- STEP 6: VWAP RECLAIM ---
+            vwap_20 = (df["Close"] * df["Volume"]).rolling(20).sum() / df["Volume"].rolling(20).sum()
+            curr_vwap = float(vwap_20.iloc[-1])
+            is_vwap_reclaim = bool(ltp > curr_vwap)
 
-        # --- FINAL SCORING ---
-        score = 0
-        if ema_trend: score += 30
-        if is_strong_rs: score += 20
-        if is_vwap_reclaim: score += 20
-        if is_compressing: score += 15
-        if has_rsi_divergence: score += 15
+            # --- FINAL SCORING ---
+            score = 0
+            if ema_trend: score += 30
+            if is_strong_rs: score += 20
+            if is_vwap_reclaim: score += 20
+            if is_compressing: score += 15
+            if has_rsi_divergence: score += 15
 
-        if score >= 65:  # Lowered slightly for early detection
-            recent_high = df["High"].iloc[-5:].max()
-            entry_price = round(max(ltp * 1.005, recent_high), 2)
-            atr_val = (df["High"] - df["Low"]).iloc[-14:].mean()
-            sl_price = round(max(df["Low"].iloc[-10:].min(), ltp - (1.5 * atr_val)), 2)
+            if score >= 65:  
+                recent_high = float(df["High"].iloc[-5:].max())
+                entry_price = round(max(ltp * 1.005, recent_high), 2)
+                atr_val = float((df["High"] - df["Low"]).iloc[-14:].mean())
+                sl_price = round(max(float(df["Low"].iloc[-10:].min()), ltp - (1.5 * atr_val)), 2)
 
-            return {
-                "signal": True,
-                "metrics": {
-                    "Score": score,
-                    "Grade": "Elite" if score >= 85 else "Strong" if score >= 70 else "Pass",
-                    "Compression": "YES" if is_compressing else "NO",
-                    "Divergence": "YES" if has_rsi_divergence else "NO",
-                    "VWAP_Reclaim": "YES" if is_vwap_reclaim else "NO",
-                    "Entry": entry_price,
-                    "SL": sl_price,
-                    "T1": round(entry_price * 1.15, 2)
-                },
-            }
+                return {
+                    "signal": True,
+                    "metrics": {
+                        "Score": score,
+                        "Grade": "Elite" if score >= 85 else "Strong" if score >= 70 else "Pass",
+                        "Comp": "YES" if is_compressing else "NO",
+                        "Div": "YES" if has_rsi_divergence else "NO",
+                        "VWAP": "YES" if is_vwap_reclaim else "NO",
+                        "Entry": entry_price,
+                        "SL": sl_price,
+                    },
+                }
+
+        except Exception as e:
+            pass
 
         return {"signal": False}
