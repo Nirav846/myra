@@ -131,7 +131,7 @@ class DataAdapter:
                 where += " AND date <= ?"
                 params.append(as_of_date)
 
-            sql = f"SELECT * FROM technical_data {where} LIMIT {fetch_limit}"
+            sql = f"SELECT * FROM technical_data {where} ORDER BY date DESC LIMIT {fetch_limit}"
             df = pd.read_sql(sql, conn, params=params)
 
             if not df.empty:
