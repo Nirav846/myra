@@ -730,8 +730,7 @@ class Engine:
                 from myra_app.librarian_core import LibrarianCore
                 import sqlite3
                 import os
-                import pandas as pd
-
+                
                 meta_conn = sqlite3.connect(
                     os.path.join(os.getcwd(), "db", LibrarianCore.DB_MAP["meta"]),
                     timeout=10,
