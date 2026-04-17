@@ -294,7 +294,6 @@ def _worker_task(payload):
             return res_dict
 
         return None
-
     except Exception as e:
         import traceback
         print(f"\n[WORKER CRASH] Symbol {payload[0]} failed: {str(e)}")
