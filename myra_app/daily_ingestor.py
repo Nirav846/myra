@@ -1,5 +1,6 @@
 import sqlite3
 import sys
+import argparse
 import pandas as pd
 import io
 import os
@@ -20,9 +21,16 @@ def run_daily_update():
     """
     print("[MYRA] Initiating daily data ingestion via v3.2 Ghost Engine...")
 
+    parser = argparse.ArgumentParser(description="MYRA Daily Ingestor")
+    parser.add_argument("--date", type=str, help="Date in DD-MM-YYYY format to force a specific ingestion date")
+    args, _ = parser.parse_known_args()
+
     # Force IST Time (Performance Guard compliant)
     ist_now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
-    current_date = ist_now
+    if args.date:
+        current_date = datetime.strptime(args.date, "%d-%m-%Y")
+    else:
+        current_date = ist_now
 
     # Pre-flight check for market holidays using myra_calendar.db
     calendar_db_path = os.path.join("db", LibrarianCore.DB_MAP["calendar"])
