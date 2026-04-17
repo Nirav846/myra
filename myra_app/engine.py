@@ -299,8 +299,11 @@ def _worker_task(payload):
             }
 
             res_dict["Money_Flow"] = f"₹{round(funda.get('money_flow_cr', 0))}Cr"
-            return res_dict
-    except Exception:
+        return res_dict
+    except Exception as e:
+        import traceback
+        print(f"\n[WORKER CRASH] Symbol {payload[0]} failed: {str(e)}")
+        traceback.print_exc()
         return None
     return None
 
