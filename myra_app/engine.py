@@ -93,26 +93,34 @@ def init_worker(strategy_name, db_path=None):
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     warnings.filterwarnings("ignore", category=UserWarning)
 
-    # Separation: 101+ or piped primitives are Scanners, others are Strategies
+    # 1. INITIALIZE ADAPTER FIRST
+    # If we don't do this first, an import error will kill the whole worker
+    try:
+        from myra_app.librarian import Librarian
+        lib = Librarian(read_only=True, db_path=db_path)
+        _worker_adapter = DataAdapter(librarian=lib)
+    except Exception as e:
+        print(f"[WORKER INIT ERROR] Adapter failed: {e}")
+
+    # 2. SANITIZE NAME ("Delivery Spikes" -> "delivery_spikes")
+    # This ensures it correctly targets your delivery_spikes.py file
+    safe_name = str(strategy_name).lower().replace(" ", "_").replace("-", "_").split("(")[0].strip()
+
+    # 3. ROUTE TO CORRECT MODULE
     is_primitive = False
-    if strategy_name.isdigit():
+    if str(strategy_name).isdigit() or "|" in str(strategy_name):
         is_primitive = True
-    elif "|" in strategy_name:
-        is_primitive = True  # e.g. 109|110|111
 
     try:
         if is_primitive:
             _worker_strategy = importlib.import_module("myra_app.scanners.primitives")
         else:
-            _worker_strategy = importlib.import_module(
-                f"myra_app.strategies.{strategy_name}"
-            )
-
-        # Initialize Adapter in Worker (New 10x Optimization)
-        from myra_app.librarian import Librarian
-
-        lib = Librarian(read_only=True, db_path=db_path)
-        _worker_adapter = DataAdapter(librarian=lib)
+            try:
+                # Attempt to load your custom file (e.g., myra_app.strategies.delivery_spikes)
+                _worker_strategy = importlib.import_module(f"myra_app.strategies.{safe_name}")
+            except ModuleNotFoundError:
+                # Fallback just in case
+                _worker_strategy = importlib.import_module("myra_app.scanners.primitives")
     except Exception:
         pass
 
