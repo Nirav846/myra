@@ -301,7 +301,7 @@ class LibrarianIngestorMixin:
             # Use current tech connection
             self._tech_conn.cursor().executemany(
                 """
-                INSERT OR IGNORE INTO technical_data 
+                INSERT OR REPLACE INTO technical_data
                 (symbol, date, open, high, low, close, volume, delivery, trades, vwap, delivery_pct, delivery_ratio)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,

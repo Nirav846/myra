@@ -108,8 +108,14 @@ def run_daily_update():
         # Only keep the columns that the database recognizes
         df_to_insert = df[[c for c in df.columns if c in valid_cols]]
 
-        # Append to DB
-        df_to_insert.to_sql("technical_data", conn, if_exists="append", index=False)
+        # Append to DB using INSERT OR REPLACE for robust ingestion
+        cols = df_to_insert.columns.tolist()
+        placeholders = ', '.join(['?'] * len(cols))
+        col_names = ', '.join(cols)
+        sql = f"INSERT OR REPLACE INTO technical_data ({col_names}) VALUES ({placeholders})"
+
+        conn.executemany(sql, df_to_insert.values.tolist())
+        conn.commit()
         conn.close()
 
         print(
@@ -135,8 +141,13 @@ def run_daily_update():
 
             with open("data_sync_manifest.json", "w") as f:
                 json.dump(manifest_payload, f, indent=4)
+
+            # Automatic Metadata Hook
+            lib = LibrarianCore(read_only=False)
+            lib.set_metadata("cache_meta", json.dumps(manifest_payload))
+            print("✅ Successfully updated cache_meta metadata.")
         except Exception as e:
-            print(f"⚠️ Warning: Could not save data_sync_manifest.json. Error: {e}")
+            print(f"⚠️ Warning: Could not save data_sync_manifest.json or update metadata. Error: {e}")
 
     except Exception as e:
         print(f"❌ Critical Database Error: {e}")
