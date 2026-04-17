@@ -48,7 +48,7 @@ class LibrarianIntelligenceMixin:
         if not valid_results:
             return pd.DataFrame()
 
-        # Consolidate into the 'Turbo Load' DataFrame
+        import pandas as pd  # <--- ADD THIS EXACTLY HERE
         final_df = pd.concat(valid_results, axis=0, ignore_index=False)
         return final_df.reset_index()
 
