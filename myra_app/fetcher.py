@@ -453,7 +453,7 @@ class DataFetcher:
         if target_date < ist_now.date():
             return True
         if target_date == ist_now.date():
-            return ist_now.hour >= 18
+            return ist_now.hour > 18 or (ist_now.hour == 18 and ist_now.minute >= 30)
         return False
 
     def score_data_quality(self, data, source_type="bhavcopy", current_date=None):
@@ -868,6 +868,9 @@ class DataFetcher:
                     url = stream["url"].format(ds=ds)
                     self.session.get("https://www.nseindia.com", headers=headers)
                     r = self.session.get(url, headers=headers)
+                    if r and r.status_code == 404:
+                        logger.error("File not yet published by NSE")
+                        continue
                     if r and r.status_code == 200:
                         data_text = r.text
 
@@ -880,6 +883,10 @@ class DataFetcher:
                     self.session.get("https://www.nseindia.com", headers=headers)
                     r_p = self.session.get(p_url, headers=headers)
                     r_d = self.session.get(d_url, headers=headers)
+
+                    if (r_p and r_p.status_code == 404) or (r_d and r_d.status_code == 404):
+                        logger.error("File not yet published by NSE")
+                        continue
 
                     if (
                         r_p
