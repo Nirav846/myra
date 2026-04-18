@@ -215,7 +215,7 @@ class IndexEngine:
             entry = self.cache[key]
             return entry["data"]
 
-        if not librarian or not librarian.conn:
+        if not librarian or not librarian._tech_conn:
             return {"advances": 0, "declines": 0, "unchanged": 0}
 
         try:
@@ -264,7 +264,7 @@ class IndexEngine:
                 FROM data
             """
 
-            res = librarian.conn.execute(sql_refined).fetchone()
+            res = librarian._tech_conn.execute(sql_refined).fetchone()
             if res:
                 result = {
                     "advances": int(res[0] or 0),
