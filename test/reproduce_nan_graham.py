@@ -1,15 +1,16 @@
-import duckdb
+import sqlite3
 import os
+import pandas as pd
 
-db_path = "results/Data/myra_market_data.db"
+db_path = "db/myra_valuation.db"
 if os.path.exists(db_path):
-    conn = duckdb.connect(db_path)
+    conn = sqlite3.connect(db_path)
 
     # 1. Check summary table
     print("--- Fundamentals Summary Table Check ---")
     sql = "SELECT symbol, pe, roe, eps, book_value, last_updated FROM fundamentals LIMIT 5"
     try:
-        print(conn.execute(sql).df())
+        print(pd.read_sql(sql, conn))
     except Exception as e:
         print(f"Error checking summary table: {e}")
 
@@ -20,7 +21,7 @@ if os.path.exists(db_path):
         print(f"\nSymbol: {s}")
         sql_q = f"SELECT report_date, eps, book_value, source, last_updated FROM fundamentals_quarterly WHERE symbol='{s}' ORDER BY last_updated DESC LIMIT 3"
         try:
-            print(conn.execute(sql_q).df())  # noqa: performance
+            print(pd.read_sql(sql_q, conn))  # noqa: performance
         except Exception as e:
             print(f"Error checking quarterly table for {s}: {e}")
 

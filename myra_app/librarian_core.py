@@ -9,7 +9,6 @@ import sys
 import threading
 import time
 import sqlite3
-import duckdb
 from rich.console import Console
 
 
@@ -67,7 +66,6 @@ class LibrarianCore:
         self.console = console if console else Console()
 
         # Connection Handles
-        self.conn = None  # Legacy DuckDB
         self._tech_conn = None
         self._inst_conn = None
         self._meta_conn = None
@@ -85,13 +83,6 @@ class LibrarianCore:
     def connect(self):
         """Establishes connections to all modular databases."""
         try:
-            # 1. Connect Legacy DuckDB (Optional)
-            if os.path.exists(self.db_path):
-                try:
-                    self.conn = duckdb.connect(self.db_path, read_only=self.read_only)
-                except Exception:
-                    self.conn = None
-
             # 2. Connect Atomic SQLite Sidecars
             self._connect_sqlite()
 
@@ -124,38 +115,21 @@ class LibrarianCore:
         self._gov_conn = _get_conn(self.DB_MAP["governance"])
 
     def safe_execute(self, sql, params=None, conn=None, retries=5):
-        """Thread-safe SQL execution for both DuckDB and SQLite."""
-        # Route logic: if it's a DuckDB connection, use DuckDB retry logic
+        """Thread-safe SQL execution for SQLite."""
         # if it's SQLite, use standard execute
-        c = conn if conn else self.conn
+        c = conn
         if not c:
             return None
 
-        is_duck = isinstance(c, duckdb.DuckDBPyConnection)
-
-        if is_duck:
-            for i in range(retries):
-                try:
-                    with self._db_lock:
-                        if params:
-                            return c.execute(sql, params)
-                        else:
-                            return c.execute(sql)
-                except Exception as e:
-                    if "locked" in str(e).lower() and i < retries - 1:
-                        time.sleep(0.5 * (i + 1))
-                        continue
-                    raise e
-        else:
-            # SQLite Path
-            try:
-                with self._db_lock:
-                    if params:
-                        return c.execute(sql, params)
-                    else:
-                        return c.execute(sql)
-            except Exception as e:
-                raise e
+        # SQLite Path
+        try:
+            with self._db_lock:
+                if params:
+                    return c.execute(sql, params)
+                else:
+                    return c.execute(sql)
+        except Exception as e:
+            raise e
 
     def get_metadata(self, key):
         if not self._meta_conn:
@@ -198,7 +172,6 @@ class LibrarianCore:
     def close(self):
         """Graceful shutdown of all database handles."""
         conns = [
-            self.conn,
             self._tech_conn,
             self._inst_conn,
             self._meta_conn,
@@ -211,6 +184,4 @@ class LibrarianCore:
                     c.close()
                 except Exception:
                     pass
-        self.conn = (
-            self._tech_conn
-        ) = self._inst_conn = self._meta_conn = self._val_conn = self._gov_conn = None
+        self._tech_conn = self._inst_conn = self._meta_conn = self._val_conn = self._gov_conn = None

@@ -1,7 +1,7 @@
-import duckdb
+import sqlite3
 import os
 
-db = "results/Data/myra_market_data.db"
+db = "db/myra_technical.db"
 symbols = [
     "APCOTEXIND",
     "SJVN",
@@ -31,9 +31,9 @@ symbols = [
 s_list = "','".join(symbols)
 
 if os.path.exists(db):
-    con = duckdb.connect(db, read_only=True)
+    con = sqlite3.connect(db)
     res = con.execute(
-        f"SELECT symbol, COUNT(*) as c, MIN(date), MAX(date) FROM prices WHERE symbol IN ('{s_list}') GROUP BY symbol"
+        f"SELECT symbol, COUNT(*) as c, MIN(date), MAX(date) FROM technical_data WHERE symbol IN ('{s_list}') GROUP BY symbol"
     ).fetchall()
     print("Symbol | Count | Min Date | Max Date")
     for r in res:

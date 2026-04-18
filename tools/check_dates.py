@@ -1,11 +1,11 @@
-import duckdb
+import sqlite3
 import os
 
-db = "results/Data/myra_market_data.db"
+db = "db/myra_technical.db"
 if os.path.exists(db):
-    con = duckdb.connect(db, read_only=True)
+    con = sqlite3.connect(db)
     res = con.execute(
-        "SELECT date, COUNT(*) FROM prices GROUP BY date ORDER BY date ASC"
+        "SELECT date, COUNT(*) FROM technical_data GROUP BY date ORDER BY date ASC"
     ).fetchall()
     print("Date | Count")
     for r in res:

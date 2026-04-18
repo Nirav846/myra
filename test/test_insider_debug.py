@@ -1,5 +1,5 @@
 import pandas as pd
-import duckdb
+import sqlite3
 import os
 import sys
 
@@ -20,12 +20,12 @@ def debug_insider():
     sql = """
         SELECT symbol, COUNT(DISTINCT date) as unique_days, SUM(value_cr) as total_cr
         FROM insider_trades
-        WHERE type='Buy' AND date >= CURRENT_DATE - INTERVAL 60 DAY
+        WHERE type='Buy' AND date >= date('now', '-60 day')
         GROUP BY symbol
         ORDER BY unique_days DESC
         LIMIT 10
     """
-    insider_df = lib.conn.execute(sql).df()
+    insider_df = pd.read_sql(sql, lib._inst_conn)
     print("Top Insider Buyers (60d):")
     print(insider_df)
 
@@ -36,10 +36,10 @@ def debug_insider():
     # Check if these symbols exist in prices table and have enough data
     symbols = insider_df["symbol"].tolist()
     for s in symbols:
-        price_check = lib.conn.execute(  # noqa: performance
-            f"SELECT COUNT(*) FROM prices WHERE symbol = '{s}'"
+        price_check = lib._tech_conn.execute(  # noqa: performance
+            f"SELECT COUNT(*) FROM technical_data WHERE symbol = '{s}'"
         ).fetchone()[0]
-        ma200_check = lib.conn.execute(  # noqa: performance
+        ma200_check = lib._tech_conn.execute(  # noqa: performance
             f"SELECT close, sma200 FROM calculated_indicators WHERE symbol = '{s}' AND date = (SELECT MAX(date) FROM calculated_indicators)"
         ).fetchone()
 
@@ -60,20 +60,20 @@ def debug_insider():
 
     # Pre-calculate similar to engine
     m5 = (
-        lib.conn.execute(
-            f"SELECT SUM(value_cr) FROM insider_trades WHERE symbol='{target}' AND type='Buy' AND date >= CURRENT_DATE - INTERVAL 5 DAY"
+        lib._inst_conn.execute(
+            f"SELECT SUM(value_cr) FROM insider_trades WHERE symbol='{target}' AND type='Buy' AND date >= date('now', '-5 day')"
         ).fetchone()[0]
         or 0
     )
     m60 = (
-        lib.conn.execute(
-            f"SELECT SUM(value_cr) FROM insider_trades WHERE symbol='{target}' AND type='Buy' AND date >= CURRENT_DATE - INTERVAL 60 DAY"
+        lib._inst_conn.execute(
+            f"SELECT SUM(value_cr) FROM insider_trades WHERE symbol='{target}' AND type='Buy' AND date >= date('now', '-60 day')"
         ).fetchone()[0]
         or 0
     )
     ud = (
-        lib.conn.execute(
-            f"SELECT COUNT(DISTINCT date) FROM insider_trades WHERE symbol='{target}' AND type='Buy' AND date >= CURRENT_DATE - INTERVAL 60 DAY"
+        lib._inst_conn.execute(
+            f"SELECT COUNT(DISTINCT date) FROM insider_trades WHERE symbol='{target}' AND type='Buy' AND date >= date('now', '-60 day')"
         ).fetchone()[0]
         or 0
     )

@@ -1,5 +1,5 @@
 import unittest
-import duckdb
+import sqlite3
 import os
 from datetime import date
 from myra_app.fundamental_manager import FundamentalManager
@@ -10,20 +10,20 @@ class TestGrahamData(unittest.TestCase):
         self.db_path = "test_graham.db"
         if os.path.exists(self.db_path):
             os.remove(self.db_path)
-        self.conn = duckdb.connect(self.db_path)
+        self.conn = sqlite3.connect(self.db_path)
 
         # Create table with new schema
         self.conn.execute(
             """
             CREATE TABLE quarterly_results (
-                symbol VARCHAR, report_date VARCHAR, revenue DOUBLE, net_profit DOUBLE, 
-                eps DOUBLE, roce DOUBLE, roe DOUBLE, debt DOUBLE,
-                opm_pct DOUBLE, interest DOUBLE, borrowings DOUBLE, cash_from_ops DOUBLE,
-                debtor_days DOUBLE, inventory_days DOUBLE, cwip DOUBLE,
-                promoter_holding DOUBLE, pledged_pct DOUBLE,
-                industry_pe DOUBLE, stock_pe DOUBLE, book_value DOUBLE,
-                sales_per_share DOUBLE, dividend_yield DOUBLE,
-                source VARCHAR, last_updated DATE,
+                symbol TEXT, report_date TEXT, revenue REAL, net_profit REAL,
+                eps REAL, roce REAL, roe REAL, debt REAL,
+                opm_pct REAL, interest REAL, borrowings REAL, cash_from_ops REAL,
+                debtor_days REAL, inventory_days REAL, cwip REAL,
+                promoter_holding REAL, pledged_pct REAL,
+                industry_pe REAL, stock_pe REAL, book_value REAL,
+                sales_per_share REAL, dividend_yield REAL,
+                source TEXT, last_updated TEXT,
                 PRIMARY KEY (symbol, report_date)
             )
         """

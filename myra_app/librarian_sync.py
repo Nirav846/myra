@@ -8,7 +8,6 @@ Routes data to technical.db, institutional.db, meta.db, and valuation.db.
 import sys
 import os
 import threading
-import duckdb
 import pandas as pd
 from datetime import date, datetime, timedelta
 import concurrent.futures
@@ -235,18 +234,16 @@ class LibrarianSyncMixin:
                 pass
 
     def update_symbols_master(self):
-        """Updates master list from prices in DuckDB or technical.db."""
+        """Updates master list from technical.db."""
         if not self._meta_conn or self.read_only:
             return
 
-        # We use DuckDB or Technical.db to find first/last seen
-        source_conn = self.conn if self.conn else self._tech_conn
+        source_conn = self._tech_conn
         if not source_conn:
             return
 
-        # Note: logic remains same but targets _meta_conn
         try:
-            # Simple version for rebuild: get symbols from technical.db
+            # get symbols from technical.db
             res = self._tech_conn.execute(
                 "SELECT symbol, MIN(date), MAX(date) FROM technical_data GROUP BY symbol"
             ).fetchall()
