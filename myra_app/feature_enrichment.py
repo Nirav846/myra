@@ -107,7 +107,7 @@ def enrich_features(df: pl.DataFrame, nifty_df: pl.DataFrame) -> pl.DataFrame:
     return df
 
 
-def process_enrichment_pipeline(conn):
+def process_enrichment_pipeline(lib, conn):
     """
     Handles the DB transaction and applies the enrichment logic.
     """
@@ -135,11 +135,10 @@ def process_enrichment_pipeline(conn):
     try:
         import pandas as pd
 
-        cursor = conn.cursor()
         tables = [
             t[0]
-            for t in cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
+            for t in lib.safe_execute(
+                "SELECT name FROM sqlite_master WHERE type='table'", conn=conn
             ).fetchall()
         ]
 
@@ -169,12 +168,14 @@ def process_enrichment_pipeline(conn):
         )
 
         try:
-            cursor.execute("BEGIN TRANSACTION;")
-            cursor.execute(ALLOWED_DROPS[table_name])
-            cursor.execute(ALLOWED_RENAMES[table_name])
-            cursor.execute("COMMIT;")
+            with lib._db_lock:
+                conn.execute("BEGIN TRANSACTION;")
+                conn.execute(ALLOWED_DROPS[table_name])
+                conn.execute(ALLOWED_RENAMES[table_name])
+                conn.execute("COMMIT;")
         except Exception:
-            cursor.execute("ROLLBACK")
+            with lib._db_lock:
+                conn.execute("ROLLBACK;")
             raise
 
     except Exception as e:

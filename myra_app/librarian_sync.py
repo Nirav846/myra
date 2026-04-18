@@ -63,11 +63,11 @@ class LibrarianSyncMixin:
             try:
                 from myra_app.feature_enrichment import process_enrichment_pipeline
 
-                if self.conn:
+                if self._tech_conn:
                     self.sync_status.update(
                         task="Enriching Market Data", completed=25, total=100
                     )
-                    process_enrichment_pipeline(self.conn)
+                    process_enrichment_pipeline(self, self._tech_conn)
             except Exception as e:
                 import logging
 
