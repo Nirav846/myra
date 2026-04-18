@@ -26,8 +26,9 @@ class BaseStrategy(ABC):
         """
         try:
             # We fetch India VIX as a fear proxy
-            df_vix = lib.conn.execute(
-                "SELECT close FROM benchmark WHERE symbol = '^INDIAVIX' ORDER BY date DESC LIMIT 1"
+            df_vix = lib.safe_execute(
+                "SELECT close FROM benchmark WHERE symbol = '^INDIAVIX' ORDER BY date DESC LIMIT 1",
+                conn=lib._tech_conn
             ).fetchone()
             vix = df_vix[0] if df_vix else 18.0
 

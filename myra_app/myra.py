@@ -238,7 +238,7 @@ def main():
                                 res, f"Deep Dive: {arg}", "technicals", []
                             )
                             screener.rm.run_institutional_deep_dive(
-                                res, screener.lib.conn, screener.fetcher
+                                res, screener.fetcher
                             )
                         nav.pop()
                         continue

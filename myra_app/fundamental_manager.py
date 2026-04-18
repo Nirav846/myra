@@ -23,7 +23,6 @@ class FundamentalManager:
             self.db_dir = db_dir
 
         self.fetcher = fetcher
-        self.conn = None  # Legacy/Compatibility Connection
         self.limiter = RateLimiter(rate_per_sec=2)
         self.source_manager = SourceManager()
 
@@ -33,21 +32,21 @@ class FundamentalManager:
 
     def set_connection(self, conn):
         """Legacy support for Librarian."""
-        self.conn = conn
+        pass
 
     def set_fetcher(self, fetcher):
         """Legacy support for Librarian."""
         self.fetcher = fetcher
 
     def _get_val_conn(self):
-        if self.conn:
-            return self.conn
-        return sqlite3.connect(self.val_db, timeout=20)
+        conn = sqlite3.connect(self.val_db, timeout=20, check_same_thread=False)
+        conn.execute("PRAGMA journal_mode=WAL")
+        return conn
 
     def _get_meta_conn(self):
-        # meta.db is usually separate, but if self.conn is provided and it's a combined DB (legacy), we use it.
-        # However, in v3.0, meta.db is its own sidecar.
-        return sqlite3.connect(self.meta_db, timeout=20)
+        conn = sqlite3.connect(self.meta_db, timeout=20, check_same_thread=False)
+        conn.execute("PRAGMA journal_mode=WAL")
+        return conn
 
     def is_stale(self, symbol, days=90):
         """
