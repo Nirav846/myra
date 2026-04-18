@@ -168,12 +168,14 @@ def process_enrichment_pipeline(lib, conn):
         )
 
         try:
-            lib.safe_execute("BEGIN TRANSACTION;", conn=conn)
-            lib.safe_execute(ALLOWED_DROPS[table_name], conn=conn)
-            lib.safe_execute(ALLOWED_RENAMES[table_name], conn=conn)
-            lib.safe_execute("COMMIT;", conn=conn)
+            with lib._db_lock:
+                conn.execute("BEGIN TRANSACTION;")
+                conn.execute(ALLOWED_DROPS[table_name])
+                conn.execute(ALLOWED_RENAMES[table_name])
+                conn.execute("COMMIT;")
         except Exception:
-            lib.safe_execute("ROLLBACK", conn=conn)
+            with lib._db_lock:
+                conn.execute("ROLLBACK;")
             raise
 
     except Exception as e:

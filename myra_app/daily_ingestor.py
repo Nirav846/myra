@@ -109,6 +109,8 @@ def run_daily_update():
         os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
         lib = LibrarianCore(read_only=False)
         conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
 
         # Ask SQLite what columns actually exist in the table
         cursor = lib.safe_execute("PRAGMA table_info(technical_data)", conn=conn)
