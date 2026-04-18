@@ -403,7 +403,7 @@ class Engine:
 
         start_time = time.time()
         lib = self.librarian
-        if not lib.conn:
+        if not lib._tech_conn:
             lib.connect()
 
         from myra_core.utils.date_utils import to_date

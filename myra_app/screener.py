@@ -53,7 +53,7 @@ class MYRAScreener:
             SELECT * FROM latest_indicators
         """
         try:
-            df = self.lib.conn.execute(sql).df()
+            df = pd.read_sql(sql, self.lib._tech_conn)
         except Exception as e:
             self.console.print(f"[error]Failed to build X-Ray: {e}[/error]")
             return
@@ -62,7 +62,7 @@ class MYRAScreener:
             return
 
         # Merge with fundamentals to get Sector
-        funda = self.lib.conn.execute("SELECT symbol, sector FROM fundamentals").df()
+        funda = pd.read_sql("SELECT symbol, sector FROM fundamentals", self.lib._val_conn)
         if not funda.empty:
             df = df.merge(funda, on="symbol", how="left")
 
