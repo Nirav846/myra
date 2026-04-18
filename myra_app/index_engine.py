@@ -264,7 +264,7 @@ class IndexEngine:
                 FROM data
             """
 
-            res = librarian._tech_conn.execute(sql_refined).fetchone()
+            res = librarian.safe_execute(sql_refined, conn=librarian._tech_conn).fetchone()
             if res:
                 result = {
                     "advances": int(res[0] or 0),

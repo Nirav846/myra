@@ -30,15 +30,23 @@ class FundamentalManager:
         self.meta_db = os.path.join(self.db_dir, "meta.db")
         self.val_db = os.path.join(self.db_dir, "valuation.db")
 
+    def set_connection(self, conn):
+        """Legacy support for Librarian."""
+        pass
+
     def set_fetcher(self, fetcher):
         """Legacy support for Librarian."""
         self.fetcher = fetcher
 
     def _get_val_conn(self):
-        return sqlite3.connect(self.val_db, timeout=20)
+        conn = sqlite3.connect(self.val_db, timeout=20, check_same_thread=False)
+        conn.execute("PRAGMA journal_mode=WAL")
+        return conn
 
     def _get_meta_conn(self):
-        return sqlite3.connect(self.meta_db, timeout=20)
+        conn = sqlite3.connect(self.meta_db, timeout=20, check_same_thread=False)
+        conn.execute("PRAGMA journal_mode=WAL")
+        return conn
 
     def is_stale(self, symbol, days=90):
         """
