@@ -1,132 +1,86 @@
-# MYRA Deep-Dive Technical Audit Report
+# MYRA System Architecture & Database Audit Report
 
-## Part 1: Feature Verification Report (User Request)
+## 1. Executive Summary (how system actually works at runtime)
+MYRA operates as a decoupled, multi-stage data processing pipeline ("v3.2 GHOST / Atomic Trilogy").
+At runtime, execution begins via CLI commands (e.g., `myra_app/myra.py` or `myra_app/cli.py`) or scheduled cron/batch jobs (e.g., `myra_app/daily_ingestor.py` triggering `run_daily_update()`).
+Network requests are routed exclusively through a "stealth session" manager (`GhostSession` in `myra_app/fetcher.py`) that implements aggressive caching (`myra_cache_network.db` or generic `cache` table) to prevent N+1 query overhead.
+Raw data is fetched from external sources (primarily NSE India), validated dynamically, and inserted into specialized, decoupled SQLite "sidecar" databases (`myra_technical.db`, `myra_institutional.db`, `myra_metadata.db`, etc.) using `INSERT OR REPLACE` to handle idempotency.
+Once raw data is persisted, enrichment pipelines (e.g., `process_enrichment_pipeline` in `myra_app/feature_enrichment.py`) calculate features in a vectorized manner using Polars and update the technical databases.
+Finally, the `DataAdapter` reads from these SQLite databases and provides data to ML agents (e.g., `AEON Agent`, `DeepEvolutionStrategy`) and analytical scanners (`myra_app/strategy_engine.py`, `myra_app/screener.py`), while calculated indicators are offloaded to an "Indicator Lake" (Parquet files) to prevent SQLite schema bloat.
 
-Based on a thorough review of the current MYRA codebase, the following requested features have been verified:
+## 2. End-to-End Data Flow (step-by-step pipeline)
+- **SOURCE:** External APIs (NSE India `https://www.nseindia.com`, Yahoo Finance as fallback) provide raw market data.
+- **FETCH:** `DataFetcher.fetch_ohlcv_delivery` attempts to pull daily Bhavcopy and MTO (delivery) data. `GhostSession` acts as a network gatekeeper and caches responses.
+- **PROCESS:** `myra_app/daily_ingestor.py` normalizes columns to snake_case, filters for standard Equities (`SERIES` IN 'EQ', 'BE', 'SM'), parses dates to ISO format strings (`YYYY-MM-DD`), and explicitly checks `PRAGMA table_info` to drop unknown columns before insertion.
+- **STORE:** Processed rows are persisted into `db/myra_technical.db` (and other DBs based on context) using batched `executemany` with `INSERT OR REPLACE` to prevent duplicates.
+- **ENRICH:** `feature_enrichment.py` reads data using Polars/DuckDB/SQLite, computes vectorised features (e.g., `delivery_divergence_score`, `stock_return`), and writes back to `stg_enriched_market_data` before atomically renaming to `technical_data`. Indicators are exported to Parquet (`data/indicators/`).
+- **READ:** Strategies use `DataAdapter.get_price_df` to read historical data (applying CamelCase renaming on the fly for compatibility).
+- **OUTPUT:** Scanners execute logic over the `DataFrame` and output results to the UI (`rich` terminal dashboards) or `TelegramNotifier`.
 
-### 1. ETF and ISIN Exclusion Logics
-*   **Status: Implemented & Active**
-*   **Details:**
-    *   **ISIN Mapping:** The `isin_mapper.py` utility successfully bridges historical ISINs to symbols and creates an `isin_bridge.parquet` file, which is actively utilized in `fundamental_ranker.py` to join datasets securely.
-    *   **ETF Exclusion:** The system features a robust, multi-layered ETF filter. `librarian_ingestor.py` actively screens out known non-equity and ETF symbols during the primary SQLite ingestion using `meta.db`. Furthermore, `gatekeeper.py` features a dedicated "smart gatekeeper" that reads `MW-ETF-*.csv` files, purges ETF rows from `technical_data`, clears them from the `ias_history`, and marks them as `ETF` and `is_active = 0` in `symbols_master`.
+## 3. Data Source Map
+- **NSE India (Primary):** `bhavcopy`, `zip_mto_merge`, direct CSV formats. Fetched daily via `DataFetcher.fetch_ohlcv_delivery` (after 18:30 IST). Failure handling: Pre-flight checks (`_is_holiday`, `is_data_ready`), retry loops, and 404 categorization.
+- **Yahoo Finance (Secondary):** Handled via `yfinance` in `DataAdapter` or index components, primarily used for global indices or missing technical fallback.
+- **Local Metadata (Generated):** `db/myra_calendar.db` explicitly manages trading days vs holidays, driving scheduling.
 
-### 2. Market Timing and Holiday Awareness
-*   **Status: Implemented & Active**
-*   **Details:**
-    *   **Market Timing:** The `DataFetcher.is_data_ready(dt)` function in `fetcher.py` actively prevents premature fetching. It correctly assumes that the current day's NSE data is only ready after 6:00 PM IST (`now.hour >= 18`).
-    *   **Holiday Awareness:** The `DataFetcher._is_holiday(dt)` function successfully detects weekends (Saturday/Sunday), reads from a whitelist in `trading_calendar_master.csv`, and includes a fallback hardcoded list of known NSE holidays (`NSE_HOLIDAYS`), preventing the system from incorrectly assuming missing files for closed days.
+## 4. Storage & Database Inventory
+- **SQLite (Atomic Trilogy Sidecars):** Located in `db/` directory. Initialized via `LibrarianCore.DB_MAP` mappings or explicitly in tools.
+  - `myra_technical.db`: Core price action (`technical_data` table).
+  - `myra_institutional.db`: Insider trading, large deals, FII/DII activities.
+  - `myra_valuation.db`: Fundamentals, quarterly results.
+  - `myra_metadata.db`: System state, job status, cache metadata.
+  - `myra_scoring.db`: Fundamental scores.
+  - `myra_calendar.db`: Trading day calendar (`market_calendar`).
+  - `myra_cache_network.db`: Scrapling cache.
+- **Apache Parquet (Indicator Lake):** Located in `data/indicators/` (or `data/lake/`). Caches computed indicators (SMA, RSI, VWAP) to avoid schema bloat in SQLite.
+- **JSON (Filesystem):** `data_sync_manifest.json` handles post-ingestion system health scores and missing delivery records.
 
+## 5. Data Structure & Format Analysis
+- **Date/Time Formats:** `myra_app/daily_ingestor.py` strictly uses ISO format strings `YYYY-MM-DD` (`.isoformat()`) for database insertion, avoiding string comparison issues.
+- **Naming Conventions:** Lowercase snake_case in SQLite (`open`, `high`, `low`, `close`), converted dynamically to CamelCase (`Open`, `High`, `Low`, `Close`, `Volume`) inside `DataAdapter` for legacy components.
+- **Serialization:** Parquet for large analytical subsets; JSON for sync metrics; SQLite for structured tabular data.
+- **Numeric Handling:** Ingestion (`myra_app/ingest_bhavcopy.py`) drops non-numeric or missing `delivery` values explicitly and converts columns dynamically. Strict validation rejects values where delivery is missing or exactly `1.0`.
 
----
+## 6. Transformation Pipeline Breakdown
+- **Normalization:** Column names mapped to standard (e.g., `TOTTRDQTY` -> `volume`, `DELIV_QTY` -> `delivery`).
+- **Data Filtering:** Non-equities dropped (`SERIES` IN ('EQ', 'BE', 'SM')).
+- **Feature Engineering:** Vectorized Polars operations in `process_enrichment_pipeline` calculate `delivery_divergence_score`, `stock_return`, and `volatility_compression_score`.
+- **Handling Missing Data:** Replaces missing delivery metrics with `1.0` dynamically before transformation, but raw ingest explicitly rejects completely invalid delivery rows.
 
-## Part 2: Deep-Dive Technical Audit
+## 7. Validation & Integrity Audit
+- **Schema Validation:** `myra_app/daily_ingestor.py` asks SQLite (`PRAGMA table_info`) what columns exist, gracefully dropping missing ones before batched insertion.
+- **Data Integrity:** `myra_app/ingest_bhavcopy.py` implements a "hard reject" for placeholder `delivery` values (rejecting exact 1.0 or NaN).
+- **Null/Missing Handling:** Feature enrichment dynamically handles NaNs (`fill_nan(1.0).fill_null(1.0)`).
+- **Silent Failures Risks:** The fallback to `1.0` inside the enrichment phase might mask genuine data gaps if the raw ingestion lets bad data through.
 
-### 1. Data Ingestion & API Resiliency
-**Severity:** High
-**Location:** `myra_app/fetcher.py` -> `DataFetcher._merge_zip_mto()` and `daily_ingestor.py`
-**The Vulnerability:**
-When fetching the ZIP Bhavcopy directly from NSE, the system passes the response content directly to `zipfile.ZipFile(io.BytesIO(r.content))`. If the NSE WAF blocks the request (often returning a 200 OK with an HTML captcha or block page) or if the zip file is truncated, this throws a `zipfile.BadZipFile` exception. In `daily_ingestor.py` and `fetcher.py`, this error propagates and fails the entire daily batch process rather than gracefully falling back or identifying the WAF block.
-**Actionable Fix:**
-Wrap the zip extraction in a `try/except` block specifically checking for `BadZipFile` and `HTTP` response headers for content-type.
-```python
-# Python Actionable Fix
-try:
-    with zipfile.ZipFile(io.BytesIO(zip_content)) as z:
-        df_bhav = pd.read_csv(z.open(z.namelist()[0]))
-except zipfile.BadZipFile:
-    logger.error("Failed to unzip Bhavcopy. Likely an HTML WAF block or corrupted download.")
-    return None
-```
+## 8. Runtime Risks & Failure Points
+- **Silent SQLite DB Creation:** If paths are incorrect, SQLite might silently create an empty database file. Explicit checks `os.path.exists(path)` exist in `DataAdapter` to mitigate this.
+- **Holiday/Calendar Drift:** If `myra_calendar.db` is out of date, ingestion jobs may fail or run unnecessarily.
+- **Data Locking:** If multiple processes write concurrently to the same sidecar DB without proper isolation, `database is locked` errors could arise, though WAL mode is enabled via `PRAGMA journal_mode=WAL;`.
+- **API Failure:** Handled via `GhostSession` retries and explicit NSE publication checks (status code 404).
 
-### 2. Data Merging & Integrity Risks
-**Severity:** Medium
-**Location:** `myra_app/fundamental_ranker.py` -> DuckDB Query inside `_calculate_all_scores_from_duck()`
-**The Vulnerability:**
-The query joins recent data with historical snapshots using `JOIN latest_snapshot l ON a.symbol = l.symbol`. Corporate actions (stock splits, symbol name changes) will break this exact string matching over time. When a ticker changes, the historical fundamental data under the old ticker will be orphaned, and the system will silently drop or restart the equity's ranking history.
-**Actionable Fix:**
-Use the `isin_bridge.parquet` as the absolute primary key for temporal joins instead of relying solely on the ticker symbol.
-```sql
--- DuckDB Actionable Fix
--- Map everything to ISIN first, then aggregate over time to ensure continuous lineage regardless of ticker changes.
-WITH mapped_base AS (
-    SELECT COALESCE(b.ISIN, f.symbol) AS uid, f.*
-    FROM fundamentals_quarterly f
-    LEFT JOIN read_parquet('data/isin_bridge.parquet') b ON f.symbol = b.SYMBOL
-)
-```
+## 9. Performance & Scalability Observations
+- **N+1 Query Elimination:** Implemented via batched `executemany` inserts and vectorized `IN` queries.
+- **Caching Mechanism:** Results are heavily cached in `GhostSession` for network responses and `_price_cache` in `DataAdapter`. Parquet Lake offloads read loads from SQLite.
+- **Efficient Filtering:** Date clauses are parameterized securely in SQL queries, avoiding full table scans.
+- **Scalability Limit:** High RAM usage if `_price_cache` grows infinitely without eviction strategies.
 
-### 3. Error Handling & State Logging
-**Severity:** Medium
-**Location:** `myra_app/fetcher.py` -> `GhostSession._set_cache()`
-**The Vulnerability:**
-The SQLite WAL cache persistence wraps its `INSERT OR REPLACE` query inside a broad `try... except Exception as e: pass` or `logger.error` block without retrying. If the database is locked due to concurrent thread access (`sqlite3.OperationalError: database is locked`), the cache silently fails to persist. This forces the engine to redundantly fetch the same URL on the next scan, severely increasing the likelihood of an NSE or Morningstar IP ban.
-**Actionable Fix:**
-Implement exponential backoff specifically for SQLite lock errors.
-```python
-# Actionable Fix
-import time
-for attempt in range(3):
-    try:
-        conn = sqlite3.connect(self.cache_path, timeout=20)
-        # Execute insert...
-        conn.commit()
-        break
-    except sqlite3.OperationalError as e:
-        if "database is locked" in str(e):
-            time.sleep(1 + attempt)  # Exponential backoff
-        else:
-            logger.error(f"Unrecoverable DB Cache Error: {e}")
-            break
-```
+## 10. Critical Risks (HIGH / MEDIUM / LOW)
+- **HIGH:** Missing or poorly timed `myra_calendar.db` updates could lead to data drift, false positives in multi-day signals, and pipeline errors.
+- **MEDIUM:** Unbounded memory growth in `DataAdapter._price_cache` if scanning thousands of symbols over multiple days.
+- **MEDIUM:** Hardcoded fallback values (e.g., delivery set to 1.0) might mask deeper data integrity issues down the line.
+- **LOW:** Legacy engine dependency on CamelCase column names adds minor overhead during dynamic renaming inside `DataAdapter`.
 
-### 4. Technical Debt & Architecture
-**Severity:** High
-**Location:** `myra_app/data_adapter.py` -> `DataAdapter.compute_common_indicators()`
-**The Vulnerability:**
-Despite the README's declaration of an "Atomic Trilogy" and "Parquet Indicator Lake," `DataAdapter` uses `pandas_ta` to compute moving averages, RSI, and ATR *dynamically on-the-fly* for the fetched dataframe (`df.ta.study()`). This redundant recalculation introduces massive technical debt, wastes CPU cycles, creates memory spikes when querying thousands of symbols, and violates the architectural rule to read precomputed indicators from the Parquet lake.
-**Actionable Fix:**
-Refactor the Adapter to strictly fetch indicators from `myra_app/librarian_core.py`'s Parquet loader and remove dynamic `pandas_ta` computations from the read-path.
-```python
-# Polars/DuckDB Actionable Fix (Parquet Lake Route)
-def get_indicators(symbol):
-    query = f"""
-    SELECT date, RSI, sma20, sma50, sma150, sma200, atr20
-    FROM read_parquet('data/indicators/{symbol}.parquet')
-    """
-    return duckdb.execute(query).df()
-```
+## 11. Improvement Recommendations (NO CODE CHANGES)
+- Implement an LRU eviction policy for `DataAdapter._price_cache` to prevent memory leaks during massive batch runs.
+- Standardize all downstream consumer modules to accept snake_case columns, eventually deprecating the CamelCase proxy mapping in `DataAdapter`.
+- Add active monitoring/alerting if `market_calendar` hasn't been updated for the current month.
+- Ensure the Parquet Indicator Lake routinely cleans up stale indicator files to avoid disk space bloat.
 
-### 5. Performance & Memory Management
-**Severity:** High
-**Location:** `myra_app/strategy_engine.py` -> `run_strategy()`
-**The Vulnerability:**
-The strategy engine pulls a 10-day window for *all symbols* into memory via `pl.read_database` to calculate a single day's relative volume score and delivery divergence. While Polars is fast, pulling 10 days of raw technical data for 4,000+ equities into RAM just to filter down to the `latest_date` is highly inefficient and risks memory exhaustion on constrained hardware (like the specified AMD APU).
-**Actionable Fix:**
-Leverage SQLite Window Functions in the SQL layer *before* it hits Polars, pushing the computation down to the database and retrieving only the final row per symbol.
-```sql
--- SQLite Actionable Fix
-SELECT symbol, date, close, high, low, delivery, delivery_pct,
-       AVG(delivery) OVER (PARTITION BY symbol ORDER BY date ROWS BETWEEN 9 PRECEDING AND CURRENT ROW) as avg_10d_delivery,
-       delivery_pct - LAG(delivery_pct) OVER (PARTITION BY symbol ORDER BY date) as delivery_divergence
-FROM technical_data
-WHERE date IN (SELECT DISTINCT date FROM technical_data ORDER BY date DESC LIMIT 10)
-```
+## 12. Unknowns / Uncertain Areas
+- **UNCERTAIN:** How `myra_calendar.db` is initially populated or actively kept synchronized with NSE ad-hoc holiday changes.
+- **UNCERTAIN:** Whether the `cache` table in `myra_cache_network.db` has an active background cleanup process for expired entries, or if it grows indefinitely.
+- **UNCERTAIN:** The exact trigger mechanisms for Parquet export workflows (`data_exporter.py`). It's unclear if this is fully automated or manually run via CLI tools.
 
-### 6. Scanner Logic & Screening Accuracy
-**Severity:** Critical
-**Location:** `myra_app/fundamental_manager.py` -> `fetch_fundamentals()` (Growth Metrics)
-**The Vulnerability:**
-The logic calculating `sales_growth` and `profit_growth` uses a basic division: `((l_profit - p_profit) / abs(p_profit)) * 100`. If a company is a turnaround stock (e.g., recovering from a massive loss of -100 to a profit of 10), the absolute denominator results in highly distorted, massive percentage spikes. Alternatively, if `prev` metrics are zero, the system skips it (`p_profit != 0`). This causes edge cases to produce infinite/NaN returns or silently omit highly lucrative turnaround companies.
-**Actionable Fix:**
-Implement a mathematically sound bounds-capped calculation for turnaround growth using vectorized logic in Polars/DuckDB.
-```sql
--- DuckDB Actionable Fix
-AVG(
-    CASE
-        WHEN prev_profit < 0 AND net_profit > 0 THEN 100.0 -- Hard cap for full turnaround
-        WHEN prev_profit < 0 AND net_profit < 0 THEN ((net_profit - prev_profit) / ABS(prev_profit)) * 100
-        WHEN prev_profit > 0 THEN ((net_profit - prev_profit) / prev_profit) * 100
-        ELSE 0
-    END
-) as profit_growth
-```
+## Architectural Concerns & Observability Gaps
+- **Observability Gap:** While there are prints and logger warnings, centralized structured logging for database write failures and API retry exhaustion seems fragmented between `print()` and standard `logging`.
+- **Architectural Risk:** The system is heavily decoupled (Atomic Trilogy), which is great for file-locking prevention but makes joining cross-domain data (e.g., technicals + fundamentals) rely entirely on application-layer logic (Pandas/Polars merges), which might become a bottleneck for complex joins.
