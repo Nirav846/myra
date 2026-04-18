@@ -107,10 +107,11 @@ def run_daily_update():
 
         # 4. Dynamic Schema Enforcement (Bulletproof insertion)
         os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-        conn = sqlite3.connect(DB_PATH)
+        lib = LibrarianCore(read_only=False)
+        conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 
         # Ask SQLite what columns actually exist in the table
-        cursor = conn.execute("PRAGMA table_info(technical_data)")
+        cursor = lib.safe_execute("PRAGMA table_info(technical_data)", conn=conn)
         valid_cols = [info[1] for info in cursor.fetchall()]
 
         # Only keep the columns that the database recognizes
@@ -151,7 +152,6 @@ def run_daily_update():
                 json.dump(manifest_payload, f, indent=4)
 
             # Automatic Metadata Hook
-            lib = LibrarianCore(read_only=False)
             lib.set_metadata("cache_meta", json.dumps(manifest_payload))
             print("✅ Successfully updated cache_meta metadata.")
         except Exception as e:

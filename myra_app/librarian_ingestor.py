@@ -41,12 +41,6 @@ class LibrarianIngestorMixin:
             except:
                 pass
 
-        if self.conn:
-            try:
-                self.conn.execute("VACUUM")
-            except:
-                pass
-
     def _consolidate_csv_archives(self):
         ad = os.path.join(self.data_dir, "Market_Archives")
         if not os.path.exists(ad):
@@ -123,10 +117,6 @@ class LibrarianIngestorMixin:
         for i in range(0, len(target_days), chunk_size):
             chunk = target_days[i : i + chunk_size]
 
-            # Legacy DuckDB Transaction if present
-            if self.conn:
-                self.conn.execute("BEGIN TRANSACTION")
-
             try:
                 # Optimized with list comprehension (Fix 136, 145: Avoid append and execute in loop)
                 def _fetch_one(idx, current):
@@ -177,17 +167,7 @@ class LibrarianIngestorMixin:
                     if (f := _fetch_one(idx, current)) is not None
                 ]
 
-                # 1. Ingest into DuckDB (Standard Cache) - Batch execution
-                if self.conn and valid_files:
-                    for local in valid_files:
-                        sql = f"INSERT OR REPLACE INTO prices SELECT trim(SYMBOL) as symbol, strptime(trim(DATE1), '%d-%b-%Y')::DATE as date, OPEN_PRICE as open, HIGH_PRICE as high, LOW_PRICE as low, CLOSE_PRICE as close, TTL_TRD_QNTY as volume, try_cast(trim(DELIV_QTY) AS BIGINT) as delivery_qty, try_cast(trim(DELIV_PER) AS DOUBLE) as delivery_percent, 'NSE' as exchange FROM read_csv_auto('{local.replace('\\\\','/')}') WHERE trim(SERIES) IN ('EQ', 'BE', 'BZ', 'SM')"
-                        self.conn.execute(sql)  # noqa: N+1
-
-                if self.conn:
-                    self.conn.execute("COMMIT")
             except Exception as e:
-                if self.conn:
-                    self.conn.execute("ROLLBACK")
                 if hasattr(self, "console"):
                     self.console.print(f"[bold red][!] Ingestion Range Error: {e}[/]")
         return True
