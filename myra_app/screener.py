@@ -42,18 +42,8 @@ class MYRAScreener:
             return
 
         # 1. Trend Distribution & Volume (Direct SQL for speed and safety)
-        sql = """
-            WITH latest_indicators AS (
-                SELECT c.*, p.close, p.volume
-                FROM calculated_indicators c
-                JOIN prices p ON c.symbol = p.symbol AND c.date = p.date
-                WHERE c.date = (SELECT MAX(date) FROM calculated_indicators)
-                AND c.symbol IN (SELECT symbol FROM symbols_master WHERE in_active_universe = TRUE)
-            )
-            SELECT * FROM latest_indicators
-        """
         try:
-            df = pd.read_sql(sql, self.lib._tech_conn)
+            df = self.lib.precompute_indicators()
         except Exception as e:
             self.console.print(f"[error]Failed to build X-Ray: {e}[/error]")
             return
