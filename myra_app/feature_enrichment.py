@@ -142,11 +142,19 @@ def process_enrichment_pipeline(conn):
                 "SELECT name FROM sqlite_master WHERE type='table'"
             ).fetchall()
         ]
-        table_name = "technical_data"
+
+        # Find the first valid table available in the DB
+        table_name = None
+        for tbl in ["technical_data", "prices", "calculated_indicators", "fundamentals"]:
+            if tbl in tables:
+                table_name = tbl
+                break
+
+        if not table_name:
+            return
+
         if table_name not in ALLOWED_QUERIES:
             raise ValueError("Invalid table name")
-        if table_name not in tables:
-            return
 
         df_raw = pl.read_database(ALLOWED_QUERIES[table_name], conn)
         nifty_pd = pd.read_sql(

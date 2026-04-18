@@ -114,7 +114,7 @@ class LibrarianCore:
         self._val_conn = _get_conn(self.DB_MAP["valuation"])
         self._gov_conn = _get_conn(self.DB_MAP["governance"])
 
-    def safe_execute(self, sql, params=None, conn=None, retries=5):
+    def safe_execute(self, sql, params=None, conn=None):
         """Thread-safe SQL execution for SQLite."""
         # if it's SQLite, use standard execute
         c = conn

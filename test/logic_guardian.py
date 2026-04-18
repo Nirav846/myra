@@ -7,7 +7,6 @@ Implements NoREC and TLP patterns for mathematical integrity.
 import os
 import sqlite3
 import pandas as pd
-import sqlite3
 from myra_app.librarian import Librarian
 
 

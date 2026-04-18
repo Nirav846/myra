@@ -88,8 +88,8 @@ class Gatekeeper:
                     con_t.execute(
                         f"DELETE FROM technical_data WHERE symbol IN ({placeholders})", etf_list
                     )
-                    con_t.execute("VACUUM")
                     con_t.commit()
+                    con_t.execute("VACUUM")
                 con_t.close()
 
             if os.path.exists(gov_db):
@@ -98,8 +98,8 @@ class Gatekeeper:
                     con_g.execute(
                         f"DELETE FROM ias_history WHERE symbol IN ({placeholders})", etf_list
                     )
-                    con_g.execute("VACUUM")
                     con_g.commit()
+                    con_g.execute("VACUUM")
                     con_g.close()
                 except Exception:
                     pass
