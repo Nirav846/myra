@@ -42,18 +42,8 @@ class MYRAScreener:
             return
 
         # 1. Trend Distribution & Volume (Direct SQL for speed and safety)
-        sql = """
-            WITH latest_indicators AS (
-                SELECT c.*, p.close, p.volume
-                FROM calculated_indicators c
-                JOIN prices p ON c.symbol = p.symbol AND c.date = p.date
-                WHERE c.date = (SELECT MAX(date) FROM calculated_indicators)
-                AND c.symbol IN (SELECT symbol FROM symbols_master WHERE in_active_universe = TRUE)
-            )
-            SELECT * FROM latest_indicators
-        """
         try:
-            df = self.lib.conn.execute(sql).df()
+            df = self.lib.precompute_indicators()
         except Exception as e:
             self.console.print(f"[error]Failed to build X-Ray: {e}[/error]")
             return
@@ -62,7 +52,7 @@ class MYRAScreener:
             return
 
         # Merge with fundamentals to get Sector
-        funda = self.lib.conn.execute("SELECT symbol, sector FROM fundamentals").df()
+        funda = pd.read_sql("SELECT symbol, sector FROM fundamentals", self.lib._val_conn)
         if not funda.empty:
             df = df.merge(funda, on="symbol", how="left")
 

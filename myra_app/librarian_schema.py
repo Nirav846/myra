@@ -253,10 +253,9 @@ class LibrarianSchemaMixin:
                 conn=self._gov_conn,
             )
 
-        # --- 6. DUCKDB (Legacy/High-Speed Cache) ---
-        if self.conn:
-            # We keep 'prices' in DuckDB for vectorized math if needed,
-            # but it will be a mirror of technical.db
+        # --- 6. LEGACY (High-Speed Cache) ---
+        if self._tech_conn:
+            # We keep 'prices' as a mirror of technical.db for vectorized math if needed
             self.safe_execute(
                 """
                 CREATE TABLE IF NOT EXISTS prices (
@@ -265,7 +264,7 @@ class LibrarianSchemaMixin:
                     PRIMARY KEY (symbol, date, exchange)
                 )
             """,
-                conn=self.conn,
+                conn=self._tech_conn,
             )
 
         self._create_indices()
