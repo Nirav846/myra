@@ -7,7 +7,6 @@ Implements NoREC and TLP patterns for mathematical integrity.
 import os
 import sqlite3
 import pandas as pd
-import duckdb
 from myra_app.librarian import Librarian
 
 
@@ -19,18 +18,18 @@ class LogicGuardian:
     ### 1. NoREC Audit (Non-optimizing Reference Engine Check) ###
     def audit_norec_query(self, table_name, predicate):
         """
-        Verifies if DuckDB's optimizer matches a brute-force Python filter.
+        Verifies if SQLite's optimizer matches a brute-force Python filter.
         Logic: Optimized SQL Count == Brute-Force DataFrame Count.
         """
         try:
-            # 1. Get Optimized Result (DuckDB)
+            # 1. Get Optimized Result (SQLite)
             sql = f"SELECT symbol FROM {table_name} WHERE {predicate}"
-            df_sql = self.lib.conn.execute(sql).df()
+            df_sql = pd.read_sql(sql, self.lib._tech_conn)
             sql_count = len(df_sql)
 
             # 2. Get Reference Result (Brute-Force Pandas)
             # We fetch ALL data for that table and filter manually
-            df_raw = self.lib.conn.execute(f"SELECT * FROM {table_name}").df()
+            df_raw = pd.read_sql(f"SELECT * FROM {table_name}", self.lib._tech_conn)
 
             # Translate SQL predicate to Pandas
             # Using query() which is close to SQL syntax
@@ -60,18 +59,18 @@ class LogicGuardian:
         Logic: Total == Count(P) + Count(NOT P) + Count(P IS NULL).
         """
         try:
-            total = self.lib.conn.execute(
+            total = self.lib._tech_conn.execute(
                 f"SELECT COUNT(*) FROM {table_name}"
             ).fetchone()[0]
 
-            # Correct DuckDB Syntax: No "= TRUE" for complex expressions
-            p_true = self.lib.conn.execute(
+            # SQLite Query
+            p_true = self.lib._tech_conn.execute(
                 f"SELECT COUNT(*) FROM {table_name} WHERE ({predicate})"
             ).fetchone()[0]
-            p_false = self.lib.conn.execute(
+            p_false = self.lib._tech_conn.execute(
                 f"SELECT COUNT(*) FROM {table_name} WHERE NOT ({predicate})"
             ).fetchone()[0]
-            p_null = self.lib.conn.execute(
+            p_null = self.lib._tech_conn.execute(
                 f"SELECT COUNT(*) FROM {table_name} WHERE ({predicate}) IS NULL"
             ).fetchone()[0]
 
@@ -94,13 +93,13 @@ class LogicGuardian:
         print("\n🛡️ [MYRA] Initializing Logic Guardian Audit...")
 
         # Audit 1: TLP on Prices (Data integrity)
-        print("[*] Testing TLP on 'prices' table...")
-        res, msg = self.audit_tlp_partitioning("prices", "close > 500")
+        print("[*] Testing TLP on 'technical_data' table...")
+        res, msg = self.audit_tlp_partitioning("technical_data", "close > 500")
         print(f"    {msg}")
 
         # Audit 2: NoREC on Price Threshold
         print("[*] Testing NoREC on price threshold...")
-        res, msg = self.audit_norec_query("prices", "close > 1000")
+        res, msg = self.audit_norec_query("technical_data", "close > 1000")
         print(f"    {msg}")
 
         print(

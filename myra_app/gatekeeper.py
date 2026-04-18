@@ -3,7 +3,7 @@ import glob
 import time
 import shutil
 import pandas as pd
-import duckdb
+import sqlite3
 from datetime import datetime
 from rich.console import Console
 
@@ -63,18 +63,21 @@ class Gatekeeper:
                 Gatekeeper.DRY_RUN_LOG, index=False
             )
 
-            # 5. Execution (DuckDB for RAM efficiency)
+            # 5. Execution (SQLite for RAM efficiency)
             tech_db = os.path.join("db", db_map["technical"])
             meta_db = os.path.join("db", db_map["meta"])
             gov_db = os.path.join("db", db_map["governance"])
 
-            symbols_sql = "', '".join(etf_list)
+            if not etf_list:
+                return
+
+            placeholders = ", ".join(["?"] * len(etf_list))
 
             if os.path.exists(tech_db):
-                con_t = duckdb.connect(tech_db)
+                con_t = sqlite3.connect(tech_db, check_same_thread=False)
                 # Check how many rows will be deleted
                 count_res = con_t.execute(
-                    f"SELECT COUNT(*) FROM technical_data WHERE symbol IN ('{symbols_sql}')"
+                    f"SELECT COUNT(*) FROM technical_data WHERE symbol IN ({placeholders})", etf_list
                 ).fetchone()
                 row_count = count_res[0] if count_res else 0
 
@@ -83,28 +86,31 @@ class Gatekeeper:
                         f"[yellow][Gatekeeper] Purging {row_count} ETF rows from {db_map['technical']}...[/]"
                     )
                     con_t.execute(
-                        f"DELETE FROM technical_data WHERE symbol IN ('{symbols_sql}')"
+                        f"DELETE FROM technical_data WHERE symbol IN ({placeholders})", etf_list
                     )
+                    con_t.commit()
                     con_t.execute("VACUUM")
                 con_t.close()
 
             if os.path.exists(gov_db):
                 try:
-                    con_g = duckdb.connect(gov_db)
+                    con_g = sqlite3.connect(gov_db, check_same_thread=False)
                     con_g.execute(
-                        f"DELETE FROM ias_history WHERE symbol IN ('{symbols_sql}')"
+                        f"DELETE FROM ias_history WHERE symbol IN ({placeholders})", etf_list
                     )
+                    con_g.commit()
                     con_g.execute("VACUUM")
                     con_g.close()
                 except Exception:
                     pass
 
             if os.path.exists(meta_db):
-                con_m = duckdb.connect(meta_db)
+                con_m = sqlite3.connect(meta_db, check_same_thread=False)
                 # Mark as ETF and inactive
                 con_m.execute(
-                    f"UPDATE symbols_master SET instrument_type = 'ETF', is_active = 0, in_active_universe = 0 WHERE symbol IN ('{symbols_sql}')"
+                    f"UPDATE symbols_master SET instrument_type = 'ETF', is_active = 0, in_active_universe = 0 WHERE symbol IN ({placeholders})", etf_list
                 )
+                con_m.commit()
                 con_m.close()
 
             # 6. Archive and Lock

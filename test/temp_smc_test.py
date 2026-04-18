@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import os
-import duckdb
+import sqlite3
 
 
 def calculate_fvg(df):
@@ -83,7 +83,7 @@ def calculate_structure(df, window=5):
 def test_smc():
     print("[*] SMC Sandbox: Testing new indicators...")
 
-    db_path = "results/Data/myra_market_data.db"
+    db_path = "db/myra_technical.db"
     if not os.path.exists(db_path):
         print("[!] DB not found, using dummy data.")
         data = {
@@ -95,10 +95,10 @@ def test_smc():
         }
         df = pd.DataFrame(data)
     else:
-        conn = duckdb.connect(db_path, read_only=True)
-        df = conn.execute(
-            "SELECT open, high, low, close, volume FROM prices LIMIT 100"
-        ).df()
+        conn = sqlite3.connect(db_path)
+        df = pd.read_sql(
+            "SELECT open, high, low, close, volume FROM technical_data LIMIT 100", conn
+        )
         conn.close()
         print(f"[✔] Loaded {len(df)} rows from DB.")
 

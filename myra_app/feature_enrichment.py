@@ -1,5 +1,4 @@
 import polars as pl
-import duckdb
 
 
 def enrich_features(df: pl.DataFrame, nifty_df: pl.DataFrame) -> pl.DataFrame:
@@ -112,86 +111,71 @@ def process_enrichment_pipeline(conn):
     """
     Handles the DB transaction and applies the enrichment logic.
     """
+    ALLOWED_QUERIES = {
+        "prices": "SELECT * FROM prices",
+        "technical_data": "SELECT * FROM technical_data",
+        "calculated_indicators": "SELECT * FROM calculated_indicators",
+        "fundamentals": "SELECT * FROM fundamentals"
+    }
+
+    ALLOWED_DROPS = {
+        "prices": "DROP TABLE IF EXISTS prices",
+        "technical_data": "DROP TABLE IF EXISTS technical_data",
+        "calculated_indicators": "DROP TABLE IF EXISTS calculated_indicators",
+        "fundamentals": "DROP TABLE IF EXISTS fundamentals"
+    }
+
+    ALLOWED_RENAMES = {
+        "prices": "ALTER TABLE stg_enriched_market_data RENAME TO prices",
+        "technical_data": "ALTER TABLE stg_enriched_market_data RENAME TO technical_data",
+        "calculated_indicators": "ALTER TABLE stg_enriched_market_data RENAME TO calculated_indicators",
+        "fundamentals": "ALTER TABLE stg_enriched_market_data RENAME TO fundamentals"
+    }
+
     try:
-        if isinstance(conn, duckdb.DuckDBPyConnection):
-            tables = [t[0] for t in conn.execute("SHOW TABLES").fetchall()]
-            table_name = "prices"
-            valid_tables = ["prices", "technical_data", "calculated_indicators", "fundamentals"]
-            if table_name not in valid_tables:
-                raise ValueError("Invalid table name")
-            if table_name not in tables:
-                return
+        import pandas as pd
 
-            df_raw = pl.from_arrow(conn.execute(f"SELECT * FROM {table_name}").arrow())  # noqa: S608
-            if df_raw.is_empty():
-                return
+        cursor = conn.cursor()
+        tables = [
+            t[0]
+            for t in cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        ]
 
-            nifty_df = pl.DataFrame({"date": [], "close": []})
-            if "benchmarks" in tables:
-                nifty_df = pl.from_arrow(
-                    conn.execute(
-                        "SELECT date, close FROM benchmarks WHERE symbol = '^NSEI'"
-                    ).arrow()
-                )
+        # Find the first valid table available in the DB
+        table_name = None
+        for tbl in ["technical_data", "prices", "calculated_indicators", "fundamentals"]:
+            if tbl in tables:
+                table_name = tbl
+                break
 
-            df_enriched = enrich_features(df_raw, nifty_df)
-            conn.register("df_enriched_view", df_enriched.to_arrow())
+        if not table_name:
+            return
 
-            conn.execute("BEGIN TRANSACTION")
-            try:
-                conn.execute("DROP TABLE IF EXISTS stg_enriched_market_data")
-                conn.execute(
-                    "CREATE TABLE stg_enriched_market_data AS SELECT * FROM df_enriched_view"
-                )
-                conn.execute(f"DROP TABLE {table_name}")  # noqa: S608
-                conn.execute(
-                    f"ALTER TABLE stg_enriched_market_data RENAME TO {table_name}"  # noqa: S608
-                )
-                conn.execute("COMMIT")
-            except Exception:
-                conn.execute("ROLLBACK")
-                raise
-        else:  # SQLite fallback
-            import pandas as pd
+        if table_name not in ALLOWED_QUERIES:
+            raise ValueError("Invalid table name")
 
-            cursor = conn.cursor()
-            tables = [
-                t[0]
-                for t in cursor.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table'"
-                ).fetchall()
-            ]
-            table_name = "technical_data"
-            valid_tables = ["prices", "technical_data", "calculated_indicators", "fundamentals"]
-            if table_name not in valid_tables:
-                raise ValueError("Invalid table name")
-            if table_name not in tables:
-                return
+        df_raw = pl.read_database(ALLOWED_QUERIES[table_name], conn)
+        nifty_pd = pd.read_sql(
+            "SELECT date, close FROM technical_data WHERE symbol LIKE '%NIFTY 50%'",
+            conn,
+        )
+        nifty_df = pl.from_pandas(nifty_pd)
 
-            df_raw = pl.read_database(f"SELECT * FROM {table_name}", conn)  # noqa: S608
-            nifty_pd = pd.read_sql(
-                "SELECT date, close FROM technical_data WHERE symbol LIKE '%NIFTY 50%'",
-                conn,
-            )
-            nifty_df = pl.from_pandas(nifty_pd)
+        df_enriched = enrich_features(df_raw, nifty_df)
+        df_enriched.to_pandas().to_sql(
+            "stg_enriched_market_data", conn, if_exists="replace", index=False
+        )
 
-            df_enriched = enrich_features(df_raw, nifty_df)
-            df_enriched.to_pandas().to_sql(
-                "stg_enriched_market_data", conn, if_exists="replace", index=False
-            )
-
-            try:
-                cursor.executescript(
-                    f"""
-                    BEGIN TRANSACTION;
-                    DROP TABLE IF EXISTS {table_name};
-                    ALTER TABLE stg_enriched_market_data RENAME TO {table_name};
-                    COMMIT;
-                    """  # noqa: S608
-                )
-            except Exception:
-                cursor.execute("ROLLBACK")
-                raise
+        try:
+            cursor.execute("BEGIN TRANSACTION;")
+            cursor.execute(ALLOWED_DROPS[table_name])
+            cursor.execute(ALLOWED_RENAMES[table_name])
+            cursor.execute("COMMIT;")
+        except Exception:
+            cursor.execute("ROLLBACK")
+            raise
 
     except Exception as e:
         import logging
