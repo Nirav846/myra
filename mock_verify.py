@@ -12,7 +12,7 @@ if info[0] != "fusion_engine":
     print("Wrong strategy id")
     sys.exit(1)
 
-if set(info[2]) != {"Entry", "SL", "TP", "Score"}:
+if set(info[2]) != {"Entry", "SL", "TP", "Score", "Signal_Type"}:
     print(f"Wrong hero cols: {info[2]}")
     sys.exit(1)
 

@@ -132,6 +132,20 @@ class FusionEngine(BaseStrategy):
             )
         )
 
+        # Risk:Reward Filter
+        rr_ratio_min = params.get("execution", {}).get("rr_ratio_min", 2.0)
+
+        # Calculate RR handling potential division by zero
+        risk = np.abs(entry_price - stop_loss)
+        reward = np.abs(take_profit - entry_price)
+
+        # Avoid division by zero
+        safe_risk = np.where(risk > 0, risk, np.inf)
+        rr_ratio = reward / safe_risk
+
+        # Invalidate signals where RR is too low
+        signal_state = np.where(rr_ratio < rr_ratio_min, "NONE", signal_state)
+
         # Priority Ranking
         mtf_aligned = is_long_aligned | is_short_aligned
         priority_score = np.abs(final_score)
@@ -157,6 +171,7 @@ class FusionEngine(BaseStrategy):
                 "MTF_Aligned": "YES" if mtf_aligned_bool else "NO",
                 "Entry": round(final_entry, 2),
                 "SL": round(final_sl, 2),
-                "TP": round(final_tp, 2)
+                "TP": round(final_tp, 2),
+                "T1": round(final_tp, 2)
             }
         }
