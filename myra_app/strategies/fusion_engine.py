@@ -82,14 +82,15 @@ class FusionEngine(BaseStrategy):
         dist = np.abs(close - fvg_boundary) / close
 
         is_in_proximity = (dist <= prox_radius) & (dist > inval_thresh)
+        is_active = dist <= inval_thresh
 
         signal_state = pd.Series("NONE", index=df.index)
 
-        # Default active states based on alignment
-        signal_state = np.where(is_long_aligned, "ACTIVE_LONG", signal_state)
-        signal_state = np.where(is_short_aligned, "ACTIVE_SHORT", signal_state)
+        # If it's active (within invalidation threshold)
+        signal_state = np.where(is_long_aligned & is_active, "LONG", signal_state)
+        signal_state = np.where(is_short_aligned & is_active, "SHORT", signal_state)
 
-        # Override with pending states if in proximity
+        # If it's in proximity (within proximity radius but not yet active)
         signal_state = np.where(is_long_aligned & is_in_proximity & (fvg_boundary > 0), "PENDING_LONG", signal_state)
         signal_state = np.where(is_short_aligned & is_in_proximity & (fvg_boundary > 0), "PENDING_SHORT", signal_state)
 
@@ -103,20 +104,74 @@ class FusionEngine(BaseStrategy):
         final_score = np.where(is_conviction_spike, base_score * conv_mult, base_score)
         final_score = np.clip(final_score, -1.0, 1.0)
 
-        # Strategy evaluation only uses the final row
-        mtf_aligned_bool = is_long_aligned.iloc[-1] or is_short_aligned.iloc[-1]
+        # Execution Logic
+        fvg_top = df["fvg_top"] if "fvg_top" in df.columns else pd.Series(0.0, index=df.index)
+        fvg_bottom = df["fvg_bottom"] if "fvg_bottom" in df.columns else pd.Series(0.0, index=df.index)
+        swing_high = df["swing_high"] if "swing_high" in df.columns else pd.Series(0.0, index=df.index)
+        swing_low = df["swing_low"] if "swing_low" in df.columns else pd.Series(0.0, index=df.index)
 
-        if not mtf_aligned_bool:
-            return {"signal": False}
+        entry_price = (fvg_top + fvg_bottom) / 2.0
+
+        stop_loss = np.where(
+            (signal_state == "LONG") | (signal_state == "PENDING_LONG"),
+            fvg_bottom * 0.995,
+            np.where(
+                (signal_state == "SHORT") | (signal_state == "PENDING_SHORT"),
+                fvg_top * 1.005,
+                0.0
+            )
+        )
+
+        take_profit = np.where(
+            (signal_state == "LONG") | (signal_state == "PENDING_LONG"),
+            swing_high,
+            np.where(
+                (signal_state == "SHORT") | (signal_state == "PENDING_SHORT"),
+                swing_low,
+                0.0
+            )
+        )
+
+        # Risk:Reward Filter
+        rr_ratio_min = params.get("execution", {}).get("rr_ratio_min", 2.0)
+
+        # Calculate RR handling potential division by zero
+        risk = np.abs(entry_price - stop_loss)
+        reward = np.abs(take_profit - entry_price)
+
+        # Avoid division by zero
+        safe_risk = np.where(risk > 0, risk, np.inf)
+        rr_ratio = reward / safe_risk
+
+        # Invalidate signals where RR is too low
+        signal_state = np.where(rr_ratio < rr_ratio_min, "NONE", signal_state)
+
+        # Priority Ranking
+        mtf_aligned = is_long_aligned | is_short_aligned
+        priority_score = np.abs(final_score)
+        priority_score = np.where(mtf_aligned, priority_score + 10.0, priority_score)
 
         final_state_val = signal_state[-1] if isinstance(signal_state, np.ndarray) else signal_state.iloc[-1]
-        final_score_val = float(final_score[-1] if isinstance(final_score, np.ndarray) else final_score.iloc[-1])
+
+        if final_state_val == "NONE":
+            return {"signal": False}
+
+        # Strategy evaluation only uses the final row
+        mtf_aligned_bool = mtf_aligned.iloc[-1] if not isinstance(mtf_aligned, np.ndarray) else mtf_aligned[-1]
+        final_score_val = float(priority_score[-1] if isinstance(priority_score, np.ndarray) else priority_score.iloc[-1])
+        final_entry = float(entry_price[-1] if isinstance(entry_price, np.ndarray) else entry_price.iloc[-1])
+        final_sl = float(stop_loss[-1] if isinstance(stop_loss, np.ndarray) else stop_loss.iloc[-1])
+        final_tp = float(take_profit[-1] if isinstance(take_profit, np.ndarray) else take_profit.iloc[-1])
 
         return {
             "signal": True,
             "metrics": {
-                "State": str(final_state_val),
+                "Signal_Type": str(final_state_val),
                 "Score": round(final_score_val, 2),
-                "MTF_Aligned": "YES",
+                "MTF_Aligned": "YES" if mtf_aligned_bool else "NO",
+                "Entry": round(final_entry, 2),
+                "SL": round(final_sl, 2),
+                "TP": round(final_tp, 2),
+                "T1": round(final_tp, 2)
             }
         }

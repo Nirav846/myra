@@ -304,6 +304,7 @@ class MYRAScreener:
             "smart_money_ignition",
             "institutional_structural_flow",
             "multibagger_early",
+            "fusion_engine",
         ]
         is_aeon_scan = strategy_id == "31"
 

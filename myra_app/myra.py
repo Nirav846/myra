@@ -177,6 +177,11 @@ def main():
             "Multibagger Early Detection (Quant)",
             ["Score", "RS_Raw", "Compression", "VWAP_Reclaim", "Divergence"],
         ),
+        "36": (
+            "fusion_engine",
+            "Institutional Fusion Tracker",
+            ["Entry", "SL", "TP", "Score", "Signal_Type"],
+        ),
         "A1": ("alpha_vcp", "VCP Base Breakout", "Tightness"),
         "A2": ("alpha_bear_trap", "Weekly Bear Trap Reversal", "Absorption"),
         "A3": ("alpha_rs_leader", "RS Leadership (Stage 2)", "RS_Rating"),
