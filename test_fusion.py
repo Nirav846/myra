@@ -1,9 +1,8 @@
 import pandas as pd
 import numpy as np
 
-from myra_app.strategies.fusion_engine import FusionEngine
+from myra_app.strategies.fusion_engine import run
 
-engine = FusionEngine()
 df = pd.DataFrame({
     "close": [100]*100,
     "htf_bullish": [1]*100,
@@ -20,5 +19,5 @@ df = pd.DataFrame({
     "delivery_ma_60": [500]*100,
 })
 
-res = engine.run(df, {})
+res = run(df)
 print(res)

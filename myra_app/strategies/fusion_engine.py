@@ -29,6 +29,10 @@ class FusionEngine(BaseStrategy):
             return {}
 
     def run(self, df: pd.DataFrame, funda: dict) -> dict:
+        """Satisfies BaseStrategy abstract method."""
+        return self.compute_fusion_signal(df)
+
+    def compute_fusion_signal(self, df: pd.DataFrame) -> dict:
         """Core vectorized execution logic."""
         # Load params
         params = self.config.get("parameters", {})
@@ -173,3 +177,8 @@ class FusionEngine(BaseStrategy):
                 "T1": round(final_tp, 2)
             }
         }
+
+
+def run(df):
+    engine = FusionEngine()
+    return engine.compute_fusion_signal(df)
