@@ -15,6 +15,10 @@ def test_fusion_engine():
     # Enforce OHLCV TitleCase rule
     df = pd.DataFrame({
         'Close': np.random.uniform(100, 150, size),
+        'Open': np.random.uniform(100, 150, size),
+        'High': np.random.uniform(150, 160, size),
+        'Low': np.random.uniform(90, 100, size),
+        'Volume': np.random.uniform(1000, 5000, size),
         'htf_bullish': np.ones(size),
         'mtf_bullish': np.ones(size),
         'fvg_freshness': np.ones(size),
@@ -67,8 +71,18 @@ def test_fusion_engine():
 
     target_val = mock_screener_result.get("T1") or mock_screener_result["tactics"].get("target", round(mock_screener_result["Entry"] * 1.15, 2))
     print(f"Screener logic populated Target: {target_val}")
-
     assert target_val == 150 or target_val == mock_screener_result.get("T1"), "Target not correctly populated!"
+
+    # Simulate the absence of the T1 key to verify the screener's fallback mechanism
+    mock_screener_result_no_t1 = {
+        "Stock": "TEST",
+        "Entry": 100,
+        "SL": 90,
+        "tactics": {}
+    }
+    target_val_no_t1 = mock_screener_result_no_t1.get("T1") or mock_screener_result_no_t1["tactics"].get("target", round(mock_screener_result_no_t1["Entry"] * 1.15, 2))
+    print(f"Screener logic populated Target (Fallback): {target_val_no_t1}")
+    assert target_val_no_t1 == 115.0, "Fallback target logic failed!"
 
     print("Verification complete!")
 
