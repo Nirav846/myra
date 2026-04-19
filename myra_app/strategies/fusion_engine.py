@@ -1,5 +1,6 @@
 import os
 import yaml
+import logging
 import pandas as pd
 import numpy as np
 from myra_app.strategies.base_strategy import BaseStrategy
@@ -22,18 +23,20 @@ class FusionEngine(BaseStrategy):
         )
         try:
             with open(config_path, "r") as f:
-                return yaml.safe_load(f)
+                return yaml.safe_load(f) or {}
         except Exception as e:
-            print(f"[FusionEngine] Error loading config: {e}")
+            logging.error(f"[FusionEngine] Error loading config: {e}")
             return {}
 
     def run(self, df: pd.DataFrame, funda: dict) -> dict:
         """Core vectorized execution logic."""
-        if df.empty or len(df) < 3:
-            return {"signal": False}
-
         # Load params
         params = self.config.get("parameters", {})
+        lookback = params.get("lookback_trading_days", 60)
+
+        if df.empty or len(df) < lookback:
+            return {"signal": False}
+
         prox_radius = params.get("proximity_radius_pct", 0.03)
         inval_thresh = params.get("invalidation_threshold_pct", 0.015)
         spike_thresh = params.get("delivery_spike_threshold", 1.5)
