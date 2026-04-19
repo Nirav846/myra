@@ -47,13 +47,10 @@ class FusionEngine(BaseStrategy):
         w_liq = weights.get("liquidity_distance", 0.2)
         w_trend = weights.get("trend_alignment", 0.5)
 
-        # Standardize column names (case-insensitive mapping for safety)
-        cols = {c.lower(): c for c in df.columns}
-        c_close = cols.get("close")
-        if not c_close:
+        # Enforce OHLCV TitleCase rule
+        close = df["Close"] if "Close" in df.columns else None
+        if close is None:
             return {"signal": False}
-
-        close = df[c_close]
 
         # Use 0 as default if indicator is missing from DataFrame
         htf_bullish = df["htf_bullish"] if "htf_bullish" in df.columns else pd.Series(0, index=df.index)
@@ -133,7 +130,7 @@ class FusionEngine(BaseStrategy):
         )
 
         # Risk:Reward Filter
-        rr_ratio_min = params.get("execution", {}).get("rr_ratio_min", 2.0)
+        rr_ratio_min = self.config.get("parameters", {}).get("execution", {}).get("rr_ratio_min", 2.0)
 
         # Calculate RR handling potential division by zero
         risk = np.abs(entry_price - stop_loss)
@@ -143,7 +140,7 @@ class FusionEngine(BaseStrategy):
         safe_risk = np.where(risk > 0, risk, np.inf)
         rr_ratio = reward / safe_risk
 
-        # Invalidate signals where RR is too low
+        # Enforce vectorized Risk:Reward check: Invalidate signals where RR is too low
         signal_state = np.where(rr_ratio < rr_ratio_min, "NONE", signal_state)
 
         # Priority Ranking
@@ -171,6 +168,7 @@ class FusionEngine(BaseStrategy):
                 "MTF_Aligned": "YES" if mtf_aligned_bool else "NO",
                 "Entry": round(final_entry, 2),
                 "SL": round(final_sl, 2),
+                # Explicitly adding TP and T1 for position sizing calculations
                 "TP": round(final_tp, 2),
                 "T1": round(final_tp, 2)
             }
