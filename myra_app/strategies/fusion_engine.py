@@ -143,7 +143,7 @@ class FusionEngine(BaseStrategy):
         safe_risk = np.where(risk > 0, risk, np.inf)
         rr_ratio = reward / safe_risk
 
-        # Invalidate signals where RR is too low
+        # Enforce vectorized Risk:Reward check: Invalidate signals where RR is too low
         signal_state = np.where(rr_ratio < rr_ratio_min, "NONE", signal_state)
 
         # Priority Ranking
@@ -171,6 +171,7 @@ class FusionEngine(BaseStrategy):
                 "MTF_Aligned": "YES" if mtf_aligned_bool else "NO",
                 "Entry": round(final_entry, 2),
                 "SL": round(final_sl, 2),
+                # Explicitly adding TP and T1 for position sizing calculations
                 "TP": round(final_tp, 2),
                 "T1": round(final_tp, 2)
             }
