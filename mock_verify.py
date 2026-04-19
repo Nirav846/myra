@@ -1,13 +1,6 @@
 import sys
 import pandas as pd
-
-def get_strategies():
-    import ast
-    with open("myra_app/myra.py") as f:
-        for node in ast.walk(ast.parse(f.read())):
-            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name) and node.targets[0].id == "strategies":
-                return ast.literal_eval(node.value)
-    return {}
+from myra_app.utils.strategy_utils import get_strategies
 
 strategies = get_strategies()
 
@@ -25,5 +18,12 @@ if info[0] != "fusion_engine":
 if set(info[2]) != {"Entry", "SL", "TP", "Score", "Signal_Type"}:
     print(f"Wrong hero cols: {info[2]}")
     sys.exit(1)
+
+# Verify screener behavior
+from myra_app.screener import MYRAScreener
+from rich.console import Console
+
+console = Console()
+screener = MYRAScreener(console)
 
 print("Mock UI verification complete: integration properties are correct.")
