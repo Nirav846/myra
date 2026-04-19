@@ -47,10 +47,10 @@
 
 ## 🏗️ ARCHITECTURE RULES
 - **Librarian First**: Check `PKNSETools` and `PKDevTools` before adding new fetchers.
-- **Sidecar Isolation**: The Atomic Trilogy architecture utilizes four specialized sidecars: `technical.db`, `meta.db`, `institutional.db`, and `governance.db`. Never add columns directly to SQL; use Parquet files in `data/indicators/`.
+- **Sidecar Isolation**: The Atomic Trilogy architecture utilizes eight active databases mapped in LibrarianCore: `technical.db`, `meta.db`, `institutional.db`, `governance.db`, `valuation.db`, `scoring.db`, `calendar.db`, and `network_cache.sqlite`. Never add columns directly to SQL; use Parquet files in `data/indicators/`.
 - **Rule 26**: Indicators MUST come strictly from Parquet via `precompute_indicators()`. Do not read technical indicators from SQLite.
 - **Rule 43**: Thread-safe writes MUST use `with lib._db_lock:` and WAL mode.
-- **SMC FVG**: The Smart Money Concepts FVG threshold is standardized at 1.5%.
+- **SMC FVG**: The Smart Money Concepts (SMC) standardization rule is: detection threshold is 0.2%, and mitigation/invalidation threshold is 1.5%.
 - **Materiality**: Institutional signals must respect the ₹10 Lakhs materiality filter.
 
 ---

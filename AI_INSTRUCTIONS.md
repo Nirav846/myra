@@ -6,7 +6,7 @@ Before generating code or approving any Pull Request, you MUST verify the change
 
 ## 1. Architecture & Routing
 Preserve the Atomic Trilogy sidecar architecture. Legacy DuckDB connections and hardcoded paths are strictly deprecated.
-* **REQUIRE:** Enforce the four domain-specific SQLite sidecars: `technical.db`, `meta.db`, `institutional.db`, and `governance.db`.
+* **REQUIRE:** Enforce the eight active SQLite sidecars mapped in LibrarianCore: `technical.db`, `meta.db`, `institutional.db`, `governance.db`, `valuation.db`, `scoring.db`, `calendar.db`, and `network_cache.sqlite`.
 * **REJECT:** `duckdb.connect()`, `lib.conn`, `librarian.get_ohlcv()`, or hardcoded `.db` file paths.
 * **REQUIRE:** All database connections must route through the central dictionary: `myra_app.librarian_core.LibrarianCore.DB_MAP`.
 * **REQUIRE (Rule 43):** Enforce thread-safe writes via `with lib._db_lock:` and WAL mode.
@@ -31,7 +31,7 @@ Optimize strictly for high-frequency data processing.
 
 ## 4. Ecosystem Integration
 * **Library First:** Always check `PKNSETools` and `PKDevTools` for existing logic before writing custom data fetchers.
-* **Standardization:** Smart Money Concepts (SMC) FVG thresholds must be standardized at 1.5%.
+* **Standardization:** Smart Money Concepts (SMC) FVG thresholds must be clearly separated: detection threshold is 0.2%, and mitigation/invalidation threshold is 1.5%.
 
 ## 5. UI Resilience & Graceful Degradation
 Terminal interfaces must not crash due to missing legacy data adapters.
