@@ -6,6 +6,8 @@ parameters:
   invalidation_threshold_pct: 0.015
   delivery_spike_threshold: 1.5
   conviction_score_multiplier: 2.0
+  execution:
+    rr_ratio_min: 2.0  # Minimum Risk:Reward to accept a setup
   weights:
     fvg_freshness: 0.3
     liquidity_distance: 0.2
