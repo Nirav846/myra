@@ -1,0 +1,12 @@
+name: "Institutional Fusion Tracker"
+version: "3.2"
+parameters:
+  lookback_trading_days: 60
+  proximity_radius_pct: 0.03
+  invalidation_threshold_pct: 0.015
+  delivery_spike_threshold: 1.5
+  conviction_score_multiplier: 2.0
+  weights:
+    fvg_freshness: 0.3
+    liquidity_distance: 0.2
+    trend_alignment: 0.5
