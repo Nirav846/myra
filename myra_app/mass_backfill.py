@@ -24,10 +24,7 @@ def mass_backfill(db_path=os.path.join("db", "myra_technical.db"), missing_csv=o
         return
 
     df_missing = pd.read_csv(missing_csv)
-    # Only focus on symbols we have in our master list
     df_missing = df_missing[df_missing["symbol"].isin(all_symbols)]
-
-    # We group by date because files are organized by date
     unique_missing_dates = df_missing["missing_date"].unique()
 
     print(f"[*] Found {len(unique_missing_dates)} dates requiring backfill.")
@@ -43,7 +40,6 @@ def mass_backfill(db_path=os.path.join("db", "myra_technical.db"), missing_csv=o
         print(f"[!] {archive_dir} not found.")
         return
 
-    # Create a mapping of date to file in the archive dir
     all_csvs = glob.glob(os.path.join(archive_dir, "nse_full_*.csv"))
     date_to_file = {}
     for csv_file in all_csvs:
@@ -70,12 +66,12 @@ def mass_backfill(db_path=os.path.join("db", "myra_technical.db"), missing_csv=o
     for idx, d_str in enumerate(unique_missing_dates, 1):
         myra_log(idx, total_dates, desc=f"Backfilling {d_str}")
 
-        # Get missing symbols for this specific date
-        symbols_needed = df_missing[df_missing["missing_date"] == d_str]["symbol"].tolist()
+        # ARMOR: Force upper and strip on the needed symbols list
+        raw_symbols_needed = df_missing[df_missing["missing_date"] == d_str]["symbol"].tolist()
+        symbols_needed = [str(s).strip().upper() for s in raw_symbols_needed]
 
-        # Look for a local CSV
         if d_str not in date_to_file:
-            print(f"\n[!] WARNING: Local CSV missing for date {d_str}. Skipping. DO NOT fallback to API.")
+            print(f"\n[!] WARNING: Local CSV missing for date {d_str}. Skipping.")
             stats["skipped"] += 1
             continue
 
@@ -83,22 +79,30 @@ def mass_backfill(db_path=os.path.join("db", "myra_technical.db"), missing_csv=o
 
         try:
             df = pd.read_csv(csv_path)
-            # Standardize columns to upper case
+            stats["processed"] += 1 # Moved counter up to accurately reflect files touched
+            
             df.columns = df.columns.str.strip().str.upper()
 
-            # Filter for Equity Series only
-            if "SERIES" in df.columns:
-                df = df[df["SERIES"] == "EQ"]
+            if "SYMBOL" in df.columns:
+                df["SYMBOL"] = df["SYMBOL"].astype(str).str.strip()
 
-            # Normalize the CSV date format
+            if "SERIES" in df.columns:
+                df["SERIES"] = df["SERIES"].astype(str).str.strip()
+                df = df[df["SERIES"].isin(["EQ", "BE", "SM", "ST", "BZ"])]
+
             if 'DATE1' in df.columns:
                 df['DATE1'] = pd.to_datetime(df['DATE1']).dt.strftime('%Y-%m-%d')
+            elif 'TIMESTAMP' in df.columns:
+                df['TIMESTAMP'] = pd.to_datetime(df['TIMESTAMP']).dt.strftime('%Y-%m-%d')
 
-            # Map columns
             rename_map = {
                 "SYMBOL": "symbol",
                 "DATE1": "date",
                 "TIMESTAMP": "date",
+                "OPEN_PRICE": "open",
+                "HIGH_PRICE": "high",
+                "LOW_PRICE": "low",
+                "CLOSE_PRICE": "close",
                 "OPEN": "open",
                 "HIGH": "high",
                 "LOW": "low",
@@ -110,49 +114,43 @@ def mass_backfill(db_path=os.path.join("db", "myra_technical.db"), missing_csv=o
             }
             df.rename(columns=rename_map, inplace=True)
 
-            # Subset DataFrame to only include mapped columns plus delivery_ratio (which will be calculated)
             mapped_cols = list(set(rename_map.values()))
             available_cols = [c for c in mapped_cols if c in df.columns]
             df = df[available_cols]
 
-            # Ensure essential columns exist
             for col in ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume', 'delivery', 'delivery_pct']:
                 if col not in df.columns:
                     df[col] = None
 
-            # Filter rows for symbols we need
-            df = df[df["symbol"].isin(symbols_needed)]
+            # ARMOR: Force upper and strip on the dataframe before matching
+            if "symbol" in df.columns:
+                df["symbol"] = df["symbol"].astype(str).str.strip().str.upper()
+                df = df[df["symbol"].isin(symbols_needed)]
 
             if df.empty:
                 continue
 
-            # Check for necessary columns
-            for col in ["open", "high", "low", "close", "volume", "delivery"]:
+            for col in ["open", "high", "low", "close", "volume", "delivery", "delivery_pct"]:
                 if col in df.columns:
+                    df[col] = df[col].astype(str).str.replace(',', '', regex=False).str.strip()
                     df[col] = pd.to_numeric(df[col], errors="coerce")
                 else:
                     df[col] = None
 
-            # Enforce delivery metrics
-            initial_count = len(df)
             df = df.dropna(subset=["delivery"])
             df = df[df["delivery"] > 1.0]
 
             if df.empty:
                 continue
 
-            if "delivery_pct" in df.columns:
-                df["delivery_pct"] = pd.to_numeric(df["delivery_pct"], errors="coerce")
-            else:
+            if "delivery_pct" not in df.columns or df["delivery_pct"].isnull().all():
                 df["delivery_pct"] = (df["delivery"] / df["volume"] * 100).fillna(0)
 
             df["delivery_ratio"] = (df["delivery"] / df["volume"]).fillna(0)
 
-            # Ensure date column exists and is populated
             if "date" not in df.columns:
                 df["date"] = d_str
             else:
-                # Use format='mixed' to avoid UserWarning from pandas and ensure consistent parsing
                 df["date"] = pd.to_datetime(df["date"], errors="coerce", format='mixed').dt.date.astype(str)
                 df["date"] = df["date"].fillna(d_str)
 
@@ -182,13 +180,10 @@ def mass_backfill(db_path=os.path.join("db", "myra_technical.db"), missing_csv=o
                 )
                 stats["rows"] += cursor.rowcount
 
-            stats["processed"] += 1
-
         except Exception as e:
             print(f"[!] Error processing {csv_path}: {e}")
             stats["errors"] += 1
 
-    # Commit once outside the loop for performance
     if stats["rows"] > 0:
         conn.commit()
 
@@ -196,9 +191,9 @@ def mass_backfill(db_path=os.path.join("db", "myra_technical.db"), missing_csv=o
     print("\n" + "=" * 30)
     print("MASS BACKFILL COMPLETE")
     print("=" * 30)
-    print(f"Dates Processed:   {stats['processed']}")
+    print(f"Dates Evaluated:   {stats['processed']}")
     print(f"Dates Skipped:     {stats['skipped']}")
-    print(f"Rows Added:        {stats['rows']}")
+    print(f"Valid Rows Added:  {stats['rows']}")
     print(f"Errors:            {stats['errors']}")
     print("=" * 30)
 
