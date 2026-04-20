@@ -9,7 +9,7 @@ from myra_core.utils.myra_log import myra_log
 from myra_app.librarian import Librarian
 
 
-def mass_backfill(db_path="technical.db", missing_csv="missing_data.csv"):
+def mass_backfill(db_path=os.path.join("db", "technical.db"), missing_csv=os.path.join("data", "missing_data.csv")):
     """
     Massive backfill for all symbols in the database.
     Strict Local Source: Reads strictly from local Bhavcopy CSV files.
@@ -32,7 +32,8 @@ def mass_backfill(db_path="technical.db", missing_csv="missing_data.csv"):
 
     print(f"[*] Found {len(unique_missing_dates)} dates requiring backfill.")
 
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL;")
     cursor = conn.cursor()
 
     stats = {"processed": 0, "rows": 0, "errors": 0, "skipped": 0}
@@ -179,7 +180,6 @@ def mass_backfill(db_path="technical.db", missing_csv="missing_data.csv"):
                     """,
                     records,
                 )
-                conn.commit()
                 stats["rows"] += cursor.rowcount
 
             stats["processed"] += 1
@@ -187,6 +187,10 @@ def mass_backfill(db_path="technical.db", missing_csv="missing_data.csv"):
         except Exception as e:
             print(f"[!] Error processing {csv_path}: {e}")
             stats["errors"] += 1
+
+    # Commit once outside the loop for performance
+    if stats["rows"] > 0:
+        conn.commit()
 
     conn.close()
     print("\n" + "=" * 30)
