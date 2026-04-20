@@ -105,18 +105,18 @@ def mass_backfill(db_path=os.path.join("db", "myra_technical.db"), missing_csv=o
                 "CLOSE": "close",
                 "TOTTRDQTY": "volume",
                 "TTL_TRD_QNTY": "volume",
-                "DELIV_QTY": "delivery_qty",
+                "DELIV_QTY": "delivery",
                 "DELIV_PER": "delivery_pct"
             }
             df.rename(columns=rename_map, inplace=True)
 
-            # Subset DataFrame to only include mapped columns
+            # Subset DataFrame to only include mapped columns plus delivery_ratio (which will be calculated)
             mapped_cols = list(set(rename_map.values()))
             available_cols = [c for c in mapped_cols if c in df.columns]
             df = df[available_cols]
 
             # Ensure essential columns exist
-            for col in ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume', 'delivery_qty', 'delivery_pct']:
+            for col in ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume', 'delivery', 'delivery_pct']:
                 if col not in df.columns:
                     df[col] = None
 
@@ -127,7 +127,7 @@ def mass_backfill(db_path=os.path.join("db", "myra_technical.db"), missing_csv=o
                 continue
 
             # Check for necessary columns
-            for col in ["open", "high", "low", "close", "volume", "delivery_qty"]:
+            for col in ["open", "high", "low", "close", "volume", "delivery"]:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors="coerce")
                 else:
@@ -135,8 +135,8 @@ def mass_backfill(db_path=os.path.join("db", "myra_technical.db"), missing_csv=o
 
             # Enforce delivery metrics
             initial_count = len(df)
-            df = df.dropna(subset=["delivery_qty"])
-            df = df[df["delivery_qty"] > 1.0]
+            df = df.dropna(subset=["delivery"])
+            df = df[df["delivery"] > 1.0]
 
             if df.empty:
                 continue
@@ -144,7 +144,9 @@ def mass_backfill(db_path=os.path.join("db", "myra_technical.db"), missing_csv=o
             if "delivery_pct" in df.columns:
                 df["delivery_pct"] = pd.to_numeric(df["delivery_pct"], errors="coerce")
             else:
-                df["delivery_pct"] = (df["delivery_qty"] / df["volume"] * 100).fillna(0)
+                df["delivery_pct"] = (df["delivery"] / df["volume"] * 100).fillna(0)
+
+            df["delivery_ratio"] = (df["delivery"] / df["volume"]).fillna(0)
 
             # Ensure date column exists and is populated
             if "date" not in df.columns:
@@ -163,8 +165,9 @@ def mass_backfill(db_path=os.path.join("db", "myra_technical.db"), missing_csv=o
                     "low",
                     "close",
                     "volume",
-                    "delivery_qty",
-                    "delivery_pct"
+                    "delivery",
+                    "delivery_pct",
+                    "delivery_ratio"
                 ]
             ].values.tolist()
 
@@ -172,8 +175,8 @@ def mass_backfill(db_path=os.path.join("db", "myra_technical.db"), missing_csv=o
                 cursor.executemany(
                     """
                     INSERT OR REPLACE INTO technical_data
-                    (symbol, date, open, high, low, close, volume, delivery_qty, delivery_pct)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (symbol, date, open, high, low, close, volume, delivery, delivery_pct, delivery_ratio)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     records,
                 )
