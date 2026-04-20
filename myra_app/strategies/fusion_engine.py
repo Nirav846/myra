@@ -179,6 +179,7 @@ class FusionEngine(BaseStrategy):
         }
 
 
-def run(df):
-    engine = FusionEngine()
-    return engine.compute_fusion_signal(df)
+_engine = FusionEngine()
+
+def run(df: pd.DataFrame, funda: dict = None) -> dict:
+    return _engine.compute_fusion_signal(df)
