@@ -4,11 +4,11 @@ import numpy as np
 from myra_app.strategies.fusion_engine import run
 
 df = pd.DataFrame({
-    "Open": [100]*100,
-    "High": [100]*100,
-    "Low": [100]*100,
-    "Close": [100]*100,
-    "Volume": [1000]*100,
+    "open": [100]*100,
+    "high": [100]*100,
+    "low": [100]*100,
+    "close": [100]*100,
+    "volume": [1000]*100,
     "htf_bullish": [1]*100,
     "mtf_bullish": [1]*100,
     "fvg_top": [102]*100,

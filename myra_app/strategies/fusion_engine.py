@@ -30,6 +30,7 @@ class FusionEngine(BaseStrategy):
 
     def run(self, df: pd.DataFrame, funda: dict) -> dict:
         """Satisfies BaseStrategy abstract method."""
+        df = df.rename(columns=str.title)
         return self.compute_fusion_signal(df)
 
     def compute_fusion_signal(self, df: pd.DataFrame) -> dict:
@@ -182,4 +183,4 @@ class FusionEngine(BaseStrategy):
 _engine = FusionEngine()
 
 def run(df: pd.DataFrame, funda: dict = None) -> dict:
-    return _engine.compute_fusion_signal(df)
+    return _engine.run(df, funda)
