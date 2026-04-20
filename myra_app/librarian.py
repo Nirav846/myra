@@ -321,8 +321,8 @@ class Librarian(
             """
             df = pd.read_sql(query, self._tech_conn, params=(clean, days))
             if not df.empty:
-                df = df.drop_duplicates(subset=['date'], keep='last')
-                return df.sort_values("date")
+                df = df.sort_values("date").drop_duplicates(subset=['date'], keep='last')
+                return df
         except Exception:
             pass
         return pd.DataFrame()
