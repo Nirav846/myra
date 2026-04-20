@@ -9,7 +9,7 @@ from myra_core.utils.myra_log import myra_log
 from myra_app.librarian import Librarian
 
 
-def mass_backfill(db_path=os.path.join("db", "technical.db"), missing_csv=os.path.join("data", "missing_data.csv")):
+def mass_backfill(db_path=os.path.join("db", "myra_technical.db"), missing_csv=os.path.join("data", "missing_data.csv")):
     """
     Massive backfill for all symbols in the database.
     Strict Local Source: Reads strictly from local Bhavcopy CSV files.
@@ -84,34 +84,41 @@ def mass_backfill(db_path=os.path.join("db", "technical.db"), missing_csv=os.pat
         try:
             df = pd.read_csv(csv_path)
             # Standardize columns to upper case
-            df.columns = [c.strip().upper() for c in df.columns]
+            df.columns = df.columns.str.strip().str.upper()
 
             # Filter for Equity Series only
             if "SERIES" in df.columns:
-                df = df[df["SERIES"].str.strip().isin(["EQ", "BE", "SM"])]
+                df = df[df["SERIES"] == "EQ"]
+
+            # Normalize the CSV date format
+            if 'DATE1' in df.columns:
+                df['DATE1'] = pd.to_datetime(df['DATE1']).dt.strftime('%Y-%m-%d')
 
             # Map columns
-            mapping = {
+            rename_map = {
                 "SYMBOL": "symbol",
                 "DATE1": "date",
                 "TIMESTAMP": "date",
-                "OPEN_PRICE": "open",
                 "OPEN": "open",
-                "HIGH_PRICE": "high",
                 "HIGH": "high",
-                "LOW_PRICE": "low",
                 "LOW": "low",
-                "CLOSE_PRICE": "close",
                 "CLOSE": "close",
-                "TTL_TRD_QNTY": "volume",
                 "TOTTRDQTY": "volume",
+                "TTL_TRD_QNTY": "volume",
                 "DELIV_QTY": "delivery",
-                "DELIVERY_QTY": "delivery",
-                "DELIV_PER": "delivery_pct",
-                "DELIVERY_PCT": "delivery_pct",
-                "NO_OF_TRADES": "trades",
+                "DELIV_PER": "delivery_pct"
             }
-            df = df.rename(columns={k: v for k, v in mapping.items() if k in df.columns})
+            df.rename(columns=rename_map, inplace=True)
+
+            # Subset DataFrame to only include mapped columns plus delivery_ratio (which will be calculated)
+            mapped_cols = list(set(rename_map.values()))
+            available_cols = [c for c in mapped_cols if c in df.columns]
+            df = df[available_cols]
+
+            # Ensure essential columns exist
+            for col in ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume', 'delivery', 'delivery_pct']:
+                if col not in df.columns:
+                    df[col] = None
 
             # Filter rows for symbols we need
             df = df[df["symbol"].isin(symbols_needed)]
@@ -149,11 +156,6 @@ def mass_backfill(db_path=os.path.join("db", "technical.db"), missing_csv=os.pat
                 df["date"] = pd.to_datetime(df["date"], errors="coerce", format='mixed').dt.date.astype(str)
                 df["date"] = df["date"].fillna(d_str)
 
-            # Optional columns setup for executemany
-            for col in ["trades", "vwap"]:
-                if col not in df.columns:
-                    df[col] = None
-
             records = df[
                 [
                     "symbol",
@@ -164,8 +166,6 @@ def mass_backfill(db_path=os.path.join("db", "technical.db"), missing_csv=os.pat
                     "close",
                     "volume",
                     "delivery",
-                    "trades",
-                    "vwap",
                     "delivery_pct",
                     "delivery_ratio"
                 ]
@@ -175,8 +175,8 @@ def mass_backfill(db_path=os.path.join("db", "technical.db"), missing_csv=os.pat
                 cursor.executemany(
                     """
                     INSERT OR REPLACE INTO technical_data
-                    (symbol, date, open, high, low, close, volume, delivery, trades, vwap, delivery_pct, delivery_ratio)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (symbol, date, open, high, low, close, volume, delivery, delivery_pct, delivery_ratio)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     records,
                 )
