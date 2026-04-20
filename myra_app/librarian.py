@@ -285,6 +285,7 @@ class Librarian(
             if not res.empty:
                 res["date"] = pd.to_datetime(res["date"])
                 res.set_index("date", inplace=True)
+                res = res[~res.index.duplicated(keep="last")]
                 # Standardize for Intelligence Layer (lowercase_snake_case)
                 res.rename(
                     columns={
@@ -320,6 +321,7 @@ class Librarian(
             """
             df = pd.read_sql(query, self._tech_conn, params=(clean, days))
             if not df.empty:
+                df = df.drop_duplicates(subset=['date'], keep='last')
                 return df.sort_values("date")
         except Exception:
             pass

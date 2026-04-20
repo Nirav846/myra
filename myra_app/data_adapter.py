@@ -96,6 +96,7 @@ class DataAdapter:
                 df["date"] = pd.to_datetime(df["date"], errors='coerce')
                 df = df.dropna(subset=["date"]).sort_values("date")
                 df.set_index("date", inplace=True)
+                df = df[~df.index.duplicated(keep='last')]
                 
                 # Compliance: CamelCase Rename
                 rename_map = {
