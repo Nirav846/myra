@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import sqlite3
+from datetime import datetime
 from rich.console import Console
 
 
@@ -185,3 +186,21 @@ class LibrarianCore:
                 except Exception:
                     pass
         self._tech_conn = self._inst_conn = self._meta_conn = self._val_conn = self._gov_conn = None
+
+    def record_lineage(self, dataset: str, source: str, rows: int, status: str, transforms: str):
+        """PRIORITY 8: Centralized Data Lineage Tracking."""
+        if not self._meta_conn or self.read_only:
+            return
+        fetch_time = datetime.now().isoformat()
+        try:
+            self._meta_conn.execute(
+                """
+                INSERT OR REPLACE INTO lineage_tracking
+                (dataset_name, fetch_time, source_url, rows_processed, status, transformations_applied)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (dataset, fetch_time, source, rows, status, transforms)
+            )
+            self._meta_conn.commit()
+        except Exception as e:
+            print(f"[MYRA] Failed to record lineage for {dataset}: {e}")
