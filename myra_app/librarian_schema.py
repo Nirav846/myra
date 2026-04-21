@@ -1,32 +1,20 @@
-#!/usr/bin/env python
-"""
-MYRA Librarian Schema Layer (TRILOGY ERA)
-Handles multi-DB table creation and schema migrations.
-Routes tables to their designated Atomic SQLite sidecars.
-"""
+import sqlite3
+import logging
+from myra_app.schema_registry import SchemaRegistry
 
+logger = logging.getLogger(__name__)
 
 class LibrarianSchemaMixin:
-    def _migrate_schema(self, conn=None):
-        """
-        PKScreener Superpower: Automatic Schema Migrations
-        Handles migrations across modular databases.
-        """
-        if self.read_only:
-            return
-        # Migration logic will be updated to target specific sidecars in Phase 3
-        pass
+    """Handles all database initialization and migrations."""
 
     def _migrate_meta_schema(self):
-        """Helper to add new columns to symbols_master for existing DBs."""
+        """Auto-migrates new columns into symbols_master if they don't exist."""
         columns = {
-            "industry": "TEXT",
-            "raw_sector": "TEXT",
-            "raw_industry": "TEXT",
             "source": "TEXT",
             "confidence": "REAL",
             "last_updated_sector": "TEXT",
             "sector_locked": "INTEGER DEFAULT 0",
+            "is_active": "INTEGER DEFAULT 1",
             "instrument_type": "TEXT DEFAULT 'EQUITY'",
         }
         for col, col_type in columns.items():
@@ -36,7 +24,7 @@ class LibrarianSchemaMixin:
                     conn=self._meta_conn,
                 )
             except Exception:
-                pass  # Column already exists
+                pass
 
     def _create_tables(self):
         """Initializes all tables in their respective sidecars."""
@@ -66,7 +54,6 @@ class LibrarianSchemaMixin:
             """,
                 conn=self._meta_conn,
             )
-            # Schema Migration: Add missing columns if they don't exist
             self._migrate_meta_schema()
             self.safe_execute(
                 "CREATE TABLE IF NOT EXISTS index_constituents (index_name TEXT, symbol TEXT, PRIMARY KEY (index_name, symbol))",
@@ -78,6 +65,21 @@ class LibrarianSchemaMixin:
             )
             self.safe_execute(
                 "CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT)",
+                conn=self._meta_conn,
+            )
+            # PRIORITY 8: DATA LINEAGE TRACKING
+            self.safe_execute(
+                """
+                CREATE TABLE IF NOT EXISTS lineage_tracking (
+                    dataset_name TEXT,
+                    fetch_time TEXT,
+                    source_url TEXT,
+                    rows_processed INTEGER,
+                    status TEXT,
+                    transformations_applied TEXT,
+                    PRIMARY KEY (dataset_name, fetch_time)
+                )
+                """,
                 conn=self._meta_conn,
             )
 
@@ -106,7 +108,6 @@ class LibrarianSchemaMixin:
 
         # --- 3. INSTITUTIONAL.DB (Smart Money) ---
         if self._inst_conn:
-            # FII/DII Quarter-over-Quarter History
             self.safe_execute(
                 """
                 CREATE TABLE IF NOT EXISTS fii_dii_history (
@@ -125,7 +126,6 @@ class LibrarianSchemaMixin:
             """,
                 conn=self._inst_conn,
             )
-            # Concentrated Institutional Owners
             self.safe_execute(
                 """
                 CREATE TABLE IF NOT EXISTS institutional_owners (
@@ -189,14 +189,6 @@ class LibrarianSchemaMixin:
             """,
                 conn=self._val_conn,
             )
-            # Migration: Ensure period_end exists
-            try:
-                self.safe_execute(
-                    "ALTER TABLE quarterly_results ADD COLUMN period_end TEXT",
-                    conn=self._val_conn,
-                )
-            except Exception:
-                pass
 
         # --- 5. GOVERNANCE.DB (Pledge & SAST) ---
         if self._gov_conn:
@@ -255,7 +247,11 @@ class LibrarianSchemaMixin:
 
         # --- 6. LEGACY (High-Speed Cache) ---
         if self._tech_conn:
-            # We keep 'prices' as a mirror of technical.db for vectorized math if needed
+            # DEPRECATED: Slated for removal in v4.0. technical_data is the Single Source of Truth.
+            try:
+                logger.warning("DEPRECATION WARNING: Table 'prices' is redundant. Migration to 'technical_data' required.")
+            except:
+                pass
             self.safe_execute(
                 """
                 CREATE TABLE IF NOT EXISTS prices (
@@ -268,6 +264,10 @@ class LibrarianSchemaMixin:
             )
 
         self._create_indices()
+
+        # PRIORITY 2.3: Runtime Schema Validation on Startup
+        if self._tech_conn:
+            SchemaRegistry.validate_schema(self._tech_conn, "technical_data")
 
     def _create_indices(self):
         """Optimizes all sidecars with covering indices."""
@@ -283,10 +283,6 @@ class LibrarianSchemaMixin:
                 )
 
             if self._inst_conn:
-                self.safe_execute(
-                    "CREATE INDEX IF NOT EXISTS idx_insider_sym ON insider_trades (symbol)",
-                    conn=self._inst_conn,
-                )
                 self.safe_execute(
                     "CREATE INDEX IF NOT EXISTS idx_deals_sym ON large_deals (symbol)",
                     conn=self._inst_conn,
