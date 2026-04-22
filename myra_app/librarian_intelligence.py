@@ -39,11 +39,7 @@ class LibrarianIntelligenceMixin:
                 logger.debug(f"Failed to load indicator for {sym}: {e}")
                 continue
 
-        if not results_list:
-            return pd.DataFrame()
-
-        # Concatenate valid DataFrames
-        return pd.concat(results_list, axis=0).reset_index()
+        return pd.concat([res for res in results_list if not res.empty], axis=0).reset_index() if results_list else pd.DataFrame()
 
     def update_indicator_history(self):
         """
@@ -58,18 +54,9 @@ class LibrarianIntelligenceMixin:
             print("[!] No active symbols found for indicator update.")
             return
 
-        # Load Institutional Deals for joining
+        # Bypass institutional deal tables: do not fetch or merge large_deals/insider_trades.
+        # Delivery-centric resilience: compute IAS purely from technical/delivery columns.
         deals_df = pd.DataFrame()
-        if hasattr(self, '_inst_conn') and self._inst_conn:
-            try:
-                deals_df = pd.read_sql(
-                    "SELECT symbol, date, SUM(qty) as inst_vol FROM large_deals GROUP BY symbol, date",
-                    self._inst_conn,
-                )
-                if not deals_df.empty:
-                    deals_df["date"] = pd.to_datetime(deals_df["date"])
-            except Exception as e:
-                logger.error(f"Deal fetch failed: {e}")
 
         print(f"[MYRA] Updating Virtual Indicator Lake for {len(active_symbols)} symbols...")
 
@@ -86,18 +73,11 @@ class LibrarianIntelligenceMixin:
                 df.columns = [c.capitalize() for c in df.columns]
                 df.index = pd.to_datetime(df.index)
                 df.sort_index(inplace=True)
+                # Force uniqueness of index to avoid stale/duplicate rows (The Shield)
+                df = df.loc[~df.index.duplicated(keep='last')]
 
-                # 2. Join Institutional Volume
-                if not deals_df.empty:
-                    sym_deals = deals_df[deals_df["symbol"] == sym].copy()
-                    if not sym_deals.empty:
-                        sym_deals.set_index("date", inplace=True)
-                        df = df.join(sym_deals[["inst_vol"]], how="left")
-                        df["inst_vol"] = df["inst_vol"].fillna(0.0)
-                    else:
-                        df["inst_vol"] = 0.0
-                else:
-                    df["inst_vol"] = 0.0
+                # 2. Skip joining institutional volume (delivery-centric resilience)
+                df["inst_vol"] = 0.0
 
                 # 3. Compute Core Technicals
                 df["sma20"] = ta.sma(df["Close"], length=20)
@@ -114,17 +94,79 @@ class LibrarianIntelligenceMixin:
                 else:
                     df["rdv"] = 1.0
 
-                # 5. SMC Structural Flow
-                from myra_app.engine import SMCManager
-                df_lower = df.rename(columns=lambda x: x.lower())
-                df["fvg"] = SMCManager.calculate_fvg(df_lower)
-                bos, choch = SMCManager.calculate_market_structure(df_lower)
-                df["bos"] = bos
-                df["choch"] = choch
+                # Delivery-centric institutional metrics (compute IAS using technical_data only)
+                try:
+                    # approximate delivery_pct if only delivery_qty is present
+                    if "Delivery_qty" in df.columns and "Volume" in df.columns:
+                        df["delivery_pct"] = (df["Delivery_qty"] / df["Volume"].replace(0, np.nan)).fillna(0.0) * 100.0
+                    elif "Delivery_pct" in df.columns:
+                        df["delivery_pct"] = df["Delivery_pct"].fillna(0.0)
+                    else:
+                        df["delivery_pct"] = 0.0
+
+                    # Volatility Compression Score (VCP): higher when ATR is small relative to price
+                    df["vcp"] = 1.0 - (df["atr20"] / df["sma20"].replace(0, np.nan)).fillna(0.0)
+                    df["vcp"] = df["vcp"].clip(lower=0.0, upper=1.0)
+
+                    # Primary metric: delivery_divergence_score (z-score of delivery_pct vs recent window)
+                    rolling_mean = df["delivery_pct"].rolling(20, min_periods=1).mean()
+                    rolling_std = df["delivery_pct"].rolling(20, min_periods=1).std().replace(0, np.nan).fillna(1.0)
+                    df["delivery_divergence_score"] = ((df["delivery_pct"] - rolling_mean) / rolling_std).fillna(0.0)
+
+                    # Factor VCP into the divergence score
+                    df["delivery_divergence_score"] = df["delivery_divergence_score"] * df["vcp"]
+
+                    # Compute VWAP (use pandas_ta vwap if available)
+                    try:
+                        df["vwap"] = ta.vwap(df["High"], df["Low"], df["Close"], df["Volume"])
+                    except Exception:
+                        # fallback: rolling price-volume average
+                        pv = (df["Close"] * df["Volume"]).rolling(20, min_periods=1).sum()
+                        v = df["Volume"].rolling(20, min_periods=1).sum().replace(0, np.nan)
+                        df["vwap"] = (pv / v).fillna(df["Close"])
+
+                    # Heavy institutional absorption signal: delivery_pct > 50% and Close > VWAP
+                    heavy_absorption = ((df["delivery_pct"] > 50.0) & (df["Close"] > df["vwap"])) .astype(float)
+
+                    # Secondary metric: delivery_pct when absorption condition met
+                    df["delivery_accumulation_signal"] = df["delivery_pct"] * heavy_absorption
+
+                    # Institutional Accumulation Score (IAS): delivery-weighted with VCP guardrail
+                    # Primary weight on delivery_divergence_score, secondary on accumulation signal
+                    primary_w = 0.8
+                    secondary_w = 0.2
+                    df["ias"] = (primary_w * df["delivery_divergence_score"]) + (secondary_w * (df["delivery_accumulation_signal"] / 100.0))
+                    # Apply VCP as guardrail to final IAS
+                    df["ias"] = df["ias"] * df["vcp"]
+                except Exception:
+                    # keep robust: set neutral defaults
+                    df["delivery_pct"] = df.get("delivery_pct", 0.0)
+                    df["vcp"] = df.get("vcp", 0.0)
+                    df["delivery_divergence_score"] = df.get("delivery_divergence_score", 0.0)
+                    df["delivery_accumulation_signal"] = df.get("delivery_accumulation_signal", 0.0)
+                    df["ias"] = df.get("ias", 0.0)
+
+                # 5. SMC Structural Flow (isolate errors so we still save indicators)
+                try:
+                    from myra_app.engine import SMCManager
+
+                    df_lower = df.rename(columns=lambda x: x.lower())
+                    df["fvg"] = SMCManager.calculate_fvg(df_lower)
+                    bos, choch = SMCManager.calculate_market_structure(df_lower)
+                    df["bos"] = bos
+                    df["choch"] = choch
+                except Exception as e:
+                    logger.debug(f"SMC calc failed for {sym}: {e}")
+                    df["fvg"] = 0.0
+                    df["bos"] = False
+                    df["choch"] = False
 
                 # 6. Save to Lake (Lowercase consistency)
                 df.columns = [c.lower() for c in df.columns]
                 df["symbol"] = sym
+                # Guarantee `ias` exists so downstream consumers always have the column
+                if "ias" not in df.columns:
+                    df["ias"] = df.get("ias", 0.0)
                 self.loader.indicators.save_indicators("precomputed", sym, df)
 
             except Exception as e:

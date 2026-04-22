@@ -56,7 +56,12 @@ class Librarian(
 
         if not self.read_only:
             self._create_tables()
-            self._migrate_schema()
+            # 1. Migrate the metadata/system tables (e.g., symbols, sectors)
+            self._migrate_meta_schema() 
+
+            # 2. Validate/Auto-fix the technical data via the new Registry (v3.3)
+            from myra_app.schema_registry import SchemaRegistry
+            SchemaRegistry.validate_schema(self._tech_conn, "technical_data")
 
     def get_market_holidays(self, year):
         import json, os, datetime
@@ -234,26 +239,29 @@ class Librarian(
             if cache_max < db_max:
                 # Cache is stale. Fetch delta from DB.
                 try:
-                    query = "SELECT * FROM technical_data WHERE symbol = ? AND date > ?"
-                    delta = pd.read_sql(
-                        query, self._tech_conn, params=(clean, cache_max)
-                    )
+                    # Dynamically select only columns that exist in technical_data
+                    try:
+                        cols_info = [r[1] for r in self._tech_conn.execute("PRAGMA table_info('technical_data')").fetchall()]
+                    except Exception:
+                        cols_info = []
+                    desired = ["symbol", "date", "open", "high", "low", "close", "volume", "delivery", "trades", "vwap", "delivery_pct"]
+                    select_cols = [c for c in desired if c in cols_info]
+                    if not select_cols:
+                        delta = pd.DataFrame()
+                    else:
+                        col_str = ", ".join(select_cols)
+                        query = f"SELECT {col_str} FROM technical_data WHERE symbol = ? AND date > ?"
+                        delta = pd.read_sql(query, self._tech_conn, params=(clean, cache_max))
                     if not delta.empty:
                         delta["date"] = pd.to_datetime(delta["date"])
                         delta.set_index("date", inplace=True)
-                        delta.rename(
-                            columns={
-                                "open": "Open",
-                                "high": "High",
-                                "low": "Low",
-                                "close": "Close",
-                                "volume": "Volume",
-                                "delivery": "delivery_qty",
-                                "delivery_pct": "delivery_percent",
-                            },
-                            inplace=True,
-                        )
-                        delta["Adj Close"] = delta["Close"]
+                        # Schema shield: rename legacy delivery columns to canonical names
+                        delta.rename(columns={"delivery_qty": "delivery", "delivery_percent": "delivery_pct"}, inplace=True)
+                        # TitleCase core columns for compatibility
+                        delta.rename(columns={"open": "Open", "high": "High", "low": "Low", "close": "Close", "volume": "Volume", "vwap": "Vwap", "trades": "Trades"}, inplace=True)
+                        # Drop duplicate columns if any
+                        delta = delta.loc[:, ~delta.columns.duplicated()]
+                        delta["Adj Close"] = delta.get("Close", delta.get("close"))
                         # Merge and update cache
                         df = pd.concat([df, delta])
                         df = df[~df.index.duplicated(keep="last")].sort_index()
@@ -265,6 +273,24 @@ class Librarian(
             # Normalization check for legacy Parquet files
             if "delivery" in df.columns and "delivery_qty" not in df.columns:
                 df.rename(columns={"delivery": "delivery_qty"}, inplace=True)
+            # Harmonize delivery percentage column names
+            if "delivery_pct" not in df.columns or df["delivery_pct"].isnull().all():
+                if "delivery_percent" in df.columns:
+                    df["delivery_pct"] = df["delivery_pct"].fillna(df["delivery_percent"])
+                elif "delivery_ratio" in df.columns:
+                    df["delivery_pct"] = df["delivery_pct"].fillna(df["delivery_ratio"] * 100)
+
+            # Ensure delivery_qty canonical name exists
+            if "delivery_qty" not in df.columns and "delivery" in df.columns:
+                df["delivery_qty"] = df["delivery"]
+
+            # Clean redundant columns
+            for c in ["delivery_percent", "delivery_ratio", "delivery"]:
+                if c in df.columns and "delivery_pct" in df.columns:
+                    try:
+                        df.drop(columns=[c], inplace=True)
+                    except Exception:
+                        pass
             if as_of_date:
                 df = df[df.index <= as_of_date]
             return df
@@ -280,26 +306,53 @@ class Librarian(
                 params.append(as_of_date)
             query += " ORDER BY date ASC"
 
+            # Dynamically select only available columns to avoid SQL errors on missing fields
+            try:
+                cols_info = [r[1] for r in self._tech_conn.execute("PRAGMA table_info('technical_data')").fetchall()]
+            except Exception:
+                cols_info = []
+            desired = ["symbol", "date", "open", "high", "low", "close", "volume", "delivery", "trades", "vwap", "delivery_pct"]
+            select_cols = [c for c in desired if c in cols_info]
+            if not select_cols:
+                return None
+            col_str = ", ".join(select_cols)
+            query = f"SELECT {col_str} FROM technical_data WHERE symbol = ?"
+            if as_of_date:
+                query += " AND date <= ?"
+            query += " ORDER BY date ASC"
+
             res = pd.read_sql(query, self._tech_conn, params=params)
 
             if not res.empty:
                 res["date"] = pd.to_datetime(res["date"])
                 res.set_index("date", inplace=True)
                 res = res[~res.index.duplicated(keep="last")]
-                # Standardize for Intelligence Layer (lowercase_snake_case)
-                res.rename(
-                    columns={
-                        "open": "Open",
-                        "high": "High",
-                        "low": "Low",
-                        "close": "Close",
-                        "volume": "Volume",
-                        "delivery": "delivery_qty",
-                        "delivery_pct": "delivery_percent",
-                    },
-                    inplace=True,
-                )
-                res["Adj Close"] = res["Close"]
+
+                # Schema Shield: rename legacy delivery columns to canonical names
+                res.rename(columns={"delivery_qty": "delivery", "delivery_percent": "delivery_pct"}, inplace=True)
+
+                # Ensure TitleCase for core numeric fields for downstream compatibility
+                title_map = {}
+                for c in ["open", "high", "low", "close", "volume", "vwap", "trades"]:
+                    if c in res.columns:
+                        title_map[c] = c.capitalize()
+                if title_map:
+                    res.rename(columns=title_map, inplace=True)
+
+                # Drop duplicate columns that may arise from legacy joins
+                res = res.loc[:, ~res.columns.duplicated()]
+
+                # Harmonize delivery_pct if alternate names present
+                if "delivery_pct" not in res.columns or res["delivery_pct"].isnull().all():
+                    if "delivery_percent" in res.columns:
+                        res["delivery_pct"] = res["delivery_percent"].fillna(res.get("delivery_pct"))
+                    elif "delivery_ratio" in res.columns:
+                        res["delivery_pct"] = res["delivery_ratio"].fillna(res.get("delivery_pct")) * 100
+
+                # Ensure canonical delivery_qty if delivery exists
+                if "delivery_qty" not in res.columns and "delivery" in res.columns:
+                    res["delivery_qty"] = res["delivery"]
+
                 self.loader.save_to_parquet(clean, res)
                 return res
         except Exception:
