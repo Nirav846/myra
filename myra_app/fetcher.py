@@ -789,6 +789,20 @@ class DataFetcher:
 
         df_full = pd.merge(df_bhav, df_mto, on=["SYMBOL", "SERIES"], how="left")
 
+        # Enforce column whitelist and uniqueness before reindex
+        CORE_COLUMNS = [
+            "SYMBOL",
+            "SERIES",
+            "DATE1",
+            "OPEN_PRICE",
+            "HIGH_PRICE",
+            "LOW_PRICE",
+            "CLOSE_PRICE",
+            "TTL_TRD_QNTY",
+            "DELIV_QTY",
+            "DELIV_PER",
+        ]
+
         MONTHS = [
             "JAN",
             "FEB",
@@ -807,22 +821,14 @@ class DataFetcher:
             "DATE1"
         ] = f"{current_date.day:02d}-{MONTHS[current_date.month-1]}-{current_date.year}"
 
-        cols = [
-            "SYMBOL",
-            "SERIES",
-            "DATE1",
-            "OPEN_PRICE",
-            "HIGH_PRICE",
-            "LOW_PRICE",
-            "CLOSE_PRICE",
-            "TTL_TRD_QNTY",
-            "DELIV_QTY",
-            "DELIV_PER",
-        ]
-        for c in cols:
+        # Drop anything not explicitly in whitelist, ensuring no duplicate mapping creates chaos
+        for c in CORE_COLUMNS:
             if c not in df_full.columns:
                 df_full[c] = 0
-        return df_full.reindex(columns=cols).fillna(0).to_csv(index=False)
+        df_full = df_full.loc[:, ~df_full.columns.duplicated()]
+        df_full = df_full[CORE_COLUMNS]
+
+        return df_full.fillna(0).to_csv(index=False)
 
     def fetch_ohlcv_delivery(self, current_date):
         """Primary data stream entry point (Restored & Hardened)."""

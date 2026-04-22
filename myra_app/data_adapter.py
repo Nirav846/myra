@@ -93,10 +93,10 @@ class DataAdapter:
             
             if not df.empty:
                 # Efficient Date Parsing
-                df["date"] = pd.to_datetime(df["date"], errors='coerce')
+                df["date"] = pd.to_datetime(df["date"], errors='coerce').dt.normalize()
                 df = df.dropna(subset=["date"]).sort_values("date")
                 df.set_index("date", inplace=True)
-                df = df[~df.index.duplicated(keep='last')]
+                df = df.loc[~df.index.duplicated(keep='last')]
                 
                 # Compliance: CamelCase Rename
                 rename_map = {
@@ -104,6 +104,10 @@ class DataAdapter:
                     "close": "Close", "volume": "Volume", "delivery_pct": "DeliveryPct"
                 }
                 df.rename(columns=rename_map, inplace=True)
+                df = df.loc[:, ~df.columns.duplicated()]
+
+                from myra_core.utils.data_validation import validate_dataframe
+                df = validate_dataframe(df, context=f"DataAdapter get_price_df: {symbol_clean}")
         except Exception as e:
             logging.error(f"Price fetch failed for {symbol_clean}: {e}")
             df = pd.DataFrame()
