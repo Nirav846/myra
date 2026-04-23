@@ -3,6 +3,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+STRICT_INDEX_MODE = True
+
 def enforce_index_contract(df, symbol="UNKNOWN"):
     """
     Enforces the core invariant: df.index MUST be unique.
@@ -32,8 +34,8 @@ def enforce_index_contract(df, symbol="UNKNOWN"):
     df = df.loc[~df.index.duplicated(keep="last")]
 
     # 4. Final Assertion
-    if not df.index.is_unique:
-        raise ValueError(f"[{symbol}] duplicate index AFTER enforcement")
+    if STRICT_INDEX_MODE:
+        assert df.index.is_unique, f"[{symbol}] duplicate index AFTER enforcement"
 
     return df
 
