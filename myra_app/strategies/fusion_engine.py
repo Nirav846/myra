@@ -6,10 +6,37 @@ import numpy as np
 from myra_app.strategies.base_strategy import BaseStrategy
 
 
+def enforce_contract(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Global Data Contract Enforcement:
+    - Ensures datetime index
+    - Removes duplicate index
+    - Guarantees sorted, unique index
+    """
+
+    if df is None or df.empty:
+        return df
+
+    df = df.copy()
+
+    # Normalize index
+    df.index = pd.to_datetime(df.index, errors="coerce").normalize()
+    df = df[~df.index.isna()]
+
+    # Sort + deduplicate
+    df = df.sort_index()
+    df = df.loc[~df.index.duplicated(keep="last")]
+
+    # Final safety
+    if not df.index.is_unique:
+        raise ValueError("Index still not unique after enforcement")
+
+    return df
+
+
 class FusionEngine(BaseStrategy):
     """
     Fusion Engine (v3.2) - Institutional Fusion Tracker
-    Implements Multi-Timeframe Alignment, Proximity Alerting, and Delivery Conviction.
     """
 
     def __init__(self):
@@ -17,7 +44,6 @@ class FusionEngine(BaseStrategy):
         self.config = self._load_config()
 
     def _load_config(self) -> dict:
-        """Loads configuration from the YAML file."""
         config_path = os.path.join(
             os.path.dirname(__file__), "..", "..", "config", "fusion_config.yaml"
         )
@@ -29,13 +55,31 @@ class FusionEngine(BaseStrategy):
             return {}
 
     def run(self, df: pd.DataFrame, funda: dict) -> dict:
-        """Satisfies BaseStrategy abstract method."""
+        """
+        Entry point — THIS is where your crash was happening.
+        Now fully protected.
+        """
+
+        if df is None or df.empty:
+            return {"signal": False}
+
+        try:
+            # 🔥 CRITICAL FIX: enforce index contract
+            df = enforce_contract(df)
+        except Exception as e:
+            logging.debug(f"[FusionEngine] Index cleanup failed: {e}")
+            return {"signal": False}
+
+        # Normalize column casing AFTER cleaning
         df = df.rename(columns=str.title)
+
         return self.compute_fusion_signal(df)
 
     def compute_fusion_signal(self, df: pd.DataFrame) -> dict:
-        """Core vectorized execution logic."""
-        # Load params
+        """
+        Core vectorized execution logic
+        """
+
         params = self.config.get("parameters", {})
         lookback = params.get("lookback_trading_days", 60)
 
@@ -52,65 +96,57 @@ class FusionEngine(BaseStrategy):
         w_liq = weights.get("liquidity_distance", 0.2)
         w_trend = weights.get("trend_alignment", 0.5)
 
-        # Enforce OHLCV TitleCase rule
         close = df["Close"] if "Close" in df.columns else None
         if close is None:
             return {"signal": False}
 
-        # Use 0 as default if indicator is missing from DataFrame
-        htf_bullish = df["htf_bullish"] if "htf_bullish" in df.columns else pd.Series(0, index=df.index)
-        mtf_bullish = df["mtf_bullish"] if "mtf_bullish" in df.columns else pd.Series(0, index=df.index)
-        htf_bearish = df["htf_bearish"] if "htf_bearish" in df.columns else pd.Series(0, index=df.index)
-        mtf_bearish = df["mtf_bearish"] if "mtf_bearish" in df.columns else pd.Series(0, index=df.index)
+        # Safe Series generators
+        def safe_series(col, default=0.0):
+            return df[col] if col in df.columns else pd.Series(default, index=df.index)
 
-        # Multi-Timeframe Alignment
+        htf_bullish = safe_series("htf_bullish")
+        mtf_bullish = safe_series("mtf_bullish")
+        htf_bearish = safe_series("htf_bearish")
+        mtf_bearish = safe_series("mtf_bearish")
+
         is_long_aligned = (htf_bullish > 0) & (mtf_bullish > 0)
         is_short_aligned = (htf_bearish > 0) & (mtf_bearish > 0)
 
-        # Base Score Components
-        fvg_freshness = df["fvg_freshness"] if "fvg_freshness" in df.columns else pd.Series(0.0, index=df.index)
-        liquidity_dist = df["liquidity_distance"] if "liquidity_distance" in df.columns else pd.Series(0.0, index=df.index)
-        trend_align = df["trend_alignment"] if "trend_alignment" in df.columns else pd.Series(0.0, index=df.index)
+        fvg_freshness = safe_series("fvg_freshness")
+        liquidity_dist = safe_series("liquidity_distance")
+        trend_align = safe_series("trend_alignment")
 
-        # Calculate base score, clip between -1.0 and 1.0
         base_score = (fvg_freshness * w_fvg) + (liquidity_dist * w_liq) + (trend_align * w_trend)
-        # Flip the sign for short setups
         base_score = np.where(is_short_aligned, -base_score, base_score)
         base_score = np.clip(base_score, -1.0, 1.0)
 
-        # Proximity Alerting
-        fvg_boundary = df["fvg_boundary"] if "fvg_boundary" in df.columns else pd.Series(0.0, index=df.index)
-
+        fvg_boundary = safe_series("fvg_boundary")
         dist = np.abs(close - fvg_boundary) / close
 
         is_in_proximity = (dist <= prox_radius) & (dist > inval_thresh)
         is_active = dist <= inval_thresh
 
-        signal_state = pd.Series("NONE", index=df.index)
+        # 🔥 SAFE INIT
+        signal_state = pd.Series(np.full(len(df), "NONE"), index=df.index)
 
-        # If it's active (within invalidation threshold)
         signal_state = np.where(is_long_aligned & is_active, "LONG", signal_state)
         signal_state = np.where(is_short_aligned & is_active, "SHORT", signal_state)
 
-        # If it's in proximity (within proximity radius but not yet active)
         signal_state = np.where(is_long_aligned & is_in_proximity & (fvg_boundary > 0), "PENDING_LONG", signal_state)
         signal_state = np.where(is_short_aligned & is_in_proximity & (fvg_boundary > 0), "PENDING_SHORT", signal_state)
 
-        # Delivery Conviction Multiplier
-        d_qty = df["delivery_qty"] if "delivery_qty" in df.columns else pd.Series(0.0, index=df.index)
-        d_ma = df["delivery_ma_60"] if "delivery_ma_60" in df.columns else pd.Series(0.0, index=df.index)
+        d_qty = safe_series("delivery_qty")
+        d_ma = safe_series("delivery_ma_60")
 
         is_conviction_spike = (d_ma > 0) & (d_qty >= (d_ma * spike_thresh))
 
-        # Apply multiplier and re-clip
         final_score = np.where(is_conviction_spike, base_score * conv_mult, base_score)
         final_score = np.clip(final_score, -1.0, 1.0)
 
-        # Execution Logic
-        fvg_top = df["fvg_top"] if "fvg_top" in df.columns else pd.Series(0.0, index=df.index)
-        fvg_bottom = df["fvg_bottom"] if "fvg_bottom" in df.columns else pd.Series(0.0, index=df.index)
-        swing_high = df["swing_high"] if "swing_high" in df.columns else pd.Series(0.0, index=df.index)
-        swing_low = df["swing_low"] if "swing_low" in df.columns else pd.Series(0.0, index=df.index)
+        fvg_top = safe_series("fvg_top")
+        fvg_bottom = safe_series("fvg_bottom")
+        swing_high = safe_series("swing_high")
+        swing_low = safe_series("swing_low")
 
         entry_price = (fvg_top + fvg_bottom) / 2.0
 
@@ -134,22 +170,18 @@ class FusionEngine(BaseStrategy):
             )
         )
 
-        # Risk:Reward Filter
-        rr_ratio_min = self.config.get("parameters", {}).get("execution", {}).get("rr_ratio_min", 2.0)
+        rr_ratio_min = params.get("execution", {}).get("rr_ratio_min", 2.0)
 
-        # Calculate RR handling potential division by zero
         risk = np.abs(entry_price - stop_loss)
         reward = np.abs(take_profit - entry_price)
 
-        # Avoid division by zero
         safe_risk = np.where(risk > 0, risk, np.inf)
         rr_ratio = reward / safe_risk
 
-        # Enforce vectorized Risk:Reward check: Invalidate signals where RR is too low
         signal_state = np.where(rr_ratio < rr_ratio_min, "NONE", signal_state)
 
-        # Priority Ranking
         mtf_aligned = is_long_aligned | is_short_aligned
+
         priority_score = np.abs(final_score)
         priority_score = np.where(mtf_aligned, priority_score + 10.0, priority_score)
 
@@ -158,8 +190,8 @@ class FusionEngine(BaseStrategy):
         if final_state_val == "NONE":
             return {"signal": False}
 
-        # Strategy evaluation only uses the final row
         mtf_aligned_bool = mtf_aligned.iloc[-1] if not isinstance(mtf_aligned, np.ndarray) else mtf_aligned[-1]
+
         final_score_val = float(priority_score[-1] if isinstance(priority_score, np.ndarray) else priority_score.iloc[-1])
         final_entry = float(entry_price[-1] if isinstance(entry_price, np.ndarray) else entry_price.iloc[-1])
         final_sl = float(stop_loss[-1] if isinstance(stop_loss, np.ndarray) else stop_loss.iloc[-1])
@@ -173,7 +205,6 @@ class FusionEngine(BaseStrategy):
                 "MTF_Aligned": "YES" if mtf_aligned_bool else "NO",
                 "Entry": round(final_entry, 2),
                 "SL": round(final_sl, 2),
-                # Explicitly adding TP and T1 for position sizing calculations
                 "TP": round(final_tp, 2),
                 "T1": round(final_tp, 2)
             }
@@ -181,6 +212,7 @@ class FusionEngine(BaseStrategy):
 
 
 _engine = FusionEngine()
+
 
 def run(df: pd.DataFrame, funda: dict = None) -> dict:
     return _engine.run(df, funda)
