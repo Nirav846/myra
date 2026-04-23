@@ -2,36 +2,12 @@ import os
 import yaml
 import logging
 import pandas as pd
+from myra_core.utils.data_validation import enforce_index_contract
 import numpy as np
 from myra_app.strategies.base_strategy import BaseStrategy
 
 
-def enforce_contract(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Global Data Contract Enforcement:
-    - Ensures datetime index
-    - Removes duplicate index
-    - Guarantees sorted, unique index
-    """
 
-    if df is None or df.empty:
-        return df
-
-    df = df.copy()
-
-    # Normalize index
-    df.index = pd.to_datetime(df.index, errors="coerce").normalize()
-    df = df[~df.index.isna()]
-
-    # Sort + deduplicate
-    df = df.sort_index()
-    df = df.loc[~df.index.duplicated(keep="last")]
-
-    # Final safety
-    if not df.index.is_unique:
-        raise ValueError("Index still not unique after enforcement")
-
-    return df
 
 
 class FusionEngine(BaseStrategy):
@@ -65,7 +41,7 @@ class FusionEngine(BaseStrategy):
 
         try:
             # 🔥 CRITICAL FIX: enforce index contract
-            df = enforce_contract(df)
+            df = enforce_index_contract(df)
         except Exception as e:
             logging.debug(f"[FusionEngine] Index cleanup failed: {e}")
             return {"signal": False}

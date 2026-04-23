@@ -3,6 +3,40 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def enforce_index_contract(df, symbol="UNKNOWN"):
+    """
+    Enforces the core invariant: df.index MUST be unique.
+    Applied before any merge/concat/join/reindex or before passing df to strategies.
+    """
+    if df is None or df.empty:
+        return df
+
+    df = df.copy()
+
+    # 1. Normalize Date Index (if applicable)
+    if isinstance(df.index, pd.DatetimeIndex) or df.index.name in ('date', 'Date'):
+        df.index = pd.to_datetime(df.index, errors="coerce").normalize()
+    # If date is column
+    elif "date" in df.columns:
+        df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.normalize()
+        df = df.dropna(subset=["date"])
+        df = df.sort_values("date")
+        df = df.groupby("date", as_index=False).last()
+        df = df.set_index("date")
+
+    # 2. Drop NA indices
+    df = df.loc[~df.index.isna()]
+
+    # 3. Sort & Deduplicate
+    df = df.sort_index()
+    df = df.loc[~df.index.duplicated(keep="last")]
+
+    # 4. Final Assertion
+    if not df.index.is_unique:
+        raise ValueError(f"[{symbol}] duplicate index AFTER enforcement")
+
+    return df
+
 def validate_dataframe(df: pd.DataFrame, context: str = "General") -> pd.DataFrame:
     """
     Enforces the MYRA Data Contract.

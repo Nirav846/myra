@@ -1,3 +1,4 @@
+from myra_core.utils.data_validation import enforce_index_contract
 import os
 import pandas as pd
 import numpy as np
@@ -113,7 +114,7 @@ class StockDataLoader:
         existing = self.load_from_parquet(symbol)
         if not existing.empty:
             df = pd.concat([existing, new_df])
-            df = df[~df.index.duplicated(keep="last")].sort_index()
+            df = enforce_index_contract(df)
         else:
             df = new_df
         self.save_to_parquet(symbol, df)

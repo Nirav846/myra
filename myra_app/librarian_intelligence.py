@@ -7,6 +7,7 @@ Handles all heavy indicator computation using Parquet Lake.
 import os
 import logging
 import pandas as pd
+from myra_core.utils.data_validation import enforce_index_contract
 import numpy as np
 import pandas_ta as ta
 from myra_core.utils.myra_log import myra_log
@@ -14,40 +15,7 @@ from myra_core.utils.myra_log import myra_log
 logger = logging.getLogger(__name__)
 
 
-def enforce_contract(df, symbol="UNKNOWN"):
-    """
-    Global Data Contract Enforcement:
-    - Ensures date uniqueness
-    - Prevents duplicate index issues
-    - Standardizes structure
-    """
-    if df is None or df.empty:
-        return df
 
-    # If date is index → normalize
-    if df.index.name == "date" or isinstance(df.index, pd.DatetimeIndex):
-        df = df.copy()
-        df.index = pd.to_datetime(df.index, errors="coerce").normalize()
-        df = df[~df.index.isna()]
-
-        df = df.sort_index()
-        df = df.loc[~df.index.duplicated(keep="last")]
-
-    # If date is column
-    elif "date" in df.columns:
-        df = df.copy()
-        df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.normalize()
-        df = df.dropna(subset=["date"])
-
-        df = df.sort_values("date")
-        df = df.groupby("date", as_index=False).last()
-        df = df.set_index("date")
-
-    # Final assertion
-    if not df.index.is_unique:
-        raise ValueError(f"{symbol}: Duplicate index AFTER enforcement")
-
-    return df
 
 
 class LibrarianIntelligenceMixin:
@@ -70,7 +38,7 @@ class LibrarianIntelligenceMixin:
                 if df_node is None or df_node.empty:
                     continue
 
-                df_node = enforce_contract(df_node, symbol=sym)
+                df_node = enforce_index_contract(df_node, symbol=sym)
 
                 if as_of_date:
                     df_node = df_node[df_node.index <= as_of_date]
@@ -148,7 +116,7 @@ class LibrarianIntelligenceMixin:
                         df[col] = pd.to_numeric(df[col], errors="coerce")
 
                 # Contract enforcement
-                df = enforce_contract(df, symbol=sym)
+                df = enforce_index_contract(df, symbol=sym)
 
                 df = validate_dataframe(df, context=f"Indicator Engine: {sym}")
 
