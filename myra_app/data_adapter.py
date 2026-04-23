@@ -5,6 +5,7 @@ import threading
 from typing import Any, Dict
 
 import pandas as pd
+from myra_core.utils.data_validation import enforce_index_contract
 import pandas_ta as ta
 
 
@@ -96,7 +97,7 @@ class DataAdapter:
                 df["date"] = pd.to_datetime(df["date"], errors='coerce').dt.normalize()
                 df = df.dropna(subset=["date"]).sort_values("date")
                 df.set_index("date", inplace=True)
-                df = df.loc[~df.index.duplicated(keep='last')]
+                df = enforce_index_contract(df, symbol=symbol_clean)
                 
                 # Compliance: CamelCase Rename
                 rename_map = {
@@ -106,7 +107,7 @@ class DataAdapter:
                 df.rename(columns=rename_map, inplace=True)
                 df = df.loc[:, ~df.columns.duplicated()]
 
-                from myra_core.utils.data_validation import validate_dataframe
+                from myra_core.utils.data_validation import validate_dataframe, enforce_index_contract
                 df = validate_dataframe(df, context=f"DataAdapter get_price_df: {symbol_clean}")
         except Exception as e:
             logging.error(f"Price fetch failed for {symbol_clean}: {e}")

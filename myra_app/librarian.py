@@ -6,6 +6,7 @@ EXCLUSIVE GATEKEEPER for all MYRA data.
 """
 import os
 import pandas as pd
+from myra_core.utils.data_validation import enforce_index_contract
 from rich.console import Console
 
 from myra_app.fetcher import DataFetcher
@@ -258,7 +259,7 @@ class Librarian(
                         delta = delta.dropna(subset=["date"])
                         delta.set_index("date", inplace=True)
                         # Immediately ensure index uniqueness to avoid concat/reindex crash
-                        delta = delta.loc[~delta.index.duplicated(keep='last')]
+                        delta = enforce_index_contract(delta)
 
                         # Schema shield: rename legacy delivery columns to canonical names
                         delta.rename(columns={"delivery_qty": "delivery", "delivery_percent": "delivery_pct"}, inplace=True)
@@ -270,9 +271,9 @@ class Librarian(
                         # Merge and update cache
                         df = pd.concat([df, delta])
                         df.index = pd.to_datetime(df.index, errors="coerce").dt.normalize()
-                        df = df[~df.index.duplicated(keep="last")].sort_index()
+                        df = enforce_index_contract(df)
 
-                        from myra_core.utils.data_validation import validate_dataframe
+                        from myra_core.utils.data_validation import validate_dataframe, enforce_index_contract
                         df = validate_dataframe(df, context=f"Librarian get_ohlcv: {clean}")
 
                         self.loader.save_to_parquet(clean, df)
@@ -336,7 +337,7 @@ class Librarian(
             if not res.empty:
                 res["date"] = pd.to_datetime(res["date"])
                 res.set_index("date", inplace=True)
-                res = res[~res.index.duplicated(keep="last")]
+                res = enforce_index_contract(res)
 
                 # Schema Shield: rename legacy delivery columns to canonical names
                 res.rename(columns={"delivery_qty": "delivery", "delivery_percent": "delivery_pct"}, inplace=True)
