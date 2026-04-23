@@ -66,10 +66,7 @@ class LibrarianIntelligenceMixin:
             return pd.DataFrame()
 
         # 🔥 SAFE CONCAT
-        df_final = pd.concat(results_list, axis=0)
-        df_final = df_final.sort_index()
-        df_final = df_final.loc[~df_final.index.duplicated(keep="last")]
-        assert df_final.index.is_unique
+        df_final = pd.concat(results_list, axis=0, ignore_index=True)
 
         # 🔒 SYSTEM-LEVEL GUARANTEE
         if "date" in df_final.columns:
