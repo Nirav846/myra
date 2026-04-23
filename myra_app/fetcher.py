@@ -3,6 +3,7 @@ import warnings
 
 # Silence Scrapling/Fetcher deprecation warnings BEFORE any other imports
 warnings.filterwarnings("ignore", message=".*deprecated now, and have no effect.*")
+
 import pandas as pd
 from myra_core.utils.data_validation import enforce_index_contract
 
