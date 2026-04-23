@@ -61,6 +61,8 @@ class LibrarianIntelligenceMixin:
         print(f"[MYRA] Updating Virtual Indicator Lake for {len(active_symbols)} symbols...")
 
         total_syms = len(active_symbols)
+        from myra_core.utils.data_validation import validate_dataframe
+
         for i, sym in enumerate(active_symbols, 1):
             myra_log(i, total_syms, desc="Precomputing")
             try:
@@ -71,10 +73,19 @@ class LibrarianIntelligenceMixin:
 
                 # Standardize casing for ta-lib
                 df.columns = [c.capitalize() for c in df.columns]
-                df.index = pd.to_datetime(df.index)
-                df.sort_index(inplace=True)
+                # Enforce column uniqueness
+                df = df.loc[:, ~df.columns.duplicated()]
+
+                # Standardize date binary uniqueness
+                df.index = pd.to_datetime(df.index, errors="coerce").dt.normalize()
+                df = df[df.index.notna()]
+
                 # Force uniqueness of index to avoid stale/duplicate rows (The Shield)
+                df.sort_index(inplace=True)
                 df = df.loc[~df.index.duplicated(keep='last')]
+
+                # Validate DataFrame using the strict contract guard
+                df = validate_dataframe(df, context=f"Indicator Engine: {sym}")
 
                 # 2. Skip joining institutional volume (delivery-centric resilience)
                 df["inst_vol"] = 0.0

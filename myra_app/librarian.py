@@ -253,8 +253,13 @@ class Librarian(
                         query = f"SELECT {col_str} FROM technical_data WHERE symbol = ? AND date > ?"
                         delta = pd.read_sql(query, self._tech_conn, params=(clean, cache_max))
                     if not delta.empty:
-                        delta["date"] = pd.to_datetime(delta["date"])
+                        # Enforce binary date unicity and drop bad dates BEFORE setting index
+                        delta["date"] = pd.to_datetime(delta["date"], errors="coerce").dt.normalize()
+                        delta = delta.dropna(subset=["date"])
                         delta.set_index("date", inplace=True)
+                        # Immediately ensure index uniqueness to avoid concat/reindex crash
+                        delta = delta.loc[~delta.index.duplicated(keep='last')]
+
                         # Schema shield: rename legacy delivery columns to canonical names
                         delta.rename(columns={"delivery_qty": "delivery", "delivery_percent": "delivery_pct"}, inplace=True)
                         # TitleCase core columns for compatibility
@@ -264,7 +269,12 @@ class Librarian(
                         delta["Adj Close"] = delta.get("Close", delta.get("close"))
                         # Merge and update cache
                         df = pd.concat([df, delta])
+                        df.index = pd.to_datetime(df.index, errors="coerce").dt.normalize()
                         df = df[~df.index.duplicated(keep="last")].sort_index()
+
+                        from myra_core.utils.data_validation import validate_dataframe
+                        df = validate_dataframe(df, context=f"Librarian get_ohlcv: {clean}")
+
                         self.loader.save_to_parquet(clean, df)
                 except Exception:
                     pass

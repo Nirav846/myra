@@ -94,6 +94,15 @@ class StockDataLoader:
         """Saves a symbol's history to high-speed Parquet format."""
         if df.empty:
             return
+
+        # Enforce Standardized Datetime Index for all Parquet files
+        if not isinstance(df.index, pd.DatetimeIndex):
+            try:
+                df.index = pd.to_datetime(df.index, errors="coerce").dt.normalize()
+                df = df[df.index.notna()]
+            except Exception:
+                pass
+
         path = os.path.join(self.parquet_dir, f"{symbol.upper()}.parquet")
         df.to_parquet(path, compression="snappy")
 
