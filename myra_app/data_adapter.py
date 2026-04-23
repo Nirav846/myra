@@ -5,7 +5,7 @@ import threading
 from typing import Any, Dict
 
 import pandas as pd
-from myra_core.utils.data_validation import enforce_index_contract
+from myra_core.utils.data_validation import enforce_index_contract, validate_dataframe
 import pandas_ta as ta
 
 
@@ -107,7 +107,7 @@ class DataAdapter:
                 df.rename(columns=rename_map, inplace=True)
                 df = df.loc[:, ~df.columns.duplicated()]
 
-                from myra_core.utils.data_validation import validate_dataframe, enforce_index_contract
+
                 df = validate_dataframe(df, context=f"DataAdapter get_price_df: {symbol_clean}")
         except Exception as e:
             logging.error(f"Price fetch failed for {symbol_clean}: {e}")

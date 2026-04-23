@@ -7,7 +7,7 @@ Handles all heavy indicator computation using Parquet Lake.
 import os
 import logging
 import pandas as pd
-from myra_core.utils.data_validation import enforce_index_contract
+from myra_core.utils.data_validation import enforce_index_contract, validate_dataframe
 import numpy as np
 import pandas_ta as ta
 from myra_core.utils.myra_log import myra_log
@@ -61,6 +61,7 @@ class LibrarianIntelligenceMixin:
                 logger.debug(f"Failed to load indicator for {sym}: {e}")
                 continue
 
+        results_list = [r for r in results_list if r is not None and not r.empty]
         if not results_list:
             return pd.DataFrame()
 
@@ -89,7 +90,7 @@ class LibrarianIntelligenceMixin:
 
         total_syms = len(active_symbols)
 
-        from myra_core.utils.data_validation import validate_dataframe
+
 
         for i, sym in enumerate(active_symbols, 1):
             myra_log(i, total_syms, desc="Precomputing")

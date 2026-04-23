@@ -6,7 +6,7 @@ EXCLUSIVE GATEKEEPER for all MYRA data.
 """
 import os
 import pandas as pd
-from myra_core.utils.data_validation import enforce_index_contract
+from myra_core.utils.data_validation import enforce_index_contract, validate_dataframe
 from rich.console import Console
 
 from myra_app.fetcher import DataFetcher
@@ -273,7 +273,7 @@ class Librarian(
                         df.index = pd.to_datetime(df.index, errors="coerce").dt.normalize()
                         df = enforce_index_contract(df)
 
-                        from myra_core.utils.data_validation import validate_dataframe, enforce_index_contract
+
                         df = validate_dataframe(df, context=f"Librarian get_ohlcv: {clean}")
 
                         self.loader.save_to_parquet(clean, df)
