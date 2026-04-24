@@ -33,24 +33,44 @@ class DataAdapter:
             if df.empty:
                 return None
 
+            # ✅ Convert date
             df["date"] = pd.to_datetime(df["date"], errors="coerce")
             df = df.dropna(subset=["date"])
 
+            # ✅ Remove duplicates
             df = df.drop_duplicates(subset=["symbol", "date"], keep="last")
+
+            # ✅ Sort
             df = df.sort_values("date")
 
+            # ✅ Normalize column names (DB → Engine format)
+            df.columns = [col.lower() for col in df.columns]
+
+            rename_map = {
+                "open": "Open",
+                "high": "High",
+                "low": "Low",
+                "close": "Close",
+                "volume": "Volume"
+            }
+
+            df = df.rename(columns=rename_map)
+
+            # ✅ Set index
             df = df.set_index("date")
 
+            # ✅ Ensure unique index (critical fix)
             if not df.index.is_unique:
                 logging.error(f"[DATA ADAPTER] Duplicate index detected for {symbol}")
                 df = df[~df.index.duplicated(keep="last")]
 
+            # ✅ Apply lookback
             if lookback_days:
                 df = df.tail(lookback_days)
 
             return df
 
-        except Exception as e:
+        except Exception:
             logging.exception(f"[DATA ADAPTER ERROR] {symbol} failed")
             return None
 
