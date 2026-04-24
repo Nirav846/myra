@@ -49,9 +49,6 @@ class LibrarianIntelligenceMixin:
                 # 🔥 TAKE LAST ROW SAFELY
                 row = df_node.iloc[[-1]].copy()
 
-                # 🔥 CRITICAL: move index → column
-                row = row.reset_index()
-
                 # Ensure symbol exists
                 row["symbol"] = sym
 
@@ -66,11 +63,8 @@ class LibrarianIntelligenceMixin:
             return pd.DataFrame()
 
         # 🔥 SAFE CONCAT
-        df_final = pd.concat(results_list, axis=0, ignore_index=True)
-
-        # 🔒 SYSTEM-LEVEL GUARANTEE
-        if "date" in df_final.columns:
-            df_final = df_final.drop_duplicates(subset=["symbol", "date"], keep="last")
+        df_final = pd.concat(results_list, axis=0)
+        df_final = df_final.set_index(["symbol", df_final.index])
 
         return df_final
 
