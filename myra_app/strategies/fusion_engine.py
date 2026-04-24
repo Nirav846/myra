@@ -97,11 +97,35 @@ class FusionEngine(BaseStrategy):
         base_score = np.clip(base_score, -1.0, 1.0)
 
         fvg_boundary = safe_series("fvg_boundary")
-        fvg_boundary = fvg_boundary.reindex(close.index)
-        dist = np.abs(close - fvg_boundary) / close
 
-        is_in_proximity = (dist <= prox_radius) & (dist > inval_thresh)
-        is_active = dist <= inval_thresh
+# 🔥 Ensure both are clean Series
+close = close.astype(float)
+fvg_boundary = fvg_boundary.astype(float)
+
+# 🔥 Align safely on index first
+fvg_boundary = fvg_boundary.reindex(close.index)
+
+# 🔥 Drop any NaNs introduced during alignment
+mask = close.notna() & fvg_boundary.notna()
+close_clean = close[mask]
+fvg_clean = fvg_boundary[mask]
+
+# 🔥 FINAL SAFETY: enforce equal length via numpy (prevents Pandas alignment crash)
+close_vals = close_clean.to_numpy()
+fvg_vals = fvg_clean.to_numpy()
+
+min_len = min(len(close_vals), len(fvg_vals))
+close_vals = close_vals[-min_len:]
+fvg_vals = fvg_vals[-min_len:]
+
+# 🔥 Compute distance safely
+dist = np.abs(close_vals - fvg_vals) / close_vals
+
+# 🔥 Rebuild Series aligned to last valid index slice
+dist = pd.Series(dist, index=close_clean.index[-min_len:])
+
+is_in_proximity = (dist <= prox_radius) & (dist > inval_thresh)
+is_active = dist <= inval_thresh
 
         # 🔥 SAFE INIT
         signal_state = pd.Series(np.full(len(df), "NONE"), index=df.index)
