@@ -68,10 +68,8 @@ class LibrarianIntelligenceMixin:
         # 🔥 SAFE CONCAT
         df_final = pd.concat(results_list, axis=0, ignore_index=True)
 
-        if "date" not in df_final.columns:
-            df_final["date"] = df_final.index
-
         assert "symbol" in df_final.columns
+        assert "date" in df_final.columns
 
         df_final = df_final.set_index(["symbol", "date"], drop=False)
 
