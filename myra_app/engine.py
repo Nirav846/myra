@@ -141,13 +141,21 @@ def _worker_task(payload):
         return None
 
     try:
+        print(f"[WORKER START] {symbol}")
+
         lookback = _worker_adapter.get_lookback_for_scanner(strategy_name)
         df = _worker_adapter.get_price_df(
             symbol, lookback_days=lookback
         )
 
         if df is None or df.empty:
+            print(f"[WORKER DONE] {symbol}")
             return None
+
+        if not df.index.is_unique:
+            print(f"[DUPLICATE INDEX] {symbol}")
+            df = df[~df.index.duplicated(keep="last")]
+        df = df.sort_index()
 
         # --- UNIVERSAL CASE-INSENSITIVE COMPATIBILITY LAYER ---
         for col in ["Open", "High", "Low", "Close", "Volume"]:
@@ -265,7 +273,9 @@ def _worker_task(payload):
                 if funda.get("smart_money_score", 0) > 0.7: stars += 1
                 res_payload["Stars"] = "*" * int(min(5, stars))
 
+                print(f"[WORKER DONE] {symbol}")
                 return res_payload
+            print(f"[WORKER DONE] {symbol}")
             return None
         else:
             res = _worker_strategy.run(df, funda)
@@ -291,13 +301,14 @@ def _worker_task(payload):
             }
 
             res_dict["Money_Flow"] = f"₹{round(funda.get('money_flow_cr', 0))}Cr"
+
+            print(f"[WORKER DONE] {symbol}")
             return res_dict
 
+        print(f"[WORKER DONE] {symbol}")
         return None
     except Exception as e:
-        import traceback
-        print(f"\n[WORKER CRASH] Symbol {payload[0]} failed: {str(e)}")
-        # traceback.print_exc()
+        print(f"[WORKER CRASH] {symbol} failed: {str(e)}")
         return None
 
 
@@ -691,13 +702,8 @@ class Engine:
 
         max_workers = multiprocessing.cpu_count()
 
-        def poked_results(it, wd):
-            for item in it:
-                wd.poke()
-                yield item
-
         total_symbols = len(payloads)
-        current_symbol = 0
+        results = []
         try:
             with multiprocessing.Pool(
                 processes=max_workers,
@@ -705,19 +711,14 @@ class Engine:
                 initargs=(strategy_name, lib.db_path),
             ) as pool:
                 raw_it = pool.imap(_worker_task, payloads)
-                results = [
-                    res
-                    for res, _ in zip(
-                        poked_results(raw_it, watchdog), range(total_symbols)
-                    )
-                    if (
-                        res
-                        and not (current_symbol := current_symbol + 1)
-                        and (not silent and myra_log(current_symbol, total_symbols))
-                        is None
-                    )
-                    or res
-                ]
+                for i, res in enumerate(raw_it, 1):
+                    watchdog.poke()
+                    if not silent:
+                        myra_log(i, total_symbols)
+                    if i % 100 == 0:
+                        print(f"[HEARTBEAT] {i}/{total_symbols}")
+                    if res:
+                        results.append(res)
 
         except KeyboardInterrupt:
             if not silent:
