@@ -152,10 +152,20 @@ def _worker_task(payload):
             print(f"[WORKER DONE] {symbol}")
             return None
 
-        if not df.index.is_unique:
-            print(f"[DUPLICATE INDEX] {symbol}")
-            df = df[~df.index.duplicated(keep="last")]
-        df = df.sort_index()
+        # Ensure DataFrame Integrity
+        if "date" not in df.columns:
+            df = df.reset_index()
+            if "index" in df.columns and "date" not in df.columns:
+                df = df.rename(columns={"index": "date"})
+
+        if "date" in df.columns:
+            df = df.sort_values("date")
+            df = df.drop_duplicates(subset=["date"], keep="last")
+            df = df.set_index("date")
+        else:
+            if not df.index.is_unique:
+                df = df[~df.index.duplicated(keep="last")]
+            df = df.sort_index()
 
         # --- UNIVERSAL CASE-INSENSITIVE COMPATIBILITY LAYER ---
         for col in ["Open", "High", "Low", "Close", "Volume"]:
