@@ -7,9 +7,6 @@ import numpy as np
 from myra_app.strategies.base_strategy import BaseStrategy
 
 
-
-
-
 class FusionEngine(BaseStrategy):
     """
     Fusion Engine (v3.2) - Institutional Fusion Tracker
@@ -31,30 +28,21 @@ class FusionEngine(BaseStrategy):
             return {}
 
     def run(self, df: pd.DataFrame, funda: dict) -> dict:
-        """
-        Entry point — THIS is where your crash was happening.
-        Now fully protected.
-        """
 
         if df is None or df.empty:
             return {"signal": False}
 
         try:
-            # 🔥 CRITICAL FIX: enforce index contract
             df = enforce_index_contract(df)
         except Exception as e:
             logging.debug(f"[FusionEngine] Index cleanup failed: {e}")
             return {"signal": False}
 
-        # Normalize column casing AFTER cleaning
         df = df.rename(columns=str.title)
 
         return self.compute_fusion_signal(df)
 
     def compute_fusion_signal(self, df: pd.DataFrame) -> dict:
-        """
-        Core vectorized execution logic
-        """
 
         params = self.config.get("parameters", {})
         lookback = params.get("lookback_trading_days", 60)
@@ -76,7 +64,6 @@ class FusionEngine(BaseStrategy):
         if close is None:
             return {"signal": False}
 
-        # Safe Series generators
         def safe_series(col, default=0.0):
             return df[col] if col in df.columns else pd.Series(default, index=df.index)
 
@@ -96,38 +83,42 @@ class FusionEngine(BaseStrategy):
         base_score = np.where(is_short_aligned, -base_score, base_score)
         base_score = np.clip(base_score, -1.0, 1.0)
 
+        # =========================
+        # 🔥 CRITICAL FIX START
+        # =========================
         fvg_boundary = safe_series("fvg_boundary")
 
-# 🔥 Ensure both are clean Series
-close = close.astype(float)
-fvg_boundary = fvg_boundary.astype(float)
+        close = pd.to_numeric(close, errors="coerce")
+        fvg_boundary = pd.to_numeric(fvg_boundary, errors="coerce")
 
-# 🔥 Align safely on index first
-fvg_boundary = fvg_boundary.reindex(close.index)
+        fvg_boundary = fvg_boundary.reindex(close.index)
 
-# 🔥 Drop any NaNs introduced during alignment
-mask = close.notna() & fvg_boundary.notna()
-close_clean = close[mask]
-fvg_clean = fvg_boundary[mask]
+        mask = close.notna() & fvg_boundary.notna()
+        close_clean = close[mask]
+        fvg_clean = fvg_boundary[mask]
 
-# 🔥 FINAL SAFETY: enforce equal length via numpy (prevents Pandas alignment crash)
-close_vals = close_clean.to_numpy()
-fvg_vals = fvg_clean.to_numpy()
+        if close_clean.empty or fvg_clean.empty:
+            return {"signal": False}
 
-min_len = min(len(close_vals), len(fvg_vals))
-close_vals = close_vals[-min_len:]
-fvg_vals = fvg_vals[-min_len:]
+        close_vals = close_clean.to_numpy()
+        fvg_vals = fvg_clean.to_numpy()
 
-# 🔥 Compute distance safely
-dist = np.abs(close_vals - fvg_vals) / close_vals
+        min_len = min(len(close_vals), len(fvg_vals))
+        close_vals = close_vals[-min_len:]
+        fvg_vals = fvg_vals[-min_len:]
 
-# 🔥 Rebuild Series aligned to last valid index slice
-dist = pd.Series(dist, index=close_clean.index[-min_len:])
+        close_vals = np.where(close_vals == 0, np.nan, close_vals)
 
-is_in_proximity = (dist <= prox_radius) & (dist > inval_thresh)
-is_active = dist <= inval_thresh
+        dist_vals = np.abs(close_vals - fvg_vals) / close_vals
 
-        # 🔥 SAFE INIT
+        dist = pd.Series(dist_vals, index=close_clean.index[-min_len:])
+        # =========================
+        # 🔥 CRITICAL FIX END
+        # =========================
+
+        is_in_proximity = (dist <= prox_radius) & (dist > inval_thresh)
+        is_active = dist <= inval_thresh
+
         signal_state = pd.Series(np.full(len(df), "NONE"), index=df.index)
 
         signal_state = np.where(is_long_aligned & is_active, "LONG", signal_state)
