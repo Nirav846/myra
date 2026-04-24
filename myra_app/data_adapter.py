@@ -5,7 +5,7 @@ import logging
 
 class DataAdapter:
     def __init__(self, db_path="db/myra_technical.db", **kwargs):
-    self.db_path = db_path
+        self.db_path = db_path
 
     def get_price_df(
         self,
@@ -16,7 +16,7 @@ class DataAdapter:
         try:
             conn = sqlite3.connect(self.db_path)
 
-            query = f"""
+            query = """
                 SELECT *
                 FROM technical_data
                 WHERE symbol = ?
@@ -33,27 +33,18 @@ class DataAdapter:
             if df.empty:
                 return None
 
-            # ✅ Convert date column
             df["date"] = pd.to_datetime(df["date"], errors="coerce")
-
-            # ✅ Drop bad rows
             df = df.dropna(subset=["date"])
 
-            # ✅ Remove duplicates at DB level (extra safety)
             df = df.drop_duplicates(subset=["symbol", "date"], keep="last")
-
-            # ✅ Sort
             df = df.sort_values("date")
 
-            # ✅ Set index
             df = df.set_index("date")
 
-            # ✅ FINAL DEFENSE: ensure unique index
             if not df.index.is_unique:
                 logging.error(f"[DATA ADAPTER] Duplicate index detected for {symbol}")
                 df = df[~df.index.duplicated(keep="last")]
 
-            # ✅ Apply lookback
             if lookback_days:
                 df = df.tail(lookback_days)
 
@@ -64,5 +55,4 @@ class DataAdapter:
             return None
 
     def get_lookback_for_scanner(self, strategy_name: str) -> int:
-        # Default logic — can be extended later
         return 300
