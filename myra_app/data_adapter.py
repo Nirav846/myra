@@ -95,7 +95,9 @@ class DataAdapter:
             if not df.empty:
                 # Efficient Date Parsing
                 df["date"] = pd.to_datetime(df["date"], errors='coerce').dt.normalize()
-                df = df.dropna(subset=["date"]).sort_values("date")
+                df = df.dropna(subset=["date"])
+                df = df.drop_duplicates(subset=["symbol", "date"])
+                df = df.sort_values("date")
                 df.set_index("date", inplace=True)
                 df = enforce_index_contract(df, symbol=symbol_clean)
                 
