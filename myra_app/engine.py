@@ -143,7 +143,7 @@ def _worker_task(payload):
     try:
         lookback = _worker_adapter.get_lookback_for_scanner(strategy_name)
         df = _worker_adapter.get_price_df(
-            symbol, lookback_days=lookback, as_of_date=as_of_date
+            symbol, lookback_days=lookback
         )
 
         if df is None or df.empty:
