@@ -92,7 +92,7 @@ def test_indicator_sync():
         class DummyInds:
             def load_indicators(self, path, sym):
                 # Return old data
-                df = pd.DataFrame({"rsi": [50]}, index=[pd.Timestamp("2023-01-01")])
+                df = pd.DataFrame({"rsi": [50]}, index=pd.DatetimeIndex(["2023-01-01"], name="date"))
                 return df
         indicators = DummyInds()
 

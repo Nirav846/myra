@@ -68,9 +68,16 @@ class LibrarianIntelligenceMixin:
         # 🔥 SAFE CONCAT
         df_final = pd.concat(results_list, axis=0, ignore_index=True)
 
-        # 🔒 SYSTEM-LEVEL GUARANTEE
-        if "date" in df_final.columns:
-            df_final = df_final.drop_duplicates(subset=["symbol", "date"], keep="last")
+        assert "symbol" in df_final.columns
+        assert "date" in df_final.columns
+
+        df_final = df_final.set_index(["symbol", "date"], drop=False)
+
+        if not df_final.index.is_unique:
+            dupes = df_final[df_final.index.duplicated(keep=False)]
+            raise Exception(
+                f"Duplicate (symbol, date) detected after aggregation:\n{dupes.tail(10)}"
+            )
 
         return df_final
 
