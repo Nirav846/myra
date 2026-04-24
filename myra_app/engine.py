@@ -308,7 +308,8 @@ def _worker_task(payload):
         print(f"[WORKER DONE] {symbol}")
         return None
     except Exception as e:
-        print(f"[WORKER CRASH] {symbol} failed: {str(e)}")
+        import logging
+        logging.exception(f"[WORKER CRASH] {symbol} failed")
         return None
 
 
