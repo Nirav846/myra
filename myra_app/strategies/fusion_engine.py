@@ -97,6 +97,7 @@ class FusionEngine(BaseStrategy):
         base_score = np.clip(base_score, -1.0, 1.0)
 
         fvg_boundary = safe_series("fvg_boundary")
+        fvg_boundary = fvg_boundary.reindex(close.index)
         dist = np.abs(close - fvg_boundary) / close
 
         is_in_proximity = (dist <= prox_radius) & (dist > inval_thresh)
