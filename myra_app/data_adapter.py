@@ -1,3 +1,14 @@
+import logging
+import os
+import sqlite3
+import threading
+from typing import Any, Dict
+
+import pandas as pd   # ✅ MUST BE BEFORE ANY FUNCTION USING pd
+
+from myra_core.utils.data_validation import enforce_index_contract, validate_dataframe
+import pandas_ta as ta
+
 def get_price_df(
     self, symbol: str, lookback_days: int = 252, as_of_date: str = None
 ) -> pd.DataFrame:
