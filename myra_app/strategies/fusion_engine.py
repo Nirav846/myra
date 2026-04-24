@@ -60,13 +60,28 @@ class FusionEngine(BaseStrategy):
         w_liq = weights.get("liquidity_distance", 0.2)
         w_trend = weights.get("trend_alignment", 0.5)
 
-        close = df["Close"] if "Close" in df.columns else None
-        if close is None:
+        # =========================
+        # SAFE SERIES EXTRACTOR
+        # =========================
+        def safe_series(col, default=0.0):
+            if col not in df.columns:
+                return pd.Series(default, index=df.index)
+
+            s = df[col]
+
+            if isinstance(s, pd.DataFrame):
+                s = s.iloc[:, 0]
+
+            return pd.to_numeric(s, errors="coerce")
+
+        close = safe_series("Close")
+
+        if close is None or close.empty or close.isna().all():
             return {"signal": False}
 
-        def safe_series(col, default=0.0):
-            return df[col] if col in df.columns else pd.Series(default, index=df.index)
-
+        # =========================
+        # TREND ALIGNMENT
+        # =========================
         htf_bullish = safe_series("htf_bullish")
         mtf_bullish = safe_series("mtf_bullish")
         htf_bearish = safe_series("htf_bearish")
@@ -75,25 +90,32 @@ class FusionEngine(BaseStrategy):
         is_long_aligned = (htf_bullish > 0) & (mtf_bullish > 0)
         is_short_aligned = (htf_bearish > 0) & (mtf_bearish > 0)
 
+        # =========================
+        # BASE SCORE
+        # =========================
         fvg_freshness = safe_series("fvg_freshness")
         liquidity_dist = safe_series("liquidity_distance")
         trend_align = safe_series("trend_alignment")
 
-        base_score = (fvg_freshness * w_fvg) + (liquidity_dist * w_liq) + (trend_align * w_trend)
+        base_score = (
+            (fvg_freshness * w_fvg)
+            + (liquidity_dist * w_liq)
+            + (trend_align * w_trend)
+        )
+
         base_score = np.where(is_short_aligned, -base_score, base_score)
         base_score = np.clip(base_score, -1.0, 1.0)
 
         # =========================
-        # 🔥 CRITICAL FIX START
+        # 🔥 CRITICAL SAFE DISTANCE CALC
         # =========================
         fvg_boundary = safe_series("fvg_boundary")
 
-        close = pd.to_numeric(close, errors="coerce")
-        fvg_boundary = pd.to_numeric(fvg_boundary, errors="coerce")
-
+        # Align
         fvg_boundary = fvg_boundary.reindex(close.index)
 
         mask = close.notna() & fvg_boundary.notna()
+
         close_clean = close[mask]
         fvg_clean = fvg_boundary[mask]
 
@@ -112,21 +134,33 @@ class FusionEngine(BaseStrategy):
         dist_vals = np.abs(close_vals - fvg_vals) / close_vals
 
         dist = pd.Series(dist_vals, index=close_clean.index[-min_len:])
-        # =========================
-        # 🔥 CRITICAL FIX END
-        # =========================
 
         is_in_proximity = (dist <= prox_radius) & (dist > inval_thresh)
         is_active = dist <= inval_thresh
 
-        signal_state = pd.Series(np.full(len(df), "NONE"), index=df.index)
+        # =========================
+        # SIGNAL STATE
+        # =========================
+        signal_state = pd.Series("NONE", index=df.index)
 
         signal_state = np.where(is_long_aligned & is_active, "LONG", signal_state)
         signal_state = np.where(is_short_aligned & is_active, "SHORT", signal_state)
 
-        signal_state = np.where(is_long_aligned & is_in_proximity & (fvg_boundary > 0), "PENDING_LONG", signal_state)
-        signal_state = np.where(is_short_aligned & is_in_proximity & (fvg_boundary > 0), "PENDING_SHORT", signal_state)
+        signal_state = np.where(
+            is_long_aligned & is_in_proximity & (fvg_boundary > 0),
+            "PENDING_LONG",
+            signal_state,
+        )
 
+        signal_state = np.where(
+            is_short_aligned & is_in_proximity & (fvg_boundary > 0),
+            "PENDING_SHORT",
+            signal_state,
+        )
+
+        # =========================
+        # CONVICTION
+        # =========================
         d_qty = safe_series("delivery_qty")
         d_ma = safe_series("delivery_ma_60")
 
@@ -135,6 +169,9 @@ class FusionEngine(BaseStrategy):
         final_score = np.where(is_conviction_spike, base_score * conv_mult, base_score)
         final_score = np.clip(final_score, -1.0, 1.0)
 
+        # =========================
+        # EXECUTION LEVELS
+        # =========================
         fvg_top = safe_series("fvg_top")
         fvg_bottom = safe_series("fvg_bottom")
         swing_high = safe_series("swing_high")
@@ -148,8 +185,8 @@ class FusionEngine(BaseStrategy):
             np.where(
                 (signal_state == "SHORT") | (signal_state == "PENDING_SHORT"),
                 fvg_top * 1.005,
-                0.0
-            )
+                0.0,
+            ),
         )
 
         take_profit = np.where(
@@ -158,8 +195,8 @@ class FusionEngine(BaseStrategy):
             np.where(
                 (signal_state == "SHORT") | (signal_state == "PENDING_SHORT"),
                 swing_low,
-                0.0
-            )
+                0.0,
+            ),
         )
 
         rr_ratio_min = params.get("execution", {}).get("rr_ratio_min", 2.0)
@@ -172,34 +209,30 @@ class FusionEngine(BaseStrategy):
 
         signal_state = np.where(rr_ratio < rr_ratio_min, "NONE", signal_state)
 
+        # =========================
+        # FINAL OUTPUT
+        # =========================
         mtf_aligned = is_long_aligned | is_short_aligned
 
         priority_score = np.abs(final_score)
         priority_score = np.where(mtf_aligned, priority_score + 10.0, priority_score)
 
-        final_state_val = signal_state[-1] if isinstance(signal_state, np.ndarray) else signal_state.iloc[-1]
+        final_state_val = signal_state[-1]
 
         if final_state_val == "NONE":
             return {"signal": False}
-
-        mtf_aligned_bool = mtf_aligned.iloc[-1] if not isinstance(mtf_aligned, np.ndarray) else mtf_aligned[-1]
-
-        final_score_val = float(priority_score[-1] if isinstance(priority_score, np.ndarray) else priority_score.iloc[-1])
-        final_entry = float(entry_price[-1] if isinstance(entry_price, np.ndarray) else entry_price.iloc[-1])
-        final_sl = float(stop_loss[-1] if isinstance(stop_loss, np.ndarray) else stop_loss.iloc[-1])
-        final_tp = float(take_profit[-1] if isinstance(take_profit, np.ndarray) else take_profit.iloc[-1])
 
         return {
             "signal": True,
             "metrics": {
                 "Signal_Type": str(final_state_val),
-                "Score": round(final_score_val, 2),
-                "MTF_Aligned": "YES" if mtf_aligned_bool else "NO",
-                "Entry": round(final_entry, 2),
-                "SL": round(final_sl, 2),
-                "TP": round(final_tp, 2),
-                "T1": round(final_tp, 2)
-            }
+                "Score": round(float(priority_score[-1]), 2),
+                "MTF_Aligned": "YES" if mtf_aligned.iloc[-1] else "NO",
+                "Entry": round(float(entry_price[-1]), 2),
+                "SL": round(float(stop_loss[-1]), 2),
+                "TP": round(float(take_profit[-1]), 2),
+                "T1": round(float(take_profit[-1]), 2),
+            },
         }
 
 
