@@ -4,8 +4,8 @@ import logging
 
 
 class DataAdapter:
-    def __init__(self, db_path="db/myra_technical.db"):
-        self.db_path = db_path
+    def __init__(self, db_path="db/myra_technical.db", **kwargs):
+    self.db_path = db_path
 
     def get_price_df(
         self,
