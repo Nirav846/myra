@@ -100,6 +100,7 @@ class LibrarianSchemaMixin:
                     vwap REAL,
                     delivery_pct REAL,
                     delivery_ratio REAL,
+                    delivery_source TEXT,
                     PRIMARY KEY (symbol, date)
                 )
             """,

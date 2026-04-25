@@ -46,11 +46,11 @@ def resolve_delivery(df: pd.DataFrame) -> pd.DataFrame:
         pct = pd.to_numeric(df[pct_col], errors="coerce")
         vol = pd.to_numeric(df["volume"], errors="coerce")
 
+        derived_qty = (pct / 100) * vol
+
         # Cross-validate where both exist
         if qty_col:
-            calculated = (pct / 100) * vol
-            qty_series = pd.to_numeric(df[qty_col], errors="coerce")
-            ratio = (calculated - qty_series).abs() / (qty_series.replace(0, float("nan")))
+            ratio = (derived_qty - qty).abs() / (qty.replace(0, float("nan")))
             suspicious = ratio > 0.05
             if suspicious.any():
                 n = suspicious.sum()
@@ -58,7 +58,7 @@ def resolve_delivery(df: pd.DataFrame) -> pd.DataFrame:
 
         # Fill only rows still missing delivery (Tier 2 fallback)
         needs_fill = df["delivery_source"] == "unavailable"
-        calculated = ((pct / 100) * vol).round()
+        calculated = derived_qty.round()
         valid_calc = needs_fill & pct.notna() & vol.notna() & (calculated > 1)
         df.loc[valid_calc, "delivery"] = calculated
         df.loc[valid_calc, "delivery_source"] = "calculated_from_pct"
