@@ -487,7 +487,7 @@ class Engine:
                 try:
                     m_data = pd.read_sql(
                         """
-                        SELECT symbol, 
+                        SELECT symbol,
                                SUM(CASE WHEN type='Buy' THEN value_cr ELSE -value_cr END) as net_60d,
                                AVG(CASE WHEN type='Buy' AND value_cr > 0.1 THEN avg_price ELSE NULL END) as avg_buy_60d,
                                SUM(CASE WHEN type='Buy' AND date >= date('now', '-5 days') THEN value_cr ELSE 0 END) as net_5d,

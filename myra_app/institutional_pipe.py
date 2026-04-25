@@ -183,7 +183,7 @@ class InstitutionalPipe:
             # Find latest material buy > 0.1Cr (10L)
             res = self.lib._inst_conn.execute(
                 """
-                SELECT avg_price, value_cr, date FROM insider_trades 
+                SELECT avg_price, value_cr, date FROM insider_trades
                 WHERE symbol = ? AND type = 'Buy' AND value_cr > 0.1 
                 ORDER BY date DESC LIMIT 1
             """,
