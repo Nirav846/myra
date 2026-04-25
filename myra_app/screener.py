@@ -54,7 +54,7 @@ class MYRAScreener:
         # Merge with fundamentals to get Sector
         try:
             funda = pd.read_sql("SELECT symbol, sector FROM fundamentals", self.lib._val_conn)
-        except Exception:
+        except pd.errors.DatabaseError:
             funda = pd.DataFrame(columns=["symbol", "sector"])
 
         if not funda.empty:
