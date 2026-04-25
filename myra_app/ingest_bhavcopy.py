@@ -11,7 +11,8 @@ def ingest_bhavcopies(csv_folder, db_path=None):
     STRICT DELIVERY INGESTION: Rejects any data lacking institutional footprint.
     """
     if db_path is None:
-        db_path = os.path.join("db", LibrarianCore.DB_MAP["technical"])
+        _myra_app_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "myra_app")
+        db_path = os.path.join(_myra_app_dir, "db", LibrarianCore.DB_MAP["technical"])
 
     if not os.path.exists(db_path):
         print(f"[!] Database {db_path} not found.")

@@ -1,12 +1,21 @@
 import sqlite3
 import pandas as pd
 import logging
+import os
+from myra_app.librarian_core import LibrarianCore
 
 
 class DataAdapter:
-    def __init__(self, db_path="db/myra_technical.db", librarian=None):
-        self.db_path = db_path
+    def __init__(self, db_path=None, librarian=None):
         self.librarian = librarian
+        if db_path is not None:
+            self.db_path = db_path
+        else:
+            # Anchor to this file's location so it works regardless of cwd
+            _here = os.path.dirname(os.path.abspath(__file__))
+            self.db_path = os.path.join(
+                _here, "db", LibrarianCore.DB_MAP["technical"]
+            )
 
     def get_lookback_for_scanner(self, strategy_name: str) -> int:
         return 300
