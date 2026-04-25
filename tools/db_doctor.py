@@ -107,7 +107,7 @@ class DbDoctor:
             indexes = c.fetchall()
             pk_found = False
             for idx in indexes:
-                if idx[2] == 1: # origin='pk'
+                if idx[3] == 'pk': # origin column in PRAGMA index_list
                     pk_found = True
                     break
 
@@ -297,7 +297,8 @@ class DbDoctor:
                                     print(f"  [ERROR] Failed to update delivery_source: {e}")
                                     self.issues_failed += 1
                 except Exception as e:
-                    pass
+                    print(f"  [ERROR] Quality check failed ({desc}): {e}")
+                    self.issues_failed += 1
 
         finally:
             conn.close()
@@ -335,7 +336,8 @@ class DbDoctor:
                         conn.commit()
 
             except Exception as e:
-                pass
+                print(f"  [ERROR] Failed to configure WAL mode for {filename}: {e}")
+                self.issues_failed += 1
             finally:
                 if 'conn' in locals() and conn:
                     conn.close()
