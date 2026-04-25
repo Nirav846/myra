@@ -1,8 +1,15 @@
+import sys
 import os
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
 import pandas as pd
 import sqlite3
 import glob
 from datetime import datetime
+from myra_app.utils.bhavcopy_parser import BhavcopyParser
 from myra_core.utils.myra_log import myra_log
 from myra_app.librarian_core import LibrarianCore
 
@@ -95,38 +102,23 @@ def ingest_bhavcopies(csv_folder, db_path=None):
     for i, file_path in enumerate(csv_files, 1):
         myra_log(i, len(csv_files), desc="Ingesting files")
         try:
-            df = pd.read_csv(file_path)
-            df.columns = [c.strip().upper() for c in df.columns]
+            df, report = BhavcopyParser.parse_csv(file_path, source_filename=file_path)
+            if df.empty:
+                if report["errors"]:
+                    print(f"[!] {os.path.basename(file_path)}: {report['errors']}")
+                continue
 
-            # Filter for Equity Series only
-            if "SERIES" in df.columns:
-                df = df[df["SERIES"].str.strip().isin(["EQ", "BE", "SM"])]
-
-            # Mapping
-            mapping = {
-                "SYMBOL": "symbol",
-                "DATE1": "date",
-                "TIMESTAMP": "date",
-                "OPEN_PRICE": "open",
-                "OPEN": "open",
-                "HIGH_PRICE": "high",
-                "HIGH": "high",
-                "LOW_PRICE": "low",
-                "LOW": "low",
-                "CLOSE_PRICE": "close",
-                "CLOSE": "close",
-                "TTL_TRD_QNTY": "volume",
-                "TOTTRDQTY": "volume",
-                "NO_OF_TRADES": "trades",
+            # Block known ETFs that NSE lists under EQ series
+            ETF_SYMBOLS = {
+                "LIQUIDBEES", "NIFTYBEES", "BANKBEES", "GOLDBEES", "JUNIORBEES",
+                "SETFNIF50", "SETFNN50", "MOM100", "CONSUMBEES", "DIVOPPBEES",
+                "INFRABBEES", "ITBEES", "PHARMABEES", "PSUBNKBEES", "SHARIABEES",
+                "CPSEETF", "BHARAT22ETF", "MON100", "EBBETF0423", "EBBETF0431",
+                "ICICIB22", "NV20BEES", "SETF10GILT", "LIQUIDCASE", "LIQUIDIETF",
+                "HDFCNIFTY", "ICICIFIXBL"
             }
-            df = df.rename(
-                columns={k: v for k, v in mapping.items() if k in df.columns}
-            )
-
-            # 1. Cast numeric fields
-            for col in ["open", "high", "low", "close", "volume"]:
-                if col in df.columns:
-                    df[col] = pd.to_numeric(df[col], errors="coerce")
+            if "symbol" in df.columns:
+                df = df[~df["symbol"].isin(ETF_SYMBOLS)]
 
             # Resolve delivery
             df = resolve_delivery(df)
