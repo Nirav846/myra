@@ -238,10 +238,7 @@ class DbDoctor:
                 c.execute("PRAGMA table_info(insider_trades)")
                 existing_cols = {row[1] for row in c.fetchall()}
 
-                expected_cols = [
-                    "symbol", "acq_name", "category", "type",
-                    "mode", "value_cr", "avg_price", "date"
-                ]
+                expected_cols = ["symbol", "date", "transaction_type", "quantity", "price", "value"]
                 for col in expected_cols:
                     if col not in existing_cols:
                         print(f"  [WARNING] Missing column in insider_trades: {col}")

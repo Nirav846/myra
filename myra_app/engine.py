@@ -485,43 +485,22 @@ class Engine:
             insider_map = {}
             if lib._inst_conn:
                 try:
-                    raw_df = pd.read_sql(
+                    m_data = pd.read_sql(
                         """
-                        SELECT symbol, type, value_cr, avg_price, date
+                        SELECT symbol,
+                               SUM(CASE WHEN type='Buy' THEN value_cr ELSE -value_cr END) as net_60d,
+                               AVG(CASE WHEN type='Buy' AND value_cr > 0.1 THEN avg_price ELSE NULL END) as avg_buy_60d,
+                               SUM(CASE WHEN type='Buy' AND date >= date('now', '-5 days') THEN value_cr ELSE 0 END) as net_5d,
+                               COUNT(DISTINCT CASE WHEN type='Buy' AND value_cr > 0.1 THEN date ELSE NULL END) as active_days
                         FROM insider_trades 
                         WHERE date >= date('now', '-60 days') 
                         AND (mode LIKE '%Market%' OR mode = '-')
-                        """,
+                        GROUP BY symbol
+                    """,
                         lib._inst_conn,
                     )
 
-                    if not raw_df.empty:
-                        raw_df["quantity"] = (
-                            (raw_df["value_cr"] * 10_000_000) / raw_df["avg_price"].replace(0, float("nan"))
-                        ).round().astype("Int64")
-                        raw_df = raw_df.rename(columns={
-                            "type":      "transaction_type",
-                            "avg_price": "price",
-                            "value_cr":  "value",
-                        })
-
-                        raw_df["is_buy"] = raw_df["transaction_type"] == "Buy"
-                        raw_df["net_val"] = np.where(raw_df["is_buy"], raw_df["value"], -raw_df["value"])
-
-                        raw_df["date"] = pd.to_datetime(raw_df["date"]).dt.date
-                        from datetime import date, timedelta
-                        cutoff_5d = date.today() - timedelta(days=5)
-
-                        def active_days(x):
-                            return x[(x['transaction_type'] == 'Buy') & (x['value'] > 0.1)]['date'].nunique()
-
-                        m_data = raw_df.groupby("symbol").apply(lambda g: pd.Series({
-                            "net_60d": g["net_val"].sum(),
-                            "avg_buy_60d": g[(g["transaction_type"] == 'Buy') & (g["value"] > 0.1)]["price"].mean(),
-                            "net_5d": g[(g["transaction_type"] == 'Buy') & (g["date"] >= cutoff_5d)]["value"].sum(),
-                            "active_days": active_days(g)
-                        })).reset_index()
-
+                    if not m_data.empty:
                         conditions = [
                             m_data["active_days"] > 5,
                             m_data["active_days"] >= 3,
