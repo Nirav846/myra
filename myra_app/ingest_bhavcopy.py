@@ -13,6 +13,15 @@ from myra_app.utils.bhavcopy_parser import BhavcopyParser
 from myra_core.utils.myra_log import myra_log
 from myra_app.librarian_core import LibrarianCore
 
+ETF_SYMBOLS = {
+    "LIQUIDBEES", "NIFTYBEES", "BANKBEES", "GOLDBEES", "JUNIORBEES",
+    "SETFNIF50", "SETFNN50", "MOM100", "CONSUMBEES", "DIVOPPBEES",
+    "INFRABBEES", "ITBEES", "PHARMABEES", "PSUBNKBEES", "SHARIABEES",
+    "CPSEETF", "BHARAT22ETF", "MON100", "EBBETF0423", "EBBETF0431",
+    "ICICIB22", "NV20BEES", "SETF10GILT", "LIQUIDCASE", "LIQUIDIETF",
+    "HDFCNIFTY", "ICICIFIXBL"
+}
+
 def resolve_delivery(df: pd.DataFrame) -> pd.DataFrame:
     """
     Resolves delivery quantity using a strict priority hierarchy.
@@ -108,15 +117,16 @@ def ingest_bhavcopies(csv_folder, db_path=None):
                     print(f"[!] {os.path.basename(file_path)}: {report['errors']}")
                 continue
 
+            # Rename to CamelCase for processing (Rule 39 compliance)
+            df = df.rename(columns={
+                "open":   "Open",
+                "high":   "High",
+                "low":    "Low",
+                "close":  "Close",
+                "volume": "Volume",
+            })
+
             # Block known ETFs that NSE lists under EQ series
-            ETF_SYMBOLS = {
-                "LIQUIDBEES", "NIFTYBEES", "BANKBEES", "GOLDBEES", "JUNIORBEES",
-                "SETFNIF50", "SETFNN50", "MOM100", "CONSUMBEES", "DIVOPPBEES",
-                "INFRABBEES", "ITBEES", "PHARMABEES", "PSUBNKBEES", "SHARIABEES",
-                "CPSEETF", "BHARAT22ETF", "MON100", "EBBETF0423", "EBBETF0431",
-                "ICICIB22", "NV20BEES", "SETF10GILT", "LIQUIDCASE", "LIQUIDIETF",
-                "HDFCNIFTY", "ICICIFIXBL"
-            }
             if "symbol" in df.columns:
                 df = df[~df["symbol"].isin(ETF_SYMBOLS)]
 
@@ -148,7 +158,16 @@ def ingest_bhavcopies(csv_folder, db_path=None):
             df = df.dropna(subset=["date"])
 
             # Calculate Ratio
-            df["delivery_ratio"] = (df["delivery"] / df["volume"]).fillna(0)
+            df["delivery_ratio"] = (df["delivery"] / df["Volume"]).fillna(0)
+
+            # Rename back to lowercase for DB insert (Rule 38 compliance)
+            df = df.rename(columns={
+                "Open":   "open",
+                "High":   "high",
+                "Low":    "low",
+                "Close":  "close",
+                "Volume": "volume",
+            })
 
             # Insert
             records = df[
