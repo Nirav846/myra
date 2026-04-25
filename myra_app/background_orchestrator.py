@@ -1,0 +1,221 @@
+#!/usr/bin/env python
+"""
+MYRA Background Orchestrator
+Runs maintenance tasks in daemon threads on startup.
+Guarantees clean DB shutdown on Ctrl+C, window close, or taskkill.
+"""
+import os
+import sys
+import signal
+import threading
+import time
+import sqlite3
+import logging
+from datetime import datetime, timezone, timedelta
+
+# Ensure project root is on path
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.dirname(_HERE)
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+from myra_app.librarian_core import LibrarianCore
+
+logger = logging.getLogger("myra.orchestrator")
+
+# ─── Shared shutdown event ────────────────────────────────────────────────────
+_shutdown_event = threading.Event()
+_active_tasks: list[threading.Thread] = []
+_task_lock = threading.Lock()
+
+
+# ─── Shutdown handler ─────────────────────────────────────────────────────────
+
+def _graceful_shutdown(signum=None, frame=None):
+    """
+    Called on Ctrl+C (SIGINT), SIGTERM, or Windows console close.
+    Signals all background tasks to stop and waits for them to finish
+    their current DB write before exiting.
+    """
+    if _shutdown_event.is_set():
+        return  # Already shutting down
+    print("\n[MYRA] Shutdown signal received. Waiting for background tasks to finish...")
+    _shutdown_event.set()
+
+    with _task_lock:
+        for t in _active_tasks:
+            if t.is_alive():
+                t.join(timeout=15)  # Give each task 15s to finish current write
+
+    print("[MYRA] All background tasks finished. DB is safe. Goodbye.")
+
+
+# Register signal handlers
+signal.signal(signal.SIGINT, _graceful_shutdown)
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+
+# Windows-specific: catch window X button and taskkill
+try:
+    import win32api
+
+    def _win_handler(event):
+        _graceful_shutdown()
+        time.sleep(3)  # Give threads time before OS kills process
+        return True
+
+    win32api.SetConsoleCtrlHandler(_win_handler, True)
+except ImportError:
+    pass  # Non-Windows — signal handlers above are sufficient
+
+
+# ─── Helper: check if today already ingested ──────────────────────────────────
+
+def _already_ingested_today() -> bool:
+    """Checks meta.db to see if today's data has already been ingested."""
+    try:
+        db_path = os.path.join(_HERE, "db", LibrarianCore.DB_MAP["meta"])
+        if not os.path.exists(db_path):
+            return False
+        with sqlite3.connect(db_path, timeout=10) as conn:
+            res = conn.execute(
+                "SELECT value FROM metadata WHERE key = 'last_sync_date'"
+            ).fetchone()
+            if res:
+                last = res[0].strip()
+                today = datetime.now(timezone.utc).astimezone(
+                    timezone(timedelta(hours=5, minutes=30))
+                ).date().isoformat()
+                return last == today
+    except Exception:
+        pass
+    return False
+
+
+def _mark_ingested_today():
+    """Writes today's date to meta.db after successful ingestion."""
+    try:
+        db_path = os.path.join(_HERE, "db", LibrarianCore.DB_MAP["meta"])
+        today = datetime.now(timezone.utc).astimezone(
+            timezone(timedelta(hours=5, minutes=30))
+        ).date().isoformat()
+        with sqlite3.connect(db_path, timeout=10) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO metadata (key, value) VALUES ('last_sync_date', ?)",
+                (today,)
+            )
+            conn.commit()
+    except Exception as e:
+        logger.warning(f"Could not mark ingestion date: {e}")
+
+
+# ─── Task 1: DB Doctor ────────────────────────────────────────────────────────
+
+def _task_db_doctor():
+    """
+    Runs db_doctor in auto-fix mode on startup.
+    Skips if shutdown is requested.
+    """
+    if _shutdown_event.is_set():
+        return
+    try:
+        print("[MYRA BG] Running DB health check...")
+        from tools.db_doctor import DbDoctor
+        doctor = DbDoctor()
+        doctor.run()
+        print("[MYRA BG] DB health check complete.")
+    except Exception as e:
+        logger.error(f"[MYRA BG] DB Doctor failed: {e}")
+
+
+# ─── Task 2: Daily Ingestor ───────────────────────────────────────────────────
+
+def _task_daily_ingest():
+    """
+    Runs daily_ingestor if today's data hasn't been fetched yet.
+    Checks market hours — NSE data is available after 6 PM IST.
+    Skips on weekends and holidays.
+    """
+    if _shutdown_event.is_set():
+        return
+
+    # Check if market data time (after 6 PM IST)
+    ist_now = datetime.now(timezone.utc).astimezone(
+        timezone(timedelta(hours=5, minutes=30))
+    )
+    if ist_now.weekday() >= 5:
+        print("[MYRA BG] Weekend — skipping daily ingest.")
+        return
+    if ist_now.hour < 18:
+        print(f"[MYRA BG] Market data not yet available (IST: {ist_now.strftime('%H:%M')}). Skipping ingest.")
+        return
+    if _already_ingested_today():
+        print("[MYRA BG] Today's data already ingested. Skipping.")
+        return
+
+    try:
+        print("[MYRA BG] Fetching today's bhavcopy...")
+        from myra_app.daily_ingestor import run_daily_update
+        run_daily_update()
+        _mark_ingested_today()
+        print("[MYRA BG] Daily ingest complete.")
+    except Exception as e:
+        logger.error(f"[MYRA BG] Daily ingest failed: {e}")
+
+
+# ─── Task 3: Midnight Watchdog ────────────────────────────────────────────────
+
+def _task_watchdog():
+    """
+    Polls every 60 seconds. When a new trading day is detected after
+    6 PM IST, triggers daily ingest automatically.
+    Runs for the entire session lifetime.
+    """
+    last_checked_date = None
+
+    while not _shutdown_event.is_set():
+        _shutdown_event.wait(timeout=60)  # Sleep 60s, wake early on shutdown
+        if _shutdown_event.is_set():
+            break
+
+        try:
+            ist_now = datetime.now(timezone.utc).astimezone(
+                timezone(timedelta(hours=5, minutes=30))
+            )
+            today = ist_now.date().isoformat()
+
+            # New day detected after 6 PM IST
+            if (
+                today != last_checked_date
+                and ist_now.weekday() < 5
+                and ist_now.hour >= 18
+                and not _already_ingested_today()
+            ):
+                print(f"[MYRA BG] New trading day detected ({today}). Auto-fetching bhavcopy...")
+                _task_daily_ingest()
+                last_checked_date = today
+
+        except Exception as e:
+            logger.warning(f"[MYRA BG] Watchdog error: {e}")
+
+
+# ─── Public entry point ───────────────────────────────────────────────────────
+
+def start():
+    """
+    Call this from myra.py on startup.
+    Launches all background tasks as daemon threads.
+    """
+    tasks = [
+        ("db-doctor",      _task_db_doctor),
+        ("daily-ingest",   _task_daily_ingest),
+        ("watchdog",       _task_watchdog),
+    ]
+
+    with _task_lock:
+        for name, fn in tasks:
+            t = threading.Thread(target=fn, name=f"myra-bg-{name}", daemon=True)
+            t.start()
+            _active_tasks.append(t)
+            logger.info(f"[MYRA BG] Started task: {name}")
+
+    print("[MYRA BG] Background orchestrator running.")

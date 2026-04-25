@@ -3,8 +3,15 @@
 MYRA - Myra Yield & Research Analytics
 The official entry point. (TRILOGY ERA v4.0 Alpha)
 """
-import os
 import sys
+import os
+
+# Auto-fix Python path so the project root is always importable
+# regardless of how the script is launched
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
 import argparse
 from datetime import datetime
 import pandas as pd
@@ -14,10 +21,8 @@ from rich.panel import Panel
 from rich.theme import Theme
 import threading
 
-# Add current dir to path so imports work
-sys.path.append(os.getcwd())
-
 from myra_app.screener import MYRAScreener
+from myra_app.background_orchestrator import start as start_background
 from myra_app.menu_navigation import MenuNavigator
 from myra_app.telegram_notifier import TelegramNotifier
 from myra_app.UI_Manager import draw_dashboard
@@ -332,6 +337,7 @@ def main():
 
 
 if __name__ == "__main__":
+    start_background()
     try:
         main()
     except KeyboardInterrupt:
