@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import pandas_ta as ta
 
 
 def run(df: pd.DataFrame, funda: dict) -> dict:
