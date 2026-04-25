@@ -13,7 +13,8 @@ import time
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
-DB_PATH = os.path.join(PROJECT_ROOT, "myra_app", "db", "myra_technical.db")
+from myra_app.librarian_core import LibrarianCore
+DB_PATH = os.path.join(PROJECT_ROOT, "myra_app", "db", LibrarianCore.DB_MAP["technical"])
 
 
 def rebuild():
@@ -38,21 +39,30 @@ def rebuild():
 
         # Step 2: Create new table with PRIMARY KEY
         print("[2/6] Creating new table with PRIMARY KEY...")
+        conn.execute("BEGIN EXCLUSIVE")
         conn.execute("DROP TABLE IF EXISTS technical_data_new")
         conn.execute("""
             CREATE TABLE technical_data_new (
-                symbol           TEXT NOT NULL,
-                date             TEXT NOT NULL,
-                open             REAL,
-                high             REAL,
-                low              REAL,
-                close            REAL,
-                volume           INTEGER,
-                delivery         INTEGER,
-                trades           INTEGER,
-                vwap             REAL,
-                delivery_ratio   REAL,
-                delivery_source  TEXT,
+                symbol                       TEXT NOT NULL,
+                date                         TEXT NOT NULL,
+                open                         REAL,
+                high                         REAL,
+                low                          REAL,
+                close                        REAL,
+                volume                       INTEGER,
+                delivery                     INTEGER,
+                trades                       INTEGER,
+                vwap                         REAL,
+                delivery_pct                 REAL,
+                delivery_ratio               REAL,
+                delivery_qty                 REAL,
+                stock_return                 REAL,
+                market_return                REAL,
+                delivery_divergence_score    REAL,
+                volatility_compression_score REAL,
+                relative_volume_score        REAL,
+                nifty_outperformance_score   REAL,
+                delivery_source              TEXT,
                 PRIMARY KEY (symbol, date)
             )
         """)
@@ -64,7 +74,11 @@ def rebuild():
             INSERT INTO technical_data_new
             SELECT
                 symbol, date, open, high, low, close, volume,
-                delivery, trades, vwap, delivery_ratio, delivery_source
+                delivery, trades, vwap, delivery_pct, delivery_ratio,
+                delivery_qty, stock_return, market_return,
+                delivery_divergence_score, volatility_compression_score,
+                relative_volume_score, nifty_outperformance_score,
+                delivery_source
             FROM technical_data
             ORDER BY symbol, date
         """)
