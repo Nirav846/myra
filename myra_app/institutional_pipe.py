@@ -181,17 +181,28 @@ class InstitutionalPipe:
         if self.lib and self.lib._inst_conn:
             # Check for Underwater Promoters (Alpha Signal)
             # Find latest material buy > 0.1Cr (10L)
-            res = self.lib._inst_conn.execute(
+            df = pd.read_sql(
                 """
-                SELECT avg_price, value_cr, date FROM insider_trades 
+                SELECT avg_price, value_cr, date, type FROM insider_trades
                 WHERE symbol = ? AND type = 'Buy' AND value_cr > 0.1 
                 ORDER BY date DESC LIMIT 1
             """,
-                (symbol,),
-            ).fetchone()
+                self.lib._inst_conn, params=(symbol,)
+            )
 
-            if res:
-                avg_buy, val, dt = res
+            if not df.empty:
+                df["quantity"] = (
+                    (df["value_cr"] * 10_000_000) / df["avg_price"].replace(0, float("nan"))
+                ).round().astype("Int64")
+                df = df.rename(columns={
+                    "type":      "transaction_type",
+                    "avg_price": "price",
+                    "value_cr":  "value",
+                })
+                avg_buy = df["price"].iloc[0]
+                val = df["value"].iloc[0]
+                dt = df["date"].iloc[0]
+
                 # Get current price from technical.db
                 p_res = self.lib._tech_conn.execute(
                     "SELECT close FROM technical_data WHERE symbol = ? ORDER BY date DESC LIMIT 1",
@@ -206,7 +217,7 @@ class InstitutionalPipe:
                         )
                     else:
                         flags.append(
-                            f"PROMOTER_BACKED: Recent material buy of ₹{round(val,2)}Cr at {avg_buy}"
+                            f"PROMOTER_BACKED: Recent material buy of ₹{round(val,2)} (Cr) at {avg_buy}"
                         )
 
         grade = (
