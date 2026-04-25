@@ -9,9 +9,10 @@ import sys
 import signal
 import threading
 import time
-import sqlite3
 import logging
 from datetime import datetime, timezone, timedelta
+
+IST = timezone(timedelta(hours=5, minutes=30))
 
 # Ensure project root is on path
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -50,60 +51,27 @@ def _graceful_shutdown(signum=None, frame=None):
     print("[MYRA] All background tasks finished. DB is safe. Goodbye.")
 
 
-# Register signal handlers
-signal.signal(signal.SIGINT, _graceful_shutdown)
-signal.signal(signal.SIGTERM, _graceful_shutdown)
-
-# Windows-specific: catch window X button and taskkill
-try:
-    import win32api
-
-    def _win_handler(event):
-        _graceful_shutdown()
-        time.sleep(3)  # Give threads time before OS kills process
-        return True
-
-    win32api.SetConsoleCtrlHandler(_win_handler, True)
-except ImportError:
-    pass  # Non-Windows — signal handlers above are sufficient
-
-
 # ─── Helper: check if today already ingested ──────────────────────────────────
 
 def _already_ingested_today() -> bool:
-    """Checks meta.db to see if today's data has already been ingested."""
     try:
-        db_path = os.path.join(_HERE, "db", LibrarianCore.DB_MAP["meta"])
-        if not os.path.exists(db_path):
-            return False
-        with sqlite3.connect(db_path, timeout=10) as conn:
-            res = conn.execute(
-                "SELECT value FROM metadata WHERE key = 'last_sync_date'"
-            ).fetchone()
-            if res:
-                last = res[0].strip()
-                today = datetime.now(timezone.utc).astimezone(
-                    timezone(timedelta(hours=5, minutes=30))
-                ).date().isoformat()
-                return last == today
+        lib = LibrarianCore(read_only=True)
+        last = lib.get_metadata("last_sync_date")
+        lib.close()
+        if last:
+            today = datetime.now(timezone.utc).astimezone(IST).date().isoformat()
+            return last.strip() == today
     except Exception:
         pass
     return False
 
 
 def _mark_ingested_today():
-    """Writes today's date to meta.db after successful ingestion."""
     try:
-        db_path = os.path.join(_HERE, "db", LibrarianCore.DB_MAP["meta"])
-        today = datetime.now(timezone.utc).astimezone(
-            timezone(timedelta(hours=5, minutes=30))
-        ).date().isoformat()
-        with sqlite3.connect(db_path, timeout=10) as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO metadata (key, value) VALUES ('last_sync_date', ?)",
-                (today,)
-            )
-            conn.commit()
+        today = datetime.now(timezone.utc).astimezone(IST).date().isoformat()
+        lib = LibrarianCore(read_only=False)
+        lib.set_metadata("last_sync_date", today)
+        lib.close()
     except Exception as e:
         logger.warning(f"Could not mark ingestion date: {e}")
 
@@ -139,9 +107,7 @@ def _task_daily_ingest():
         return
 
     # Check if market data time (after 6 PM IST)
-    ist_now = datetime.now(timezone.utc).astimezone(
-        timezone(timedelta(hours=5, minutes=30))
-    )
+    ist_now = datetime.now(timezone.utc).astimezone(IST)
     if ist_now.weekday() >= 5:
         print("[MYRA BG] Weekend — skipping daily ingest.")
         return
@@ -178,9 +144,7 @@ def _task_watchdog():
             break
 
         try:
-            ist_now = datetime.now(timezone.utc).astimezone(
-                timezone(timedelta(hours=5, minutes=30))
-            )
+            ist_now = datetime.now(timezone.utc).astimezone(IST)
             today = ist_now.date().isoformat()
 
             # New day detected after 6 PM IST
@@ -205,12 +169,24 @@ def start():
     Call this from myra.py on startup.
     Launches all background tasks as daemon threads.
     """
-    tasks = [
-        ("db-doctor",      _task_db_doctor),
-        ("daily-ingest",   _task_daily_ingest),
-        ("watchdog",       _task_watchdog),
-    ]
+    # Register signal handlers here, not at module level
+    signal.signal(signal.SIGINT, _graceful_shutdown)
+    signal.signal(signal.SIGTERM, _graceful_shutdown)
+    try:
+        import win32api
+        win32api.SetConsoleCtrlHandler(lambda e: (_graceful_shutdown(), time.sleep(3), True)[-1], True)
+    except ImportError:
+        pass
 
+    # Run DB Doctor synchronously first — schema must be ready before any data tasks
+    print("[MYRA BG] Running startup DB health check (synchronous)...")
+    _task_db_doctor()
+
+    # Now launch remaining tasks as background threads
+    tasks = [
+        ("daily-ingest", _task_daily_ingest),
+        ("watchdog",     _task_watchdog),
+    ]
     with _task_lock:
         for name, fn in tasks:
             t = threading.Thread(target=fn, name=f"myra-bg-{name}", daemon=True)
