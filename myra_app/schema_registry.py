@@ -106,6 +106,7 @@ class SchemaRegistry:
                 except Exception as e:
                     conn.rollback()
                     logger.error(f"[SCHEMA_REGISTRY] Failed to auto-fix schema: {e}")
+                    return False
 
             # Check type mismatches
             cursor.execute(f"PRAGMA table_info({table_name})")
