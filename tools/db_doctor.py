@@ -238,8 +238,14 @@ class DbDoctor:
                 c.execute("PRAGMA table_info(insider_trades)")
                 existing_cols = {row[1] for row in c.fetchall()}
 
-                expected_cols = ["symbol", "date", "transaction_type", "quantity", "price", "value"]
-                for col in expected_cols:
+                # Note: insider_trades uses original NSE column names.
+                # Canonical aliases (transaction_type, price, value) are applied
+                # at query time in engine.py and institutional_pipe.py.
+                INSTITUTIONAL_EXPECTED_COLS = [
+                    "symbol", "acq_name", "category", "type",
+                    "mode", "value_cr", "avg_price", "date"
+                ]
+                for col in INSTITUTIONAL_EXPECTED_COLS:
                     if col not in existing_cols:
                         print(f"  [WARNING] Missing column in insider_trades: {col}")
                         self.issues_found += 1
