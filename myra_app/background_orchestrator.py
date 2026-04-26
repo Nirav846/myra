@@ -162,6 +162,22 @@ def _task_watchdog():
             logger.warning(f"[MYRA BG] Watchdog error: {e}")
 
 
+# ─── Task 4: ETF Sync ─────────────────────────────────────────────────────────
+
+def _task_etf_sync():
+    """Syncs ETF blocklist from NSE every Sunday."""
+    while not _shutdown_event.is_set():
+        try:
+            ist_now = datetime.now(timezone.utc).astimezone(IST)
+            if ist_now.weekday() == 6:  # Sunday
+                from myra_app.utils.etf_sync import sync_etf_list
+                print("[MYRA BG] Sunday ETF sync running...")
+                sync_etf_list()
+        except Exception as e:
+            logger.error(f"[MYRA BG] ETF sync failed: {e}")
+        _shutdown_event.wait(timeout=3600)  # Check every hour
+
+
 # ─── Public entry point ───────────────────────────────────────────────────────
 
 def start():
@@ -182,10 +198,31 @@ def start():
     print("[MYRA BG] Running startup DB health check (synchronous)...")
     _task_db_doctor()
 
+    # Seed ETF list on first run if DB is empty
+    try:
+        from myra_app.utils.etf_sync import sync_etf_list
+        from myra_app.librarian_core import LibrarianCore
+        import sqlite3, os
+        _meta_db = os.path.join(os.path.dirname(os.path.abspath(__file__)), "db", LibrarianCore.DB_MAP["meta"])
+        _needs_seed = True
+        if os.path.exists(_meta_db):
+            with sqlite3.connect(_meta_db, timeout=5) as _c:
+                try:
+                    _count = _c.execute("SELECT COUNT(*) FROM etf_blocklist").fetchone()[0]
+                    _needs_seed = _count < 50
+                except Exception:
+                    _needs_seed = True
+        if _needs_seed:
+            print("[MYRA BG] Seeding ETF blocklist for first time...")
+            sync_etf_list(force=True)
+    except Exception as e:
+        logger.warning(f"ETF seed failed: {e}")
+
     # Now launch remaining tasks as background threads
     tasks = [
         ("daily-ingest", _task_daily_ingest),
         ("watchdog",     _task_watchdog),
+        ("etf-sync",     _task_etf_sync),
     ]
     with _task_lock:
         for name, fn in tasks:
