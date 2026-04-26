@@ -252,7 +252,9 @@ def _worker_task(payload):
 
             if passed:
                 _deliv_pct = funda.get('delivery_percent', 0)
-                _deliv_pct = 0 if (not _deliv_pct or _deliv_pct != _deliv_pct) else _deliv_pct
+                if pd.isna(_deliv_pct):
+                    _deliv_pct = 0
+                funda['delivery_percent'] = _deliv_pct
                 res_payload = {
                     "Stock": symbol,
                     "Stage": stage,
