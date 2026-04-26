@@ -95,13 +95,17 @@ class SchemaRegistry:
             expected_columns = cls.TABLES[table_name]["columns"]
 
             # Auto-fix minor mismatches (add missing columns)
-            for col_name, col_type in expected_columns.items():
-                if col_name not in existing_columns:
-                    logger.warning(f"[SCHEMA_REGISTRY] Auto-fixing schema: Adding {col_name} ({col_type}) to {table_name}")
-                    try:
+            missing = [(c, t) for c, t in expected_columns.items() if c not in existing_columns]
+            if missing:
+                try:
+                    conn.execute("BEGIN")
+                    for col_name, col_type in missing:
+                        logger.warning(f"[SCHEMA_REGISTRY] Auto-fixing schema: Adding {col_name} ({col_type}) to {table_name}")
                         cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}")
-                    except Exception as e:
-                        logger.error(f"[SCHEMA_REGISTRY] Failed to auto-fix {col_name}: {e}")
+                    conn.commit()
+                except Exception as e:
+                    conn.rollback()
+                    logger.error(f"[SCHEMA_REGISTRY] Failed to auto-fix schema: {e}")
 
             # Check type mismatches
             cursor.execute(f"PRAGMA table_info({table_name})")

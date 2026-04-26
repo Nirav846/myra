@@ -86,21 +86,25 @@ class DbDoctor:
             c.execute("PRAGMA table_info(technical_data)")
             existing_cols = {row[1] for row in c.fetchall()}
 
-            for col, col_type in TECHNICAL_EXPECTED_COLS.items():
-                if col not in existing_cols:
-                    print(f"  [WARNING] Missing column in technical_data: {col}")
-                    self.issues_found += 1
-                    if self.dry_run:
-                        print(f"  [DRY RUN] Would fix: ALTER TABLE technical_data ADD COLUMN {col} {col_type}")
-                    else:
-                        try:
-                            c.execute(f"ALTER TABLE technical_data ADD COLUMN {col} {col_type}")
-                            conn.commit()
-                            print(f"  [FIXED] Added column {col}")
-                            self.issues_fixed += 1
-                        except Exception as e:
-                            print(f"  [ERROR] Failed to add column {col}: {e}")
-                            self.issues_failed += 1
+            missing_cols = {col: col_type for col, col_type in TECHNICAL_EXPECTED_COLS.items() if col not in existing_cols}
+            for col, col_type in missing_cols.items():
+                print(f"  [WARNING] Missing column in technical_data: {col}")
+                self.issues_found += 1
+                if self.dry_run:
+                    print(f"  [DRY RUN] Would fix: ALTER TABLE technical_data ADD COLUMN {col} {col_type}")
+
+            if missing_cols and not self.dry_run:
+                try:
+                    conn.execute("BEGIN")
+                    for col, col_type in missing_cols.items():
+                        c.execute(f"ALTER TABLE technical_data ADD COLUMN {col} {col_type}")
+                        print(f"  [FIXED] Added column {col}")
+                        self.issues_fixed += 1
+                    conn.commit()
+                except Exception as e:
+                    conn.rollback()
+                    print(f"  [ERROR] Failed to add columns: {e}")
+                    self.issues_failed += 1
 
             # Verify PRIMARY KEY
             c.execute("PRAGMA index_list(technical_data)")
@@ -164,23 +168,26 @@ class DbDoctor:
                 c.execute("PRAGMA table_info(symbols_master)")
                 existing_cols = {row[1] for row in c.fetchall()}
 
-                for col, col_type in META_EXPECTED_COLS.items():
-                    if col not in existing_cols:
-                        print(f"  [WARNING] Missing column in symbols_master: {col}")
-                        self.issues_found += 1
-                        if self.dry_run:
-                            print(f"  [DRY RUN] Would fix: ALTER TABLE symbols_master ADD COLUMN {col} {col_type.replace('PRIMARY KEY', '')}")
-                        else:
-                            try:
-                                # SQLite ALTER TABLE ADD COLUMN doesn't support PRIMARY KEY constraints
-                                add_type = col_type.replace("PRIMARY KEY", "")
-                                c.execute(f"ALTER TABLE symbols_master ADD COLUMN {col} {add_type}")
-                                conn.commit()
-                                print(f"  [FIXED] Added column {col}")
-                                self.issues_fixed += 1
-                            except Exception as e:
-                                print(f"  [ERROR] Failed to add column {col}: {e}")
-                                self.issues_failed += 1
+                missing_cols = {col: col_type for col, col_type in META_EXPECTED_COLS.items() if col not in existing_cols}
+                for col, col_type in missing_cols.items():
+                    print(f"  [WARNING] Missing column in symbols_master: {col}")
+                    self.issues_found += 1
+                    if self.dry_run:
+                        print(f"  [DRY RUN] Would fix: ALTER TABLE symbols_master ADD COLUMN {col} {col_type.replace('PRIMARY KEY', '')}")
+
+                if missing_cols and not self.dry_run:
+                    try:
+                        conn.execute("BEGIN")
+                        for col, col_type in missing_cols.items():
+                            add_type = col_type.replace("PRIMARY KEY", "")
+                            c.execute(f"ALTER TABLE symbols_master ADD COLUMN {col} {add_type}")
+                            print(f"  [FIXED] Added column {col}")
+                            self.issues_fixed += 1
+                        conn.commit()
+                    except Exception as e:
+                        conn.rollback()
+                        print(f"  [ERROR] Failed to add columns: {e}")
+                        self.issues_failed += 1
 
         finally:
             conn.close()
@@ -202,21 +209,25 @@ class DbDoctor:
                 c.execute("PRAGMA table_info(fundamentals)")
                 existing_cols = {row[1] for row in c.fetchall()}
 
-                for col in ["symbol", "sector"]:
-                    if col not in existing_cols:
-                        print(f"  [WARNING] Missing column in fundamentals: {col}")
-                        self.issues_found += 1
-                        if self.dry_run:
-                            print(f"  [DRY RUN] Would fix: ALTER TABLE fundamentals ADD COLUMN {col} TEXT")
-                        else:
-                            try:
-                                c.execute(f"ALTER TABLE fundamentals ADD COLUMN {col} TEXT")
-                                conn.commit()
-                                print(f"  [FIXED] Added column {col}")
-                                self.issues_fixed += 1
-                            except Exception as e:
-                                print(f"  [ERROR] Failed to add column {col}: {e}")
-                                self.issues_failed += 1
+                missing_cols = [col for col in ["symbol", "sector"] if col not in existing_cols]
+                for col in missing_cols:
+                    print(f"  [WARNING] Missing column in fundamentals: {col}")
+                    self.issues_found += 1
+                    if self.dry_run:
+                        print(f"  [DRY RUN] Would fix: ALTER TABLE fundamentals ADD COLUMN {col} TEXT")
+
+                if missing_cols and not self.dry_run:
+                    try:
+                        conn.execute("BEGIN")
+                        for col in missing_cols:
+                            c.execute(f"ALTER TABLE fundamentals ADD COLUMN {col} TEXT")
+                            print(f"  [FIXED] Added column {col}")
+                            self.issues_fixed += 1
+                        conn.commit()
+                    except Exception as e:
+                        conn.rollback()
+                        print(f"  [ERROR] Failed to add columns: {e}")
+                        self.issues_failed += 1
 
         finally:
             conn.close()

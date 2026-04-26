@@ -67,7 +67,7 @@ def mass_backfill(db_path=os.path.join("db", "myra_technical.db"), missing_csv=o
         myra_log(idx, total_dates, desc=f"Backfilling {d_str}")
 
         # ARMOR: Force upper and strip on the needed symbols list
-        raw_symbols_needed = df_missing[df_missing["missing_date"] == d_str]["symbol"].tolist()
+        raw_symbols_needed = df_missing.loc[df_missing["missing_date"] == d_str, "symbol"].tolist()
         symbols_needed = [str(s).strip().upper() for s in raw_symbols_needed]
 
         if d_str not in date_to_file:
