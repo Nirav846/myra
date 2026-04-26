@@ -13,7 +13,8 @@ from datetime import datetime, timezone, timedelta
 logger = logging.getLogger("myra.etf_sync")
 
 _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_DB_PATH = os.path.join(_HERE, "db", "myra_metadata.db")
+from myra_app.librarian_core import LibrarianCore
+_DB_PATH = os.path.join(_HERE, "db", LibrarianCore.DB_MAP["meta"])
 
 NSE_ETF_API = "https://www.nseindia.com/api/etf"
 NSE_HEADERS = {
@@ -131,16 +132,16 @@ def get_etf_symbols() -> set:
 
 def _fetch_from_nse() -> set:
     """Fetches live ETF list from NSE API."""
-    session = requests.Session()
-    # NSE requires a cookie from the main page first
-    session.get("https://www.nseindia.com", headers=NSE_HEADERS, timeout=10)
-    time.sleep(1)
-    resp = session.get(NSE_ETF_API, headers=NSE_HEADERS, timeout=15)
-    resp.raise_for_status()
-    data = resp.json()
-    # NSE returns {"data": [{"symbol": "...", ...}, ...]}
-    symbols = {item["symbol"].strip().upper() for item in data.get("data", [])}
-    return symbols
+    with requests.Session() as session:
+        # NSE requires a cookie from the main page first
+        session.get("https://www.nseindia.com", headers=NSE_HEADERS, timeout=10)
+        time.sleep(1)
+        resp = session.get(NSE_ETF_API, headers=NSE_HEADERS, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        # NSE returns {"data": [{"symbol": "...", ...}, ...]}
+        symbols = {item["symbol"].strip().upper() for item in data.get("data", [])}
+        return symbols
 
 
 def sync_etf_list(force: bool = False) -> bool:
@@ -177,6 +178,7 @@ def sync_etf_list(force: bool = False) -> bool:
                 source = "seed_fallback"
 
             # Upsert into DB
+            conn.execute("DELETE FROM etf_blocklist")
             conn.executemany(
                 "INSERT OR REPLACE INTO etf_blocklist (symbol, added_date, source) VALUES (?, ?, ?)",
                 [(s, today, source) for s in symbols]
