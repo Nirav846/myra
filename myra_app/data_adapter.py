@@ -31,7 +31,8 @@ class DataAdapter:
     def __init__(self, librarian=None):
         if not hasattr(self, "initialized"):
             self.librarian = librarian
-            self.db_dir = os.path.join(os.getcwd(), "db")
+            _here = os.path.dirname(os.path.abspath(__file__))
+            self.db_dir = os.path.join(_here, "db")
             self.initialized = True
 
     def _get_connection(self, path: str):
@@ -87,7 +88,7 @@ class DataAdapter:
             params = [symbol_clean]
             if as_of_date:
                 where += " AND date <= ?"
-                params.append(as_of_date)
+                params.append(as_of_date)  # noqa: append
 
             # Fix: Added ORDER BY date DESC to ensure we get recent data
             sql = f"SELECT * FROM technical_data {where} ORDER BY date DESC LIMIT {fetch_limit}"
@@ -195,11 +196,11 @@ class DataAdapter:
         try:
             missing_ta = []
             if "RSI" not in df.columns:
-                missing_ta.append({"kind": "rsi", "length": 14})
+                missing_ta.append({"kind": "rsi", "length": 14})  # noqa: append
 
             for length in [20, 50, 150, 200]:
                 if f"sma{length}" not in df.columns:
-                    missing_ta.append({"kind": "sma", "length": length})
+                    missing_ta.append({"kind": "sma", "length": length})  # noqa: append
 
             if not missing_ta:
                 return df
