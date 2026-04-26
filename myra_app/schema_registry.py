@@ -106,17 +106,22 @@ class SchemaRegistry:
                 except Exception as e:
                     conn.rollback()
                     logger.error(f"[SCHEMA_REGISTRY] Failed to auto-fix schema: {e}")
+                    return False
 
             # Check type mismatches
             cursor.execute(f"PRAGMA table_info({table_name})")
             updated_columns = {row[1]: row[2] for row in cursor.fetchall()}
+            type_mismatch_found = False
             for col_name, expected_type in expected_columns.items():
                  actual_type = updated_columns.get(col_name)
                  # Note SQLite type affinity makes exact matching fuzzy, but we log severe differences
                  if actual_type and "INT" in expected_type and "TEXT" in actual_type.upper():
                       logger.error(f"[SCHEMA_REGISTRY] Type mismatch on {table_name}.{col_name}: Expected {expected_type}, Found {actual_type}")
+                      type_mismatch_found = True
 
             conn.commit()
+            if type_mismatch_found:
+                return False
             return True
         except Exception as e:
             logger.error(f"[SCHEMA_REGISTRY] Validation error on {table_name}: {e}")
