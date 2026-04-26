@@ -27,6 +27,7 @@ class DbDoctor:
         self.check_valuation_schema()
         self.check_institutional_schema()
         self.check_technical_data_quality()
+        self.check_etf_contamination()
         self.check_wal_mode()
         self.print_summary()
 
@@ -319,6 +320,20 @@ class DbDoctor:
 
         finally:
             conn.close()
+        print()
+
+    def check_etf_contamination(self):
+        print("--- Checking ETF Contamination in Technical DB ---")
+        try:
+            from myra_app.utils.etf_sync import purge_etf_rows_from_technical_db
+            count = purge_etf_rows_from_technical_db(dry_run=self.dry_run)
+            if count > 0:
+                self.issues_found += 1
+                if not self.dry_run:
+                    self.issues_fixed += 1
+        except Exception as e:
+            print(f"  [ERROR] ETF contamination check failed: {e}")
+            self.issues_failed += 1
         print()
 
     def check_wal_mode(self):

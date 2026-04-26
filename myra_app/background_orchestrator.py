@@ -162,6 +162,22 @@ def _task_watchdog():
             logger.warning(f"[MYRA BG] Watchdog error: {e}")
 
 
+# ─── Task 4: ETF Sync ─────────────────────────────────────────────────────────
+
+def _task_etf_sync():
+    """Syncs ETF blocklist from NSE every Sunday."""
+    if _shutdown_event.is_set():
+        return
+    try:
+        ist_now = datetime.now(timezone.utc).astimezone(IST)
+        if ist_now.weekday() == 6:  # Sunday
+            from myra_app.utils.etf_sync import sync_etf_list
+            print("[MYRA BG] Sunday ETF sync running...")
+            sync_etf_list()
+    except Exception as e:
+        logger.error(f"[MYRA BG] ETF sync failed: {e}")
+
+
 # ─── Public entry point ───────────────────────────────────────────────────────
 
 def start():
@@ -182,10 +198,20 @@ def start():
     print("[MYRA BG] Running startup DB health check (synchronous)...")
     _task_db_doctor()
 
+    # Seed ETF list on first run if DB is empty
+    try:
+        from myra_app.utils.etf_sync import sync_etf_list, get_etf_symbols
+        if len(get_etf_symbols()) < 50:
+            print("[MYRA BG] Seeding ETF blocklist for first time...")
+            sync_etf_list(force=True)
+    except Exception as e:
+        logger.warning(f"ETF seed failed: {e}")
+
     # Now launch remaining tasks as background threads
     tasks = [
         ("daily-ingest", _task_daily_ingest),
         ("watchdog",     _task_watchdog),
+        ("etf-sync",     _task_etf_sync),
     ]
     with _task_lock:
         for name, fn in tasks:

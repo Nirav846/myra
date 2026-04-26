@@ -20,15 +20,7 @@ if _ROOT not in sys.path:
 from myra_app.utils.bhavcopy_parser import BhavcopyParser
 from myra_core.utils.myra_log import myra_log
 from myra_app.librarian_core import LibrarianCore
-
-ETF_SYMBOLS = {
-    "LIQUIDBEES", "NIFTYBEES", "BANKBEES", "GOLDBEES", "JUNIORBEES",
-    "SETFNIF50", "SETFNN50", "MOM100", "CONSUMBEES", "DIVOPPBEES",
-    "INFRABBEES", "ITBEES", "PHARMABEES", "PSUBNKBEES", "SHARIABEES",
-    "CPSEETF", "BHARAT22ETF", "MON100", "EBBETF0423", "EBBETF0431",
-    "ICICIB22", "NV20BEES", "SETF10GILT", "LIQUIDCASE", "LIQUIDIETF",
-    "HDFCNIFTY", "ICICIFIXBL", "ABSLNN50ET"
-}
+from myra_app.utils.etf_sync import get_etf_symbols
 
 def resolve_delivery(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -100,6 +92,9 @@ def ingest_bhavcopies(csv_folder: str, db_path: str = None) -> None:
         return
 
     stats = {"processed": 0, "inserted": 0, "rejected": 0}
+
+    ETF_SYMBOLS = get_etf_symbols()
+    print(f"[MYRA] ETF blocklist loaded: {len(ETF_SYMBOLS)} symbols")
 
     for i, file_path in enumerate(csv_files, 1):
         myra_log(i, len(csv_files), desc="Ingesting files")
