@@ -1,31 +1,55 @@
-import os
+import sqlite3
 
-import duckdb
-import polars as pl
-from myra_app.feature_enrichment import enrich_features
-from myra_app.librarian_core import LibrarianCore
+conn = sqlite3.connect("db/myra_technical.db")
+cur = conn.cursor()
 
-# 1. Connect
-con = duckdb.connect(os.path.join("db", LibrarianCore.DB_MAP["technical"]))
+print("🚧 Creating new table with safety constraints...")
 
-# 2. Load Data
-print("Reading data from technical_data...")
-df = con.execute("SELECT * FROM technical_data").pl()
+cur.execute("""
+CREATE TABLE IF NOT EXISTS technical_data_new (
+    symbol TEXT,
+    date TEXT,
+    open REAL,
+    high REAL,
+    low REAL,
+    close REAL,
+    volume INTEGER,
+    delivery REAL,
+    trades REAL,
+    vwap REAL,
+    delivery_pct REAL,
+    delivery_ratio REAL,
+    delivery_qty REAL,
+    stock_return REAL,
+    market_return REAL,
+    delivery_divergence_score REAL,
+    volatility_compression_score REAL,
+    relative_volume_score REAL,
+    nifty_outperformance_score REAL,
+    UNIQUE(symbol, date)
+);
+""")
 
-# 3. Get Nifty Data (Using a flexible search for the name)
-nifty_df = con.execute(
-    "SELECT date, close FROM technical_data WHERE symbol LIKE '%NIFTY 50%'"
-).pl()
+print("📦 Copying data (removing duplicates automatically)...")
 
-if nifty_df.is_empty():
-    print("⚠️ Warning: Nifty 50 data not found. RS score might be empty.")
+cur.execute("""
+INSERT OR IGNORE INTO technical_data_new
+SELECT * FROM technical_data;
+""")
 
-# 4. Enrich
-print("Running Institutional Enrichment (Vectorized Polars)...")
-enriched_df = enrich_features(df, nifty_df)
+print("🗑 Dropping old table...")
+cur.execute("DROP TABLE technical_data;")
 
-# 5. Write back to DuckDB
-con.execute("CREATE OR REPLACE TABLE technical_data AS SELECT * FROM enriched_df")
+print("🔁 Renaming new table...")
+cur.execute("ALTER TABLE technical_data_new RENAME TO technical_data;")
 
-print("🚀 Success! Institutional scores are now in the database.")
-print(con.execute("PRAGMA table_info('technical_data')").pl())
+print("⚡ Adding index...")
+cur.execute("""
+CREATE INDEX idx_symbol_date 
+ON technical_data(symbol, date);
+""")
+
+conn.commit()
+conn.close()
+
+print("✅ DONE: Database is now safe")
