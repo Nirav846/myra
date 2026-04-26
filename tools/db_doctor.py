@@ -222,12 +222,12 @@ class DbDoctor:
                         for col in missing_cols:
                             c.execute(f"ALTER TABLE fundamentals ADD COLUMN {col} TEXT")
                             print(f"  [FIXED] Added column {col}")
-                            self.issues_fixed += 1
                         conn.commit()
+                        self.issues_fixed += len(missing_cols)
                     except Exception as e:
                         conn.rollback()
                         print(f"  [ERROR] Failed to add columns: {e}")
-                        self.issues_failed += 1
+                        self.issues_failed += len(missing_cols)
 
         finally:
             conn.close()
