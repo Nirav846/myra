@@ -115,6 +115,9 @@ class DataAdapter:
                 df.rename(columns=rename_map, inplace=True)
                 df = df.loc[:, ~df.columns.duplicated()]
 
+                if "DeliveryPct" in df.columns:
+                    df["DeliveryPct"] = pd.to_numeric(df["DeliveryPct"], errors="coerce").fillna(0.0)
+
                 df = validate_dataframe(
                     df, context=f"DataAdapter get_price_df: {symbol_clean}"
                 )

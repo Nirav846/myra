@@ -251,6 +251,8 @@ def _worker_task(payload):
                     passed = True
 
             if passed:
+                _deliv_pct = funda.get('delivery_percent', 0)
+                _deliv_pct = 0 if (not _deliv_pct or _deliv_pct != _deliv_pct) else _deliv_pct
                 res_payload = {
                     "Stock": symbol,
                     "Stage": stage,
@@ -269,7 +271,7 @@ def _worker_task(payload):
                     "POC_Dist": f"{round(((df['Close'].iloc[-1] - funda.get('d_poc', 0)) / (funda.get('d_poc', 1) if funda.get('d_poc', 0) > 0 else 1) * 100), 2)}%",
                     "Absorption": f"{round(funda.get('Absorp_Ratio', 0) * 100)}%",
                     "Tightness": f"{round(funda.get('std20', 0) / df['Close'].iloc[-1] * 100, 2)}%" if df["Close"].iloc[-1] > 0 else "0%",
-                    "Deliv_Pct": f"{round(funda.get('delivery_percent', 0))}%",
+                    "Deliv_Pct": f"{round(_deliv_pct)}%",
                     "Confluence": "High" if funda.get("Consensus", 0) >= 4 else "Moderate" if funda.get("Consensus", 0) >= 2 else "Low",
                     **funda,
                 }
