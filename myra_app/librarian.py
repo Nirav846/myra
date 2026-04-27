@@ -218,6 +218,21 @@ class Librarian(
             logging.getLogger(__name__).warning(f"Sector lookup failed: {e}")
             return []
 
+    def get_available_sectors(self) -> list[dict]:
+        """Returns list of sectors with stock counts from fundamentals table."""
+        if not self._val_conn:
+            return []
+        try:
+            cur = self._val_conn.execute(
+                "SELECT sector, COUNT(*) as cnt FROM fundamentals WHERE sector IS NOT NULL AND sector != '' "
+                "GROUP BY sector ORDER BY sector"
+            )
+            return [{"sector": row[0], "count": row[1]} for row in cur.fetchall()]
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Sector list failed: {e}")
+            return []
+
     def get_all_symbols(self):
         if not self._meta_conn:
             return []

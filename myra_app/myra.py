@@ -304,27 +304,55 @@ def main():
             pd_in = console.input(
                 "\n[info]Backtest Date? (YYYY-MM-DD) [Enter for Today] > [/info]"
             )
-            universe_input = console.input(
-                "[info]Universe? [Enter for NIFTY 500, 1 for Full Market, or type sector name e.g. 'IT', 'PHARMA'] > [/info]"
-            ).strip()
+            # Build universe options list
+            options = [
+                ("1", "NIFTY 50", "NIFTY 50"),
+                ("2", "NIFTY 500", "NIFTY 500"),
+                ("3", "NIFTY Smallcap 250", "NIFTY SMALLCAP 250"),  # adjust if exact name differs
+                ("4", "Full Market", "full"),
+            ]
+
+            # Add numbered sectors dynamically
+            try:
+                sectors = screener.lib.get_available_sectors()  # returns list of dicts or tuples: (sector_name, count)
+                if sectors:
+                    for i, sec in enumerate(sectors, start=5):
+                        options.append((str(i), f"{sec['sector']} ({sec['count']} stocks)", sec['sector']))
+            except Exception:
+                pass
+
+            # Display menu
+            console.print("\n[bold]Select Universe:[/bold]")
+            for num, label, _ in options:
+                console.print(f"  {num}. {label}")
+            console.print("  [dim]Enter number (default: 2 = NIFTY 500)[/dim]")
+
+            universe_input = input().strip()
+            if not universe_input:
+                universe_input = "2"  # default NIFTY 500
+
+            # Resolve selection
+            selected = next((opt for opt in options if opt[0] == universe_input), None)
+            if not selected:
+                console.print("[warning]Invalid option. Using NIFTY 500.[/warning]")
+                selected = ("2", "NIFTY 500", "NIFTY 500")
+
+            num, label, value = selected
 
             scan_all_flag = False
             portfolio_syms = None
-            if universe_input == "1":
-                scan_all_flag = True
-            elif universe_input and universe_input != "":
-                # Sector scan
-                sector_name = universe_input.upper()
-                try:
-                    symbols = screener.lib.get_symbols_by_sector(sector_name)
-                    portfolio_syms = symbols
-                    if not portfolio_syms:
-                        console.print(f"[warning]No symbols found for sector: {sector_name}[/warning]")
-                        continue
-                    console.print(f"[info]Scanning {len(portfolio_syms)} stocks in {sector_name} sector[/info]")
-                except Exception as e:
-                    console.print(f"[error]Sector lookup failed: {e}[/error]")
+            if value == "full":
+                symbols = screener.lib.get_all_symbols()
+            elif value in ("NIFTY 50", "NIFTY 500", "NIFTY SMALLCAP 250"):
+                symbols = screener.lib.get_index_symbols(value)
+            else:
+                # Sector
+                symbols = screener.lib.get_symbols_by_sector(value)
+                if not symbols:
+                    console.print(f"[warning]No symbols found for sector: {value}[/warning]")
                     continue
+                console.print(f"[info]Scanning {len(symbols)} stocks in {value} sector[/info]")
+                portfolio_syms = symbols
 
             try:
                 res = screener.execute_scan(

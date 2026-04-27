@@ -195,6 +195,20 @@ def _task_index_sync():
         _shutdown_event.wait(timeout=3600)  # Check every hour
 
 
+# ─── Task 6: Fundamentals Sync ───────────────────────────────────────────────────
+
+def _task_fundamentals_sync():
+    """Monthly fundamentals sync with resumable progress tracking."""
+    if _shutdown_event.is_set():
+        return
+    try:
+        from myra_app.utils.fundamentals_sync import sync_fundamentals
+        print("[MYRA BG] Checking fundamentals sync...")
+        sync_fundamentals()  # the function itself decides if it needs to run
+    except Exception as e:
+        logger.error(f"[MYRA BG] Fundamentals sync failed: {e}")
+
+
 # ─── Public entry point ───────────────────────────────────────────────────────
 
 def start():
@@ -247,12 +261,21 @@ def start():
     except Exception as e:
         logger.warning(f"NIFTY 500 seed failed: {e}")
 
+    # Run fundamentals sync once on startup (function decides if needed)
+    try:
+        from myra_app.utils.fundamentals_sync import sync_fundamentals
+        print("[MYRA BG] Checking fundamentals sync on startup...")
+        sync_fundamentals()
+    except Exception as e:
+        logger.warning(f"Startup fundamentals sync failed: {e}")
+
     # Now launch remaining tasks as background threads
     tasks = [
         ("daily-ingest", _task_daily_ingest),
         ("watchdog",     _task_watchdog),
         ("etf-sync",     _task_etf_sync),
         ("index-sync",   _task_index_sync),
+        ("fundamentals-sync", _task_fundamentals_sync),
     ]
     with _task_lock:
         for name, fn in tasks:

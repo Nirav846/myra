@@ -81,6 +81,23 @@ def sync_index_constituents(index_name, force=False):
             if symbol:
                 symbols.append(symbol)
         
+        # Filter out dummy / test symbols that NSE sometimes includes
+        EXCLUDE_SYMBOLS = {'DUMMY', 'TEST', 'DEMO', 'NSE', 'INDIA', 'EQ', 'TEMP',
+                           '123456', '789012', 'MII', 'MSEI', 'BSE', 'NIFTY',
+                           'SENSEX', 'BANKNIFTY', 'FINNIFTY'}
+        # Also remove any symbol that contains any of these words
+        EXCLUDE_PATTERNS = ['DUMMY', 'TEST', 'DEMO']
+        
+        filtered = []
+        for sym in symbols:
+            sym_upper = sym.upper()
+            if sym_upper in EXCLUDE_SYMBOLS:
+                continue
+            if any(p in sym_upper for p in EXCLUDE_PATTERNS):
+                continue
+            filtered.append(sym)
+        symbols = filtered
+        
         if not symbols:
             print(f"[Index Sync] No symbols found for {index_name}")
             return False
