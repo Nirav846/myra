@@ -64,10 +64,19 @@ class LibrarianSyncMixin:
                 from myra_app.feature_enrichment import process_enrichment_pipeline
 
                 if self._tech_conn:
-                    self.sync_status.update(
-                        task="Enriching Market Data", completed=25, total=100
-                    )
-                    process_enrichment_pipeline(self, self._tech_conn)
+                    # Only run enrichment once per day — it writes to all 2.4M rows
+                    last_enrich = self.get_metadata("last_enrichment_date") or "1900-01-01"
+                    today = date.today().isoformat()
+                    if last_enrich != today:
+                        self.sync_status.update(
+                            task="Enriching Market Data", completed=25, total=100
+                        )
+                        process_enrichment_pipeline(self, self._tech_conn)
+                        self.set_metadata("last_enrichment_date", today)
+                    else:
+                        import logging
+
+                        logging.getLogger(__name__).info("Enrichment already ran today, skipping.")
             except Exception as e:
                 import logging
 
@@ -294,6 +303,7 @@ class LibrarianSyncMixin:
         def sync_loop():
             # Initial catchup history
             h = history_years if history_years > 0 else 0.04
+            time.sleep(300)  # Wait 5 minutes before first background sync
             while True:
                 try:
                     self.sync_market_data(history_years=h, skip_maintenance=True)
