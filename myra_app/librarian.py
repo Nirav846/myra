@@ -19,7 +19,7 @@ from myra_app.librarian_schema import LibrarianSchemaMixin
 from myra_app.librarian_sync import LibrarianSyncMixin
 from myra_app.librarian_intelligence import LibrarianIntelligenceMixin
 from myra_app.librarian_ingestor import LibrarianIngestorMixin
-from myra_app.constants import PROJECT_ROOT, DB_DIR, DATA_DIR, CACHE_DIR
+from myra_app.constants import DB_DIR, DATA_DIR, CACHE_DIR
 
 
 class Librarian(
@@ -34,6 +34,7 @@ class Librarian(
     """
 
     def __init__(self, read_only=False, console=None, db_path=None):
+        self.db_dir = DB_DIR
         self.data_dir = DATA_DIR
         if not os.path.exists(self.data_dir):
             os.makedirs(self.data_dir)
