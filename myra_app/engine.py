@@ -17,6 +17,7 @@ from datetime import date, datetime
 from typing import List, Dict, Any
 from myra_app.data_adapter import DataAdapter
 from myra_core.utils.myra_log import myra_log
+from rich.progress import Progress
 
 # Suppress warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -141,15 +142,12 @@ def _worker_task(payload):
         return None
 
     try:
-        print(f"[WORKER START] {symbol}")
-
         lookback = _worker_adapter.get_lookback_for_scanner(strategy_name)
         df = _worker_adapter.get_price_df(
             symbol, lookback_days=lookback
         )
 
         if df is None or df.empty:
-            print(f"[WORKER DONE] {symbol}")
             return None
 
         # Ensure DataFrame Integrity
@@ -287,9 +285,7 @@ def _worker_task(payload):
                 if funda.get("smart_money_score", 0) > 0.7: stars += 1
                 res_payload["Stars"] = "*" * int(min(5, stars))
 
-                print(f"[WORKER DONE] {symbol}")
                 return res_payload
-            print(f"[WORKER DONE] {symbol}")
             return None
         else:
             res = _worker_strategy.run(df, funda)
@@ -316,10 +312,8 @@ def _worker_task(payload):
 
             res_dict["Money_Flow"] = f"₹{round(funda.get('money_flow_cr', 0))}Cr"
 
-            print(f"[WORKER DONE] {symbol}")
             return res_dict
 
-        print(f"[WORKER DONE] {symbol}")
         return None
     except Exception as e:
         import logging
@@ -720,20 +714,20 @@ class Engine:
         total_symbols = len(payloads)
         results = []
         try:
-            with multiprocessing.Pool(
-                processes=max_workers,
-                initializer=init_worker,
-                initargs=(strategy_name, lib.db_path),
-            ) as pool:
-                raw_it = pool.imap(_worker_task, payloads)
-                for i, res in enumerate(raw_it, 1):
-                    watchdog.poke()
-                    if not silent:
-                        myra_log(i, total_symbols)
-                    if i % 100 == 0:
-                        print(f"[HEARTBEAT] {i}/{total_symbols}")
-                    if res:
-                        results.append(res)
+            with Progress() as progress:
+                task = progress.add_task("[cyan]Scanning...", total=total_symbols)
+                
+                with multiprocessing.Pool(
+                    processes=max_workers,
+                    initializer=init_worker,
+                    initargs=(strategy_name, lib.db_path),
+                ) as pool:
+                    raw_it = pool.imap(_worker_task, payloads)
+                    for i, res in enumerate(raw_it, 1):
+                        watchdog.poke()
+                        progress.update(task, advance=1)
+                        if res:
+                            results.append(res)
 
         except KeyboardInterrupt:
             if not silent:
