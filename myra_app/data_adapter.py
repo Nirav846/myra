@@ -185,8 +185,12 @@ class DataAdapter:
                     if len(df) >= 252
                     else float(df["Low"].min())
                 )
-            if "DeliveryPct" in df.columns:
-                funda["delivery_percent"] = float(df["DeliveryPct"].iloc[-1])
+            deliv_col = next((c for c in ["DeliveryPct", "delivery_pct"] if c in df.columns), None)
+            if deliv_col:
+                series = pd.to_numeric(df[deliv_col], errors="coerce")
+                last_deliv = series[series != 0].dropna()
+                if not last_deliv.empty:
+                    funda["delivery_percent"] = float(last_deliv.iloc[-1])
 
         with self._lock:
             self._funda_cache[symbol_clean] = funda
