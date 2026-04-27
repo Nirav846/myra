@@ -20,6 +20,8 @@ from myra_app.librarian_sync import LibrarianSyncMixin
 from myra_app.librarian_intelligence import LibrarianIntelligenceMixin
 from myra_app.librarian_ingestor import LibrarianIngestorMixin
 
+_MYRA_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
 
 class Librarian(
     LibrarianCore,
@@ -33,7 +35,7 @@ class Librarian(
     """
 
     def __init__(self, read_only=False, console=None, db_path=None):
-        self.data_dir = os.path.join(os.getcwd(), "data")
+        self.data_dir = os.path.join(_MYRA_APP_DIR, "data")
         if not os.path.exists(self.data_dir):
             os.makedirs(self.data_dir)
 
@@ -52,7 +54,7 @@ class Librarian(
 
         self.fundamental_ranker = FundamentalRanker(
             self._val_conn,
-            scoring_db_path=os.path.join(os.getcwd(), "db", self.DB_MAP["scoring"]),
+            scoring_db_path=os.path.join(_MYRA_APP_DIR, "db", self.DB_MAP["scoring"]),
         )
 
         if not self.read_only:
@@ -69,7 +71,7 @@ class Librarian(
         from myra_app.fetcher import DataFetcher
 
         cache_file = os.path.join(
-            os.getcwd(), ".jules", "cache", f"holidays_{year}.json"
+            _MYRA_APP_DIR, ".jules", "cache", f"holidays_{year}.json"
         )
         if os.path.exists(cache_file):
             try:
@@ -181,8 +183,8 @@ class Librarian(
         from myra_app.technical_audit import TechnicalAudit
 
         try:
-            tech_db = os.path.join(os.getcwd(), "db", self.DB_MAP["technical"])
-            cal_db = os.path.join(os.getcwd(), "db", self.DB_MAP["calendar"])
+            tech_db = os.path.join(_MYRA_APP_DIR, "db", self.DB_MAP["technical"])
+            cal_db = os.path.join(_MYRA_APP_DIR, "db", self.DB_MAP["calendar"])
             audit = TechnicalAudit(tech_db=tech_db, cal_db=cal_db)
             audit.run_audit()
         except Exception as e:
