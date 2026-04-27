@@ -12,8 +12,7 @@ import sqlite3
 from datetime import datetime
 from rich.console import Console
 
-
-_MYRA_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+from myra_app.constants import DB_DIR
 
 class SyncStatus:
     """Tracks background synchronization progress."""
@@ -63,7 +62,7 @@ class LibrarianCore:
         self.db_path = (
             db_path
             if db_path
-            else os.path.join(_MYRA_APP_DIR, "db", "myra_market_data.db")
+            else os.path.join(DB_DIR, "myra_market_data.db")
         )
         self.read_only = read_only
         self.console = console if console else Console()
@@ -94,7 +93,7 @@ class LibrarianCore:
 
     def _connect_sqlite(self):
         """Initializes all SQLite sidecar handles."""
-        db_dir = os.path.join(_MYRA_APP_DIR, "db")
+        db_dir = DB_DIR
         os.makedirs(db_dir, exist_ok=True)
 
         def _get_conn(name):
@@ -165,7 +164,7 @@ class LibrarianCore:
             return self.cached_stats
 
         size_bytes = 0
-        db_dir = os.path.join(_MYRA_APP_DIR, "db")
+        db_dir = DB_DIR
         if os.path.exists(db_dir):
             for f in os.listdir(db_dir):
                 if f.endswith(".db") or f.endswith(".sqlite"):
