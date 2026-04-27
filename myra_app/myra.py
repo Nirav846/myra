@@ -345,6 +345,10 @@ def main():
                 symbols = screener.lib.get_all_symbols()
             elif value in ("NIFTY 50", "NIFTY 500", "NIFTY SMALLCAP 250"):
                 symbols = screener.lib.get_index_symbols(value)
+                if not symbols:
+                    console.print(f"[warning]No symbols found for {value}. Please run index sync first.[/warning]")
+                    continue
+                console.print(f"[info]Scanning {len(symbols)} stocks in {value}[/info]")
             else:
                 # Sector
                 symbols = screener.lib.get_symbols_by_sector(value)

@@ -66,11 +66,10 @@ class LibrarianIntelligenceMixin:
             return pd.DataFrame()
 
         # 🔥 SAFE CONCAT
-        # Filter out fully-null DataFrames before concat
-        results_list = [df for df in results_list if not df.isnull().values.all()]
+        # Filter out None, empty, or fully-null DataFrames before concat
+        results_list = [df for df in results_list if df is not None and not df.empty and not df.isnull().values.all()]
         if results_list:
             df_final = pd.concat(results_list, axis=0, ignore_index=True)
-            # Drop columns that became all-NaN after concat (silences FutureWarning)
             df_final = df_final.dropna(axis=1, how='all')
         else:
             df_final = pd.DataFrame()

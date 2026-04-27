@@ -264,7 +264,7 @@ def start():
     # Run fundamentals sync once on startup (function decides if needed)
     try:
         from myra_app.utils.fundamentals_sync import sync_fundamentals
-        print("[MYRA BG] Checking fundamentals sync on startup...")
+        # Quiet startup sync - let the function handle its own internal logging
         sync_fundamentals()
     except Exception as e:
         logger.warning(f"Startup fundamentals sync failed: {e}")
