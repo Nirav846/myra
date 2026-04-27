@@ -19,7 +19,7 @@ from myra_app.librarian_schema import LibrarianSchemaMixin
 from myra_app.librarian_sync import LibrarianSyncMixin
 from myra_app.librarian_intelligence import LibrarianIntelligenceMixin
 from myra_app.librarian_ingestor import LibrarianIngestorMixin
-from myra_app.constants import PROJECT_ROOT, DB_DIR, DATA_DIR, CACHE_DIR
+from myra_app.constants import PROJECT_ROOT, DB_DIR, DATA_DIR, CACHE_DIR, LOGS_DIR
 
 
 class Librarian(
