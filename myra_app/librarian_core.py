@@ -13,6 +13,8 @@ from datetime import datetime
 from rich.console import Console
 
 
+_MYRA_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
 class SyncStatus:
     """Tracks background synchronization progress."""
 
@@ -61,7 +63,7 @@ class LibrarianCore:
         self.db_path = (
             db_path
             if db_path
-            else os.path.join(os.getcwd(), "db", "myra_market_data.db")
+            else os.path.join(_MYRA_APP_DIR, "db", "myra_market_data.db")
         )
         self.read_only = read_only
         self.console = console if console else Console()
@@ -92,7 +94,7 @@ class LibrarianCore:
 
     def _connect_sqlite(self):
         """Initializes all SQLite sidecar handles."""
-        db_dir = os.path.join(os.getcwd(), "db")
+        db_dir = os.path.join(_MYRA_APP_DIR, "db")
         os.makedirs(db_dir, exist_ok=True)
 
         def _get_conn(name):
@@ -110,6 +112,12 @@ class LibrarianCore:
 
         # Standardized Connections via DB_MAP
         self._tech_conn = _get_conn(self.DB_MAP["technical"])
+        if self._tech_conn:
+            try:
+                self._tech_conn.execute("DROP TABLE IF EXISTS prices")
+                self._tech_conn.commit()
+            except Exception:
+                pass
         self._inst_conn = _get_conn(self.DB_MAP["institutional"])
         self._meta_conn = _get_conn(self.DB_MAP["meta"])
         self._val_conn = _get_conn(self.DB_MAP["valuation"])
@@ -157,7 +165,7 @@ class LibrarianCore:
             return self.cached_stats
 
         size_bytes = 0
-        db_dir = os.path.join(os.getcwd(), "db")
+        db_dir = os.path.join(_MYRA_APP_DIR, "db")
         if os.path.exists(db_dir):
             for f in os.listdir(db_dir):
                 if f.endswith(".db") or f.endswith(".sqlite"):
