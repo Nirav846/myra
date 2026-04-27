@@ -66,7 +66,10 @@ class LibrarianIntelligenceMixin:
             return pd.DataFrame()
 
         # 🔥 SAFE CONCAT
-        results_list = [df for df in results_list if not df.isnull().values.all()]
+        results_list = [
+            df for df in results_list
+            if df is not None and not df.empty and not df.isnull().values.all()
+        ]
         df_final = pd.concat(results_list, axis=0, ignore_index=True) if results_list else pd.DataFrame()
 
         assert "symbol" in df_final.columns
