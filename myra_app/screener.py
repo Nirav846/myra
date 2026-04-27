@@ -264,9 +264,14 @@ class MYRAScreener:
             if scan_all:
                 symbols = self.lib.get_all_symbols()
             else:
-                symbols = self.lib.get_active_universe()
+                # Default: Institutional Core = NIFTY 500
+                symbols = self.lib.get_index_symbols("NIFTY 500")
                 if not symbols:
-                    symbols = self.lib.get_all_symbols()
+                    # Fallback to active universe, never silently scan all
+                    symbols = self.lib.get_active_universe() or []
+                    if not symbols:
+                        self.console.print("[warning][!] No active universe found. Please sync data first.[/warning]")
+                        return []
 
         # DEBUG: Check symbols
         # self.console.print(f"[dim]DEBUG: Resolved {len(symbols)} symbols for scan.[/dim]")

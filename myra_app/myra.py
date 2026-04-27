@@ -304,16 +304,35 @@ def main():
             pd_in = console.input(
                 "\n[info]Backtest Date? (YYYY-MM-DD) [Enter for Today] > [/info]"
             )
-            u_choice = console.input(
-                "[info]Universe? [Enter for Institutional Core, 1 for Full Market] > [/info]"
-            )
+            universe_input = console.input(
+                "[info]Universe? [Enter for NIFTY 500, 1 for Full Market, or type sector name e.g. 'IT', 'PHARMA'] > [/info]"
+            ).strip()
+
+            scan_all_flag = False
+            portfolio_syms = None
+            if universe_input == "1":
+                scan_all_flag = True
+            elif universe_input and universe_input != "":
+                # Sector scan
+                sector_name = universe_input.upper()
+                try:
+                    symbols = screener.lib.get_symbols_by_sector(sector_name)
+                    portfolio_syms = symbols
+                    if not portfolio_syms:
+                        console.print(f"[warning]No symbols found for sector: {sector_name}[/warning]")
+                        continue
+                    console.print(f"[info]Scanning {len(portfolio_syms)} stocks in {sector_name} sector[/info]")
+                except Exception as e:
+                    console.print(f"[error]Sector lookup failed: {e}[/error]")
+                    continue
 
             try:
                 res = screener.execute_scan(
                     s_id,
                     s_name,
                     as_of_date=pd_in if pd_in else None,
-                    scan_all=(u_choice == "1"),
+                    scan_all=scan_all_flag,
+                    portfolio_symbols=portfolio_syms,
                 )
 
                 if res:

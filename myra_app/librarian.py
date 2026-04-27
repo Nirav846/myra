@@ -203,6 +203,21 @@ class Librarian(
         res = self._tech_conn.execute("SELECT MAX(date) FROM technical_data").fetchone()
         return res[0] if res else None
 
+    def get_symbols_by_sector(self, sector_name: str) -> list:
+        """Returns symbols matching a sector name. Case-insensitive partial match."""
+        if not self._val_conn:
+            return []
+        try:
+            cursor = self._val_conn.execute(
+                "SELECT symbol FROM fundamentals WHERE sector LIKE ? COLLATE NOCASE",
+                (f"%{sector_name}%",)
+            )
+            return [row[0] for row in cursor.fetchall()]
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Sector lookup failed: {e}")
+            return []
+
     def get_all_symbols(self):
         if not self._meta_conn:
             return []
