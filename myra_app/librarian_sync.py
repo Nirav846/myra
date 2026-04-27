@@ -7,9 +7,10 @@ Routes data to technical.db, institutional.db, meta.db, and valuation.db.
 
 import sys
 import os
+import logging
 import threading
 import pandas as pd
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 import concurrent.futures
 
 try:
@@ -64,13 +65,19 @@ class LibrarianSyncMixin:
                 from myra_app.feature_enrichment import process_enrichment_pipeline
 
                 if self._tech_conn:
-                    self.sync_status.update(
-                        task="Enriching Market Data", completed=25, total=100
-                    )
-                    process_enrichment_pipeline(self, self._tech_conn)
+                    # Only run enrichment once per day — it writes to all 2.4M rows
+                    last_enrich = self.get_metadata("last_enrichment_date") or "1900-01-01"
+                    IST = timezone(timedelta(hours=5, minutes=30))
+                    today = datetime.now(timezone.utc).astimezone(IST).date().isoformat()
+                    if last_enrich != today:
+                        self.sync_status.update(
+                            task="Enriching Market Data", completed=25, total=100
+                        )
+                        process_enrichment_pipeline(self, self._tech_conn)
+                        self.set_metadata("last_enrichment_date", today)
+                    else:
+                        logging.getLogger(__name__).info("Enrichment already ran today, skipping.")
             except Exception as e:
-                import logging
-
                 logging.getLogger(__name__).warning(f"Feature enrichment failed: {e}")
 
             if skip_maintenance:
@@ -294,6 +301,9 @@ class LibrarianSyncMixin:
         def sync_loop():
             # Initial catchup history
             h = history_years if history_years > 0 else 0.04
+            _startup_delay = 300  # seconds — gives user time to start scanning before background sync begins
+            logging.getLogger(__name__).info(f"[MYRA Sync] Background sync will start in {_startup_delay // 60} minutes...")
+            time.sleep(_startup_delay)
             while True:
                 try:
                     self.sync_market_data(history_years=h, skip_maintenance=True)
