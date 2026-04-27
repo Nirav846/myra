@@ -316,12 +316,8 @@ def main():
                 # Sector scan
                 sector_name = universe_input.upper()
                 try:
-                    funda = pd.read_sql(
-                        "SELECT symbol FROM fundamentals WHERE UPPER(sector) LIKE ?",
-                        screener.lib._val_conn,
-                        params=(f"%{sector_name}%",)
-                    )
-                    portfolio_syms = funda["symbol"].tolist()
+                    symbols = screener.lib.get_symbols_by_sector(sector_name)
+                    portfolio_syms = symbols
                     if not portfolio_syms:
                         console.print(f"[warning]No symbols found for sector: {sector_name}[/warning]")
                         continue
