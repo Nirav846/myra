@@ -187,10 +187,10 @@ class DataAdapter:
                 )
             deliv_col = next((c for c in ["DeliveryPct", "delivery_pct"] if c in df.columns), None)
             if deliv_col:
-                last_deliv = df[deliv_col].replace(0, float("nan")).dropna()
+                series = pd.to_numeric(df[deliv_col], errors="coerce")
+                last_deliv = series[series != 0].dropna()
                 if not last_deliv.empty:
                     funda["delivery_percent"] = float(last_deliv.iloc[-1])
-
 
         with self._lock:
             self._funda_cache[symbol_clean] = funda
