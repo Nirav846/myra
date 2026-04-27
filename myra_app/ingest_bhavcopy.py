@@ -86,6 +86,12 @@ def ingest_bhavcopies(csv_folder: str, db_path: str = None) -> None:
     except sqlite3.OperationalError:
         pass # Column already exists
 
+    try:
+        cursor.execute("ALTER TABLE technical_data ADD COLUMN delivery_pct REAL")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     csv_files = glob.glob(os.path.join(csv_folder, "nse_full_*.csv"))
     if not csv_files:
         print("[!] No matching 'nse_full_*.csv' files found in the specified directory.")
@@ -144,6 +150,7 @@ def ingest_bhavcopies(csv_folder: str, db_path: str = None) -> None:
             df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.date.astype(str)
             df = df.dropna(subset=["date"])
             df["delivery_ratio"] = (df["delivery"] / df["Volume"]).fillna(0)
+            df["delivery_pct"] = (df["delivery_ratio"] * 100).round(2)
 
             # Rename back to lowercase for DB insert
             df = df.rename(columns={
@@ -154,12 +161,12 @@ def ingest_bhavcopies(csv_folder: str, db_path: str = None) -> None:
             # Prepare records for insertion
             records = df[[
                 "symbol", "date", "open", "high", "low", "close", 
-                "volume", "delivery", "delivery_ratio", "delivery_source"
+                "volume", "delivery", "delivery_pct", "delivery_ratio", "delivery_source"
             ]].values.tolist()
 
             # Batched database insertions for performance
             cursor.executemany(
-                "INSERT OR REPLACE INTO technical_data (symbol, date, open, high, low, close, volume, delivery, delivery_ratio, delivery_source) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "INSERT OR REPLACE INTO technical_data (symbol, date, open, high, low, close, volume, delivery, delivery_pct, delivery_ratio, delivery_source) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 records,
             )
             stats["inserted"] += cursor.rowcount
