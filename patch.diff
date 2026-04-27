@@ -1,24 +1,17 @@
---- myra_app/results_manager.py
-+++ myra_app/results_manager.py
-@@ -194,7 +194,8 @@
-             style="on black",
-             box=box.SIMPLE if is_narrow else box.HEAVY_EDGE,
-             expand=True,
--            min_width=100
-+            min_width=100,
-+            caption=f"[dim]Total: {total} | Strong (Stage 2): {strong}[/dim]"
-         )
+--- myra_app/data_adapter.py
++++ myra_app/data_adapter.py
+@@ -155,8 +155,12 @@
+                     if len(df) >= 252
+                     else float(df["Low"].min())
+                 )
+-            if "DeliveryPct" in df.columns:
+-                funda["delivery_percent"] = float(df["DeliveryPct"].iloc[-1])
++            deliv_col = next((c for c in ["DeliveryPct", "delivery_pct"] if c in df.columns), None)
++            if deliv_col:
++                last_deliv = df[deliv_col].replace(0, float("nan")).dropna()
++                if not last_deliv.empty:
++                    funda["delivery_percent"] = float(last_deliv.iloc[-1])
++
 
-         # Column 1: Identity Group (Yellow)
-@@ -321,11 +322,6 @@
-
-         self.console.print(table)
-
--        # PERSISTENT SUMMARY FOOTER
--        total = len(results)
--        strong = len([r for r in results if "2" in str(r.get("Stage", ""))])
--        self.console.print(f"[dim]  [+] Scan Complete: {total} candidates identified. Strong Trend (Stage 2): {strong} [/dim]")
--
-     def offer_institutional_deep_dive(self, results: list):
-         """
-         PKScreener Superpower: On-Demand Institutional Deep-Dive.
+         with self._lock:
+             self._funda_cache[symbol_clean] = funda
