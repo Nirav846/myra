@@ -318,6 +318,26 @@ class DbDoctor:
                     print(f"  [ERROR] Quality check failed ({desc}): {e}")
                     self.issues_failed += 1
 
+            # Backfill delivery_pct for rows that have delivery but NULL delivery_pct
+            null_pct = conn.execute(
+                "SELECT COUNT(*) FROM technical_data WHERE delivery IS NOT NULL AND volume > 0 AND delivery_pct IS NULL"
+            ).fetchone()[0]
+
+            if null_pct > 0:
+                self.issues_found += 1
+                print(f"  [WARNING] Rows with NULL delivery_pct but valid delivery: {null_pct:,}")
+                if not self.dry_run:
+                    conn.execute("""
+                        UPDATE technical_data
+                        SET delivery_pct = ROUND((delivery * 100.0 / volume), 2)
+                        WHERE delivery IS NOT NULL AND volume > 0 AND delivery_pct IS NULL
+                    """)
+                    conn.commit()
+                    self.issues_fixed += 1
+                    print(f"  [FIXED] Backfilled delivery_pct for {null_pct:,} rows")
+                else:
+                    print(f"  [DRY RUN] Would backfill delivery_pct for {null_pct:,} rows")
+
         finally:
             conn.close()
         print()
