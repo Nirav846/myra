@@ -246,24 +246,6 @@ class LibrarianSchemaMixin:
                 conn=self._gov_conn,
             )
 
-        # --- 6. LEGACY (High-Speed Cache) ---
-        if self._tech_conn:
-            # DEPRECATED: Slated for removal in v4.0. technical_data is the Single Source of Truth.
-            try:
-                logger.warning("DEPRECATION WARNING: Table 'prices' is redundant. Migration to 'technical_data' required.")
-            except:
-                pass
-            self.safe_execute(
-                """
-                CREATE TABLE IF NOT EXISTS prices (
-                    symbol VARCHAR, date DATE, open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE, 
-                    volume BIGINT, delivery_qty BIGINT, delivery_percent DOUBLE, exchange VARCHAR,
-                    PRIMARY KEY (symbol, date, exchange)
-                )
-            """,
-                conn=self._tech_conn,
-            )
-
         self._create_indices()
 
         # PRIORITY 2.3: Runtime Schema Validation on Startup
