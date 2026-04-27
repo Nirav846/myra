@@ -112,7 +112,7 @@ class LibrarianCore:
 
         # Standardized Connections via DB_MAP
         self._tech_conn = _get_conn(self.DB_MAP["technical"])
-        if self._tech_conn:
+        if self._tech_conn and not self.read_only:
             try:
                 self._tech_conn.execute("DROP TABLE IF EXISTS prices")
                 self._tech_conn.commit()
