@@ -21,6 +21,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from myra_app.librarian_core import LibrarianCore
+from myra_app.utils.index_sync import sync_index_constituents
 
 logger = logging.getLogger("myra.orchestrator")
 
@@ -98,28 +99,28 @@ def _task_db_doctor():
 # ─── Task 2: Daily Ingestor ───────────────────────────────────────────────────
 
 def _task_daily_ingest():
-    """
-    Runs daily_ingestor if today's data hasn't been fetched yet.
-    Checks market hours — NSE data is available after 6 PM IST.
-    Skips on weekends and holidays.
-    """
     if _shutdown_event.is_set():
         return
 
-    # Check if market data time (after 6 PM IST)
     ist_now = datetime.now(timezone.utc).astimezone(IST)
+
+    # Skip weekends
     if ist_now.weekday() >= 5:
-        print("[MYRA BG] Weekend — skipping daily ingest.")
+        print(f"[MYRA BG] {ist_now.date()} is a weekend – skipping daily ingest.")
         return
+
+    # Skip before 6 PM IST (data not yet available)
     if ist_now.hour < 18:
-        print(f"[MYRA BG] Market data not yet available (IST: {ist_now.strftime('%H:%M')}). Skipping ingest.")
+        print(f"[MYRA BG] Market data not yet available (IST: {ist_now.strftime('%H:%M')}). Skipping.")
         return
+
+    # Skip if already ingested today
     if _already_ingested_today():
         print("[MYRA BG] Today's data already ingested. Skipping.")
         return
 
     try:
-        print("[MYRA BG] Fetching today's bhavcopy...")
+        print(f"[MYRA BG] {ist_now.date()} is a trading day. Fetching today's bhavcopy...")
         from myra_app.daily_ingestor import run_daily_update
         run_daily_update()
         _mark_ingested_today()
@@ -178,6 +179,22 @@ def _task_etf_sync():
         _shutdown_event.wait(timeout=3600)  # Check every hour
 
 
+# ─── Task 5: Index Sync ─────────────────────────────────────────────────────────
+
+def _task_index_sync():
+    """Syncs NIFTY indices from NSE every Sunday."""
+    while not _shutdown_event.is_set():
+        try:
+            ist_now = datetime.now(timezone.utc).astimezone(IST)
+            if ist_now.weekday() == 6:  # Sunday
+                print("[MYRA BG] Sunday index sync running...")
+                sync_index_constituents("NIFTY 500")
+                sync_index_constituents("NIFTY 50")
+        except Exception as e:
+            logger.error(f"[MYRA BG] Index sync failed: {e}")
+        _shutdown_event.wait(timeout=3600)  # Check every hour
+
+
 # ─── Public entry point ───────────────────────────────────────────────────────
 
 def start():
@@ -218,11 +235,24 @@ def start():
     except Exception as e:
         logger.warning(f"ETF seed failed: {e}")
 
+    # Seed NIFTY 500 on first run if empty
+    try:
+        from myra_app.librarian import Librarian
+        lib = Librarian()
+        lib.connect()
+        if len(lib.get_index_symbols("NIFTY 500")) < 100:
+            print("[MYRA BG] Seeding NIFTY 500 constituents...")
+            sync_index_constituents("NIFTY 500", force=True)
+        lib.close()
+    except Exception as e:
+        logger.warning(f"NIFTY 500 seed failed: {e}")
+
     # Now launch remaining tasks as background threads
     tasks = [
         ("daily-ingest", _task_daily_ingest),
         ("watchdog",     _task_watchdog),
         ("etf-sync",     _task_etf_sync),
+        ("index-sync",   _task_index_sync),
     ]
     with _task_lock:
         for name, fn in tasks:

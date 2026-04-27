@@ -267,10 +267,21 @@ class MYRAScreener:
                 # Default: Institutional Core = NIFTY 500
                 symbols = self.lib.get_index_symbols("NIFTY 500")
                 if not symbols:
-                    # Fallback to active universe, never silently scan all
+                    # Fallback to active universe
                     symbols = self.lib.get_active_universe() or []
                     if not symbols:
                         self.console.print("[warning][!] No active universe found. Please sync data first.[/warning]")
+                        return []
+                    # CRITICAL: If active_universe has more than 600 stocks,
+                    # warn and limit to NIFTY 500 size to avoid accidental full-market scans
+                    if len(symbols) > 600:
+                        self.console.print(
+                            f"[warning][!] Active universe has {len(symbols)} stocks — "
+                            f"too many for default scan. Add NIFTY 500 index data or use '1' for Full Market.[/warning]"
+                        )
+                        self.console.print(
+                            "[dim]To populate NIFTY 500: run the index sync in Librarian.[/dim]"
+                        )
                         return []
 
         # DEBUG: Check symbols
