@@ -37,9 +37,15 @@ def calculate_smc_indicators(df: pd.DataFrame, swing_length: int = 5) -> pd.Data
     )
     
     # --- FVG freshness (vectorized per symbol) ---
+    # FVG freshness: bars since last FVG event per symbol
     df['fvg_event'] = ((df['bullish_fvg']==1) | (df['bearish_fvg']==1))
     df['event_idx'] = df.groupby('symbol').cumcount()
-    df['last_event_idx'] = df.groupby('symbol')['event_idx'].where(df['fvg_event']).ffill().fillna(-1000)
+    # Set event_idx to NaN where no event, then forward fill within each symbol group
+    df['last_event_idx'] = (df['event_idx']
+        .where(df['fvg_event'])
+        .groupby(df['symbol'])
+        .ffill()
+        .fillna(-1000))
     df['fvg_freshness'] = df['event_idx'] - df['last_event_idx']
     df.drop(['fvg_event','event_idx','last_event_idx'], axis=1, inplace=True)
     
