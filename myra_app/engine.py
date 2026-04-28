@@ -150,6 +150,10 @@ def _worker_task(payload):
         if df is None or df.empty:
             return None
 
+        # Contract enforcement after load
+        from myra_core.data_contracts import enforce_ohlcv_contract
+        df = enforce_ohlcv_contract(df, symbol)
+
         # Ensure DataFrame Integrity
         if "date" not in df.columns:
             df = df.reset_index()
@@ -227,6 +231,9 @@ def _worker_task(payload):
         
         # Accept string strategy names properly
         funda["active_sid"] = strategy_name
+
+        # Contract enforcement before strategy
+        df = enforce_ohlcv_contract(df, symbol)
 
         # 1. CLASS-BASED STRATEGY SUPPORT
         if hasattr(_worker_strategy, "Strategy"):
@@ -317,7 +324,7 @@ def _worker_task(payload):
         return None
     except Exception as e:
         import logging
-        logging.exception(f"[WORKER CRASH] {symbol} failed")
+        logging.error(f"[WORKER FAILED] {symbol}: {type(e).__name__} - {e}")
         return None
 
 

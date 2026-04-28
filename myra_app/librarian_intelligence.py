@@ -10,12 +10,23 @@ import pandas as pd
 from myra_core.utils.data_validation import enforce_index_contract, validate_dataframe
 import numpy as np
 import pandas_ta as ta
-from myra_core.utils.myra_log import myra_log
 
 logger = logging.getLogger(__name__)
 
-
-
+def safe_concat(df_list):
+    """
+    Concatenates a list of DataFrames, removing None, empty, and all-NaN entries.
+    Drops columns that become entirely NaN after merging.
+    """
+    clean = [
+        df for df in df_list
+        if df is not None and not df.empty and not df.isnull().all().all()
+    ]
+    if not clean:
+        return pd.DataFrame()
+    result = pd.concat(clean, axis=0, ignore_index=True)
+    # Drop columns that became all-NaN (handles mismatched columns across sources)
+    return result.dropna(axis=1, how='all')
 
 
 class LibrarianIntelligenceMixin:
@@ -61,17 +72,7 @@ class LibrarianIntelligenceMixin:
                 logger.debug(f"Failed to load indicator for {sym}: {e}")
                 continue
 
-        # Remove None, empty, and fully-NaN DataFrames before concat
-        safe_list = [
-            df for df in results_list
-            if df is not None and not df.empty and not df.isnull().all().all()
-        ]
-        if safe_list:
-            df_final = pd.concat(safe_list, axis=0, ignore_index=True)
-            # Drop columns that became entirely NaN (handles missing columns across sources)
-            df_final = df_final.dropna(axis=1, how='all')
-        else:
-            df_final = pd.DataFrame()
+        df_final = safe_concat(results_list)
 
         assert "symbol" in df_final.columns
         assert "date" in df_final.columns
