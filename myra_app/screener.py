@@ -247,6 +247,7 @@ class MYRAScreener:
 
         # Resolve Universe
         symbols = []
+        print(f"[DEBUG] portfolio_symbols type={type(portfolio_symbols)}, len={len(portfolio_symbols) if portfolio_symbols else 'None'}, truthy={bool(portfolio_symbols)}")
         if portfolio_symbols:
             symbols = portfolio_symbols
             print(f"Scanning {len(symbols)} stocks from portfolio selection")
