@@ -343,8 +343,10 @@ def main():
             portfolio_syms = None
             if value == "full":
                 symbols = screener.lib.get_all_symbols()
+                portfolio_syms = symbols
             elif value in ("NIFTY 50", "NIFTY 500", "NIFTY SMALLCAP 250"):
                 symbols = screener.lib.get_index_symbols(value)
+                portfolio_syms = symbols
                 if not symbols:
                     console.print(f"[warning]No symbols found for {value}. Please run index sync first.[/warning]")
                     continue

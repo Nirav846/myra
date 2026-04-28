@@ -154,6 +154,7 @@ class MYRA_UI:
                 "15 > Elite Whale Tracker",
                 "31 > AEON Agent (ML-1)",
                 "32 > Dilated CNN (ML-2)",
+                "36 > Institutional Fusion Tracker",
                 "20 > Intelligence Scout",
                 "24 > Crash Resilience",
                 "19 > Market Breadth",

@@ -91,16 +91,6 @@ class FusionEngine(BaseStrategy):
         htf_bearish = safe_series("htf_bearish")
         mtf_bearish = safe_series("mtf_bearish")
 
-        # If SMC columns are unavailable, fall back to available metrics
-        if htf_bullish.isna().all() or (htf_bullish == 0).all():
-            logging.info("[FusionEngine] SMC columns not populated. Using basic metrics.")
-            # Use available enrichment scores as substitutes
-            htf_bullish = (safe_series("nifty_outperformance_score") > 0).astype(int)
-            mtf_bullish = (safe_series("delivery_divergence_score") > 0.7).astype(int)
-            fvg_boundary = safe_series("close") * 0.98  # approximate support
-            fvg_top = safe_series("close") * 1.02
-            fvg_bottom = safe_series("close") * 0.98
-
         is_long_aligned = (htf_bullish > 0) & (mtf_bullish > 0)
         is_short_aligned = (htf_bearish > 0) & (mtf_bearish > 0)
 
