@@ -117,6 +117,8 @@ class DataAdapter:
 
                 if "DeliveryPct" in df.columns:
                     df["DeliveryPct"] = pd.to_numeric(df["DeliveryPct"], errors="coerce").fillna(0.0)
+                    # Backward compatibility: provide both CamelCase and lowercase delivery_percent
+                    df["delivery_percent"] = df["DeliveryPct"]
 
                 df = validate_dataframe(
                     df, context=f"DataAdapter get_price_df: {symbol_clean}"
