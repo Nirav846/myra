@@ -14,19 +14,15 @@ import pandas_ta as ta
 logger = logging.getLogger(__name__)
 
 def safe_concat(df_list):
-    """
-    Concatenates a list of DataFrames, removing None, empty, and all-NaN entries.
-    Drops columns that become entirely NaN after merging.
-    """
     clean = [
         df for df in df_list
         if df is not None and not df.empty and not df.isnull().all().all()
     ]
     if not clean:
         return pd.DataFrame()
-    result = pd.concat(clean, axis=0, ignore_index=True)
-    # Drop columns that became all-NaN (handles mismatched columns across sources)
-    return result.dropna(axis=1, how='all')
+    # Drop all-NaN columns from each DataFrame BEFORE concat (stops FutureWarning)
+    clean = [df.dropna(axis=1, how='all') for df in clean]
+    return pd.concat(clean, axis=0, ignore_index=True)
 
 
 class LibrarianIntelligenceMixin:
