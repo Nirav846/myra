@@ -261,13 +261,23 @@ def start():
     except Exception as e:
         logger.warning(f"NIFTY 500 seed failed: {e}")
 
-    # Run fundamentals sync once on startup (function decides if needed)
+    # Seed fundamentals if empty
     try:
-        from myra_app.utils.fundamentals_sync import sync_fundamentals
-        # Quiet startup sync - let the function handle its own internal logging
-        sync_fundamentals()
+        import sqlite3, os
+        from myra_app.constants import DB_DIR
+        val_db = os.path.join(DB_DIR, "myra_valuation.db")
+        if os.path.exists(val_db):
+            with sqlite3.connect(val_db, timeout=5) as vconn:
+                # Check if ANY fundamental metric is missing
+                missing = vconn.execute(
+                    "SELECT COUNT(*) FROM fundamentals WHERE pe IS NULL OR pe=0 "
+                    "OR roe IS NULL OR roe=0 OR market_cap IS NULL OR market_cap=0"
+                ).fetchone()[0]
+                if missing > 500:    # >500 stocks with blanks → seed
+                    print(f"[MYRA BG] Seeding fundamentals for {missing} stocks...")
+                    sync_fundamentals(force=True)
     except Exception as e:
-        logger.warning(f"Startup fundamentals sync failed: {e}")
+        logger.warning(f"Fundamentals seed check failed: {e}")
 
     # Now launch remaining tasks as background threads
     tasks = [
