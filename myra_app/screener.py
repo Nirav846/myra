@@ -249,8 +249,13 @@ class MYRAScreener:
         symbols = []
         if portfolio_symbols:
             symbols = portfolio_symbols
+            print(f"Scanning {len(symbols)} stocks from portfolio selection")
         elif strategy_id == "whale_tracker":
             symbols = self.lib.get_index_symbols("NIFTY 50")
+            if not symbols:
+                self.console.print("[warning][!] No NIFTY 50 data available. Please run index sync first.[/warning]")
+                return []
+            print(f"Scanning {len(symbols)} stocks in NIFTY 50")
         elif strategy_id in [
             "super_setup",
             "insider_signals",
@@ -259,16 +264,20 @@ class MYRAScreener:
             "large_deal_momentum",
         ]:
             symbols = self.lib.get_index_symbols("NIFTY 500")
-
-        if not symbols:
-            if scan_all:
-                symbols = self.lib.get_all_symbols()
-            else:
-                # Default: Institutional Core = NIFTY 500
-                symbols = self.lib.get_index_symbols("NIFTY 500")
-                if not symbols:
-                    self.console.print("[warning][!] No NIFTY 500 data available. Please run index sync first.[/warning]")
-                    return []
+            if not symbols:
+                self.console.print("[warning][!] No NIFTY 500 data available. Please run index sync first.[/warning]")
+                return []
+            print(f"Scanning {len(symbols)} stocks in NIFTY 500")
+        elif scan_all:
+            symbols = self.lib.get_all_symbols()
+            print(f"Scanning {len(symbols)} stocks in Full Market")
+        else:
+            # Default: Institutional Core = NIFTY 500
+            symbols = self.lib.get_index_symbols("NIFTY 500")
+            if not symbols:
+                self.console.print("[warning][!] No NIFTY 500 data available. Please run index sync first.[/warning]")
+                return []
+            print(f"Scanning {len(symbols)} stocks in NIFTY 500")
 
         # DEBUG: Check symbols
         # self.console.print(f"[dim]DEBUG: Resolved {len(symbols)} symbols for scan.[/dim]")
