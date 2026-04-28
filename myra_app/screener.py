@@ -633,6 +633,9 @@ class MYRAScreener:
             "31",
         ]
         is_inst = strategy_id in audit_strategies or strategy_id.startswith("3")
+        # Exclude fusion engine (Option 36) from database writes to prevent bloat
+        if strategy_id == "36":
+            return
         if not is_inst:
             return
 

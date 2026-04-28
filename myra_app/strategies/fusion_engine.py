@@ -6,6 +6,10 @@ from myra_core.utils.data_validation import enforce_index_contract
 import numpy as np
 from myra_app.strategies.base_strategy import BaseStrategy
 
+# Note: This file only computes fusion signals and returns dictionaries.
+# Database persistence is handled by feature_enrichment.py daily pipeline.
+# No database writes are performed in this file to prevent DB bloat.
+
 
 class FusionEngine(BaseStrategy):
     """
