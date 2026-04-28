@@ -172,62 +172,45 @@ def process_enrichment_pipeline(lib, conn):
         if not price_df.empty and 'symbol' in price_df.columns and 'date' in price_df.columns:
             print("[MYRA Enrichment] Computing SMC indicators...")
             
-            # Process each symbol individually for SMC calculation
-            smc_results = []
-            for symbol in price_df['symbol'].unique():
-                symbol_df = price_df[price_df['symbol'] == symbol].copy()
-                if len(symbol_df) >= 200:  # Need minimum data for SMA200
-                    try:
-                        # Rename columns to match SMC calculator expectations
-                        symbol_df = symbol_df.rename(columns={
-                            'open': 'Open', 'high': 'High', 'low': 'Low', 
-                            'close': 'Close', 'volume': 'Volume'
-                        })
-                        
-                        smc_df = calculate_smc_indicators(symbol_df)
-                        smc_df['symbol'] = symbol
-                        smc_results.append(smc_df)
-                    except Exception as e:
-                        import logging
-                        logging.getLogger(__name__).warning(f"SMC calculation failed for {symbol}: {e}")
+            # Process all symbols at once with vectorized SMC calculation
+            smc_df = calculate_smc_indicators(price_df.rename(columns={
+                'open': 'Open', 'high': 'High', 'low': 'Low',
+                'close': 'Close', 'volume': 'Volume'
+            }))
             
-            if smc_results:
-                # Combine all SMC results
-                all_smc_df = pd.concat(smc_results, ignore_index=True)
-                
-                # Write SMC columns to technical_data using efficient batch updates
-                smc_columns = [
-                    'bullish_fvg', 'bearish_fvg', 'fvg_top', 'fvg_bottom', 'fvg_boundary',
-                    'fvg_freshness', 'swing_high', 'swing_low', 'liquidity_distance',
-                    'htf_bullish', 'htf_bearish', 'mtf_bullish', 'mtf_bearish',
-                    'trend_alignment', 'delivery_ma_60', 'has_bullish_fvg'
-                ]
-                
-                # Add missing columns to technical_data table
-                for col in smc_columns:
-                    if col in all_smc_df.columns:
-                        try:
-                            conn.execute(f"ALTER TABLE technical_data ADD COLUMN {col} REAL")
-                        except:
-                            pass  # Column already exists
-                
-                # Batch update using executemany for performance
-                for col in smc_columns:
-                    if col in all_smc_df.columns:
-                        # Prepare batch data
-                        update_data = [
-                            (float(row[col]) if not pd.isna(row[col]) else None, 
-                             row['symbol'], str(row['date']))
-                            for _, row in all_smc_df.iterrows()
-                            if not pd.isna(row[col])
-                        ]
-                        
-                        if update_data:
-                            conn.executemany(
-                                f"UPDATE technical_data SET {col} = ? WHERE symbol = ? AND date = ?",
-                                update_data
-                            )
-                            conn.commit()
+            # Write SMC columns to technical_data using efficient batch updates
+            smc_columns = [
+                'bullish_fvg', 'bearish_fvg', 'fvg_top', 'fvg_bottom', 'fvg_boundary',
+                'fvg_freshness', 'swing_high', 'swing_low', 'liquidity_distance',
+                'htf_bullish', 'htf_bearish', 'mtf_bullish', 'mtf_bearish',
+                'trend_alignment', 'delivery_ma_60', 'has_bullish_fvg'
+            ]
+            
+            # Add missing columns to technical_data table
+            for col in smc_columns:
+                if col in smc_df.columns:
+                    try:
+                        conn.execute(f"ALTER TABLE technical_data ADD COLUMN {col} REAL")
+                    except:
+                        pass  # Column already exists
+            
+            # Batch update using executemany for performance
+            for col in smc_columns:
+                if col in smc_df.columns:
+                    # Prepare batch data
+                    update_data = [
+                        (float(row[col]) if not pd.isna(row[col]) else None, 
+                         row['symbol'], str(row['date']))
+                        for _, row in smc_df.iterrows()
+                        if not pd.isna(row[col])
+                    ]
+                    
+                    if update_data:
+                        conn.executemany(
+                            f"UPDATE technical_data SET {col} = ? WHERE symbol = ? AND date = ?",
+                            update_data
+                        )
+                        conn.commit()
         
         df_enriched.to_pandas().to_sql(
             "stg_enriched_market_data", conn, if_exists="replace", index=False
