@@ -19,6 +19,7 @@ class RateLimiter:
 class SourceManager:
     def __init__(self):
         self.sources = {
+            "indian_market_api": {"score": 11, "cooldown_until": 0},   # NEW – primary
             "screener_in": {"score": 10, "cooldown_until": 0},
             "google_finance": {"score": 9, "cooldown_until": 0},
             "finology": {"score": 8.5, "cooldown_until": 0},

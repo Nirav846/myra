@@ -5,10 +5,6 @@ import time
 import logging
 from datetime import datetime, timezone, timedelta
 
-# --- UPDATED: Import FundamentalManager directly from myra_app ---
-from myra_app.fundamental_manager import FundamentalManager
-from myra_app.fetcher import DataFetcher
-
 logger = logging.getLogger("myra.fundamentals_sync")
 
 _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -89,38 +85,62 @@ def sync_fundamentals(force=False):
         progress["start_time"] = datetime.now(timezone.utc).isoformat()
         print(f"[MYRA FUNDA] Starting sync for {len(symbols_needed)} symbols...")
 
-    # DEBUG: skip batch API for now (unreliable), go directly to multi-source fallback
-    mgr = FundamentalManager(db_dir=DB_DIR)
-    mgr.set_fetcher(DataFetcher())
-
     meta_conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES (?,?)",
                       ("fundamentals_sync_status", json.dumps(progress)))
     meta_conn.commit()
 
-    # --- 3. Skip BATCH fetch (unreliable) ---
-    print("[MYRA FUNDA] Skipping batch – using multi-source fallback for all symbols.")
-
+    # --- 3. Attempt BATCH fetch with IndianMarketAPISource ---
+    from myra_app.data_sources.indian_market_api_source import IndianMarketAPISource
+    batch_source = IndianMarketAPISource()
+    
     remaining_symbols = list(symbols_needed)
+    updated = 0
+    failed = 0
 
-    # --- Per-symbol fallback using multi-source FundamentalManager ---
+    # Try batch first
+    try:
+        print(f"[MYRA FUNDA] Attempting batch fetch for {len(remaining_symbols)} symbols...")
+        batch_results = batch_source.fetch_batch(remaining_symbols)
+        if batch_results:
+            for result in batch_results:
+                sym = result.get("symbol", "").upper()
+                if sym:
+                    try:
+                        # Write to DB via the existing FundamentalManager path
+                        # We call fetch_fundamentals which handles DB insert for a single symbol
+                        ok = mgr.fetch_fundamentals(sym)
+                        if ok:
+                            updated += 1
+                            progress["updated_count"] += 1
+                        else:
+                            failed += 1
+                            progress["failed_count"] += 1
+                    except Exception:
+                        failed += 1
+                        progress["failed_count"] += 1
+                else:
+                    failed += 1
+                    progress["failed_count"] += 1
+            progress["last_processed_symbol"] = sym
+        print(f"[MYRA FUNDA] Batch completed. Updated: {updated}, Failed: {failed}")
+    except Exception as e:
+        logger.warning(f"Batch fetch failed: {e}. Will fall back to per-symbol.")
+
+    # --- 4. Per-symbol fallback for any remaining symbols (uses full source cascade) ---
     if remaining_symbols:
-        print(f"[MYRA FUNDA] Using multi-source fallback for {len(remaining_symbols)} symbols...")
-        updated_fallback = 0
-        failed_fallback = 0
-        
+        print(f"[MYRA FUNDA] Falling back to per-symbol fetch for {len(remaining_symbols)} symbols...")
         for i, symbol in enumerate(remaining_symbols):
             try:
                 ok = mgr.fetch_fundamentals(symbol)
                 if ok:
-                    updated_fallback += 1
+                    updated += 1
                     progress["updated_count"] += 1
                 else:
-                    print(f"  [FAIL] {symbol}: multi-source fallback exhausted")
-                    failed_fallback += 1
+                    failed += 1
                     progress["failed_count"] += 1
             except Exception as e:
-                print(f"  [FAIL] {symbol}: {type(e).__name__} – {e}")
-                failed_fallback += 1
+                logger.warning(f"Failed {symbol}: {e}")
+                failed += 1
                 progress["failed_count"] += 1
 
             progress["last_processed_symbol"] = symbol
@@ -130,11 +150,11 @@ def sync_fundamentals(force=False):
                     "INSERT OR REPLACE INTO metadata (key, value) VALUES (?,?)",
                     ("fundamentals_sync_status", json.dumps(progress)))
                 meta_conn.commit()
-                print(f"[MYRA FUNDA] Fallback progress: {i+1}/{len(remaining_symbols)}")
+                print(f"[MYRA FUNDA] Per-symbol progress: {i+1}/{len(remaining_symbols)}")
+            
+            time.sleep(0.2)  # gentle rate limit only for per-symbol fallback
 
-        print(f"[MYRA FUNDA] Fallback done. Updated: {updated_fallback}, Failed: {failed_fallback}")
-
-    # --- 5. Finalize ---
+    # --- 4. Finalize ---
     progress["status"] = "complete"
     progress["last_sync_date"] = today
     meta_conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES (?,?)",

@@ -61,14 +61,14 @@ class LibrarianIntelligenceMixin:
                 logger.debug(f"Failed to load indicator for {sym}: {e}")
                 continue
 
-        results_list = [r for r in results_list if r is not None and not r.empty]
-        if not results_list:
-            return pd.DataFrame()
-
-        results_list = [df for df in results_list if df is not None and not df.empty and not df.isnull().values.all()]
-        if results_list:
-            df_final = pd.concat(results_list, axis=0, ignore_index=True)
-            # Drop columns that became entirely NaN after concatenation
+        # Remove None, empty, and fully-NaN DataFrames before concat
+        safe_list = [
+            df for df in results_list
+            if df is not None and not df.empty and not df.isnull().all().all()
+        ]
+        if safe_list:
+            df_final = pd.concat(safe_list, axis=0, ignore_index=True)
+            # Drop columns that became entirely NaN (handles missing columns across sources)
             df_final = df_final.dropna(axis=1, how='all')
         else:
             df_final = pd.DataFrame()
