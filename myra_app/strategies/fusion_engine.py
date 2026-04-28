@@ -42,7 +42,9 @@ class FusionEngine(BaseStrategy):
             logging.debug(f"[FusionEngine] Index cleanup failed: {e}")
             return {"signal": False}
 
-        df = df.rename(columns=str.title)
+        for col in list(df.columns):
+            if col.lower() in ('open', 'high', 'low', 'close', 'volume'):
+                df = df.rename(columns={col: col.title()})
 
         return self.compute_fusion_signal(df)
 
@@ -221,7 +223,7 @@ class FusionEngine(BaseStrategy):
         priority_score = np.abs(final_score)
         priority_score = np.where(mtf_aligned, priority_score + 10.0, priority_score)
 
-        final_state_val = signal_state[-1]
+        final_state_val = signal_state.iloc[-1]
 
         if final_state_val == "NONE":
             return {"signal": False}
@@ -230,12 +232,12 @@ class FusionEngine(BaseStrategy):
             "signal": True,
             "metrics": {
                 "Signal_Type": str(final_state_val),
-                "Score": round(float(priority_score[-1]), 2),
+                "Score": round(float(priority_score.iloc[-1]), 2),
                 "MTF_Aligned": "YES" if mtf_aligned.iloc[-1] else "NO",
-                "Entry": round(float(entry_price[-1]), 2),
-                "SL": round(float(stop_loss[-1]), 2),
-                "TP": round(float(take_profit[-1]), 2),
-                "T1": round(float(take_profit[-1]), 2),
+                "Entry": round(float(entry_price.iloc[-1]), 2),
+                "SL": round(float(stop_loss.iloc[-1]), 2),
+                "TP": round(float(take_profit.iloc[-1]), 2),
+                "T1": round(float(take_profit.iloc[-1]), 2),
             },
         }
 
