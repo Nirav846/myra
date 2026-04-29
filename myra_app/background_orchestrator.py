@@ -253,6 +253,30 @@ def _task_institutional_sync():
         logger.error(f"[MYRA BG] Institutional sync failed: {e}")
 
 
+# Task 8: Daily DB Backup
+
+
+def _task_db_backup():
+    """Runs a full DB backup daily at 2 AM IST."""
+    while not _shutdown_event.is_set():
+        try:
+            ist_now = datetime.now(timezone.utc).astimezone(IST)
+            # Run between 02:00 and 02:59 IST
+            if ist_now.hour == 2:
+                from myra_app.utils.db_backup import rotate_backups
+                print("[MYRA BG] Running scheduled daily DB backup...")
+                rotate_backups()
+                print("[MYRA BG] Daily DB backup complete.")
+                # Wait until next hour to avoid multiple runs
+                _shutdown_event.wait(timeout=3600)
+            else:
+                # Check again in 30 minutes
+                _shutdown_event.wait(timeout=1800)
+        except Exception as e:
+            logger.error(f"[MYRA BG] Daily DB backup failed: {e}")
+            _shutdown_event.wait(timeout=1800)  # wait and retry
+
+
 # ─── Public entry point ───────────────────────────────────────────────────────
 
 
