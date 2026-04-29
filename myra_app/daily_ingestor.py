@@ -15,6 +15,16 @@ from myra_app.librarian_core import LibrarianCore
 DB_PATH = os.path.join("db", LibrarianCore.DB_MAP["technical"])
 
 
+def clean_bhavcopy_for_archive(data_csv: str) -> str:
+    """Remove non‑equity rows (GS, bonds, etc.) from a raw NSE CSV. ETFs are kept."""
+    import pandas as pd, io
+    df = pd.read_csv(io.StringIO(data_csv))
+    df.columns = [c.strip().lower() for c in df.columns]
+    if "series" in df.columns:
+        df = df[df["series"].isin(["EQ", "BE", "SM"])]
+    return df.to_csv(index=False)
+
+
 def run_daily_update():
     """
     Guard-Compliant Daily Fetcher connected to the v3.2 Ghost Engine.
@@ -82,6 +92,19 @@ def run_daily_update():
         return
 
     # If we got data, ingest it into the Atomic Vault
+
+    # Save cleaned CSV (equity only, ETFs kept) to Market_Archives
+    try:
+        archive_csv = clean_bhavcopy_for_archive(data_csv)
+        archives_dir = os.path.join("data", "Market_Archives")
+        os.makedirs(archives_dir, exist_ok=True)
+        csv_path = os.path.join(archives_dir, f"nse_full_{current_date.date().isoformat()}.csv")
+        with open(csv_path, "w", encoding="utf-8") as f:
+            f.write(archive_csv)
+        print(f"✅ Cleaned CSV saved to {csv_path}")
+    except Exception as e:
+        print(f"⚠️ Could not save CSV archive: {e}")
+
     try:
         df = pd.read_csv(io.StringIO(data_csv))
         df.columns = [c.strip().lower() for c in df.columns]
@@ -90,7 +113,13 @@ def run_daily_update():
         if "series" in df.columns:
             df = df[df["series"].isin(["EQ", "BE", "SM"])]
 
-        # 2. Map fetcher output to standard OHLCV
+        # 2. Remove ETFs from DB insert (keep archives clean but DB lean)
+        from myra_app.utils.etf_sync import get_etf_symbols
+        etf_symbols = get_etf_symbols()
+        if etf_symbols and "symbol" in df.columns:
+            df = df[~df["symbol"].str.upper().isin(etf_symbols)]
+
+        # 3. Map fetcher output to standard OHLCV
         rename_map = {
             "open_price": "open",
             "high_price": "high",
