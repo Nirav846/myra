@@ -5,7 +5,7 @@ import importlib
 import multiprocessing
 import pandas as pd
 from rich.progress import Progress
-from myra_app.adapters.data_adapter import DataAdapter
+from myra_app.data_adapter import DataAdapter
 from myra_app.smc_manager import SMCManager
 
 
