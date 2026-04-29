@@ -461,6 +461,8 @@ class Engine:
                 return [], {"status": "HOLIDAY_NO_DATA"}
 
         if not silent:
+            if len(symbols) < 10:
+                print(f"[MYRA] Quick Scan Mode for {len(symbols)} symbols")
             mode_text = f" as of {as_of_date}" if as_of_date else ""
             print(f"[MYRA] Turbo-SQL Mode (10x Opt) Initialized{mode_text}...")
 
@@ -471,10 +473,7 @@ class Engine:
                     if not silent:
                         print("[!] No precomputed indicators found. Database might be stale.")
                     return [], {}
-            else:
-                cache_df = pd.DataFrame()
 
-            if len(symbols) >= 10:
                 regime = lib.get_market_regime()
                 from myra_app.strategies.base_strategy import MarketMoodHelper
                 mood = MarketMoodHelper().get_market_mood(lib)
@@ -490,13 +489,7 @@ class Engine:
                     if not funda_df.empty
                     else {}
                 )
-            else:
-                regime = "Unknown"
-                mood = "Neutral"
-                vix_stable = True
-                funda_lookup = {}
 
-            if len(symbols) >= 10:
                 insider_map = {}
                 if lib._inst_conn:
                     try:
@@ -539,10 +532,7 @@ class Engine:
                             )
                     except Exception:
                         pass
-            else:
-                insider_map = {}
 
-            if len(symbols) >= 10:
                 deal_map = {}
                 if lib._inst_conn:
                     try:
@@ -560,11 +550,8 @@ class Engine:
                         deal_map = dict(zip(deals_df["symbol"], deals_df["total_buy_cr"]))
                     except Exception:
                         pass
-            else:
-                deal_map = {}
 
-            funda_map = {}
-            if len(symbols) >= 10:
+                funda_map = {}
                 cache_records = cache_df.to_dict("records")
                 for c in cache_records:
                     s = c["symbol"]
@@ -692,6 +679,13 @@ class Engine:
                         "avg_buy_60d": i.get("avg_buy_60d", 0) or 0,
                     }
             else:
+                cache_df = pd.DataFrame()
+                regime = "Unknown"
+                mood = "Neutral"
+                vix_stable = True
+                funda_lookup = {}
+                insider_map = {}
+                deal_map = {}
                 funda_map = {}
 
             target_symbols = (
