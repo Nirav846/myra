@@ -4,6 +4,28 @@ import numpy as np
 from datetime import date
 
 
+def is_vix_stable(lib):
+    try:
+        if not lib._meta_conn:
+            return True
+        sql = """
+            WITH vix_data AS (
+                SELECT date, close,
+                       AVG(close) OVER (ORDER BY date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) as sma20
+                FROM benchmarks
+                WHERE symbol = ?
+            )
+            SELECT (close < sma20) as is_stable
+            FROM vix_data
+            ORDER BY date DESC
+            LIMIT 1
+        """
+        res = lib._meta_conn.execute(sql, ("^INDIAVIX",)).fetchone()
+        return bool(res[0]) if res else True
+    except Exception:
+        return True
+
+
 def load_universe(lib, symbols, as_of_date, silent=False):
     """
     Builds funda_map, insider_map, deal_map for the full universe.
@@ -34,7 +56,7 @@ def load_universe(lib, symbols, as_of_date, silent=False):
     regime = lib.get_market_regime()
     from myra_app.strategies.base_strategy import MarketMoodHelper
     mood = MarketMoodHelper().get_market_mood(lib)
-    vix_stable = lib._is_vix_stable(lib)
+    vix_stable = is_vix_stable(lib)
 
     funda_df = (
         pd.read_sql("SELECT * FROM fundamentals", lib._val_conn)

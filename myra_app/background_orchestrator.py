@@ -209,6 +209,19 @@ def _task_fundamentals_sync():
         logger.error(f"[MYRA BG] Fundamentals sync failed: {e}")
 
 
+# ─── Task 7: Institutional Sync ─────────────────────────────────────────────────
+
+def _task_institutional_sync():
+    if _shutdown_event.is_set():
+        return
+    try:
+        from myra_app.utils.institutional_sync import sync_institutional_data
+        print("[MYRA BG] Running institutional sync...")
+        sync_institutional_data()  # Only sync if table is empty
+    except Exception as e:
+        logger.error(f"[MYRA BG] Institutional sync failed: {e}")
+
+
 # ─── Public entry point ───────────────────────────────────────────────────────
 
 def start():
@@ -279,6 +292,19 @@ def start():
     except Exception as e:
         logger.warning(f"Fundamentals seed check failed: {e}")
 
+    # Seed institutional data if table is empty
+    try:
+        inst_db = os.path.join(DB_DIR, "myra_institutional.db")
+        if os.path.exists(inst_db):
+            with sqlite3.connect(inst_db, timeout=5) as iconn:
+                count = iconn.execute("SELECT COUNT(*) FROM large_deals").fetchone()[0]
+                if count < 100:
+                    print("[MYRA BG] Seeding institutional data...")
+                    from myra_app.utils.institutional_sync import sync_institutional_data
+                    sync_institutional_data(force=True)
+    except Exception as e:
+        logger.warning(f"Institutional seed check failed: {e}")
+
     # Now launch remaining tasks as background threads
     tasks = [
         ("daily-ingest", _task_daily_ingest),
@@ -286,6 +312,7 @@ def start():
         ("etf-sync",     _task_etf_sync),
         ("index-sync",   _task_index_sync),
         ("fundamentals-sync", _task_fundamentals_sync),
+        ("institutional-sync", _task_institutional_sync),
     ]
     with _task_lock:
         for name, fn in tasks:

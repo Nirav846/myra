@@ -156,11 +156,24 @@ def run_daily_update():
 
         conn.executemany(sql, df_to_insert.values.tolist())
         conn.commit()
-        conn.close()
 
         print(
             f"✅ Successfully added {len(df_to_insert)} rows to Atomic Vault from {source}."
         )
+
+        # Automatically enrich the newly ingested rows
+        try:
+            from myra_app.feature_enrichment import process_enrichment_pipeline
+            from myra_app.librarian import Librarian
+            enrichment_lib = Librarian(read_only=False)
+            enrichment_lib.connect()
+            print("[MYRA] Running enrichment on new rows...")
+            process_enrichment_pipeline(enrichment_lib, conn)
+            print("[MYRA] Enrichment complete.")
+        except Exception as e:
+            print(f"[!] Enrichment after ingestion failed: {e}")
+
+        conn.close()
 
         # Generate Data Confidence Sync Manifest
         try:

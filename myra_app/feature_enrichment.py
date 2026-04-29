@@ -1,4 +1,21 @@
 import polars as pl
+import threading
+import time
+
+_enrichment_paused = threading.Event()
+_enrichment_paused.set()  # not paused initially
+
+def pause_enrichment():
+    """Called by screener when a scan starts."""
+    _enrichment_paused.clear()  # blocking
+
+def resume_enrichment():
+    """Called by screener when a scan finishes."""
+    _enrichment_paused.set()  # unblock
+
+def wait_if_paused():
+    """Call this periodically in the enrichment loop to check if paused."""
+    _enrichment_paused.wait()  # blocks until resume_enrichment is called
 
 
 def enrich_features(df: pl.DataFrame, nifty_df: pl.DataFrame) -> pl.DataFrame:
@@ -211,6 +228,9 @@ def process_enrichment_pipeline(lib, conn):
                             update_data
                         )
                         conn.commit()
+            
+            # Check if enrichment should pause after processing all symbols
+            wait_if_paused()
         
         df_enriched.to_pandas().to_sql(
             "stg_enriched_market_data", conn, if_exists="replace", index=False

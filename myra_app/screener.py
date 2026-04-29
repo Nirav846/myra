@@ -283,9 +283,14 @@ class MYRAScreener:
         # self.console.print(f"[dim]DEBUG: Resolved {len(symbols)} symbols for scan.[/dim]")
 
         # 2. TECHNICAL SCAN
-        results, payload_map = self.engine.run_scan(
-            symbols, strategy_id, as_of_date=as_of_date
-        )
+        from myra_app.feature_enrichment import pause_enrichment, resume_enrichment
+        pause_enrichment()
+        try:
+            results, payload_map = self.engine.run_scan(
+                symbols, strategy_id, as_of_date=as_of_date
+            )
+        finally:
+            resume_enrichment()
 
         if not results:
             # ... (Stale data warning logic)
@@ -460,6 +465,38 @@ class MYRAScreener:
 
         # 7. REGISTER SIGNALS FOR AUDIT (Trust Loop)
         self._register_signals(final_results, strategy_id, as_of_date)
+
+        # Add Dist% column to all results
+        for r in final_results:
+            if "Dist%" not in r:
+                entry = r.get("Entry")
+                ltp = r.get("Ltp") or r.get("LTP") or r.get("Close")
+                if entry and ltp and entry != 0:
+                    try:
+                        entry_val = float(entry)
+                        ltp_val = float(ltp)
+                        distance_pct = abs(ltp_val - entry_val) / entry_val * 100
+                        r["Dist%"] = round(distance_pct, 2)
+                    except (ValueError, TypeError, ZeroDivisionError):
+                        r["Dist%"] = "-"
+
+        # --- Still-in-Range Filter (Terminal Prompt) ---
+        if final_results and not is_piped:
+            apply_filter = input("Filter results by Still-in-Range? (y/N): ").strip().lower()
+            if apply_filter == 'y':
+                try:
+                    pct = float(input("   Range percentage (default 3%): ").strip() or "3.0")
+                except ValueError:
+                    pct = 3.0
+                filtered = self._filter_still_in_range(final_results, pct)
+                if filtered:
+                    self.console.print(f"[bold green]→ Still-in-Range (≤{pct}%): {len(filtered)} stocks[/bold green]")
+                    # Reprint the Rich table with filtered results
+                    hero_cols = self._resolve_hero_columns(filtered)
+                    self.rm.display_discovery_table(filtered, display_name, strategy_id, hero_cols)
+                else:
+                    self.console.print(f"[warning][!] No stocks within {pct}% of entry.[/warning]")
+                final_results = filtered
 
         return final_results
 
@@ -686,6 +723,44 @@ class MYRAScreener:
             self.console.print(
                 f"[dim][*] Trust Loop: Registered {registered_count} signals for performance audit.[/dim]"
             )
+
+    def _filter_still_in_range(self, results, range_pct=3.0):
+        """
+        Filter results to keep only stocks within range_pct of their entry price.
+        Returns filtered list, or original if Entry/LTP keys are missing.
+        """
+        filtered = []
+        for r in results:
+            entry = r.get("Entry")
+            ltp = r.get("Ltp") or r.get("LTP") or r.get("Close")
+            
+            if entry is None or entry == 0:
+                filtered.append(r)
+                continue
+            
+            if ltp is None:
+                filtered.append(r)
+                continue
+            
+            try:
+                entry_val = float(entry)
+                ltp_val = float(ltp)
+                distance_pct = abs(ltp_val - entry_val) / entry_val * 100
+                
+                if distance_pct <= range_pct:
+                    r["Dist%"] = round(distance_pct, 2)
+                    filtered.append(r)
+            except (ValueError, TypeError, ZeroDivisionError):
+                filtered.append(r)
+        
+        return filtered
+
+    def _resolve_hero_columns(self, results):
+        """
+        Extract hero columns from results for display_discovery_table.
+        Returns empty list by default (uses standard columns).
+        """
+        return []
 
     def close(self):
         self.lib.close()
