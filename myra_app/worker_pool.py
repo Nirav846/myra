@@ -50,7 +50,7 @@ def init_worker(strategy_name, db_path=None):
 
 def _worker_task(payload):
     global _worker_strategy, _worker_adapter
-    symbol, strategy_name, as_of_date, funda = payload
+    symbol, strategy_name, as_of_date, funda, precomputed_df = payload
 
     # Ensure worker is initialized
     if _worker_adapter is None:
@@ -76,37 +76,21 @@ def _worker_task(payload):
         }
 
     try:
-        lookback = _worker_adapter.get_lookback_for_scanner(strategy_name)
-        df = _worker_adapter.get_price_df(
-            symbol, lookback_days=lookback
-        )
-
-        if df is None or df.empty:
-            return {
-                "symbol": symbol,
-                "status": "SKIPPED",
-                "error": "No price data available",
-                "stage": "data_fetch",
-            }
-
-        # Contract enforcement after load
-        from myra_core.data_contracts import enforce_ohlcv_contract
-        df = enforce_ohlcv_contract(df, symbol)
-
-        # Ensure DataFrame Integrity
-        if "date" not in df.columns:
-            df = df.reset_index()
-            if "index" in df.columns and "date" not in df.columns:
-                df = df.rename(columns={"index": "date"})
-
-        if "date" in df.columns:
-            df = df.sort_values("date")
-            df = df.drop_duplicates(subset=["date"], keep="last")
-            df = df.set_index("date")
+        # VECTORIZED FAST PATH: use pre-computed DataFrame if available
+        if precomputed_df is not None and not precomputed_df.empty:
+            df = precomputed_df.copy()
+            # Ensure date is a column (our schema guarantee)
+            if "date" not in df.columns and df.index.name == "date":
+                df = df.reset_index()
+            if "date" in df.columns:
+                df = df.set_index("date")
         else:
-            if not df.index.is_unique:
-                df = df[~df.index.duplicated(keep="last")]
-            df = df.sort_index()
+            # Fallback for small scans: load from adapter (backward compatible)
+            lookback = _worker_adapter.get_lookback_for_scanner(strategy_name)
+            df = _worker_adapter.get_price_df(symbol, lookback_days=lookback)
+            
+        if df is None or df.empty:
+            return {"symbol": symbol, "status": "SKIPPED", "error": "No price data available", "stage": "data_load"}
 
         # --- UNIVERSAL CASE-INSENSITIVE COMPATIBILITY LAYER ---
         for col in ["Open", "High", "Low", "Close", "Volume"]:

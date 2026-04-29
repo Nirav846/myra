@@ -256,7 +256,7 @@ class Engine:
                 pass
 
             payloads = [
-                (s, strategy_name, as_of_date, funda_map.get(s, {"symbol": s}))
+                (s, strategy_name, as_of_date, funda_map.get(s, {"symbol": s}), precomputed.get(s))
                 for s in target_symbols
             ]
 
@@ -264,6 +264,35 @@ class Engine:
             if not silent:
                 print(f"[!] Turbo Load failed: {e}")
             return [], {}
+
+        # VECTORIZED PRE-COMPUTATION: compute indicators for ALL symbols once
+        from myra_app.feature_enrichment import enrich_features
+        import polars as pl
+
+        # Read only the symbols needed for this scan
+        if target_symbols:
+            placeholders = ','.join(['?'] * len(target_symbols))
+            query = f"SELECT * FROM technical_data WHERE symbol IN ({placeholders}) ORDER BY symbol, date"
+            raw_df = pl.read_database(query, lib._tech_conn, params=target_symbols)
+            
+            if not raw_df.is_empty():
+                # Use the existing Polars enrichment pipeline (fast, vectorized)
+                nifty_df = pl.read_database(
+                    "SELECT date, close FROM technical_data WHERE symbol LIKE '%NIFTY 50%'",
+                    lib._tech_conn,
+                )
+                enriched = enrich_features(raw_df, nifty_df)
+                
+                # Convert to pandas and build a per-symbol lookup dict
+                pdf = enriched.to_pandas()
+                precomputed = {
+                    symbol: group.set_index('date') if 'date' in group.columns else group
+                    for symbol, group in pdf.groupby('symbol')
+                }
+            else:
+                precomputed = {}
+        else:
+            precomputed = {}
 
         num_stocks = len(payloads)
         if not silent:
