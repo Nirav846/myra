@@ -1,17 +1,19 @@
 import os
-import pandas as pd
-from datetime import datetime
 import warnings
+from datetime import datetime
+
+import pandas as pd
 
 warnings.filterwarnings("ignore", message=".*deprecated now, and have no effect.*")
 from rich.console import Console
 from rich.panel import Panel
-from myra_app.librarian import Librarian
-from myra_app.engine import Engine
-from myra_app.results_manager import ResultsManager
+
 from myra_app.broker_parser import BrokerParser
+from myra_app.engine import Engine
 from myra_app.fundamental_ranker import FundamentalRanker
+from myra_app.librarian import Librarian
 from myra_app.positional_engine import PositionalScorer
+from myra_app.results_manager import ResultsManager
 from myra_core.utils.myra_log import myra_log
 
 
@@ -53,7 +55,9 @@ class MYRAScreener:
 
         # Merge with fundamentals to get Sector
         try:
-            funda = pd.read_sql("SELECT symbol, sector FROM fundamentals", self.lib._val_conn)
+            funda = pd.read_sql(
+                "SELECT symbol, sector FROM fundamentals", self.lib._val_conn
+            )
         except pd.errors.DatabaseError:
             funda = pd.DataFrame(columns=["symbol", "sector"])
 
@@ -144,10 +148,10 @@ class MYRAScreener:
 
     def display_data_status(self):
         """Displays a summary panel of data availability (Fix: PROMPT.txt UX)."""
-        from rich.table import Table
+        import datetime as _dt
         from datetime import datetime
 
-        import datetime as _dt
+        from rich.table import Table
 
         now = _dt.datetime.now()
         last_bhav = self.lib.get_max_price_date()
@@ -253,7 +257,9 @@ class MYRAScreener:
         elif strategy_id == "whale_tracker":
             symbols = self.lib.get_index_symbols("NIFTY 50")
             if not symbols:
-                self.console.print("[warning][!] No NIFTY 50 data available. Please run index sync first.[/warning]")
+                self.console.print(
+                    "[warning][!] No NIFTY 50 data available. Please run index sync first.[/warning]"
+                )
                 return []
             print(f"Scanning {len(symbols)} stocks in NIFTY 50")
         elif strategy_id in [
@@ -265,7 +271,9 @@ class MYRAScreener:
         ]:
             symbols = self.lib.get_index_symbols("NIFTY 500")
             if not symbols:
-                self.console.print("[warning][!] No NIFTY 500 data available. Please run index sync first.[/warning]")
+                self.console.print(
+                    "[warning][!] No NIFTY 500 data available. Please run index sync first.[/warning]"
+                )
                 return []
             print(f"Scanning {len(symbols)} stocks in NIFTY 500")
         elif scan_all:
@@ -275,7 +283,9 @@ class MYRAScreener:
             # Default: Institutional Core = NIFTY 500
             symbols = self.lib.get_index_symbols("NIFTY 500")
             if not symbols:
-                self.console.print("[warning][!] No NIFTY 500 data available. Please run index sync first.[/warning]")
+                self.console.print(
+                    "[warning][!] No NIFTY 500 data available. Please run index sync first.[/warning]"
+                )
                 return []
             print(f"Scanning {len(symbols)} stocks in NIFTY 500")
 
@@ -283,7 +293,9 @@ class MYRAScreener:
         # self.console.print(f"[dim]DEBUG: Resolved {len(symbols)} symbols for scan.[/dim]")
 
         # 2. TECHNICAL SCAN
-        from myra_app.feature_enrichment import pause_enrichment, resume_enrichment
+        from myra_app.feature_enrichment import (pause_enrichment,
+                                                 resume_enrichment)
+
         pause_enrichment()
         try:
             results, payload_map = self.engine.run_scan(
@@ -377,11 +389,7 @@ class MYRAScreener:
                         stars_count = (
                             5
                             if s_score >= 80
-                            else 4
-                            if s_score >= 65
-                            else 3
-                            if s_score >= 50
-                            else 2
+                            else 4 if s_score >= 65 else 3 if s_score >= 50 else 2
                         )
                     else:
                         stars_count = 4 if r.get("smc_phase") == 2 else 3
@@ -482,20 +490,30 @@ class MYRAScreener:
 
         # --- Still-in-Range Filter (Terminal Prompt) ---
         if final_results and not is_piped:
-            apply_filter = input("Filter results by Still-in-Range? (y/N): ").strip().lower()
-            if apply_filter == 'y':
+            apply_filter = (
+                input("Filter results by Still-in-Range? (y/N): ").strip().lower()
+            )
+            if apply_filter == "y":
                 try:
-                    pct = float(input("   Range percentage (default 3%): ").strip() or "3.0")
+                    pct = float(
+                        input("   Range percentage (default 3%): ").strip() or "3.0"
+                    )
                 except ValueError:
                     pct = 3.0
                 filtered = self._filter_still_in_range(final_results, pct)
                 if filtered:
-                    self.console.print(f"[bold green]→ Still-in-Range (≤{pct}%): {len(filtered)} stocks[/bold green]")
+                    self.console.print(
+                        f"[bold green]→ Still-in-Range (≤{pct}%): {len(filtered)} stocks[/bold green]"
+                    )
                     # Reprint the Rich table with filtered results
                     hero_cols = self._resolve_hero_columns(filtered)
-                    self.rm.display_discovery_table(filtered, display_name, strategy_id, hero_cols)
+                    self.rm.display_discovery_table(
+                        filtered, display_name, strategy_id, hero_cols
+                    )
                 else:
-                    self.console.print(f"[warning][!] No stocks within {pct}% of entry.[/warning]")
+                    self.console.print(
+                        f"[warning][!] No stocks within {pct}% of entry.[/warning]"
+                    )
                 final_results = filtered
 
         return final_results
@@ -733,26 +751,26 @@ class MYRAScreener:
         for r in results:
             entry = r.get("Entry")
             ltp = r.get("Ltp") or r.get("LTP") or r.get("Close")
-            
+
             if entry is None or entry == 0:
                 filtered.append(r)
                 continue
-            
+
             if ltp is None:
                 filtered.append(r)
                 continue
-            
+
             try:
                 entry_val = float(entry)
                 ltp_val = float(ltp)
                 distance_pct = abs(ltp_val - entry_val) / entry_val * 100
-                
+
                 if distance_pct <= range_pct:
                     r["Dist%"] = round(distance_pct, 2)
                     filtered.append(r)
             except (ValueError, TypeError, ZeroDivisionError):
                 filtered.append(r)
-        
+
         return filtered
 
     def _resolve_hero_columns(self, results):

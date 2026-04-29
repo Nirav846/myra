@@ -1,9 +1,11 @@
-import sqlite3
-import pandas as pd
 import logging
+import sqlite3
 from datetime import datetime, timedelta
 
+import pandas as pd
+
 logger = logging.getLogger(__name__)
+
 
 def generate_calendar(db_path="calendar.db", start_year=2021, end_year=2026):
     """
@@ -16,15 +18,13 @@ def generate_calendar(db_path="calendar.db", start_year=2021, end_year=2026):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS market_calendar (
             date TEXT PRIMARY KEY,
             is_trading_day INTEGER NOT NULL,
             holiday_name TEXT
         )
-    """
-    )
+    """)
 
     # Base list (approximate/simplified for demonstration)
     fixed_holidays = {
@@ -65,7 +65,10 @@ def generate_calendar(db_path="calendar.db", start_year=2021, end_year=2026):
     conn.close()
 
     # Priority 4: Fallback Warning Log
-    logger.warning("[CALENDAR] Auto-generated calendar in use. This relies on approximations and does not include ad-hoc NSE holidays. For strict accuracy, update `market_calendar` table manually.")
+    logger.warning(
+        "[CALENDAR] Auto-generated calendar in use. This relies on approximations and does not include ad-hoc NSE holidays. For strict accuracy, update `market_calendar` table manually."
+    )
+
 
 if __name__ == "__main__":
     generate_calendar()

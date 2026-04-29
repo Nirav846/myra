@@ -1,7 +1,8 @@
-import sqlite3
 import os
+import sqlite3
 
 from myra_app.librarian_core import LibrarianCore
+
 
 def create_technical_db(db_path=None):
     """
@@ -9,15 +10,19 @@ def create_technical_db(db_path=None):
     Schema designed for high-performance time-series ingestion.
     """
     if db_path is None:
-        db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "db", LibrarianCore.DB_MAP["technical"])
+        db_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "..",
+            "db",
+            LibrarianCore.DB_MAP["technical"],
+        )
     print(f"[MYRA] Initializing Technical DB at {db_path}...")
 
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
     # 1. Technical Data Table
-    cursor.execute(
-        """
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS technical_data (
             symbol TEXT NOT NULL,
             date TEXT NOT NULL,
@@ -29,8 +34,7 @@ def create_technical_db(db_path=None):
             delivery_pct REAL,
             PRIMARY KEY (symbol, date)
         )
-    """
-    )
+    """)
 
     # 2. Indexes for fast retrieval
     cursor.execute(

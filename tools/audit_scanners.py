@@ -1,5 +1,6 @@
 import os
 import sys
+
 from rich.console import Console
 from rich.table import Table
 
@@ -9,8 +10,8 @@ PROJECT_ROOT = os.path.abspath(
 )
 sys.path.insert(0, PROJECT_ROOT)
 
-from myra_app.screener import MYRAScreener
 from myra_app.librarian import Librarian
+from myra_app.screener import MYRAScreener
 
 
 def run_suite_audit():

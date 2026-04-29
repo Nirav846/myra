@@ -3,21 +3,24 @@
 MYRA Engine - The Processing Coordinator (UNIVERSAL SQL v12)
 Unified SQL precompute for both standard and piped (silent) scans.
 """
-import multiprocessing
+
 import importlib
-import warnings
+import multiprocessing
+import os
 import signal
 import sys
-import os
 import threading
 import time
-import pandas as pd
-import numpy as np
+import warnings
 from datetime import date, datetime
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
+import numpy as np
+import pandas as pd
+from rich.progress import Progress
+
 from myra_app.data_adapter import DataAdapter
 from myra_core.utils.myra_log import myra_log
-from rich.progress import Progress
 
 # Suppress warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -110,7 +113,7 @@ class Engine:
             count = 0
             # Removed the 101 restriction here too
             is_primitive = str(strategy_name).isdigit() or ("|" in str(strategy_name))
-            
+
             if is_primitive:
                 strat_mod = importlib.import_module("myra_app.scanners.primitives")
             else:
@@ -194,15 +197,20 @@ class Engine:
             lib.connect()
 
         from myra_core.utils.date_utils import to_date
+
         target_date = to_date(as_of_date) if as_of_date else date.today()
         from myra_app.fetcher import DataFetcher
+
         fetcher = DataFetcher()
 
         if fetcher._is_holiday(target_date):
             if not silent:
-                print(f"[MYRA] {target_date} is a Market Holiday. Attempting Snapshot...")
+                print(
+                    f"[MYRA] {target_date} is a Market Holiday. Attempting Snapshot..."
+                )
             try:
                 from myra_app.results_manager import ResultsManager
+
                 rm = ResultsManager()
                 snapshot = rm.load_last_snapshot(strategy_name)
                 if snapshot:
@@ -215,8 +223,14 @@ class Engine:
             if not as_of_date:
                 last_trading_day = lib.get_expected_trading_day(datetime.now())
                 if not silent:
-                    print(f"[MYRA] No Snapshot found. Targeting last trading day: {last_trading_day}")
-                as_of_date = last_trading_day.date().isoformat() if hasattr(last_trading_day, 'date') else last_trading_day.isoformat()
+                    print(
+                        f"[MYRA] No Snapshot found. Targeting last trading day: {last_trading_day}"
+                    )
+                as_of_date = (
+                    last_trading_day.date().isoformat()
+                    if hasattr(last_trading_day, "date")
+                    else last_trading_day.isoformat()
+                )
             else:
                 return [], {"status": "HOLIDAY_NO_DATA"}
 
@@ -226,8 +240,9 @@ class Engine:
 
         try:
             from myra_app.universe_loader import load_universe
-            cache_df, regime, mood, vix_stable, funda_map, insider_map, deal_map = load_universe(
-                lib, symbols, as_of_date, silent=silent
+
+            cache_df, regime, mood, vix_stable, funda_map, insider_map, deal_map = (
+                load_universe(lib, symbols, as_of_date, silent=silent)
             )
             if cache_df.empty and len(symbols) >= 10:
                 return [], {}
@@ -239,24 +254,37 @@ class Engine:
             )
 
             try:
-                from myra_app.librarian_core import LibrarianCore
-                import sqlite3
                 import os
-                
+                import sqlite3
+
+                from myra_app.librarian_core import LibrarianCore
+
                 meta_conn = sqlite3.connect(
                     os.path.join(os.getcwd(), "db", LibrarianCore.DB_MAP["meta"]),
                     timeout=10,
                     check_same_thread=False,
                 )
-                meta_df = pd.read_sql("SELECT symbol, instrument_type FROM symbols_master", meta_conn)
+                meta_df = pd.read_sql(
+                    "SELECT symbol, instrument_type FROM symbols_master", meta_conn
+                )
                 meta_conn.close()
-                equity_symbols = set(meta_df.loc[meta_df['instrument_type'] == 'EQUITY', 'symbol'].str.upper())
+                equity_symbols = set(
+                    meta_df.loc[
+                        meta_df["instrument_type"] == "EQUITY", "symbol"
+                    ].str.upper()
+                )
                 target_symbols = [s for s in target_symbols if s in equity_symbols]
             except Exception:
                 pass
 
             payloads = [
-                (s, strategy_name, as_of_date, funda_map.get(s, {"symbol": s}), precomputed.get(s))
+                (
+                    s,
+                    strategy_name,
+                    as_of_date,
+                    funda_map.get(s, {"symbol": s}),
+                    precomputed.get(s),
+                )
                 for s in target_symbols
             ]
 
@@ -266,15 +294,16 @@ class Engine:
             return [], {}
 
         # VECTORIZED PRE-COMPUTATION: compute indicators for ALL symbols once
-        from myra_app.feature_enrichment import enrich_features
         import polars as pl
+
+        from myra_app.feature_enrichment import enrich_features
 
         # Read only the symbols needed for this scan
         if target_symbols:
-            placeholders = ','.join(['?'] * len(target_symbols))
+            placeholders = ",".join(["?"] * len(target_symbols))
             query = f"SELECT * FROM technical_data WHERE symbol IN ({placeholders}) ORDER BY symbol, date"
             raw_df = pl.read_database(query, lib._tech_conn, params=target_symbols)
-            
+
             if not raw_df.is_empty():
                 # Use the existing Polars enrichment pipeline (fast, vectorized)
                 nifty_df = pl.read_database(
@@ -282,12 +311,14 @@ class Engine:
                     lib._tech_conn,
                 )
                 enriched = enrich_features(raw_df, nifty_df)
-                
+
                 # Convert to pandas and build a per-symbol lookup dict
                 pdf = enriched.to_pandas()
                 precomputed = {
-                    symbol: group.set_index('date') if 'date' in group.columns else group
-                    for symbol, group in pdf.groupby('symbol')
+                    symbol: (
+                        group.set_index("date") if "date" in group.columns else group
+                    )
+                    for symbol, group in pdf.groupby("symbol")
                 }
             else:
                 precomputed = {}
@@ -296,13 +327,17 @@ class Engine:
 
         num_stocks = len(payloads)
         if not silent:
-            print(f"[MYRA] Analyzing {num_stocks} stocks with Institutional Resilience...")
+            print(
+                f"[MYRA] Analyzing {num_stocks} stocks with Institutional Resilience..."
+            )
 
         watchdog = ScanWatchdog(timeout=120)
         watchdog.start()
 
         try:
-            results = run_workers(payloads, strategy_name, lib.db_path, silent=silent, watchdog=watchdog)
+            results = run_workers(
+                payloads, strategy_name, lib.db_path, silent=silent, watchdog=watchdog
+            )
         except KeyboardInterrupt:
             if not silent:
                 print("\n[!] Scan interrupted by user.")
@@ -317,12 +352,18 @@ class Engine:
         valid_results = len(results)
         if num_stocks > 20 and valid_results == 0:
             if not silent:
-                print(f"\n[CRITICAL] Data Integrity Failure: 0/{num_stocks} results produced. Aborting.")
+                print(
+                    f"\n[CRITICAL] Data Integrity Failure: 0/{num_stocks} results produced. Aborting."
+                )
             return [], {"error": "CATASTROPHIC_PIPELINE_FAILURE"}
 
         # Observability: report failed/skipped symbols
-        failed = [r for r in results if isinstance(r, dict) and r.get("status") == "FAILED"]
-        skipped = [r for r in results if isinstance(r, dict) and r.get("status") == "SKIPPED"]
+        failed = [
+            r for r in results if isinstance(r, dict) and r.get("status") == "FAILED"
+        ]
+        skipped = [
+            r for r in results if isinstance(r, dict) and r.get("status") == "SKIPPED"
+        ]
         if failed:
             print(f"\n❌ Failed Symbols ({len(failed)}):")
             for f in failed[:10]:
@@ -331,11 +372,17 @@ class Engine:
             print(f"\n⚠️  Skipped Symbols: {len(skipped)}")
 
         # Clean results to only contain valid signal dicts
-        results = [r for r in results if isinstance(r, dict) and r.get("signal") or r.get("Stock")]
+        results = [
+            r
+            for r in results
+            if isinstance(r, dict) and r.get("signal") or r.get("Stock")
+        ]
 
         if not silent:
             elapsed = time.time() - start_time
-            print(f"[MYRA] Scan completed in {elapsed:.2f}s ({num_stocks} stocks, {elapsed/max(1,num_stocks):.3f}s/stock)")
+            print(
+                f"[MYRA] Scan completed in {elapsed:.2f}s ({num_stocks} stocks, {elapsed/max(1,num_stocks):.3f}s/stock)"
+            )
 
         try:
             lineage_path = self.fetcher.lineage.save()

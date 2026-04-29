@@ -5,9 +5,11 @@ import threading
 from typing import Any, Dict
 
 import pandas as pd
-from myra_core.utils.data_validation import enforce_index_contract, validate_dataframe
-from myra_core.schema import CORE_COLS, validate_columns
 import pandas_ta as ta
+
+from myra_core.schema import CORE_COLS, validate_columns
+from myra_core.utils.data_validation import (enforce_index_contract,
+                                             validate_dataframe)
 
 
 class DataAdapter:
@@ -117,7 +119,9 @@ class DataAdapter:
                 df = df.loc[:, ~df.columns.duplicated()]
 
                 if "DeliveryPct" in df.columns:
-                    df["DeliveryPct"] = pd.to_numeric(df["DeliveryPct"], errors="coerce").fillna(0.0)
+                    df["DeliveryPct"] = pd.to_numeric(
+                        df["DeliveryPct"], errors="coerce"
+                    ).fillna(0.0)
                     # Backward compatibility: provide both CamelCase and lowercase delivery_percent
                     df["delivery_percent"] = df["DeliveryPct"]
 
@@ -144,15 +148,17 @@ class DataAdapter:
             validate_columns(df, CORE_COLS, f"DataAdapter({symbol_clean})")
         except ValueError as e:
             logging.warning(str(e))
-        
+
         # Ensure date is always a column, not the index
         if "date" not in df.columns and df.index.name == "date":
             df = df.reset_index()
         if "date" in df.columns:
-            df = df.set_index("symbol")  # optional: keep symbol as index for quick lookups
+            df = df.set_index(
+                "symbol"
+            )  # optional: keep symbol as index for quick lookups
         else:
             df = df.reset_index()  # fallback
-        
+
         return df.copy()
 
     def get_technical_history(
@@ -201,7 +207,9 @@ class DataAdapter:
                     if len(df) >= 252
                     else float(df["Low"].min())
                 )
-            deliv_col = next((c for c in ["DeliveryPct", "delivery_pct"] if c in df.columns), None)
+            deliv_col = next(
+                (c for c in ["DeliveryPct", "delivery_pct"] if c in df.columns), None
+            )
             if deliv_col:
                 series = pd.to_numeric(df[deliv_col], errors="coerce")
                 last_deliv = series[series != 0].dropna()

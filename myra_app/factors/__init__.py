@@ -1,7 +1,7 @@
 #!/usr/bin/env python
-from .rs_factor import RSFactor
 from .delivery_factor import DeliveryFactor
 from .ias_factor import IASFactor
+from .rs_factor import RSFactor
 
 GLOBAL_FACTORS = {
     "rs": RSFactor(weight=0.3),

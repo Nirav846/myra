@@ -1,5 +1,5 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 
 def run(df: pd.DataFrame, funda: dict) -> dict:
@@ -39,9 +39,11 @@ def run(df: pd.DataFrame, funda: dict) -> dict:
                     "Type": status,
                     "Gap%": f"{gap_per}%",
                     "Intraday%": f"{intraday_per}%",
-                    "Vol_Vibe": "High"
-                    if latest["Volume"] > (df["Volume"].tail(20).mean() * 1.5)
-                    else "Normal",
+                    "Vol_Vibe": (
+                        "High"
+                        if latest["Volume"] > (df["Volume"].tail(20).mean() * 1.5)
+                        else "Normal"
+                    ),
                 },
             }
 

@@ -2,6 +2,7 @@ import json
 import os
 import sys
 
+
 def main():
     manifest_path = "data_sync_manifest.json"
     if not os.path.exists(manifest_path):
@@ -19,7 +20,10 @@ def main():
     missing_delivery_list = data.get("missing_delivery_list", [])
 
     if total_symbols_processed > 0:
-        score = ((total_symbols_processed - len(missing_delivery_list)) / total_symbols_processed) * 100
+        score = (
+            (total_symbols_processed - len(missing_delivery_list))
+            / total_symbols_processed
+        ) * 100
     else:
         score = 0.0
 
@@ -35,6 +39,7 @@ def main():
         print("Missing Delivery Symbols:")
         for symbol in missing_delivery_list:
             print(f"  - {symbol}")
+
 
 if __name__ == "__main__":
     main()

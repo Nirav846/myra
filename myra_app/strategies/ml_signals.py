@@ -1,7 +1,8 @@
-import pandas as pd
-import numpy as np
-import xgboost as xgb
 from datetime import datetime
+
+import numpy as np
+import pandas as pd
+import xgboost as xgb
 
 
 def run(df: pd.DataFrame, funda: dict) -> dict:
@@ -41,10 +42,14 @@ def run(df: pd.DataFrame, funda: dict) -> dict:
         close_vals = df["Close"].values
 
         labels = [
-            1
-            if (high_vals[i + 1 : i + window + 1] >= close_vals[i] * (1 + pt)).any()
-            and not (low_vals[i + 1 : i + window + 1] <= close_vals[i] * (1 - sl)).any()
-            else 0
+            (
+                1
+                if (high_vals[i + 1 : i + window + 1] >= close_vals[i] * (1 + pt)).any()
+                and not (
+                    low_vals[i + 1 : i + window + 1] <= close_vals[i] * (1 - sl)
+                ).any()
+                else 0
+            )
             for i in range(len(df) - window)
         ]
 
@@ -101,9 +106,11 @@ def run(df: pd.DataFrame, funda: dict) -> dict:
                 "metrics": {
                     "LTP": round(df["Close"].iloc[-1], 2),
                     "ML_ProbUp": f"{round(prob_success * 100, 1)}%",
-                    "Vibe": "Institutional Accumulation"
-                    if df["Vol_Shock"].iloc[-1] > 1.2
-                    else "Momentum",
+                    "Vibe": (
+                        "Institutional Accumulation"
+                        if df["Vol_Shock"].iloc[-1] > 1.2
+                        else "Momentum"
+                    ),
                     "Accuracy": funda.get("Accuracy", "-"),
                 },
             }

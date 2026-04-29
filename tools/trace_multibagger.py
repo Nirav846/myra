@@ -1,5 +1,6 @@
 import os
 import sys
+
 import pandas as pd
 from rich.console import Console
 
@@ -7,8 +8,8 @@ from rich.console import Console
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, PROJECT_ROOT)
 
-from myra_app.librarian import Librarian
 from myra_app.data_adapter import DataAdapter
+from myra_app.librarian import Librarian
 from myra_app.strategies.multibagger_early import Strategy
 
 

@@ -1,5 +1,6 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
+
 
 class Strategy:
     def __init__(self):
@@ -11,7 +12,7 @@ class Strategy:
 
         try:
             ltp = float(df["close"].iloc[-1])
-            
+
             ema20 = df["close"].ewm(span=20, adjust=False).mean()
             ema50 = df["close"].ewm(span=50, adjust=False).mean()
             val_ema20 = float(ema20.iloc[-1])
@@ -22,7 +23,7 @@ class Strategy:
             gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
             rs = gain / loss
-            df["rsi"] = 100 - (100 / (1+rs))
+            df["rsi"] = 100 - (100 / (1 + rs))
 
             rsi_min = float(df["rsi"].iloc[-20:-1].min())
             price_min = float(df["close"].iloc[-20:-1].min())
@@ -36,39 +37,52 @@ class Strategy:
             elif isinstance(rs_raw, (np.ndarray, list)):
                 rs_val = float(rs_raw[-1]) if len(rs_raw) > 0 else 0.0
             else:
-                # Safely catch APIs that return "N/A" or "-" 
+                # Safely catch APIs that return "N/A" or "-"
                 try:
                     rs_val = float(rs_raw) if rs_raw else 0.0
                 except ValueError:
                     rs_val = 0.0
-                
+
             is_strong_rs = bool(rs_val > 70)
             std20 = float(df["close"].iloc[-20:].std())
-            is_compressing = bool((std20 / ltp) < 0.02)  
+            is_compressing = bool((std20 / ltp) < 0.02)
 
-            vwap_20 = (df["close"] * df["volume"]).rolling(20).sum() / df["volume"].rolling(20).sum()
+            vwap_20 = (df["close"] * df["volume"]).rolling(20).sum() / df[
+                "volume"
+            ].rolling(20).sum()
             curr_vwap = float(vwap_20.iloc[-1])
             is_vwap_reclaim = bool(ltp > curr_vwap)
 
             score = 0
-            if ema_trend: score += 30
-            if is_strong_rs: score += 20
-            if is_vwap_reclaim: score += 20
-            if is_compressing: score += 15
-            if has_rsi_divergence: score += 15
+            if ema_trend:
+                score += 30
+            if is_strong_rs:
+                score += 20
+            if is_vwap_reclaim:
+                score += 20
+            if is_compressing:
+                score += 15
+            if has_rsi_divergence:
+                score += 15
 
             # --- DIAGNOSTIC OVERRIDE (Forced Output) ---
-            if score >= 0:  
+            if score >= 0:
                 recent_high = float(df["high"].iloc[-5:].max())
                 entry_price = round(max(ltp * 1.005, recent_high), 2)
                 atr_val = float((df["high"] - df["low"]).iloc[-14:].mean())
-                sl_price = round(max(float(df["low"].iloc[-10:].min()), ltp - (1.5 * atr_val)), 2)
+                sl_price = round(
+                    max(float(df["low"].iloc[-10:].min()), ltp - (1.5 * atr_val)), 2
+                )
 
                 return {
                     "signal": True,
                     "metrics": {
                         "Score": score,
-                        "Grade": "Elite" if score >= 85 else "Strong" if score >= 70 else "Pass",
+                        "Grade": (
+                            "Elite"
+                            if score >= 85
+                            else "Strong" if score >= 70 else "Pass"
+                        ),
                         "Comp": "YES" if is_compressing else "NO",
                         "Div": "YES" if has_rsi_divergence else "NO",
                         "VWAP": "YES" if is_vwap_reclaim else "NO",
@@ -78,7 +92,9 @@ class Strategy:
                 }
         except Exception as e:
             # --- UN-GAGGED ERROR REPORTING ---
-            print(f"\n[STRATEGY CRASH] {funda.get('symbol', 'Unknown')} failed inside logic: {e}")
+            print(
+                f"\n[STRATEGY CRASH] {funda.get('symbol', 'Unknown')} failed inside logic: {e}"
+            )
             pass
 
         return {"signal": False}

@@ -4,8 +4,9 @@ import sys
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(PROJECT_ROOT)
 
-from myra_app.librarian import Librarian
 import pandas as pd
+
+from myra_app.librarian import Librarian
 
 
 def validate_modular_librarian():

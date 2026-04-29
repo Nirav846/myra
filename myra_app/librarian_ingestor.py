@@ -4,10 +4,13 @@ MYRA Librarian Ingestor Layer (TRILOGY ERA)
 Handles all data fetching from archives and multi-DB ingestion.
 Routes to technical.db, institutional.db, and legacy DuckDB cache.
 """
+
 import os
-import pandas as pd
 import sqlite3
 from datetime import date, datetime, timedelta
+
+import pandas as pd
+
 from myra_core.date_utils import PKDateUtilities
 from myra_core.utils.myra_log import myra_log
 

@@ -1,6 +1,7 @@
-import pandas as pd
-import numpy as np
 from abc import ABC, abstractmethod
+
+import numpy as np
+import pandas as pd
 
 
 class BaseStrategy(ABC):
@@ -28,7 +29,7 @@ class BaseStrategy(ABC):
             # We fetch India VIX as a fear proxy
             df_vix = lib.safe_execute(
                 "SELECT close FROM benchmark WHERE symbol = '^INDIAVIX' ORDER BY date DESC LIMIT 1",
-                conn=lib._tech_conn
+                conn=lib._tech_conn,
             ).fetchone()
             vix = df_vix[0] if df_vix else 18.0
 

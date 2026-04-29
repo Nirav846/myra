@@ -4,15 +4,18 @@ MYRA Librarian Core - Connectivity & Persistence Layer (TRILOGY ERA)
 EXCLUSIVE GATEKEEPER for Modular SQLite Sidecars.
 Transitioning from DuckDB to Multi-DB Architecture.
 """
+
 import os
+import sqlite3
 import sys
 import threading
 import time
-import sqlite3
 from datetime import datetime
+
 from rich.console import Console
 
 from myra_app.constants import DB_DIR
+
 
 class SyncStatus:
     """Tracks background synchronization progress."""
@@ -60,9 +63,7 @@ class LibrarianCore:
     def __init__(self, read_only=False, console=None, db_path=None):
         # Legacy DuckDB path (for fallback/migration validation)
         self.db_path = (
-            db_path
-            if db_path
-            else os.path.join(DB_DIR, "myra_market_data.db")
+            db_path if db_path else os.path.join(DB_DIR, "myra_market_data.db")
         )
         self.read_only = read_only
         self.console = console if console else Console()
@@ -192,9 +193,13 @@ class LibrarianCore:
                     c.close()
                 except Exception:
                     pass
-        self._tech_conn = self._inst_conn = self._meta_conn = self._val_conn = self._gov_conn = None
+        self._tech_conn = self._inst_conn = self._meta_conn = self._val_conn = (
+            self._gov_conn
+        ) = None
 
-    def record_lineage(self, dataset: str, source: str, rows: int, status: str, transforms: str):
+    def record_lineage(
+        self, dataset: str, source: str, rows: int, status: str, transforms: str
+    ):
         """PRIORITY 8: Centralized Data Lineage Tracking."""
         if not self._meta_conn or self.read_only:
             return
@@ -206,7 +211,7 @@ class LibrarianCore:
                 (dataset_name, fetch_time, source_url, rows_processed, status, transformations_applied)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (dataset, fetch_time, source, rows, status, transforms)
+                (dataset, fetch_time, source, rows, status, transforms),
             )
             self._meta_conn.commit()
         except Exception as e:

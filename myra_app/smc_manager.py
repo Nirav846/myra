@@ -1,6 +1,7 @@
 """MYRA SMC Manager - Institutional Accumulation Engine (SMC-1)"""
-import pandas as pd
+
 import numpy as np
+import pandas as pd
 
 
 class SMCManager:
@@ -182,7 +183,12 @@ class SMCManager:
             vol_last = df["volume"].iloc[-1]
             high_60 = df["close"].rolling(60).max().iloc[-1]
 
-            if (ltp > (d_poc * 1.03) and ltp >= high_60 and vol_last > (avg_vol_20 * 1.5) and confluence > 0):
+            if (
+                ltp > (d_poc * 1.03)
+                and ltp >= high_60
+                and vol_last > (avg_vol_20 * 1.5)
+                and confluence > 0
+            ):
                 return 2
 
             price_near_poc = abs(ltp - d_poc) / d_poc <= 0.02

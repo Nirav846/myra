@@ -1,5 +1,5 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 
 def run_primitive(df: pd.DataFrame, scanner_id: str) -> bool:

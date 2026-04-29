@@ -3,8 +3,9 @@
 MYRA - Myra Yield & Research Analytics
 The official entry point. (TRILOGY ERA v4.0 Alpha)
 """
-import sys
+
 import os
+import sys
 
 # Auto-fix Python path so the project root is always importable
 # regardless of how the script is launched
@@ -14,19 +15,20 @@ if _PROJECT_ROOT not in sys.path:
 os.chdir(_PROJECT_ROOT)
 
 import argparse
+import threading
 from datetime import datetime
+
 import pandas as pd
 from rich.console import Console
 from rich.panel import Panel
 from rich.theme import Theme
-import threading
 
-from myra_app.screener import MYRAScreener
 from myra_app.background_orchestrator import start as start_background
 from myra_app.menu_navigation import MenuNavigator
+from myra_app.ml_engine import TrendForecaster
+from myra_app.screener import MYRAScreener
 from myra_app.telegram_notifier import TelegramNotifier
 from myra_app.UI_Manager import draw_dashboard
-from myra_app.ml_engine import TrendForecaster
 
 # Define High-Vibe Dark Theme
 custom_theme = Theme(
@@ -88,8 +90,8 @@ def main():
     # Initialize Core Components
     # --- Phase 3: Smart Gatekeeper (ETF Purge & Daily Sanitization) ---
     try:
-        from myra_app.librarian_core import LibrarianCore
         from myra_app.gatekeeper import Gatekeeper
+        from myra_app.librarian_core import LibrarianCore
 
         Gatekeeper.smart_gatekeeper(LibrarianCore.DB_MAP, console=console)
     except Exception as e:
@@ -297,16 +299,28 @@ def main():
             options = [
                 ("1", "NIFTY 50", "NIFTY 50"),
                 ("2", "NIFTY 500", "NIFTY 500"),
-                ("3", "NIFTY Smallcap 250", "NIFTY SMALLCAP 250"),  # adjust if exact name differs
+                (
+                    "3",
+                    "NIFTY Smallcap 250",
+                    "NIFTY SMALLCAP 250",
+                ),  # adjust if exact name differs
                 ("4", "Full Market", "full"),
             ]
 
             # Add numbered sectors dynamically
             try:
-                sectors = screener.lib.get_available_sectors()  # returns list of dicts or tuples: (sector_name, count)
+                sectors = (
+                    screener.lib.get_available_sectors()
+                )  # returns list of dicts or tuples: (sector_name, count)
                 if sectors:
                     for i, sec in enumerate(sectors, start=5):
-                        options.append((str(i), f"{sec['sector']} ({sec['count']} stocks)", sec['sector']))
+                        options.append(
+                            (
+                                str(i),
+                                f"{sec['sector']} ({sec['count']} stocks)",
+                                sec["sector"],
+                            )
+                        )
             except Exception:
                 pass
 
@@ -337,16 +351,22 @@ def main():
                 symbols = screener.lib.get_index_symbols(value)
                 portfolio_syms = symbols
                 if not symbols:
-                    console.print(f"[warning]No symbols found for {value}. Please run index sync first.[/warning]")
+                    console.print(
+                        f"[warning]No symbols found for {value}. Please run index sync first.[/warning]"
+                    )
                     continue
                 console.print(f"[info]Scanning {len(symbols)} stocks in {value}[/info]")
             else:
                 # Sector
                 symbols = screener.lib.get_symbols_by_sector(value)
                 if not symbols:
-                    console.print(f"[warning]No symbols found for sector: {value}[/warning]")
+                    console.print(
+                        f"[warning]No symbols found for sector: {value}[/warning]"
+                    )
                     continue
-                console.print(f"[info]Scanning {len(symbols)} stocks in {value} sector[/info]")
+                console.print(
+                    f"[info]Scanning {len(symbols)} stocks in {value} sector[/info]"
+                )
                 portfolio_syms = symbols
 
             try:

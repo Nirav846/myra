@@ -6,10 +6,11 @@ import sys
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(BASE_DIR)
 
+from rich.console import Console
+
+from myra_app.fetcher import DataFetcher
 from myra_app.fundamental_manager import FundamentalManager
 from myra_app.librarian import Librarian
-from myra_app.fetcher import DataFetcher
-from rich.console import Console
 from myra_core.utils.myra_log import myra_log
 
 

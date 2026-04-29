@@ -1,7 +1,7 @@
-import os
-import sys
-import sqlite3
 import argparse
+import os
+import sqlite3
+import sys
 
 # Anchor to project root regardless of where script is launched from
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -11,6 +11,7 @@ from myra_app.librarian_core import LibrarianCore
 
 DB_DIR = os.path.join(PROJECT_ROOT, "myra_app", "db")
 DB_MAP = LibrarianCore.DB_MAP
+
 
 class DbDoctor:
     def __init__(self, dry_run=False):
@@ -28,6 +29,7 @@ class DbDoctor:
         self.check_institutional_schema()
         self.check_technical_data_quality()
         self.check_etf_contamination()
+        self.check_scanner_health()
         self.check_wal_mode()
         self.print_summary()
 
@@ -63,42 +65,52 @@ class DbDoctor:
             c = conn.cursor()
 
             # Check if technical_data table exists
-            c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='technical_data'")
+            c.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='technical_data'"
+            )
             if not c.fetchone():
                 print("  [WARNING] 'technical_data' table missing!")
                 self.issues_found += 1
                 return
 
             TECHNICAL_EXPECTED_COLS = {
-                "symbol":           "TEXT NOT NULL",
-                "date":             "TEXT NOT NULL",
-                "open":             "REAL",
-                "high":             "REAL",
-                "low":              "REAL",
-                "close":            "REAL",
-                "volume":           "INTEGER",
-                "delivery":         "INTEGER",
-                "trades":           "INTEGER",
-                "vwap":             "REAL",
-                "delivery_ratio":   "REAL",
-                "delivery_source":  "TEXT",
+                "symbol": "TEXT NOT NULL",
+                "date": "TEXT NOT NULL",
+                "open": "REAL",
+                "high": "REAL",
+                "low": "REAL",
+                "close": "REAL",
+                "volume": "INTEGER",
+                "delivery": "INTEGER",
+                "trades": "INTEGER",
+                "vwap": "REAL",
+                "delivery_ratio": "REAL",
+                "delivery_source": "TEXT",
             }
 
             c.execute("PRAGMA table_info(technical_data)")
             existing_cols = {row[1] for row in c.fetchall()}
 
-            missing_cols = {col: col_type for col, col_type in TECHNICAL_EXPECTED_COLS.items() if col not in existing_cols}
+            missing_cols = {
+                col: col_type
+                for col, col_type in TECHNICAL_EXPECTED_COLS.items()
+                if col not in existing_cols
+            }
             for col, col_type in missing_cols.items():
                 print(f"  [WARNING] Missing column in technical_data: {col}")
                 self.issues_found += 1
                 if self.dry_run:
-                    print(f"  [DRY RUN] Would fix: ALTER TABLE technical_data ADD COLUMN {col} {col_type}")
+                    print(
+                        f"  [DRY RUN] Would fix: ALTER TABLE technical_data ADD COLUMN {col} {col_type}"
+                    )
 
             if missing_cols and not self.dry_run:
                 try:
                     conn.execute("BEGIN")
                     for col, col_type in missing_cols.items():
-                        c.execute(f"ALTER TABLE technical_data ADD COLUMN {col} {col_type}")
+                        c.execute(
+                            f"ALTER TABLE technical_data ADD COLUMN {col} {col_type}"
+                        )
                         print(f"  [FIXED] Added column {col}")
                     conn.commit()
                     self.issues_fixed += len(missing_cols)
@@ -112,7 +124,7 @@ class DbDoctor:
             indexes = c.fetchall()
             pk_found = False
             for idx in indexes:
-                if idx[3] == 'pk': # origin column in PRAGMA index_list
+                if idx[3] == "pk":  # origin column in PRAGMA index_list
                     pk_found = True
                     break
 
@@ -121,7 +133,9 @@ class DbDoctor:
             pk_cols = [row[1] for row in c.fetchall() if row[5] > 0]
 
             if not pk_found and len(pk_cols) == 0:
-                print("  [WARNING] PRIMARY KEY missing on technical_data. Note: Run a full rebuild to fix.")
+                print(
+                    "  [WARNING] PRIMARY KEY missing on technical_data. Note: Run a full rebuild to fix."
+                )
                 self.issues_found += 1
 
         finally:
@@ -139,49 +153,68 @@ class DbDoctor:
         try:
             c = conn.cursor()
 
-            expected_tables = ["symbols_master", "index_constituents", "benchmarks", "metadata", "lineage_tracking"]
+            expected_tables = [
+                "symbols_master",
+                "index_constituents",
+                "benchmarks",
+                "metadata",
+                "lineage_tracking",
+            ]
             for table in expected_tables:
-                c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
+                c.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                    (table,),
+                )
                 if not c.fetchone():
                     print(f"  [WARNING] Missing table in meta DB: {table}")
                     self.issues_found += 1
 
             # Check symbols_master columns
-            c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='symbols_master'")
+            c.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='symbols_master'"
+            )
             if c.fetchone():
                 META_EXPECTED_COLS = {
-                    "symbol":                "TEXT PRIMARY KEY",
-                    "first_seen":            "TEXT",
-                    "last_seen":             "TEXT",
-                    "in_active_universe":    "INTEGER DEFAULT 0",
-                    "in_nifty500":           "INTEGER DEFAULT 0",
-                    "sector":                "TEXT",
-                    "industry":              "TEXT",
-                    "source":                "TEXT",
-                    "confidence":            "REAL",
-                    "last_updated_sector":   "TEXT",
-                    "sector_locked":         "INTEGER DEFAULT 0",
-                    "is_active":             "INTEGER DEFAULT 1",
-                    "instrument_type":       "TEXT DEFAULT 'EQUITY'",
+                    "symbol": "TEXT PRIMARY KEY",
+                    "first_seen": "TEXT",
+                    "last_seen": "TEXT",
+                    "in_active_universe": "INTEGER DEFAULT 0",
+                    "in_nifty500": "INTEGER DEFAULT 0",
+                    "sector": "TEXT",
+                    "industry": "TEXT",
+                    "source": "TEXT",
+                    "confidence": "REAL",
+                    "last_updated_sector": "TEXT",
+                    "sector_locked": "INTEGER DEFAULT 0",
+                    "is_active": "INTEGER DEFAULT 1",
+                    "instrument_type": "TEXT DEFAULT 'EQUITY'",
                     "last_fundamental_update": "TEXT",
                 }
 
                 c.execute("PRAGMA table_info(symbols_master)")
                 existing_cols = {row[1] for row in c.fetchall()}
 
-                missing_cols = {col: col_type for col, col_type in META_EXPECTED_COLS.items() if col not in existing_cols}
+                missing_cols = {
+                    col: col_type
+                    for col, col_type in META_EXPECTED_COLS.items()
+                    if col not in existing_cols
+                }
                 for col, col_type in missing_cols.items():
                     print(f"  [WARNING] Missing column in symbols_master: {col}")
                     self.issues_found += 1
                     if self.dry_run:
-                        print(f"  [DRY RUN] Would fix: ALTER TABLE symbols_master ADD COLUMN {col} {col_type.replace('PRIMARY KEY', '')}")
+                        print(
+                            f"  [DRY RUN] Would fix: ALTER TABLE symbols_master ADD COLUMN {col} {col_type.replace('PRIMARY KEY', '')}"
+                        )
 
                 if missing_cols and not self.dry_run:
                     try:
                         conn.execute("BEGIN")
                         for col, col_type in missing_cols.items():
                             add_type = col_type.replace("PRIMARY KEY", "")
-                            c.execute(f"ALTER TABLE symbols_master ADD COLUMN {col} {add_type}")
+                            c.execute(
+                                f"ALTER TABLE symbols_master ADD COLUMN {col} {add_type}"
+                            )
                             print(f"  [FIXED] Added column {col}")
                         conn.commit()
                         self.issues_fixed += len(missing_cols)
@@ -205,17 +238,23 @@ class DbDoctor:
         try:
             c = conn.cursor()
 
-            c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='fundamentals'")
+            c.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='fundamentals'"
+            )
             if c.fetchone():
                 c.execute("PRAGMA table_info(fundamentals)")
                 existing_cols = {row[1] for row in c.fetchall()}
 
-                missing_cols = [col for col in ["symbol", "sector"] if col not in existing_cols]
+                missing_cols = [
+                    col for col in ["symbol", "sector"] if col not in existing_cols
+                ]
                 for col in missing_cols:
                     print(f"  [WARNING] Missing column in fundamentals: {col}")
                     self.issues_found += 1
                     if self.dry_run:
-                        print(f"  [DRY RUN] Would fix: ALTER TABLE fundamentals ADD COLUMN {col} TEXT")
+                        print(
+                            f"  [DRY RUN] Would fix: ALTER TABLE fundamentals ADD COLUMN {col} TEXT"
+                        )
 
                 if missing_cols and not self.dry_run:
                     try:
@@ -245,7 +284,9 @@ class DbDoctor:
         try:
             c = conn.cursor()
 
-            c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='insider_trades'")
+            c.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='insider_trades'"
+            )
             if c.fetchone():
                 c.execute("PRAGMA table_info(insider_trades)")
                 existing_cols = {row[1] for row in c.fetchall()}
@@ -254,8 +295,14 @@ class DbDoctor:
                 # Canonical aliases (transaction_type, price, value) are applied
                 # at query time in engine.py and institutional_pipe.py.
                 INSTITUTIONAL_EXPECTED_COLS = [
-                    "symbol", "acq_name", "category", "type",
-                    "mode", "value_cr", "avg_price", "date"
+                    "symbol",
+                    "acq_name",
+                    "category",
+                    "type",
+                    "mode",
+                    "value_cr",
+                    "avg_price",
+                    "date",
                 ]
                 for col in INSTITUTIONAL_EXPECTED_COLS:
                     if col not in existing_cols:
@@ -278,20 +325,26 @@ class DbDoctor:
             c = conn.cursor()
 
             checks = [
-                ("Rows with zero/negative close price",
-                 "SELECT COUNT(*) FROM technical_data WHERE close <= 0"),
-
-                ("Rows with delivery > 0 but volume = 0",
-                 "SELECT COUNT(*) FROM technical_data WHERE volume = 0 AND delivery > 0"),
-
-                ("Rows with delivery_ratio > 1.0",
-                 "SELECT COUNT(*) FROM technical_data WHERE delivery_ratio > 1.0"),
-
-                ("Future-dated rows",
-                 "SELECT COUNT(*) FROM technical_data WHERE date > date('now')"),
-
-                ("Rows with delivery data but NULL delivery_source",
-                 "SELECT COUNT(*) FROM technical_data WHERE delivery IS NOT NULL AND delivery_source IS NULL"),
+                (
+                    "Rows with zero/negative close price",
+                    "SELECT COUNT(*) FROM technical_data WHERE close <= 0",
+                ),
+                (
+                    "Rows with delivery > 0 but volume = 0",
+                    "SELECT COUNT(*) FROM technical_data WHERE volume = 0 AND delivery > 0",
+                ),
+                (
+                    "Rows with delivery_ratio > 1.0",
+                    "SELECT COUNT(*) FROM technical_data WHERE delivery_ratio > 1.0",
+                ),
+                (
+                    "Future-dated rows",
+                    "SELECT COUNT(*) FROM technical_data WHERE date > date('now')",
+                ),
+                (
+                    "Rows with delivery data but NULL delivery_source",
+                    "SELECT COUNT(*) FROM technical_data WHERE delivery IS NOT NULL AND delivery_source IS NULL",
+                ),
             ]
 
             for desc, query in checks:
@@ -304,15 +357,23 @@ class DbDoctor:
 
                         if "NULL delivery_source" in desc:
                             if self.dry_run:
-                                print("  [DRY RUN] Would fix: UPDATE technical_data SET delivery_source = 'raw_qty' WHERE delivery IS NOT NULL AND delivery_source IS NULL")
+                                print(
+                                    "  [DRY RUN] Would fix: UPDATE technical_data SET delivery_source = 'raw_qty' WHERE delivery IS NOT NULL AND delivery_source IS NULL"
+                                )
                             else:
                                 try:
-                                    c.execute("UPDATE technical_data SET delivery_source = 'raw_qty' WHERE delivery IS NOT NULL AND delivery_source IS NULL")
+                                    c.execute(
+                                        "UPDATE technical_data SET delivery_source = 'raw_qty' WHERE delivery IS NOT NULL AND delivery_source IS NULL"
+                                    )
                                     conn.commit()
-                                    print(f"  [FIXED] Updated delivery_source for {count} rows")
+                                    print(
+                                        f"  [FIXED] Updated delivery_source for {count} rows"
+                                    )
                                     self.issues_fixed += 1
                                 except Exception as e:
-                                    print(f"  [ERROR] Failed to update delivery_source: {e}")
+                                    print(
+                                        f"  [ERROR] Failed to update delivery_source: {e}"
+                                    )
                                     self.issues_failed += 1
                 except Exception as e:
                     print(f"  [ERROR] Quality check failed ({desc}): {e}")
@@ -325,7 +386,9 @@ class DbDoctor:
 
             if null_pct > 0:
                 self.issues_found += 1
-                print(f"  [WARNING] Rows with NULL delivery_pct but valid delivery: {null_pct:,}")
+                print(
+                    f"  [WARNING] Rows with NULL delivery_pct but valid delivery: {null_pct:,}"
+                )
                 if not self.dry_run:
                     conn.execute("""
                         UPDATE technical_data
@@ -336,7 +399,9 @@ class DbDoctor:
                     self.issues_fixed += 1
                     print(f"  [FIXED] Backfilled delivery_pct for {null_pct:,} rows")
                 else:
-                    print(f"  [DRY RUN] Would backfill delivery_pct for {null_pct:,} rows")
+                    print(
+                        f"  [DRY RUN] Would backfill delivery_pct for {null_pct:,} rows"
+                    )
 
         finally:
             conn.close()
@@ -345,7 +410,9 @@ class DbDoctor:
     def check_etf_contamination(self):
         print("--- Checking ETF Contamination in Technical DB ---")
         try:
-            from myra_app.utils.etf_sync import purge_etf_rows_from_technical_db
+            from myra_app.utils.etf_sync import \
+                purge_etf_rows_from_technical_db
+
             count = purge_etf_rows_from_technical_db(dry_run=self.dry_run)
             if count > 0:
                 self.issues_found += 1
@@ -354,6 +421,44 @@ class DbDoctor:
         except Exception as e:
             print(f"  [ERROR] ETF contamination check failed: {e}")
             self.issues_failed += 1
+        print()
+
+    def check_scanner_health(self):
+        """Log skipped symbols by scanner for trend analysis."""
+        import json
+        import os
+        from datetime import datetime
+
+        log_path = os.path.join(PROJECT_ROOT, "logs", "scanner_skips.json")
+
+        # This is a lightweight check - full per-scanner logging would require
+        # the engine to write skipped symbols, which is out of scope.
+        # For now, we simply note the current skip count for manual review.
+        try:
+            existing = {}
+            if os.path.exists(log_path):
+                with open(log_path, "r") as f:
+                    existing = json.load(f)
+
+            # Record today's health score
+            from datetime import date
+
+            today = date.today().isoformat()
+            existing[today] = {
+                "health_score": getattr(self, "health_score", "N/A"),
+                "checked_at": str(datetime.now()),
+            }
+
+            # Keep only last 90 days
+            keys = sorted(existing.keys())[-90:]
+            trimmed = {k: existing[k] for k in keys}
+
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            with open(log_path, "w") as f:
+                json.dump(trimmed, f, indent=2)
+            print("  [INFO] Scanner health logged")
+        except Exception as e:
+            print(f"  [WARNING] Scanner health logging failed: {e}")
         print()
 
     def check_wal_mode(self):
@@ -371,10 +476,14 @@ class DbDoctor:
                 mode = c.fetchone()[0].upper()
 
                 if mode != "WAL":
-                    print(f"  [WARNING] {filename} is not in WAL mode (current: {mode})")
+                    print(
+                        f"  [WARNING] {filename} is not in WAL mode (current: {mode})"
+                    )
                     self.issues_found += 1
                     if self.dry_run:
-                        print(f"  [DRY RUN] Would fix: PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; on {filename}")
+                        print(
+                            f"  [DRY RUN] Would fix: PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; on {filename}"
+                        )
                     else:
                         c.execute("PRAGMA journal_mode=WAL")
                         c.execute("PRAGMA synchronous=NORMAL")
@@ -391,7 +500,7 @@ class DbDoctor:
                 print(f"  [ERROR] Failed to configure WAL mode for {filename}: {e}")
                 self.issues_failed += 1
             finally:
-                if 'conn' in locals() and conn:
+                if "conn" in locals() and conn:
                     conn.close()
         print()
 
@@ -405,9 +514,14 @@ class DbDoctor:
             attention_needed = self.issues_found - self.issues_fixed
             print(f"  Needs attention: {attention_needed} (see warnings above)")
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Audit and heal MYRA SQLite databases.")
-    parser.add_argument("--dry-run", action="store_true", help="Report only, no changes")
+    parser = argparse.ArgumentParser(
+        description="Audit and heal MYRA SQLite databases."
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Report only, no changes"
+    )
     args = parser.parse_args()
 
     doctor = DbDoctor(dry_run=args.dry_run)

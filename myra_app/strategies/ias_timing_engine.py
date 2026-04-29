@@ -1,10 +1,13 @@
-import pandas as pd
-import numpy as np
 import logging
+
+import numpy as np
+import pandas as pd
+
 from myra_app.ias_manager import IASManager
 
 # Instantiate IAS Manager once to avoid overhead
 _ias_manager = IASManager()
+
 
 def run(df: pd.DataFrame, funda: dict) -> dict:
     """
@@ -51,7 +54,11 @@ def run(df: pd.DataFrame, funda: dict) -> dict:
         high_20d = df["High"].iloc[-20:].max()
 
         # Delivery % check (Uses DataAdapter's mapped column)
-        delivery_pct = df["DeliveryPct"].iloc[-1] if "DeliveryPct" in df.columns else funda.get("delivery_percent", 0)
+        delivery_pct = (
+            df["DeliveryPct"].iloc[-1]
+            if "DeliveryPct" in df.columns
+            else funda.get("delivery_percent", 0)
+        )
 
         # Volatility / ATR
         ranges = df["High"] - df["Low"]
@@ -59,14 +66,20 @@ def run(df: pd.DataFrame, funda: dict) -> dict:
         atr_20 = ranges.iloc[-20:].mean()
 
         # Trend and Momentum (Lazy Fallback handling)
-        ema_20 = df["sma20"].iloc[-1] if "sma20" in df.columns else df["Close"].ewm(span=20).mean().iloc[-1]
-        
+        ema_20 = (
+            df["sma20"].iloc[-1]
+            if "sma20" in df.columns
+            else df["Close"].ewm(span=20).mean().iloc[-1]
+        )
+
         # VWAP Approximation for daily timeframe
         if "VWAP" in df.columns:
             vwap = latest["VWAP"]
         else:
             tp = (df["High"] + df["Low"] + df["Close"]) / 3
-            vwap = (tp * df["Volume"]).rolling(window=20).sum().iloc[-1] / df["Volume"].rolling(window=20).sum().iloc[-1]
+            vwap = (tp * df["Volume"]).rolling(window=20).sum().iloc[-1] / df[
+                "Volume"
+            ].rolling(window=20).sum().iloc[-1]
 
         # 5. TRIGGER LOGIC
 
@@ -108,8 +121,12 @@ def run(df: pd.DataFrame, funda: dict) -> dict:
             return {"signal": False}
 
         # 7. Formatting Result
-        setup_type = "Breakout" if breakout_entry else "Pullback" if pullback_entry else "Bear Trap"
-        
+        setup_type = (
+            "Breakout"
+            if breakout_entry
+            else "Pullback" if pullback_entry else "Bear Trap"
+        )
+
         # Entry/SL Logic
         if breakout_entry:
             entry_price = max(base_high * 1.003, high)
@@ -117,14 +134,14 @@ def run(df: pd.DataFrame, funda: dict) -> dict:
         elif pullback_entry:
             entry_price = max(high, ema_20)
             stop_loss = low * 0.995
-        else: # Trap
+        else:  # Trap
             entry_price = max(close, high)
             stop_loss = low * 0.995
 
         # Quality Scoring
         delivery_quality = min(delivery_pct / 50, 1) * 10
         compression_quality = (atr_20 / atr_5) * 5 if atr_5 > 0 else 0
-        
+
         entry_quality = (
             0.35 * ias_score
             + 0.15 * delivery_quality

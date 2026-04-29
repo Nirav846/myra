@@ -1,6 +1,7 @@
+import os
 import sqlite3
 import time
-import os
+
 
 def setup_db(db_path):
     if os.path.exists(db_path):
@@ -27,6 +28,7 @@ def setup_db(db_path):
     conn.commit()
     return conn
 
+
 def simulate_current(conn, num_symbols=50, rows_per_symbol=10):
     cursor = conn.cursor()
     start_time = time.time()
@@ -34,16 +36,35 @@ def simulate_current(conn, num_symbols=50, rows_per_symbol=10):
         symbol = f"SYM{i}"
         records = []
         for j in range(rows_per_symbol):
-            records.append((symbol, f"2023-01-{j:02d}", 100.0, 105.0, 95.0, 102.0, 1000, None, None, 101.0, None, None))
+            records.append(
+                (
+                    symbol,
+                    f"2023-01-{j:02d}",
+                    100.0,
+                    105.0,
+                    95.0,
+                    102.0,
+                    1000,
+                    None,
+                    None,
+                    101.0,
+                    None,
+                    None,
+                )
+            )
 
-        cursor.executemany("""
+        cursor.executemany(
+            """
             INSERT OR IGNORE INTO technical_data
             (symbol, date, open, high, low, close, volume, delivery, trades, vwap, delivery_pct, delivery_ratio)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, records)
+        """,
+            records,
+        )
         conn.commit()
     end_time = time.time()
     return end_time - start_time
+
 
 def simulate_optimized(conn, num_symbols=50, rows_per_symbol=10):
     cursor = conn.cursor()
@@ -52,16 +73,35 @@ def simulate_optimized(conn, num_symbols=50, rows_per_symbol=10):
     for i in range(num_symbols):
         symbol = f"SYM{i}_OPT"
         for j in range(rows_per_symbol):
-            all_batch_records.append((symbol, f"2023-01-{j:02d}", 100.0, 105.0, 95.0, 102.0, 1000, None, None, 101.0, None, None))
+            all_batch_records.append(
+                (
+                    symbol,
+                    f"2023-01-{j:02d}",
+                    100.0,
+                    105.0,
+                    95.0,
+                    102.0,
+                    1000,
+                    None,
+                    None,
+                    101.0,
+                    None,
+                    None,
+                )
+            )
 
-    cursor.executemany("""
+    cursor.executemany(
+        """
         INSERT OR IGNORE INTO technical_data
         (symbol, date, open, high, low, close, volume, delivery, trades, vwap, delivery_pct, delivery_ratio)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, all_batch_records)
+    """,
+        all_batch_records,
+    )
     conn.commit()
     end_time = time.time()
     return end_time - start_time
+
 
 def main():
     db_path = "benchmark_test.db"
@@ -81,6 +121,7 @@ def main():
     conn.close()
     if os.path.exists(db_path):
         os.remove(db_path)
+
 
 if __name__ == "__main__":
     main()

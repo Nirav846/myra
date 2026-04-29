@@ -1,5 +1,6 @@
-import pandas as pd
 import os
+
+import pandas as pd
 
 ARCHIVE_DIR = os.path.join("data", "Market_Archives")
 KEEP_SERIES = {"eq", "be", "sm"}
@@ -21,7 +22,9 @@ for filename in os.listdir(ARCHIVE_DIR):
                 break
 
         if series_col is None:
-            print(f"{filename}: no 'series' column found (columns: {df.columns.tolist()[:5]}) – skipping")
+            print(
+                f"{filename}: no 'series' column found (columns: {df.columns.tolist()[:5]}) – skipping"
+            )
             continue
 
         # Normalize series values: strip spaces, uppercase
@@ -32,7 +35,9 @@ for filename in os.listdir(ARCHIVE_DIR):
 
         # Only overwrite if we kept something (safety check)
         if after == 0 and before > 0:
-            print(f"{filename}: WARNING – kept 0 rows after filtering, NOT overwriting file. Check series values.")
+            print(
+                f"{filename}: WARNING – kept 0 rows after filtering, NOT overwriting file. Check series values."
+            )
             continue
 
         if before != after:

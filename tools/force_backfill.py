@@ -1,5 +1,6 @@
 import os
 import sys
+
 from rich.console import Console
 
 # Add current dir to path

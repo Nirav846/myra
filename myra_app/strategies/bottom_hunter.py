@@ -1,6 +1,7 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 import pandas_ta as ta
+
 from myra_app.strategies.base_strategy import BaseStrategy
 
 
@@ -67,9 +68,7 @@ class Strategy(BaseStrategy):
             ctx_stage = (
                 "Stage 1 (Basing)"
                 if "Stage 1" in stage
-                else "Stage 4 (Dangerous Fall)"
-                if "Stage 4" in stage
-                else stage
+                else "Stage 4 (Dangerous Fall)" if "Stage 4" in stage else stage
             )
 
             # 4. Weekly Divergence
@@ -119,9 +118,11 @@ class Strategy(BaseStrategy):
                     "Support": f"{'3Y' if is_3y else '2Y' if is_2y else '1Y'} Floor",
                     "Weekly_Div": "YES" if is_divergent else "NO",
                     "CHoCH": "YES" if is_choch else "NO",
-                    "A/D_Vibe": "Accumulating"
-                    if funda.get("AD_Flow", 0) > 0
-                    else "Distributing",
+                    "A/D_Vibe": (
+                        "Accumulating"
+                        if funda.get("AD_Flow", 0) > 0
+                        else "Distributing"
+                    ),
                     "Absorption": f"{round(funda.get('Absorp_Ratio', 0) * 100)}%",
                     "SM_Score": round(sm_score, 2),
                     "Stage_Ctx": ctx_stage,

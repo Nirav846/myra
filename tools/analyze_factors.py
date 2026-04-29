@@ -1,10 +1,10 @@
 #!/usr/bin/env python
-import os
-import pandas as pd
-import numpy as np
 import glob
-import sys
 import os
+import sys
+
+import numpy as np
+import pandas as pd
 
 # Fix path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

@@ -1,6 +1,7 @@
-import sqlite3
 import os
+import sqlite3
 import sys
+
 import pandas as pd
 from rich.console import Console
 from rich.progress import track
@@ -8,8 +9,9 @@ from rich.progress import track
 # Add current dir to path for imports
 sys.path.append(os.getcwd())
 
-from myra_app.librarian_core import LibrarianCore
 from PKNSETools.morningstartools import Security
+
+from myra_app.librarian_core import LibrarianCore
 
 console = Console()
 

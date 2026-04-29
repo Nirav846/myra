@@ -1,9 +1,11 @@
-import pandas as pd
 import logging
+
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
 STRICT_INDEX_MODE = True
+
 
 def enforce_index_contract(df, symbol="UNKNOWN"):
     """
@@ -16,7 +18,7 @@ def enforce_index_contract(df, symbol="UNKNOWN"):
     df = df.copy()
 
     # 1. Normalize Date Index (if applicable)
-    if isinstance(df.index, pd.DatetimeIndex) or df.index.name in ('date', 'Date'):
+    if isinstance(df.index, pd.DatetimeIndex) or df.index.name in ("date", "Date"):
         df.index = pd.to_datetime(df.index, errors="coerce").normalize()
     # If date is column
     elif "date" in df.columns:
@@ -39,6 +41,7 @@ def enforce_index_contract(df, symbol="UNKNOWN"):
 
     return df
 
+
 def validate_dataframe(df: pd.DataFrame, context: str = "General") -> pd.DataFrame:
     """
     Enforces the MYRA Data Contract.
@@ -59,7 +62,16 @@ def validate_dataframe(df: pd.DataFrame, context: str = "General") -> pd.DataFra
 
     # 3. Dtype Integrity
     # Ensure critical numeric fields aren't 'object' dtypes
-    critical_numerics = ['close', 'volume', 'delivery_pct', 'Close', 'Volume', 'DeliveryPct', 'DELIV_QTY', 'DELIV_PER']
+    critical_numerics = [
+        "close",
+        "volume",
+        "delivery_pct",
+        "Close",
+        "Volume",
+        "DeliveryPct",
+        "DELIV_QTY",
+        "DELIV_PER",
+    ]
     for col in [c for c in critical_numerics if c in df.columns]:
         if not pd.api.types.is_numeric_dtype(df[col]):
             raise TypeError(f"[{context}] Non-numeric dtype in {col}: {df[col].dtype}")

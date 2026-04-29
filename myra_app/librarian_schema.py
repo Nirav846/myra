@@ -1,8 +1,10 @@
-import sqlite3
 import logging
+import sqlite3
+
 from myra_app.schema_registry import SchemaRegistry
 
 logger = logging.getLogger(__name__)
+
 
 class LibrarianSchemaMixin:
     """Handles all database initialization and migrations."""

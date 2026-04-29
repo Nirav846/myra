@@ -1,9 +1,11 @@
 # myra_app/data_sources/screener_source.py
-import requests
-from bs4 import BeautifulSoup
-from .base import BaseDataSource
 import re
 import statistics
+
+import requests
+from bs4 import BeautifulSoup
+
+from .base import BaseDataSource
 
 
 class ScreenerSource(BaseDataSource):

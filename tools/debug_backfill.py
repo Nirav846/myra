@@ -1,9 +1,10 @@
 import os
-import sys
-import pandas as pd
 import sqlite3
+import sys
 from datetime import datetime
 from io import StringIO
+
+import pandas as pd
 
 # Fix path
 PROJECT_ROOT = os.path.abspath(

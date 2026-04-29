@@ -1,5 +1,5 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 
 def run(df: pd.DataFrame, funda: dict) -> dict:
@@ -47,9 +47,11 @@ def run(df: pd.DataFrame, funda: dict) -> dict:
                 "metrics": {
                     "LTP": round(latest["Close"], 2),
                     "VWAP_Gap": f"{dist_to_vwap}%",
-                    "Zone": "Deep Value"
-                    if latest["Close"] <= latest["Lower_Band_2"]
-                    else "Institutional Buy",
+                    "Zone": (
+                        "Deep Value"
+                        if latest["Close"] <= latest["Lower_Band_2"]
+                        else "Institutional Buy"
+                    ),
                     "ROE": f"{roe}%" if roe else "N/A",
                     "MCap": funda.get("MCap", "N/A"),
                 },

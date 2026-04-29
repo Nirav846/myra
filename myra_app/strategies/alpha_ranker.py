@@ -47,13 +47,15 @@ class Strategy:
                         "Strategy": "Alpha_Ranker",
                         "IAS": round(ias, 1),
                         "RS_Raw": round(rs_raw, 3),
-                        "Conviction": "ELITE"
-                        if ias >= 8.0
-                        else "HIGH"
-                        if ias >= 7.0
-                        else "TECHNICAL_WATCH"
-                        if ias < 5.0
-                        else "WATCH",
+                        "Conviction": (
+                            "ELITE"
+                            if ias >= 8.0
+                            else (
+                                "HIGH"
+                                if ias >= 7.0
+                                else "TECHNICAL_WATCH" if ias < 5.0 else "WATCH"
+                            )
+                        ),
                     },
                 }
         except:

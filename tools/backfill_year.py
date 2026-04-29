@@ -1,7 +1,8 @@
+import argparse
 import os
 import sys
-import argparse
 from datetime import date, timedelta
+
 from rich.console import Console
 
 # Fix path to allow importing from root

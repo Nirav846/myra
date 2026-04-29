@@ -4,24 +4,29 @@ MYRA Librarian Intelligence Layer (TRILOGY ERA)
 Handles all heavy indicator computation using Parquet Lake.
 """
 
-import os
 import logging
-import pandas as pd
-from myra_core.utils.data_validation import enforce_index_contract, validate_dataframe
+import os
+
 import numpy as np
+import pandas as pd
 import pandas_ta as ta
+
+from myra_core.utils.data_validation import (enforce_index_contract,
+                                             validate_dataframe)
 
 logger = logging.getLogger(__name__)
 
+
 def safe_concat(df_list):
     clean = [
-        df for df in df_list
+        df
+        for df in df_list
         if df is not None and not df.empty and not df.isnull().all().all()
     ]
     if not clean:
         return pd.DataFrame()
     # Drop all-NaN columns from each DataFrame BEFORE concat (stops FutureWarning)
-    clean = [df.dropna(axis=1, how='all') for df in clean]
+    clean = [df.dropna(axis=1, how="all") for df in clean]
     return pd.concat(clean, axis=0, ignore_index=True)
 
 
@@ -87,7 +92,7 @@ class LibrarianIntelligenceMixin:
         """
         Computes comprehensive indicators for ALL active stocks and saves to Parquet Lake.
         """
-        if getattr(self, 'read_only', False):
+        if getattr(self, "read_only", False):
             return
 
         active_symbols = self.get_active_universe()
@@ -95,11 +100,11 @@ class LibrarianIntelligenceMixin:
             print("[!] No active symbols found for indicator update.")
             return
 
-        print(f"[MYRA] Updating Virtual Indicator Lake for {len(active_symbols)} symbols...")
+        print(
+            f"[MYRA] Updating Virtual Indicator Lake for {len(active_symbols)} symbols..."
+        )
 
         total_syms = len(active_symbols)
-
-
 
         for i, sym in enumerate(active_symbols, 1):
             myra_log(i, total_syms, desc="Precomputing")
@@ -118,7 +123,7 @@ class LibrarianIntelligenceMixin:
                 df = df[df.index.notna()]
 
                 df.sort_index(inplace=True)
-                df = df.loc[~df.index.duplicated(keep='last')]
+                df = df.loc[~df.index.duplicated(keep="last")]
 
                 # 🔥 dtype safety (fix warning + hidden bugs)
                 for col in ["Volume", "Delivery_qty"]:
@@ -149,35 +154,52 @@ class LibrarianIntelligenceMixin:
 
                 try:
                     if "Delivery_qty" in df.columns and "Volume" in df.columns:
-                        df["delivery_pct"] = (df["Delivery_qty"] / df["Volume"].replace(0, np.nan)).fillna(0.0) * 100.0
+                        df["delivery_pct"] = (
+                            df["Delivery_qty"] / df["Volume"].replace(0, np.nan)
+                        ).fillna(0.0) * 100.0
                     elif "Delivery_pct" in df.columns:
                         df["delivery_pct"] = df["Delivery_pct"].fillna(0.0)
                     else:
                         df["delivery_pct"] = 0.0
 
-                    df["vcp"] = 1.0 - (df["atr20"] / df["sma20"].replace(0, np.nan)).fillna(0.0)
+                    df["vcp"] = 1.0 - (
+                        df["atr20"] / df["sma20"].replace(0, np.nan)
+                    ).fillna(0.0)
                     df["vcp"] = df["vcp"].clip(0.0, 1.0)
 
                     rolling_mean = df["delivery_pct"].rolling(20, min_periods=1).mean()
-                    rolling_std = df["delivery_pct"].rolling(20, min_periods=1).std().replace(0, np.nan).fillna(1.0)
+                    rolling_std = (
+                        df["delivery_pct"]
+                        .rolling(20, min_periods=1)
+                        .std()
+                        .replace(0, np.nan)
+                        .fillna(1.0)
+                    )
 
-                    df["delivery_divergence_score"] = ((df["delivery_pct"] - rolling_mean) / rolling_std).fillna(0.0)
+                    df["delivery_divergence_score"] = (
+                        (df["delivery_pct"] - rolling_mean) / rolling_std
+                    ).fillna(0.0)
                     df["delivery_divergence_score"] *= df["vcp"]
 
                     try:
-                        df["vwap"] = ta.vwap(df["High"], df["Low"], df["Close"], df["Volume"])
+                        df["vwap"] = ta.vwap(
+                            df["High"], df["Low"], df["Close"], df["Volume"]
+                        )
                     except Exception:
                         pv = (df["Close"] * df["Volume"]).rolling(20).sum()
                         v = df["Volume"].rolling(20).sum().replace(0, np.nan)
                         df["vwap"] = (pv / v).fillna(df["Close"])
 
-                    heavy_absorption = ((df["delivery_pct"] > 50.0) & (df["Close"] > df["vwap"])).astype(float)
+                    heavy_absorption = (
+                        (df["delivery_pct"] > 50.0) & (df["Close"] > df["vwap"])
+                    ).astype(float)
 
-                    df["delivery_accumulation_signal"] = df["delivery_pct"] * heavy_absorption
+                    df["delivery_accumulation_signal"] = (
+                        df["delivery_pct"] * heavy_absorption
+                    )
 
-                    df["ias"] = (
-                        0.8 * df["delivery_divergence_score"]
-                        + 0.2 * (df["delivery_accumulation_signal"] / 100.0)
+                    df["ias"] = 0.8 * df["delivery_divergence_score"] + 0.2 * (
+                        df["delivery_accumulation_signal"] / 100.0
                     )
 
                     df["ias"] *= df["vcp"]

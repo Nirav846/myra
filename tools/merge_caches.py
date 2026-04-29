@@ -1,5 +1,5 @@
-import sqlite3
 import os
+import sqlite3
 
 
 def merge_caches():
@@ -10,7 +10,9 @@ def merge_caches():
         print("[*] request_cache.sqlite not found, skipping merge.")
         return
 
-    print(f"[*] Resetting legacy cache {c2_path} and migrating to JSON cache schema in {c1_path}...")
+    print(
+        f"[*] Resetting legacy cache {c2_path} and migrating to JSON cache schema in {c1_path}..."
+    )
     try:
         conn = sqlite3.connect(c1_path)
 

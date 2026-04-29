@@ -1,8 +1,9 @@
-import sqlite3
-import pandas as pd
 import os
+import sqlite3
 import sys
 from datetime import datetime, timedelta
+
+import pandas as pd
 
 from myra_app.librarian_core import LibrarianCore
 
@@ -19,7 +20,9 @@ def detect_missing_candles(
     True Gap Detection based on ACTUAL presence in the technical db.
     """
     tech_db = (
-        tech_db if tech_db else os.path.join(PROJECT_ROOT, "db", LibrarianCore.DB_MAP["technical"])
+        tech_db
+        if tech_db
+        else os.path.join(PROJECT_ROOT, "db", LibrarianCore.DB_MAP["technical"])
     )
     meta_db = os.path.join(PROJECT_ROOT, "db", LibrarianCore.DB_MAP["meta"])
 

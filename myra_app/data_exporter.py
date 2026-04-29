@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 import os
-import pandas as pd
 import sqlite3
 from datetime import datetime
+
+import pandas as pd
+
 from myra_core.utils.myra_log import myra_log
 
 

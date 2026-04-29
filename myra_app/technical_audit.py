@@ -1,6 +1,8 @@
-import sqlite3
-import pandas as pd
 import os
+import sqlite3
+
+import pandas as pd
+
 from myra_app.librarian_core import LibrarianCore
 
 
@@ -84,8 +86,9 @@ class TechnicalAudit:
             # 5. Symbol Sample Deep Dive
             sample_sym = "RELIANCE"
             sample_data = pd.read_sql(
-                f"SELECT COUNT(*) FROM technical_data WHERE symbol='{sample_sym}'",
+                "SELECT COUNT(*) FROM technical_data WHERE symbol = ?",
                 conn_t,
+                params=(sample_sym,),
             ).iloc[0, 0]
             print(
                 f"[*] Sample Integrity ({sample_sym}): {sample_data}/{days_c} days "

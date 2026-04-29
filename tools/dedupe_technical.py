@@ -1,9 +1,10 @@
-import sqlite3
 import os
+import sqlite3
+
 
 def deduplicate_database():
     db_path = r"D:\01screener\Myra\myra_app\db\myra_technical.db"
-    
+
     if not os.path.exists(db_path):
         print(f"[!] DB not found at {db_path}")
         return
@@ -14,7 +15,7 @@ def deduplicate_database():
     print("[MYRA] Starting deduplication of technical_data...")
     print("       This may take a minute for 2.4M+ rows. Please wait...")
 
-    # The magic SQL query: Keep only the highest rowid (most recently inserted) 
+    # The magic SQL query: Keep only the highest rowid (most recently inserted)
     # for each symbol/date pair. Delete the rest.
     dedupe_query = """
     DELETE FROM technical_data 
@@ -41,6 +42,7 @@ def deduplicate_database():
         print(f"[!] Error during deduplication: {e}")
     finally:
         conn.close()
+
 
 if __name__ == "__main__":
     deduplicate_database()

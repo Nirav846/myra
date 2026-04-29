@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 from datetime import date, datetime
 
 # Fix path

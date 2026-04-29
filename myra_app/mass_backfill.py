@@ -1,20 +1,27 @@
-import os
-import pandas as pd
-import sqlite3
-from datetime import datetime, timedelta
-import time
-import re
 import glob
-from myra_core.utils.myra_log import myra_log
+import os
+import re
+import sqlite3
+import time
+from datetime import datetime, timedelta
+
+import pandas as pd
+
 from myra_app.librarian import Librarian
+from myra_core.utils.myra_log import myra_log
 
 
-def mass_backfill(db_path=os.path.join("db", "myra_technical.db"), missing_csv=os.path.join("data", "missing_data.csv")):
+def mass_backfill(
+    db_path=os.path.join("db", "myra_technical.db"),
+    missing_csv=os.path.join("data", "missing_data.csv"),
+):
     """
     Massive backfill for all symbols in the database.
     Strict Local Source: Reads strictly from local Bhavcopy CSV files.
     """
-    print("[MYRA] Initializing Mass Market Backfill (3800 Stocks) via STRICT LOCAL ARCHIVES...")
+    print(
+        "[MYRA] Initializing Mass Market Backfill (3800 Stocks) via STRICT LOCAL ARCHIVES..."
+    )
 
     lib = Librarian(read_only=True)
     all_symbols = lib.get_all_symbols()
@@ -67,7 +74,9 @@ def mass_backfill(db_path=os.path.join("db", "myra_technical.db"), missing_csv=o
         myra_log(idx, total_dates, desc=f"Backfilling {d_str}")
 
         # ARMOR: Force upper and strip on the needed symbols list
-        raw_symbols_needed = df_missing.loc[df_missing["missing_date"] == d_str, "symbol"].tolist()
+        raw_symbols_needed = df_missing.loc[
+            df_missing["missing_date"] == d_str, "symbol"
+        ].tolist()
         symbols_needed = [str(s).strip().upper() for s in raw_symbols_needed]
 
         if d_str not in date_to_file:
@@ -79,8 +88,10 @@ def mass_backfill(db_path=os.path.join("db", "myra_technical.db"), missing_csv=o
 
         try:
             df = pd.read_csv(csv_path)
-            stats["processed"] += 1 # Moved counter up to accurately reflect files touched
-            
+            stats[
+                "processed"
+            ] += 1  # Moved counter up to accurately reflect files touched
+
             df.columns = df.columns.str.strip().str.upper()
 
             if "SYMBOL" in df.columns:
@@ -90,10 +101,12 @@ def mass_backfill(db_path=os.path.join("db", "myra_technical.db"), missing_csv=o
                 df["SERIES"] = df["SERIES"].astype(str).str.strip()
                 df = df[df["SERIES"].isin(["EQ", "BE", "SM", "ST", "BZ"])]
 
-            if 'DATE1' in df.columns:
-                df['DATE1'] = pd.to_datetime(df['DATE1']).dt.strftime('%Y-%m-%d')
-            elif 'TIMESTAMP' in df.columns:
-                df['TIMESTAMP'] = pd.to_datetime(df['TIMESTAMP']).dt.strftime('%Y-%m-%d')
+            if "DATE1" in df.columns:
+                df["DATE1"] = pd.to_datetime(df["DATE1"]).dt.strftime("%Y-%m-%d")
+            elif "TIMESTAMP" in df.columns:
+                df["TIMESTAMP"] = pd.to_datetime(df["TIMESTAMP"]).dt.strftime(
+                    "%Y-%m-%d"
+                )
 
             rename_map = {
                 "SYMBOL": "symbol",
@@ -110,7 +123,7 @@ def mass_backfill(db_path=os.path.join("db", "myra_technical.db"), missing_csv=o
                 "TOTTRDQTY": "volume",
                 "TTL_TRD_QNTY": "volume",
                 "DELIV_QTY": "delivery",
-                "DELIV_PER": "delivery_pct"
+                "DELIV_PER": "delivery_pct",
             }
             df.rename(columns=rename_map, inplace=True)
 
@@ -118,7 +131,17 @@ def mass_backfill(db_path=os.path.join("db", "myra_technical.db"), missing_csv=o
             available_cols = [c for c in mapped_cols if c in df.columns]
             df = df[available_cols]
 
-            for col in ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume', 'delivery', 'delivery_pct']:
+            for col in [
+                "symbol",
+                "date",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "delivery",
+                "delivery_pct",
+            ]:
                 if col not in df.columns:
                     df[col] = None
 
@@ -130,9 +153,22 @@ def mass_backfill(db_path=os.path.join("db", "myra_technical.db"), missing_csv=o
             if df.empty:
                 continue
 
-            for col in ["open", "high", "low", "close", "volume", "delivery", "delivery_pct"]:
+            for col in [
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "delivery",
+                "delivery_pct",
+            ]:
                 if col in df.columns:
-                    df[col] = df[col].astype(str).str.replace(',', '', regex=False).str.strip()
+                    df[col] = (
+                        df[col]
+                        .astype(str)
+                        .str.replace(",", "", regex=False)
+                        .str.strip()
+                    )
                     df[col] = pd.to_numeric(df[col], errors="coerce")
                 else:
                     df[col] = None
@@ -151,7 +187,9 @@ def mass_backfill(db_path=os.path.join("db", "myra_technical.db"), missing_csv=o
             if "date" not in df.columns:
                 df["date"] = d_str
             else:
-                df["date"] = pd.to_datetime(df["date"], errors="coerce", format='mixed').dt.date.astype(str)
+                df["date"] = pd.to_datetime(
+                    df["date"], errors="coerce", format="mixed"
+                ).dt.date.astype(str)
                 df["date"] = df["date"].fillna(d_str)
 
             records = df[
@@ -165,7 +203,7 @@ def mass_backfill(db_path=os.path.join("db", "myra_technical.db"), missing_csv=o
                     "volume",
                     "delivery",
                     "delivery_pct",
-                    "delivery_ratio"
+                    "delivery_ratio",
                 ]
             ].values.tolist()
 

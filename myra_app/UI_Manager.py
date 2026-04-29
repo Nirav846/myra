@@ -1,13 +1,14 @@
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-from rich.layout import Layout
-from rich.text import Text
-from datetime import datetime
-import pandas as pd
-import sqlite3
-import os
 import json
+import os
+import sqlite3
+from datetime import datetime
+
+import pandas as pd
+from rich.console import Console
+from rich.layout import Layout
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 
 console = Console()
 
@@ -30,9 +31,7 @@ class MYRA_UI:
                 v_col = (
                     "red"
                     if vix["last_price"] > 18
-                    else "green"
-                    if vix["last_price"] < 15
-                    else "yellow"
+                    else "green" if vix["last_price"] < 15 else "yellow"
                 )
                 dash = f"NIFTY 50: [{n_col}]{nifty['last_price']}[/] ({nifty['pchange']}%) | "
                 dash += f"INDIA VIX: [{v_col}]{vix['last_price']}[/] | "
@@ -41,9 +40,7 @@ class MYRA_UI:
                     f_col = (
                         "green"
                         if forecast["direction"] == "BULLISH"
-                        else "red"
-                        if forecast["direction"] == "BEARISH"
-                        else "yellow"
+                        else "red" if forecast["direction"] == "BEARISH" else "yellow"
                     )
                     dash += f"AI Forecast: [{f_col}]{forecast['direction']}[/] ({forecast['confidence']}%) | "
 
@@ -365,14 +362,18 @@ class MYRA_UI:
     def get_footer(librarian, market_breadth="↗ 0 | ↘ 0", forecast=None):
         db_stats = (
             librarian.get_db_stats()
-            if librarian and hasattr(librarian, 'get_db_stats')
+            if librarian and hasattr(librarian, "get_db_stats")
             else {"status": "Connected (Core)", "size": "-"}
         )
         db_status = db_stats.get("status", "Connected")
         db_size = db_stats.get("size", "0MB")
 
         # 1. Resolve Data Dates (Bhavcopy)
-        b_date = librarian.get_max_price_date() if librarian and hasattr(librarian, 'get_max_price_date') else None
+        b_date = (
+            librarian.get_max_price_date()
+            if librarian and hasattr(librarian, "get_max_price_date")
+            else None
+        )
 
         def _format_dt(dt):
             if not dt:
@@ -390,7 +391,13 @@ class MYRA_UI:
         i_str = "INST([bold green]LIVE[/bold green])"
         # 2. Market Status / Breadth
         sync_text = market_breadth
-        if librarian and hasattr(librarian, 'sync_status') and librarian.sync_status and hasattr(librarian.sync_status, 'task_name') and librarian.sync_status.task_name:
+        if (
+            librarian
+            and hasattr(librarian, "sync_status")
+            and librarian.sync_status
+            and hasattr(librarian.sync_status, "task_name")
+            and librarian.sync_status.task_name
+        ):
             st = librarian.sync_status
             sync_text = f"[bold cyan]Sync:[/] {st.task_name} ({st.percentage}%)"
 
@@ -399,9 +406,7 @@ class MYRA_UI:
             f_col = (
                 "green"
                 if forecast["direction"] == "BULLISH"
-                else "red"
-                if forecast["direction"] == "BEARISH"
-                else "yellow"
+                else "red" if forecast["direction"] == "BEARISH" else "yellow"
             )
             forecast_text = (
                 f" | [bold white]AI-Trend:[/] [{f_col}]{forecast['direction']}[/]"

@@ -1,10 +1,11 @@
-import os
 import glob
-import time
+import os
 import shutil
-import pandas as pd
 import sqlite3
+import time
 from datetime import datetime
+
+import pandas as pd
 from rich.console import Console
 
 
@@ -77,7 +78,8 @@ class Gatekeeper:
                 con_t = sqlite3.connect(tech_db, check_same_thread=False)
                 # Check how many rows will be deleted
                 count_res = con_t.execute(
-                    f"SELECT COUNT(*) FROM technical_data WHERE symbol IN ({placeholders})", etf_list
+                    f"SELECT COUNT(*) FROM technical_data WHERE symbol IN ({placeholders})",
+                    etf_list,
                 ).fetchone()
                 row_count = count_res[0] if count_res else 0
 
@@ -86,7 +88,8 @@ class Gatekeeper:
                         f"[yellow][Gatekeeper] Purging {row_count} ETF rows from {db_map['technical']}...[/]"
                     )
                     con_t.execute(
-                        f"DELETE FROM technical_data WHERE symbol IN ({placeholders})", etf_list
+                        f"DELETE FROM technical_data WHERE symbol IN ({placeholders})",
+                        etf_list,
                     )
                     con_t.commit()
                     con_t.execute("VACUUM")
@@ -96,7 +99,8 @@ class Gatekeeper:
                 try:
                     con_g = sqlite3.connect(gov_db, check_same_thread=False)
                     con_g.execute(
-                        f"DELETE FROM ias_history WHERE symbol IN ({placeholders})", etf_list
+                        f"DELETE FROM ias_history WHERE symbol IN ({placeholders})",
+                        etf_list,
                     )
                     con_g.commit()
                     con_g.execute("VACUUM")
@@ -108,7 +112,8 @@ class Gatekeeper:
                 con_m = sqlite3.connect(meta_db, check_same_thread=False)
                 # Mark as ETF and inactive
                 con_m.execute(
-                    f"UPDATE symbols_master SET instrument_type = 'ETF', is_active = 0, in_active_universe = 0 WHERE symbol IN ({placeholders})", etf_list
+                    f"UPDATE symbols_master SET instrument_type = 'ETF', is_active = 0, in_active_universe = 0 WHERE symbol IN ({placeholders})",
+                    etf_list,
                 )
                 con_m.commit()
                 con_m.close()

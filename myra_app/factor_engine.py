@@ -1,7 +1,9 @@
 #!/usr/bin/env python
-import pandas as pd
+from typing import Any, Dict, List
+
 import numpy as np
-from typing import List, Dict, Any
+import pandas as pd
+
 from .factors import GLOBAL_FACTORS
 
 

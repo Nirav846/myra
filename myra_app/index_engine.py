@@ -4,10 +4,12 @@ MYRA Index Engine - Direct NSE Quote Acquisition
 Replaces Yahoo Finance for Benchmarks (^NSEI, ^INDIAVIX)
 Enhanced with Local-First Breadth & YFinance Fallback.
 """
+
 import time
-import requests
-import pandas as pd
 from datetime import datetime, timedelta
+
+import pandas as pd
+import requests
 
 try:
     import yfinance as yf
@@ -46,6 +48,7 @@ class IndexEngine:
         # Query Local SQLite DB instead of external APIs
         import os
         import sqlite3
+
         from myra_app.librarian_core import LibrarianCore
 
         db_path = os.path.join(os.getcwd(), "db", LibrarianCore.DB_MAP["technical"])
@@ -89,6 +92,7 @@ class IndexEngine:
         # Query Local SQLite DB instead of external APIs
         import os
         import sqlite3
+
         from myra_app.librarian_core import LibrarianCore
 
         db_path = os.path.join(os.getcwd(), "db", LibrarianCore.DB_MAP["technical"])
@@ -161,9 +165,7 @@ class IndexEngine:
             vibe = (
                 "BULLISH"
                 if avg_change > 0.5
-                else "BEARISH"
-                if avg_change < -0.5
-                else "NEUTRAL"
+                else "BEARISH" if avg_change < -0.5 else "NEUTRAL"
             )
             res = {"avg": round(avg_change, 2), "vibe": vibe}
             self._store_cache(key, res)
@@ -264,7 +266,9 @@ class IndexEngine:
                 FROM data
             """
 
-            res = librarian.safe_execute(sql_refined, conn=librarian._tech_conn).fetchone()
+            res = librarian.safe_execute(
+                sql_refined, conn=librarian._tech_conn
+            ).fetchone()
             if res:
                 result = {
                     "advances": int(res[0] or 0),

@@ -1,8 +1,9 @@
-from rich.panel import Panel
+import os
+from datetime import datetime
+
 from rich.box import DOUBLE
 from rich.console import Console
-from datetime import datetime
-import os
+from rich.panel import Panel
 
 MYRA_LOGO = r"""
   __  __ __     _______            

@@ -1,5 +1,5 @@
-import sqlite3
 import os
+import sqlite3
 
 db = "db/myra_technical.db"
 symbols = [

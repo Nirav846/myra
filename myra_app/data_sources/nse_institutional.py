@@ -3,8 +3,12 @@ NSE Institutional Data Source
 Fetches bulk deals, block deals, and short selling data directly from NSE APIs.
 Uses same session/cookie pattern as DataFetcher for reliability.
 """
-import requests, io, pandas as pd
+
+import io
 from datetime import date, timedelta
+
+import pandas as pd
+import requests
 
 NSE_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -13,13 +17,17 @@ NSE_HEADERS = {
     "Referer": "https://www.nseindia.com/",
 }
 
+
 def _nse_session():
     """Create a session with a valid NSE cookie."""
     session = requests.Session()
     session.get("https://www.nseindia.com", headers=NSE_HEADERS, timeout=10)
     return session
 
-def _fetch_deals_csv(session, option_type: str, from_date: date, to_date: date) -> pd.DataFrame:
+
+def _fetch_deals_csv(
+    session, option_type: str, from_date: date, to_date: date
+) -> pd.DataFrame:
     """Fetch bulk/block/short-selling deals from NSE API."""
     url = "https://www.nseindia.com/api/historicalOR/bulk-block-short-deals"
     params = {
@@ -33,6 +41,7 @@ def _fetch_deals_csv(session, option_type: str, from_date: date, to_date: date) 
     df = pd.read_csv(io.BytesIO(resp.content))
     df.columns = [c.strip() for c in df.columns]
     return df
+
 
 def fetch_institutional_data(from_date: date = None, to_date: date = None):
     """

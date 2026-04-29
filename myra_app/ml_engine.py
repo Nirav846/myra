@@ -1,8 +1,9 @@
-import pandas as pd
-import numpy as np
-import xgboost as xgb
 import os
+
 import joblib
+import numpy as np
+import pandas as pd
+import xgboost as xgb
 import yfinance as yf
 
 
@@ -163,7 +164,8 @@ class DilatedCNNForecaster:
         Builds the underlying TensorFlow/Keras architecture.
         """
         try:
-            from tensorflow.keras.layers import Input, Conv1D, Dense, Dropout, Lambda
+            from tensorflow.keras.layers import (Conv1D, Dense, Dropout, Input,
+                                                 Lambda)
             from tensorflow.keras.models import Model
 
             inputs = Input(shape=(self.window_size, self.features_count))

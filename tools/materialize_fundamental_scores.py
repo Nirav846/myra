@@ -1,6 +1,7 @@
-from myra_app.librarian import Librarian
-from myra_app.fundamental_ranker import FundamentalRanker
 from rich.console import Console
+
+from myra_app.fundamental_ranker import FundamentalRanker
+from myra_app.librarian import Librarian
 
 
 def materialize():

@@ -1,13 +1,15 @@
 """Worker pool and task execution for MYRA engine."""
-import signal
-import warnings
+
 import importlib
 import multiprocessing
+import signal
+import warnings
+
 import pandas as pd
 from rich.progress import Progress
+
 from myra_app.data_adapter import DataAdapter
 from myra_app.smc_manager import SMCManager
-
 
 _worker_strategy = None
 _worker_adapter = None
@@ -21,6 +23,7 @@ def init_worker(strategy_name, db_path=None):
     # 1. INITIALIZE ADAPTER FIRST
     try:
         from myra_app.librarian import Librarian
+
         lib = Librarian(read_only=True, db_path=db_path)
         _worker_adapter = DataAdapter(librarian=lib)
     except Exception as e:
@@ -41,15 +44,18 @@ def init_worker(strategy_name, db_path=None):
             _worker_strategy = importlib.import_module("myra_app.scanners.primitives")
         else:
             try:
-                _worker_strategy = importlib.import_module(f"myra_app.strategies.{safe_name}")
+                _worker_strategy = importlib.import_module(
+                    f"myra_app.strategies.{safe_name}"
+                )
             except ModuleNotFoundError:
-                _worker_strategy = importlib.import_module("myra_app.scanners.primitives")
+                _worker_strategy = importlib.import_module(
+                    "myra_app.scanners.primitives"
+                )
     except Exception:
         pass
 
 
 def _worker_task(payload):
-    global _worker_strategy, _worker_adapter
     symbol, strategy_name, as_of_date, funda, precomputed_df = payload
 
     # Ensure worker is initialized
@@ -64,8 +70,15 @@ def _worker_task(payload):
         }
 
     noise_keywords = [
-        "BEES", "GOLD", "SILVER", "LIQUID", "ETF",
-        "IETF", "SDL", "GSEC", "CASH"
+        "BEES",
+        "GOLD",
+        "SILVER",
+        "LIQUID",
+        "ETF",
+        "IETF",
+        "SDL",
+        "GSEC",
+        "CASH",
     ]
     if any(k in symbol.upper() for k in noise_keywords):
         return {
@@ -88,9 +101,14 @@ def _worker_task(payload):
             # Fallback for small scans: load from adapter (backward compatible)
             lookback = _worker_adapter.get_lookback_for_scanner(strategy_name)
             df = _worker_adapter.get_price_df(symbol, lookback_days=lookback)
-            
+
         if df is None or df.empty:
-            return {"symbol": symbol, "status": "SKIPPED", "error": "No price data available", "stage": "data_load"}
+            return {
+                "symbol": symbol,
+                "status": "SKIPPED",
+                "error": "No price data available",
+                "stage": "data_load",
+            }
 
         # --- UNIVERSAL CASE-INSENSITIVE COMPATIBILITY LAYER ---
         for col in ["Open", "High", "Low", "Close", "Volume"]:
@@ -123,11 +141,13 @@ def _worker_task(payload):
 
         # Pattern detection
         from myra_app.scanners.patterns import PatternScout
+
         pattern = PatternScout().get_latest_pattern(df)
 
         # Factor Scoring
         try:
             from myra_app.factor_engine import FactorEngine
+
             fe = FactorEngine()
             factor_scores = fe.score_symbol(df, funda)
             funda.update(factor_scores)
@@ -135,21 +155,42 @@ def _worker_task(payload):
             pass
 
         # Use pre-computed SMC columns (no per-symbol recomputation)
-        fvg_top = df["fvg_top"].dropna().iloc[-1] if "fvg_top" in df.columns and not df["fvg_top"].dropna().empty else 0
-        fvg_bottom = df["fvg_bottom"].dropna().iloc[-1] if "fvg_bottom" in df.columns and not df["fvg_bottom"].dropna().empty else 0
-        fvg_boundary = df["fvg_boundary"].dropna().iloc[-1] if "fvg_boundary" in df.columns and not df["fvg_boundary"].dropna().empty else 0
-        has_bullish = df["has_bullish_fvg"].dropna().iloc[-1] if "has_bullish_fvg" in df.columns and not df["has_bullish_fvg"].dropna().empty else 0
+        fvg_top = (
+            df["fvg_top"].dropna().iloc[-1]
+            if "fvg_top" in df.columns and not df["fvg_top"].dropna().empty
+            else 0
+        )
+        fvg_bottom = (
+            df["fvg_bottom"].dropna().iloc[-1]
+            if "fvg_bottom" in df.columns and not df["fvg_bottom"].dropna().empty
+            else 0
+        )
+        fvg_boundary = (
+            df["fvg_boundary"].dropna().iloc[-1]
+            if "fvg_boundary" in df.columns and not df["fvg_boundary"].dropna().empty
+            else 0
+        )
+        has_bullish = (
+            df["has_bullish_fvg"].dropna().iloc[-1]
+            if "has_bullish_fvg" in df.columns
+            and not df["has_bullish_fvg"].dropna().empty
+            else 0
+        )
 
         # Construct FVG zone for UI display
         if fvg_top and fvg_bottom:
-            fvg_zone = {"top": fvg_top, "bottom": fvg_bottom, "mid": (fvg_top + fvg_bottom) / 2}
+            fvg_zone = {
+                "top": fvg_top,
+                "bottom": fvg_bottom,
+                "mid": (fvg_top + fvg_bottom) / 2,
+            }
             funda["fvg_active"] = 1
         else:
             fvg_zone = None
             funda["fvg_active"] = 0
 
         funda["fvg"] = 1 if has_bullish else 0
-        funda["bos"] = funda.get("bos", 0)   # keep existing if already set
+        funda["bos"] = funda.get("bos", 0)  # keep existing if already set
         funda["choch"] = funda.get("choch", 0)
         funda["fvg_zone"] = fvg_zone
 
@@ -178,17 +219,20 @@ def _worker_task(payload):
             passed = False
             if "|" in str(sid):
                 sids = str(sid).split("|")
-                if any(_worker_strategy.run_scanner(df, s.strip(), funda=funda) for s in sids):
+                if any(
+                    _worker_strategy.run_scanner(df, s.strip(), funda=funda)
+                    for s in sids
+                ):
                     passed = True
             else:
                 if _worker_strategy.run_scanner(df, str(sid), funda=funda):
                     passed = True
 
             if passed:
-                _deliv_pct = funda.get('delivery_percent', 0)
+                _deliv_pct = funda.get("delivery_percent", 0)
                 if pd.isna(_deliv_pct):
                     _deliv_pct = 0
-                funda['delivery_percent'] = _deliv_pct
+                funda["delivery_percent"] = _deliv_pct
                 res_payload = {
                     "Stock": symbol,
                     "Stage": stage,
@@ -196,7 +240,11 @@ def _worker_task(payload):
                     "Pattern": pattern,
                     "SL": funda.get("SL", 0),
                     "Entry": fvg_mid if fvg_mid else funda.get("LTP", 0),
-                    "FVG_Zone": f"{round(fvg_zone['bottom'], 2)} - {round(fvg_zone['top'], 2)}" if fvg_zone else "None",
+                    "FVG_Zone": (
+                        f"{round(fvg_zone['bottom'], 2)} - {round(fvg_zone['top'], 2)}"
+                        if fvg_zone
+                        else "None"
+                    ),
                     "Risk_Per": funda.get("Risk_Per", 0),
                     "Closing_Vibe": funda.get("Closing_Vibe", "-"),
                     "Consensus": funda.get("Consensus", 0),
@@ -206,19 +254,31 @@ def _worker_task(payload):
                     "D-POC": round(funda.get("d_poc", 0), 2),
                     "POC_Dist": f"{round(((df['Close'].iloc[-1] - funda.get('d_poc', 0)) / (funda.get('d_poc', 1) if funda.get('d_poc', 0) > 0 else 1) * 100), 2)}%",
                     "Absorption": f"{round(funda.get('Absorp_Ratio', 0) * 100)}%",
-                    "Tightness": f"{round(funda.get('std20', 0) / df['Close'].iloc[-1] * 100, 2)}%" if df["Close"].iloc[-1] > 0 else "0%",
+                    "Tightness": (
+                        f"{round(funda.get('std20', 0) / df['Close'].iloc[-1] * 100, 2)}%"
+                        if df["Close"].iloc[-1] > 0
+                        else "0%"
+                    ),
                     "Deliv_Pct": f"{round(_deliv_pct)}%",
-                    "Confluence": "High" if funda.get("Consensus", 0) >= 4 else "Moderate" if funda.get("Consensus", 0) >= 2 else "Low",
+                    "Confluence": (
+                        "High"
+                        if funda.get("Consensus", 0) >= 4
+                        else "Moderate" if funda.get("Consensus", 0) >= 2 else "Low"
+                    ),
                     **funda,
                 }
 
                 res_payload["Money_Flow"] = f"₹{round(funda.get('money_flow_cr', 0))}Cr"
 
                 stars = 1
-                if res_payload.get("Weekly_Div", "NO") == "YES": stars += 1
-                if "3Y" in res_payload.get("Support", ""): stars += 1
-                if funda.get("RDV", 0) > 1.5 and funda.get("VIX_Stable") == True: stars += 1
-                if funda.get("smart_money_score", 0) > 0.7: stars += 1
+                if res_payload.get("Weekly_Div", "NO") == "YES":
+                    stars += 1
+                if "3Y" in res_payload.get("Support", ""):
+                    stars += 1
+                if funda.get("RDV", 0) > 1.5 and funda.get("VIX_Stable") == True:
+                    stars += 1
+                if funda.get("smart_money_score", 0) > 0.7:
+                    stars += 1
                 res_payload["Stars"] = "*" * int(min(5, stars))
 
                 return res_payload
@@ -243,7 +303,11 @@ def _worker_task(payload):
                 "Pattern": pattern,
                 "SL": funda.get("SL", 0),
                 "Entry": entry_price,
-                "FVG_Zone": f"{round(fvg_zone['bottom'], 2)} - {round(fvg_zone['top'], 2)}" if fvg_zone else "None",
+                "FVG_Zone": (
+                    f"{round(fvg_zone['bottom'], 2)} - {round(fvg_zone['top'], 2)}"
+                    if fvg_zone
+                    else "None"
+                ),
                 "Risk_Per": funda.get("Risk_Per", 0),
                 "Closing_Vibe": funda.get("Closing_Vibe", "-"),
                 "Consensus": funda.get("Consensus", 0),
@@ -262,8 +326,12 @@ def _worker_task(payload):
             "stage": "final_return",
         }
     except Exception as e:
-        import logging, traceback
-        logging.error(f"[WORKER FAILED] {symbol}: {type(e).__name__} - {e}\n{traceback.format_exc()}")
+        import logging
+        import traceback
+
+        logging.error(
+            f"[WORKER FAILED] {symbol}: {type(e).__name__} - {e}\n{traceback.format_exc()}"
+        )
         return {
             "symbol": symbol,
             "status": "FAILED",
@@ -272,7 +340,9 @@ def _worker_task(payload):
         }
 
 
-def run_workers(payloads, strategy_name, db_path, silent=False, watchdog=None) -> list[dict]:
+def run_workers(
+    payloads, strategy_name, db_path, silent=False, watchdog=None
+) -> list[dict]:
     """
     Runs _worker_task across all payloads, using multiprocessing for large batches
     and a simple loop for small batches (<10 symbols).

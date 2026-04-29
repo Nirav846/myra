@@ -4,13 +4,14 @@ MYRA Background Orchestrator
 Runs maintenance tasks in daemon threads on startup.
 Guarantees clean DB shutdown on Ctrl+C, window close, or taskkill.
 """
+
+import logging
 import os
-import sys
 import signal
+import sys
 import threading
 import time
-import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -33,6 +34,7 @@ _task_lock = threading.Lock()
 
 # ─── Shutdown handler ─────────────────────────────────────────────────────────
 
+
 def _graceful_shutdown(signum=None, frame=None):
     """
     Called on Ctrl+C (SIGINT), SIGTERM, or Windows console close.
@@ -41,7 +43,9 @@ def _graceful_shutdown(signum=None, frame=None):
     """
     if _shutdown_event.is_set():
         return  # Already shutting down
-    print("\n[MYRA] Shutdown signal received. Waiting for background tasks to finish...")
+    print(
+        "\n[MYRA] Shutdown signal received. Waiting for background tasks to finish..."
+    )
     _shutdown_event.set()
 
     with _task_lock:
@@ -53,6 +57,7 @@ def _graceful_shutdown(signum=None, frame=None):
 
 
 # ─── Helper: check if today already ingested ──────────────────────────────────
+
 
 def _already_ingested_today() -> bool:
     try:
@@ -79,6 +84,7 @@ def _mark_ingested_today():
 
 # ─── Task 1: DB Doctor ────────────────────────────────────────────────────────
 
+
 def _task_db_doctor():
     """
     Runs db_doctor in auto-fix mode on startup.
@@ -89,6 +95,7 @@ def _task_db_doctor():
     try:
         print("[MYRA BG] Running DB health check...")
         from tools.db_doctor import DbDoctor
+
         doctor = DbDoctor()
         doctor.run()
         print("[MYRA BG] DB health check complete.")
@@ -97,6 +104,7 @@ def _task_db_doctor():
 
 
 # ─── Task 2: Daily Ingestor ───────────────────────────────────────────────────
+
 
 def _task_daily_ingest():
     if _shutdown_event.is_set():
@@ -111,7 +119,9 @@ def _task_daily_ingest():
 
     # Skip before 6 PM IST (data not yet available)
     if ist_now.hour < 18:
-        print(f"[MYRA BG] Market data not yet available (IST: {ist_now.strftime('%H:%M')}). Skipping.")
+        print(
+            f"[MYRA BG] Market data not yet available (IST: {ist_now.strftime('%H:%M')}). Skipping."
+        )
         return
 
     # Skip if already ingested today
@@ -120,8 +130,11 @@ def _task_daily_ingest():
         return
 
     try:
-        print(f"[MYRA BG] {ist_now.date()} is a trading day. Fetching today's bhavcopy...")
+        print(
+            f"[MYRA BG] {ist_now.date()} is a trading day. Fetching today's bhavcopy..."
+        )
         from myra_app.daily_ingestor import run_daily_update
+
         run_daily_update()
         _mark_ingested_today()
         print("[MYRA BG] Daily ingest complete.")
@@ -130,6 +143,7 @@ def _task_daily_ingest():
 
 
 # ─── Task 3: Midnight Watchdog ────────────────────────────────────────────────
+
 
 def _task_watchdog():
     """
@@ -155,7 +169,9 @@ def _task_watchdog():
                 and ist_now.hour >= 18
                 and not _already_ingested_today()
             ):
-                print(f"[MYRA BG] New trading day detected ({today}). Auto-fetching bhavcopy...")
+                print(
+                    f"[MYRA BG] New trading day detected ({today}). Auto-fetching bhavcopy..."
+                )
                 _task_daily_ingest()
                 last_checked_date = today
 
@@ -165,6 +181,7 @@ def _task_watchdog():
 
 # ─── Task 4: ETF Sync ─────────────────────────────────────────────────────────
 
+
 def _task_etf_sync():
     """Syncs ETF blocklist from NSE every Sunday."""
     while not _shutdown_event.is_set():
@@ -172,6 +189,7 @@ def _task_etf_sync():
             ist_now = datetime.now(timezone.utc).astimezone(IST)
             if ist_now.weekday() == 6:  # Sunday
                 from myra_app.utils.etf_sync import sync_etf_list
+
                 print("[MYRA BG] Sunday ETF sync running...")
                 sync_etf_list()
         except Exception as e:
@@ -181,6 +199,7 @@ def _task_etf_sync():
 
 # ─── Task 5: Index Sync ─────────────────────────────────────────────────────────
 
+
 def _task_index_sync():
     """Syncs NIFTY indices from NSE every Sunday."""
     while not _shutdown_event.is_set():
@@ -188,14 +207,21 @@ def _task_index_sync():
             ist_now = datetime.now(timezone.utc).astimezone(IST)
             if ist_now.weekday() == 6:  # Sunday
                 print("[MYRA BG] Sunday index sync running...")
-                sync_index_constituents("NIFTY 500")
-                sync_index_constituents("NIFTY 50")
+                from myra_app.utils.index_sync import (heal_index_if_stale,
+                                                       sync_index_constituents)
+
+                for idx in ["NIFTY 50", "NIFTY 500", "NIFTY SMALLCAP 250"]:
+                    sync_index_constituents(idx)
+
+                # Self-heal: verify NIFTY 500 count (most critical for default universe)
+                heal_index_if_stale("NIFTY 500", expected_count=500)
         except Exception as e:
-            logger.error(f"[MYRA BG] Index sync failed: {e}")
+            logger.error(f"[MYRA BG] Index sync/heal failed: {e}")
         _shutdown_event.wait(timeout=3600)  # Check every hour
 
 
 # ─── Task 6: Fundamentals Sync ───────────────────────────────────────────────────
+
 
 def _task_fundamentals_sync():
     """Monthly fundamentals sync with resumable progress tracking."""
@@ -203,6 +229,7 @@ def _task_fundamentals_sync():
         return
     try:
         from myra_app.utils.fundamentals_sync import sync_fundamentals
+
         print("[MYRA BG] Checking fundamentals sync...")
         sync_fundamentals()  # the function itself decides if it needs to run
     except Exception as e:
@@ -211,11 +238,13 @@ def _task_fundamentals_sync():
 
 # ─── Task 7: Institutional Sync ─────────────────────────────────────────────────
 
+
 def _task_institutional_sync():
     if _shutdown_event.is_set():
         return
     try:
         from myra_app.utils.institutional_sync import sync_institutional_data
+
         print("[MYRA BG] Running institutional sync...")
         sync_institutional_data()  # Only sync if table is empty
     except Exception as e:
@@ -223,6 +252,7 @@ def _task_institutional_sync():
 
 
 # ─── Public entry point ───────────────────────────────────────────────────────
+
 
 def start():
     """
@@ -234,7 +264,10 @@ def start():
     signal.signal(signal.SIGTERM, _graceful_shutdown)
     try:
         import win32api
-        win32api.SetConsoleCtrlHandler(lambda e: (_graceful_shutdown(), time.sleep(3), True)[-1], True)
+
+        win32api.SetConsoleCtrlHandler(
+            lambda e: (_graceful_shutdown(), time.sleep(3), True)[-1], True
+        )
     except ImportError:
         pass
 
@@ -244,15 +277,24 @@ def start():
 
     # Seed ETF list on first run if DB is empty
     try:
-        from myra_app.utils.etf_sync import sync_etf_list
+        import os
+        import sqlite3
+
         from myra_app.librarian_core import LibrarianCore
-        import sqlite3, os
-        _meta_db = os.path.join(os.path.dirname(os.path.abspath(__file__)), "db", LibrarianCore.DB_MAP["meta"])
+        from myra_app.utils.etf_sync import sync_etf_list
+
+        _meta_db = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "db",
+            LibrarianCore.DB_MAP["meta"],
+        )
         _needs_seed = True
         if os.path.exists(_meta_db):
             with sqlite3.connect(_meta_db, timeout=5) as _c:
                 try:
-                    _count = _c.execute("SELECT COUNT(*) FROM etf_blocklist").fetchone()[0]
+                    _count = _c.execute(
+                        "SELECT COUNT(*) FROM etf_blocklist"
+                    ).fetchone()[0]
                     _needs_seed = _count < 50
                 except Exception:
                     _needs_seed = True
@@ -265,6 +307,7 @@ def start():
     # Seed NIFTY 500 on first run if empty
     try:
         from myra_app.librarian import Librarian
+
         lib = Librarian()
         lib.connect()
         if len(lib.get_index_symbols("NIFTY 500")) < 100:
@@ -276,8 +319,11 @@ def start():
 
     # Seed fundamentals if empty
     try:
-        import sqlite3, os
+        import os
+        import sqlite3
+
         from myra_app.constants import DB_DIR
+
         val_db = os.path.join(DB_DIR, "myra_valuation.db")
         if os.path.exists(val_db):
             with sqlite3.connect(val_db, timeout=5) as vconn:
@@ -286,7 +332,7 @@ def start():
                     "SELECT COUNT(*) FROM fundamentals WHERE pe IS NULL OR pe=0 "
                     "OR roe IS NULL OR roe=0 OR market_cap IS NULL OR market_cap=0"
                 ).fetchone()[0]
-                if missing > 500:    # >500 stocks with blanks → seed
+                if missing > 500:  # >500 stocks with blanks → seed
                     print(f"[MYRA BG] Seeding fundamentals for {missing} stocks...")
                     sync_fundamentals(force=True)
     except Exception as e:
@@ -300,19 +346,33 @@ def start():
                 count = iconn.execute("SELECT COUNT(*) FROM large_deals").fetchone()[0]
                 if count < 100:
                     print("[MYRA BG] Seeding institutional data...")
-                    from myra_app.utils.institutional_sync import sync_institutional_data
+                    from myra_app.utils.institutional_sync import \
+                        sync_institutional_data
+
                     sync_institutional_data(force=True)
     except Exception as e:
         logger.warning(f"Institutional seed check failed: {e}")
 
+    # Initial backup on first startup
+    try:
+        from myra_app.utils.db_backup import rotate_backups
+
+        backup_dir = os.path.join(DB_DIR, "backups")
+        if not os.path.exists(backup_dir) or len(os.listdir(backup_dir)) == 0:
+            print("[MYRA BG] Creating initial DB backup...")
+            rotate_backups()
+    except Exception as e:
+        logger.warning(f"Initial backup check failed: {e}")
+
     # Now launch remaining tasks as background threads
     tasks = [
         ("daily-ingest", _task_daily_ingest),
-        ("watchdog",     _task_watchdog),
-        ("etf-sync",     _task_etf_sync),
-        ("index-sync",   _task_index_sync),
+        ("watchdog", _task_watchdog),
+        ("etf-sync", _task_etf_sync),
+        ("index-sync", _task_index_sync),
         ("fundamentals-sync", _task_fundamentals_sync),
         ("institutional-sync", _task_institutional_sync),
+        ("db-backup", _task_db_backup),
     ]
     with _task_lock:
         for name, fn in tasks:

@@ -1,6 +1,7 @@
 import os
-import sys
 import sqlite3
+import sys
+
 import pandas as pd
 
 # Fix path

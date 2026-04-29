@@ -5,6 +5,7 @@ import warnings
 warnings.filterwarnings("ignore", message=".*deprecated now, and have no effect.*")
 
 import pandas as pd
+
 from myra_core.utils.data_validation import enforce_index_contract
 
 """
@@ -12,25 +13,25 @@ MYRA Smart Fetcher - Resilient Data Acquisition Layer (v3.2 GHOST)
 Powered by scrapling and curl_cffi for human-identical TLS signatures.
 EXCLUSIVE GATEKEEPER for all network requests.
 """
-import random
 import json
-import os
 import logging
+import os
+import random
 
 logger = logging.getLogger(__name__)
+import hashlib
+import io
 import re
-import pandas as pd
-import numpy as np
-from io import StringIO
-from bs4 import BeautifulSoup
+import sqlite3
 import time
 import zipfile
-import io
-
 from datetime import date, datetime, timedelta, timezone
+from io import StringIO
+
+import numpy as np
+import pandas as pd
+from bs4 import BeautifulSoup
 from scrapling import Fetcher
-import sqlite3
-import hashlib
 
 
 class GhostSession:
@@ -88,7 +89,8 @@ class GhostSession:
         if not conn:
             return None
         key = hashlib.md5(
-            f"{url}{json.dumps(params, sort_keys=True)}".encode()
+            f"{url}{json.dumps(params, sort_keys=True)}".encode(),
+            usedforsecurity=False
         ).hexdigest()
         try:
             # Consistent UTC comparison
@@ -107,12 +109,13 @@ class GhostSession:
         if not conn:
             return
         key = hashlib.md5(
-            f"{url}{json.dumps(params, sort_keys=True)}".encode()
+            f"{url}{json.dumps(params, sort_keys=True)}".encode(),
+            usedforsecurity=False
         ).hexdigest()
         expiry = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(
             seconds=expire_seconds
         )
-        data_hash = hashlib.md5(value).hexdigest() if value else None
+        data_hash = hashlib.md5(value, usedforsecurity=False).hexdigest() if value else None
 
         try:
             conn.execute(
@@ -768,9 +771,10 @@ class DataFetcher:
 
             # Vectorized filtering: Extract valid data rows (avoiding record type assumptions).
             # We target rows with enough columns where delivery metrics (indices 5 & 6) are numeric.
-            mask = pd.to_numeric(df_mto.iloc[:, 5], errors="coerce").notna() & pd.to_numeric(
-                df_mto.iloc[:, 6], errors="coerce"
-            ).notna()
+            mask = (
+                pd.to_numeric(df_mto.iloc[:, 5], errors="coerce").notna()
+                & pd.to_numeric(df_mto.iloc[:, 6], errors="coerce").notna()
+            )
             df_mto = df_mto[mask].copy()
 
             if df_mto.empty:
@@ -820,9 +824,9 @@ class DataFetcher:
             "NOV",
             "DEC",
         ]
-        df_full[
-            "DATE1"
-        ] = f"{current_date.day:02d}-{MONTHS[current_date.month-1]}-{current_date.year}"
+        df_full["DATE1"] = (
+            f"{current_date.day:02d}-{MONTHS[current_date.month-1]}-{current_date.year}"
+        )
 
         # Drop anything not explicitly in whitelist, ensuring no duplicate mapping creates chaos
         for c in CORE_COLUMNS:
@@ -893,7 +897,9 @@ class DataFetcher:
                     r_p = self.session.get(p_url, headers=headers)
                     r_d = self.session.get(d_url, headers=headers)
 
-                    if (r_p and r_p.status_code == 404) or (r_d and r_d.status_code == 404):
+                    if (r_p and r_p.status_code == 404) or (
+                        r_d and r_d.status_code == 404
+                    ):
                         logger.warning("File not yet published by NSE")
                         continue
 
@@ -1207,9 +1213,7 @@ class DataFetcher:
             col = (
                 "Symbol"
                 if "Symbol" in df.columns
-                else "SYMBOL"
-                if "SYMBOL" in df.columns
-                else df.columns[2]
+                else "SYMBOL" if "SYMBOL" in df.columns else df.columns[2]
             )
             return df[col].tolist()
         except:
@@ -1259,9 +1263,9 @@ class DataFetcher:
 
     def fetch_sast_disclosures(self, days=3):
         headers = self.registry.get("headers", {}).get("nse_api_headers", {}).copy()
-        headers[
-            "Referer"
-        ] = "https://www.nseindia.com/companies-listing/corporate-filings-insider-trading"
+        headers["Referer"] = (
+            "https://www.nseindia.com/companies-listing/corporate-filings-insider-trading"
+        )
         today = date.today()
         start_date = today - timedelta(days=days)
         end_str = f"{today.day:02d}-{today.month:02d}-{today.year}"

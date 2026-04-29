@@ -1,10 +1,12 @@
-import os
-import yaml
 import logging
-import pandas as pd
-from myra_core.utils.data_validation import enforce_index_contract
+import os
+
 import numpy as np
+import pandas as pd
+import yaml
+
 from myra_app.strategies.base_strategy import BaseStrategy
+from myra_core.utils.data_validation import enforce_index_contract
 
 # Note: This file only computes fusion signals and returns dictionaries.
 # Database persistence is handled by feature_enrichment.py daily pipeline.
@@ -43,7 +45,7 @@ class FusionEngine(BaseStrategy):
             return {"signal": False}
 
         for col in list(df.columns):
-            if col.lower() in ('open', 'high', 'low', 'close', 'volume'):
+            if col.lower() in ("open", "high", "low", "close", "volume"):
                 df = df.rename(columns={col: col.title()})
 
         return self.compute_fusion_signal(df)
@@ -104,9 +106,7 @@ class FusionEngine(BaseStrategy):
         trend_align = safe_series("trend_alignment")
 
         base_score = (
-            (fvg_freshness * w_fvg)
-            + (liquidity_dist * w_liq)
-            + (trend_align * w_trend)
+            (fvg_freshness * w_fvg) + (liquidity_dist * w_liq) + (trend_align * w_trend)
         )
 
         base_score = np.where(is_short_aligned, -base_score, base_score)

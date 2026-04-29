@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 import pandas as pd
-from .base_factor import BaseFactor
+
 from myra_app.ias_manager import IASManager
+
+from .base_factor import BaseFactor
 
 
 class IASFactor(BaseFactor):

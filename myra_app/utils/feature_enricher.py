@@ -1,5 +1,6 @@
-import polars as pl
 import os
+
+import polars as pl
 
 # Optimization for AMD A8-7410 (4 cores)
 os.environ["POLARS_MAX_THREADS"] = "2"

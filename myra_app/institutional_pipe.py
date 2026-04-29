@@ -1,9 +1,11 @@
 # myra_app/institutional_pipe.py
 import json
 import os
-import pandas as pd
-import numpy as np
 from datetime import date, datetime
+
+import numpy as np
+import pandas as pd
+
 from .fundamental_manager import FundamentalManager
 
 
@@ -212,11 +214,7 @@ class InstitutionalPipe:
         grade = (
             "A"
             if not flags
-            else "B"
-            if len(flags) < 2
-            else "C"
-            if len(flags) < 4
-            else "F"
+            else "B" if len(flags) < 2 else "C" if len(flags) < 4 else "F"
         )
         return {"grade": grade, "flags": flags}
 

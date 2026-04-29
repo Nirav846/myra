@@ -1,6 +1,7 @@
 import ast
 import os
 
+
 def get_strategies():
     """
     Safely parses myra_app/myra.py using AST to extract the strategies dictionary
@@ -13,8 +14,12 @@ def get_strategies():
     try:
         with open(file_path, "r") as f:
             for node in ast.walk(ast.parse(f.read())):
-                if isinstance(node, ast.Assign) and len(node.targets) == 1 and \
-                   isinstance(node.targets[0], ast.Name) and node.targets[0].id == "strategies":
+                if (
+                    isinstance(node, ast.Assign)
+                    and len(node.targets) == 1
+                    and isinstance(node.targets[0], ast.Name)
+                    and node.targets[0].id == "strategies"
+                ):
                     return ast.literal_eval(node.value)
     except Exception as e:
         print(f"Failed to parse strategies: {e}")

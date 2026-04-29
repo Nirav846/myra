@@ -1,10 +1,12 @@
 #!/usr/bin/env python
-import os
 import json
-import pandas as pd
+import os
 import sqlite3
 from datetime import datetime
 from io import StringIO
+
+import pandas as pd
+
 from myra_app.fetcher import GhostSession
 
 
@@ -213,9 +215,10 @@ class SectorManager:
 
     def fetch_nse_meta_bulk(self, symbols):
         """Fetches industry info from NSE Meta API in parallel."""
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-        import requests
         import time
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        import requests
 
         results = {}
 

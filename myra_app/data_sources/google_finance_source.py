@@ -1,7 +1,9 @@
 # myra_app/data_sources/google_finance_source.py
+import re
+
 import requests
 from bs4 import BeautifulSoup
-import re
+
 from .base import BaseDataSource
 
 

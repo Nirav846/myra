@@ -1,7 +1,9 @@
 """Standalone script for Task Scheduler – smart daily ingestion with weekend/holiday awareness."""
-import sys, os
-from datetime import datetime, timezone, timedelta
+
+import os
 import sqlite3
+import sys
+from datetime import datetime, timedelta, timezone
 
 # Project root and path setup
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

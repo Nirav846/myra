@@ -1,7 +1,8 @@
 import os
 import sys
-import pandas as pd
 from datetime import datetime
+
+import pandas as pd
 
 # Fix path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))

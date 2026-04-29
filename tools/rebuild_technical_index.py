@@ -5,16 +5,20 @@ Adds PRIMARY KEY (symbol, date) and performance index to technical_data.
 Safe to run — zero duplicates confirmed. Takes ~30-60 seconds on large DBs.
 Run from project root: python tools/rebuild_technical_index.py
 """
+
 import os
-import sys
 import sqlite3
+import sys
 import time
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
 from myra_app.librarian_core import LibrarianCore
-DB_PATH = os.path.join(PROJECT_ROOT, "myra_app", "db", LibrarianCore.DB_MAP["technical"])
+
+DB_PATH = os.path.join(
+    PROJECT_ROOT, "myra_app", "db", LibrarianCore.DB_MAP["technical"]
+)
 
 
 def rebuild():

@@ -1,17 +1,21 @@
-import polars as pl
 import threading
 import time
 
+import polars as pl
+
 _enrichment_paused = threading.Event()
 _enrichment_paused.set()  # not paused initially
+
 
 def pause_enrichment():
     """Called by screener when a scan starts."""
     _enrichment_paused.clear()  # blocking
 
+
 def resume_enrichment():
     """Called by screener when a scan finishes."""
     _enrichment_paused.set()  # unblock
+
 
 def wait_if_paused():
     """Call this periodically in the enrichment loop to check if paused."""
@@ -132,21 +136,21 @@ def process_enrichment_pipeline(lib, conn):
         "prices": "SELECT * FROM prices",
         "technical_data": "SELECT * FROM technical_data",
         "calculated_indicators": "SELECT * FROM calculated_indicators",
-        "fundamentals": "SELECT * FROM fundamentals"
+        "fundamentals": "SELECT * FROM fundamentals",
     }
 
     ALLOWED_DROPS = {
         "prices": "DROP TABLE IF EXISTS prices",
         "technical_data": "DROP TABLE IF EXISTS technical_data",
         "calculated_indicators": "DROP TABLE IF EXISTS calculated_indicators",
-        "fundamentals": "DROP TABLE IF EXISTS fundamentals"
+        "fundamentals": "DROP TABLE IF EXISTS fundamentals",
     }
 
     ALLOWED_RENAMES = {
         "prices": "ALTER TABLE stg_enriched_market_data RENAME TO prices",
         "technical_data": "ALTER TABLE stg_enriched_market_data RENAME TO technical_data",
         "calculated_indicators": "ALTER TABLE stg_enriched_market_data RENAME TO calculated_indicators",
-        "fundamentals": "ALTER TABLE stg_enriched_market_data RENAME TO fundamentals"
+        "fundamentals": "ALTER TABLE stg_enriched_market_data RENAME TO fundamentals",
     }
 
     try:
@@ -161,7 +165,12 @@ def process_enrichment_pipeline(lib, conn):
 
         # Find the first valid table available in the DB
         table_name = None
-        for tbl in ["technical_data", "prices", "calculated_indicators", "fundamentals"]:
+        for tbl in [
+            "technical_data",
+            "prices",
+            "calculated_indicators",
+            "fundamentals",
+        ]:
             if tbl in tables:
                 table_name = tbl
                 break
@@ -180,58 +189,86 @@ def process_enrichment_pipeline(lib, conn):
         nifty_df = pl.from_pandas(nifty_pd)
 
         df_enriched = enrich_features(df_raw, nifty_df)
-        
+
         # Add SMC indicators for fusion engine
         from myra_app.utils.smc_calculator import calculate_smc_indicators
-        
+
         # Convert to pandas for SMC calculation
         price_df = df_enriched.to_pandas()
-        if not price_df.empty and 'symbol' in price_df.columns and 'date' in price_df.columns:
+        if (
+            not price_df.empty
+            and "symbol" in price_df.columns
+            and "date" in price_df.columns
+        ):
             print("[MYRA Enrichment] Computing SMC indicators...")
-            
+
             # Process all symbols at once with vectorized SMC calculation
-            smc_df = calculate_smc_indicators(price_df.rename(columns={
-                'open': 'Open', 'high': 'High', 'low': 'Low',
-                'close': 'Close', 'volume': 'Volume'
-            }))
-            
+            smc_df = calculate_smc_indicators(
+                price_df.rename(
+                    columns={
+                        "open": "Open",
+                        "high": "High",
+                        "low": "Low",
+                        "close": "Close",
+                        "volume": "Volume",
+                    }
+                )
+            )
+
             # Write SMC columns to technical_data using efficient batch updates
             smc_columns = [
-                'bullish_fvg', 'bearish_fvg', 'fvg_top', 'fvg_bottom', 'fvg_boundary',
-                'fvg_freshness', 'swing_high', 'swing_low', 'liquidity_distance',
-                'htf_bullish', 'htf_bearish', 'mtf_bullish', 'mtf_bearish',
-                'trend_alignment', 'delivery_ma_60', 'has_bullish_fvg'
+                "bullish_fvg",
+                "bearish_fvg",
+                "fvg_top",
+                "fvg_bottom",
+                "fvg_boundary",
+                "fvg_freshness",
+                "swing_high",
+                "swing_low",
+                "liquidity_distance",
+                "htf_bullish",
+                "htf_bearish",
+                "mtf_bullish",
+                "mtf_bearish",
+                "trend_alignment",
+                "delivery_ma_60",
+                "has_bullish_fvg",
             ]
-            
+
             # Add missing columns to technical_data table
             for col in smc_columns:
                 if col in smc_df.columns:
                     try:
-                        conn.execute(f"ALTER TABLE technical_data ADD COLUMN {col} REAL")
+                        conn.execute(
+                            f"ALTER TABLE technical_data ADD COLUMN {col} REAL"
+                        )
                     except:
                         pass  # Column already exists
-            
+
             # Batch update using executemany for performance
             for col in smc_columns:
                 if col in smc_df.columns:
                     # Prepare batch data
                     update_data = [
-                        (float(row[col]) if not pd.isna(row[col]) else None, 
-                         row['symbol'], str(row['date']))
+                        (
+                            float(row[col]) if not pd.isna(row[col]) else None,
+                            row["symbol"],
+                            str(row["date"]),
+                        )
                         for _, row in smc_df.iterrows()
                         if not pd.isna(row[col])
                     ]
-                    
+
                     if update_data:
                         conn.executemany(
                             f"UPDATE technical_data SET {col} = ? WHERE symbol = ? AND date = ?",
-                            update_data
+                            update_data,
                         )
                         conn.commit()
-            
+
             # Check if enrichment should pause after processing all symbols
             wait_if_paused()
-        
+
         df_enriched.to_pandas().to_sql(
             "stg_enriched_market_data", conn, if_exists="replace", index=False
         )

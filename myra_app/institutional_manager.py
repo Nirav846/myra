@@ -1,10 +1,12 @@
+import json
 import os
 import sqlite3
-import json
-import requests
 from datetime import datetime
-from rich.console import Console
+
+import requests
 from PKNSETools.morningstartools import Stock
+from rich.console import Console
+
 from myra_app.librarian_core import LibrarianCore
 
 

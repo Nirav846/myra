@@ -1,10 +1,15 @@
 import sys
 import traceback
+
 from myra_app.librarian import Librarian
 
-TARGETS = sys.argv[1:] if len(sys.argv) > 1 else ["DCAL","WABAG","PARKHOTELS","DIVISLAB","METROPOLIS"]
+TARGETS = (
+    sys.argv[1:]
+    if len(sys.argv) > 1
+    else ["DCAL", "WABAG", "PARKHOTELS", "DIVISLAB", "METROPOLIS"]
+)
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     lib = Librarian(read_only=False)
     # Monkeypatch active universe
     lib.get_active_universe = lambda: TARGETS
@@ -20,14 +25,14 @@ if __name__ == '__main__':
                 continue
             dup = df.index.duplicated().any()
             print(f"{sym}: rows={len(df)} duplicate_index={dup}")
-            if sym.upper() == 'DIVISLAB':
+            if sym.upper() == "DIVISLAB":
                 # attempt to read last IAS
-                if 'ias' in df.columns:
-                    last_ias = df['ias'].iloc[-1]
+                if "ias" in df.columns:
+                    last_ias = df["ias"].iloc[-1]
                     print(f"DIVISLAB last IAS={last_ias}")
                 else:
                     print("DIVISLAB: 'ias' not found in indicators")
-        print('Smoke targets completed without exceptions')
+        print("Smoke targets completed without exceptions")
     except Exception:
-        print('Smoke targets FAILED:')
+        print("Smoke targets FAILED:")
         traceback.print_exc()

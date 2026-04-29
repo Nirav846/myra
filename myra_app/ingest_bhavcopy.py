@@ -4,35 +4,37 @@ Processes end-of-day NSE Bhavcopy archives for swing and long-term trading analy
 Filters non-equity ETFs and strictly mandates institutional delivery footprints.
 """
 
-import sys
-import os
 import argparse
-import pandas as pd
-import sqlite3
 import glob
+import os
+import sqlite3
+import sys
 
-# Dynamically add the project root to sys.path so it works seamlessly 
+import pandas as pd
+
+# Dynamically add the project root to sys.path so it works seamlessly
 # when executed directly from any directory.
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from myra_app.utils.bhavcopy_parser import BhavcopyParser
-from myra_core.utils.myra_log import myra_log
 from myra_app.librarian_core import LibrarianCore
+from myra_app.utils.bhavcopy_parser import BhavcopyParser
 from myra_app.utils.etf_sync import get_etf_symbols
+from myra_core.utils.myra_log import myra_log
+
 
 def resolve_delivery(df: pd.DataFrame) -> pd.DataFrame:
     """
     Resolves delivery quantity using MYRA canonical column names mapped by SchemaRegistry.
-    
+
     Tier 1: Use absolute delivery qty directly (most accurate).
     Tier 2: Calculate from delivery_pct × volume (derived, flagged).
     Tier 3: Neither available — mark rows so Gatekeeper can reject them.
     """
     if "delivery" not in df.columns:
         df["delivery"] = float("nan")
-    
+
     df["delivery_source"] = "unavailable"
 
     # --- Tier 1: Absolute qty ---
@@ -52,11 +54,12 @@ def resolve_delivery(df: pd.DataFrame) -> pd.DataFrame:
         needs_fill = df["delivery_source"] == "unavailable"
         calculated = derived_qty.round()
         valid_calc = needs_fill & pct.notna() & vol.notna() & (calculated > 1)
-        
+
         df.loc[valid_calc, "delivery"] = calculated
         df.loc[valid_calc, "delivery_source"] = "calculated_from_pct"
 
     return df
+
 
 def ingest_bhavcopies(csv_folder: str, db_path: str = None) -> None:
     """
@@ -69,14 +72,18 @@ def ingest_bhavcopies(csv_folder: str, db_path: str = None) -> None:
     # Dynamically locate the DB if not provided
     if db_path is None:
         _current_dir = os.path.dirname(os.path.abspath(__file__))
-        db_path = os.path.join(_current_dir, "db", LibrarianCore.DB_MAP.get("technical", "myra_technical.db"))
+        db_path = os.path.join(
+            _current_dir,
+            "db",
+            LibrarianCore.DB_MAP.get("technical", "myra_technical.db"),
+        )
 
     # Ensure DB directory exists
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
     print(f"[MYRA] Starting STRICT ingestion from: {csv_folder}")
     print(f"[MYRA] Target Database: {db_path}")
-    
+
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
@@ -84,7 +91,7 @@ def ingest_bhavcopies(csv_folder: str, db_path: str = None) -> None:
         cursor.execute("ALTER TABLE technical_data ADD COLUMN delivery_source TEXT")
         conn.commit()
     except sqlite3.OperationalError:
-        pass # Column already exists
+        pass  # Column already exists
 
     try:
         cursor.execute("ALTER TABLE technical_data ADD COLUMN delivery_pct REAL")
@@ -94,7 +101,9 @@ def ingest_bhavcopies(csv_folder: str, db_path: str = None) -> None:
 
     csv_files = glob.glob(os.path.join(csv_folder, "nse_full_*.csv"))
     if not csv_files:
-        print("[!] No matching 'nse_full_*.csv' files found in the specified directory.")
+        print(
+            "[!] No matching 'nse_full_*.csv' files found in the specified directory."
+        )
         return
 
     stats = {"processed": 0, "inserted": 0, "rejected": 0}
@@ -107,17 +116,22 @@ def ingest_bhavcopies(csv_folder: str, db_path: str = None) -> None:
         try:
             # Route through the MYRA v9.0 BhavcopyParser for schema standardization
             df, report = BhavcopyParser.parse_csv(file_path, source_filename=file_path)
-            
+
             if df.empty:
                 if report["errors"]:
                     print(f"\n[!] {os.path.basename(file_path)}: {report['errors']}")
                 continue
 
             # Rename canonical lowercase to CamelCase for processing (Rule 39 compliance)
-            df = df.rename(columns={
-                "open": "Open", "high": "High", "low": "Low", 
-                "close": "Close", "volume": "Volume"
-            })
+            df = df.rename(
+                columns={
+                    "open": "Open",
+                    "high": "High",
+                    "low": "Low",
+                    "close": "Close",
+                    "volume": "Volume",
+                }
+            )
 
             # Block known ETFs that NSE lists under EQ series
             if "symbol" in df.columns:
@@ -133,7 +147,9 @@ def ingest_bhavcopies(csv_folder: str, db_path: str = None) -> None:
             unavailable_mask = df["delivery_source"] == "unavailable"
             if unavailable_mask.any():
                 n = unavailable_mask.sum()
-                print(f"\n[!] {os.path.basename(file_path)}: {n} rows lack delivery data. Excluded from DB.")
+                print(
+                    f"\n[!] {os.path.basename(file_path)}: {n} rows lack delivery data. Excluded from DB."
+                )
 
             df = df[~unavailable_mask]
 
@@ -153,16 +169,32 @@ def ingest_bhavcopies(csv_folder: str, db_path: str = None) -> None:
             df["delivery_pct"] = (df["delivery_ratio"] * 100).round(2)
 
             # Rename back to lowercase for DB insert
-            df = df.rename(columns={
-                "Open": "open", "High": "high", "Low": "low", 
-                "Close": "close", "Volume": "volume"
-            })
+            df = df.rename(
+                columns={
+                    "Open": "open",
+                    "High": "high",
+                    "Low": "low",
+                    "Close": "close",
+                    "Volume": "volume",
+                }
+            )
 
             # Prepare records for insertion
-            records = df[[
-                "symbol", "date", "open", "high", "low", "close", 
-                "volume", "delivery", "delivery_pct", "delivery_ratio", "delivery_source"
-            ]].values.tolist()
+            records = df[
+                [
+                    "symbol",
+                    "date",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "delivery",
+                    "delivery_pct",
+                    "delivery_ratio",
+                    "delivery_source",
+                ]
+            ].values.tolist()
 
             # Batched database insertions for performance
             cursor.executemany(
@@ -176,27 +208,32 @@ def ingest_bhavcopies(csv_folder: str, db_path: str = None) -> None:
             print(f"\n[!] Critical Error processing {os.path.basename(file_path)}: {e}")
 
     conn.close()
-    print(f"\n[+] Pipeline Complete. Inserted: {stats['inserted']} | Rejected (No Delivery): {stats['rejected']}")
+    print(
+        f"\n[+] Pipeline Complete. Inserted: {stats['inserted']} | Rejected (No Delivery): {stats['rejected']}"
+    )
+
 
 if __name__ == "__main__":
     # Setup CLI Argument Parsing for portability
-    parser = argparse.ArgumentParser(description="MYRA End-of-Day Data Ingestion Pipeline")
-    
+    parser = argparse.ArgumentParser(
+        description="MYRA End-of-Day Data Ingestion Pipeline"
+    )
+
     # Calculate default paths relative to the script's location
     default_csv_dir = os.path.join(_ROOT, "data", "Market_Archives")
-    
+
     parser.add_argument(
-        "--csv-dir", 
-        type=str, 
+        "--csv-dir",
+        type=str,
         default=default_csv_dir,
-        help="Path to the directory containing nse_full_*.csv files"
+        help="Path to the directory containing nse_full_*.csv files",
     )
-    
+
     parser.add_argument(
-        "--db-path", 
-        type=str, 
+        "--db-path",
+        type=str,
         default=None,
-        help="Override path for the MYRA technical SQLite database"
+        help="Override path for the MYRA technical SQLite database",
     )
 
     args = parser.parse_args()

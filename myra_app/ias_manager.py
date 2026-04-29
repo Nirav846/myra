@@ -1,11 +1,13 @@
 #!/usr/bin/env python
-import os
-import json
-import sqlite3
-import pandas as pd
-import numpy as np
 import hashlib
+import json
+import os
+import sqlite3
 from datetime import datetime, timedelta
+
+import numpy as np
+import pandas as pd
+
 from myra_app.fetcher import DataFetcher
 
 
@@ -246,7 +248,7 @@ class IASManager:
         # Optimized with list comprehension (Fix 249: Avoid .append in loop)
         def _to_record(d):
             raw_id = f"{d.get('symbol')}_{d.get('date')}_{d.get('acqName')}_{d.get('secAcq')}"
-            uid = hashlib.md5(raw_id.encode()).hexdigest()
+            uid = hashlib.md5(raw_id.encode(), usedforsecurity=False).hexdigest()
             return (
                 uid,
                 d.get("symbol"),
