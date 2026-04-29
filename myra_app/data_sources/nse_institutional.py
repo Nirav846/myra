@@ -32,8 +32,8 @@ def _fetch_deals_csv(
     url = "https://www.nseindia.com/api/historicalOR/bulk-block-short-deals"
     params = {
         "optionType": option_type,  # bulk_deals, block_deals, short_selling
-        "from": from_date.strftime("%d-%m-%Y"),
-        "to": to_date.strftime("%d-%m-%Y"),
+        "from": from_date.strftime("%d-%m-%Y"),  # noqa: PG-STRFTIME
+        "to": to_date.strftime("%d-%m-%Y"),  # noqa: PG-STRFTIME
         "csv": "true",
     }
     resp = session.get(url, params=params, headers=NSE_HEADERS, timeout=15)

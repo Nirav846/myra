@@ -116,9 +116,9 @@ def fetch_and_patch(symbol):
                             )
 
                             if delivery_val > 0:
-                                records_to_update.append(
+                                records_to_update.append(  # noqa: PG-APPEND
                                     (delivery_val, delivery_pct_val, symbol, date_str)
-                                )  # noqa: append
+                                )
         except Exception as e:
             print(f"    - Error fetching {date_str}: {e}")
 

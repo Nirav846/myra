@@ -8,7 +8,8 @@ def setup_db(db_path):
         os.remove(db_path)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    cursor.execute("""
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS technical_data (
             symbol TEXT NOT NULL,
             date TEXT NOT NULL,
@@ -24,7 +25,8 @@ def setup_db(db_path):
             delivery_ratio REAL,
             PRIMARY KEY (symbol, date)
         )
-    """)
+    """
+    )
     conn.commit()
     return conn
 

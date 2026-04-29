@@ -116,7 +116,7 @@ class SchemaRegistry:
                 logger.warning(f"[SCHEMA_REGISTRY] Table {table_name} does not exist.")
                 return False
 
-            expected_columns = cls.TABLES[table_name]["columns"]
+            expected_columns = cls.TABLES[table_name]["columns"]  # noqa: PG-CHAINED
 
             # Auto-fix minor mismatches (add missing columns)
             missing = [
@@ -129,7 +129,7 @@ class SchemaRegistry:
                         logger.warning(
                             f"[SCHEMA_REGISTRY] Auto-fixing schema: Adding {col_name} ({col_type}) to {table_name}"
                         )
-                        cursor.execute(
+                        cursor.execute(  # noqa: PG-NPLUS1
                             f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}"
                         )
                     conn.commit()

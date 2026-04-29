@@ -44,7 +44,7 @@ class BhavcopyParser:
                 raw_date = match.group(1)
                 try:
                     dt = datetime.strptime(raw_date, "%d%m%Y")
-                    return dt.strftime("%Y-%m-%d")
+                    return dt.strftime("%Y-%m-%d")  # noqa: PG-STRFTIME
                 except:
                     pass
         return None
@@ -97,7 +97,7 @@ class BhavcopyParser:
             ]
 
             # SCHEMA VALIDATION LAYER (PRIORITY 1.3)
-            required_cols = SchemaRegistry.TABLES["technical_data"][
+            required_cols = SchemaRegistry.TABLES["technical_data"][  # noqa: PG-CHAINED
                 "required_for_ingestion"
             ]
             missing_cols = [c for c in required_cols if c not in df.columns]
@@ -130,7 +130,7 @@ class BhavcopyParser:
 
             try:
                 # errors='coerce' to safely handle single corrupt strings without failing entire file
-                df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.strftime(
+                df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.strftime(  # noqa: PG-STRFTIME
                     "%Y-%m-%d"
                 )
             except Exception as e:

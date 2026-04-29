@@ -241,9 +241,15 @@ class Engine:
         try:
             from myra_app.universe_loader import load_universe
 
-            cache_df, regime, mood, vix_stable, funda_map, insider_map, deal_map = (
-                load_universe(lib, symbols, as_of_date, silent=silent)
-            )
+            (
+                cache_df,
+                regime,
+                mood,
+                vix_stable,
+                funda_map,
+                insider_map,
+                deal_map,
+            ) = load_universe(lib, symbols, as_of_date, silent=silent)
             if cache_df.empty and len(symbols) >= 10:
                 return [], {}
 

@@ -45,7 +45,8 @@ def rebuild():
         print("[2/6] Creating new table with PRIMARY KEY...")
         conn.execute("BEGIN EXCLUSIVE")
         conn.execute("DROP TABLE IF EXISTS technical_data_new")
-        conn.execute("""
+        conn.execute(
+            """
             CREATE TABLE technical_data_new (
                 symbol                       TEXT NOT NULL,
                 date                         TEXT NOT NULL,
@@ -69,12 +70,14 @@ def rebuild():
                 delivery_source              TEXT,
                 PRIMARY KEY (symbol, date)
             )
-        """)
+        """
+        )
 
         # Step 3: Copy all data ordered correctly
         print("[3/6] Copying data (this may take 30-60 seconds)...")
         t0 = time.time()
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO technical_data_new
             SELECT
                 symbol, date, open, high, low, close, volume,
@@ -85,7 +88,8 @@ def rebuild():
                 delivery_source
             FROM technical_data
             ORDER BY symbol, date
-        """)
+        """
+        )
         elapsed = round(time.time() - t0, 1)
         copied = conn.execute("SELECT COUNT(*) FROM technical_data_new").fetchone()[0]
         print(f"    Copied {copied} rows in {elapsed}s")
@@ -103,10 +107,12 @@ def rebuild():
 
         # Step 5: Add performance index
         print("[5/6] Creating performance index...")
-        conn.execute("""
+        conn.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_technical_symbol_date
             ON technical_data (symbol, date DESC)
-        """)
+        """
+        )
 
         # Step 6: Drop old table and vacuum
         print("[6/6] Cleaning up...")

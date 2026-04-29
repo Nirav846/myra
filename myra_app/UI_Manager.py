@@ -31,7 +31,9 @@ class MYRA_UI:
                 v_col = (
                     "red"
                     if vix["last_price"] > 18
-                    else "green" if vix["last_price"] < 15 else "yellow"
+                    else "green"
+                    if vix["last_price"] < 15
+                    else "yellow"
                 )
                 dash = f"NIFTY 50: [{n_col}]{nifty['last_price']}[/] ({nifty['pchange']}%) | "
                 dash += f"INDIA VIX: [{v_col}]{vix['last_price']}[/] | "
@@ -40,7 +42,9 @@ class MYRA_UI:
                     f_col = (
                         "green"
                         if forecast["direction"] == "BULLISH"
-                        else "red" if forecast["direction"] == "BEARISH" else "yellow"
+                        else "red"
+                        if forecast["direction"] == "BEARISH"
+                        else "yellow"
                     )
                     dash += f"AI Forecast: [{f_col}]{forecast['direction']}[/] ({forecast['confidence']}%) | "
 
@@ -406,7 +410,9 @@ class MYRA_UI:
             f_col = (
                 "green"
                 if forecast["direction"] == "BULLISH"
-                else "red" if forecast["direction"] == "BEARISH" else "yellow"
+                else "red"
+                if forecast["direction"] == "BEARISH"
+                else "yellow"
             )
             forecast_text = (
                 f" | [bold white]AI-Trend:[/] [{f_col}]{forecast['direction']}[/]"

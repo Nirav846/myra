@@ -102,9 +102,9 @@ def mass_backfill(
                 df = df[df["SERIES"].isin(["EQ", "BE", "SM", "ST", "BZ"])]
 
             if "DATE1" in df.columns:
-                df["DATE1"] = pd.to_datetime(df["DATE1"]).dt.strftime("%Y-%m-%d")
+                df["DATE1"] = pd.to_datetime(df["DATE1"]).dt.strftime("%Y-%m-%d")  # noqa: PG-STRFTIME
             elif "TIMESTAMP" in df.columns:
-                df["TIMESTAMP"] = pd.to_datetime(df["TIMESTAMP"]).dt.strftime(
+                df["TIMESTAMP"] = pd.to_datetime(df["TIMESTAMP"]).dt.strftime(  # noqa: PG-STRFTIME
                     "%Y-%m-%d"
                 )
 

@@ -18,13 +18,15 @@ def generate_calendar(db_path="calendar.db", start_year=2021, end_year=2026):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    cursor.execute("""
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS market_calendar (
             date TEXT PRIMARY KEY,
             is_trading_day INTEGER NOT NULL,
             holiday_name TEXT
         )
-    """)
+    """
+    )
 
     # Base list (approximate/simplified for demonstration)
     fixed_holidays = {
@@ -55,7 +57,7 @@ def generate_calendar(db_path="calendar.db", start_year=2021, end_year=2026):
             is_trading = False
             holiday_name = fixed_holidays[mm_dd]
 
-        records.append((date_str, 1 if is_trading else 0, holiday_name))
+        records.append((date_str, 1 if is_trading else 0, holiday_name))  # noqa: PG-APPEND
         current_date += timedelta(days=1)
 
     cursor.executemany(

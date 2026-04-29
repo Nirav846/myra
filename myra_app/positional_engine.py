@@ -1,9 +1,15 @@
 import pandas as pd
 
-from myra_app.score_components_v2 import (base_score, delivery_score,
-                                          fundamental_score, liquidity_score,
-                                          precompute_ranks, regime_adjustment,
-                                          stability_score, trend_score)
+from myra_app.score_components_v2 import (
+    base_score,
+    delivery_score,
+    fundamental_score,
+    liquidity_score,
+    precompute_ranks,
+    regime_adjustment,
+    stability_score,
+    trend_score,
+)
 
 
 class PositionalScorer:

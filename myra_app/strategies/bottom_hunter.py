@@ -68,7 +68,9 @@ class Strategy(BaseStrategy):
             ctx_stage = (
                 "Stage 1 (Basing)"
                 if "Stage 1" in stage
-                else "Stage 4 (Dangerous Fall)" if "Stage 4" in stage else stage
+                else "Stage 4 (Dangerous Fall)"
+                if "Stage 4" in stage
+                else stage
             )
 
             # 4. Weekly Divergence

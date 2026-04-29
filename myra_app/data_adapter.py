@@ -8,8 +8,7 @@ import pandas as pd
 import pandas_ta as ta
 
 from myra_core.schema import CORE_COLS, validate_columns
-from myra_core.utils.data_validation import (enforce_index_contract,
-                                             validate_dataframe)
+from myra_core.utils.data_validation import enforce_index_contract, validate_dataframe
 
 
 class DataAdapter:

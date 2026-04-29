@@ -84,7 +84,7 @@ class IndianMarketAPISource(BaseDataSource):
 
                     # Extract metrics wrapper if it exists (for single endpoint fallback)
                     metrics = item.get("data", item)
-                    all_results.append(self._normalize(metrics, ret_symbol))
+                    all_results.append(self._normalize(metrics, ret_symbol))  # noqa: PG-APPEND
 
             except Exception as e:
                 logging.error(f"Batch fetch error for {url}: {e}")

@@ -63,8 +63,7 @@ class LibrarianSyncMixin:
             )
             # Post-Fetch / Pre-Load Feature Enrichment Integration
             try:
-                from myra_app.feature_enrichment import \
-                    process_enrichment_pipeline
+                from myra_app.feature_enrichment import process_enrichment_pipeline
 
                 if self._tech_conn:
                     # Only run enrichment once per day — it writes to all 2.4M rows

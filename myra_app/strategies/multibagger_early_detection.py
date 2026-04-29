@@ -81,7 +81,9 @@ class Strategy:
                         "Grade": (
                             "Elite"
                             if score >= 85
-                            else "Strong" if score >= 70 else "Pass"
+                            else "Strong"
+                            if score >= 70
+                            else "Pass"
                         ),
                         "Comp": "YES" if is_compressing else "NO",
                         "Div": "YES" if has_rsi_divergence else "NO",

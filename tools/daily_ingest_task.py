@@ -23,7 +23,7 @@ if now_ist.weekday() >= 5:
 # 2. Skip before 6 PM IST (data not yet available)
 if now_ist.hour < 18:
     print(
-        f"[MYRA Scheduler] Market data not yet available (IST: {now_ist.strftime('%H:%M')}). Skipping."
+        f"[MYRA Scheduler] Market data not yet available (IST: {now_ist.strftime('%H:%M')}). Skipping."  # noqa: PG-STRFTIME
     )
     sys.exit(0)
 

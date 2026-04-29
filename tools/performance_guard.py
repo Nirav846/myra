@@ -21,7 +21,21 @@ class PerformanceVisitor(ast.NodeVisitor):
         if lineno > len(self.lines):
             return False
         line_content = self.lines[lineno - 1]
-        return f"noqa: {rule}" in line_content or "noqa: performance" in line_content
+        # Accept both standard and PG-prefixed noqa comments
+        pg_rule_map = {
+            "strftime": "PG-STRFTIME",
+            "append": "PG-APPEND",
+            "chained": "PG-CHAINED",
+            "N+1": "PG-NPLUS1",
+            "iterrows": "PG-ITERROWS",
+            "iloc": "PG-ILOC",
+        }
+        pg_rule = pg_rule_map.get(rule, rule)
+        return (
+            f"noqa: {rule}" in line_content
+            or f"noqa: {pg_rule}" in line_content
+            or "noqa: performance" in line_content
+        )
 
     def visit_For(self, node):
         # Check if this is a retry loop (common false positive for N+1)

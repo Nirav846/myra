@@ -22,7 +22,8 @@ def create_technical_db(db_path=None):
     cursor = conn.cursor()
 
     # 1. Technical Data Table
-    cursor.execute("""
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS technical_data (
             symbol TEXT NOT NULL,
             date TEXT NOT NULL,
@@ -34,7 +35,8 @@ def create_technical_db(db_path=None):
             delivery_pct REAL,
             PRIMARY KEY (symbol, date)
         )
-    """)
+    """
+    )
 
     # 2. Indexes for fast retrieval
     cursor.execute(

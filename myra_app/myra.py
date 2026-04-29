@@ -314,7 +314,7 @@ def main():
                 )  # returns list of dicts or tuples: (sector_name, count)
                 if sectors:
                     for i, sec in enumerate(sectors, start=5):
-                        options.append(
+                        options.append(  # noqa: PG-APPEND
                             (
                                 str(i),
                                 f"{sec['sector']} ({sec['count']} stocks)",

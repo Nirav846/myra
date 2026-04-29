@@ -120,7 +120,7 @@ def _task_daily_ingest():
     # Skip before 6 PM IST (data not yet available)
     if ist_now.hour < 18:
         print(
-            f"[MYRA BG] Market data not yet available (IST: {ist_now.strftime('%H:%M')}). Skipping."
+            f"[MYRA BG] Market data not yet available (IST: {ist_now.strftime('%H:%M')}). Skipping."  # noqa: PG-STRFTIME
         )
         return
 
@@ -207,8 +207,10 @@ def _task_index_sync():
             ist_now = datetime.now(timezone.utc).astimezone(IST)
             if ist_now.weekday() == 6:  # Sunday
                 print("[MYRA BG] Sunday index sync running...")
-                from myra_app.utils.index_sync import (heal_index_if_stale,
-                                                       sync_index_constituents)
+                from myra_app.utils.index_sync import (
+                    heal_index_if_stale,
+                    sync_index_constituents,
+                )
 
                 for idx in ["NIFTY 50", "NIFTY 500", "NIFTY SMALLCAP 250"]:
                     sync_index_constituents(idx)
@@ -346,8 +348,9 @@ def start():
                 count = iconn.execute("SELECT COUNT(*) FROM large_deals").fetchone()[0]
                 if count < 100:
                     print("[MYRA BG] Seeding institutional data...")
-                    from myra_app.utils.institutional_sync import \
-                        sync_institutional_data
+                    from myra_app.utils.institutional_sync import (
+                        sync_institutional_data,
+                    )
 
                     sync_institutional_data(force=True)
     except Exception as e:
@@ -378,7 +381,7 @@ def start():
         for name, fn in tasks:
             t = threading.Thread(target=fn, name=f"myra-bg-{name}", daemon=True)
             t.start()
-            _active_tasks.append(t)
+            _active_tasks.append(t)  # noqa: PG-APPEND
             logger.info(f"[MYRA BG] Started task: {name}")
 
     print("[MYRA BG] Background orchestrator running.")

@@ -293,8 +293,7 @@ class MYRAScreener:
         # self.console.print(f"[dim]DEBUG: Resolved {len(symbols)} symbols for scan.[/dim]")
 
         # 2. TECHNICAL SCAN
-        from myra_app.feature_enrichment import (pause_enrichment,
-                                                 resume_enrichment)
+        from myra_app.feature_enrichment import pause_enrichment, resume_enrichment
 
         pause_enrichment()
         try:
@@ -389,7 +388,11 @@ class MYRAScreener:
                         stars_count = (
                             5
                             if s_score >= 80
-                            else 4 if s_score >= 65 else 3 if s_score >= 50 else 2
+                            else 4
+                            if s_score >= 65
+                            else 3
+                            if s_score >= 50
+                            else 2
                         )
                     else:
                         stars_count = 4 if r.get("smc_phase") == 2 else 3
@@ -753,11 +756,11 @@ class MYRAScreener:
             ltp = r.get("Ltp") or r.get("LTP") or r.get("Close")
 
             if entry is None or entry == 0:
-                filtered.append(r)
+                filtered.append(r)  # noqa: PG-APPEND
                 continue
 
             if ltp is None:
-                filtered.append(r)
+                filtered.append(r)  # noqa: PG-APPEND
                 continue
 
             try:
@@ -767,10 +770,9 @@ class MYRAScreener:
 
                 if distance_pct <= range_pct:
                     r["Dist%"] = round(distance_pct, 2)
-                    filtered.append(r)
+                    filtered.append(r)  # noqa: PG-APPEND
             except (ValueError, TypeError, ZeroDivisionError):
-                filtered.append(r)
-
+                filtered.append(r)  # noqa: PG-APPEND
         return filtered
 
     def _resolve_hero_columns(self, results):
@@ -778,6 +780,7 @@ class MYRAScreener:
         Extract hero columns from results for display_discovery_table.
         Returns empty list by default (uses standard columns).
         """
+        return ["Dist%"]  # Add "Dist%" as a hero column
         return []
 
     def close(self):

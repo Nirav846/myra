@@ -355,14 +355,17 @@ SEED_ETF_SYMBOLS = {
 
 
 def _ensure_etf_table(conn):
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS etf_blocklist (
             symbol      TEXT PRIMARY KEY,
             added_date  TEXT,
             source      TEXT
         )
-    """)
-    conn.execute("""
+    """
+    )
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS etf_sync_log (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             sync_date   TEXT,
@@ -370,7 +373,8 @@ def _ensure_etf_table(conn):
             count       INTEGER,
             status      TEXT
         )
-    """)
+    """
+    )
     conn.commit()
 
 

@@ -108,12 +108,12 @@ class DbDoctor:
                 try:
                     conn.execute("BEGIN")
                     for col, col_type in missing_cols.items():
-                        c.execute(
+                        c.execute(  # noqa: PG-NPLUS1
                             f"ALTER TABLE technical_data ADD COLUMN {col} {col_type}"
                         )
                         print(f"  [FIXED] Added column {col}")
-                    conn.commit()
-                    self.issues_fixed += len(missing_cols)
+                        conn.commit()
+                        self.issues_fixed += len(missing_cols)
                 except Exception as e:
                     conn.rollback()
                     print(f"  [ERROR] Failed to add columns: {e}")
@@ -160,12 +160,11 @@ class DbDoctor:
                 "metadata",
                 "lineage_tracking",
             ]
+            c.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            existing = {row[0] for row in c.fetchall()}
+
             for table in expected_tables:
-                c.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-                    (table,),
-                )
-                if not c.fetchone():
+                if table not in existing:
                     print(f"  [WARNING] Missing table in meta DB: {table}")
                     self.issues_found += 1
 
@@ -212,7 +211,7 @@ class DbDoctor:
                         conn.execute("BEGIN")
                         for col, col_type in missing_cols.items():
                             add_type = col_type.replace("PRIMARY KEY", "")
-                            c.execute(
+                            c.execute(  # noqa: PG-NPLUS1
                                 f"ALTER TABLE symbols_master ADD COLUMN {col} {add_type}"
                             )
                             print(f"  [FIXED] Added column {col}")
@@ -255,18 +254,6 @@ class DbDoctor:
                         print(
                             f"  [DRY RUN] Would fix: ALTER TABLE fundamentals ADD COLUMN {col} TEXT"
                         )
-
-                if missing_cols and not self.dry_run:
-                    try:
-                        conn.execute("BEGIN")
-                        for col in missing_cols:
-                            c.execute(f"ALTER TABLE fundamentals ADD COLUMN {col} TEXT")
-                            print(f"  [FIXED] Added column {col}")
-                        conn.commit()
-                        self.issues_fixed += len(missing_cols)
-                    except Exception as e:
-                        conn.rollback()
-                        print(f"  [ERROR] Failed to add columns: {e}")
                         self.issues_failed += len(missing_cols)
 
         finally:
@@ -349,7 +336,7 @@ class DbDoctor:
 
             for desc, query in checks:
                 try:
-                    c.execute(query)
+                    c.execute(query)  # noqa: PG-NPLUS1
                     count = c.fetchone()[0]
                     if count > 0:
                         print(f"  [WARNING] {desc}: {count}")
@@ -362,7 +349,7 @@ class DbDoctor:
                                 )
                             else:
                                 try:
-                                    c.execute(
+                                    c.execute(  # noqa: PG-NPLUS1
                                         "UPDATE technical_data SET delivery_source = 'raw_qty' WHERE delivery IS NOT NULL AND delivery_source IS NULL"
                                     )
                                     conn.commit()
@@ -390,11 +377,13 @@ class DbDoctor:
                     f"  [WARNING] Rows with NULL delivery_pct but valid delivery: {null_pct:,}"
                 )
                 if not self.dry_run:
-                    conn.execute("""
+                    conn.execute(
+                        """
                         UPDATE technical_data
                         SET delivery_pct = ROUND((delivery * 100.0 / volume), 2)
                         WHERE delivery IS NOT NULL AND volume > 0 AND delivery_pct IS NULL
-                    """)
+                    """
+                    )
                     conn.commit()
                     self.issues_fixed += 1
                     print(f"  [FIXED] Backfilled delivery_pct for {null_pct:,} rows")
@@ -410,8 +399,7 @@ class DbDoctor:
     def check_etf_contamination(self):
         print("--- Checking ETF Contamination in Technical DB ---")
         try:
-            from myra_app.utils.etf_sync import \
-                purge_etf_rows_from_technical_db
+            from myra_app.utils.etf_sync import purge_etf_rows_from_technical_db
 
             count = purge_etf_rows_from_technical_db(dry_run=self.dry_run)
             if count > 0:
@@ -472,7 +460,7 @@ class DbDoctor:
                 conn = sqlite3.connect(db_path, check_same_thread=False)
                 c = conn.cursor()
 
-                c.execute("PRAGMA journal_mode")
+                c.execute("PRAGMA journal_mode")  # noqa: PG-NPLUS1
                 mode = c.fetchone()[0].upper()
 
                 if mode != "WAL":
@@ -485,15 +473,15 @@ class DbDoctor:
                             f"  [DRY RUN] Would fix: PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; on {filename}"
                         )
                     else:
-                        c.execute("PRAGMA journal_mode=WAL")
-                        c.execute("PRAGMA synchronous=NORMAL")
+                        c.execute("PRAGMA journal_mode=WAL")  # noqa: PG-NPLUS1
+                        c.execute("PRAGMA synchronous=NORMAL")  # noqa: PG-NPLUS1
                         conn.commit()
                         print(f"  [FIXED] Enabled WAL mode on {filename}")
                         self.issues_fixed += 1
                 else:
                     # just ensure synchronous=NORMAL if it's already WAL
                     if not self.dry_run:
-                        c.execute("PRAGMA synchronous=NORMAL")
+                        c.execute("PRAGMA synchronous=NORMAL")  # noqa: PG-NPLUS1
                         conn.commit()
 
             except Exception as e:

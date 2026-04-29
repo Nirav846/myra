@@ -6,6 +6,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from myra_app.fetcher import DataFetcher
+
 # --- UPDATED: Import FundamentalManager directly from myra_app ---
 from myra_app.fundamental_manager import FundamentalManager
 
@@ -144,7 +145,7 @@ def sync_fundamentals(force=False):
             progress["last_processed_symbol"] = symbol
 
             if (i + 1) % 10 == 0:
-                meta_conn.execute(
+                meta_conn.execute(  # noqa: PG-NPLUS1
                     "INSERT OR REPLACE INTO metadata (key, value) VALUES (?,?)",
                     ("fundamentals_sync_status", json.dumps(progress)),
                 )

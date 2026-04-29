@@ -263,7 +263,9 @@ def _worker_task(payload):
                     "Confluence": (
                         "High"
                         if funda.get("Consensus", 0) >= 4
-                        else "Moderate" if funda.get("Consensus", 0) >= 2 else "Low"
+                        else "Moderate"
+                        if funda.get("Consensus", 0) >= 2
+                        else "Low"
                     ),
                     **funda,
                 }
@@ -364,7 +366,7 @@ def run_workers(
                 res = _worker_task(payload)
                 progress.update(task, advance=1)
                 if res:
-                    results.append(res)
+                    results.append(res)  # noqa: PG-APPEND
         else:
             # Full path: use multiprocessing for bulk scans
             with multiprocessing.Pool(
@@ -378,6 +380,6 @@ def run_workers(
                         watchdog.poke()
                     progress.update(task, advance=1)
                     if res:
-                        results.append(res)
+                        results.append(res)  # noqa: PG-APPEND
 
     return results

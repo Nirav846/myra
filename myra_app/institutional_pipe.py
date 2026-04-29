@@ -214,7 +214,11 @@ class InstitutionalPipe:
         grade = (
             "A"
             if not flags
-            else "B" if len(flags) < 2 else "C" if len(flags) < 4 else "F"
+            else "B"
+            if len(flags) < 2
+            else "C"
+            if len(flags) < 4
+            else "F"
         )
         return {"grade": grade, "flags": flags}
 

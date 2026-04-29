@@ -124,7 +124,9 @@ def run(df: pd.DataFrame, funda: dict) -> dict:
         setup_type = (
             "Breakout"
             if breakout_entry
-            else "Pullback" if pullback_entry else "Bear Trap"
+            else "Pullback"
+            if pullback_entry
+            else "Bear Trap"
         )
 
         # Entry/SL Logic

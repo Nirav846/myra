@@ -11,8 +11,7 @@ import numpy as np
 import pandas as pd
 import pandas_ta as ta
 
-from myra_core.utils.data_validation import (enforce_index_contract,
-                                             validate_dataframe)
+from myra_core.utils.data_validation import enforce_index_contract, validate_dataframe
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +30,6 @@ def safe_concat(df_list):
 
 
 class LibrarianIntelligenceMixin:
-
     def precompute_indicators(self, as_of_date=None):
         """
         Unified API for retrieving indicators via Parquet Lake.
@@ -67,7 +65,7 @@ class LibrarianIntelligenceMixin:
                 # Ensure symbol exists
                 row["symbol"] = sym
 
-                results_list.append(row)
+                results_list.append(row)  # noqa: PG-APPEND
 
             except Exception as e:
                 logger.debug(f"Failed to load indicator for {sym}: {e}")

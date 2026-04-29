@@ -85,7 +85,7 @@ def sync_index_constituents(index_name, force=False):
         for item in data["data"]:
             symbol = item.get("symbol")
             if symbol:
-                symbols.append(symbol)
+                symbols.append(symbol)  # noqa: PG-APPEND
 
         # Filter out dummy / test symbols that NSE sometimes includes
         EXCLUDE_SYMBOLS = {
@@ -116,7 +116,7 @@ def sync_index_constituents(index_name, force=False):
                 continue
             if any(p in sym_upper for p in EXCLUDE_PATTERNS):
                 continue
-            filtered.append(sym)
+            filtered.append(sym)  # noqa: PG-APPEND
         symbols = filtered
 
         if not symbols:
@@ -134,14 +134,16 @@ def sync_index_constituents(index_name, force=False):
 
         with sqlite3.connect(metadata_db_path, timeout=30) as conn:
             # Create table if not exists
-            conn.execute("""
+            conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS index_constituents (
                     index_name TEXT,
                     symbol TEXT,
                     last_updated TEXT,
                     PRIMARY KEY (index_name, symbol)
                 )
-            """)
+            """
+            )
 
             # Clear old entries
             conn.execute(

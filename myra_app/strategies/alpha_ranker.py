@@ -53,7 +53,9 @@ class Strategy:
                             else (
                                 "HIGH"
                                 if ias >= 7.0
-                                else "TECHNICAL_WATCH" if ias < 5.0 else "WATCH"
+                                else "TECHNICAL_WATCH"
+                                if ias < 5.0
+                                else "WATCH"
                             )
                         ),
                     },

@@ -193,9 +193,9 @@ class LibrarianCore:
                     c.close()
                 except Exception:
                     pass
-        self._tech_conn = self._inst_conn = self._meta_conn = self._val_conn = (
-            self._gov_conn
-        ) = None
+        self._tech_conn = (
+            self._inst_conn
+        ) = self._meta_conn = self._val_conn = self._gov_conn = None
 
     def record_lineage(
         self, dataset: str, source: str, rows: int, status: str, transforms: str

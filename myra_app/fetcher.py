@@ -89,8 +89,7 @@ class GhostSession:
         if not conn:
             return None
         key = hashlib.md5(
-            f"{url}{json.dumps(params, sort_keys=True)}".encode(),
-            usedforsecurity=False
+            f"{url}{json.dumps(params, sort_keys=True)}".encode(), usedforsecurity=False
         ).hexdigest()
         try:
             # Consistent UTC comparison
@@ -109,13 +108,14 @@ class GhostSession:
         if not conn:
             return
         key = hashlib.md5(
-            f"{url}{json.dumps(params, sort_keys=True)}".encode(),
-            usedforsecurity=False
+            f"{url}{json.dumps(params, sort_keys=True)}".encode(), usedforsecurity=False
         ).hexdigest()
         expiry = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(
             seconds=expire_seconds
         )
-        data_hash = hashlib.md5(value, usedforsecurity=False).hexdigest() if value else None
+        data_hash = (
+            hashlib.md5(value, usedforsecurity=False).hexdigest() if value else None
+        )
 
         try:
             conn.execute(
@@ -824,9 +824,9 @@ class DataFetcher:
             "NOV",
             "DEC",
         ]
-        df_full["DATE1"] = (
-            f"{current_date.day:02d}-{MONTHS[current_date.month-1]}-{current_date.year}"
-        )
+        df_full[
+            "DATE1"
+        ] = f"{current_date.day:02d}-{MONTHS[current_date.month-1]}-{current_date.year}"
 
         # Drop anything not explicitly in whitelist, ensuring no duplicate mapping creates chaos
         for c in CORE_COLUMNS:
@@ -1213,7 +1213,9 @@ class DataFetcher:
             col = (
                 "Symbol"
                 if "Symbol" in df.columns
-                else "SYMBOL" if "SYMBOL" in df.columns else df.columns[2]
+                else "SYMBOL"
+                if "SYMBOL" in df.columns
+                else df.columns[2]
             )
             return df[col].tolist()
         except:
@@ -1263,9 +1265,9 @@ class DataFetcher:
 
     def fetch_sast_disclosures(self, days=3):
         headers = self.registry.get("headers", {}).get("nse_api_headers", {}).copy()
-        headers["Referer"] = (
-            "https://www.nseindia.com/companies-listing/corporate-filings-insider-trading"
-        )
+        headers[
+            "Referer"
+        ] = "https://www.nseindia.com/companies-listing/corporate-filings-insider-trading"
         today = date.today()
         start_date = today - timedelta(days=days)
         end_str = f"{today.day:02d}-{today.month:02d}-{today.year}"

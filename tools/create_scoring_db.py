@@ -13,7 +13,8 @@ def create_scoring_db(db_path="scoring.db"):
     cursor = conn.cursor()
 
     # 1. Fundamental Scores Table
-    cursor.execute("""
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS fundamental_scores (
             symbol TEXT NOT NULL,
             date TEXT NOT NULL,
@@ -25,10 +26,12 @@ def create_scoring_db(db_path="scoring.db"):
             grade TEXT,
             PRIMARY KEY (symbol, date)
         )
-    """)
+    """
+    )
 
     # 2. Ranking History
-    cursor.execute("""
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS ranking_history (
             symbol TEXT NOT NULL,
             date TEXT NOT NULL,
@@ -36,7 +39,8 @@ def create_scoring_db(db_path="scoring.db"):
             rank_sector INTEGER,
             PRIMARY KEY (symbol, date)
         )
-    """)
+    """
+    )
 
     conn.commit()
     conn.close()

@@ -6,8 +6,7 @@ import pandas as pd
 from rich.console import Console
 from rich.table import Table
 
-from myra_app.strategies.alpha.position_sizer import (KellySizer,
-                                                      VolatilityAdjustedSizer)
+from myra_app.strategies.alpha.position_sizer import KellySizer, VolatilityAdjustedSizer
 
 from .institutional_pipe import InstitutionalPipe
 
@@ -413,7 +412,9 @@ class ResultsManager:
             rating = (
                 "[green]LOW[/green]"
                 if vol < 20
-                else "[yellow]MOD[/yellow]" if vol < 40 else "[red]HIGH[/red]"
+                else "[yellow]MOD[/yellow]"
+                if vol < 40
+                else "[red]HIGH[/red]"
             )
             t_risk.add_row(r["Stock"], f"{mdd:.1f}%", f"{vol:.1f}%", rating)
 
@@ -602,7 +603,11 @@ class ResultsManager:
             gc = (
                 "green"
                 if "A" in g
-                else "yellow" if "B" in g else "white" if "C" in g else "red"
+                else "yellow"
+                if "B" in g
+                else "white"
+                if "C" in g
+                else "red"
             )
 
             # Universal Formatting for standard numeric fields
@@ -682,7 +687,9 @@ class ResultsManager:
                 score_color = (
                     "bold green"
                     if score_v25 >= 70
-                    else "yellow" if score_v25 >= 50 else "red"
+                    else "yellow"
+                    if score_v25 >= 50
+                    else "red"
                 )
                 row = row + [f"[{score_color}]{s_sym}{score_v25}[/{score_color}]"]
 
@@ -699,12 +706,16 @@ class ResultsManager:
                             a_sym = (
                                 "↑ "
                                 if val_num >= 70
-                                else "↓ " if val_num < 40 else "→ "
+                                else "↓ "
+                                if val_num < 40
+                                else "→ "
                             )
                             acc_color = (
                                 "green"
                                 if val_num >= 70
-                                else "yellow" if val_num >= 40 else "red"
+                                else "yellow"
+                                if val_num >= 40
+                                else "red"
                             )
                         elif acc == "New":
                             a_sym = "✦ "
@@ -804,7 +815,9 @@ class ResultsManager:
                         color = (
                             "green"
                             if num_val > 1.1
-                            else "red" if num_val < 0.9 else "yellow"
+                            else "red"
+                            if num_val < 0.9
+                            else "yellow"
                         )
                         arrow = (
                             "↑ " if num_val > 1.1 else "↓ " if num_val < 0.9 else "→ "
@@ -815,7 +828,9 @@ class ResultsManager:
                         color = (
                             "green"
                             if num_val > 20
-                            else "red" if num_val < 10 else "yellow"
+                            else "red"
+                            if num_val < 10
+                            else "yellow"
                         )
                         colored_val = f"[{color}]{sym}{formatted_val}[/{color}]"
                     elif c == "SMC":
@@ -823,7 +838,9 @@ class ResultsManager:
                         color = (
                             "green"
                             if num_val > 20
-                            else "red" if num_val < 10 else "yellow"
+                            else "red"
+                            if num_val < 10
+                            else "yellow"
                         )
                         colored_val = f"[{color}]{sym}{formatted_val}[/{color}]"
                     elif c == "Absorp_Ratio" or c == "Absorption":
@@ -831,7 +848,9 @@ class ResultsManager:
                         color = (
                             "green"
                             if num_val > 1.5
-                            else "red" if num_val < 0.8 else "yellow"
+                            else "red"
+                            if num_val < 0.8
+                            else "yellow"
                         )
                         colored_val = f"[{color}]{sym}{formatted_val}[/{color}]"
                     elif c == "d_poc" or c == "D-POC":
@@ -844,7 +863,9 @@ class ResultsManager:
                         color = (
                             "green"
                             if num_val > 0.5
-                            else "red" if num_val < -0.5 else "white"
+                            else "red"
+                            if num_val < -0.5
+                            else "white"
                         )
                         arrow = (
                             "↑ " if num_val > 0.5 else "↓ " if num_val < -0.5 else "→ "
@@ -855,7 +876,9 @@ class ResultsManager:
                         color = (
                             "green"
                             if num_val < 2
-                            else "yellow" if num_val < 5 else "red"
+                            else "yellow"
+                            if num_val < 5
+                            else "red"
                         )
                         colored_val = f"[{color}]{sym}{formatted_val}[/{color}]"
                 except:

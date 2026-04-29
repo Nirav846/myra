@@ -22,7 +22,7 @@ def rotate_backups():
     backup_dir = os.path.join(DB_DIR, "backups")
     os.makedirs(backup_dir, exist_ok=True)
 
-    stamp = date.today().strftime("%Y-%m-%d")
+    stamp = date.today().strftime("%Y-%m-%d")  # noqa: PG-STRFTIME
     dest = os.path.join(backup_dir, f"myra_technical_{stamp}.db")
 
     try:

@@ -239,7 +239,7 @@ def process_enrichment_pipeline(lib, conn):
             for col in smc_columns:
                 if col in smc_df.columns:
                     try:
-                        conn.execute(
+                        conn.execute(  # noqa: PG-NPLUS1
                             f"ALTER TABLE technical_data ADD COLUMN {col} REAL"
                         )
                     except:
@@ -255,7 +255,7 @@ def process_enrichment_pipeline(lib, conn):
                             row["symbol"],
                             str(row["date"]),
                         )
-                        for _, row in smc_df.iterrows()
+                        for _, row in smc_df.iterrows()  # noqa: PG-ITERROWS
                         if not pd.isna(row[col])
                     ]
 

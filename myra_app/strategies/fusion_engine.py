@@ -34,7 +34,6 @@ class FusionEngine(BaseStrategy):
             return {}
 
     def run(self, df: pd.DataFrame, funda: dict) -> dict:
-
         if df is None or df.empty:
             return {"signal": False}
 
@@ -51,7 +50,6 @@ class FusionEngine(BaseStrategy):
         return self.compute_fusion_signal(df)
 
     def compute_fusion_signal(self, df: pd.DataFrame) -> dict:
-
         params = self.config.get("parameters", {})
         lookback = params.get("lookback_trading_days", 60)
 

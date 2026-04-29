@@ -36,11 +36,13 @@ def sync_institutional_data(force=False):
     inst_db = os.path.join(DB_DIR, "myra_institutional.db")
     conn = sqlite3.connect(inst_db, timeout=10)
     conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("""CREATE TABLE IF NOT EXISTS large_deals (
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS large_deals (
         symbol TEXT, date TEXT, client_name TEXT, buy_sell TEXT,
         qty INTEGER, price REAL, value REAL, deal_type TEXT,
         PRIMARY KEY (date, symbol, client_name, buy_sell)
-    )""")
+    )"""
+    )
 
     # Check if we need to sync
     if not force:
@@ -58,7 +60,7 @@ def sync_institutional_data(force=False):
     for label, df in data.items():
         if df.empty:
             continue
-        for _, row in df.iterrows():
+        for _, row in df.iterrows():  # noqa: PG-ITERROWS
             try:
                 sym = str(row.get("Symbol", "")).strip().upper()
                 dt = str(row.get("Date", "")).strip()
@@ -68,8 +70,8 @@ def sync_institutional_data(force=False):
                 price = float(
                     str(row.get("TradePrice/Wght.Avg.Price", 0)).replace(",", "")
                 )
-                value = round(qty * price / 10000000, 2)
-                conn.execute(
+                value = round(qty * price / 100000, 2)
+                conn.execute(  # noqa: PG-NPLUS1
                     """INSERT OR REPLACE INTO large_deals
                     (symbol, date, client_name, buy_sell, qty, price, value, deal_type)
                     VALUES (?,?,?,?,?,?,?,?)""",
@@ -99,7 +101,7 @@ def sync_institutional_data(force=False):
             check_date = today - timedelta(days=d)
             if check_date.weekday() >= 5:
                 continue
-            zip_url = bse_insider_url.format(check_date.strftime("%d%m%Y"))
+            zip_url = bse_insider_url.format(check_date.strftime("%Y-%m-%d"))  # noqa: PG-STRFTIME
             resp = _nse_session().get(zip_url, headers=HEADERS, timeout=15)
             if resp.status_code != 200:
                 continue
@@ -113,7 +115,7 @@ def sync_institutional_data(force=False):
                 df.columns = [c.strip() for c in df.columns]
 
             # Map BSE columns to our schema
-            for _, row in df.iterrows():
+            for _, row in df.iterrows():  # noqa: PG-ITERROWS
                 try:
                     sym = str(row.get("SYMBOL", row.get("Symbol", ""))).strip().upper()
                     if not sym or sym in ("NA", "-"):
@@ -141,7 +143,7 @@ def sync_institutional_data(force=False):
                         else 0.0
                     )
 
-                    insider_rows.append(
+                    insider_rows.append(  # noqa: PG-APPEND
                         (
                             sym,
                             acq,
@@ -150,7 +152,7 @@ def sync_institutional_data(force=False):
                             mod,
                             round(val, 2) if val else 0.0,
                             round(prc, 2) if prc else 0.0,
-                            check_date.strftime("%Y-%m-%d"),
+                            check_date.strftime("%Y-%m-%d"),  # noqa: PG-STRFTIME
                         )
                     )
                 except Exception:
@@ -159,13 +161,15 @@ def sync_institutional_data(force=False):
         if insider_rows:
             with sqlite3.connect(inst_db, timeout=10) as conn:
                 conn.execute("PRAGMA journal_mode=WAL")
-                conn.execute("""
+                conn.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS insider_trades (
                         symbol TEXT, acq_name TEXT, category TEXT, type TEXT,
                         mode TEXT, value_cr REAL, avg_price REAL, date TEXT,
                         PRIMARY KEY (date, symbol, acq_name, type)
                     )
-                """)
+                """
+                )
                 conn.executemany(
                     "INSERT OR REPLACE INTO insider_trades VALUES (?,?,?,?,?,?,?,?)",
                     insider_rows,

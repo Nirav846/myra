@@ -45,7 +45,11 @@ class FundamentalRanker:
                 grade = (
                     "A"
                     if score >= 70
-                    else "B" if score >= 50 else "C" if score >= 30 else "D"
+                    else "B"
+                    if score >= 50
+                    else "C"
+                    if score >= 30
+                    else "D"
                 )
                 return (
                     row.Stock,

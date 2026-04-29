@@ -164,8 +164,7 @@ class DilatedCNNForecaster:
         Builds the underlying TensorFlow/Keras architecture.
         """
         try:
-            from tensorflow.keras.layers import (Conv1D, Dense, Dropout, Input,
-                                                 Lambda)
+            from tensorflow.keras.layers import Conv1D, Dense, Dropout, Input, Lambda
             from tensorflow.keras.models import Model
 
             inputs = Input(shape=(self.window_size, self.features_count))

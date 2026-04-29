@@ -20,8 +20,7 @@ from myra_app.librarian_ingestor import LibrarianIngestorMixin
 from myra_app.librarian_intelligence import LibrarianIntelligenceMixin
 from myra_app.librarian_schema import LibrarianSchemaMixin
 from myra_app.librarian_sync import LibrarianSyncMixin
-from myra_core.utils.data_validation import (enforce_index_contract,
-                                             validate_dataframe)
+from myra_core.utils.data_validation import enforce_index_contract, validate_dataframe
 
 
 class Librarian(

@@ -165,7 +165,9 @@ class IndexEngine:
             vibe = (
                 "BULLISH"
                 if avg_change > 0.5
-                else "BEARISH" if avg_change < -0.5 else "NEUTRAL"
+                else "BEARISH"
+                if avg_change < -0.5
+                else "NEUTRAL"
             )
             res = {"avg": round(avg_change, 2), "vibe": vibe}
             self._store_cache(key, res)
