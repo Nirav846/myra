@@ -6,6 +6,7 @@ from typing import Any, Dict
 
 import pandas as pd
 from myra_core.utils.data_validation import enforce_index_contract, validate_dataframe
+from myra_core.schema import CORE_COLS, validate_columns
 import pandas_ta as ta
 
 
@@ -139,6 +140,19 @@ class DataAdapter:
                 self._price_cache.clear()  # Emergency flush
             self._price_cache[cache_key] = df
 
+        try:
+            validate_columns(df, CORE_COLS, f"DataAdapter({symbol_clean})")
+        except ValueError as e:
+            logging.warning(str(e))
+        
+        # Ensure date is always a column, not the index
+        if "date" not in df.columns and df.index.name == "date":
+            df = df.reset_index()
+        if "date" in df.columns:
+            df = df.set_index("symbol")  # optional: keep symbol as index for quick lookups
+        else:
+            df = df.reset_index()  # fallback
+        
         return df.copy()
 
     def get_technical_history(

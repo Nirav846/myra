@@ -56,14 +56,24 @@ def _worker_task(payload):
     if _worker_adapter is None:
         init_worker(strategy_name)
     if _worker_adapter is None:
-        return None
+        return {
+            "symbol": symbol,
+            "status": "SKIPPED",
+            "error": "Adapter initialization failed",
+            "stage": "worker_init",
+        }
 
     noise_keywords = [
         "BEES", "GOLD", "SILVER", "LIQUID", "ETF",
         "IETF", "SDL", "GSEC", "CASH"
     ]
     if any(k in symbol.upper() for k in noise_keywords):
-        return None
+        return {
+            "symbol": symbol,
+            "status": "SKIPPED",
+            "error": "Noise keyword (ETF/Gold/Silver)",
+            "stage": "noise_filter",
+        }
 
     try:
         lookback = _worker_adapter.get_lookback_for_scanner(strategy_name)
@@ -72,7 +82,12 @@ def _worker_task(payload):
         )
 
         if df is None or df.empty:
-            return None
+            return {
+                "symbol": symbol,
+                "status": "SKIPPED",
+                "error": "No price data available",
+                "stage": "data_fetch",
+            }
 
         # Contract enforcement after load
         from myra_core.data_contracts import enforce_ohlcv_contract
@@ -135,23 +150,24 @@ def _worker_task(payload):
         except Exception:
             pass
 
-        # --- SMC FIX: ISOLATED COLUMNS (Stops Truth Value Ambiguity) ---
-        base_cols = ["Open", "High", "Low", "Close", "Volume"]
-        df_smc = df[base_cols].copy()
-        df_smc.columns = [c.lower() for c in df_smc.columns]
+        # Use pre-computed SMC columns (no per-symbol recomputation)
+        fvg_top = df["fvg_top"].dropna().iloc[-1] if "fvg_top" in df.columns and not df["fvg_top"].dropna().empty else 0
+        fvg_bottom = df["fvg_bottom"].dropna().iloc[-1] if "fvg_bottom" in df.columns and not df["fvg_bottom"].dropna().empty else 0
+        fvg_boundary = df["fvg_boundary"].dropna().iloc[-1] if "fvg_boundary" in df.columns and not df["fvg_boundary"].dropna().empty else 0
+        has_bullish = df["has_bullish_fvg"].dropna().iloc[-1] if "has_bullish_fvg" in df.columns and not df["has_bullish_fvg"].dropna().empty else 0
 
-        fvg_signals = SMCManager.calculate_fvg(df_smc)
-        bos_signals, choch_signals = SMCManager.calculate_market_structure(df_smc)
+        # Construct FVG zone for UI display
+        if fvg_top and fvg_bottom:
+            fvg_zone = {"top": fvg_top, "bottom": fvg_bottom, "mid": (fvg_top + fvg_bottom) / 2}
+            funda["fvg_active"] = 1
+        else:
+            fvg_zone = None
+            funda["fvg_active"] = 0
 
-        funda["fvg"] = fvg_signals.iloc[-1] if not fvg_signals.empty else 0
-        funda["bos"] = bos_signals.iloc[-1] if not bos_signals.empty else 0
-        funda["choch"] = choch_signals.iloc[-1] if not choch_signals.empty else 0
-
-        fvg_zone = SMCManager.get_fvg_buy_zone(df)
-        fvg_mid = fvg_zone["mid"] if fvg_zone else None
-
+        funda["fvg"] = 1 if has_bullish else 0
+        funda["bos"] = funda.get("bos", 0)   # keep existing if already set
+        funda["choch"] = funda.get("choch", 0)
         funda["fvg_zone"] = fvg_zone
-        funda["fvg_active"] = 1 if fvg_zone else 0
 
         # Accept string strategy names properly
         funda["active_sid"] = strategy_name
@@ -168,7 +184,12 @@ def _worker_task(payload):
         elif hasattr(_worker_strategy, "run_scanner"):
             sid = funda.get("active_sid")
             if not sid:
-                return None
+                return {
+                    "symbol": symbol,
+                    "status": "SKIPPED",
+                    "error": "No active scanner ID",
+                    "stage": "primitive_scanner",
+                }
 
             passed = False
             if "|" in str(sid):
@@ -217,7 +238,12 @@ def _worker_task(payload):
                 res_payload["Stars"] = "*" * int(min(5, stars))
 
                 return res_payload
-            return None
+            return {
+                "symbol": symbol,
+                "status": "SKIPPED",
+                "error": "Scanner did not pass",
+                "stage": "primitive_scanner",
+            }
         else:
             res = _worker_strategy.run(df, funda)
 
@@ -245,11 +271,21 @@ def _worker_task(payload):
 
             return res_dict
 
-        return None
+        return {
+            "symbol": symbol,
+            "status": "SKIPPED",
+            "error": "No signal generated",
+            "stage": "final_return",
+        }
     except Exception as e:
-        import logging
-        logging.error(f"[WORKER FAILED] {symbol}: {type(e).__name__} - {e}")
-        return None
+        import logging, traceback
+        logging.error(f"[WORKER FAILED] {symbol}: {type(e).__name__} - {e}\n{traceback.format_exc()}")
+        return {
+            "symbol": symbol,
+            "status": "FAILED",
+            "error": f"{type(e).__name__}: {e}",
+            "stage": "worker_task",
+        }
 
 
 def run_workers(payloads, strategy_name, db_path, silent=False, watchdog=None) -> list[dict]:

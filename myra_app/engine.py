@@ -291,6 +291,19 @@ class Engine:
                 print(f"\n[CRITICAL] Data Integrity Failure: 0/{num_stocks} results produced. Aborting.")
             return [], {"error": "CATASTROPHIC_PIPELINE_FAILURE"}
 
+        # Observability: report failed/skipped symbols
+        failed = [r for r in results if isinstance(r, dict) and r.get("status") == "FAILED"]
+        skipped = [r for r in results if isinstance(r, dict) and r.get("status") == "SKIPPED"]
+        if failed:
+            print(f"\n❌ Failed Symbols ({len(failed)}):")
+            for f in failed[:10]:
+                print(f"   • {f['symbol']}: {f.get('error', 'unknown')}")
+        if skipped and not silent:
+            print(f"\n⚠️  Skipped Symbols: {len(skipped)}")
+
+        # Clean results to only contain valid signal dicts
+        results = [r for r in results if isinstance(r, dict) and r.get("signal") or r.get("Stock")]
+
         if not silent:
             elapsed = time.time() - start_time
             print(f"[MYRA] Scan completed in {elapsed:.2f}s ({num_stocks} stocks, {elapsed/max(1,num_stocks):.3f}s/stock)")
