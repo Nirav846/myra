@@ -90,8 +90,11 @@ def _task_db_doctor():
     Runs db_doctor in auto-fix mode on startup.
     Skips if shutdown is requested.
     """
+    from myra_app.task_tracker import register, unregister
+
     if _shutdown_event.is_set():
         return
+    tid = register("DB health check")
     try:
         print("[MYRA BG] Running DB health check...")
         from tools.db_doctor import DbDoctor
@@ -101,12 +104,16 @@ def _task_db_doctor():
         print("[MYRA BG] DB health check complete.")
     except Exception as e:
         logger.error(f"[MYRA BG] DB Doctor failed: {e}")
+    finally:
+        unregister(tid)
 
 
 # ─── Task 2: Daily Ingestor ───────────────────────────────────────────────────
 
 
 def _task_daily_ingest():
+    from myra_app.task_tracker import register, unregister
+
     if _shutdown_event.is_set():
         return
 
@@ -129,6 +136,7 @@ def _task_daily_ingest():
         print("[MYRA BG] Today's data already ingested. Skipping.")
         return
 
+    tid = register("Daily ingest")
     try:
         print(
             f"[MYRA BG] {ist_now.date()} is a trading day. Fetching today's bhavcopy..."
@@ -140,6 +148,8 @@ def _task_daily_ingest():
         print("[MYRA BG] Daily ingest complete.")
     except Exception as e:
         logger.error(f"[MYRA BG] Daily ingest failed: {e}")
+    finally:
+        unregister(tid)
 
 
 # ─── Task 3: Midnight Watchdog ────────────────────────────────────────────────
@@ -151,32 +161,41 @@ def _task_watchdog():
     6 PM IST, triggers daily ingest automatically.
     Runs for the entire session lifetime.
     """
-    last_checked_date = None
+    from myra_app.task_tracker import register, update, unregister
 
-    while not _shutdown_event.is_set():
-        _shutdown_event.wait(timeout=60)  # Sleep 60s, wake early on shutdown
-        if _shutdown_event.is_set():
-            break
+    tid = register("Background sync watchdog", task_type="indefinite")
+    try:
+        last_checked_date = None
 
-        try:
-            ist_now = datetime.now(timezone.utc).astimezone(IST)
-            today = ist_now.date().isoformat()
+        while not _shutdown_event.is_set():
+            _shutdown_event.wait(timeout=60)  # Sleep 60s, wake early on shutdown
+            if _shutdown_event.is_set():
+                break
 
-            # New day detected after 6 PM IST
-            if (
-                today != last_checked_date
-                and ist_now.weekday() < 5
-                and ist_now.hour >= 18
-                and not _already_ingested_today()
-            ):
-                print(
-                    f"[MYRA BG] New trading day detected ({today}). Auto-fetching bhavcopy..."
-                )
-                _task_daily_ingest()
-                last_checked_date = today
+            try:
+                ist_now = datetime.now(timezone.utc).astimezone(IST)
+                today = ist_now.date().isoformat()
 
-        except Exception as e:
-            logger.warning(f"[MYRA BG] Watchdog error: {e}")
+                # Update watchdog status with timestamp
+                update(tid, f"Watching – Last check: {ist_now.strftime('%H:%M:%S')}")
+
+                # New day detected after 6 PM IST
+                if (
+                    today != last_checked_date
+                    and ist_now.weekday() < 5
+                    and ist_now.hour >= 18
+                    and not _already_ingested_today()
+                ):
+                    print(
+                        f"[MYRA BG] New trading day detected ({today}). Auto-fetching bhavcopy..."
+                    )
+                    _task_daily_ingest()
+                    last_checked_date = today
+
+            except Exception as e:
+                logger.warning(f"[MYRA BG] Watchdog error: {e}")
+    finally:
+        unregister(tid)
 
 
 # ─── Task 4: ETF Sync ─────────────────────────────────────────────────────────
@@ -184,17 +203,23 @@ def _task_watchdog():
 
 def _task_etf_sync():
     """Syncs ETF blocklist from NSE every Sunday."""
-    while not _shutdown_event.is_set():
-        try:
-            ist_now = datetime.now(timezone.utc).astimezone(IST)
-            if ist_now.weekday() == 6:  # Sunday
-                from myra_app.utils.etf_sync import sync_etf_list
+    from myra_app.task_tracker import register, unregister
 
-                print("[MYRA BG] Sunday ETF sync running...")
-                sync_etf_list()
-        except Exception as e:
-            logger.error(f"[MYRA BG] ETF sync failed: {e}")
-        _shutdown_event.wait(timeout=3600)  # Check every hour
+    tid = register("ETF sync", task_type="indefinite")
+    try:
+        while not _shutdown_event.is_set():
+            try:
+                ist_now = datetime.now(timezone.utc).astimezone(IST)
+                if ist_now.weekday() == 6:  # Sunday
+                    from myra_app.utils.etf_sync import sync_etf_list
+
+                    print("[MYRA BG] Sunday ETF sync running...")
+                    sync_etf_list(task_id=tid)
+            except Exception as e:
+                logger.error(f"[MYRA BG] ETF sync failed: {e}")
+            _shutdown_event.wait(timeout=3600)  # Check every hour
+    finally:
+        unregister(tid)
 
 
 # ─── Task 5: Index Sync ─────────────────────────────────────────────────────────
@@ -202,24 +227,30 @@ def _task_etf_sync():
 
 def _task_index_sync():
     """Syncs NIFTY indices from NSE every Sunday."""
-    while not _shutdown_event.is_set():
-        try:
-            ist_now = datetime.now(timezone.utc).astimezone(IST)
-            if ist_now.weekday() == 6:  # Sunday
-                print("[MYRA BG] Sunday index sync running...")
-                from myra_app.utils.index_sync import (
-                    heal_index_if_stale,
-                    sync_index_constituents,
-                )
+    from myra_app.task_tracker import register, unregister
 
-                for idx in ["NIFTY 50", "NIFTY 500", "NIFTY SMALLCAP 250"]:
-                    sync_index_constituents(idx)
+    tid = register("Index sync", task_type="indefinite")
+    try:
+        while not _shutdown_event.is_set():
+            try:
+                ist_now = datetime.now(timezone.utc).astimezone(IST)
+                if ist_now.weekday() == 6:  # Sunday
+                    print("[MYRA BG] Sunday index sync running...")
+                    from myra_app.utils.index_sync import (
+                        heal_index_if_stale,
+                        sync_index_constituents,
+                    )
 
-                # Self-heal: verify NIFTY 500 count (most critical for default universe)
-                heal_index_if_stale("NIFTY 500", expected_count=500)
-        except Exception as e:
-            logger.error(f"[MYRA BG] Index sync/heal failed: {e}")
-        _shutdown_event.wait(timeout=3600)  # Check every hour
+                    for idx in ["NIFTY 50", "NIFTY 500", "NIFTY SMALLCAP 250"]:
+                        sync_index_constituents(idx, task_id=tid)
+
+                    # Self-heal: verify NIFTY 500 count (most critical for default universe)
+                    heal_index_if_stale("NIFTY 500", expected_count=500)
+            except Exception as e:
+                logger.error(f"[MYRA BG] Index sync/heal failed: {e}")
+            _shutdown_event.wait(timeout=3600)  # Check every hour
+    finally:
+        unregister(tid)
 
 
 # ─── Task 6: Fundamentals Sync ───────────────────────────────────────────────────
@@ -227,30 +258,41 @@ def _task_index_sync():
 
 def _task_fundamentals_sync():
     """Monthly fundamentals sync with resumable progress tracking."""
+    from myra_app.task_tracker import register, unregister
+
     if _shutdown_event.is_set():
         return
+    tid = register("Fundamentals sync", task_type="indefinite")
     try:
         from myra_app.utils.fundamentals_sync import sync_fundamentals
 
         print("[MYRA BG] Checking fundamentals sync...")
-        sync_fundamentals()  # the function itself decides if it needs to run
+        sync_fundamentals(task_id=tid)  # the function itself decides if it needs to run
     except Exception as e:
         logger.error(f"[MYRA BG] Fundamentals sync failed: {e}")
+    finally:
+        unregister(tid)
 
 
-# ─── Task 7: Institutional Sync ─────────────────────────────────────────────────
+# ─── Task 7: Institutional Sync (Bulk/Block Deals Only) ────────────────────────
 
 
 def _task_institutional_sync():
+    """Syncs bulk/block deals from NSE. Insider trades removed."""
+    from myra_app.task_tracker import register, unregister
+
     if _shutdown_event.is_set():
         return
+    tid = register("Institutional sync", task_type="indefinite")
     try:
         from myra_app.utils.institutional_sync import sync_institutional_data
 
         print("[MYRA BG] Running institutional sync...")
-        sync_institutional_data()  # Only sync if table is empty
+        sync_institutional_data(task_id=tid)  # Only sync if table is empty
     except Exception as e:
         logger.error(f"[MYRA BG] Institutional sync failed: {e}")
+    finally:
+        unregister(tid)
 
 
 # Task 8: Daily DB Backup
@@ -258,23 +300,29 @@ def _task_institutional_sync():
 
 def _task_db_backup():
     """Runs a full DB backup daily at 2 AM IST."""
-    while not _shutdown_event.is_set():
-        try:
-            ist_now = datetime.now(timezone.utc).astimezone(IST)
-            # Run between 02:00 and 02:59 IST
-            if ist_now.hour == 2:
-                from myra_app.utils.db_backup import rotate_backups
-                print("[MYRA BG] Running scheduled daily DB backup...")
-                rotate_backups()
-                print("[MYRA BG] Daily DB backup complete.")
-                # Wait until next hour to avoid multiple runs
-                _shutdown_event.wait(timeout=3600)
-            else:
-                # Check again in 30 minutes
-                _shutdown_event.wait(timeout=1800)
-        except Exception as e:
-            logger.error(f"[MYRA BG] Daily DB backup failed: {e}")
-            _shutdown_event.wait(timeout=1800)  # wait and retry
+    from myra_app.task_tracker import register, unregister
+
+    tid = register("DB backup", task_type="indefinite")
+    try:
+        while not _shutdown_event.is_set():
+            try:
+                ist_now = datetime.now(timezone.utc).astimezone(IST)
+                # Run between 02:00 and 02:59 IST
+                if ist_now.hour == 2:
+                    from myra_app.utils.db_backup import rotate_backups
+                    print("[MYRA BG] Running scheduled daily DB backup...")
+                    rotate_backups(task_id=tid)
+                    print("[MYRA BG] Daily DB backup complete.")
+                    # Wait until next hour to avoid multiple runs
+                    _shutdown_event.wait(timeout=3600)
+                else:
+                    # Check again in 30 minutes
+                    _shutdown_event.wait(timeout=1800)
+            except Exception as e:
+                logger.error(f"[MYRA BG] Daily DB backup failed: {e}")
+                _shutdown_event.wait(timeout=1800)  # wait and retry
+    finally:
+        unregister(tid)
 
 
 # ─── Public entry point ───────────────────────────────────────────────────────

@@ -132,28 +132,33 @@ def process_enrichment_pipeline(lib, conn):
     """
     Handles the DB transaction and applies the enrichment logic.
     """
-    ALLOWED_QUERIES = {
-        "prices": "SELECT * FROM prices",
-        "technical_data": "SELECT * FROM technical_data",
-        "calculated_indicators": "SELECT * FROM calculated_indicators",
-        "fundamentals": "SELECT * FROM fundamentals",
-    }
+    from datetime import datetime
+    from myra_app.task_tracker import register, update, unregister
 
-    ALLOWED_DROPS = {
-        "prices": "DROP TABLE IF EXISTS prices",
-        "technical_data": "DROP TABLE IF EXISTS technical_data",
-        "calculated_indicators": "DROP TABLE IF EXISTS calculated_indicators",
-        "fundamentals": "DROP TABLE IF EXISTS fundamentals",
-    }
-
-    ALLOWED_RENAMES = {
-        "prices": "ALTER TABLE stg_enriched_market_data RENAME TO prices",
-        "technical_data": "ALTER TABLE stg_enriched_market_data RENAME TO technical_data",
-        "calculated_indicators": "ALTER TABLE stg_enriched_market_data RENAME TO calculated_indicators",
-        "fundamentals": "ALTER TABLE stg_enriched_market_data RENAME TO fundamentals",
-    }
-
+    tid = register("Enrichment pipeline", task_type="batch")
+    start_time = datetime.now()
     try:
+        ALLOWED_QUERIES = {
+            "prices": "SELECT * FROM prices",
+            "technical_data": "SELECT * FROM technical_data",
+            "calculated_indicators": "SELECT * FROM calculated_indicators",
+            "fundamentals": "SELECT * FROM fundamentals",
+        }
+
+        ALLOWED_DROPS = {
+            "prices": "DROP TABLE IF EXISTS prices",
+            "technical_data": "DROP TABLE IF EXISTS technical_data",
+            "calculated_indicators": "DROP TABLE IF EXISTS calculated_indicators",
+            "fundamentals": "DROP TABLE IF EXISTS fundamentals",
+        }
+
+        ALLOWED_RENAMES = {
+            "prices": "ALTER TABLE stg_enriched_market_data RENAME TO prices",
+            "technical_data": "ALTER TABLE stg_enriched_market_data RENAME TO technical_data",
+            "calculated_indicators": "ALTER TABLE stg_enriched_market_data RENAME TO calculated_indicators",
+            "fundamentals": "ALTER TABLE stg_enriched_market_data RENAME TO fundamentals",
+        }
+
         import pandas as pd
 
         tables = [
@@ -200,6 +205,7 @@ def process_enrichment_pipeline(lib, conn):
             and "symbol" in price_df.columns
             and "date" in price_df.columns
         ):
+            update(tid, "Computing SMC indicators…")
             print("[MYRA Enrichment] Computing SMC indicators...")
 
             # Process all symbols at once with vectorized SMC calculation
@@ -236,7 +242,7 @@ def process_enrichment_pipeline(lib, conn):
             ]
 
             # Add missing columns to technical_data table
-            for col in smc_columns:
+            for i, col in enumerate(smc_columns):
                 if col in smc_df.columns:
                     try:
                         conn.execute(  # noqa: PG-NPLUS1
@@ -244,6 +250,16 @@ def process_enrichment_pipeline(lib, conn):
                         )
                     except:
                         pass  # Column already exists
+
+                # Update progress
+                pct = (i + 1) * 100 // len(smc_columns)
+                elapsed = (datetime.now() - start_time).total_seconds()
+                if pct > 0:
+                    eta_seconds = (elapsed / pct) * (100 - pct)
+                    eta_str = f"~{int(eta_seconds//60)}m {int(eta_seconds%60)}s"
+                else:
+                    eta_str = "calculating…"
+                update(tid, progress=pct, eta=eta_str)
 
             # Batch update using executemany for performance
             for col in smc_columns:
@@ -284,7 +300,11 @@ def process_enrichment_pipeline(lib, conn):
                 conn.execute("ROLLBACK;")
             raise
 
+        update(tid, "Enrichment complete")
+
     except Exception as e:
         import logging
 
         logging.getLogger(__name__).error(f"Enrichment pipeline failed: {e}")
+    finally:
+        unregister(tid)

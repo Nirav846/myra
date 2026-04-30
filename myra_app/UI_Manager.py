@@ -204,68 +204,13 @@ class MYRA_UI:
     @staticmethod
     def get_ias_leaderboard(librarian):
         """Top symbols by Institutional Activity Score."""
-        try:
-            if (
-                not librarian
-                or not hasattr(librarian, "_gov_conn")
-                or not librarian._gov_conn
-            ):
-                # Try direct connection if librarian handle is missing
-                gov_db = os.path.join(os.getcwd(), "db", "governance.db")
-                if os.path.exists(gov_db):
-                    conn = sqlite3.connect(gov_db)
-                else:
-                    return Panel(
-                        "[red]Governance DB Missing[/]", title="IAS Leaderboard"
-                    )
-            else:
-                conn = librarian._gov_conn
-
-            # Query the latest scores (Hardened v3.2: Only EQUITY)
-            from myra_app.librarian_core import LibrarianCore
-
-            meta_path = os.path.join(os.getcwd(), "db", LibrarianCore.DB_MAP["meta"])
-            try:
-                conn.execute(f"ATTACH DATABASE '{meta_path}' AS meta_db")  # noqa: S608
-                sql = """
-                    SELECT h.symbol, h.ias_score, h.tags 
-                    FROM ias_history h
-                    JOIN meta_db.symbols_master s ON h.symbol = s.symbol
-                    WHERE s.instrument_type = 'EQUITY' AND s.is_active = 1
-                    ORDER BY h.date DESC, h.ias_score DESC 
-                    LIMIT 10
-                """
-                df = pd.read_sql(sql, conn)
-            except Exception:
-                # Fallback if ATTACH fails
-                sql = "SELECT symbol, ias_score, tags FROM ias_history ORDER BY date DESC, ias_score DESC LIMIT 10"
-                df = pd.read_sql(sql, conn)
-
-            table = Table(
-                title="[bold magenta]IAS Leaders (Institutional)[/]",
-                expand=True,
-                header_style="bold magenta",
-                box=None,
-            )
-            table.add_column("Symbol", style="bold yellow")
-            table.add_column("IAS", justify="right")
-            table.add_column("Tag", style="dim", overflow="ellipsis")
-
-            if df.empty:
-                table.add_row("No Data", "-", "-")
-            else:
-                # Fix 136: Use itertuples for performance
-                for row in df.itertuples(index=False):
-                    tag = (
-                        str(row.tags)
-                        .replace("STRONG_ACCUMULATION", "STRONG")
-                        .replace("EARLY_ACCUMULATION", "EARLY")
-                    )
-                    table.add_row(row.symbol, f"{row.ias_score:.1f}", tag)
-
-            return table
-        except Exception as e:
-            return Panel(f"[dim]IAS Feed Error: {str(e)}[/]", title="IAS Leaderboard")
+        return Panel(
+            "[dim]Insider trading feed unavailable – historical data removed.[/dim]\n"
+            "[dim]Institutional flow estimates continue to update live.[/dim]",
+            title="Institutional",
+            border_style="dim",
+            width=30,
+        )
 
     @staticmethod
     def get_fii_dii_flow(librarian):
@@ -363,6 +308,45 @@ class MYRA_UI:
             )
 
     @staticmethod
+    def get_background_tasks_panel():
+        """Display active background tasks with safety status."""
+        try:
+            from myra_app.task_tracker import get_active_tasks
+
+            tasks = get_active_tasks()
+            if not tasks:
+                # Idle status line
+                return Panel("✅ System idle – safe to exit", title="Status", border_style="green")
+
+            lines = []
+            any_unsafe = False
+            for t in tasks:
+                name = t["name"]
+                status = t["status"]
+                progress = t["progress"]
+                eta = t["eta"]
+                safe = t["safe_to_exit"]
+                if not safe:
+                    any_unsafe = True
+
+                if progress is not None:
+                    # Render a text progress bar 20 chars wide
+                    bar_len = 20
+                    filled = int(progress / 100 * bar_len)
+                    bar = "█" * filled + "░" * (bar_len - filled)
+                    eta_text = f" {eta}" if eta else ""
+                    lines.append(f"• {name}: {bar} {progress}%{eta_text}")
+                else:
+                    lines.append(f"• {name} – {status}")
+
+            safe_text = "⚠️  Unsafe to close – background tasks in progress" if any_unsafe else "✅ Safe to close"
+            content = "\n".join(lines) + "\n\n" + safe_text
+            style = "red" if any_unsafe else "cyan"
+            return Panel(content, title="Background Tasks", border_style=style)
+        except Exception:
+            return Panel("Task tracker unavailable", title="Background Tasks", border_style="dim")
+
+    @staticmethod
     def get_footer(librarian, market_breadth="↗ 0 | ↘ 0", forecast=None):
         db_stats = (
             librarian.get_db_stats()
@@ -433,6 +417,7 @@ def draw_dashboard(librarian, breadth_text="↗ 0 | ↘ 0", forecast=None):
     layout.split_column(
         Layout(name="header", size=4),
         Layout(name="body", ratio=1),
+        Layout(name="tasks", size=5),
         Layout(name="footer", size=3),
     )
 
@@ -453,6 +438,7 @@ def draw_dashboard(librarian, breadth_text="↗ 0 | ↘ 0", forecast=None):
     layout["ias_widget"].update(MYRA_UI.get_ias_leaderboard(librarian))
     layout["timing_widget"].update(MYRA_UI.get_timing_triggers_panel(librarian))
     layout["flow_widget"].update(MYRA_UI.get_fii_dii_flow(librarian))
+    layout["tasks"].update(MYRA_UI.get_background_tasks_panel())
     layout["footer"].update(MYRA_UI.get_footer(librarian, breadth_text, forecast))
 
     return layout

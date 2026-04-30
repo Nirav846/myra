@@ -28,14 +28,20 @@ def get_librarian_core():
         return None
 
 
-def sync_index_constituents(index_name, force=False):
+def sync_index_constituents(index_name, force=False, task_id: int = None):
     """
     Sync index constituents from NSE API.
 
     Args:
         index_name: Name of the index (e.g., "NIFTY 500")
         force: Force sync regardless of last sync date
+        task_id: Optional task ID for progress tracking
     """
+    from myra_app.task_tracker import update
+
+    if task_id is not None:
+        update(task_id, f"Syncing {index_name} constituents…")
+
     if index_name not in NSE_INDICES:
         print(f"[Index Sync] Unknown index: {index_name}")
         return False
@@ -125,6 +131,9 @@ def sync_index_constituents(index_name, force=False):
 
         print(f"[Index Sync] Found {len(symbols)} symbols for {index_name}")
 
+        if task_id is not None:
+            update(task_id, f"Writing {len(symbols)} symbols to DB…")
+
         # Update database
         metadata_db_path = os.path.join(
             os.path.dirname(os.path.dirname(__file__)), "db", "myra_metadata.db"
@@ -142,7 +151,7 @@ def sync_index_constituents(index_name, force=False):
                     last_updated TEXT,
                     PRIMARY KEY (index_name, symbol)
                 )
-            """
+                """
             )
 
             # Clear old entries
@@ -166,6 +175,10 @@ def sync_index_constituents(index_name, force=False):
         print(
             f"[Index Sync] Successfully synced {len(symbols)} symbols for {index_name}"
         )
+
+        if task_id is not None:
+            update(task_id, f"{index_name} sync complete")
+
         return True
 
     except requests.RequestException as e:

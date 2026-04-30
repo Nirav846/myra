@@ -23,11 +23,16 @@ HEADERS = {
 }
 
 
-def sync_institutional_data(force=False):
+def sync_institutional_data(force=False, task_id: int = None):
     """
     Sync institutional bulk/block deals from NSE.
     If force=True, always fetch. Otherwise only fetch if table is empty.
     """
+    from myra_app.task_tracker import update
+
+    if task_id is not None:
+        update(task_id, "Checking institutional data freshness…")
+
     from datetime import datetime, timedelta, timezone
 
     IST = timezone(timedelta(hours=5, minutes=30))
@@ -55,6 +60,8 @@ def sync_institutional_data(force=False):
             return
 
     # Fetch data (default last 7 days)
+    if task_id is not None:
+        update(task_id, "Fetching bulk/block deals from NSE…")
     data = fetch_institutional_data()
     inserted = 0
     for label, df in data.items():
@@ -81,106 +88,13 @@ def sync_institutional_data(force=False):
             except Exception:
                 pass
 
-    # Fetch insider trades from BSE (reliable ZIP endpoint)
-    try:
-        import io
-        import zipfile
-        from datetime import timedelta
-
-        import pandas as pd
-
-        from myra_app.data_sources.nse_institutional import _nse_session
-
-        bse_insider_url = (
-            "https://www.bseindia.com/download/BSEInsider/Equity/Insider_{}.zip"
-        )
-        insider_rows = []
-
-        # Try last 5 trading days
-        for d in range(5):
-            check_date = today - timedelta(days=d)
-            if check_date.weekday() >= 5:
-                continue
-            zip_url = bse_insider_url.format(check_date.strftime("%Y-%m-%d"))  # noqa: PG-STRFTIME
-            resp = _nse_session().get(zip_url, headers=HEADERS, timeout=15)
-            if resp.status_code != 200:
-                continue
-
-            # Extract CSV from ZIP
-            with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
-                csv_name = [n for n in zf.namelist() if n.lower().endswith(".csv")]
-                if not csv_name:
-                    continue
-                df = pd.read_csv(zf.open(csv_name[0]))
-                df.columns = [c.strip() for c in df.columns]
-
-            # Map BSE columns to our schema
-            for _, row in df.iterrows():  # noqa: PG-ITERROWS
-                try:
-                    sym = str(row.get("SYMBOL", row.get("Symbol", ""))).strip().upper()
-                    if not sym or sym in ("NA", "-"):
-                        continue
-                    acq = str(row.get("ACQ_NAME", row.get("Acquirer Name", ""))).strip()
-                    cat = str(row.get("CATEGORY", row.get("Category", ""))).strip()
-                    typ = str(row.get("TYPE", row.get("Trade Type", ""))).strip()
-                    mod = str(row.get("MODE", row.get("Mode", ""))).strip()
-                    val = (
-                        float(
-                            str(row.get("VALUE_CR", row.get("Value", 0))).replace(
-                                ",", ""
-                            )
-                        )
-                        if "VALUE" in row or "Value" in row
-                        else 0.0
-                    )
-                    prc = (
-                        float(
-                            str(row.get("AVG_PRICE", row.get("Avg Price", 0))).replace(
-                                ",", ""
-                            )
-                        )
-                        if "AVG" in row or "Avg" in row
-                        else 0.0
-                    )
-
-                    insider_rows.append(  # noqa: PG-APPEND
-                        (
-                            sym,
-                            acq,
-                            cat,
-                            typ,
-                            mod,
-                            round(val, 2) if val else 0.0,
-                            round(prc, 2) if prc else 0.0,
-                            check_date.strftime("%Y-%m-%d"),  # noqa: PG-STRFTIME
-                        )
-                    )
-                except Exception:
-                    pass
-
-        if insider_rows:
-            with sqlite3.connect(inst_db, timeout=10) as conn:
-                conn.execute("PRAGMA journal_mode=WAL")
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS insider_trades (
-                        symbol TEXT, acq_name TEXT, category TEXT, type TEXT,
-                        mode TEXT, value_cr REAL, avg_price REAL, date TEXT,
-                        PRIMARY KEY (date, symbol, acq_name, type)
-                    )
-                """
-                )
-                conn.executemany(
-                    "INSERT OR REPLACE INTO insider_trades VALUES (?,?,?,?,?,?,?,?)",
-                    insider_rows,
-                )
-                conn.commit()
-            print(f"[INST SYNC] Inserted {len(insider_rows)} insider trades from BSE.")
-        else:
-            print("[INST SYNC] No insider trades found in recent BSE files.")
-    except Exception as e:
-        logger.warning(f"BSE insider trade sync failed: {e}")
+    if task_id is not None:
+        update(task_id, f"Inserting {inserted} deals…")
 
     conn.commit()
     conn.close()
+
+    if task_id is not None:
+        update(task_id, f"Institutional sync complete: {inserted} deals")
+
     print(f"[MYRA] Institutional sync complete: {inserted} deals inserted")

@@ -10,6 +10,7 @@ from rich.progress import Progress
 
 from myra_app.data_adapter import DataAdapter
 from myra_app.smc_manager import SMCManager
+from myra_core.data_contracts import enforce_ohlcv_contract
 
 _worker_strategy = None
 _worker_adapter = None

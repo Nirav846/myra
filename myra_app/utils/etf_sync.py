@@ -410,12 +410,17 @@ def _fetch_from_nse() -> set:
         return symbols
 
 
-def sync_etf_list(force: bool = False) -> bool:
+def sync_etf_list(force: bool = False, task_id: int = None) -> bool:
     """
     Syncs ETF list from NSE API into myra_metadata.db.
     Runs weekly — skips if last sync was less than 6 days ago unless force=True.
     Returns True if sync happened, False if skipped.
     """
+    from myra_app.task_tracker import update
+
+    if task_id is not None:
+        update(task_id, "Checking ETF list freshness…")
+
     try:
         with sqlite3.connect(_DB_PATH, timeout=10) as conn:
             _ensure_etf_table(conn)
@@ -442,6 +447,8 @@ def sync_etf_list(force: bool = False) -> bool:
                 .isoformat()
             )
             try:
+                if task_id is not None:
+                    update(task_id, "Fetching live ETF list from NSE…")
                 symbols = _fetch_from_nse()
                 source = "nse_api"
                 logger.info(f"Fetched {len(symbols)} ETFs from NSE API")
@@ -451,6 +458,8 @@ def sync_etf_list(force: bool = False) -> bool:
                 source = "seed_fallback"
 
             # Upsert into DB
+            if task_id is not None:
+                update(task_id, f"Upserting {len(symbols)} ETFs into database…")
             conn.execute("DELETE FROM etf_blocklist")
             conn.executemany(
                 "INSERT OR REPLACE INTO etf_blocklist (symbol, added_date, source) VALUES (?, ?, ?)",
@@ -462,6 +471,10 @@ def sync_etf_list(force: bool = False) -> bool:
             )
             conn.commit()
             print(f"[MYRA ETF] Synced {len(symbols)} ETF symbols from {source}")
+
+            if task_id is not None:
+                update(task_id, "ETF sync complete")
+
             return True
 
     except Exception as e:

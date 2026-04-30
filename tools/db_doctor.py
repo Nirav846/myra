@@ -26,7 +26,6 @@ class DbDoctor:
         self.check_technical_schema()
         self.check_meta_schema()
         self.check_valuation_schema()
-        self.check_institutional_schema()
         self.check_technical_data_quality()
         self.check_etf_contamination()
         self.check_scanner_health()
@@ -260,45 +259,6 @@ class DbDoctor:
             conn.close()
         print()
 
-    def check_institutional_schema(self):
-        print("--- Checking Institutional DB Schema ---")
-        conn = self._get_connection("institutional")
-        if not conn:
-            print("  [SKIP] Institutional DB not found.")
-            print()
-            return
-
-        try:
-            c = conn.cursor()
-
-            c.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='insider_trades'"
-            )
-            if c.fetchone():
-                c.execute("PRAGMA table_info(insider_trades)")
-                existing_cols = {row[1] for row in c.fetchall()}
-
-                # Note: insider_trades uses original NSE column names.
-                # Canonical aliases (transaction_type, price, value) are applied
-                # at query time in engine.py and institutional_pipe.py.
-                INSTITUTIONAL_EXPECTED_COLS = [
-                    "symbol",
-                    "acq_name",
-                    "category",
-                    "type",
-                    "mode",
-                    "value_cr",
-                    "avg_price",
-                    "date",
-                ]
-                for col in INSTITUTIONAL_EXPECTED_COLS:
-                    if col not in existing_cols:
-                        print(f"  [WARNING] Missing column in insider_trades: {col}")
-                        self.issues_found += 1
-
-        finally:
-            conn.close()
-        print()
 
     def check_technical_data_quality(self):
         print("--- Checking Technical Data Quality ---")

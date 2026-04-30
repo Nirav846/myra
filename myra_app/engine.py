@@ -192,6 +192,7 @@ class Engine:
         import time
 
         start_time = time.time()
+        precomputed = {}
         lib = self.librarian
         if not lib._tech_conn:
             lib.connect()
@@ -308,7 +309,7 @@ class Engine:
         if target_symbols:
             placeholders = ",".join(["?"] * len(target_symbols))
             query = f"SELECT * FROM technical_data WHERE symbol IN ({placeholders}) ORDER BY symbol, date"
-            raw_df = pl.read_database(query, lib._tech_conn, params=target_symbols)
+            raw_df = pl.read_database(query, lib._tech_conn, execute_options={"parameters": target_symbols})
 
             if not raw_df.is_empty():
                 # Use the existing Polars enrichment pipeline (fast, vectorized)

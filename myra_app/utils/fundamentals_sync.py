@@ -17,12 +17,17 @@ DB_DIR = os.path.join(_HERE, "db")
 IST = timezone(timedelta(hours=5, minutes=30))
 
 
-def sync_fundamentals(force=False):
+def sync_fundamentals(force=False, task_id: int = None):
     """
     Syncs all fundamental fields (PE, ROE, MCap, sector, etc.) using the
     multi-source FundamentalManager (Screener.in → Yahoo → Google → Finology → NSE).
     Resumable: survives shutdowns.
     """
+    from myra_app.task_tracker import update
+
+    if task_id is not None:
+        update(task_id, "Checking fundamentals freshness…")
+
     today = datetime.now(timezone.utc).astimezone(IST).date().isoformat()
 
     # --- 1. Progress tracking via myra_metadata.db ---
@@ -104,6 +109,9 @@ def sync_fundamentals(force=False):
         progress["start_time"] = datetime.now(timezone.utc).isoformat()
         print(f"[MYRA FUNDA] Starting sync for {len(symbols_needed)} symbols...")
 
+        if task_id is not None:
+            update(task_id, f"Fetching fundamentals for {len(symbols_needed)} symbols…")
+
     # DEBUG: skip batch API for now (unreliable), go directly to multi-source fallback
     mgr = FundamentalManager(db_dir=DB_DIR)
     mgr.set_fetcher(DataFetcher())
@@ -144,7 +152,9 @@ def sync_fundamentals(force=False):
 
             progress["last_processed_symbol"] = symbol
 
-            if (i + 1) % 10 == 0:
+            if (i + 1) % 25 == 0:
+                if task_id is not None:
+                    update(task_id, f"Fundamentals: {i+1}/{len(remaining_symbols)}")
                 meta_conn.execute(  # noqa: PG-NPLUS1
                     "INSERT OR REPLACE INTO metadata (key, value) VALUES (?,?)",
                     ("fundamentals_sync_status", json.dumps(progress)),
@@ -164,6 +174,10 @@ def sync_fundamentals(force=False):
         ("fundamentals_sync_status", json.dumps(progress)),
     )
     meta_conn.commit()
+
+    if task_id is not None:
+        update(task_id, f"Fundamentals sync complete. Updated: {progress['updated_count']}")
+
     print(
         f"[MYRA FUNDA] Sync complete. Updated: {progress['updated_count']}, Failed: {progress['failed_count']}"
     )
