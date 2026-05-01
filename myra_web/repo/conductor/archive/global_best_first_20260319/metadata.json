@@ -1,0 +1,8 @@
+{
+  "track_id": "global_best_first_20260319",
+  "type": "feature",
+  "status": "new",
+  "created_at": "2026-03-19T15:27:00Z",
+  "updated_at": "2026-03-19T15:27:00Z",
+  "description": "Global 'Best First' Architecture: Standardized sorting and row decorators"
+}

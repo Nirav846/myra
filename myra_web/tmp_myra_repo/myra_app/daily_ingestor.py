@@ -1,0 +1,266 @@
+import argparse
+import io
+import json
+import os
+import sqlite3
+import sys
+from datetime import datetime, timedelta, timezone
+
+import pandas as pd
+
+# IMPORT THE HARDENED FETCHER
+from myra_app.fetcher import DataFetcher
+from myra_app.librarian_core import LibrarianCore
+
+# Path to your 945MB Atomic Vault
+DB_PATH = os.path.join("db", LibrarianCore.DB_MAP["technical"])
+
+
+def clean_bhavcopy_for_archive(data_csv: str) -> str:
+    """Remove non‑equity rows (GS, bonds, etc.) from a raw NSE CSV. ETFs are kept."""
+    import io
+
+    import pandas as pd
+
+    df = pd.read_csv(io.StringIO(data_csv))
+    df.columns = [c.strip().lower() for c in df.columns]
+    if "series" in df.columns:
+        df = df[df["series"].isin(["EQ", "BE", "SM"])]
+    return df.to_csv(index=False)
+
+
+def run_daily_update():
+    """
+    Guard-Compliant Daily Fetcher connected to the v3.2 Ghost Engine.
+    """
+    from myra_app.task_tracker import register, update, unregister
+
+    tid = register("Daily bhavcopy ingestion", task_type="batch")
+    try:
+        print("[MYRA] Initiating daily data ingestion via v3.2 Ghost Engine...")
+
+        # Ensure logs directory exists
+        os.makedirs("logs", exist_ok=True)
+
+        parser = argparse.ArgumentParser(description="MYRA Daily Ingestor")
+        parser.add_argument(
+            "--date",
+            type=str,
+            help="Date in DD-MM-YYYY format to force a specific ingestion date",
+        )
+        args, _ = parser.parse_known_args()
+
+        # Force IST Time (Performance Guard compliant)
+        ist_now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+        if args.date:
+            current_date = datetime.strptime(args.date, "%d-%m-%Y")
+        else:
+            current_date = ist_now
+
+        # Pre-flight check for market holidays using myra_calendar.db
+        calendar_db_path = os.path.join("db", LibrarianCore.DB_MAP["calendar"])
+        if os.path.exists(calendar_db_path):
+            try:
+                with sqlite3.connect(calendar_db_path) as cal_conn:
+                    date_str = current_date.date().isoformat()
+                    cal_res = cal_conn.execute(
+                        "SELECT is_trading_day, holiday_name FROM market_calendar WHERE date = ?",
+                        (date_str,),
+                    ).fetchone()
+
+                    is_trading = True
+                    holiday_reason = ""
+                    if cal_res:
+                        is_trading = bool(cal_res[0])
+                        holiday_reason = cal_res[1]
+                    elif current_date.weekday() >= 5:
+                        is_trading = False
+                        holiday_reason = "Weekend"
+
+                    if not is_trading:
+                        print(
+                            f"[INFO] Market is closed on {date_str} ({holiday_reason or 'Holiday'}). Skipping fetch."
+                        )
+                        sys.exit(0)
+            except Exception as e:
+                print(f"⚠️ Warning: Could not query calendar DB: {e}")
+
+        # Instantiate the hardened fetcher
+        fetcher = DataFetcher()
+
+        update(tid, "Fetching data…")
+        print(
+            f"[MYRA] Requesting data for {current_date.day:02d}-{current_date.month:02d}-{current_date.year}..."
+        )
+
+        # Route the request through the stealth session
+        data_csv, source = fetcher.fetch_ohlcv_delivery(current_date)
+
+        # Handle the Fetcher's responses
+        if data_csv == "too_early":
+            print(
+                "⚠️ Data not yet released. (IST Shield active: It is strictly before 6 PM IST)."
+            )
+            return
+        elif data_csv == "holiday_skip":
+            print("🛑 Market Holiday or Weekend. Skipping fetch.")
+            return
+        elif not data_csv:
+            print("❌ Fetch failed. NSE WAF block or 404 Not Found.")
+            return
+
+        # If we got data, ingest it into the Atomic Vault
+
+        # Save cleaned CSV (equity only, ETFs kept) to Market_Archives
+        try:
+            archive_csv = clean_bhavcopy_for_archive(data_csv)
+            archives_dir = os.path.join("data", "Market_Archives")
+            os.makedirs(archives_dir, exist_ok=True)
+            csv_path = os.path.join(
+                archives_dir, f"nse_full_{current_date.date().isoformat()}.csv"
+            )
+            with open(csv_path, "w", encoding="utf-8") as f:
+                f.write(archive_csv)
+            print(f"✅ Cleaned CSV saved to {csv_path}")
+        except Exception as e:
+            print(f"⚠️ Could not save CSV archive: {e}")
+
+        try:
+            df = pd.read_csv(io.StringIO(data_csv))
+            df.columns = [c.strip().lower() for c in df.columns]
+
+            # Schema change detection: log unknown columns
+            EXPECTED_COLS = {
+                "symbol",
+                "series",
+                "date1",
+                "prev_close",
+                "open_price",
+                "high_price",
+                "low_price",
+                "last_price",
+                "close_price",
+                "avg_price",
+                "ttl_trd_qnty",
+                "turnover_lacs",
+                "no_of_trades",
+                "deliv_qty",
+                "deliv_per",
+            }
+            actual_cols = set(df.columns)
+            unknown = actual_cols - EXPECTED_COLS
+            if unknown:
+                import logging
+
+                warn_msg = f"[NSE FORMAT CHANGE] {current_date.date().isoformat()} - unknown columns: {unknown}"
+                print(f"  {warn_msg}")
+                with open(os.path.join("logs", "nse_warnings.log"), "a") as f:
+                    f.write(warn_msg + "\n")
+            missing = EXPECTED_COLS - actual_cols
+            if missing:
+                print(f"  Missing expected columns: {missing}")
+
+            # 1. Filter for standard Equities only (ignore bonds/options)
+            if "series" in df.columns:
+                df = df[df["series"].isin(["EQ", "BE", "SM"])]
+
+            # 2. Remove ETFs from DB insert (keep archives clean but DB lean)
+            from myra_app.utils.etf_sync import get_etf_symbols
+
+            etf_symbols = get_etf_symbols()
+            if etf_symbols and "symbol" in df.columns:
+                df = df[~df["symbol"].str.upper().isin(etf_symbols)]
+
+            # 3. Map fetcher output to standard OHLCV
+            rename_map = {
+                "open_price": "open",
+                "high_price": "high",
+                "low_price": "low",
+                "close_price": "close",
+                "ttl_trd_qnty": "volume",
+                "deliv_qty": "delivery",
+                "deliv_per": "delivery_pct",
+            }
+            df = df.rename(columns=rename_map)
+
+            # 3. Use ISO format to avoid .strftime() banned method
+            df["date"] = current_date.date().isoformat()
+
+            # 4. Dynamic Schema Enforcement (Bulletproof insertion)
+            os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+            lib = LibrarianCore(read_only=False)
+            conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+
+            # Ask SQLite what columns actually exist in the table
+            cursor = lib.safe_execute("PRAGMA table_info(technical_data)", conn=conn)
+            valid_cols = [info[1] for info in cursor.fetchall()]
+
+            # Only keep the columns that the database recognizes
+            df_to_insert = df[[c for c in df.columns if c in valid_cols]]
+
+            # Append to DB using INSERT OR REPLACE for robust ingestion
+            cols = df_to_insert.columns.tolist()
+            placeholders = ", ".join(["?"] * len(cols))
+            col_names = ", ".join(cols)
+            sql = f"INSERT OR REPLACE INTO technical_data ({col_names}) VALUES ({placeholders})"
+
+            conn.executemany(sql, df_to_insert.values.tolist())
+            conn.commit()
+
+            print(
+                f"✅ Successfully added {len(df_to_insert)} rows to Atomic Vault from {source}."
+            )
+
+            # Automatically enrich the newly ingested rows
+            try:
+                from myra_app.feature_enrichment import process_enrichment_pipeline
+                from myra_app.librarian import Librarian
+
+                enrichment_lib = Librarian(read_only=False)
+                enrichment_lib.connect()
+                print("[MYRA] Running enrichment on new rows...")
+                process_enrichment_pipeline(enrichment_lib, conn)
+                print("[MYRA] Enrichment complete.")
+            except Exception as e:
+                print(f"[!] Enrichment after ingestion failed: {e}")
+
+            conn.close()
+
+            # Generate Data Confidence Sync Manifest
+            try:
+                missing_delivery_mask = df_to_insert["delivery"].isna() | (
+                    df_to_insert["delivery"] == 0
+                )
+                missing_symbols = (
+                    df_to_insert.loc[missing_delivery_mask, "symbol"].tolist()
+                    if "symbol" in df_to_insert.columns
+                    else []
+                )
+
+                manifest_payload = {
+                    "last_sync_date": current_date.date().isoformat(),
+                    "total_symbols_processed": len(df_to_insert),
+                    "missing_delivery_list": missing_symbols,
+                }
+
+                with open("data_sync_manifest.json", "w") as f:
+                    json.dump(manifest_payload, f, indent=4)
+
+                # Automatic Metadata Hook
+                lib.set_metadata("cache_meta", json.dumps(manifest_payload))
+                print("✅ Successfully updated cache_meta metadata.")
+            except Exception as e:
+                print(
+                    f"⚠️ Warning: Could not save data_sync_manifest.json or update metadata. Error: {e}"
+                )
+
+        except Exception as e:
+            print(f"❌ Critical Database Error: {e}")
+    finally:
+        unregister(tid)
+
+
+if __name__ == "__main__":
+    run_daily_update()

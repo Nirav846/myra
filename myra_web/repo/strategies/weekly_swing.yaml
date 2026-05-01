@@ -1,0 +1,23 @@
+metadata:
+  name: "Smart Money Compression (FVG + DWAP)"
+  description: "Hunting for tight volatility just above an unfilled Bullish FVG."
+
+filters:
+  # Institutional Participation
+  delivery:
+    min_delivery_divergence_score: 0.0
+  volume:
+    min_relative_volume_score: 1.25
+
+  # Volatility Compression
+  volatility:
+    max_volatility_compression_score: 0.045 # Max 4.5% intraday range
+
+  # Smart Money Concepts
+  smc:
+    min_has_bullish_fvg: 1  # 1 = True (Requires an active 3-candle bullish gap)
+    
+  # DWAP Proximity (Delivery Weighted)
+  dwap:
+    min_distance_from_dwap: 0.005 # Must be at least 0.5% above 10-day DWAP
+    max_distance_from_dwap: 0.050 # Must not be overextended (max 5% above DWAP)

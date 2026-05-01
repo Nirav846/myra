@@ -1,0 +1,101 @@
+# --- Virtual Environments & Dependencies ---
+pkscreener_env/
+venv/
+.venv/
+env/
+bin/
+lib/
+share/
+include/
+build/
+dist/
+*.egg-info/
+*.egg
+*ta-lib*
+
+# --- Databases & Large Data (The 2.9GB block) ---
+*.db
+*.sqlite
+*.sql
+*.joblib
+*.keras
+*.h5
+*.bin
+*.run
+*.exe
+data/
+logs/
+results/
+myra_reports/
+*.db-wal
+*.db-shm
+
+# --- Python & Cache ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.cache
+*.session
+
+# --- Configuration & Secrets (DO NOT PUSH TO GITHUB) ---
+*.env
+*.dev
+*.ini
+pkscreener.ini
+myra_sources.json
+Cookies
+results/*_cookies.pkl
+
+# --- AI & Agent Artifacts ---
+.agent/
+.agents/
+.gemini/
+.geminiignore
+.claude/
+# GEMINI.md (Tracked for agent synchronization)
+# conductor/
+# memory/
+# superpowers/
+*_plan.md
+AEON_Audit_*.csv
+MYRA_AI_READY.txt
+.julesrules
+skills-lock.json
+NRV.txt
+PROMPT.txt
+PROMPTRESULT.txt
+.DS_Store
+
+# --- Media & Documents ---
+*.png
+*.jpg
+*.jpeg
+*.pdf
+*.xlsx
+*.html
+*.spec
+*.whl
+
+# --- Temporary & Junk ---
+Help/
+DeleteThis/
+results/*_html.pkl
+results/*.pkl.lck
+sync_log.txt
+*.txt
+!requirements.txt
+!README.md
+!PROJECT_SUMMARY.md
+!ruff.toml
+!.bandit
+!.coveragerc
+!*.py
+
+# --- Exceptions ---
+!results/Data/yfinance.cache.zip
+HELP FILES/

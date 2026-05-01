@@ -1,0 +1,23 @@
+metadata:
+  name: "Smart Money Compression (FVG + DWAP)"
+  description: "Hunting for tight volatility just above an unfilled Bullish FVG."
+
+filters:
+  # Institutional Participation
+  delivery:
+    min_delivery_divergence_score: 0.5       # unchanged – already passing
+  volume:
+    min_relative_volume_score: 1.0           # relaxed from 1.25
+
+  # Volatility Compression (adjusted to match actual score range)
+  volatility:
+    max_volatility_compression_score: 1.5    # was 0.045, now captures tight stocks
+
+  # Smart Money Concepts – temporarily disable FVG requirement for testing
+  smc:
+    min_has_bullish_fvg: 0                   # 0 = not required, 1 = required
+
+  # DWAP Proximity
+  dwap:
+    min_distance_from_dwap: 0.005
+    max_distance_from_dwap: 0.050
