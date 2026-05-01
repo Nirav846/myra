@@ -1,31 +1,39 @@
 # PROJECT_SUMMARY: MYRA (Myra Yield & Research Analytics)
 
 ## Description
-MYRA is a specialized stock screening and research analytics platform designed for the National Stock Exchange (NSE) of India. It emphasizes high-fidelity technical analysis (OHLCV, Delivery, VWAP), institutional activity tracking (Insider Trades, Large Deals), and modular data management for the stable v3.2 era.
+MYRA is an atomic trading system for the National Stock Exchange (NSE) of India. It combines high-fidelity technical analysis, institutional activity tracking, and a factor-based positional scoring engine (v2.5) for 1-24 month holdings.
 
 ## Tech Stack
-- **Languages:** Python (Primary).
-- **Data Layers:** SQLite (Atomic Trilogy Sidecars: `technical.db`, `meta.db`, `institutional.db`, `governance.db`, `valuation.db`, `scoring.db`, `calendar.db`, and `network_cache.sqlite`). Thread-safe writes via `with lib._db_lock:` and WAL mode (Rule 43) are strictly enforced.
-- **Storage:** Parquet (Indicator Lake for strategy results to prevent schema contention). Indicators must come strictly from Parquet via `precompute_indicators()` (Rule 26).
-- **Libraries:** PKNSETools, morningstartools, PKDevTools (Authoritative sources for NSE data).
-- **Analytics:** pandas, numpy, xgboost, tensorflow (Dilated CNN), pandas_ta.
-- **UI/CLI:** rich, myra_log (for minimalist CLI terminal experience).
+- **Languages:** Python 3.10+
+- **Data Layer:** SQLite (modular sidecars: `technical.db`, `institutional.db`, `meta.db`, `valuation.db`)
+- **Storage:** Parquet (Indicator Lake for strategy results)
+- **Libraries:** pandas, numpy, pandas_ta, xgboost, tensorflow
+- **UI/CLI:** rich, myra_log (minimalist terminal experience)
+- **NSE Data:** myra_core (localized from PKScreener), morningstartools
 
 ## Core Features
-- **Atomic Trilogy Architecture:** Specialized SQLite sidecars to prevent file locking and schema contention.
-- **Indicator Lake:** Strategy-specific results saved to isolated Parquet files to isolate technical indicators from main SQL schemas.
-- **Institutional Intelligence:** Tracking insider trades (> ₹10L materiality) and calculating the 'Underwater Signal' (LTP < Insider_Cost_Basis).
-- **Self-Healing Data Layer:** Automatic retrieval and backfill of missing metrics via the `DataAdapter` and `Librarian`.
-- **Advanced Scanning:** Smart Money Concepts (SMC), Volume Spread Analysis (VSA), and multi-timeframe technical screening.
-- **Evolutionary ML:** AEON Agent using Deep Evolution Strategies (DES) and Dilated CNNs for sequence-to-sequence forecasting.
+- **v2.5 Positional Engine:** Factor-based ranking with trend, stability, delivery, liquidity, base, and fundamental scores
+- **Modular Factors:** BaseFactor abstract class with DeliveryFactor, RSFactor, IASFactor implementations
+- **Strategy Framework:** BaseStrategy with market mood detection, Kelly criterion sizing, and AI hooks
+- **Institutional Intelligence:** Insider trades (> ₹10L), large deals, delivery divergence scoring
+- **SMC & VSA:** Smart Money Concepts with Fair Value Gaps, absorption, and tightness analysis
+- **ML Integration:** AEON Agent (Deep Evolution Strategies), Surpriver v2 (multi-window anomaly detection)
+- **Resilient Data Pipeline:** Watchdog for stuck scans, process timeouts, adaptive source selection
 
 ## Architecture
-- **Modular Architecture v3.2 (Atomic Trilogy):** A decoupled, sidecar-based system where data (SQL), indicators (Parquet), and logic (Engine) are isolated to ensure stability and performance. SMC FVG thresholds must be clearly separated: detection threshold is 0.2%, and mitigation/invalidation threshold is 1.5%.
-- **Absolute Root Anchoring:** High-resilience pathing logic used across all tools and research scripts to ensure cross-directory execution.
-- **Vectorized ML Conviction:** High-performance feature reconstruction for 680-stock scanning on AMD APU/low-resource systems.
-- **Unified Data Access:** The `DataAdapter` and `IndicatorManager` provide a single interface for all data operations, abstracting the underlying SQL/Parquet split.
+- **Engine (UNIVERSAL SQL v12):** Unified precompute for standard and piped scans, multiprocessing worker pool
+- **PositionalScorer:** Vectorized scoring with regime adjustment and drawdown filtering
+- **Librarian Modularization:** Decomposed into Core, Intelligence, Ingestor, Sync, and Schema modules
+- **Atomic Trilogy:** SQLite sidecars prevent file locking; Parquet Lake isolates strategy indicators
+- **Thread Safety:** Global locks, WAL mode, retry mechanisms for concurrent access
+
+## Strategy Ecosystem
+- **Surpriver v2:** Multi-window (5/10/15/20/30-day) institutional accumulation detection
+- **AEON Agent:** Evolutionary Strategy optimization for SMC entry/exit timing
+- **Alpha Strategies:** Delivery clusters, liquidity vacuums, supply absorption, RS leaders
+- **Scanners:** Bottom hunter, multibagger early detection, institutional structural flow
 
 ## External Integrations
-- **NSE India:** Primary data source for Bhavcopies, insider trades, and corporate actions.
-- **Yahoo Finance:** Fallback data source for global symbols and basic technicals.
-- **Open-Source Libraries:** IndStocks, indstocks_source (fallback or for reference implementation).
+- **NSE India:** Bhavcopies, insider trades, corporate actions
+- **Yahoo Finance:** Fallback for index quotes (NIFTY, VIX)
+- **Morningstar:** Fundamental data

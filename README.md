@@ -1,57 +1,52 @@
 # MYRA (Myra Yield & Research Analytics)
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
-![SQLite](https://img.shields.io/badge/Database-SQLite%20(Atomic%20Trilogy)-blue)
+![SQLite](https://img.shields.io/badge/Database-SQLite%20(Sidecars)-blue)
 ![Parquet](https://img.shields.io/badge/Storage-Parquet%20Lake-orange)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 
-**MYRA** is a specialized, high-performance stock screening and research analytics platform designed explicitly for the National Stock Exchange (NSE) of India. Built for the modern quant era, it emphasizes high-fidelity technical analysis (OHLCV, Delivery, VWAP), institutional activity tracking, and an advanced, self-healing data architecture.
+**MYRA** is an atomic trading system for the National Stock Exchange (NSE) of India. It combines a factor-based positional scoring engine (v2.5), institutional activity tracking, and resilient data pipelines for 1-24 month holdings.
 
 ---
 
 ## 🚀 Key Features
 
-*   **⚡ High-Performance Scanner Engine**: Optimized for extreme speed on low-resource hardware (e.g., AMD APUs). Leverages Smart Money Concepts (SMC), Volume Spread Analysis (VSA), and multi-timeframe technical screening.
-*   **🏦 Institutional Intelligence**: Tracks institutional moves natively. Features include tracking insider trades with strict materiality filters (> ₹10 Lakhs) and calculating the 'Underwater Signal' (LTP < Insider Cost Basis) to identify institutional accumulation zones.
-*   **🧬 Evolutionary ML (AEON Agent)**: Implements Deep Evolution Strategies (DES) and Dilated Convolutional Neural Networks (CNN) for sequence-to-sequence forecasting and vectorised ML conviction scoring.
-*   **🛡️ Self-Healing Data Layer**: Automatic retrieval and backfill of missing metrics via the robust `DataAdapter` and `Librarian` modules, ensuring your pipelines never dry up.
-*   **🏎️ Performance First**: Strict adherence to vectorized Pandas/NumPy operations, DB query batching, and eliminating hidden Python loops for O(N) or better algorithmic scaling.
+*   **⚡ v2.5 Positional Engine**: Factor-based ranking with trend, stability, delivery, liquidity, base, and fundamental scores
+*   **🏦 Institutional Intelligence**: Tracks insider trades (> ₹10L), large deals, and delivery divergence scoring
+*   **🧬 Strategy Framework**: Modular BaseStrategy with market mood detection, Kelly criterion sizing, and AI hooks
+*   **🛡️ Resilient Data Pipeline**: Watchdog for stuck scans, process timeouts, and adaptive source selection
+*   **🏎️ Performance First**: Vectorized operations, multiprocessing worker pool, and optimized SQLite sidecars
 
 ---
 
-## 🏗️ Architecture: Modular Architecture v3.2 (Atomic Trilogy)
+## 🏗️ Architecture: Atomic Trading System
 
-MYRA operates on a decoupled, highly resilient architecture known as the **Atomic Trilogy (v3.2 Stable)**. This design isolates data, indicators, and execution logic to prevent file locking, schema contention, and performance bottlenecks. All multi-step DB writes must be thread-safe, utilizing `with lib._db_lock:` and WAL mode.
+MYRA operates on a modular architecture with SQLite sidecars and a Parquet Indicator Lake to prevent file locking and schema contention.
 
-### 1. SQLite Sidecars (The Data Base)
-Instead of a monolithic database, MYRA uses eight active, domain-specific SQLite databases mapped in LibrarianCore:
-*   `technical.db`: Core price action, volume, and raw market data.
-*   `meta.db`: System metadata, job states, and configuration.
-*   `institutional.db`: Insider trading, bulk deals, and corporate actions.
-*   `governance.db`: Compliance, audits, and access logs.
-*   `valuation.db`: Fundamental metrics and derived valuations.
-*   `scoring.db`: Cross-sectional scoring and rankings.
-*   `calendar.db`: Trading holidays and market schedules.
-*   `network_cache.sqlite`: Aggressive caching for stealth session requests.
+### 1. SQLite Sidecars
+*   `technical.db`: OHLCV, delivery, VWAP data
+*   `institutional.db`: Insider trades, large deals
+*   `meta.db`: Symbols master, benchmarks
+*   `valuation.db`: Fundamentals, quarterly results
 
-### 2. Parquet Indicator Lake (The Cache)
-**Strict Rule 26 Enforcement:** To avoid schema bloat in SQLite and accelerate read times, *all* calculated technical indicators (e.g., SMA, RSI, VWAP) MUST be read strictly from the isolated Parquet Indicator Lake via `precompute_indicators()`. Do NOT read technical indicators from SQLite.
-
-### 3. Unified Data Access (The Gateway)
-The `DataAdapter` and `IndicatorManager` serve as the singular interface, abstracting the SQL/Parquet split. Strategy logic simply asks for data, and the adapter routes the request seamlessly. Standardized quantitative parameters like the SMC Fair Value Gap (FVG) threshold must be clearly separated: detection threshold is 0.2%, and mitigation/invalidation threshold is 1.5%.
+### 2. Modular Components
+*   **Engine (UNIVERSAL SQL v12)**: Unified precompute for scans
+*   **PositionalScorer**: Vectorized scoring with regime adjustment
+*   **Librarian**: Decomposed into Core, Intelligence, Ingestor, Sync modules
+*   **Factors**: BaseFactor abstract class with DeliveryFactor, RSFactor, IASFactor
+*   **Strategies**: BaseStrategy framework with 30+ implementations
 
 ---
 
 ## 🛠️ Tech Stack
 
-*   **Core Language:** Python
-*   **Databases:** SQLite (Sidecars)
+*   **Core Language:** Python 3.10+
+*   **Databases:** SQLite (sidecars)
 *   **Data Lake Storage:** Apache Parquet
 *   **Analytics & Quant:** `pandas`, `numpy`, `pandas_ta`
-*   **Machine Learning:** `xgboost`, `tensorflow` (Dilated CNNs)
-*   **UI / CLI Experience:** `rich`, `myra_log` (for minimalist terminal interactions)
-*   **NSE Data:** `PKNSETools`, `PKDevTools`, `morningstartools`
-*   *(Note: DuckDB integration has been officially deprecated in v3.0)*
+*   **Machine Learning:** `xgboost`, `tensorflow`
+*   **UI / CLI Experience:** `rich`, `myra_log`
+*   **NSE Data:** `myra_core` (localized), `morningstartools`
 
 ---
 
@@ -63,10 +58,10 @@ The `DataAdapter` and `IndicatorManager` serve as the singular interface, abstra
     cd myra
     ```
 
-2.  **Set up a virtual environment (Recommended):**
+2.  **Set up a virtual environment:**
     ```bash
     python -m venv venv
-    source venv/bin/activate  # On Windows use: venv\Scripts\activate
+    source venv/bin/activate  # On Windows: venv\Scripts\activate
     ```
 
 3.  **Install dependencies:**
@@ -78,19 +73,21 @@ The `DataAdapter` and `IndicatorManager` serve as the singular interface, abstra
 
 ## 🖥️ Usage Examples
 
-MYRA is primarily driven via its CLI. Ensure you are in the project root before running commands.
-
 **Run the Core Scanner:**
 ```bash
-python myra_app/cli.py --scan "SMC" --timeframe "1D"
+python myra_app/myra.py
+# Select strategy (e.g., 34 for Surpriver v2, 31 for AEON Agent)
 ```
 
-**Fetch and Update Institutional Data (Insider Trades):**
+**Positional Analysis:**
+```bash
+python myra_app/positional_engine.py --regime neutral --universe nifty500
+```
+
+**Data Backfill:**
 ```bash
 python tools/backfill_year.py --target institutional --year 2024
 ```
-
-*(Note: Actual CLI commands may vary based on the specific modules you are invoking. Check `myra_app/cli.py` for full options.)*
 
 ---
 
@@ -98,35 +95,52 @@ python tools/backfill_year.py --target institutional --year 2024
 
 ```text
 MYRA/
-├── myra_core/          # Core engine logic, adapters, and ML agents
-├── myra_app/           # Presentation layer, CLI, and high-level orchestrators
-├── tools/              # Utilities, data fetchers, and maintenance scripts
-├── test/               # Comprehensive pytest suite
-├── docs/               # Additional documentation and research
-├── data/               # (Generated) SQLite Sidecars
-│   └── indicators/     # (Generated) Parquet Lake
-├── conductor/          # Workflow and job scheduling orchestration
-└── PROJECT_RULES.md    # Strict engineering mandates and guidelines
+├── myra_core/          # Localized dependencies from PKScreener
+├── myra_app/           # Main application
+│   ├── engine.py       # Universal SQL precompute engine
+│   ├── positional_engine.py  # v2.5 scoring system
+│   ├── factors/        # Modular factor implementations
+│   ├── strategies/     # 30+ strategy implementations
+│   └── librarian/      # Modular data persistence
+├── tools/              # Utilities and maintenance scripts
+├── test/               # Test suite
+├── data/               # SQLite sidecars
+├── conductor/          # Workflow orchestration
+└── PROJECT_RULES.md    # Engineering guidelines
 ```
 
 ---
 
-## 🤝 Contribution Guidelines & Standards
+## 🤝 Contribution Guidelines
 
-We welcome contributions, but MYRA is built on a strict engineering philosophy to maintain its edge.
+MYRA is built on strict engineering principles. Before contributing:
 
-### Core Philosophy:
-> **Performance > Readability > Convenience**
+1. Read `PROJECT_RULES.md`
+2. No loops on large datasets (use vectorized operations)
+3. All dates must be `datetime64[ns]`
+4. Thread-safe database access with locks
+5. Include tests for new features
 
-Before submitting a PR, you **must** read and adhere to `PROJECT_RULES.md`.
+**PR Title Format:**
+* Performance: `⚡ [description]`
+* Security: `🔒 [description]`
+* Features: `✨ [description]`
 
-**Key Mandates:**
-*   **No Loops:** `iterrows()`, `apply()` on large datasets, and `DataFrame.append()` inside loops are strictly banned. Use vectorized `.isin`, `.map`, and boolean masking.
-*   **Date Handling:** All dates must be native `datetime64[ns]`. Do not use `.strftime()` for comparisons.
-*   **Testing:** PRs must include tests and be fully deterministic. If you introduce a loop (only when vectorization is impossible), you must include a benchmark.
-*   **PR Titles:**
-    * Security: `🔒 [security fix description]`
-    * Performance: `⚡ [performance improvement description]`
-    * Testing: `🧪 [testing improvement description]`
+---
 
-Please review the full ruleset in [PROJECT_RULES.md](PROJECT_RULES.md) before pushing code.
+## 📊 Strategy Ecosystem
+
+### Core Strategies
+*   **Surpriver v2**: Multi-window institutional accumulation detection
+*   **AEON Agent**: Evolutionary Strategy optimization for SMC timing
+*   **Smart Money**: Delivery spikes, absorption, institutional flow
+
+### Alpha Strategies
+*   Delivery clusters, liquidity vacuums, supply absorption
+*   RS leaders, bear traps, stage 2 continuation
+*   Bottom hunter, multibagger early detection
+
+### Scanners
+*   Technical: RSI divergence, VWAP pullback, breakouts
+*   Institutional: Insider signals, large deal momentum
+*   Fundamental: Value, growth, quality screens
