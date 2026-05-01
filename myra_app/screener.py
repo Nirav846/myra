@@ -1,4 +1,6 @@
+import functools
 import os
+import threading
 import warnings
 from datetime import datetime
 
@@ -10,7 +12,6 @@ from rich.panel import Panel
 
 from myra_app.broker_parser import BrokerParser
 from myra_app.engine import Engine
-from myra_app.fundamental_ranker import FundamentalRanker
 from myra_app.librarian import Librarian
 from myra_app.positional_engine import PositionalScorer
 from myra_app.results_manager import ResultsManager
@@ -30,8 +31,48 @@ class MYRAScreener:
         self.engine = Engine(self.lib)
         self.rm = ResultsManager(console)
         self.broker = BrokerParser(os.getcwd())
-        self.ranker = self.lib.fundamental_ranker
+        # NO FUNDAMENTALS: Removed fundamental_ranker
         self.positional_scorer = PositionalScorer()
+        # PERFORMANCE IMPROVEMENT: Cache for precompute_indicators
+        self._indicator_cache = None
+        self._indicator_cache_date = None
+        self._cache_lock = threading.Lock()
+
+    def _get_cached_indicators(self):
+        """PERFORMANCE IMPROVEMENT: Cached wrapper for precompute_indicators."""
+        # NO FUNDAMENTALS: Only technical indicators from Parquet lake
+        latest_date = self.lib.get_max_price_date()
+        
+        with self._cache_lock:
+            if self._indicator_cache_date == latest_date and self._indicator_cache is not None:
+                return self._indicator_cache
+        
+        # Cache miss or first run
+        try:
+            df = self.lib.precompute_indicators()
+            if df.empty:
+                myra_log(0, 1, desc="Parquet lake empty")
+                self.console.print(
+                    "[warning][!] Parquet Indicator Lake is empty. Starting background refresh...[/warning]"
+                )
+                # PERFORMANCE IMPROVEMENT: Non-blocking background refresh
+                def _background_refresh():
+                    try:
+                        self.lib.sync_market_data(history_years=0.02, skip_maintenance=True)
+                        self.lib.start_background_sync(history_years=3)
+                    except Exception as e:
+                        self.console.print(f"[error]Background refresh failed: {e}[/error]")
+                threading.Thread(target=_background_refresh, daemon=True).start()
+                return df
+            
+            # Update cache
+            with self._cache_lock:
+                self._indicator_cache = df
+                self._indicator_cache_date = latest_date
+            return df
+        except Exception as e:
+            self.console.print(f"[error]Failed to build X-Ray: {e}[/error]")
+            return pd.DataFrame()
 
     def run_market_xray(self):
         """Bird's Eye View of Market Health (PKScreener Superpower)"""
@@ -44,25 +85,13 @@ class MYRAScreener:
             return
 
         # 1. Trend Distribution & Volume (Direct SQL for speed and safety)
-        try:
-            df = self.lib.precompute_indicators()
-        except Exception as e:
-            self.console.print(f"[error]Failed to build X-Ray: {e}[/error]")
-            return
+        # PERFORMANCE IMPROVEMENT: Use cached indicators
+        df = self._get_cached_indicators()
 
         if df.empty:
             return
 
-        # Merge with fundamentals to get Sector
-        try:
-            funda = pd.read_sql(
-                "SELECT symbol, sector FROM fundamentals", self.lib._val_conn
-            )
-        except pd.errors.DatabaseError:
-            funda = pd.DataFrame(columns=["symbol", "sector"])
-
-        if not funda.empty:
-            df = df.merge(funda, on="symbol", how="left")
+        # NO FUNDAMENTALS: Removed sector fetch and merge - pure technical analysis
 
         # 1. Trend Distribution
         total = len(df)
@@ -108,43 +137,7 @@ class MYRAScreener:
             )
         )
 
-        # 4. Sector Heatmap (New PKScreener Idea)
-        if "Sector" in df.columns:
-            # Optimized with list comprehension (Fix 95: Avoid .append in loop)
-            def _get_sector_perc(group):
-                s_total = len(group)
-                if s_total < 5:
-                    return None
-                s_bullish = len(group[group["close"] > group["sma50"]])
-                return (s_total, (s_bullish / s_total) * 100)
-
-            sector_stats = [
-                (sector, stats[0], stats[1])
-                for sector, group in df.groupby("Sector")
-                if sector
-                and sector != "Unknown"
-                and not pd.isna(sector)
-                and (stats := _get_sector_perc(group))
-            ]
-
-            if sector_stats:
-                st = Table(
-                    title="Sector Leadership Heatmap",
-                    header_style="bold cyan",
-                    border_style="dim",
-                )
-                st.add_column("Sector")
-                st.add_column("Count", justify="right")
-                st.add_column("Trend Strength", justify="center")
-
-                for s, count, perc in sorted(sector_stats, key=lambda x: -x[2]):
-                    color = "green" if perc > 70 else "yellow" if perc > 45 else "red"
-                    bar = "█" * int(perc / 5)
-                    st.add_row(
-                        str(s), str(count), f"[{color}]{bar} {perc:.1f}%[/{color}]"
-                    )
-
-                self.console.print(st)
+        # NO FUNDAMENTALS: Removed Sector Heatmap - pure technical analysis
 
     def display_data_status(self):
         """Displays a summary panel of data availability (Fix: PROMPT.txt UX)."""
@@ -322,14 +315,14 @@ class MYRAScreener:
         results = [enriched_map.get(r["Stock"], r) for r in results]
 
         # 4. INITIAL ENRICHMENT & RANKING
-        sector_stats = self.lib.get_sector_stats()
+        # NO FUNDAMENTALS: Pure technical analysis only
         n100 = set(
             self.lib.get_index_symbols("NIFTY 50")
             + self.lib.get_index_symbols("NIFTY NEXT 50")
         )
         n500 = set(self.lib.get_index_symbols("NIFTY 500"))
 
-        funda_map = {}  # Store for accuracy enrichment
+        funda_map = {}  # Empty map - no fundamentals used
         is_smc_scan = strategy_id in [
             "126",
             "smart_money_ignition",
@@ -342,28 +335,20 @@ class MYRAScreener:
         for r in results:
             sym = r["Stock"]
 
-            # Hybrid Load: Always get Core Identity (MCap/Sector), skip Heavy Technico-Fundamentals if SMC/AEON
-            f = self.lib.get_fundamentals(sym)
-
-            if is_smc_scan or is_aeon_scan:
-                # Keep core identity but mask heavy fundamentals to avoid NULL noise in specialized scans
-                f_mask = {
-                    "PE": f.get("PE", "-") or "-",
-                    "ROE": f.get("ROE", "-") or "-",
-                    "Sector": f.get("Sector") or "ML-Specialist",
-                    "MCap": f.get("MCap", 0) or 0,
-                }
-                r.update(f_mask)
-            else:
-                r.update(f)
-
-            funda_map[sym] = f
-            r["ROCE"] = f.get("ROE", 0)
-            r["ProfitGrowth"] = f.get("ProfitGrowth", 0)
+            # NO FUNDAMENTALS: Skip all fundamental data fetching
+            # Set default values for display compatibility
+            r["PE"] = "-"
+            r["ROE"] = "-"
+            r["Sector"] = "Unknown"
+            r["MCap"] = 0
+            r["ROCE"] = 0
+            r["ProfitGrowth"] = 0
 
             if not (is_smc_scan or is_aeon_scan):
-                score, grade = self._calculate_grade(f, sector_stats)
-                r["Grade"], r["MYRA_Score"] = grade, score
+                # Use strategy-provided Grade if present, otherwise default
+                if "Grade" not in r:
+                    r["Grade"] = "C"
+                r["MYRA_Score"] = r.get("Score", 50)
             else:
                 # Use strategy-provided Grade if present
                 if "Grade" not in r:
@@ -442,9 +427,9 @@ class MYRAScreener:
                 min(25, base_size * (1.0 + (0.2 * (len(r["Stars"]) - 1)))), 1
             )
 
-        # 4. SELECT TOP CANDIDATES FOR DEEP FUNDAMENTAL AUDIT (PKScreener Superpower)
+        # 4. SELECT TOP CANDIDATES FOR DISPLAY
         results.sort(key=lambda x: x.get("MYRA_Score", 0), reverse=True)
-        # Deep audit (F_Score, Graham) is now handled earlier by FeatureEnricher in Polars
+        # NO FUNDAMENTALS: Removed deep fundamental audit
 
         # 5. FINAL POSITIONAL SCORING
         res_df = pd.DataFrame(results)
@@ -528,29 +513,16 @@ class MYRAScreener:
         if not symbols:
             return
         self.console.print(
-            f"[info][MYRA] Scouting {len(symbols)} targets with Fundamental Intelligence...[/info]"
+            f"[info][MYRA] Scouting {len(symbols)} targets with Technical Intelligence...[/info]"
         )
-        stale = [
-            s for s in symbols if self.lib.fundamental_manager.is_stale(s, days=90)
-        ]
-        if stale:
-            self.console.print(
-                f"[dim][*] Updating {len(stale)} stale fundamental profiles...[/dim]"
-            )
-            self.lib.update_quarterly_fundamentals(stale)
+        # NO FUNDAMENTALS: Removed fundamental stale check and update
         results = self.execute_scan(
             "technicals", "Custom Scout", portfolio_symbols=symbols
         )
-        funda_df = self.ranker.rank(symbols)
-        if not funda_df.empty:
-            funda_map = funda_df.set_index("Stock")["Funda_Score"].to_dict()
-            for r in results:
-                s = r["Stock"]
-                clean_s = s.split(".")[0].upper()
-                r["Funda_Score"] = funda_map.get(s, funda_map.get(clean_s, 0))
+        # NO FUNDAMENTALS: Removed fundamental ranking
         if results:
             self.rm.display_discovery_table(
-                results, "Custom Scout", "technicals", ["Funda_Score"]
+                results, "Custom Scout", "technicals", []
             )
             self.rm.archive_results(results, "Custom_Scout", strategy_id="technicals")
 
@@ -576,23 +548,11 @@ class MYRAScreener:
         self.console.print(
             f"[info][MYRA] Monitoring {len(symbols)} active broker holdings...[/info]"
         )
-        stale = [
-            s for s in symbols if self.lib.fundamental_manager.is_stale(s, days=90)
-        ]
-        if stale:
-            self.console.print(
-                f"[dim][*] Updating {len(stale)} stale fundamental profiles...[/dim]"
-            )
-            self.lib.update_quarterly_fundamentals(stale)
+        # NO FUNDAMENTALS: Removed fundamental stale check and update
         results = self.execute_scan(
             "all_pass", "Portfolio Monitor", portfolio_symbols=symbols
         )
-        funda_df = self.ranker.rank(symbols)
-        funda_map = (
-            funda_df.set_index("Stock")["Funda_Score"].to_dict()
-            if not funda_df.empty
-            else {}
-        )
+        # NO FUNDAMENTALS: Removed fundamental ranking
         if results:
             broker_map = {h["Stock"]: h for h in holdings}
             for r in results:
@@ -603,37 +563,33 @@ class MYRAScreener:
                 pnl_color = "green" if pnl > 0 else "red" if pnl < 0 else "white"
                 pnl_arrow = "↑ " if pnl > 0 else "↓ " if pnl < 0 else "→ "
                 r["PnL%"] = f"[{pnl_color}]{pnl_arrow}{pnl}%[/{pnl_color}]"
-                r["Funda_Score"] = funda_map.get(r["Stock"], 0)
+                r["Funda_Score"] = 0  # NO FUNDAMENTALS
                 tsl = r.get("SL", 0)
                 stage = r.get("Stage", "-")
                 ad_vibe = r.get("Closing_Vibe", "-")
                 accel = r.get("AV_Accel", 0)
                 status = "[bold green]HOLD[/bold green]"
-                f_score = r["Funda_Score"]
+                f_score = 0  # NO FUNDAMENTALS
                 if ltp < tsl:
                     status = "[bold red]EXIT NOW[/bold red]"
                 elif "Stage 4" in stage and accel == 0:
-                    if f_score > 0 and f_score < 40:
-                        status = "[bold red]SELL (Weak Fundamentals)[/bold red]"
-                    elif f_score == 0:
-                        status = "[bold red]SELL (Downtrend)[/bold red]"
-                    else:
-                        status = "[bold yellow]HOLD (Quality Lagging)[/bold yellow]"
+                    # NO FUNDAMENTALS: Simplified logic without f_score
+                    status = "[bold red]SELL (Downtrend)[/bold red]"
                 elif "Stage 3" in stage:
                     status = "[yellow]PROTECT (Topping)[/yellow]"
                 elif pnl > 20 and ad_vibe == "Distribution":
                     status = "[bold yellow]BOOK PARTIAL[/bold yellow]"
                 elif pnl < 0 and "Stage 2" in stage and accel > 0:
                     status = "[bold green]STRONG HOLD / ADD[/bold green]"
-                elif f_score > 70 and pnl < -10:
-                    status = "[bold blue]ACCUMULATE (Quality Dip)[/bold blue]"
+                elif pnl < -10:
+                    status = "[bold blue]ACCUMULATE (Dip)[/bold blue]"
                 r["Status"] = status
                 r["TSL"] = tsl
             self.rm.display_discovery_table(
                 results,
                 "Active Broker Monitor",
                 "portfolio_monitor",
-                ["PnL%", "Funda_Score", "Status"],
+                ["PnL%", "Status"],  # NO FUNDAMENTALS: Removed Funda_Score
             )
             self.rm.archive_results(results, "Broker_Monitor", strategy_id="all_pass")
             self.rm.display_portfolio_risk_audit(results)
@@ -650,38 +606,6 @@ class MYRAScreener:
             for s in line.replace(",", " ").split()
         ]
 
-    def _calculate_grade(self, stock_funda, sector_stats):
-        if not sector_stats:
-            return 50, "C"
-        sect = stock_funda.get("Sector")
-        if sect not in sector_stats:
-            return 50, "C"
-        stats = sector_stats[sect]
-        ts, f = 0, 0
-        roe = stock_funda.get("ROE")
-        if roe and roe != "NULL" and "roe" in stats:
-            # Fix 431: Avoid chained indexing
-            r_stats = stats["roe"]
-            z = (roe - r_stats["mean"]) / r_stats["std"]
-            ts += max(0, min(100, 50 + (z * 20)))
-            f += 1
-        pe = stock_funda.get("PE")
-        if pe and pe != "NULL" and "pe" in stats:
-            # Fix 434: Avoid chained indexing
-            p_stats = stats["pe"]
-            z = (pe - p_stats["mean"]) / p_stats["std"]
-            ts += max(0, min(100, 50 - (z * 20)))
-            f += 1
-        if f == 0:
-            return 50, "C"
-        fs = round(ts / f, 1)
-        if fs >= 80:
-            return fs, "A"
-        elif fs >= 60:
-            return fs, "B"
-        elif fs >= 40:
-            return fs, "C"
-        return fs, "F"
 
     def _register_signals(
         self, results: list, strategy_id: str, as_of_date: str = None

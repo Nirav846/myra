@@ -87,10 +87,10 @@ def execute_query(req: QueryRequest):
     if not db_path or not os.path.exists(db_path):
         raise HTTPException(status_code=404, detail=f"Database not found: {db_path}")
     
-    # Security: only SELECT/PRAGMA
+    # Security: only SELECT/PRAGMA/WITH
     query_upper = req.query.strip().upper()
-    if not (query_upper.startswith("SELECT") or query_upper.startswith("PRAGMA")):
-        raise HTTPException(status_code=403, detail="Only SELECT and PRAGMA queries allowed.")
+    if not (query_upper.startswith("SELECT") or query_upper.startswith("PRAGMA") or query_upper.startswith("WITH")):
+        raise HTTPException(status_code=403, detail="Only SELECT, WITH, and PRAGMA queries allowed.")
     
     # Apply table name rewrite
     final_query = rewrite_table_name(req.query)

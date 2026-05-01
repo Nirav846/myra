@@ -7,15 +7,14 @@ import { SymbolSearch } from '../components/SymbolSearch';
 // Math Helpers
 const calculateSMA = (data: any[], period: number) => {
   const result: number[] = [];
+  let sum = 0;
   for (let i = 0; i < data.length; i++) {
-    if (i < period - 1) {
-      result.push(NaN);
-    } else {
-      let sum = 0;
-      for (let j = 0; j < period; j++) {
-        sum += data[i - j].close;
-      }
+    sum += data[i].close;
+    if (i >= period) {
+      sum -= data[i - period].close;
       result.push(sum / period);
+    } else {
+      result.push(sum / (i + 1));
     }
   }
   return result;
@@ -106,6 +105,9 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
   const [range, setRange] = useState('1M');
   
   const [dataCache, setDataCache] = useState<Record<string, any[]>>({});
+  const [scrollEnabled, setScrollEnabled] = usePersistedState('chart-scrollEnabled', false);
+  const [allSymbols, setAllSymbols] = useState<string[]>([]);
+  const [visibleIndices, setVisibleIndices] = useState<[number, number] | null>(null);
   
   // Overlays
   const [showSma20, setShowSma20] = usePersistedState('chart-showSma20', false);
@@ -126,6 +128,8 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
   const [showDelVwapBands, setShowDelVwapBands] = usePersistedState('chart-showDelVwapBands', false);
   const [showLiqVoids, setShowLiqVoids] = usePersistedState('chart-showLiqVoids', false);
   const [showInstBlocks, setShowInstBlocks] = usePersistedState('chart-showInstBlocks', false);
+  const [showDelMA, setShowDelMA] = usePersistedState('chart-showDelMA', false);
+  const [showDelDivergence, setShowDelDivergence] = usePersistedState('chart-showDelDivergence', false);
   
   const [showRsi, setShowRsi] = usePersistedState('chart-showRsi', true);
   
@@ -134,6 +138,8 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
   const [showLogScale, setShowLogScale] = usePersistedState('chart-showLogScale', false);
 
   const [showSwings, setShowSwings] = usePersistedState('chart-showSwings', true);
+
+  const [hoveredIndices, setHoveredIndices] = useState<Record<string, number>>({});
 
   const { startDate, endDate } = useMemo(() => {
     const end = new Date();
@@ -145,6 +151,77 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
     else start.setFullYear(start.getFullYear() - 10);
     return { startDate: start.toISOString().split('T')[0], endDate: end.toISOString().split('T')[0] };
   }, [range]);
+
+  // Fetch all symbols for fast scroll
+  useEffect(() => {
+    const fetchAllSymbols = async () => {
+      try {
+        const result = await lib.executeQuery('_tech_conn', 'SELECT DISTINCT symbol FROM technical_data ORDER BY symbol', {}, 5000);
+        if (result && result.length > 0) {
+          setAllSymbols(result.map((row: any) => row.symbol));
+        }
+      } catch (e) {
+        console.error('Failed to fetch symbols:', e);
+      }
+    };
+    fetchAllSymbols();
+  }, [lib]);
+
+  // Fast scroll event listeners
+  useEffect(() => {
+    if (!scrollEnabled || allSymbols.length === 0) return;
+
+    let scrollTimeout: NodeJS.Timeout | null = null;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (scrollTimeout) return;
+      
+      scrollTimeout = setTimeout(() => {
+        scrollTimeout = null;
+        const currentIdx = allSymbols.indexOf(symbols[0] || '');
+        if (currentIdx === -1) return;
+        
+        let nextIdx: number;
+        if (e.deltaY > 0) {
+          nextIdx = Math.min(currentIdx + 1, allSymbols.length - 1);
+        } else {
+          nextIdx = Math.max(currentIdx - 1, 0);
+        }
+        
+        if (nextIdx !== currentIdx) {
+          setSymbols([allSymbols[nextIdx]]);
+        }
+      }, 50);
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      
+      const currentIdx = allSymbols.indexOf(symbols[0] || '');
+      if (currentIdx === -1) return;
+      
+      let nextIdx: number;
+      if (e.key === 'ArrowDown') {
+        nextIdx = Math.min(currentIdx + 1, allSymbols.length - 1);
+      } else {
+        nextIdx = Math.max(currentIdx - 1, 0);
+      }
+      
+      if (nextIdx !== currentIdx) {
+        setSymbols([allSymbols[nextIdx]]);
+      }
+    };
+
+    window.addEventListener('wheel', handleWheel, { passive: false });
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('wheel', handleWheel);
+      window.removeEventListener('keydown', handleKeyDown);
+      if (scrollTimeout) clearTimeout(scrollTimeout);
+    };
+  }, [scrollEnabled, allSymbols, symbols]);
 
   const fetchSymbolData = async (symbol: string) => {
     try {
@@ -251,16 +328,31 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
              
              {/* Add Symbol Input */}
              {symbols.length < 4 && (
+             <div>
              <SymbolSearch 
                  lib={lib}
                  onSymbolSelect={(sym) => {
-                     if (sym && !symbols.includes(sym)) {
-                         setSymbols(prev => [...prev, sym]);
+                     if (sym) {
+                         if (scrollEnabled) {
+                             setSymbols([sym]);
+                         } else if (!symbols.includes(sym)) {
+                             setSymbols(prev => [...prev, sym]);
+                         }
                      }
                  }}
                  placeholder="Add symbol..."
-                 clearOnSelect={true}
+                 clearOnSelect={!scrollEnabled}
              />
+             <label className="flex items-center gap-2 mt-2 text-xs text-[#888] cursor-pointer hover:text-[#fafafa] transition-colors">
+                 <input 
+                     type="checkbox" 
+                     checked={scrollEnabled} 
+                     onChange={(e) => setScrollEnabled(e.target.checked)}
+                     className="accent-cyan-500 w-3 h-3"
+                 />
+                 Fast Scroll (Wheel/Arrows)
+             </label>
+             </div>
              )}
          </div>
 
@@ -283,10 +375,10 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
             <h4 className="text-[10px] font-mono text-[#888] uppercase mb-2">Overlays & Metrics</h4>
             <div className="space-y-2 h-[250px] overflow-y-auto pr-2 custom-scrollbar">
                {[
-                 { id: 'sma20', label: 'SMA (20)', state: showSma20, set: setShowSma20 },
-                 { id: 'sma50', label: 'SMA (50)', state: showSma50, set: setShowSma50 },
-                 { id: 'sma150', label: 'SMA (150)', state: showSma150, set: setShowSma150 },
-                 { id: 'sma200', label: 'SMA (200)', state: showSma200, set: setShowSma200 },
+                 { id: 'sma20', label: 'SMA (20)', state: showSma20, set: setShowSma20, color: '#3b82f6' },
+                 { id: 'sma50', label: 'SMA (50)', state: showSma50, set: setShowSma50, color: '#eab308' },
+                 { id: 'sma150', label: 'SMA (150)', state: showSma150, set: setShowSma150, color: '#d946ef' },
+                 { id: 'sma200', label: 'SMA (200)', state: showSma200, set: setShowSma200, color: '#f97316' },
                  { id: 'vwap', label: 'VWAP', state: showVwap, set: setShowVwap },
                  { id: 'fvg', label: 'Fair Value Gaps', state: showFvg, set: setShowFvg },
                  { id: 'fibonacci', label: 'Auto Fibonacci', state: showFibonacci, set: setShowFibonacci },
@@ -295,10 +387,12 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                  { id: 'logscale', label: 'Log Scale', state: showLogScale, set: setShowLogScale },
                  { id: 'volume', label: 'Volume Pane', state: showVolume, set: setShowVolume },
                  { id: 'delivery', label: 'Delivery Pane', state: showDelivery, set: setShowDelivery },
+                 { id: 'del_ma', label: 'Delivery MA (20)', state: showDelMA, set: setShowDelMA },
                  { id: 'del_profile', label: 'Delivery Profile', state: showDeliveryProfile, set: setShowDeliveryProfile, desc: 'Histogram of delivery volume by price level.' },
                  { id: 'del_sr', label: 'Delivery Auto S/R', state: showDeliverySR, set: setShowDeliverySR, desc: 'Auto-draws support/resistance at high delivery price levels.' },
                  { id: 'smart_money', label: 'Smart Money Prints', state: showSmartMoney, set: setShowSmartMoney, desc: 'Highlights bars with 1.5x average volume and > 60% delivery ratio.' },
                  { id: 'del_ad', label: 'Delivery A/D', state: showDelAD, set: setShowDelAD, desc: 'Accumulation/Distribution strictly using delivery volume.' },
+                 { id: 'del_divergence', label: 'Delivery Intensity Core', state: showDelDivergence, set: setShowDelDivergence, desc: 'Draws a colored vertical core inside candles representing delivery %. Blue=Institutional, Gold=Divergence, Grey=Retail.' },
                  { id: 'del_vwap_bands', label: 'Del. VWAP Bands', state: showDelVwapBands, set: setShowDelVwapBands, desc: 'VWAP weighted by delivery volume with 1.5 standard deviation bands.' },
                  { id: 'liq_voids', label: 'Liquidity Voids', state: showLiqVoids, set: setShowLiqVoids, desc: 'Shaded areas where large price movement occurred on low relative volume (potential gap fills).' },
                  { id: 'inst_blocks', label: 'Inst. Blocks', state: showInstBlocks, set: setShowInstBlocks, desc: 'Massive volume anomalies (> 3.5x average) paired with > 65% delivery.' },
@@ -307,7 +401,7 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                    <div key={toggle.id} className="group relative flex items-center gap-2">
                        <label className="flex items-center gap-2 cursor-pointer flex-1 group-hover:text-white">
                            <input type="checkbox" checked={toggle.state} onChange={e => toggle.set(e.target.checked)} className="accent-cyan-500 w-3 h-3" />
-                           <span className="text-xs font-mono text-[#ccc] group-hover:text-white transition-colors">{toggle.label}</span>
+                           <span className="text-xs font-mono transition-colors group-hover:brightness-150" style={{ color: toggle.color || '#ccc' }}>{toggle.label}</span>
                        </label>
                        {toggle.desc && (
                            <div className="relative cursor-help group/tooltip" title={toggle.desc}>
@@ -372,12 +466,29 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
               const sma150 = showSma150 ? calculateSMA(data, 150) : [];
               const sma200 = showSma200 ? calculateSMA(data, 200) : [];
               const rsiObj = showRsi ? calculateRSI(data, 14) : [];
+              const delMaData = showDelMA ? calculateSMA(data.map(d => ({
+                  close: d.delivery_final != null ? Number(d.delivery_final) : Number(d.delivery_qty) || 0
+              })), 20) : [];
               
-              // Swings
-              const swingHighsDates = showSwings ? data.filter(d => d.swing_high === 1).map(d => d.date) : [];
-              const swingHighsValues = showSwings ? data.filter(d => d.swing_high === 1).map(d => d.high) : [];
-              const swingLowsDates = showSwings ? data.filter(d => d.swing_low === 1).map(d => d.date) : [];
-              const swingLowsValues = showSwings ? data.filter(d => d.swing_low === 1).map(d => d.low) : [];
+              // Swings - Dynamic calculation
+              const swingHighsDates: string[] = [];
+              const swingHighsValues: number[] = [];
+              const swingLowsDates: string[] = [];
+              const swingLowsValues: number[] = [];
+              
+              if (showSwings && data.length > 4) {
+                  const n = 2; // bars to left and right
+                  for (let i = n; i < data.length - n; i++) {
+                      let isHigh = true;
+                      let isLow = true;
+                      for (let j = 1; j <= n; j++) {
+                          if (data[i].high <= data[i-j].high || data[i].high <= data[i+j].high) isHigh = false;
+                          if (data[i].low >= data[i-j].low || data[i].low >= data[i+j].low) isLow = false;
+                      }
+                      if (isHigh) { swingHighsDates.push(data[i].date); swingHighsValues.push(data[i].high); }
+                      if (isLow) { swingLowsDates.push(data[i].date); swingLowsValues.push(data[i].low); }
+                  }
+              }
 
               // Shapes for FVGs & Reference lines
               const shapes: any[] = [];
@@ -407,34 +518,76 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                   });
               }
 
-              if (showFvg) {
-                  data.forEach((d, i) => {
-                      const freshness = d.fvg_freshness ?? 1;
-                      const opacity = (0.05 + (freshness * 0.15)).toFixed(2); // 15-20% opacity
+              // Dynamic FVG Calculation
+              if (showFvg && data.length >= 3) {
+                  const activeFvgs: Array<{type: 'bull' | 'bear', bottom: number, top: number, startDate: string, mitigatedDate: string | null}> = [];
+                  
+                  for (let i = 2; i < data.length; i++) {
+                      const current = data[i];
+                      const candle1 = data[i - 2];
                       
-                      if (d.bullish_fvg === 1 && d.fvg_top && d.fvg_bottom) {
-                          shapes.push({
-                              type: 'rect',
-                              layer: 'below',
-                              xref: 'x', yref: 'y',
-                              x0: d.date, x1: data[i+5]?.date || dates[dates.length-1], // Extrapolate
-                              y0: d.fvg_bottom, y1: d.fvg_top,
-                              fillcolor: `rgba(74, 222, 128, ${opacity})`, // pale green
-                              line: { width: 0 }
+                      // Check for new FVG formation
+                      // Bullish FVG: Current Low > Candle 1 High
+                      if (current.low > candle1.high) {
+                          activeFvgs.push({
+                              type: 'bull',
+                              bottom: candle1.high,
+                              top: current.low,
+                              startDate: current.date,
+                              mitigatedDate: null
                           });
                       }
-                      if (d.bearish_fvg === 1 && d.fvg_top && d.fvg_bottom) {
-                          shapes.push({
-                              type: 'rect',
-                              layer: 'below',
-                              xref: 'x', yref: 'y',
-                              x0: d.date, x1: data[i+5]?.date || dates[dates.length-1],
-                              y0: d.fvg_bottom, y1: d.fvg_top,
-                              fillcolor: `rgba(248, 113, 113, ${opacity})`, // pale red
-                              line: { width: 0 }
+                      // Bearish FVG: Current High < Candle 1 Low
+                      else if (current.high < candle1.low) {
+                          activeFvgs.push({
+                              type: 'bear',
+                              bottom: current.high,
+                              top: candle1.low,
+                              startDate: current.date,
+                              mitigatedDate: null
                           });
                       }
-                  });
+                      
+                      // Check for mitigation of existing FVGs
+                      for (const fvg of activeFvgs) {
+                          if (fvg.mitigatedDate !== null) continue; // Already mitigated
+                          
+                          if (fvg.type === 'bull') {
+                              // Bullish FVG mitigated if price drops below bottom
+                              if (current.low < fvg.bottom) {
+                                  fvg.mitigatedDate = current.date;
+                              }
+                          } else {
+                              // Bearish FVG mitigated if price rises above top
+                              if (current.high > fvg.top) {
+                                  fvg.mitigatedDate = current.date;
+                              }
+                          }
+                      }
+                  }
+                  
+                  // Render FVGs
+                  const lastDate = dates[dates.length - 1];
+                  for (const fvg of activeFvgs) {
+                      const isMitigated = fvg.mitigatedDate !== null;
+                      const endDate = isMitigated ? fvg.mitigatedDate! : lastDate;
+                      const opacity = isMitigated ? 0.05 : 0.15;
+                      const lineColor = fvg.type === 'bull' ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)';
+                      const fillColor = fvg.type === 'bull' ? 'rgba(74, 222, 128, 0.15)' : 'rgba(248, 113, 113, 0.15)';
+                      const fillOpacity = isMitigated ? 0.05 : 0.15;
+                      
+                      shapes.push({
+                          type: 'rect',
+                          layer: 'below',
+                          xref: 'x', yref: 'y',
+                          x0: fvg.startDate, x1: endDate,
+                          y0: fvg.bottom, y1: fvg.top,
+                          fillcolor: fvg.type === 'bull' 
+                              ? `rgba(74, 222, 128, ${fillOpacity})` 
+                              : `rgba(248, 113, 113, ${fillOpacity})`,
+                          line: isMitigated ? { width: 0 } : { color: lineColor, width: 1 }
+                      });
+                  }
               }
 
               if (showRsi) {
@@ -452,8 +605,8 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                   const avgVol = calculateSMA(data.map(d => ({close: d.volume_final != null ? Number(d.volume_final) : Number(d.volume) || 1})), 20);
                   data.forEach((d, i) => {
                        const vol = volumes[i];
-                       const delPct = deliveryPct[i];
-                       const avgV = avgVol[i] || 1;
+                       const delPct = deliveryPct[i] ?? 0;
+                       const avgV = avgVol[i] ?? 1;
                        
                        // Criteria: High relative volume (>2x 20MA) AND high delivery % (>60%)
                        if (vol > avgV * 1.5 && delPct > 60) {
@@ -465,47 +618,150 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                   });
               }
 
-              // Delivery Profile & SR
-              const deliveryProfileY: number[] = [];
+              // Delivery Intensity Core
+              const delCoreInstX: string[] = [];
+              const delCoreInstY: number[] = [];
+              const delCoreDivX: string[] = [];
+              const delCoreDivY: number[] = [];
+              const delCoreRetX: string[] = [];
+              const delCoreRetY: number[] = [];
+
+              if (showDelDivergence) {
+                  // Calculate 60-period SMA of delivery volume
+                  const delVolData = data.map(d => ({ close: d.delivery_final != null ? Number(d.delivery_final) : Number(d.delivery) || 0 }));
+                  const delVolSMA60 = calculateSMA(delVolData, 60);
+                  
+                  data.forEach((d, i) => {
+                      const score = d.delivery_divergence_score || 0;
+                      const bTop = Math.max(d.open, d.close);
+                      const bBot = Math.min(d.open, d.close);
+                      const bodyHeight = Math.max(bTop - bBot, d.close * 0.001);
+                      
+                      const delPct = deliveryPct[i] ?? 0;
+                      const delvQty = d.delivery_final != null ? Number(d.delivery_final) : Number(d.delivery) || 0;
+                      const avgDel = delVolSMA60[i] || 0;
+                      
+                      const isInstitutional = delvQty > avgDel;
+                      const delPctNormalized = Math.min(delPct / 100, 1);
+                      const coreHeight = bodyHeight * delPctNormalized;
+                      const coreTop = bBot + coreHeight;
+                      
+                      // Push [date, date, null] for X, and [bottom, top, null] for Y
+                      if (isInstitutional) {
+                          delCoreInstX.push(d.date, d.date, null as any);
+                          delCoreInstY.push(bBot, coreTop, null as any);
+                      } else if (score > 0) {
+                          delCoreDivX.push(d.date, d.date, null as any);
+                          delCoreDivY.push(bBot, coreTop, null as any);
+                      } else {
+                          delCoreRetX.push(d.date, d.date, null as any);
+                          delCoreRetY.push(bBot, coreTop, null as any);
+                      }
+                  });
+              }
+
+              // Fixed Range Volume Profile (FRVP)
+              const volProfileX: number[] = [];
+              const volProfileY: number[] = [];
               const deliveryProfileX: number[] = [];
+              const deliveryProfileY: number[] = [];
+              const volProfileColors: string[] = [];
               const deliveryProfileColors: string[] = [];
+              let pocVolBin = -1;
+              let pocDelBin = -1;
 
               if (showDeliveryProfile || showDeliverySR) {
-                  const minL = Math.min(...lows);
-                  const maxH = Math.max(...highs);
-                  if (maxH > minL) {
-                      const bins = 60; 
-                      const binSize = (maxH - minL) / bins;
-                      const profile = new Array(bins).fill(0);
-                      const buyProfile = new Array(bins).fill(0);
-                      const sellProfile = new Array(bins).fill(0);
+                  // Calculate visible range based on zoom/pan
+                  const startIndex = visibleIndices !== null 
+                      ? Math.max(0, Math.floor(visibleIndices[0])) 
+                      : 0;
+                  const endIndex = visibleIndices !== null 
+                      ? Math.min(data.length - 1, Math.ceil(visibleIndices[1])) 
+                      : data.length - 1;
+                  
+                  const visibleData = data.slice(startIndex, endIndex + 1);
+                  
+                  // Find min/max within visible range
+                  const vMinL = Math.min(...visibleData.map(d => d.low));
+                  const vMaxH = Math.max(...visibleData.map(d => d.high));
+                  
+                  if (vMaxH > vMinL) {
+                      const bins = 60;
+                      const binSize = (vMaxH - vMinL) / bins;
+                      const profileVol = new Array(bins).fill(0);
+                      const profileDelVol = new Array(bins).fill(0);
 
-                      data.forEach((d, i) => {
+                      // Generate bins and profiles from visible data
+                      visibleData.forEach((d) => {
                           const typicalPrice = (d.high + d.low + d.close) / 3;
-                          let binIdx = Math.floor((typicalPrice - minL) / binSize);
+                          let binIdx = Math.floor((typicalPrice - vMinL) / binSize);
                           if (binIdx >= bins) binIdx = bins - 1;
                           if (binIdx < 0) binIdx = 0;
                           
-                          const delv = deliveryFinal[i];
-                          profile[binIdx] += delv;
-                          if (d.close >= d.open) buyProfile[binIdx] += delv;
-                          else sellProfile[binIdx] += delv;
+                          const vol = d.volume_final != null ? Number(d.volume_final) : Number(d.volume) || 0;
+                          const delVol = d.delivery_final != null ? Number(d.delivery_final) : Number(d.delivery) || 0;
+                          
+                          profileVol[binIdx] += vol;
+                          profileDelVol[binIdx] += delVol;
                       });
 
+                      // Build profile arrays and identify POCs
+                      let maxVol = 0;
+                      let maxDelVol = 0;
+                      
                       for (let i = 0; i < bins; i++) {
-                          deliveryProfileY.push(minL + (i * binSize) + (binSize / 2));
-                          deliveryProfileX.push(profile[i]);
-                          deliveryProfileColors.push(buyProfile[i] >= sellProfile[i] ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)');
+                          const y = vMinL + (i * binSize) + (binSize / 2);
+                          volProfileY.push(y);
+                          volProfileX.push(profileVol[i]);
+                          volProfileColors.push('rgba(136, 136, 136, 0.15)');
+                          
+                          deliveryProfileY.push(y);
+                          deliveryProfileX.push(profileDelVol[i]);
+                          deliveryProfileColors.push('rgba(6, 182, 212, 0.4)');
+                          
+                          // Track POCs
+                          if (profileVol[i] > maxVol) {
+                              maxVol = profileVol[i];
+                              pocVolBin = i;
+                          }
+                          if (profileDelVol[i] > maxDelVol) {
+                              maxDelVol = profileDelVol[i];
+                              pocDelBin = i;
+                          }
                       }
 
+                      // Add POC lines
+                      if (pocVolBin >= 0) {
+                          const pocVolY = vMinL + (pocVolBin * binSize) + (binSize / 2);
+                          shapes.push({
+                              type: 'line',
+                              xref: 'paper', x0: 0, x1: 1,
+                              yref: 'y', y0: pocVolY, y1: pocVolY,
+                              line: { color: 'rgba(136, 136, 136, 0.6)', width: 1.5, dash: 'dot' },
+                              label: { text: 'Vol POC', font: { size: 10, color: '#888' }, textposition: 'start' }
+                          });
+                      }
+                      
+                      if (pocDelBin >= 0) {
+                          const pocDelY = vMinL + (pocDelBin * binSize) + (binSize / 2);
+                          shapes.push({
+                              type: 'line',
+                              xref: 'paper', x0: 0, x1: 1,
+                              yref: 'y', y0: pocDelY, y1: pocDelY,
+                              line: { color: 'rgba(6, 182, 212, 0.8)', width: 2, dash: 'dot' },
+                              label: { text: 'Del POC', font: { size: 10, color: '#06b6d4' }, textposition: 'start' }
+                          });
+                      }
+
+                      // Delivery S/R based on visible data
                       if (showDeliverySR) {
-                          const maxProf = Math.max(...profile);
+                          const maxProf = Math.max(...profileDelVol);
                           for (let i = 2; i < bins - 2; i++) {
-                             if (profile[i] > profile[i-1] && profile[i] > profile[i-2] &&
-                                 profile[i] > profile[i+1] && profile[i] > profile[i+2] && 
-                                 profile[i] > maxProf * 0.3) {
+                             if (profileDelVol[i] > profileDelVol[i-1] && profileDelVol[i] > profileDelVol[i-2] &&
+                                 profileDelVol[i] > profileDelVol[i+1] && profileDelVol[i] > profileDelVol[i+2] && 
+                                 profileDelVol[i] > maxProf * 0.3) {
                                  
-                                 const y = minL + (i * binSize) + (binSize / 2);
+                                 const y = vMinL + (i * binSize) + (binSize / 2);
                                  shapes.push({
                                      type: 'line',
                                      xref: 'paper', x0: 0, x1: 1,
@@ -566,13 +822,13 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                       }
                       
                       // 3. Liquidity Voids
-                      if (showLiqVoids && i > 14) {
+                      if (showLiqVoids) {
                           const bodySize = Math.abs(d.close - d.open);
-                          const avgBody = atr14[i] || 1;
-                          const avgV = avgVol20[i] || 1;
+                          const avgBody = atr14[i] ?? 1;
+                          const avgV = avgVol20[i] ?? 1;
                           
-                          // large body > 1.5x ATR but volume < average -> weak participation / void
-                          if (bodySize > avgBody * 1.5 && vol < avgV * 0.9) {
+                          // large body > 1.2x ATR but volume < average -> weak participation / void
+                          if (bodySize > avgBody * 1.2 && vol < avgV * 0.9) {
                               shapes.push({
                                   type: 'rect',
                                   xref: 'x', x0: dates[i-1] || dates[i], x1: dates[i+1] || dates[i],
@@ -585,10 +841,10 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                       }
                       
                       // 4. Institutional Blocks
-                      if (showInstBlocks && i > 20) {
-                          const avgV = avgVol20[i] || 1;
-                          // Volume > 3.5x average AND high delivery > 65% implies institutional block
-                          if (vol > avgV * 3.5 && delPct > 65) {
+                      if (showInstBlocks) {
+                          const avgV = avgVol20[i] ?? 1;
+                          // Volume > 2.5x average AND high delivery > 60% implies institutional block
+                          if (vol > avgV * 2.5 && delPct > 60) {
                               instBlocksX.push(d.date);
                               const isBullish = d.close >= d.open;
                               instBlocksY.push(isBullish ? d.low * 0.99 : d.high * 1.01);
@@ -617,19 +873,45 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
               
               const priceDomain = [Math.max(0.1, currentY), 1];
 
+              const dataIndex = hoveredIndices[sym] !== undefined && hoveredIndices[sym] >= 0 && hoveredIndices[sym] < dates.length 
+                    ? hoveredIndices[sym] 
+                    : dates.length - 1;
+
               return (
-                 <div key={sym} className="bg-[#1a1c24] border border-[#ffffff1a] rounded flex flex-col h-[500px]">
-                    <div className="px-4 py-2 border-b border-[#ffffff1a] font-mono font-bold text-lg text-white flex justify-between items-center bg-[#0e1117]">
-                        {sym}
-                        <div className="flex gap-4 text-xs font-normal">
-                           <span className="text-[#888]">LTP: <span className="text-[#fafafa]">{formatNumber(closes[closes.length-1])}</span></span>
-                           <span className="text-[#888]">Vol: <span className="text-[#fafafa]">{formatNumber(volumes[volumes.length-1] / 1000000, 2)}M</span></span>
-                           {deliveryPct[deliveryPct.length-1] !== undefined && <span className="text-[#888]">Delivery: <span className="text-[#fafafa]">{formatNumber(deliveryPct[deliveryPct.length-1], 1)}%</span></span>}
-                           {trendAlignment[trendAlignment.length-1] !== undefined && <span className="text-[#888]">Trend: <span className={`font-bold ${trendAlignment[trendAlignment.length-1] > 0 ? 'text-green-400' : (trendAlignment[trendAlignment.length-1] < 0 ? 'text-red-400' : 'text-[#fafafa]')}`}>{trendAlignment[trendAlignment.length-1]}</span></span>}
+                 <div key={sym} className="bg-[#1a1c24] border border-[#ffffff1a] rounded flex flex-col h-[500px] chart-container">
+                    {/* CSS Override to hide Plotly's moving tooltip box while retaining crosshair spikes */}
+                    <style>{`.chart-container .hoverlayer { display: none !important; }`}</style>
+                    
+                    <div className="px-4 py-2 border-b border-[#ffffff1a] font-mono font-bold text-lg text-white flex justify-between items-center bg-[#0e1117] z-10 relative">
+                        <div className="flex items-center gap-4">
+                            <span>{sym}</span>
+                            <span className="text-xs font-normal text-[#888]">{dates[dataIndex] || ''}</span>
+                        </div>
+                        <div className="flex gap-4 text-xs font-normal flex-wrap justify-end">
+                           <span className="text-[#888]">O: <span className="text-[#fafafa]">{opens[dataIndex]?.toFixed(2)}</span></span>
+                           <span className="text-[#888]">H: <span className="text-[#fafafa]">{highs[dataIndex]?.toFixed(2)}</span></span>
+                           <span className="text-[#888]">L: <span className="text-[#fafafa]">{lows[dataIndex]?.toFixed(2)}</span></span>
+                           <span className="text-[#888]">C: <span className="text-[#fafafa]">{closes[dataIndex]?.toFixed(2)}</span></span>
+                           
+                           <span className="text-[#888]">Vol: <span className="text-[#fafafa]">{typeof volumes[dataIndex] === 'number' ? (volumes[dataIndex] >= 1000000 ? (volumes[dataIndex] / 1000000).toFixed(2) + 'M' : (volumes[dataIndex] / 1000).toFixed(1) + 'k') : '-'}</span></span>
+                           {deliveryPct[dataIndex] != null && <span className="text-[#888]">Del: <span className="text-[#fafafa]">{Number(deliveryPct[dataIndex]).toFixed(1)}%</span></span>}
+                           {trendAlignment[dataIndex] != null && <span className="text-[#888]">Trend: <span className={`font-bold ${trendAlignment[dataIndex] > 0 ? 'text-green-400' : (trendAlignment[dataIndex] < 0 ? 'text-red-400' : 'text-[#fafafa]')}`}>{trendAlignment[dataIndex]}</span></span>}
                         </div>
                     </div>
                     <div className="flex-1 w-full relative">
                         <Plot
+                             onHover={(e) => {
+                                 if (e.points && e.points.length > 0 && e.points[0].pointIndex !== undefined) {
+                                     setHoveredIndices(prev => ({ ...prev, [sym]: e.points[0].pointIndex }));
+                                 }
+                             }}
+                             onUnhover={() => {
+                                 setHoveredIndices(prev => {
+                                     const next = { ...prev };
+                                     delete next[sym];
+                                     return next;
+                                 });
+                             }}
                              data={[
                                  // Main Candlestick
                                  {
@@ -639,16 +921,18 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                                      increasing: {line: {color: '#22c55e', width: 1.5}, fillcolor: '#1a1c24'}, // hollow body
                                      decreasing: {line: {color: '#ef4444', width: 1.5}, fillcolor: '#ef4444'}, // filled body
                                      customdata: dates.map((_, i) => {
-                                         const vol = volumes[i] || 0;
-                                         const volStr = vol >= 1000000 
-                                             ? (vol / 1000000).toFixed(2) + 'M'
-                                             : (vol / 1000).toFixed(1) + 'k';
+                                         const v = volumes[i] ?? 0;
+                                         const volStr = v >= 1000000 
+                                             ? (v / 1000000).toFixed(2) + 'M'
+                                             : (v / 1000).toFixed(1) + 'k';
+                                         const divScore = data[i]?.delivery_divergence_score ?? 0;
                                          return [
-                                             formatNumber(deliveryPct[i], 1),
-                                             formatNumber(relVol[i], 2),
-                                             formatNumber(volComp[i], 2),
-                                             formatNumber(stockReturn[i], 2),
-                                             volStr
+                                             (deliveryPct[i] ?? 0).toFixed(1),
+                                             (relVol[i] ?? 0).toFixed(2),
+                                             (volComp[i] ?? 0).toFixed(2),
+                                             (stockReturn[i] ?? 0).toFixed(2),
+                                             volStr,
+                                             divScore.toFixed(2)
                                          ];
                                      }),
                                      hovertemplate: 
@@ -658,11 +942,45 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                                          'L: %{low:.2f}<br>' +
                                          'C: %{close:.2f}<br>' +
                                          '<br>Vol: %{customdata[4]}<br>' +
-                                         'Del%: %{customdata[0]}<br>' +
-                                         'Rel Vol: %{customdata[1]}<br>' +
-                                         'Vol Comp: %{customdata[2]}<br>' +
-                                         'Ret: %{customdata[3]}%<extra></extra>'
+                                         'Del: %{customdata[0]}%<br>' +
+                                         'Rel Vol: %{customdata[1]}x<br>' +
+                                         'Vol Comp: %{customdata[2]}x<br>' +
+                                         'Ret: %{customdata[3]}%<br>' +
+                                         'Div Score: %{customdata[5]}<extra></extra>'
                                  },
+                                 // Divergence Cores Overlay (Institutional Absorption)
+                                 ...(showDelDivergence && delCoreInstX.length > 0 ? [{
+                                     type: 'scattergl',
+                                     mode: 'lines',
+                                     x: delCoreInstX,
+                                     y: delCoreInstY,
+                                     line: { color: '#00f2ff', width: 3 },
+                                     name: 'Inst. Accumulation Core',
+                                     yaxis: 'y',
+                                     hoverinfo: 'skip'
+                                 } as any] : []),
+                                 // Divergence Cores Overlay (Divergence - Retail Selling, Smart Buying)
+                                 ...(showDelDivergence && delCoreDivX.length > 0 ? [{
+                                     type: 'scattergl',
+                                     mode: 'lines',
+                                     x: delCoreDivX,
+                                     y: delCoreDivY,
+                                     line: { color: '#FF9800', width: 3 },
+                                     name: 'Divergence Core',
+                                     yaxis: 'y',
+                                     hoverinfo: 'skip'
+                                 } as any] : []),
+                                 // Divergence Cores Overlay (Retail)
+                                 ...(showDelDivergence && delCoreRetX.length > 0 ? [{
+                                     type: 'scattergl',
+                                     mode: 'lines',
+                                     x: delCoreRetX,
+                                     y: delCoreRetY,
+                                     line: { color: '#4a4a4a', width: 3 },
+                                     name: 'Retail Core',
+                                     yaxis: 'y',
+                                     hoverinfo: 'skip'
+                                 } as any] : []),
                                  // Overlays
                                  ...(showVwap ? [{ type: 'scattergl', mode: 'lines', x: dates, y: vwap, name: 'VWAP', line: { color: '#888', width: 1.5, dash: 'dot' }, yaxis: 'y', hovertemplate: '%{y:.2f}' } as any] : []),
                                  ...(showSma20 ? [{ type: 'scattergl', mode: 'lines', x: dates, y: sma20, name: 'SMA20', line: { color: '#eab308', width: 1 }, yaxis: 'y', hovertemplate: '%{y:.2f}' } as any] : []),
@@ -672,18 +990,19 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                                  ...(showNiftyOut ? [{ type: 'scattergl', mode: 'lines', x: dates, y: niftyOut, name: 'Nifty Outperf.', line: { color: '#a855f7', width: 1.5 }, yaxis: 'y4', opacity: 0.8, fill: 'tozeroy', fillcolor: 'rgba(168, 85, 247, 0.1)', hovertemplate: '%{y:.2f}%' } as any] : []),
                                  
                                  // Swing points
-                                 ...(showSwings && swingHighsDates.length > 0 ? [{ type: 'scattergl', mode: 'markers+text', x: swingHighsDates, y: swingHighsValues, name: 'Swing High', marker: { symbol: 'triangle-down', size: 8, color: '#ef4444' }, text: swingHighsValues.map(v => v.toFixed(1)), textposition: 'top center', textfont: {size: 9, color: '#ef4444'}, yaxis: 'y' } as any] : []),
-                                 ...(showSwings && swingLowsDates.length > 0 ? [{ type: 'scattergl', mode: 'markers+text', x: swingLowsDates, y: swingLowsValues, name: 'Swing Low', marker: { symbol: 'triangle-up', size: 8, color: '#22c55e' }, text: swingLowsValues.map(v => v.toFixed(1)), textposition: 'bottom center', textfont: {size: 9, color: '#22c55e'}, yaxis: 'y' } as any] : []),
+                                 ...(showSwings && swingHighsDates.length > 0 ? [{ type: 'scattergl', mode: 'markers+text', x: swingHighsDates, y: swingHighsValues, name: 'Swing High', marker: { symbol: 'triangle-down', size: 8, color: '#ef4444' }, text: swingHighsValues.map(v => v?.toFixed(1)), textposition: 'top center', textfont: {size: 9, color: '#ef4444'}, yaxis: 'y' } as any] : []),
+                                 ...(showSwings && swingLowsDates.length > 0 ? [{ type: 'scattergl', mode: 'markers+text', x: swingLowsDates, y: swingLowsValues, name: 'Swing Low', marker: { symbol: 'triangle-up', size: 8, color: '#22c55e' }, text: swingLowsValues.map(v => v?.toFixed(1)), textposition: 'bottom center', textfont: {size: 9, color: '#22c55e'}, yaxis: 'y' } as any] : []),
                                  
                                  // Smart Money Footprint
                                  ...(showSmartMoney && smartMoneyX.length > 0 ? [{
                                      type: 'scattergl',
                                      mode: 'markers+text',
                                      x: smartMoneyX, y: smartMoneyY,
-                                     text: smartMoneyText,
+                                     hovertext: smartMoneyText,
+                                     text: smartMoneyX.map(() => 'SM'),
                                      textposition: 'top center',
-                                     textfont: {size: 10, color: '#facc15'},
-                                     marker: { size: 12, color: 'rgba(250, 204, 21, 0.4)', symbol: 'circle', line: {color: '#facc15', width: 2} },
+                                     textfont: {size: 10, color: '#facc15', weight: 'bold'},
+                                     marker: { size: 14, color: 'rgba(250, 204, 21, 0.2)', symbol: 'circle', line: {color: '#facc15', width: 1.5} },
                                      name: 'Smart Money',
                                      yaxis: 'y',
                                      hoverinfo: 'text'
@@ -694,10 +1013,11 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                                      type: 'scattergl',
                                      mode: 'markers+text',
                                      x: instBlocksX, y: instBlocksY,
-                                     text: instBlocksText,
+                                     hovertext: instBlocksText,
+                                     text: instBlocksX.map(() => 'IB'),
                                      textposition: 'top center',
                                      textfont: {size: 12, color: '#22d3ee', weight: 'bold'},
-                                     marker: { size: 24, color: 'rgba(34, 211, 238, 0.9)', symbol: 'star-diamond', line: {color: '#ffffff', width: 1.5} },
+                                     marker: { size: 16, color: 'rgba(34, 211, 238, 0.2)', symbol: 'diamond', line: {color: '#22d3ee', width: 2} },
                                      name: 'Inst. Block',
                                      yaxis: 'y',
                                      hoverinfo: 'text'
@@ -740,11 +1060,12 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                                      yaxis: 'y5',
                                      marker: { color: deliveryColorsInverse, opacity: 0.8 },
                                      hovertemplate: '%{y:.2s}<br>Pct: %{customdata[0]}%<extra></extra>'
-                                 }, {
+                                 }] : []),
+                                 ...(showDelivery && showDelMA ? [{
                                      type: 'scattergl',
                                      mode: 'lines',
-                                     x: dates, y: deliveryMa60,
-                                     name: 'Del MA(60)',
+                                     x: dates, y: delMaData,
+                                     name: 'Del MA (20)',
                                      yaxis: 'y5',
                                      line: { color: '#f59e0b', width: 2 },
                                      hovertemplate: 'MA: %{y:.2s}<extra></extra>'
@@ -758,8 +1079,41 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                                  // Delivery A/D
                                  ...(showDelAD ? [
                                      { type: 'scattergl', mode: 'lines', x: dates, y: delAdLine, name: 'Del. A/D', line: { color: '#ec4899', width: 1.5 }, yaxis: 'y6', hovertemplate: 'Val: %{y:.2s}', fill: 'tozeroy', fillcolor: 'rgba(236,72,153,0.1)' } as any
-                                 ] : [])
+                                 ] : []),
+                                 
+                                 // Fixed Range Volume Profile - Total Volume
+                                 ...(showDeliveryProfile && volProfileX.length > 0 ? [{
+                                     type: 'bar',
+                                     orientation: 'h',
+                                     x: volProfileX,
+                                     y: volProfileY,
+                                     marker: { color: volProfileColors },
+                                     name: 'Volume Profile',
+                                     xaxis: 'x2',
+                                     yaxis: 'y',
+                                     hoverinfo: 'skip'
+                                 } as any] : []),
+                                 
+                                 // Fixed Range Volume Profile - Delivery Volume
+                                 ...(showDeliveryProfile && deliveryProfileX.length > 0 ? [{
+                                     type: 'bar',
+                                     orientation: 'h',
+                                     x: deliveryProfileX,
+                                     y: deliveryProfileY,
+                                     marker: { color: deliveryProfileColors },
+                                     name: 'Delivery Profile',
+                                     xaxis: 'x2',
+                                     yaxis: 'y',
+                                     hoverinfo: 'skip'
+                                 } as any] : [])
                              ]}
+                             onRelayout={(e: any) => {
+                                 if (e['xaxis.range[0]'] !== undefined && e['xaxis.range[1]'] !== undefined) {
+                                     setVisibleIndices([e['xaxis.range[0]'], e['xaxis.range[1]']]);
+                                 } else if (e['xaxis.autorange']) {
+                                     setVisibleIndices(null);
+                                 }
+                             }}
                              layout={{
                                  autosize: true,
                                  margin: { l: 40, r: 40, t: 10, b: 24 }, // minimal padding
@@ -770,16 +1124,12 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                                  hovermode: 'x unified',
                                  hoverlabel: { bgcolor: 'rgba(14, 17, 23, 0.4)', bordercolor: 'rgba(255, 255, 255, 0.1)', font: { family: 'ui-monospace', size: 11 } },
                                  dragmode: 'pan',
+                                 barmode: 'overlay',
                                  xaxis: {
                                     rangeslider: { visible: false },
                                     showgrid: false,
-                                    type: 'date',
-                                    tickformatstops: [
-                                        { dtickrange: [null, 86400000], value: "%H:%M" }, // < 1d
-                                        { dtickrange: [86400000, 7776000000], value: "%e %b" }, // 1d to 3m
-                                        { dtickrange: [7776000000, "M12"], value: "%b '%y" }, // 3m to 1y
-                                        { dtickrange: ["M12", null], value: "%Y" }, // > 1y
-                                    ],
+                                    type: 'category',
+                                    nticks: 10,
                                     showspikes: true,
                                     spikemode: 'across',
                                     spikedash: 'solid',
@@ -792,7 +1142,7 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                                     showgrid: false,
                                     zeroline: false,
                                     showticklabels: false,
-                                    range: [0, Math.max(...deliveryProfileX, 1) * 3] // Bars take up max 1/3 of chart
+                                    range: [0, Math.max(...volProfileX, 1) * 3] // Bars take up max 1/3 of chart
                                  },
                                  yaxis: {
                                     domain: priceDomain,
