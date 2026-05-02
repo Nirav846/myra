@@ -151,6 +151,23 @@ class Librarian(
             json.dump(list(holidays), f)
         return holidays
 
+    def get_muhurat_dates(self):
+        """Return set of Muhurat Trading session dates from myra_calendar.db."""
+        import sqlite3
+
+        try:
+            cal_path = os.path.join(
+                DB_DIR, self.DB_MAP.get("calendar", "myra_calendar.db")
+            )
+            conn = sqlite3.connect(cal_path, timeout=5)
+            rows = conn.execute(
+                "SELECT date FROM market_calendar WHERE session_type = 'muhurat'"
+            ).fetchall()
+            conn.close()
+            return {r[0] for r in rows}
+        except Exception:
+            return set()
+
     def get_expected_trading_day(self, now=None):
         import datetime
 

@@ -49,12 +49,16 @@ def _get_metadata_connection(read_only: bool = True) -> LibrarianCore:
             else:
                 # Connection died, remove and recreate
                 del _connection_pool[thread_name]
-                logger.warning(f"[MYRA BG] Recreating dead metadata connection for thread {thread_name}")
-        
+                logger.warning(
+                    f"[MYRA BG] Recreating dead metadata connection for thread {thread_name}"
+                )
+
         # Create new connection
         lib = LibrarianCore(read_only=read_only)
         _connection_pool[thread_name] = lib
-        logger.debug(f"[MYRA BG] Created new metadata connection for thread {thread_name}")
+        logger.debug(
+            f"[MYRA BG] Created new metadata connection for thread {thread_name}"
+        )
         return lib
 
 
@@ -66,7 +70,9 @@ def _close_metadata_connection():
             try:
                 _connection_pool[thread_name].close()
                 del _connection_pool[thread_name]
-                logger.debug(f"[MYRA BG] Closed metadata connection for thread {thread_name}")
+                logger.debug(
+                    f"[MYRA BG] Closed metadata connection for thread {thread_name}"
+                )
             except Exception as e:
                 logger.warning(f"[MYRA BG] Failed to close metadata connection: {e}")
 
@@ -139,7 +145,9 @@ def _mark_ingested_today():
         lib.set_metadata("last_sync_date", today)
         logger.info(f"[MYRA BG] Marked ingestion date: {today}")
     except Exception as e:
-        logger.warning(f"[MYRA BG] Failed to mark ingestion date with pooled connection: {e}")
+        logger.warning(
+            f"[MYRA BG] Failed to mark ingestion date with pooled connection: {e}"
+        )
         # Fallback to original method on error
         try:
             today = datetime.now(timezone.utc).astimezone(IST).date().isoformat()
@@ -246,7 +254,10 @@ def _task_watchdog():
                 today = ist_now.date().isoformat()
 
                 # Update watchdog status with timestamp
-                update(tid, f"Watching – Last check: {ist_now.strftime('%H:%M:%S')}")
+                update(
+                    tid,
+                    f"Watching – Last check: {ist_now.strftime('%H:%M:%S')}",  # noqa: PG-STRFTIME
+                )  # noqa: PG-STRFTIME
 
                 # New day detected after 6 PM IST
                 if (
@@ -385,6 +396,7 @@ def _task_db_backup():
                 # Run between 02:00 and 02:59 IST
                 if ist_now.hour == 2:
                     from myra_app.utils.db_backup import rotate_backups
+
                     print("[MYRA BG] Running scheduled daily DB backup...")
                     rotate_backups(task_id=tid)
                     print("[MYRA BG] Daily DB backup complete.")
@@ -445,7 +457,7 @@ def start():
         lib = LibrarianCore(read_only=True)
         seed_flag = lib.get_metadata("seed_etf_done")
         lib.close()
-        
+
         if seed_flag != "1":
             _meta_db = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)),
@@ -490,7 +502,7 @@ def start():
         lib_meta = LibrarianCore(read_only=True)
         seed_flag = lib_meta.get_metadata("seed_index_done")
         lib_meta.close()
-        
+
         if seed_flag != "1":
             lib = Librarian()
             lib.connect()
@@ -526,7 +538,7 @@ def start():
         lib_meta = LibrarianCore(read_only=True)
         seed_flag = lib_meta.get_metadata("seed_fundamentals_done")
         lib_meta.close()
-        
+
         if seed_flag != "1":
             val_db = os.path.join(DB_DIR, "myra_valuation.db")
             if os.path.exists(val_db):
@@ -549,7 +561,9 @@ def start():
                         lib_meta = LibrarianCore(read_only=False)
                         lib_meta.set_metadata("seed_fundamentals_done", "1")
                         lib_meta.close()
-                        logger.info("[MYRA BG] Fundamentals seeding flag set (already has data)")
+                        logger.info(
+                            "[MYRA BG] Fundamentals seeding flag set (already has data)"
+                        )
         else:
             logger.info("[MYRA BG] Fundamentals seeding already done, skipping")
     except Exception as e:
@@ -567,12 +581,14 @@ def start():
         lib_meta = LibrarianCore(read_only=True)
         seed_flag = lib_meta.get_metadata("seed_institutional_done")
         lib_meta.close()
-        
+
         if seed_flag != "1":
             inst_db = os.path.join(DB_DIR, "myra_institutional.db")
             if os.path.exists(inst_db):
                 with sqlite3.connect(inst_db, timeout=5) as iconn:
-                    count = iconn.execute("SELECT COUNT(*) FROM large_deals").fetchone()[0]
+                    count = iconn.execute(
+                        "SELECT COUNT(*) FROM large_deals"
+                    ).fetchone()[0]
                     if count < 100:
                         print("[MYRA BG] Seeding institutional data...")
                         from myra_app.utils.institutional_sync import (
@@ -584,13 +600,17 @@ def start():
                         lib_meta = LibrarianCore(read_only=False)
                         lib_meta.set_metadata("seed_institutional_done", "1")
                         lib_meta.close()
-                        logger.info("[MYRA BG] Institutional seeding marked as complete")
+                        logger.info(
+                            "[MYRA BG] Institutional seeding marked as complete"
+                        )
                     else:
                         # Already seeded, mark flag
                         lib_meta = LibrarianCore(read_only=False)
                         lib_meta.set_metadata("seed_institutional_done", "1")
                         lib_meta.close()
-                        logger.info("[MYRA BG] Institutional seeding flag set (already has data)")
+                        logger.info(
+                            "[MYRA BG] Institutional seeding flag set (already has data)"
+                        )
         else:
             logger.info("[MYRA BG] Institutional seeding already done, skipping")
     except Exception as e:

@@ -99,3 +99,11 @@ sync_log.txt
 # --- Exceptions ---
 !results/Data/yfinance.cache.zip
 HELP FILES/
+
+# Dev/debug scripts (keep in root only during active session)
+check_*.py
+verify_*.py
+test_*.py
+fix_*.py
+inspect_*.py
+simulate_*.py

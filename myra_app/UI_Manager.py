@@ -316,7 +316,11 @@ class MYRA_UI:
             tasks = get_active_tasks()
             if not tasks:
                 # Idle status line
-                return Panel("✅ System idle – safe to exit", title="Status", border_style="green")
+                return Panel(
+                    "✅ System idle – safe to exit",
+                    title="Status",
+                    border_style="green",
+                )
 
             lines = []
             any_unsafe = False
@@ -335,16 +339,24 @@ class MYRA_UI:
                     filled = int(progress / 100 * bar_len)
                     bar = "█" * filled + "░" * (bar_len - filled)
                     eta_text = f" {eta}" if eta else ""
-                    lines.append(f"• {name}: {bar} {progress}%{eta_text}")
+                    lines.append(  # noqa: PG-APPEND
+                        f"• {name}: {bar} {progress}%{eta_text}"
+                    )  # noqa: PG-APPEND
                 else:
-                    lines.append(f"• {name} – {status}")
+                    lines.append(f"• {name} – {status}")  # noqa: PG-APPEND
 
-            safe_text = "⚠️  Unsafe to close – background tasks in progress" if any_unsafe else "✅ Safe to close"
+            safe_text = (
+                "⚠️  Unsafe to close – background tasks in progress"
+                if any_unsafe
+                else "✅ Safe to close"
+            )
             content = "\n".join(lines) + "\n\n" + safe_text
             style = "red" if any_unsafe else "cyan"
             return Panel(content, title="Background Tasks", border_style=style)
         except Exception:
-            return Panel("Task tracker unavailable", title="Background Tasks", border_style="dim")
+            return Panel(
+                "Task tracker unavailable", title="Background Tasks", border_style="dim"
+            )
 
     @staticmethod
     def get_footer(librarian, market_breadth="↗ 0 | ↘ 0", forecast=None):

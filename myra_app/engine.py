@@ -308,8 +308,15 @@ class Engine:
         # Read only the symbols needed for this scan
         if target_symbols:
             placeholders = ",".join(["?"] * len(target_symbols))
-            query = f"SELECT * FROM technical_data WHERE symbol IN ({placeholders}) ORDER BY symbol, date"
-            raw_df = pl.read_database(query, lib._tech_conn, execute_options={"parameters": target_symbols})
+            muhurat_dates = lib.get_muhurat_dates()
+            if muhurat_dates:
+                mh_placeholders = ",".join([f"'{d}'" for d in muhurat_dates])
+                query = f"SELECT * FROM technical_data WHERE symbol IN ({placeholders}) AND date NOT IN ({mh_placeholders}) ORDER BY symbol, date"
+            else:
+                query = f"SELECT * FROM technical_data WHERE symbol IN ({placeholders}) ORDER BY symbol, date"
+            raw_df = pl.read_database(
+                query, lib._tech_conn, execute_options={"parameters": target_symbols}
+            )
 
             if not raw_df.is_empty():
                 # Use the existing Polars enrichment pipeline (fast, vectorized)
