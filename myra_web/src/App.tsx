@@ -13,12 +13,14 @@ import GhostSimulatorView from './views/GhostSimulator';
 import MultibaggerMatrixView from './views/MultibaggerMatrix';
 import InstDOMView from './views/InstDOM';
 import AdvancedChartView from './views/AdvancedChart';
+import ReversionEngineView from './views/ReversionEngine';
 import { getLibrarian } from './lib/Librarian';
 import { useSettings } from './lib/SettingsContext';
 import { AlertCircle, Terminal, Command, Settings as SettingsIcon, PanelLeftClose, PanelLeft } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('Mission Control');
+  const [globalSelectedTicker, setGlobalSelectedTicker] = useState<string | undefined>();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDesktopMenuExpanded, setIsDesktopMenuExpanded] = useState(true);
   const [logs, setLogs] = useState<string[]>([
@@ -63,25 +65,25 @@ export default function App() {
       )}
       {/* Sidebar Navigation */}
       <aside className={`${isDesktopMenuExpanded ? 'w-64' : 'w-16'} ${bgSidebar} flex flex-col border-r border-[#ffffff1a] absolute md:relative z-40 h-full !flex transform transition-all duration-300 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
-        <div className={`p-4 border-b border-[#ffffff1a] flex flex-col items-center`}>
+        <div className={`p-2 border-b border-[#ffffff1a] flex flex-col items-center`}>
           <div className={`flex items-center justify-between w-full h-8 mb-2 ${!isDesktopMenuExpanded && 'justify-center'}`}>
             {isDesktopMenuExpanded && (
               <div className="flex items-center gap-2 overflow-hidden">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold italic text-white flex-shrink-0 transition-colors ${settings.animations ? 'hover:scale-105' : ''} bg-${settings.accentColor}-600`}>
-                  <Command size={18} />
+                <div className={`w-6 h-6 rounded-lg flex items-center justify-center font-bold italic text-white flex-shrink-0 transition-colors ${settings.animations ? 'hover:scale-105' : ''} bg-${settings.accentColor}-600`}>
+                  <Command size={16} />
                 </div>
-                <h1 className="text-xl font-bold tracking-tight whitespace-nowrap">MYRA <span className={`text-${settings.accentColor}-400`}>v3.2</span></h1>
+                <h1 className="text-sm font-bold tracking-tight whitespace-nowrap">MYRA <span className={`text-${settings.accentColor}-400`}>v3.2</span></h1>
               </div>
             )}
             {!isDesktopMenuExpanded && (
-               <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold italic text-white flex-shrink-0 transition-colors ${settings.animations ? 'hover:scale-105' : ''} bg-${settings.accentColor}-600 mb-2`}>
-                 <Command size={18} />
+               <div className={`w-6 h-6 rounded-lg flex items-center justify-center font-bold italic text-white flex-shrink-0 transition-colors ${settings.animations ? 'hover:scale-105' : ''} bg-${settings.accentColor}-600 mb-2`}>
+                 <Command size={16} />
                </div>
             )}
             <div className="flex items-center gap-2">
               {isDesktopMenuExpanded && (
                 <button className="hidden md:flex text-[#888] hover:text-white transition-colors" onClick={() => setIsDesktopMenuExpanded(false)} title="Collapse sidebar">
-                  <PanelLeftClose size={18} />
+                  <PanelLeftClose size={16} />
                 </button>
               )}
               <button className="md:hidden text-[#888] hover:text-white" onClick={() => setIsMobileMenuOpen(false)}>✕</button>
@@ -90,7 +92,7 @@ export default function App() {
           {isDesktopMenuExpanded && (
             <div className={`flex items-center gap-2 mt-4 px-3 py-1.5 ${bgMain} rounded border border-[#ffffff1a] w-full`}>
               <div className={`w-2 h-2 rounded-full flex-shrink-0 ${disconnectedDBs.length > 0 ? 'bg-yellow-500 shadow-[0_0_8px_rgba(234,179,8,0.6)]' : 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]'}`}></div>
-              <span className="text-[10px] uppercase font-mono tracking-widest text-[#888] whitespace-nowrap overflow-hidden text-ellipsis">Librarian {disconnectedDBs.length > 0 ? 'Degraded' : 'Active'}</span>
+              <span className="text-[9px] uppercase font-mono tracking-widest text-[#888] whitespace-nowrap overflow-hidden text-ellipsis">Librarian {disconnectedDBs.length > 0 ? 'Degraded' : 'Active'}</span>
             </div>
           )}
           {!isDesktopMenuExpanded && (
@@ -114,6 +116,7 @@ export default function App() {
             { id: 'Technical Chart', icon: '📈'},
             { id: 'Sector Flow', icon: '🚥'},
             { id: 'Value Ranker', icon: '🎯'},
+            { id: 'Reversion Engine', icon: '🌀'},
             { id: 'Ghost Simulator', icon: '👻'},
             { id: 'Multibagger Matrix', icon: '🚀'},
             { id: 'Inst. DOM', icon: '🧱'},
@@ -177,17 +180,17 @@ export default function App() {
             }`}
             title={!isDesktopMenuExpanded ? 'Settings' : undefined}
           >
-            <SettingsIcon size={18} className="text-[#888]" /> 
+            <SettingsIcon size={16} className="text-[#888]" /> 
             {isDesktopMenuExpanded && <span className="whitespace-nowrap">Settings Config</span>}
           </button>
           
           {isDesktopMenuExpanded ? (
-            <div className={`px-4 pt-2 pb-2`}>
-              <div className="text-[10px] text-[#888] font-mono mb-1 uppercase">Hardware: AMD A8-7410</div>
+            <div className={`px-2 pt-2 pb-2`}>
+              <div className="text-[9px] text-[#888] font-mono mb-1 uppercase">Hardware: AMD A8-7410</div>
               <div className="h-1 w-full bg-[#333] rounded-full overflow-hidden">
                 <div className={`h-full bg-${settings.accentColor}-500 w-[14%]`}></div>
               </div>
-              <div className="flex justify-between mt-1 text-[10px] font-mono text-[#888]">
+              <div className="flex justify-between mt-1 text-[9px] font-mono text-[#888]">
                 <span>Mem: 14% / 8GB</span><span>CPU: Base</span>
               </div>
             </div>
@@ -204,7 +207,7 @@ export default function App() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         <div className={`flex-1 overflow-x-hidden overflow-y-auto flex flex-col ${densityClass}`}>
-          <header className="flex justify-between items-center w-full gap-4 shrink-0 h-10 mb-2">
+          <header className="flex justify-between items-center w-full gap-2 shrink-0 h-8 mb-1">
             <div className="flex items-center gap-3 h-full">
               {!isDesktopMenuExpanded && (
                 <button 
@@ -212,7 +215,7 @@ export default function App() {
                   onClick={() => setIsDesktopMenuExpanded(true)}
                   title="Expand sidebar"
                 >
-                  <PanelLeft size={18} />
+                  <PanelLeft size={16} />
                 </button>
               )}
               <button 
@@ -226,7 +229,7 @@ export default function App() {
                 </div>
               </button>
               <div className="flex flex-col justify-center">
-                <h2 className={`text-xl font-semibold leading-tight`}>Quantitative Engine Dashboard</h2>
+                <h2 className={`text-base font-semibold leading-none`}>Quantitative Engine Dashboard</h2>
                 <p className="text-xs text-[#888]">Librarian v3.2: Myra React Bridge</p>
               </div>
             </div>
@@ -235,7 +238,7 @@ export default function App() {
           {/* Path-Proof Streamlit UI Error Simulators */}
           {disconnectedDBs.map(([dbName, status]) => (
             <div key={dbName} className="bg-red-950/40 border border-red-500/50 p-4 rounded-lg flex items-start gap-3 shrink-0">
-              <AlertCircle className="text-red-400 flex-shrink-0 mt-0.5" size={18} />
+                <AlertCircle className="text-red-400 flex-shrink-0 mt-0.5" size={16} />
               <div>
                 <h3 className="text-red-400 text-sm font-semibold mb-1">Error: Database Missing ({dbName})</h3>
                 <p className="text-[#ccc] text-xs font-mono">{(status as any).error}</p>
@@ -249,9 +252,10 @@ export default function App() {
               {activeTab === 'Leaderboard' && <LeaderboardView lib={librarian} />}
               {activeTab === 'FVG Scanner' && <FVGScannerView lib={librarian} />}
               {activeTab === 'Historical Search' && <HistoricalSearchView lib={librarian} />}
-              {activeTab === 'Technical Chart' && <AdvancedChartView lib={librarian} />}
+              {activeTab === 'Technical Chart' && <AdvancedChartView lib={librarian} initialSymbol={globalSelectedTicker} />}
               {activeTab === 'Sector Flow' && <SectorFlowView lib={librarian} />}
               {activeTab === 'Value Ranker' && <ValueRankerView lib={librarian} />}
+              {activeTab === 'Reversion Engine' && <ReversionEngineView lib={librarian} onNavigate={(tab, symbol) => { setActiveTab(tab); if (symbol) setGlobalSelectedTicker(symbol); }} />}
               {activeTab === 'Ghost Simulator' && <GhostSimulatorView lib={librarian} />}
               {activeTab === 'Multibagger Matrix' && <MultibaggerMatrixView lib={librarian} />}
               {activeTab === 'Inst. DOM' && <InstDOMView lib={librarian} />}

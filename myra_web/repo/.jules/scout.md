@@ -1,3 +1,0 @@
-## 2024-04-04 - [Missing Fetch Registry & WAF Blocks]
-**Learning:** External source fetch routines heavily relying on dynamic registry configs (`myra_sources.json`) will fail silently if the config file is not checked into source control or correctly parsed, bypassing internal error handling. Furthermore, custom stealth sessions (`GhostSession`) degrade over time against NSE WAF, returning silent empty responses if HTTP codes aren't validated.
-**Action:** Always inject hardcoded fallback endpoints and explicit HTTP status validation logic (`if response.status_code != 200: logger.warning()`) into external fetch pipelines to ensure observability of broken intelligence feeds.

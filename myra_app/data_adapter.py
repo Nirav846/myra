@@ -178,7 +178,20 @@ class DataAdapter:
 
         with self._lock:
             if symbol_clean in self._funda_cache:
-                return self._funda_cache[symbol_clean].copy()
+                funda = self._funda_cache[symbol_clean].copy()
+                if df is not None and "delivery_percent" not in funda:
+                    # Inject delivery_percent from df if not already present
+                    deliv_col = next(
+                        (c for c in ["DeliveryPct", "delivery_pct"] if c in df.columns), None
+                    )
+                    if deliv_col:
+                        series = pd.to_numeric(df[deliv_col], errors="coerce")
+                        last_deliv = series[series != 0].dropna()
+                        if not last_deliv.empty:
+                            funda["delivery_percent"] = float(last_deliv.iloc[-1])
+                            # Update cache with the enriched funda
+                            self._funda_cache[symbol_clean] = funda
+                return funda
 
         funda = {"symbol": symbol_clean}
         from .librarian_core import LibrarianCore

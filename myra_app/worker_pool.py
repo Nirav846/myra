@@ -121,6 +121,8 @@ def _worker_task(payload):
         if actual_col:
             for variant in delivery_variants:
                 df[variant] = df[actual_col]
+            # Inject delivery_percent into funds for TUI display
+            funda["delivery_percent"] = float(df["delivery_percent"].iloc[-1]) if not df["delivery_percent"].empty else 0.0
 
         # Calculate Stage (Case-Safe & Float-Hardened)
         sma150_col = next((c for c in ["sma150", "SMA150"] if c in df.columns), None)

@@ -51,8 +51,8 @@ def run_scanner(df: pd.DataFrame, scanner_id: str, funda: dict = {}) -> bool:
         # 107: Bollinger Band Squeeze (Width < 5%)
         elif scanner_id == "107":
             bb = ta.bbands(c, length=20)
-            width = (bb["BBU_20_2.0"].iloc[-1] - bb["BBL_20_2.0"].iloc[-1]) / bb[
-                "BBM_20_2.0"
+            width = (bb["BBu_20_2.0_2.0"].iloc[-1] - bb["BBl_20_2.0_2.0"].iloc[-1]) / bb[
+                "BBM_20_2.0_2.0"
             ].iloc[-1]
             return width < 0.05
 
@@ -81,6 +81,14 @@ def run_scanner(df: pd.DataFrame, scanner_id: str, funda: dict = {}) -> bool:
             )
             w_atr = ta.atr(df_w["High"], df_w["Low"], df_w["Close"], length=14).iloc[-1]
             return c.iloc[-1] <= (l1y + (1.5 * w_atr))
+
+            # 2-Year Low
+            if not funda.get("low_2y"):
+                funda["low_2y"] = (
+                    float(df["Low"].iloc[-504:].min())
+                    if len(df) >= 504
+                    else float(df["Low"].min())
+                )
 
         # 110: 2-Year Support Hunter (Legacy Logic)
         elif scanner_id == "110":

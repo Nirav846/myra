@@ -98,9 +98,9 @@ const usePersistedState = <T,>(key: string, initialValue: T): [T, (val: T) => vo
   return [state, setValue];
 };
 
-export default function AdvancedChartView({ lib }: { lib: Librarian }) {
+export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librarian, initialSymbol?: string }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [symbols, setSymbols] = useState<string[]>(['RELIANCE']);
+  const [symbols, setSymbols] = useState<string[]>([initialSymbol || 'RELIANCE']);
   const [searchInput, setSearchInput] = useState('');
   const [range, setRange] = useState('1M');
   
@@ -140,6 +140,7 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
   const [showSwings, setShowSwings] = usePersistedState('chart-showSwings', true);
 
   const [hoveredIndices, setHoveredIndices] = useState<Record<string, number>>({});
+  const [crosshairPosition, setCrosshairPosition] = useState<{ x: number; y: number; price: number; date: string } | null>(null);
 
   const { startDate, endDate } = useMemo(() => {
     const end = new Date();
@@ -880,7 +881,7 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
               return (
                  <div key={sym} className="bg-[#1a1c24] border border-[#ffffff1a] rounded flex flex-col h-[500px] chart-container">
                     {/* CSS Override to hide Plotly's moving tooltip box while retaining crosshair spikes */}
-                    <style>{`.chart-container .hoverlayer { display: none !important; }`}</style>
+                    <style>{'.chart-container .hoverlayer > g.hovertext { display: none !important; }'}</style>
                     
                     <div className="px-4 py-2 border-b border-[#ffffff1a] font-mono font-bold text-lg text-white flex justify-between items-center bg-[#0e1117] z-10 relative">
                         <div className="flex items-center gap-4">
@@ -888,30 +889,37 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                             <span className="text-xs font-normal text-[#888]">{dates[dataIndex] || ''}</span>
                         </div>
                         <div className="flex gap-4 text-xs font-normal flex-wrap justify-end">
-                           <span className="text-[#888]">O: <span className="text-[#fafafa]">{opens[dataIndex]?.toFixed(2)}</span></span>
-                           <span className="text-[#888]">H: <span className="text-[#fafafa]">{highs[dataIndex]?.toFixed(2)}</span></span>
-                           <span className="text-[#888]">L: <span className="text-[#fafafa]">{lows[dataIndex]?.toFixed(2)}</span></span>
-                           <span className="text-[#888]">C: <span className="text-[#fafafa]">{closes[dataIndex]?.toFixed(2)}</span></span>
+                           <span className="text-[#888]">O: <span className="text-[#fafafa]">{String(opens[dataIndex]?.toFixed(2) || 'N/A')}</span></span>
+                           <span className="text-[#888]">H: <span className="text-[#fafafa]">{String(highs[dataIndex]?.toFixed(2) || 'N/A')}</span></span>
+                           <span className="text-[#888]">L: <span className="text-[#fafafa]">{String(lows[dataIndex]?.toFixed(2) || 'N/A')}</span></span>
+                           <span className="text-[#888]">C: <span className="text-[#fafafa]">{String(closes[dataIndex]?.toFixed(2) || 'N/A')}</span></span>
                            
                            <span className="text-[#888]">Vol: <span className="text-[#fafafa]">{typeof volumes[dataIndex] === 'number' ? (volumes[dataIndex] >= 1000000 ? (volumes[dataIndex] / 1000000).toFixed(2) + 'M' : (volumes[dataIndex] / 1000).toFixed(1) + 'k') : '-'}</span></span>
-                           {deliveryPct[dataIndex] != null && <span className="text-[#888]">Del: <span className="text-[#fafafa]">{Number(deliveryPct[dataIndex]).toFixed(1)}%</span></span>}
-                           {trendAlignment[dataIndex] != null && <span className="text-[#888]">Trend: <span className={`font-bold ${trendAlignment[dataIndex] > 0 ? 'text-green-400' : (trendAlignment[dataIndex] < 0 ? 'text-red-400' : 'text-[#fafafa]')}`}>{trendAlignment[dataIndex]}</span></span>}
+                           {deliveryPct[dataIndex] != null && !Number.isNaN(deliveryPct[dataIndex]) && <span className="text-[#888]">Del: <span className="text-[#fafafa]">{Number(deliveryPct[dataIndex]).toFixed(1)}%</span></span>}
+                           {trendAlignment[dataIndex] != null && !Number.isNaN(trendAlignment[dataIndex]) && <span className="text-[#888]">Trend: <span className={`font-bold ${trendAlignment[dataIndex] > 0 ? 'text-green-400' : (trendAlignment[dataIndex] < 0 ? 'text-red-400' : 'text-[#fafafa]')}`}>{trendAlignment[dataIndex]}</span></span>}
                         </div>
+                    </div>
+                    {/* TradingView-style sticky details bar */}
+                    <div className="px-3 py-1 bg-[#0e1117] border-b border-[#ffffff1a] flex items-center gap-4 text-[10px] tracking-wider font-mono text-[#fafafa] sticky top-0 z-20">
+                        <span className="font-semibold">{sym}</span>
+                        <span className="text-[#888]">{dates[dataIndex] || ''}</span>
+                        <span className="text-[#888]">O: <span className="text-white">{String(opens[dataIndex]?.toFixed(2) || 'N/A')}</span></span>
+                        <span className="text-[#888]">H: <span className="text-white">{String(highs[dataIndex]?.toFixed(2) || 'N/A')}</span></span>
+                        <span className="text-[#888]">L: <span className="text-white">{String(lows[dataIndex]?.toFixed(2) || 'N/A')}</span></span>
+                        <span className="text-[#888]">C: <span className="text-white">{String(closes[dataIndex]?.toFixed(2) || 'N/A')}</span></span>
+                        <span className="text-[#888]">Vol: <span className="text-white">{typeof volumes[dataIndex] === 'number' ? (volumes[dataIndex] >= 1000000 ? (volumes[dataIndex] / 1000000).toFixed(2) + 'M' : (volumes[dataIndex] / 1000).toFixed(1) + 'k') : '-'}</span></span>
+                        {deliveryPct[dataIndex] != null && !Number.isNaN(deliveryPct[dataIndex]) && <span className="text-[#888]">Del: <span className="text-white">{Number(deliveryPct[dataIndex]).toFixed(1)}%</span></span>}
                     </div>
                     <div className="flex-1 w-full relative">
                         <Plot
-                             onHover={(e) => {
-                                 if (e.points && e.points.length > 0 && e.points[0].pointIndex !== undefined) {
-                                     setHoveredIndices(prev => ({ ...prev, [sym]: e.points[0].pointIndex }));
-                                 }
-                             }}
+                             onHover={(e) => setHoveredIndices(prev => ({ ...prev, [sym]: e.points?.[0]?.pointIndex }))}
                              onUnhover={() => {
-                                 setHoveredIndices(prev => {
-                                     const next = { ...prev };
-                                     delete next[sym];
-                                     return next;
-                                 });
-                             }}
+                                setHoveredIndices(prev => {
+                                    const next = { ...prev };
+                                    delete next[sym];
+                                    return next;
+                                });
+                            }}
                              data={[
                                  // Main Candlestick
                                  {
@@ -920,6 +928,7 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                                      name: sym, yaxis: 'y',
                                      increasing: {line: {color: '#22c55e', width: 1.5}, fillcolor: '#1a1c24'}, // hollow body
                                      decreasing: {line: {color: '#ef4444', width: 1.5}, fillcolor: '#ef4444'}, // filled body
+                                     hoverinfo: 'none',
                                      customdata: dates.map((_, i) => {
                                          const v = volumes[i] ?? 0;
                                          const volStr = v >= 1000000 
@@ -982,12 +991,12 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                                      hoverinfo: 'skip'
                                  } as any] : []),
                                  // Overlays
-                                 ...(showVwap ? [{ type: 'scattergl', mode: 'lines', x: dates, y: vwap, name: 'VWAP', line: { color: '#888', width: 1.5, dash: 'dot' }, yaxis: 'y', hovertemplate: '%{y:.2f}' } as any] : []),
-                                 ...(showSma20 ? [{ type: 'scattergl', mode: 'lines', x: dates, y: sma20, name: 'SMA20', line: { color: '#eab308', width: 1 }, yaxis: 'y', hovertemplate: '%{y:.2f}' } as any] : []),
-                                 ...(showSma50 ? [{ type: 'scattergl', mode: 'lines', x: dates, y: sma50, name: 'SMA50', line: { color: '#0ea5e9', width: 1 }, yaxis: 'y', hovertemplate: '%{y:.2f}' } as any] : []),
-                                 ...(showSma150 ? [{ type: 'scattergl', mode: 'lines', x: dates, y: sma150, name: 'SMA150', line: { color: '#d946ef', width: 1.5 }, yaxis: 'y', hovertemplate: '%{y:.2f}' } as any] : []),
-                                 ...(showSma200 ? [{ type: 'scattergl', mode: 'lines', x: dates, y: sma200, name: 'SMA200', line: { color: '#f97316', width: 1.5 }, yaxis: 'y', hovertemplate: '%{y:.2f}' } as any] : []),
-                                 ...(showNiftyOut ? [{ type: 'scattergl', mode: 'lines', x: dates, y: niftyOut, name: 'Nifty Outperf.', line: { color: '#a855f7', width: 1.5 }, yaxis: 'y4', opacity: 0.8, fill: 'tozeroy', fillcolor: 'rgba(168, 85, 247, 0.1)', hovertemplate: '%{y:.2f}%' } as any] : []),
+                                 ...(showVwap ? [{ type: 'scattergl', mode: 'lines', x: dates, y: vwap, name: 'VWAP', line: { color: '#888', width: 1.5, dash: 'dot' }, yaxis: 'y', hoverinfo: 'none' } as any] : []),
+                                 ...(showSma20 ? [{ type: 'scattergl', mode: 'lines', x: dates, y: sma20, name: 'SMA20', line: { color: '#eab308', width: 1 }, yaxis: 'y', hoverinfo: 'none' } as any] : []),
+                                 ...(showSma50 ? [{ type: 'scattergl', mode: 'lines', x: dates, y: sma50, name: 'SMA50', line: { color: '#0ea5e9', width: 1 }, yaxis: 'y', hoverinfo: 'none' } as any] : []),
+                                 ...(showSma150 ? [{ type: 'scattergl', mode: 'lines', x: dates, y: sma150, name: 'SMA150', line: { color: '#d946ef', width: 1.5 }, yaxis: 'y', hoverinfo: 'none' } as any] : []),
+                                 ...(showSma200 ? [{ type: 'scattergl', mode: 'lines', x: dates, y: sma200, name: 'SMA200', line: { color: '#f97316', width: 1.5 }, yaxis: 'y', hoverinfo: 'none' } as any] : []),
+                                 ...(showNiftyOut ? [{ type: 'scattergl', mode: 'lines', x: dates, y: niftyOut, name: 'Nifty Outperf.', line: { color: '#a855f7', width: 1.5 }, yaxis: 'y4', opacity: 0.8, fill: 'tozeroy', fillcolor: 'rgba(168, 85, 247, 0.1)', hoverinfo: 'none' } as any] : []),
                                  
                                  // Swing points
                                  ...(showSwings && swingHighsDates.length > 0 ? [{ type: 'scattergl', mode: 'markers+text', x: swingHighsDates, y: swingHighsValues, name: 'Swing High', marker: { symbol: 'triangle-down', size: 8, color: '#ef4444' }, text: swingHighsValues.map(v => v?.toFixed(1)), textposition: 'top center', textfont: {size: 9, color: '#ef4444'}, yaxis: 'y' } as any] : []),
@@ -1027,7 +1036,7 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                                  ...(showDelVwapBands ? [
                                      { type: 'scattergl', mode: 'lines', x: dates, y: delVwapBandsUpper, name: 'Del. VWAP High', line: { color: 'rgba(251, 146, 60, 0.7)', width: 1.5, dash: 'dot' }, yaxis: 'y', hoverinfo: 'none' } as any,
                                      { type: 'scattergl', mode: 'lines', x: dates, y: delVwapBandsLower, name: 'Del. VWAP Low', line: { color: 'rgba(251, 146, 60, 0.7)', width: 1.5, dash: 'dot' }, fill: 'tonexty', fillcolor: 'rgba(251, 146, 60, 0.1)', yaxis: 'y', hoverinfo: 'none' } as any,
-                                     { type: 'scattergl', mode: 'lines', x: dates, y: delVwapMid, name: 'Del. VWAP', line: { color: '#fbbf24', width: 2, dash: 'solid' }, yaxis: 'y', hovertemplate: 'Del VWAP: %{y:.2f}' } as any
+                                     { type: 'scattergl', mode: 'lines', x: dates, y: delVwapMid, name: 'Del. VWAP', line: { color: '#fbbf24', width: 2, dash: 'solid' }, yaxis: 'y', hoverinfo: 'none' } as any
                                  ] : []),
 
                                  // Delivery Profile Overlay
@@ -1049,7 +1058,7 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                                      name: 'Vol',
                                      yaxis: 'y2',
                                      marker: { color: volumeColors },
-                                     hovertemplate: '%{y:.2s}'
+                                     hoverinfo: 'none'
                                  } as any] : []),
 
                                  // Delivery Percent Pane
@@ -1059,7 +1068,7 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                                      name: 'Del Qty',
                                      yaxis: 'y5',
                                      marker: { color: deliveryColorsInverse, opacity: 0.8 },
-                                     hovertemplate: '%{y:.2s}<br>Pct: %{customdata[0]}%<extra></extra>'
+                                     hoverinfo: 'none'
                                  }] : []),
                                  ...(showDelivery && showDelMA ? [{
                                      type: 'scattergl',
@@ -1068,17 +1077,17 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                                      name: 'Del MA (20)',
                                      yaxis: 'y5',
                                      line: { color: '#f59e0b', width: 2 },
-                                     hovertemplate: 'MA: %{y:.2s}<extra></extra>'
+                                     hoverinfo: 'none'
                                  } as any] : []),
                                  
                                  // RSI
                                  ...(showRsi ? [
-                                     { type: 'scattergl', mode: 'lines', x: dates, y: rsiObj, name: 'RSI(14)', line: { color: '#8b5cf6', width: 1.5 }, yaxis: 'y3', hovertemplate: '%{y:.1f}' } as any
+                                     { type: 'scattergl', mode: 'lines', x: dates, y: rsiObj, name: 'RSI(14)', line: { color: '#8b5cf6', width: 1.5 }, yaxis: 'y3', hoverinfo: 'none' } as any
                                  ] : []),
                                  
                                  // Delivery A/D
                                  ...(showDelAD ? [
-                                     { type: 'scattergl', mode: 'lines', x: dates, y: delAdLine, name: 'Del. A/D', line: { color: '#ec4899', width: 1.5 }, yaxis: 'y6', hovertemplate: 'Val: %{y:.2s}', fill: 'tozeroy', fillcolor: 'rgba(236,72,153,0.1)' } as any
+                                     { type: 'scattergl', mode: 'lines', x: dates, y: delAdLine, name: 'Del. A/D', line: { color: '#ec4899', width: 1.5 }, yaxis: 'y6', hoverinfo: 'none', fill: 'tozeroy', fillcolor: 'rgba(236,72,153,0.1)' } as any
                                  ] : []),
                                  
                                  // Fixed Range Volume Profile - Total Volume
@@ -1121,7 +1130,7 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                                  paper_bgcolor: '#1a1c24',
                                  font: { color: '#888', family: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' },
                                  showlegend: false,
-                                 hovermode: 'x unified',
+                                 hovermode: 'x',
                                  hoverlabel: { bgcolor: 'rgba(14, 17, 23, 0.4)', bordercolor: 'rgba(255, 255, 255, 0.1)', font: { family: 'ui-monospace', size: 11 } },
                                  dragmode: 'pan',
                                  barmode: 'overlay',
@@ -1132,8 +1141,10 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                                     nticks: 10,
                                     showspikes: true,
                                     spikemode: 'across',
+                                    spikesnap: 'cursor',
+                                    showline: true,
                                     spikedash: 'solid',
-                                    spikecolor: '#333',
+                                    spikecolor: '#555',
                                     spikethickness: 1,
                                  },
                                  xaxis2: {
@@ -1142,7 +1153,13 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                                     showgrid: false,
                                     zeroline: false,
                                     showticklabels: false,
-                                    range: [0, Math.max(...volProfileX, 1) * 3] // Bars take up max 1/3 of chart
+                                    range: [0, Math.max(...volProfileX, 1) * 3], // Bars take up max 1/3 of chart
+                                    showspikes: true,
+                                    spikemode: 'across',
+                                    spikesnap: 'cursor',
+                                    spikedash: 'solid',
+                                    spikecolor: '#555',
+                                    spikethickness: 1,
                                  },
                                  yaxis: {
                                     domain: priceDomain,
@@ -1150,6 +1167,13 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                                     zeroline: false,
                                     autorange: true,
                                     type: showLogScale ? 'log' : 'linear',
+                                    showspikes: true,
+                                    spikemode: 'across',
+                                    spikesnap: 'cursor',
+                                    showline: true,
+                                    spikedash: 'solid',
+                                    spikecolor: '#555',
+                                    spikethickness: 1,
                                  },
                                  yaxis2: {
                                     domain: volDomain,
@@ -1157,14 +1181,26 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                                     zeroline: false,
                                     showticklabels: true,
                                     tickformat: '.2s',
-                                    visible: showVolume
+                                    visible: showVolume,
+                                    showspikes: true,
+                                    spikemode: 'across',
+                                    spikesnap: 'cursor',
+                                    spikedash: 'solid',
+                                    spikecolor: '#555',
+                                    spikethickness: 1,
                                  },
                                  yaxis3: {
                                     domain: rsiDomain,
                                     gridcolor: 'rgba(255,255,255,0.05)',
                                     zeroline: false,
                                     tickvals: [0, 30, 50, 70, 100],
-                                    visible: showRsi
+                                    visible: showRsi,
+                                    showspikes: true,
+                                    spikemode: 'across',
+                                    spikesnap: 'cursor',
+                                    spikedash: 'solid',
+                                    spikecolor: '#555',
+                                    spikethickness: 1,
                                  },
                                  yaxis4: {
                                     domain: priceDomain,
@@ -1172,14 +1208,26 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                                     overlaying: 'y',
                                     showgrid: false,
                                     zeroline: false,
-                                    visible: showNiftyOut
+                                    visible: showNiftyOut,
+                                    showspikes: true,
+                                    spikemode: 'across',
+                                    spikesnap: 'cursor',
+                                    spikedash: 'solid',
+                                    spikecolor: '#555',
+                                    spikethickness: 1,
                                  },
                                  yaxis5: {
                                     domain: delDomain,
                                     gridcolor: 'rgba(255,255,255,0.05)',
                                     zeroline: false,
                                     tickformat: '.2s',
-                                    visible: showDelivery
+                                    visible: showDelivery,
+                                    showspikes: true,
+                                    spikemode: 'across',
+                                    spikesnap: 'cursor',
+                                    spikedash: 'solid',
+                                    spikecolor: '#555',
+                                    spikethickness: 1,
                                  },
                                  yaxis6: {
                                     domain: delAdDomain,
@@ -1187,7 +1235,13 @@ export default function AdvancedChartView({ lib }: { lib: Librarian }) {
                                     zeroline: false,
                                     tickformat: '.2s',
                                     visible: showDelAD,
-                                    title: { text: 'Del. A/D', font: { size: 10, color: '#888' } }
+                                    title: { text: 'Del. A/D', font: { size: 10, color: '#888' } },
+                                    showspikes: true,
+                                    spikemode: 'across',
+                                    spikesnap: 'cursor',
+                                    spikedash: 'solid',
+                                    spikecolor: '#555',
+                                    spikethickness: 1,
                                  },
                                  shapes: shapes
                              }}
