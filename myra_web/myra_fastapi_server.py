@@ -6,7 +6,7 @@ import logging
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -70,53 +70,70 @@ def rewrite_table_name(sql: str) -> str:
     return new_sql
 
 class QueryRequest(BaseModel):
-    database: str
+    db: Optional[str] = None
+    database: Optional[str] = None
     query: str
-    args: Dict[str, Any] = {}
+    params: Optional[Union[List[Any], Dict[str, Any]]] = []
+    args: Optional[Union[Dict[str, Any], List[Any]]] = {}
+
+    def get_db(self):
+        return self.db or self.database
+
+    def get_params(self):
+        # Prefer whichever is populated
+        if self.params and (isinstance(self.params, list) and len(self.params) > 0):
+            return self.params
+        if self.args and (isinstance(self.args, dict) and len(self.args) > 0):
+            return self.args
+        return []
 
 @app.post("/api/query")
 def execute_query(req: QueryRequest):
-    logger.info(f"=== Query on {req.database} ===")
-    logger.info(f"SQL: {req.query}")
+    """
+    Allows the React frontend to run read queries directly against the sidecars.
+    """
+    target_db = req.get_db()
     
-    # Validate database
-    if req.database not in DB_MAP:
-        raise HTTPException(status_code=400, detail=f"Unknown database '{req.database}'")
+    if not target_db:
+         raise HTTPException(status_code=400, detail="No database specified in payload.")
+         
+    if target_db not in DB_MAP:
+        raise HTTPException(status_code=400, detail=f"Invalid database specified: {target_db}.")
     
-    db_path = get_db_path(req.database)
+    db_path = get_db_path(target_db)
     if not db_path or not os.path.exists(db_path):
-        raise HTTPException(status_code=404, detail=f"Database not found: {db_path}")
-    
-    # Security: only SELECT/PRAGMA/WITH
-    query_upper = req.query.strip().upper()
-    if not (query_upper.startswith("SELECT") or query_upper.startswith("PRAGMA") or query_upper.startswith("WITH")):
-        raise HTTPException(status_code=403, detail="Only SELECT, WITH, and PRAGMA queries allowed.")
-    
-    # Apply table name rewrite
-    final_query = rewrite_table_name(req.query)
-    
+        raise HTTPException(status_code=404, detail=f"Database file not found: {DB_MAP.get(target_db)}")
+
     try:
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        # Execute with parameters if any (assuming named placeholders not used; simple queries)
-        if req.args:
-            cursor.execute(final_query, list(req.args.values()))
-        else:
-            cursor.execute(final_query)
-        rows = cursor.fetchall()
-        data = [dict(row) for row in rows]
-        conn.close()
         
-        logger.info(f"Returned {len(data)} rows")
-        if data:
-            logger.info(f"Columns: {list(data[0].keys())}")
-            logger.info(f"Sample first row: {data[0]}")
+        # Log payload exactly for debugging
+        params_to_use = req.get_params()
+        print(f"=== Query on {target_db} ===")
+        print(f"SQL: {req.query}")
+        print(f"PARAMS: {params_to_use}")
+        
+        cursor.execute(req.query, params_to_use)
+        
+        # If it's a SELECT query, return the rows
+        if req.query.strip().upper().startswith(("SELECT", "PRAGMA")):
+            rows = cursor.fetchall()
+            data = [dict(ix) for ix in rows]
+            conn.close()
+            return {"data": data}
         else:
-            logger.warning("No data returned.")
-        return {"data": data}
+            conn.commit()
+            rowcount = cursor.rowcount
+            conn.close()
+            return {"data": [{"rows_affected": rowcount}]}
+            
+    except sqlite3.OperationalError as op_e:
+        print(f"SQLITE OPERATIONAL ERROR: {str(op_e)}")
+        raise HTTPException(status_code=400, detail=f"SQL Error: {str(op_e)}")
     except Exception as e:
-        logger.error(f"Query error: {e}")
+        print(f"GENERAL ERROR: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # Keep the rest of your endpoints (/api/tools/execute, /api/symbols) unchanged

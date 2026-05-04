@@ -27,36 +27,52 @@ export default function MultibaggerMatrixView({ lib }: { lib: Librarian }) {
     setIsDemo(!lib.isConnectedToLocalRepo);
     
     try {
-      let query = `
-        SELECT f.symbol as ticker, f.sector, f.roe, f.eps, AVG(r.delivery_pct) as accumulation
-        FROM fundamentals f
-        JOIN technical_data r ON f.symbol = r.symbol
-        WHERE r.date >= date('now', '-${days} days') 
-          AND f.roe > ${minRoe} 
-          AND f.eps > ${minEps}
+      // Fetch fundamentals
+      let metaQuery = `
+        SELECT symbol as ticker, sector, roe, eps
+        FROM fundamentals
+        WHERE roe > ${minRoe} AND eps > ${minEps}
       `;
-
       if (excludeCyclical) {
-        query += ` AND f.sector NOT IN ('Metals', 'Chemicals', 'Energy', 'Mining', 'Materials')`;
+        metaQuery += ` AND sector NOT IN ('Metals', 'Chemicals', 'Energy', 'Mining', 'Materials')`;
       }
+      const metaResult = await lib.executeQuery('_meta_conn', metaQuery, {}, 12000);
       
-      query += ` GROUP BY f.symbol`;
-      
-      if (requireAccumulation) {
-        query += ` HAVING accumulation >= 50`;
-      }
+      if (metaResult && metaResult.length > 0) {
+        const tickers = metaResult.map((r: any) => `'${r.ticker}'`).join(',');
+        
+        const techQuery = `
+          SELECT symbol as ticker, AVG((COALESCE(delivery, delivery_qty) * 100.0) / NULLIF(COALESCE(volume, trades), 0)) as accumulation
+          FROM technical_data
+          WHERE date >= date('now', '-${days} days') AND symbol IN (${tickers})
+          GROUP BY symbol
+        `;
+        const techResult = await lib.executeQuery('_tech_conn', techQuery, {}, 12000);
+        
+        const techMap = new Map();
+        if (techResult && techResult.length > 0) {
+           for (const t of techResult) {
+              techMap.set(t.ticker, t.accumulation);
+           }
+        }
+        
+        let mapped = metaResult.map((d: any) => {
+          const accumulation = techMap.get(d.ticker) || 0;
+          return {
+            ...d,
+            accumulation,
+            multibagger_index: Math.round((Number(d.roe) * 0.4) + (Number(d.eps) * 0.4) + (Number(accumulation) * 0.2)),
+            moat_score: Number(d.roe) > 25 ? 'Monopoly' : Number(d.roe) > 15 ? 'High' : 'Medium'
+          };
+        });
 
-      query += ` ORDER BY (f.roe * f.eps) DESC LIMIT 25`;
-      
-      const result = await lib.executeQuery('_meta_conn', query, {}, 12000);
-      
-      if (result && result.length > 0) {
-        const mapped = result.map((d: any) => ({
-          ...d,
-          multibagger_index: Math.round((Number(d.roe) * 0.4) + (Number(d.eps) * 0.4) + (Number(d.accumulation) * 0.2)),
-          moat_score: Number(d.roe) > 25 ? 'Monopoly' : Number(d.roe) > 15 ? 'High' : 'Medium'
-        }));
-        setData(mapped);
+        if (requireAccumulation) {
+          mapped = mapped.filter((d: any) => d.accumulation >= 50);
+        }
+
+        mapped.sort((a: any, b: any) => b.multibagger_index - a.multibagger_index);
+        
+        setData(mapped.slice(0, 25));
       } else {
         setIsDemo(true);
         generateMockCandidates();

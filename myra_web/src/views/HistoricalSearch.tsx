@@ -21,7 +21,12 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
     setIsDemo(!lib.isConnectedToLocalRepo);
     
     try {
-      const query = `SELECT date, open, high, low, close, volume, delivery_qty, delivery_pct FROM technical_data WHERE symbol = '${ticker}' AND date >= '${startDate}' AND date <= '${endDate}' ORDER BY date ASC`;
+      const query = `
+        SELECT date, open, high, low, close, COALESCE(volume, trades) as volume, COALESCE(delivery, 0) as delivery_qty, (COALESCE(delivery, 0) * 100.0 / NULLIF(COALESCE(volume, trades), 0)) as delivery_pct
+        FROM technical_data
+        WHERE symbol = '${ticker}' AND date >= '${startDate}' AND date <= '${endDate}'
+        ORDER BY date ASC
+      `;
       const result = await lib.executeQuery('_tech_conn', query);
 
       if (result && result.length > 0) {

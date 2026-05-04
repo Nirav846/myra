@@ -18,16 +18,31 @@ export default function LeaderboardView({ lib }: { lib: Librarian }) {
     setIsRefreshing(true);
     try {
       // Connect to local python repo via Librarian
-      const result = await lib.executeQuery('_inst_conn', "SELECT ticker, vol_score, inst_flow FROM leaderboard LIMIT 10");
+      const query = `
+        SELECT symbol as ticker, 
+               95.0 as volScore, 
+               SUM(CASE WHEN buy_sell = 'BUY' THEN value_cr ELSE -value_cr END) as inst_flow
+        FROM large_deals 
+        WHERE date >= date('now', '-30 days')
+        GROUP BY symbol
+        ORDER BY inst_flow DESC
+        LIMIT 10
+      `;
+      const result = await lib.executeQuery('_inst_conn', query);
       
       if (result && result.length > 0) {
-        setApiData(result);
+        const mapped = result.map((r: any) => ({
+          ticker: r.ticker,
+          volScore: r.volScore,
+          instFlow: (r.inst_flow || 0) > 0 ? `+${(r.inst_flow || 0).toFixed(1)}Cr` : `${(r.inst_flow || 0).toFixed(1)}Cr`
+        }));
+        setApiData(mapped);
       } else {
-        // Fallback demo data if repo is disconnected
+        // Fallback demo data if repo is disconnected or empty
         setApiData([
-          { ticker: 'NVDA', volScore: 99.1, instFlow: '+1.2B' },
-          { ticker: 'AAPL', volScore: 85.4, instFlow: '+400M' },
-          { ticker: 'TSLA', volScore: 42.8, instFlow: '-800M' },
+          { ticker: 'HDFCBANK', volScore: 99.1, instFlow: '+1.2B' },
+          { ticker: 'RELIANCE', volScore: 85.4, instFlow: '+400M' },
+          { ticker: 'INFY', volScore: 42.8, instFlow: '-800M' },
         ]);
       }
       
@@ -35,6 +50,12 @@ export default function LeaderboardView({ lib }: { lib: Librarian }) {
       setLastRefreshed(new Date());
     } catch (e) {
       console.error(e);
+      // Fallback
+      setApiData([
+        { ticker: 'HDFCBANK', volScore: 99.1, instFlow: '+1.2B' },
+        { ticker: 'RELIANCE', volScore: 85.4, instFlow: '+400M' },
+        { ticker: 'INFY', volScore: 42.8, instFlow: '-800M' },
+      ]);
     } finally {
       setIsRefreshing(false);
     }

@@ -227,11 +227,11 @@ class Librarian(
 
     def get_symbols_by_sector(self, sector_name: str) -> list:
         """Returns symbols matching a sector name. Case-insensitive partial match."""
-        if not self._val_conn:
+        if not self._meta_conn:
             return []
         try:
-            cursor = self._val_conn.execute(
-                "SELECT symbol FROM fundamentals WHERE sector LIKE ? COLLATE NOCASE",
+            cursor = self._meta_conn.execute(
+                "SELECT symbol FROM symbols_master WHERE sector LIKE ? COLLATE NOCASE AND is_active = 1",
                 (f"%{sector_name}%",),
             )
             return [row[0] for row in cursor.fetchall()]
@@ -242,12 +242,13 @@ class Librarian(
             return []
 
     def get_available_sectors(self) -> list[dict]:
-        """Returns list of sectors with stock counts from fundamentals table."""
-        if not self._val_conn:
+        """Returns list of sectors with stock counts from symbols_master table."""
+        if not self._meta_conn:
             return []
         try:
-            cur = self._val_conn.execute(
-                "SELECT sector, COUNT(*) as cnt FROM fundamentals WHERE sector IS NOT NULL AND sector != '' "
+            cur = self._meta_conn.execute(
+                "SELECT sector, COUNT(*) as cnt FROM symbols_master "
+                "WHERE sector IS NOT NULL AND sector != '' AND is_active = 1 "
                 "GROUP BY sector ORDER BY sector"
             )
             return [{"sector": row[0], "count": row[1]} for row in cur.fetchall()]

@@ -105,9 +105,6 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
   const [range, setRange] = useState('1M');
   
   const [dataCache, setDataCache] = useState<Record<string, any[]>>({});
-  const [scrollEnabled, setScrollEnabled] = usePersistedState('chart-scrollEnabled', false);
-  const [allSymbols, setAllSymbols] = useState<string[]>([]);
-  const [visibleIndices, setVisibleIndices] = useState<[number, number] | null>(null);
   
   // Overlays
   const [showSma20, setShowSma20] = usePersistedState('chart-showSma20', false);
@@ -120,16 +117,16 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
   const [showVwap, setShowVwap] = usePersistedState('chart-showVwap', true);
   const [showVolume, setShowVolume] = usePersistedState('chart-showVolume', true);
   const [showDelivery, setShowDelivery] = usePersistedState('chart-showDelivery', false);
+  const [showDelMA, setShowDelMA] = usePersistedState('chart-showDelMA', false);
   const [showDeliveryProfile, setShowDeliveryProfile] = usePersistedState('chart-showDeliveryProfile', false);
   const [showDeliverySR, setShowDeliverySR] = usePersistedState('chart-showDeliverySR', false);
   const [showSmartMoney, setShowSmartMoney] = usePersistedState('chart-showSmartMoney', false);
+  const [showDelDivergence, setShowDelDivergence] = usePersistedState('chart-showDelDivergence', false);
 
   const [showDelAD, setShowDelAD] = usePersistedState('chart-showDelAD', false);
   const [showDelVwapBands, setShowDelVwapBands] = usePersistedState('chart-showDelVwapBands', false);
   const [showLiqVoids, setShowLiqVoids] = usePersistedState('chart-showLiqVoids', false);
   const [showInstBlocks, setShowInstBlocks] = usePersistedState('chart-showInstBlocks', false);
-  const [showDelMA, setShowDelMA] = usePersistedState('chart-showDelMA', false);
-  const [showDelDivergence, setShowDelDivergence] = usePersistedState('chart-showDelDivergence', false);
   
   const [showRsi, setShowRsi] = usePersistedState('chart-showRsi', true);
   
@@ -138,9 +135,74 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
   const [showLogScale, setShowLogScale] = usePersistedState('chart-showLogScale', false);
 
   const [showSwings, setShowSwings] = usePersistedState('chart-showSwings', true);
-
+  
+  const [scrollEnabled, setScrollEnabled] = usePersistedState('chart-scrollEnabled', false);
+  const [allSymbols, setAllSymbols] = useState<string[]>([]);
+  const [visibleIndices, setVisibleIndices] = useState<[number, number] | null>(null);
   const [hoveredIndices, setHoveredIndices] = useState<Record<string, number>>({});
-  const [crosshairPosition, setCrosshairPosition] = useState<{ x: number; y: number; price: number; date: string } | null>(null);
+  
+  // Fetch all symbols for fast scrolling
+  useEffect(() => {
+     lib.executeQuery('_tech_conn', 'SELECT DISTINCT symbol FROM technical_data ORDER BY symbol', {}, 5000)
+       .then(res => {
+          if (res && res.length > 0) {
+              setAllSymbols(res.map((r: any) => r.symbol));
+          }
+       })
+       .catch(e => console.error("Could not fetch all symbols for fast scroll", e));
+  }, [lib]);
+
+  // Fast scrolling logic
+  useEffect(() => {
+    if (!scrollEnabled || allSymbols.length === 0 || symbols.length === 0) return;
+
+    let timeoutId: any;
+    const handleWheel = (e: WheelEvent) => {
+        // Prevent default scrolling only if we are actively mapping wheel to symbol changes
+        e.preventDefault();
+        if (timeoutId) clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+            setSymbols((prevSymbols) => {
+                const currentIndex = allSymbols.indexOf(prevSymbols[0]);
+                if (currentIndex === -1) return prevSymbols;
+                
+                if (e.deltaY > 0) {
+                    const nextIdx = Math.min(currentIndex + 1, allSymbols.length - 1);
+                    return [allSymbols[nextIdx]];
+                } else {
+                    const prevIdx = Math.max(currentIndex - 1, 0);
+                    return [allSymbols[prevIdx]];
+                }
+            });
+        }, 50);
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+        setSymbols((prevSymbols) => {
+            const currentIndex = allSymbols.indexOf(prevSymbols[0]);
+            if (currentIndex === -1) return prevSymbols;
+            
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                const nextIdx = Math.min(currentIndex + 1, allSymbols.length - 1);
+                return [allSymbols[nextIdx]];
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                const prevIdx = Math.max(currentIndex - 1, 0);
+                return [allSymbols[prevIdx]];
+            }
+            return prevSymbols;
+        });
+    };
+
+    window.addEventListener('wheel', handleWheel, { passive: false });
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+        window.removeEventListener('wheel', handleWheel);
+        window.removeEventListener('keydown', handleKeyDown);
+        if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [scrollEnabled, allSymbols]);
 
   const { startDate, endDate } = useMemo(() => {
     const end = new Date();
@@ -152,77 +214,6 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
     else start.setFullYear(start.getFullYear() - 10);
     return { startDate: start.toISOString().split('T')[0], endDate: end.toISOString().split('T')[0] };
   }, [range]);
-
-  // Fetch all symbols for fast scroll
-  useEffect(() => {
-    const fetchAllSymbols = async () => {
-      try {
-        const result = await lib.executeQuery('_tech_conn', 'SELECT DISTINCT symbol FROM technical_data ORDER BY symbol', {}, 5000);
-        if (result && result.length > 0) {
-          setAllSymbols(result.map((row: any) => row.symbol));
-        }
-      } catch (e) {
-        console.error('Failed to fetch symbols:', e);
-      }
-    };
-    fetchAllSymbols();
-  }, [lib]);
-
-  // Fast scroll event listeners
-  useEffect(() => {
-    if (!scrollEnabled || allSymbols.length === 0) return;
-
-    let scrollTimeout: NodeJS.Timeout | null = null;
-
-    const handleWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      if (scrollTimeout) return;
-      
-      scrollTimeout = setTimeout(() => {
-        scrollTimeout = null;
-        const currentIdx = allSymbols.indexOf(symbols[0] || '');
-        if (currentIdx === -1) return;
-        
-        let nextIdx: number;
-        if (e.deltaY > 0) {
-          nextIdx = Math.min(currentIdx + 1, allSymbols.length - 1);
-        } else {
-          nextIdx = Math.max(currentIdx - 1, 0);
-        }
-        
-        if (nextIdx !== currentIdx) {
-          setSymbols([allSymbols[nextIdx]]);
-        }
-      }, 50);
-    };
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-      
-      const currentIdx = allSymbols.indexOf(symbols[0] || '');
-      if (currentIdx === -1) return;
-      
-      let nextIdx: number;
-      if (e.key === 'ArrowDown') {
-        nextIdx = Math.min(currentIdx + 1, allSymbols.length - 1);
-      } else {
-        nextIdx = Math.max(currentIdx - 1, 0);
-      }
-      
-      if (nextIdx !== currentIdx) {
-        setSymbols([allSymbols[nextIdx]]);
-      }
-    };
-
-    window.addEventListener('wheel', handleWheel, { passive: false });
-    window.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      window.removeEventListener('wheel', handleWheel);
-      window.removeEventListener('keydown', handleKeyDown);
-      if (scrollTimeout) clearTimeout(scrollTimeout);
-    };
-  }, [scrollEnabled, allSymbols, symbols]);
 
   const fetchSymbolData = async (symbol: string) => {
     try {
@@ -299,12 +290,6 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
     setSymbols(symbols.filter(s => s !== sym));
   };
 
-  // Helper to safely format numbers
-  const formatNumber = (value: any, digits: number = 2) => {
-    const num = Number(value);
-    return isNaN(num) ? 'N/A' : num.toFixed(digits);
-  };
-
   return (
     <div className="flex bg-[#0e1117] min-h-[600px] border border-[#ffffff1a] rounded overflow-hidden relative">
       {/* Sidebar Controls */}
@@ -329,30 +314,32 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
              
              {/* Add Symbol Input */}
              {symbols.length < 4 && (
-             <div>
-             <SymbolSearch 
-                 lib={lib}
-                 onSymbolSelect={(sym) => {
-                     if (sym) {
-                         if (scrollEnabled) {
-                             setSymbols([sym]);
-                         } else if (!symbols.includes(sym)) {
-                             setSymbols(prev => [...prev, sym]);
+             <div className="flex flex-col gap-2">
+                 <SymbolSearch 
+                     lib={lib}
+                     onSymbolSelect={(sym) => {
+                         if (sym && !symbols.includes(sym)) {
+                             // If scroll is enabled, maybe we just replace the main symbol?
+                             // But let's just use the normal add behavior for now.
+                             if (scrollEnabled) {
+                                setSymbols([sym]);
+                             } else {
+                                setSymbols(prev => [...prev, sym]);
+                             }
                          }
-                     }
-                 }}
-                 placeholder="Add symbol..."
-                 clearOnSelect={!scrollEnabled}
-             />
-             <label className="flex items-center gap-2 mt-2 text-xs text-[#888] cursor-pointer hover:text-[#fafafa] transition-colors">
-                 <input 
-                     type="checkbox" 
-                     checked={scrollEnabled} 
-                     onChange={(e) => setScrollEnabled(e.target.checked)}
-                     className="accent-cyan-500 w-3 h-3"
+                     }}
+                     placeholder="Add symbol..."
+                     clearOnSelect={!scrollEnabled}
                  />
-                 Fast Scroll (Wheel/Arrows)
-             </label>
+                 <label className="flex items-center gap-2 cursor-pointer mt-1 group">
+                     <input 
+                         type="checkbox" 
+                         checked={scrollEnabled} 
+                         onChange={e => setScrollEnabled(e.target.checked)} 
+                         className="accent-cyan-500 w-3 h-3" 
+                     />
+                     <span className="text-[10px] font-mono text-[#888] group-hover:text-white transition-colors">Fast Scroll (Mouse Wheel / Up/Down)</span>
+                 </label>
              </div>
              )}
          </div>
@@ -376,10 +363,10 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
             <h4 className="text-[10px] font-mono text-[#888] uppercase mb-2">Overlays & Metrics</h4>
             <div className="space-y-2 h-[250px] overflow-y-auto pr-2 custom-scrollbar">
                {[
-                 { id: 'sma20', label: 'SMA (20)', state: showSma20, set: setShowSma20, color: '#3b82f6' },
-                 { id: 'sma50', label: 'SMA (50)', state: showSma50, set: setShowSma50, color: '#eab308' },
-                 { id: 'sma150', label: 'SMA (150)', state: showSma150, set: setShowSma150, color: '#d946ef' },
-                 { id: 'sma200', label: 'SMA (200)', state: showSma200, set: setShowSma200, color: '#f97316' },
+                 { id: 'sma20', label: 'SMA (20)', color: '#3b82f6', state: showSma20, set: setShowSma20 },
+                 { id: 'sma50', label: 'SMA (50)', color: '#eab308', state: showSma50, set: setShowSma50 },
+                 { id: 'sma150', label: 'SMA (150)', color: '#d946ef', state: showSma150, set: setShowSma150 },
+                 { id: 'sma200', label: 'SMA (200)', color: '#f97316', state: showSma200, set: setShowSma200 },
                  { id: 'vwap', label: 'VWAP', state: showVwap, set: setShowVwap },
                  { id: 'fvg', label: 'Fair Value Gaps', state: showFvg, set: setShowFvg },
                  { id: 'fibonacci', label: 'Auto Fibonacci', state: showFibonacci, set: setShowFibonacci },
@@ -389,11 +376,11 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
                  { id: 'volume', label: 'Volume Pane', state: showVolume, set: setShowVolume },
                  { id: 'delivery', label: 'Delivery Pane', state: showDelivery, set: setShowDelivery },
                  { id: 'del_ma', label: 'Delivery MA (20)', state: showDelMA, set: setShowDelMA },
-                 { id: 'del_profile', label: 'Delivery Profile', state: showDeliveryProfile, set: setShowDeliveryProfile, desc: 'Histogram of delivery volume by price level.' },
+                 { id: 'del_profile', label: 'Vol/Del Profile (FRVP)', state: showDeliveryProfile, set: setShowDeliveryProfile, desc: 'Fixed Range Volume Profile (Visible Area). Shows standard Volume (gray) overlaid with Delivery Volume (cyan) and their POCs.' },
                  { id: 'del_sr', label: 'Delivery Auto S/R', state: showDeliverySR, set: setShowDeliverySR, desc: 'Auto-draws support/resistance at high delivery price levels.' },
                  { id: 'smart_money', label: 'Smart Money Prints', state: showSmartMoney, set: setShowSmartMoney, desc: 'Highlights bars with 1.5x average volume and > 60% delivery ratio.' },
-                 { id: 'del_ad', label: 'Delivery A/D', state: showDelAD, set: setShowDelAD, desc: 'Accumulation/Distribution strictly using delivery volume.' },
                  { id: 'del_divergence', label: 'Delivery Intensity Core', state: showDelDivergence, set: setShowDelDivergence, desc: 'Draws a colored vertical core inside candles representing delivery %. Blue=Institutional, Gold=Divergence, Grey=Retail.' },
+                 { id: 'del_ad', label: 'Delivery A/D', state: showDelAD, set: setShowDelAD, desc: 'Accumulation/Distribution strictly using delivery volume.' },
                  { id: 'del_vwap_bands', label: 'Del. VWAP Bands', state: showDelVwapBands, set: setShowDelVwapBands, desc: 'VWAP weighted by delivery volume with 1.5 standard deviation bands.' },
                  { id: 'liq_voids', label: 'Liquidity Voids', state: showLiqVoids, set: setShowLiqVoids, desc: 'Shaded areas where large price movement occurred on low relative volume (potential gap fills).' },
                  { id: 'inst_blocks', label: 'Inst. Blocks', state: showInstBlocks, set: setShowInstBlocks, desc: 'Massive volume anomalies (> 3.5x average) paired with > 65% delivery.' },
@@ -446,7 +433,7 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
                   return isNaN(delVal) ? 0 : delVal;
               });
               const deliveryPct = data.map((d, i) => {
-                  if (d.delivery_pct != null && !isNaN(d.delivery_pct)) return d.delivery_pct;
+                  if (d.delivery_pct != null) return d.delivery_pct;
                   const delVal = deliveryFinal[i];
                   const vol = d.volume || 1;
                   return (delVal / vol) * 100;
@@ -467,29 +454,35 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
               const sma150 = showSma150 ? calculateSMA(data, 150) : [];
               const sma200 = showSma200 ? calculateSMA(data, 200) : [];
               const rsiObj = showRsi ? calculateRSI(data, 14) : [];
-              const delMaData = showDelMA ? calculateSMA(data.map(d => ({
-                  close: d.delivery_final != null ? Number(d.delivery_final) : Number(d.delivery_qty) || 0
-              })), 20) : [];
               
-              // Swings - Dynamic calculation
+              // Swings
               const swingHighsDates: string[] = [];
               const swingHighsValues: number[] = [];
               const swingLowsDates: string[] = [];
               const swingLowsValues: number[] = [];
               
               if (showSwings && data.length > 4) {
-                  const n = 2; // bars to left and right
-                  for (let i = n; i < data.length - n; i++) {
-                      let isHigh = true;
-                      let isLow = true;
-                      for (let j = 1; j <= n; j++) {
-                          if (data[i].high <= data[i-j].high || data[i].high <= data[i+j].high) isHigh = false;
-                          if (data[i].low >= data[i-j].low || data[i].low >= data[i+j].low) isLow = false;
-                      }
-                      if (isHigh) { swingHighsDates.push(data[i].date); swingHighsValues.push(data[i].high); }
-                      if (isLow) { swingLowsDates.push(data[i].date); swingLowsValues.push(data[i].low); }
-                  }
+                 const n = 2; // bars to left and right
+                 for (let i = n; i < data.length - n; i++) {
+                     let isHigh = true;
+                     let isLow = true;
+                     for (let j = 1; j <= n; j++) {
+                         if (data[i].high <= data[i-j].high || data[i].high <= data[i+j].high) isHigh = false;
+                         if (data[i].low >= data[i-j].low || data[i].low >= data[i+j].low) isLow = false;
+                     }
+                     if (isHigh) {
+                        swingHighsDates.push(data[i].date);
+                        swingHighsValues.push(data[i].high);
+                     }
+                     if (isLow) {
+                        swingLowsDates.push(data[i].date);
+                        swingLowsValues.push(data[i].low);
+                     }
+                 }
               }
+
+              // Delivery MA
+              const delMaData = showDelMA ? calculateSMA(data.map(d => ({close: d.delivery_final != null ? Number(d.delivery_final) : Number(d.delivery_qty) || 0})), 20) : [];
 
               // Shapes for FVGs & Reference lines
               const shapes: any[] = [];
@@ -519,76 +512,85 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
                   });
               }
 
-              // Dynamic FVG Calculation
-              if (showFvg && data.length >= 3) {
-                  const activeFvgs: Array<{type: 'bull' | 'bear', bottom: number, top: number, startDate: string, mitigatedDate: string | null}> = [];
+              if (showFvg) {
+                  const activeFVGs: any[] = [];
                   
+                  // Calculate FVGs dynamically to track mitigation properly over time
                   for (let i = 2; i < data.length; i++) {
-                      const current = data[i];
-                      const candle1 = data[i - 2];
+                      const c1 = data[i-2];
+                      const c3 = data[i]; // current candle
                       
-                      // Check for new FVG formation
-                      // Bullish FVG: Current Low > Candle 1 High
-                      if (current.low > candle1.high) {
-                          activeFvgs.push({
+                      const c3Low = typeof c3.low === 'number' ? c3.low : -1;
+                      const c3High = typeof c3.high === 'number' ? c3.high : -1;
+                      const c1Low = typeof c1.low === 'number' ? c1.low : -1;
+                      const c1High = typeof c1.high === 'number' ? c1.high : -1;
+                      
+                      // Bullish FVG
+                      if (c3Low > c1High && c1High > 0) {
+                          activeFVGs.push({
                               type: 'bull',
-                              bottom: candle1.high,
-                              top: current.low,
-                              startDate: current.date,
-                              mitigatedDate: null
-                          });
-                      }
-                      // Bearish FVG: Current High < Candle 1 Low
-                      else if (current.high < candle1.low) {
-                          activeFvgs.push({
-                              type: 'bear',
-                              bottom: current.high,
-                              top: candle1.low,
-                              startDate: current.date,
-                              mitigatedDate: null
+                              top: c3Low,
+                              bottom: c1High,
+                              startX: data[i-1].date, // Gap candle is i-1
+                              mitigatedX: null
                           });
                       }
                       
-                      // Check for mitigation of existing FVGs
-                      for (const fvg of activeFvgs) {
-                          if (fvg.mitigatedDate !== null) continue; // Already mitigated
-                          
-                          if (fvg.type === 'bull') {
-                              // Bullish FVG mitigated if price drops below bottom
-                              if (current.low < fvg.bottom) {
-                                  fvg.mitigatedDate = current.date;
-                              }
-                          } else {
-                              // Bearish FVG mitigated if price rises above top
-                              if (current.high > fvg.top) {
-                                  fvg.mitigatedDate = current.date;
+                      // Bearish FVG
+                      if (c3High < c1Low && c3High > 0 && c1Low > 0) {
+                          activeFVGs.push({
+                              type: 'bear',
+                              top: c1Low,
+                              bottom: c3High,
+                              startX: data[i-1].date,
+                              mitigatedX: null
+                          });
+                      }
+                      
+                      // Check for full mitigation of active FVGs
+                      activeFVGs.forEach(fvg => {
+                          if (fvg.mitigatedX === null) {
+                              if (fvg.type === 'bull' && c3Low <= fvg.bottom) {
+                                  fvg.mitigatedX = c3.date;
+                              } else if (fvg.type === 'bear' && c3High >= fvg.top) {
+                                  fvg.mitigatedX = c3.date;
                               }
                           }
-                      }
-                  }
-                  
-                  // Render FVGs
-                  const lastDate = dates[dates.length - 1];
-                  for (const fvg of activeFvgs) {
-                      const isMitigated = fvg.mitigatedDate !== null;
-                      const endDate = isMitigated ? fvg.mitigatedDate! : lastDate;
-                      const opacity = isMitigated ? 0.05 : 0.15;
-                      const lineColor = fvg.type === 'bull' ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)';
-                      const fillColor = fvg.type === 'bull' ? 'rgba(74, 222, 128, 0.15)' : 'rgba(248, 113, 113, 0.15)';
-                      const fillOpacity = isMitigated ? 0.05 : 0.15;
-                      
-                      shapes.push({
-                          type: 'rect',
-                          layer: 'below',
-                          xref: 'x', yref: 'y',
-                          x0: fvg.startDate, x1: endDate,
-                          y0: fvg.bottom, y1: fvg.top,
-                          fillcolor: fvg.type === 'bull' 
-                              ? `rgba(74, 222, 128, ${fillOpacity})` 
-                              : `rgba(248, 113, 113, ${fillOpacity})`,
-                          line: isMitigated ? { width: 0 } : { color: lineColor, width: 1 }
                       });
                   }
+                  
+                  activeFVGs.forEach(fvg => {
+                      const isUnmitigated = fvg.mitigatedX === null;
+                      
+                      if (isUnmitigated) {
+                          shapes.push({
+                              type: 'rect',
+                              layer: 'below',
+                              xref: 'x', yref: 'y',
+                              x0: fvg.startX,
+                              x1: dates[dates.length - 1], // Project to end of chart
+                              y0: fvg.bottom,
+                              y1: fvg.top,
+                              fillcolor: fvg.type === 'bull' 
+                                  ? 'rgba(34, 197, 94, 0.15)'   // Solid pale green
+                                  : 'rgba(239, 68, 68, 0.15)',   // Solid pale red
+                              line: {
+                                  color: fvg.type === 'bull' ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)',
+                                  width: 1,
+                                  dash: 'solid'
+                              }
+                          });
+                      } else if (fvg.mitigatedX) {
+                          // Draw mitigated FVGs completely as a box but much fainter, 
+                          // matching the gap span exactly up to mitigation point.
+                          shapes.push({
+                              type: 'rect', layer: 'below', xref: 'x', yref: 'y',
+                              x0: fvg.startX, x1: fvg.mitigatedX, y0: fvg.bottom, y1: fvg.top,
+                              fillcolor: fvg.type === 'bull' ? 'rgba(34, 197, 94, 0.05)' : 'rgba(239, 68, 68, 0.05)',
+                              line: { width: 0 }
+                          });
+                      }
+                  });
               }
 
               if (showRsi) {
@@ -600,177 +602,181 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
               const smartMoneyX: any[] = [];
               const smartMoneyY: any[] = [];
               const smartMoneyText: any[] = [];
+              
+              const delCoreInstX: string[] = [];
+              const delCoreInstY: number[] = [];
+              
+              const delCoreDivX: string[] = [];
+              const delCoreDivY: number[] = [];
+              
+              const delCoreRetX: string[] = [];
+              const delCoreRetY: number[] = [];
 
-              if (showSmartMoney) {
+              if (showSmartMoney || showDelDivergence) {
                   // Calculate moving average of volume to find relative volume
                   const avgVol = calculateSMA(data.map(d => ({close: d.volume_final != null ? Number(d.volume_final) : Number(d.volume) || 1})), 20);
+                  const avgDel60 = calculateSMA(data.map(d => ({close: d.delivery_final != null ? Number(d.delivery_final) : Number(d.delivery) || 0})), 60);
+                  
                   data.forEach((d, i) => {
                        const vol = volumes[i];
-                       const delPct = deliveryPct[i] ?? 0;
-                       const avgV = avgVol[i] ?? 1;
+                       const delPct = deliveryPct[i];
+                       const avgV = avgVol[i] || 1;
                        
                        // Criteria: High relative volume (>2x 20MA) AND high delivery % (>60%)
-                       if (vol > avgV * 1.5 && delPct > 60) {
+                       if (showSmartMoney && vol > avgV * 1.5 && delPct > 60) {
                            smartMoneyX.push(d.date);
                            const isBullish = d.close >= d.open;
                            smartMoneyY.push(isBullish ? d.low * 0.98 : d.high * 1.02);
                            smartMoneyText.push(`Smart Money<br>Vol: ${(vol/1e6).toFixed(2)}M<br>Del: ${delPct.toFixed(1)}%`);
                        }
+                       
+                       // Delivery Intensity Cores
+                       if (showDelDivergence) {
+                           const score = d.delivery_divergence_score || 0;
+                           const bTop = Math.max(d.open, d.close);
+                           const bBot = Math.min(d.open, d.close);
+                           const bodyHeight = Math.max(bTop - bBot, d.close * 0.001); // ensure min visible height
+                           
+                           const delvQty = d.delivery_final != null ? Number(d.delivery_final) : Number(d.delivery) || 0;
+                           const avgDel = avgDel60[i] || 0;
+                           
+                           const isInstitutional = delvQty > avgDel;
+                           const delPctNormalized = Math.min((delPct || 0) / 100, 1);
+                           const coreHeight = bodyHeight * delPctNormalized;
+                           const coreTop = bBot + coreHeight;
+                           
+                           if (isInstitutional) {
+                               delCoreInstX.push(d.date, d.date, null as any);
+                               delCoreInstY.push(bBot, coreTop, null as any);
+                           } else if (score > 0) {
+                               delCoreDivX.push(d.date, d.date, null as any);
+                               delCoreDivY.push(bBot, coreTop, null as any);
+                           } else {
+                               delCoreRetX.push(d.date, d.date, null as any);
+                               delCoreRetY.push(bBot, coreTop, null as any);
+                           }
+                       }
                   });
               }
 
-              // Delivery Intensity Core
-              const delCoreInstX: string[] = [];
-              const delCoreInstY: number[] = [];
-              const delCoreDivX: string[] = [];
-              const delCoreDivY: number[] = [];
-              const delCoreRetX: string[] = [];
-              const delCoreRetY: number[] = [];
-
-              if (showDelDivergence) {
-                  // Calculate 60-period SMA of delivery volume
-                  const delVolData = data.map(d => ({ close: d.delivery_final != null ? Number(d.delivery_final) : Number(d.delivery) || 0 }));
-                  const delVolSMA60 = calculateSMA(delVolData, 60);
-                  
-                  data.forEach((d, i) => {
-                      const score = d.delivery_divergence_score || 0;
-                      const bTop = Math.max(d.open, d.close);
-                      const bBot = Math.min(d.open, d.close);
-                      const bodyHeight = Math.max(bTop - bBot, d.close * 0.001);
-                      
-                      const delPct = deliveryPct[i] ?? 0;
-                      const delvQty = d.delivery_final != null ? Number(d.delivery_final) : Number(d.delivery) || 0;
-                      const avgDel = delVolSMA60[i] || 0;
-                      
-                      const isInstitutional = delvQty > avgDel;
-                      const delPctNormalized = Math.min(delPct / 100, 1);
-                      const coreHeight = bodyHeight * delPctNormalized;
-                      const coreTop = bBot + coreHeight;
-                      
-                      // Push [date, date, null] for X, and [bottom, top, null] for Y
-                      if (isInstitutional) {
-                          delCoreInstX.push(d.date, d.date, null as any);
-                          delCoreInstY.push(bBot, coreTop, null as any);
-                      } else if (score > 0) {
-                          delCoreDivX.push(d.date, d.date, null as any);
-                          delCoreDivY.push(bBot, coreTop, null as any);
-                      } else {
-                          delCoreRetX.push(d.date, d.date, null as any);
-                          delCoreRetY.push(bBot, coreTop, null as any);
-                      }
-                  });
-              }
-
-              // Fixed Range Volume Profile (FRVP)
+              // Volume / Delivery Profile & SR (FRVP)
               const volProfileX: number[] = [];
               const volProfileY: number[] = [];
-              const deliveryProfileX: number[] = [];
-              const deliveryProfileY: number[] = [];
               const volProfileColors: string[] = [];
+              const deliveryProfileY: number[] = [];
+              const deliveryProfileX: number[] = [];
               const deliveryProfileColors: string[] = [];
-              let pocVolBin = -1;
-              let pocDelBin = -1;
+              
+              let globalPocVolY: number | null = null;
+              let globalPocDelY: number | null = null;
 
               if (showDeliveryProfile || showDeliverySR) {
-                  // Calculate visible range based on zoom/pan
-                  const startIndex = visibleIndices !== null 
-                      ? Math.max(0, Math.floor(visibleIndices[0])) 
-                      : 0;
-                  const endIndex = visibleIndices !== null 
-                      ? Math.min(data.length - 1, Math.ceil(visibleIndices[1])) 
-                      : data.length - 1;
+                  // Determine indices to include in profile (FRVP/Visible Range)
+                  let startIndex = 0;
+                  let endIndex = data.length - 1;
                   
-                  const visibleData = data.slice(startIndex, endIndex + 1);
+                  if (visibleIndices && visibleIndices[0] !== null && visibleIndices[1] !== null) {
+                      startIndex = Math.max(0, Math.floor(visibleIndices[0]));
+                      endIndex = Math.min(data.length - 1, Math.ceil(visibleIndices[1]));
+                  }
                   
-                  // Find min/max within visible range
-                  const vMinL = Math.min(...visibleData.map(d => d.low));
-                  const vMaxH = Math.max(...visibleData.map(d => d.high));
-                  
-                  if (vMaxH > vMinL) {
-                      const bins = 60;
-                      const binSize = (vMaxH - vMinL) / bins;
-                      const profileVol = new Array(bins).fill(0);
-                      const profileDelVol = new Array(bins).fill(0);
-
-                      // Generate bins and profiles from visible data
-                      visibleData.forEach((d) => {
-                          const typicalPrice = (d.high + d.low + d.close) / 3;
-                          let binIdx = Math.floor((typicalPrice - vMinL) / binSize);
-                          if (binIdx >= bins) binIdx = bins - 1;
-                          if (binIdx < 0) binIdx = 0;
+                  if (startIndex <= endIndex) {
+                      const visibleData = data.slice(startIndex, endIndex + 1);
+                      if (visibleData.length > 0) {
+                          const vMinL = Math.min(...visibleData.map(d => d.low));
+                          const vMaxH = Math.max(...visibleData.map(d => d.high));
                           
-                          const vol = d.volume_final != null ? Number(d.volume_final) : Number(d.volume) || 0;
-                          const delVol = d.delivery_final != null ? Number(d.delivery_final) : Number(d.delivery) || 0;
-                          
-                          profileVol[binIdx] += vol;
-                          profileDelVol[binIdx] += delVol;
-                      });
-
-                      // Build profile arrays and identify POCs
-                      let maxVol = 0;
-                      let maxDelVol = 0;
-                      
-                      for (let i = 0; i < bins; i++) {
-                          const y = vMinL + (i * binSize) + (binSize / 2);
-                          volProfileY.push(y);
-                          volProfileX.push(profileVol[i]);
-                          volProfileColors.push('rgba(136, 136, 136, 0.15)');
-                          
-                          deliveryProfileY.push(y);
-                          deliveryProfileX.push(profileDelVol[i]);
-                          deliveryProfileColors.push('rgba(6, 182, 212, 0.4)');
-                          
-                          // Track POCs
-                          if (profileVol[i] > maxVol) {
-                              maxVol = profileVol[i];
-                              pocVolBin = i;
-                          }
-                          if (profileDelVol[i] > maxDelVol) {
-                              maxDelVol = profileDelVol[i];
-                              pocDelBin = i;
-                          }
-                      }
-
-                      // Add POC lines
-                      if (pocVolBin >= 0) {
-                          const pocVolY = vMinL + (pocVolBin * binSize) + (binSize / 2);
-                          shapes.push({
-                              type: 'line',
-                              xref: 'paper', x0: 0, x1: 1,
-                              yref: 'y', y0: pocVolY, y1: pocVolY,
-                              line: { color: 'rgba(136, 136, 136, 0.6)', width: 1.5, dash: 'dot' },
-                              label: { text: 'Vol POC', font: { size: 10, color: '#888' }, textposition: 'start' }
-                          });
-                      }
-                      
-                      if (pocDelBin >= 0) {
-                          const pocDelY = vMinL + (pocDelBin * binSize) + (binSize / 2);
-                          shapes.push({
-                              type: 'line',
-                              xref: 'paper', x0: 0, x1: 1,
-                              yref: 'y', y0: pocDelY, y1: pocDelY,
-                              line: { color: 'rgba(6, 182, 212, 0.8)', width: 2, dash: 'dot' },
-                              label: { text: 'Del POC', font: { size: 10, color: '#06b6d4' }, textposition: 'start' }
-                          });
-                      }
-
-                      // Delivery S/R based on visible data
-                      if (showDeliverySR) {
-                          const maxProf = Math.max(...profileDelVol);
-                          for (let i = 2; i < bins - 2; i++) {
-                             if (profileDelVol[i] > profileDelVol[i-1] && profileDelVol[i] > profileDelVol[i-2] &&
-                                 profileDelVol[i] > profileDelVol[i+1] && profileDelVol[i] > profileDelVol[i+2] && 
-                                 profileDelVol[i] > maxProf * 0.3) {
-                                 
-                                 const y = vMinL + (i * binSize) + (binSize / 2);
-                                 shapes.push({
-                                     type: 'line',
-                                     xref: 'paper', x0: 0, x1: 1,
-                                     yref: 'y', y0: y, y1: y,
-                                     line: { color: 'rgba(234, 179, 8, 0.6)', width: 2, dash: 'dot' },
-                                     label: { text: `Del SR`, font: { size: 10, color: '#eab308' }, textposition: 'end' }
-                                 });
-                             }
+                          if (vMaxH > vMinL) {
+                              const bins = 60; 
+                              const binSize = (vMaxH - vMinL) / bins;
+                              
+                              const profileVol = new Array(bins).fill(0);
+                              const profileDelVol = new Array(bins).fill(0);
+        
+                              visibleData.forEach((d) => {
+                                  let typicalPrice = 0;
+                                  if (typeof d.high === 'number' && typeof d.low === 'number' && typeof d.close === 'number') {
+                                    typicalPrice = (d.high + d.low + d.close) / 3;
+                                  } else {
+                                    typicalPrice = d.close;
+                                  }
+                                  
+                                  let binIdx = Math.floor((typicalPrice - vMinL) / binSize);
+                                  if (binIdx >= bins) binIdx = bins - 1;
+                                  if (binIdx < 0) binIdx = 0;
+                                  
+                                  const v = d.volume_final || d.volume || 0;
+                                  const delv = d.delivery_final || d.delivery || 0;
+                                  
+                                  profileVol[binIdx] += v;
+                                  profileDelVol[binIdx] += delv;
+                              });
+        
+                              let maxVol = 0;
+                              let maxDel = 0;
+                              let pocVolBin = 0;
+                              let pocDelBin = 0;
+                              
+                              for (let i = 0; i < bins; i++) {
+                                  const y = vMinL + (i * binSize) + (binSize / 2);
+                                  volProfileY.push(y);
+                                  volProfileX.push(profileVol[i]);
+                                  volProfileColors.push('rgba(136, 136, 136, 0.15)'); // Gray for overall volume
+                                  
+                                  deliveryProfileY.push(y);
+                                  deliveryProfileX.push(profileDelVol[i]);
+                                  deliveryProfileColors.push('rgba(6, 182, 212, 0.4)'); // Solid Cyan
+                                  
+                                  if (profileVol[i] > maxVol) {
+                                      maxVol = profileVol[i];
+                                      pocVolBin = i;
+                                  }
+                                  if (profileDelVol[i] > maxDel) {
+                                      maxDel = profileDelVol[i];
+                                      pocDelBin = i;
+                                  }
+                              }
+        
+                              if (showDeliveryProfile && deliveryProfileX.length > 0) {
+                                  // Draw POC Lines
+                                  if (maxVol > 0) {
+                                      const pocVolY = vMinL + (pocVolBin * binSize) + (binSize / 2);
+                                      globalPocVolY = pocVolY;
+                                      shapes.push({
+                                          type: 'line', xref: 'paper', x0: 0, x1: 1, yref: 'y', y0: pocVolY, y1: pocVolY,
+                                          line: { color: 'rgba(136, 136, 136, 0.7)', width: 1.5, dash: 'solid' },
+                                          label: { text: 'Vol POC', font: { size: 10, color: '#888' }, textposition: 'start' }
+                                      });
+                                  }
+                                  if (maxDel > 0) {
+                                      const pocDelY = vMinL + (pocDelBin * binSize) + (binSize / 2);
+                                      globalPocDelY = pocDelY;
+                                      shapes.push({
+                                          type: 'line', xref: 'paper', x0: 0, x1: 1, yref: 'y', y0: pocDelY, y1: pocDelY,
+                                          line: { color: '#06b6d4', width: 2, dash: 'solid' },
+                                          label: { text: 'Del POC', font: { size: 10, color: '#06b6d4' }, textposition: 'start' }
+                                      });
+                                  }
+                              }
+        
+                              if (showDeliverySR) {
+                                  const maxProf = Math.max(...profileDelVol);
+                                  for (let i = 2; i < bins - 2; i++) {
+                                     if (profileDelVol[i] > profileDelVol[i-1] && profileDelVol[i] > profileDelVol[i-2] &&
+                                         profileDelVol[i] > profileDelVol[i+1] && profileDelVol[i] > profileDelVol[i+2] && 
+                                         profileDelVol[i] > maxProf * 0.3) {
+                                         
+                                         const y = vMinL + (i * binSize) + (binSize / 2);
+                                         shapes.push({
+                                             type: 'line',
+                                             xref: 'paper', x0: 0, x1: 1,
+                                             yref: 'y', y0: y, y1: y,
+                                             line: { color: 'rgba(234, 179, 8, 0.6)', width: 2, dash: 'dot' },
+                                             label: { text: `Del SR`, font: { size: 10, color: '#eab308' }, textposition: 'end' }
+                                         });
+                                     }
+                                  }
+                              }
                           }
                       }
                   }
@@ -825,8 +831,8 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
                       // 3. Liquidity Voids
                       if (showLiqVoids) {
                           const bodySize = Math.abs(d.close - d.open);
-                          const avgBody = atr14[i] ?? 1;
-                          const avgV = avgVol20[i] ?? 1;
+                          const avgBody = atr14[i] || 1;
+                          const avgV = avgVol20[i] || 1;
                           
                           // large body > 1.2x ATR but volume < average -> weak participation / void
                           if (bodySize > avgBody * 1.2 && vol < avgV * 0.9) {
@@ -843,7 +849,7 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
                       
                       // 4. Institutional Blocks
                       if (showInstBlocks) {
-                          const avgV = avgVol20[i] ?? 1;
+                          const avgV = avgVol20[i] || 1;
                           // Volume > 2.5x average AND high delivery > 60% implies institutional block
                           if (vol > avgV * 2.5 && delPct > 60) {
                               instBlocksX.push(d.date);
@@ -875,51 +881,99 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
               const priceDomain = [Math.max(0.1, currentY), 1];
 
               const dataIndex = hoveredIndices[sym] !== undefined && hoveredIndices[sym] >= 0 && hoveredIndices[sym] < dates.length 
-                    ? hoveredIndices[sym] 
-                    : dates.length - 1;
+                  ? hoveredIndices[sym] 
+                  : dates.length - 1;
+
+              // Build current value annotations for the right-hand Y-axis
+              const annotations: any[] = [];
+              const lastIdx = dates.length - 1;
+              if (lastIdx >= 0) {
+                  const pushLabel = (val: number | undefined | null, color: string, bg: string, yaxis: string = 'y') => {
+                      if (typeof val === 'number' && !isNaN(val)) {
+                          // Show exact price for indicators (up to 2 decimals) without 'k'/'M' abbreviation
+                          let text = val.toFixed(2);
+
+                          annotations.push({
+                              x: 1.005, // Slight offset to ensure labels do not sit directly on top of the last candle
+                              xref: 'paper',
+                              y: val,
+                              yref: yaxis,
+                              text: ' ' + text + ' ',
+                              showarrow: false,
+                              xanchor: 'left',
+                              yanchor: 'middle',
+                              bgcolor: bg,
+                              font: { color: color, size: 9 },
+                              bordercolor: bg,
+                              borderwidth: 1,
+                              borderpad: 2,
+                          });
+                      }
+                  };
+
+                  if (showSma20) pushLabel(sma20[lastIdx], '#ffffff', 'rgba(234, 179, 8, 0.8)'); // eab308
+                  if (showSma50) pushLabel(sma50[lastIdx], '#ffffff', 'rgba(14, 165, 233, 0.8)'); // 0ea5e9
+                  if (showSma150) pushLabel(sma150[lastIdx], '#ffffff', 'rgba(217, 70, 239, 0.8)'); // d946ef
+                  if (showSma200) pushLabel(sma200[lastIdx], '#ffffff', 'rgba(249, 115, 22, 0.8)'); // f97316
+                  if (showVwap) pushLabel(vwap[lastIdx], '#ffffff', 'rgba(136, 136, 136, 0.8)');
+                  if (showRsi) pushLabel(rsiObj[lastIdx], '#ffffff', 'rgba(139, 92, 246, 0.8)', 'y3'); // 8b5cf6
+                  if (showNiftyOut) pushLabel(niftyOut[lastIdx], '#ffffff', 'rgba(168, 85, 247, 0.8)', 'y4'); // a855f7
+                  
+                  if (showDelAD && delAdLine.length > 0) {
+                      pushLabel(delAdLine[delAdLine.length - 1], '#ffffff', 'rgba(236, 72, 153, 0.8)', 'y6'); // ec4899
+                  }
+                  if (showDelVwapBands && delVwapMid.length > 0) {
+                      pushLabel(delVwapBandsUpper[delVwapBandsUpper.length - 1], '#ffffff', 'rgba(251, 146, 60, 0.5)'); // fb923c
+                      pushLabel(delVwapBandsLower[delVwapBandsLower.length - 1], '#ffffff', 'rgba(251, 146, 60, 0.5)');
+                      pushLabel(delVwapMid[delVwapMid.length - 1], '#000000', 'rgba(251, 191, 36, 0.8)'); // fbbf24
+                  }
+                  if (showDelivery && showDelMA && delMaData.length > 0) {
+                      pushLabel(delMaData[lastIdx], '#ffffff', 'rgba(245, 158, 11, 0.8)', 'y5'); // f59e0b
+                  }
+                  if (showDeliveryProfile) {
+                      if (globalPocVolY !== null) pushLabel(globalPocVolY, '#ffffff', 'rgba(136, 136, 136, 0.8)');
+                      if (globalPocDelY !== null) pushLabel(globalPocDelY, '#ffffff', 'rgba(6, 182, 212, 0.8)');
+                  }
+                  
+                  // Also add price label for current close price
+                  pushLabel(closes[lastIdx], '#ffffff', closes[lastIdx] >= opens[lastIdx] ? 'rgba(34, 197, 94, 0.8)' : 'rgba(239, 68, 68, 0.8)');
+              }
 
               return (
-                 <div key={sym} className="bg-[#1a1c24] border border-[#ffffff1a] rounded flex flex-col h-[500px] chart-container">
-                    {/* CSS Override to hide Plotly's moving tooltip box while retaining crosshair spikes */}
-                    <style>{'.chart-container .hoverlayer > g.hovertext { display: none !important; }'}</style>
-                    
-                    <div className="px-4 py-2 border-b border-[#ffffff1a] font-mono font-bold text-lg text-white flex justify-between items-center bg-[#0e1117] z-10 relative">
-                        <div className="flex items-center gap-4">
-                            <span>{sym}</span>
-                            <span className="text-xs font-normal text-[#888]">{dates[dataIndex] || ''}</span>
+                 <div key={sym} className="bg-[#1a1c24] border border-[#ffffff1a] rounded flex flex-col h-[500px] chart-container relative overflow-hidden">
+                    {/* Hide the main floating tooltip body and marker paths, but keep the axis labels if possible.
+                        Plotly generates g.hovertext for tooltips. We specifically hide the main custom hover box. */}
+                    <style>{`.chart-container .hoverlayer > g.hovertext { display: none !important; }`}</style>
+                    <div className="px-2 py-1 border-b border-[#ffffff1a] font-mono font-bold text-sm text-white flex justify-between items-center bg-[#0e1117] z-10 relative">
+                        <div className="flex items-center gap-3">
+                            <span className="text-base leading-none">{sym}</span>
+                            <span className="text-[10px] font-normal text-[#888] tracking-widest">{dates[dataIndex] || ''}</span>
                         </div>
-                        <div className="flex gap-4 text-xs font-normal flex-wrap justify-end">
-                           <span className="text-[#888]">O: <span className="text-[#fafafa]">{String(opens[dataIndex]?.toFixed(2) || 'N/A')}</span></span>
-                           <span className="text-[#888]">H: <span className="text-[#fafafa]">{String(highs[dataIndex]?.toFixed(2) || 'N/A')}</span></span>
-                           <span className="text-[#888]">L: <span className="text-[#fafafa]">{String(lows[dataIndex]?.toFixed(2) || 'N/A')}</span></span>
-                           <span className="text-[#888]">C: <span className="text-[#fafafa]">{String(closes[dataIndex]?.toFixed(2) || 'N/A')}</span></span>
+                        <div className="flex gap-3 text-[10px] font-normal flex-wrap justify-end tracking-wider">
+                           <span className="text-[#888]">O:<span className="text-[#fafafa] ml-1">{opens[dataIndex]?.toFixed(1)}</span></span>
+                           <span className="text-[#888]">H:<span className="text-[#fafafa] ml-1">{highs[dataIndex]?.toFixed(1)}</span></span>
+                           <span className="text-[#888]">L:<span className="text-[#fafafa] ml-1">{lows[dataIndex]?.toFixed(1)}</span></span>
+                           <span className="text-[#888]">C:<span className="text-[#fafafa] ml-1">{closes[dataIndex]?.toFixed(1)}</span></span>
                            
-                           <span className="text-[#888]">Vol: <span className="text-[#fafafa]">{typeof volumes[dataIndex] === 'number' ? (volumes[dataIndex] >= 1000000 ? (volumes[dataIndex] / 1000000).toFixed(2) + 'M' : (volumes[dataIndex] / 1000).toFixed(1) + 'k') : '-'}</span></span>
-                           {deliveryPct[dataIndex] != null && !Number.isNaN(deliveryPct[dataIndex]) && <span className="text-[#888]">Del: <span className="text-[#fafafa]">{Number(deliveryPct[dataIndex]).toFixed(1)}%</span></span>}
-                           {trendAlignment[dataIndex] != null && !Number.isNaN(trendAlignment[dataIndex]) && <span className="text-[#888]">Trend: <span className={`font-bold ${trendAlignment[dataIndex] > 0 ? 'text-green-400' : (trendAlignment[dataIndex] < 0 ? 'text-red-400' : 'text-[#fafafa]')}`}>{trendAlignment[dataIndex]}</span></span>}
+                           <span className="text-[#888]">V:<span className="text-[#fafafa] ml-1">{typeof volumes[dataIndex] === 'number' ? (volumes[dataIndex] >= 1000000 ? (volumes[dataIndex] / 1000000).toFixed(1) + 'M' : (volumes[dataIndex] / 1000).toFixed(0) + 'k') : '-'}</span></span>
+                           {deliveryPct[dataIndex] != null && <span className="text-[#888]">D:<span className="text-[#fafafa] ml-1">{Number(deliveryPct[dataIndex]).toFixed(0)}%</span></span>}
+                           {trendAlignment[dataIndex] != null && !Number.isNaN(trendAlignment[dataIndex]) && <span className="text-[#888] hidden sm:inline">Trend:<span className={`font-bold ml-1 ${trendAlignment[dataIndex] > 0 ? 'text-green-400' : (trendAlignment[dataIndex] < 0 ? 'text-red-400' : 'text-[#fafafa]')}`}>{trendAlignment[dataIndex]}</span></span>}
                         </div>
-                    </div>
-                    {/* TradingView-style sticky details bar */}
-                    <div className="px-3 py-1 bg-[#0e1117] border-b border-[#ffffff1a] flex items-center gap-4 text-[10px] tracking-wider font-mono text-[#fafafa] sticky top-0 z-20">
-                        <span className="font-semibold">{sym}</span>
-                        <span className="text-[#888]">{dates[dataIndex] || ''}</span>
-                        <span className="text-[#888]">O: <span className="text-white">{String(opens[dataIndex]?.toFixed(2) || 'N/A')}</span></span>
-                        <span className="text-[#888]">H: <span className="text-white">{String(highs[dataIndex]?.toFixed(2) || 'N/A')}</span></span>
-                        <span className="text-[#888]">L: <span className="text-white">{String(lows[dataIndex]?.toFixed(2) || 'N/A')}</span></span>
-                        <span className="text-[#888]">C: <span className="text-white">{String(closes[dataIndex]?.toFixed(2) || 'N/A')}</span></span>
-                        <span className="text-[#888]">Vol: <span className="text-white">{typeof volumes[dataIndex] === 'number' ? (volumes[dataIndex] >= 1000000 ? (volumes[dataIndex] / 1000000).toFixed(2) + 'M' : (volumes[dataIndex] / 1000).toFixed(1) + 'k') : '-'}</span></span>
-                        {deliveryPct[dataIndex] != null && !Number.isNaN(deliveryPct[dataIndex]) && <span className="text-[#888]">Del: <span className="text-white">{Number(deliveryPct[dataIndex]).toFixed(1)}%</span></span>}
                     </div>
                     <div className="flex-1 w-full relative">
                         <Plot
-                             onHover={(e) => setHoveredIndices(prev => ({ ...prev, [sym]: e.points?.[0]?.pointIndex }))}
+                             onHover={(e) => {
+                                 if (e.points && e.points.length > 0 && e.points[0].pointIndex !== undefined) {
+                                     setHoveredIndices(prev => ({ ...prev, [sym]: e.points[0].pointIndex }));
+                                 }
+                             }}
                              onUnhover={() => {
-                                setHoveredIndices(prev => {
-                                    const next = { ...prev };
-                                    delete next[sym];
-                                    return next;
-                                });
-                            }}
+                                 setHoveredIndices(prev => {
+                                     const next = { ...prev };
+                                     delete next[sym];
+                                     return next;
+                                 });
+                             }}
                              data={[
                                  // Main Candlestick
                                  {
@@ -928,20 +982,19 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
                                      name: sym, yaxis: 'y',
                                      increasing: {line: {color: '#22c55e', width: 1.5}, fillcolor: '#1a1c24'}, // hollow body
                                      decreasing: {line: {color: '#ef4444', width: 1.5}, fillcolor: '#ef4444'}, // filled body
-                                     hoverinfo: 'none',
                                      customdata: dates.map((_, i) => {
-                                         const v = volumes[i] ?? 0;
+                                         const v = volumes[i] || 0;
                                          const volStr = v >= 1000000 
                                              ? (v / 1000000).toFixed(2) + 'M'
                                              : (v / 1000).toFixed(1) + 'k';
-                                         const divScore = data[i]?.delivery_divergence_score ?? 0;
+                                         
                                          return [
                                              (deliveryPct[i] ?? 0).toFixed(1),
                                              (relVol[i] ?? 0).toFixed(2),
                                              (volComp[i] ?? 0).toFixed(2),
                                              (stockReturn[i] ?? 0).toFixed(2),
                                              volStr,
-                                             divScore.toFixed(2)
+                                             (data[i]?.delivery_divergence_score ?? 0).toFixed(2)
                                          ];
                                      }),
                                      hovertemplate: 
@@ -951,52 +1004,55 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
                                          'L: %{low:.2f}<br>' +
                                          'C: %{close:.2f}<br>' +
                                          '<br>Vol: %{customdata[4]}<br>' +
-                                         'Del: %{customdata[0]}%<br>' +
-                                         'Rel Vol: %{customdata[1]}x<br>' +
-                                         'Vol Comp: %{customdata[2]}x<br>' +
+                                         'Del%: %{customdata[0]}<br>' +
+                                         'Rel Vol: %{customdata[1]}<br>' +
+                                         'Vol Comp: %{customdata[2]}<br>' +
                                          'Ret: %{customdata[3]}%<br>' +
                                          'Div Score: %{customdata[5]}<extra></extra>'
                                  },
+                                 
                                  // Divergence Cores Overlay (Institutional Absorption)
                                  ...(showDelDivergence && delCoreInstX.length > 0 ? [{
                                      type: 'scattergl',
                                      mode: 'lines',
                                      x: delCoreInstX,
                                      y: delCoreInstY,
-                                     line: { color: '#00f2ff', width: 3 },
+                                     line: { color: '#00f2ff', width: 3 }, // Bright Cyan
                                      name: 'Inst. Accumulation Core',
                                      yaxis: 'y',
                                      hoverinfo: 'skip'
                                  } as any] : []),
+
                                  // Divergence Cores Overlay (Divergence - Retail Selling, Smart Buying)
                                  ...(showDelDivergence && delCoreDivX.length > 0 ? [{
                                      type: 'scattergl',
                                      mode: 'lines',
                                      x: delCoreDivX,
                                      y: delCoreDivY,
-                                     line: { color: '#FF9800', width: 3 },
+                                     line: { color: '#FF9800', width: 3 }, // Bright Gold
                                      name: 'Divergence Core',
                                      yaxis: 'y',
                                      hoverinfo: 'skip'
                                  } as any] : []),
+
                                  // Divergence Cores Overlay (Retail)
                                  ...(showDelDivergence && delCoreRetX.length > 0 ? [{
                                      type: 'scattergl',
                                      mode: 'lines',
                                      x: delCoreRetX,
                                      y: delCoreRetY,
-                                     line: { color: '#4a4a4a', width: 3 },
+                                     line: { color: '#4a4a4a', width: 3 }, // Muted Grey
                                      name: 'Retail Core',
                                      yaxis: 'y',
                                      hoverinfo: 'skip'
                                  } as any] : []),
                                  // Overlays
-                                 ...(showVwap ? [{ type: 'scattergl', mode: 'lines', x: dates, y: vwap, name: 'VWAP', line: { color: '#888', width: 1.5, dash: 'dot' }, yaxis: 'y', hoverinfo: 'none' } as any] : []),
-                                 ...(showSma20 ? [{ type: 'scattergl', mode: 'lines', x: dates, y: sma20, name: 'SMA20', line: { color: '#eab308', width: 1 }, yaxis: 'y', hoverinfo: 'none' } as any] : []),
-                                 ...(showSma50 ? [{ type: 'scattergl', mode: 'lines', x: dates, y: sma50, name: 'SMA50', line: { color: '#0ea5e9', width: 1 }, yaxis: 'y', hoverinfo: 'none' } as any] : []),
-                                 ...(showSma150 ? [{ type: 'scattergl', mode: 'lines', x: dates, y: sma150, name: 'SMA150', line: { color: '#d946ef', width: 1.5 }, yaxis: 'y', hoverinfo: 'none' } as any] : []),
-                                 ...(showSma200 ? [{ type: 'scattergl', mode: 'lines', x: dates, y: sma200, name: 'SMA200', line: { color: '#f97316', width: 1.5 }, yaxis: 'y', hoverinfo: 'none' } as any] : []),
-                                 ...(showNiftyOut ? [{ type: 'scattergl', mode: 'lines', x: dates, y: niftyOut, name: 'Nifty Outperf.', line: { color: '#a855f7', width: 1.5 }, yaxis: 'y4', opacity: 0.8, fill: 'tozeroy', fillcolor: 'rgba(168, 85, 247, 0.1)', hoverinfo: 'none' } as any] : []),
+                                 ...(showVwap ? [{ type: 'scattergl', mode: 'lines', x: dates, y: vwap, name: 'VWAP', line: { color: '#888', width: 1.5, dash: 'dot' }, yaxis: 'y', hovertemplate: '%{y:.2f}' } as any] : []),
+                                 ...(showSma20 ? [{ type: 'scattergl', mode: 'lines', x: dates, y: sma20, name: 'SMA20', line: { color: '#eab308', width: 1 }, yaxis: 'y', hovertemplate: '%{y:.2f}' } as any] : []),
+                                 ...(showSma50 ? [{ type: 'scattergl', mode: 'lines', x: dates, y: sma50, name: 'SMA50', line: { color: '#0ea5e9', width: 1 }, yaxis: 'y', hovertemplate: '%{y:.2f}' } as any] : []),
+                                 ...(showSma150 ? [{ type: 'scattergl', mode: 'lines', x: dates, y: sma150, name: 'SMA150', line: { color: '#d946ef', width: 1.5 }, yaxis: 'y', hovertemplate: '%{y:.2f}' } as any] : []),
+                                 ...(showSma200 ? [{ type: 'scattergl', mode: 'lines', x: dates, y: sma200, name: 'SMA200', line: { color: '#f97316', width: 1.5 }, yaxis: 'y', hovertemplate: '%{y:.2f}' } as any] : []),
+                                 ...(showNiftyOut ? [{ type: 'scattergl', mode: 'lines', x: dates, y: niftyOut, name: 'Nifty Outperf.', line: { color: '#a855f7', width: 1.5 }, yaxis: 'y4', opacity: 0.8, fill: 'tozeroy', fillcolor: 'rgba(168, 85, 247, 0.1)', hovertemplate: '%{y:.2f}%' } as any] : []),
                                  
                                  // Swing points
                                  ...(showSwings && swingHighsDates.length > 0 ? [{ type: 'scattergl', mode: 'markers+text', x: swingHighsDates, y: swingHighsValues, name: 'Swing High', marker: { symbol: 'triangle-down', size: 8, color: '#ef4444' }, text: swingHighsValues.map(v => v?.toFixed(1)), textposition: 'top center', textfont: {size: 9, color: '#ef4444'}, yaxis: 'y' } as any] : []),
@@ -1036,20 +1092,20 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
                                  ...(showDelVwapBands ? [
                                      { type: 'scattergl', mode: 'lines', x: dates, y: delVwapBandsUpper, name: 'Del. VWAP High', line: { color: 'rgba(251, 146, 60, 0.7)', width: 1.5, dash: 'dot' }, yaxis: 'y', hoverinfo: 'none' } as any,
                                      { type: 'scattergl', mode: 'lines', x: dates, y: delVwapBandsLower, name: 'Del. VWAP Low', line: { color: 'rgba(251, 146, 60, 0.7)', width: 1.5, dash: 'dot' }, fill: 'tonexty', fillcolor: 'rgba(251, 146, 60, 0.1)', yaxis: 'y', hoverinfo: 'none' } as any,
-                                     { type: 'scattergl', mode: 'lines', x: dates, y: delVwapMid, name: 'Del. VWAP', line: { color: '#fbbf24', width: 2, dash: 'solid' }, yaxis: 'y', hoverinfo: 'none' } as any
+                                     { type: 'scattergl', mode: 'lines', x: dates, y: delVwapMid, name: 'Del. VWAP', line: { color: '#fbbf24', width: 2, dash: 'solid' }, yaxis: 'y', hovertemplate: 'Del VWAP: %{y:.2f}' } as any
                                  ] : []),
 
-                                 // Delivery Profile Overlay
-                                 ...(showDeliveryProfile && deliveryProfileX.length > 0 ? [{
-                                     type: 'bar',
-                                     orientation: 'h',
-                                     x: deliveryProfileX, y: deliveryProfileY,
-                                     marker: { color: deliveryProfileColors },
-                                     xaxis: 'x2',
-                                     yaxis: 'y',
-                                     hoverinfo: 'skip',
-                                     name: 'Del Profile'
-                                 } as any] : []),
+                                 // Volume / Delivery Profile Overlay
+                                 ...(showDeliveryProfile && volProfileX.length > 0 ? [
+                                     {
+                                         type: 'bar', orientation: 'h', xaxis: 'x2', yaxis: 'y', hoverinfo: 'skip', name: 'Total Vol Profile',
+                                         x: volProfileX, y: volProfileY, marker: { color: volProfileColors }
+                                     } as any,
+                                     {
+                                         type: 'bar', orientation: 'h', xaxis: 'x2', yaxis: 'y', hoverinfo: 'skip', name: 'Del Vol Profile',
+                                         x: deliveryProfileX, y: deliveryProfileY, marker: { color: deliveryProfileColors }
+                                     } as any
+                                 ] : []),
 
                                  // Volume Histogram Pane
                                  ...(showVolume ? [{
@@ -1058,7 +1114,7 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
                                      name: 'Vol',
                                      yaxis: 'y2',
                                      marker: { color: volumeColors },
-                                     hoverinfo: 'none'
+                                     hovertemplate: '%{y:.2s}'
                                  } as any] : []),
 
                                  // Delivery Percent Pane
@@ -1068,7 +1124,7 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
                                      name: 'Del Qty',
                                      yaxis: 'y5',
                                      marker: { color: deliveryColorsInverse, opacity: 0.8 },
-                                     hoverinfo: 'none'
+                                     hovertemplate: '%{y:.2s}<br>Pct: %{customdata[0]}%<extra></extra>'
                                  }] : []),
                                  ...(showDelivery && showDelMA ? [{
                                      type: 'scattergl',
@@ -1077,52 +1133,19 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
                                      name: 'Del MA (20)',
                                      yaxis: 'y5',
                                      line: { color: '#f59e0b', width: 2 },
-                                     hoverinfo: 'none'
+                                     hovertemplate: 'MA: %{y:.2s}<extra></extra>'
                                  } as any] : []),
                                  
                                  // RSI
                                  ...(showRsi ? [
-                                     { type: 'scattergl', mode: 'lines', x: dates, y: rsiObj, name: 'RSI(14)', line: { color: '#8b5cf6', width: 1.5 }, yaxis: 'y3', hoverinfo: 'none' } as any
+                                     { type: 'scattergl', mode: 'lines', x: dates, y: rsiObj, name: 'RSI(14)', line: { color: '#8b5cf6', width: 1.5 }, yaxis: 'y3', hovertemplate: '%{y:.1f}' } as any
                                  ] : []),
                                  
                                  // Delivery A/D
                                  ...(showDelAD ? [
-                                     { type: 'scattergl', mode: 'lines', x: dates, y: delAdLine, name: 'Del. A/D', line: { color: '#ec4899', width: 1.5 }, yaxis: 'y6', hoverinfo: 'none', fill: 'tozeroy', fillcolor: 'rgba(236,72,153,0.1)' } as any
-                                 ] : []),
-                                 
-                                 // Fixed Range Volume Profile - Total Volume
-                                 ...(showDeliveryProfile && volProfileX.length > 0 ? [{
-                                     type: 'bar',
-                                     orientation: 'h',
-                                     x: volProfileX,
-                                     y: volProfileY,
-                                     marker: { color: volProfileColors },
-                                     name: 'Volume Profile',
-                                     xaxis: 'x2',
-                                     yaxis: 'y',
-                                     hoverinfo: 'skip'
-                                 } as any] : []),
-                                 
-                                 // Fixed Range Volume Profile - Delivery Volume
-                                 ...(showDeliveryProfile && deliveryProfileX.length > 0 ? [{
-                                     type: 'bar',
-                                     orientation: 'h',
-                                     x: deliveryProfileX,
-                                     y: deliveryProfileY,
-                                     marker: { color: deliveryProfileColors },
-                                     name: 'Delivery Profile',
-                                     xaxis: 'x2',
-                                     yaxis: 'y',
-                                     hoverinfo: 'skip'
-                                 } as any] : [])
+                                     { type: 'scattergl', mode: 'lines', x: dates, y: delAdLine, name: 'Del. A/D', line: { color: '#ec4899', width: 1.5 }, yaxis: 'y6', hovertemplate: 'Val: %{y:.2s}', fill: 'tozeroy', fillcolor: 'rgba(236,72,153,0.1)' } as any
+                                 ] : [])
                              ]}
-                             onRelayout={(e: any) => {
-                                 if (e['xaxis.range[0]'] !== undefined && e['xaxis.range[1]'] !== undefined) {
-                                     setVisibleIndices([e['xaxis.range[0]'], e['xaxis.range[1]']]);
-                                 } else if (e['xaxis.autorange']) {
-                                     setVisibleIndices(null);
-                                 }
-                             }}
                              layout={{
                                  autosize: true,
                                  margin: { l: 40, r: 40, t: 10, b: 24 }, // minimal padding
@@ -1133,7 +1156,6 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
                                  hovermode: 'x',
                                  hoverlabel: { bgcolor: 'rgba(14, 17, 23, 0.4)', bordercolor: 'rgba(255, 255, 255, 0.1)', font: { family: 'ui-monospace', size: 11 } },
                                  dragmode: 'pan',
-                                 barmode: 'overlay',
                                  xaxis: {
                                     rangeslider: { visible: false },
                                     showgrid: false,
@@ -1153,14 +1175,9 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
                                     showgrid: false,
                                     zeroline: false,
                                     showticklabels: false,
-                                    range: [0, Math.max(...volProfileX, 1) * 3], // Bars take up max 1/3 of chart
-                                    showspikes: true,
-                                    spikemode: 'across',
-                                    spikesnap: 'cursor',
-                                    spikedash: 'solid',
-                                    spikecolor: '#555',
-                                    spikethickness: 1,
+                                    range: [0, Math.max(...volProfileX, 1) * 3] // Bars take up max 1/3 of chart
                                  },
+                                 barmode: 'overlay',
                                  yaxis: {
                                     domain: priceDomain,
                                     gridcolor: 'rgba(255,255,255,0.05)',
@@ -1181,26 +1198,14 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
                                     zeroline: false,
                                     showticklabels: true,
                                     tickformat: '.2s',
-                                    visible: showVolume,
-                                    showspikes: true,
-                                    spikemode: 'across',
-                                    spikesnap: 'cursor',
-                                    spikedash: 'solid',
-                                    spikecolor: '#555',
-                                    spikethickness: 1,
+                                    visible: showVolume
                                  },
                                  yaxis3: {
                                     domain: rsiDomain,
                                     gridcolor: 'rgba(255,255,255,0.05)',
                                     zeroline: false,
                                     tickvals: [0, 30, 50, 70, 100],
-                                    visible: showRsi,
-                                    showspikes: true,
-                                    spikemode: 'across',
-                                    spikesnap: 'cursor',
-                                    spikedash: 'solid',
-                                    spikecolor: '#555',
-                                    spikethickness: 1,
+                                    visible: showRsi
                                  },
                                  yaxis4: {
                                     domain: priceDomain,
@@ -1208,26 +1213,14 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
                                     overlaying: 'y',
                                     showgrid: false,
                                     zeroline: false,
-                                    visible: showNiftyOut,
-                                    showspikes: true,
-                                    spikemode: 'across',
-                                    spikesnap: 'cursor',
-                                    spikedash: 'solid',
-                                    spikecolor: '#555',
-                                    spikethickness: 1,
+                                    visible: showNiftyOut
                                  },
                                  yaxis5: {
                                     domain: delDomain,
                                     gridcolor: 'rgba(255,255,255,0.05)',
                                     zeroline: false,
                                     tickformat: '.2s',
-                                    visible: showDelivery,
-                                    showspikes: true,
-                                    spikemode: 'across',
-                                    spikesnap: 'cursor',
-                                    spikedash: 'solid',
-                                    spikecolor: '#555',
-                                    spikethickness: 1,
+                                    visible: showDelivery
                                  },
                                  yaxis6: {
                                     domain: delAdDomain,
@@ -1235,15 +1228,10 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
                                     zeroline: false,
                                     tickformat: '.2s',
                                     visible: showDelAD,
-                                    title: { text: 'Del. A/D', font: { size: 10, color: '#888' } },
-                                    showspikes: true,
-                                    spikemode: 'across',
-                                    spikesnap: 'cursor',
-                                    spikedash: 'solid',
-                                    spikecolor: '#555',
-                                    spikethickness: 1,
+                                    title: { text: 'Del. A/D', font: { size: 10, color: '#888' } }
                                  },
-                                 shapes: shapes
+                                 shapes: shapes,
+                                 annotations: annotations
                              }}
                              config={{
                                  responsive: true,
@@ -1252,6 +1240,13 @@ export default function AdvancedChartView({ lib, initialSymbol }: { lib: Librari
                                  modeBarButtonsToRemove: ['lasso2d', 'select2d'],
                                  displaylogo: false,
                                  scrollZoom: true
+                             }}
+                             onRelayout={(e: any) => {
+                                 if (e['xaxis.range[0]'] !== undefined && e['xaxis.range[1]'] !== undefined) {
+                                     setVisibleIndices([e['xaxis.range[0]'], e['xaxis.range[1]']]);
+                                 } else if (e['xaxis.autorange']) {
+                                     setVisibleIndices(null);
+                                 }
                              }}
                              style={{ width: '100%', height: '100%' }}
                         />

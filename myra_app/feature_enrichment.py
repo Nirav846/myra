@@ -186,7 +186,23 @@ def process_enrichment_pipeline(lib, conn):
         if table_name not in ALLOWED_QUERIES:
             raise ValueError("Invalid table name")
 
-        df_raw = pl.read_database(ALLOWED_QUERIES[table_name], conn)
+        df_raw = pl.read_database(
+            ALLOWED_QUERIES[table_name],
+            conn,
+            infer_schema_length=None,
+            schema_overrides={
+                "volume": pl.Int64,
+                "delivery": pl.Int64,
+                "trades": pl.Int64,
+                "delivery_qty": pl.Float64,
+                "delivery_pct": pl.Float64,
+                "open": pl.Float64,
+                "high": pl.Float64,
+                "low": pl.Float64,
+                "close": pl.Float64,
+                "vwap": pl.Float64,
+            }
+        )
         nifty_pd = pd.read_sql(
             "SELECT date, close FROM technical_data WHERE symbol LIKE '%NIFTY 50%'",
             conn,

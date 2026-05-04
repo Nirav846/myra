@@ -7,7 +7,9 @@ from io import StringIO
 
 import pandas as pd
 
+from myra_app.constants import DB_DIR
 from myra_app.fetcher import GhostSession
+from myra_app.librarian_core import LibrarianCore
 
 
 class SectorManager:
@@ -16,8 +18,8 @@ class SectorManager:
     Handles hybrid fetching, normalization, and meta.db updates.
     """
 
-    def __init__(self, db_path="db/meta.db"):
-        self.db_path = db_path
+    def __init__(self, db_path=None):
+        self.db_path = db_path or os.path.join(DB_DIR, LibrarianCore.DB_MAP["meta"])
         self.session = GhostSession(cache_path="db/network_cache.sqlite")
         self.config_path = "config/sources.json"
         self.map_path = "config/sector_map.json"
@@ -350,20 +352,11 @@ class SectorManager:
         if in_master:
             self._batch_update_symbols(in_master, master_map)
 
-        # 4. FALLBACK: Try yfinance/Screener for anything still missing (SMEs/New Listings)
+        # 4. FALLBACK: Skip yfinance per-symbol fallback for bulk run (too slow for SMEs)
         if remaining:
-            print(f"[MYRA] Processing {len(remaining)} symbols via slow fallbacks...")
-            chunk_size = 50
-            for i in range(0, len(remaining), chunk_size):
-                chunk = remaining[i : i + chunk_size]
-                yf_results = {}
-                for s in chunk:
-                    data = self.fetch_symbol_fallback(s)
-                    if data:
-                        yf_results[s] = data
-
-                if yf_results:
-                    self._batch_update_symbols(list(yf_results.keys()), yf_results)
+            print(f"[MYRA] {len(remaining)} symbols not found in bulk sources "
+                  f"(SME/unlisted) — skipping yfinance fallback. "
+                  f"These will show as 'Uncharted Sector' in UI.")
 
         print("[MYRA] Sector Sync Logic complete.")
 

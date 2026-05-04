@@ -99,6 +99,10 @@ sync_log.txt
 # --- Exceptions ---
 !results/Data/yfinance.cache.zip
 HELP FILES/
+!*.ts
+!src/**/         # Ensure Git looks into all subdirectories under src
+!*.ts            # Whitelist TypeScript files
+!*.tsx           # Whitelist React TypeScript files
 
 # Dev/debug scripts (keep in root only during active session)
 check_*.py

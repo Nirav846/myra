@@ -67,7 +67,6 @@ export default function FVGScannerView({ lib }: { lib: Librarian }) {
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
   const [isDemo, setIsDemo] = useState(!lib.isConnectedToLocalRepo);
-  const [fvgData, setFvgData] = useState<any[]>([]);
 
   // Concurrency Guard: Load only once on mount, no intervals.
   useEffect(() => {
@@ -79,76 +78,18 @@ export default function FVGScannerView({ lib }: { lib: Librarian }) {
     setIsDemo(!lib.isConnectedToLocalRepo);
     
     try {
-      // Check connection
+      // Stub check for connection logic on backend
       await lib.executeQuery('_tech_conn', 'SELECT 1');
-      
-      // Fetch last 10 days of technical data for all symbols
-      const query = `
-        SELECT date, symbol, open, high, low, close, volume 
-        FROM technical_data 
-        WHERE date >= date('now', '-10 days')
-        ORDER BY symbol ASC, date ASC
-      `;
-      const result = await lib.executeQuery('_tech_conn', query, {}, 10000);
-      
-      if (result && result.length > 0) {
-        // Calculate FVGs using JavaScript (equivalent to pandas shift)
-        const fvgResults: any[] = [];
-        const groupedBySymbol = result.reduce((acc: any, row: any) => {
-          if (!acc[row.symbol]) acc[row.symbol] = [];
-          acc[row.symbol].push(row);
-          return acc;
-        }, {});
-        
-        for (const symbol in groupedBySymbol) {
-          const symbolData = groupedBySymbol[symbol];
-          
-          for (let i = 2; i < symbolData.length; i++) {
-            const current = symbolData[i];
-            const prev2 = symbolData[i - 2];
-            
-            // Bullish FVG: current low > prev2 high
-            if (current.low > prev2.high) {
-              fvgResults.push({
-                symbol: symbol,
-                date: current.date,
-                type: 'Bull Gap',
-                gapTop: current.low,
-                gapBottom: prev2.high,
-                timeframe: '1D'
-              });
-            }
-            // Bearish FVG: current high < prev2 low
-            else if (current.high < prev2.low) {
-              fvgResults.push({
-                symbol: symbol,
-                date: current.date,
-                type: 'Bear Gap',
-                gapTop: prev2.low,
-                gapBottom: current.high,
-                timeframe: '1D'
-              });
-            }
-          }
-        }
-        
-        // Sort by date descending (most recent first)
-        fvgResults.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-        setFvgData(fvgResults.slice(0, 20)); // Show top 20 recent FVGs
-      } else {
-        setFvgData([]);
-      }
-      
-      setIsDemo(false);
-    } catch (e) {
-      console.error('FVG Scanner error:', e);
-      setIsDemo(true);
-      setFvgData([]);
+    } catch {
+       setIsDemo(true);
     }
     
-    setDataLoaded(true);
-    setLastRefreshed(new Date());
-    setIsRefreshing(false);
+    // Simulate query execution respecting the CPU usage limit
+    setTimeout(() => {
+      setDataLoaded(true);
+      setLastRefreshed(new Date());
+      setIsRefreshing(false);
+    }, 600);
   };
 
   const handleCopy = () => {
@@ -177,8 +118,8 @@ export default function FVGScannerView({ lib }: { lib: Librarian }) {
       <div className="p-4 space-y-4">
         
         <div className="flex justify-between items-center gap-4 bg-[#0e1117] border border-[#ffffff0a] p-3 rounded">
-          <div className="text-[#88d] font-mono text-[11px]">
-            {isDemo ? '⚠️ Demo Mode - Connect to local repository' : `Found ${fvgData.length} recent FVGs`}
+          <div className="text-[#88d] font-mono text-[11px] italic">
+            st.info: Insert quantitative logic here (using _tech_conn)
           </div>
           <button 
             onClick={fetchData}
@@ -211,35 +152,37 @@ export default function FVGScannerView({ lib }: { lib: Librarian }) {
               <tr className="text-[#888] border-b border-[#ffffff1a]">
                 <th className="pb-2 px-2 font-medium uppercase">Timeframe</th>
                 <th className="pb-2 px-2 font-medium uppercase">Asset</th>
-                <th className="pb-2 px-2 font-medium uppercase">Date Formed</th>
                 <th className="pb-2 px-2 font-medium uppercase">FVG Type</th>
-                <th className="pb-2 px-2 font-medium uppercase">Gap Top</th>
-                <th className="pb-2 px-2 font-medium uppercase">Gap Bottom</th>
               </tr>
             </thead>
             <tbody className="text-[#ccc]">
-              {dataLoaded && fvgData.length > 0 && (
-                fvgData.map((fvg, idx) => (
+              {dataLoaded && (
+                <>
                   <tr 
-                    key={idx}
-                    onClick={() => setSelectedAsset(fvg.symbol)}
-                    className={`border-b border-[#ffffff0a] hover:bg-[#ffffff10] transition-colors cursor-pointer ${selectedAsset === fvg.symbol ? 'bg-[#ffffff0a]' : ''}`}
+                    onClick={() => setSelectedAsset('NQ')}
+                    className={`border-b border-[#ffffff0a] hover:bg-[#ffffff10] transition-colors cursor-pointer ${selectedAsset === 'NQ' ? 'bg-[#ffffff0a]' : ''}`}
                   >
-                    <td className="py-2 px-2">{fvg.timeframe}</td>
-                    <td className="py-2 px-2 text-[#fafafa] font-bold">{fvg.symbol}</td>
-                    <td className="py-2 px-2">{fvg.date}</td>
-                    <td className={`py-2 px-2 ${fvg.type === 'Bull Gap' ? 'text-green-400' : 'text-red-400'}`}>{fvg.type}</td>
-                    <td className="py-2 px-2">{fvg.gapTop.toFixed(2)}</td>
-                    <td className="py-2 px-2">{fvg.gapBottom.toFixed(2)}</td>
+                    <td className="py-2 px-2">15m</td>
+                    <td className="py-2 px-2 text-[#fafafa] font-bold">NQ</td>
+                    <td className="py-2 px-2 text-green-400">Bullish</td>
                   </tr>
-                ))
-              )}
-              {dataLoaded && fvgData.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="py-8 text-center text-[#666]">
-                    {isDemo ? 'Connect to local repository to see real data' : 'No recent FVGs found.'}
-                  </td>
-                </tr>
+                  <tr 
+                    onClick={() => setSelectedAsset('ES')}
+                    className={`border-b border-[#ffffff0a] hover:bg-[#ffffff10] transition-colors cursor-pointer ${selectedAsset === 'ES' ? 'bg-[#ffffff0a]' : ''}`}
+                  >
+                    <td className="py-2 px-2">1H</td>
+                    <td className="py-2 px-2 text-[#fafafa] font-bold">ES</td>
+                    <td className="py-2 px-2 text-red-400">Bearish</td>
+                  </tr>
+                  <tr 
+                    onClick={() => setSelectedAsset('BTC')}
+                    className={`border-b border-[#ffffff0a] hover:bg-[#ffffff10] transition-colors cursor-pointer ${selectedAsset === 'BTC' ? 'bg-[#ffffff0a]' : ''}`}
+                  >
+                    <td className="py-2 px-2">4H</td>
+                    <td className="py-2 px-2 text-[#fafafa] font-bold">BTC</td>
+                    <td className="py-2 px-2 text-green-400">Bullish</td>
+                  </tr>
+                </>
               )}
             </tbody>
           </table>

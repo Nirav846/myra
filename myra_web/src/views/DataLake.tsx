@@ -28,7 +28,7 @@ export default function DataLakeView({ lib }: { lib: Librarian }) {
         WHERE symbol = '${searchQuery.trim().toUpperCase()}'
         ORDER BY date DESC LIMIT 30
       `;
-      const result = await lib.executeQuery('_technical_conn', query, {}, 5000);
+      const result = await lib.executeQuery('_tech_conn', query, {}, 5000);
       if (result && result.length > 0) {
         setApiData(result);
         setDataLoaded(true);

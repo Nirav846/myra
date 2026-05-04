@@ -1,6 +1,7 @@
 import { Librarian } from '../lib/Librarian';
 import { useState, useEffect } from 'react';
 import { RefreshCw, Target, Activity, BarChart2, ShieldAlert } from 'lucide-react';
+import { computeExhaustionSignal, computeDivergenceSignal, computeSpringCoilSignal, SignalData } from '../lib/reversionSignals';
 
 type SetupType = 'Exhaustion' | 'Divergence' | 'SpringCoil';
 
@@ -12,10 +13,54 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
   const [apiData, setApiData] = useState<any[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isDemo, setIsDemo] = useState(false);
+  const [filterSector, setFilterSector] = useState<string>('All');
+  const [filterCategory, setFilterCategory] = useState<string>('All');
+  const [metadataMap, setMetadataMap] = useState<Map<string, { sector: string; indices: string[]; in_nifty500: number }>>(new Map());
+  const [availableSectors, setAvailableSectors] = useState<string[]>([]);
+
+  useEffect(() => {
+    fetchMetadata();
+  }, [lib]);
 
   useEffect(() => {
     fetchData(activeSetup);
-  }, [activeSetup]);
+  }, [activeSetup, filterSector, filterCategory]);
+
+  const fetchMetadata = async () => {
+    try {
+      if (!lib.isConnectedToLocalRepo) return;
+      const symbolsResult = await lib.executeQuery('_meta_conn', 'SELECT symbol, sector, in_nifty500 FROM symbols_master LIMIT 5000');
+      const indexResult = await lib.executeQuery('_meta_conn', 'SELECT symbol, index_name FROM index_constituents LIMIT 5000');
+      
+      const map = new Map<string, { sector: string, indices: string[], in_nifty500: number }>();
+      const sectors = new Set<string>();
+      
+      if (symbolsResult && Array.isArray(symbolsResult)) {
+        symbolsResult.forEach((row: any) => {
+          const normalizedSector = (row.sector && row.sector.trim() !== '') ? row.sector : 'Uncharted Sector';
+          sectors.add(normalizedSector);
+          map.set(row.symbol, { sector: normalizedSector, indices: [], in_nifty500: row.in_nifty500 });
+        });
+      }
+      
+      if (indexResult && Array.isArray(indexResult)) {
+        indexResult.forEach((row: any) => {
+          if (map.has(row.symbol)) {
+              map.get(row.symbol)!.indices.push(row.index_name);
+          } else {
+              map.set(row.symbol, { sector: 'Uncharted Sector', indices: [row.index_name], in_nifty500: 0 });
+          }
+        });
+      }
+      
+      if (!sectors.has('Uncharted Sector')) sectors.add('Uncharted Sector');
+      
+      setAvailableSectors(Array.from(sectors).sort());
+      setMetadataMap(map);
+    } catch(e) {
+      console.warn("Failed to fetch metadata", e);
+    }
+  };
 
   const fetchData = async (setup: SetupType) => {
     setIsRefreshing(true);
@@ -24,26 +69,27 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
     setApiData([]);
     
     try {
-      // In a real environment, we'd use complex window functions to detect setups.
-      // E.g. Exhaustion: High Volume Down Day + High Delivery -> Potential Reversal
+      // Safest query: Fetch the latest day's data for all symbols and sort by Volume.
+      // This avoids window functions (OVER) which might crash older SQLite versions.
       const result = await lib.executeQuery('_tech_conn', `
         SELECT 
-          "Symbol" as ticker,
-          "Date",
-          "Open",
-          "High",
-          "Low",
-          "Close",
-          "Volume",
-          "Deliverable_Volume",
-          "perc_Deliverable_to_Traded_Quantity" as del_perc
-        FROM market_data
-        ORDER BY "Date" DESC 
-        LIMIT 500
+          symbol as ticker,
+          date as "Date",
+          open as "Open",
+          high as "High",
+          low as "Low",
+          close as "Close",
+          COALESCE(volume, trades) as "Volume",
+          COALESCE(delivery, delivery_qty) as "Deliverable_Volume",
+          (COALESCE(delivery, delivery_qty) * 100.0 / NULLIF(COALESCE(volume, trades), 0)) as del_perc
+        FROM technical_data
+        WHERE date = (SELECT MAX(date) FROM technical_data)
+        ORDER BY COALESCE(volume, trades) DESC 
+        LIMIT 1000
       `, {}, 5000);
       
       if (result && result.length > 0) {
-        // Mock processing based on raw data to find setups
+        // Deterministic processing based on real indicators
         const mappedData = processSetups(result, setup);
         setApiData(mappedData);
       } else {
@@ -64,46 +110,60 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
   };
 
   const processSetups = (rawData: any[], setup: SetupType) => {
-    // This provides a fallback if real data is fetched but doesn't have complex signals
-    // We inject random strength based on the setup to simulate finding "deep value"
-    const uniqueTickers = [...new Set(rawData.map(r => r.ticker))].slice(0, 15);
+    // Map raw data into strongly typed SignalData properties
+    const parsedData: SignalData[] = rawData.map(r => ({
+        ticker: r.ticker || '',
+        close: Number(r.Close) || 0,
+        high: Number(r.High) || 0,
+        low: Number(r.Low) || 0,
+        volume: Number(r.Volume) || 0,
+        avg_vol_20: Number(r.avg_vol_20) || Math.max(1, Number(r.Volume)), // fallback
+        del_perc: Number(r.del_perc) || 0,
+        high_20: Number(r.high_20) || Number(r.High), // fallback
+        low_20: Number(r.low_20) || Number(r.Low), // fallback
+    }));
     
-    return uniqueTickers.map(ticker => {
-      const row = rawData.find(r => r.ticker === ticker);
-      const baseClose = Number(row.Close || 100) || 100;
-      
-      let score = 0;
-      let note = '';
-      
-      if (setup === 'Exhaustion') {
-        score = 75 + Math.random() * 20;
-        note = 'High Vol Down + Del Spike';
-      } else if (setup === 'Divergence') {
-        score = 80 + Math.random() * 15;
-        note = 'Low Vol + 90%+ Delivery';
-      } else {
-         score = 70 + Math.random() * 25;
-         note = 'Vol Compression Break';
-      }
+    let processed = [];
+    if (setup === 'Exhaustion') {
+        processed = parsedData.map(computeExhaustionSignal);
+    } else if (setup === 'Divergence') {
+        processed = parsedData.map(computeDivergenceSignal);
+    } else {
+        processed = parsedData.map(computeSpringCoilSignal);
+    }
 
-      // Inside the mapping function for rows:
-      const high = Number(row.High || baseClose * 1.02);
-      const low = Number(row.Low || baseClose * 0.98);
-      const entry = high + (high * 0.001); // Entry slightly above High
-      const sl = low - (low * 0.002); // SL slightly below Low
-      const risk = ((entry - sl) / entry) * 100;
+    // Attach metadata and filter
+    const finalData = processed.map(item => {
+        const meta = metadataMap.get(item.ticker) || { sector: 'Uncharted Sector', indices: [], in_nifty500: 0 };
+        
+        let bucket = "Deep Frontier";
+        if (meta.indices.some(i => i.includes('NIFTY 50') && !i.includes('NEXT'))) {
+            bucket = "Large Cap (N50)";
+        } else if (meta.indices.some(i => i.includes('NIFTY NEXT 50'))) {
+            bucket = "Large Cap (N100)";
+        } else if (meta.in_nifty500 === 1 || meta.indices.some(i => i.includes('NIFTY 500'))) {
+            bucket = "Broader Market (N500)";
+        } else if (meta.indices.length > 0) {
+            bucket = "Broader Market (N500)"; // fallback for other index members
+        }
 
-      return {
-        ticker: ticker,
-        close: baseClose,
-        score: score,
-        delPerc: Number(row.del_perc || (Math.random() * 50 + 20)) || 25,
-        entry,
-        sl,
-        risk,
-        note
-      };
-    }).sort((a, b) => b.score - a.score);
+        return {
+            ...item,
+            sector: meta.sector,
+            bucket: bucket,
+            isUncharted: meta.sector === 'Uncharted Sector'
+        };
+    }).filter(item => {
+        if (filterSector !== 'All') {
+            if (item.sector !== filterSector) return false;
+        }
+        if (filterCategory !== 'All') {
+            if (item.bucket !== filterCategory) return false;
+        }
+        return true;
+    });
+
+    return finalData.sort((a, b) => b.score - a.score).slice(0, 75);
   };
 
   const generateMockData = (setup: SetupType) => {
@@ -128,23 +188,41 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
              delPerc = 30 + Math.random() * 20;
         }
         
-        const baseClose = 100 + (Math.random() * 2000);
-        const high = baseClose * (1 + (Math.random() * 0.05)); // 0-5% above close
-        const low = baseClose * (1 - (Math.random() * 0.05)); // 0-5% below close
-        const entry = high + (high * 0.001); // Entry slightly above High
-        const sl = low - (low * 0.002); // SL slightly below Low
+        const close = 100 + (Math.random() * 2000);
+        const candleRange = close * (Math.random() * 0.05 + 0.02);
+        const high = close + (candleRange * Math.random());
+        const low = close - (candleRange * Math.random());
+        
+        const entry = high + (high * 0.001);
+        const sl = low - (low * 0.002);
         const risk = ((entry - sl) / entry) * 100;
         
+        let bucket = "Large Cap (N50)";
+        if (sym === 'BAJFINANCE' || sym === 'KOTAKBANK') bucket = "Large Cap (N100)";
+        if (sym === 'HUL') bucket = "Broader Market (N500)";
+
         return {
            ticker: sym,
-           close: baseClose,
+           close: close,
+           entry: entry,
+           sl: sl,
+           risk: risk,
            score,
            delPerc,
-           entry,
-           sl,
-           risk,
-           note
+           signal: score > 90 ? 'STRONGCALL' : score > 80 ? 'CALL' : 'WATCH',
+           note,
+           sector: sym === 'RELIANCE' ? 'Energy' : sym === 'TCS' || sym === 'INFY' ? 'IT' : 'Financials',
+           bucket: bucket,
+           isUncharted: false
         };
+    }).filter(item => {
+        if (filterSector !== 'All') {
+            if (item.sector !== filterSector) return false;
+        }
+        if (filterCategory !== 'All') {
+            if (item.bucket !== filterCategory) return false;
+        }
+        return true;
     }).sort((a, b) => b.score - a.score);
     
     setApiData(mapped);
@@ -153,107 +231,155 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
   };
 
   return (
-    <div className="bg-[#262730] rounded-lg border border-[#ffffff1a] flex flex-col overflow-hidden max-w-5xl mx-auto">
-      <div className="p-3 border-b border-[#ffffff1a] bg-[#ffffff05] flex justify-between items-center">
-        <span className="text-xs font-semibold uppercase tracking-wider text-[#fafafa] flex items-center gap-2">
-          <Target size={14} className="text-cyan-400" />
-          Reversion Engine (Deep Value Scanners)
-        </span>
-        <span className="text-[10px] font-mono text-[#666]">Engine: Quantum Recoil v1.2</span>
+    <div className="bg-[#0b0c10] rounded-xl border border-white/10 shadow-2xl flex flex-col overflow-hidden max-w-5xl mx-auto">
+      <div className="p-4 border-b border-white/5 bg-gradient-to-r from-cyan-900/20 to-transparent flex justify-between items-center">
+        <div className="flex items-center gap-3">
+            <div className="p-1.5 bg-cyan-500/10 rounded-md border border-cyan-500/20">
+              <Target size={18} className="text-cyan-400" />
+            </div>
+            <span className="text-sm font-bold uppercase tracking-wider text-[#fafafa]">
+              Reversion Engine
+            </span>
+        </div>
+        <span className="text-[10px] font-mono text-cyan-500/70 border border-cyan-500/20 px-2 py-0.5 rounded-full bg-cyan-500/5">v1.2 Quantum</span>
       </div>
 
-      <div className="p-4 space-y-4 relative">
-        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between bg-[#0e1117] border border-[#ffffff0a] p-3 rounded">
-           <div className="flex bg-[#1a1c24] rounded border border-[#ffffff1a] p-1 gap-1">
+      <div className="p-5 space-y-5 relative">
+        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between bg-[#12141a] border border-white/5 p-3 rounded-lg shadow-sm">
+           <div className="flex bg-[#0A0A0A] rounded-md border border-[#333] p-1 gap-1 shadow-inner h-[34px]">
               <button 
                 onClick={() => setActiveSetup('Exhaustion')}
-                className={`px-3 py-1.5 rounded text-xs font-mono transition-colors flex items-center gap-2 ${activeSetup === 'Exhaustion' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' : 'text-[#888] hover:text-[#fff] border border-transparent'}`}
+                className={`px-3 py-1 rounded text-xs font-mono transition-all duration-200 flex items-center gap-2 ${activeSetup === 'Exhaustion' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shadow-[0_0_10px_rgba(34,211,238,0.1)]' : 'text-[#888] hover:text-[#ddd] border border-transparent hover:bg-white/5'}`}
               >
-                  <Activity size={12} /> Exhaustion Gap
+                  <Activity size={12} /> Exhaustion
               </button>
               <button 
                 onClick={() => setActiveSetup('Divergence')}
-                className={`px-3 py-1.5 rounded text-xs font-mono transition-colors flex items-center gap-2 ${activeSetup === 'Divergence' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : 'text-[#888] hover:text-[#fff] border border-transparent'}`}
+                className={`px-3 py-1 rounded text-xs font-mono transition-all duration-200 flex items-center gap-2 ${activeSetup === 'Divergence' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30 shadow-[0_0_10px_rgba(168,85,247,0.1)]' : 'text-[#888] hover:text-[#ddd] border border-transparent hover:bg-white/5'}`}
               >
-                  <ShieldAlert size={12} /> Delivery Divergence
+                  <ShieldAlert size={12} /> Divergence
               </button>
               <button 
                 onClick={() => setActiveSetup('SpringCoil')}
-                className={`px-3 py-1.5 rounded text-xs font-mono transition-colors flex items-center gap-2 ${activeSetup === 'SpringCoil' ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'text-[#888] hover:text-[#fff] border border-transparent'}`}
+                className={`px-3 py-1 rounded text-xs font-mono transition-all duration-200 flex items-center gap-2 ${activeSetup === 'SpringCoil' ? 'bg-green-500/20 text-green-400 border border-green-500/30 shadow-[0_0_10px_rgba(34,197,94,0.1)]' : 'text-[#888] hover:text-[#ddd] border border-transparent hover:bg-white/5'}`}
               >
                   <BarChart2 size={12} /> Spring Coil
               </button>
            </div>
            
-           <div className="flex items-center gap-3">
-             {errorMsg && <span className="text-xs text-red-400 font-mono px-2 py-1 bg-red-400/10 rounded">{errorMsg}</span>}
-             {isDemo && <span className="text-[10px] bg-yellow-500/20 text-yellow-500 px-2 py-1 rounded font-mono">⚠️ DEMO DATA</span>}
-            <button 
-              onClick={() => fetchData(activeSetup)}
-              disabled={isRefreshing}
-              className="flex items-center gap-2 px-3 py-1.5 bg-[#ffffff0a] hover:bg-[#ffffff15] border border-[#ffffff1a] rounded text-xs text-[#fafafa] transition-colors disabled:opacity-50 font-mono"
-            >
-              <RefreshCw size={12} className={isRefreshing ? "animate-spin" : ""} />
-              {isRefreshing ? "Scanning..." : "Run Engine"}
-            </button>
-          </div>
+             <div className="flex items-center gap-3 w-full md:w-auto h-full">
+               <div className="flex bg-[#0A0A0A] rounded border border-[#333333] shadow-inner items-center h-[34px] overflow-hidden">
+                   <select 
+                     value={filterCategory} 
+                     onChange={(e) => setFilterCategory(e.target.value)}
+                     className="bg-transparent border-r border-[#333333] hover:bg-[#1a1c24] transition-colors outline-none text-[#fafafa] text-xs font-mono h-full px-2 cursor-pointer"
+                   >
+                     <option value="All" className="bg-[#1a1c24] text-white">All Categories</option>
+                     <option value="Large Cap (N50)" className="bg-[#1a1c24] text-white">Large Cap (N50)</option>
+                     <option value="Large Cap (N100)" className="bg-[#1a1c24] text-white">Large Cap (N100)</option>
+                     <option value="Broader Market (N500)" className="bg-[#1a1c24] text-white">Broader Market (N500)</option>
+                     <option value="Deep Frontier" className="bg-[#1a1c24] text-white">Deep Frontier</option>
+                   </select>
+                   <select 
+                     value={filterSector} 
+                     onChange={(e) => setFilterSector(e.target.value)}
+                     className="bg-transparent hover:bg-[#1a1c24] transition-colors outline-none text-[#fafafa] text-xs font-mono h-full px-2 max-w-[140px] cursor-pointer"
+                   >
+                     <option value="All" className="bg-[#1a1c24] text-white">All Sectors</option>
+                     {availableSectors.map(s => <option key={s} value={s} className="bg-[#1a1c24] text-white">{s}</option>)}
+                     {isDemo && availableSectors.length === 0 && (
+                         <>
+                             <option value="IT" className="bg-[#1a1c24] text-white">IT</option>
+                             <option value="Financials" className="bg-[#1a1c24] text-white">Financials</option>
+                             <option value="Energy" className="bg-[#1a1c24] text-white">Energy</option>
+                         </>
+                     )}
+                   </select>
+               </div>
+               
+               {errorMsg && <span className="text-xs text-red-500 font-mono px-2 py-1 bg-red-500/10 border border-red-500/20 rounded hidden lg:block">{errorMsg}</span>}
+               {isDemo && <span className="text-[10px] bg-yellow-500/20 text-yellow-500 px-2 py-1 rounded border border-yellow-500/20 font-mono hidden lg:block">⚠️ DEMO</span>}
+              <button 
+                onClick={() => fetchData(activeSetup)}
+                disabled={isRefreshing}
+                className="flex justify-center items-center gap-2 px-4 h-[34px] bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 rounded text-xs text-indigo-300 font-bold transition-all disabled:opacity-50 font-mono shadow-[0_0_15px_rgba(99,102,241,0.1)] ml-auto md:ml-0"
+              >
+                <RefreshCw size={12} className={isRefreshing ? "animate-spin" : ""} />
+                {isRefreshing ? "Scanning..." : "Run"}
+              </button>
+            </div>
         </div>
 
-        <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3 text-xs font-mono text-[#888] leading-relaxed">
-            {activeSetup === 'Exhaustion' && "Idea 1: The 'Exhaustion Gap + Accumulation' Play. Looks for isolated instances where price drops intensely, volume explodes, but delivery percentage implies institutional accumulation rather than pure panic offloading."}
-            {activeSetup === 'Divergence' && "Idea 2: 'Delivery Divergence at Support'. Scans for symbols testing multi-month lows with average volume, but experiencing extreme anomalies in Delivery % (e.g. > 85%), indicating quiet smart-money absorption."}
-            {activeSetup === 'SpringCoil' && "Idea 3: 'Volatility Compression / Spring Coil'. Identifies assets going dormant. Both price range and volume dry up dramatically, while delivery percentage remains stable, preceding explosive expansion."}
+        <div className="bg-[#12141a]/50 border border-white/5 rounded-lg p-4 text-xs font-mono text-[#888] leading-relaxed shadow-sm">
+            {activeSetup === 'Exhaustion' && (
+              <p><span className="text-cyan-400 font-bold mr-2">IDEA 1: EXHAUSTION</span> Looks for isolated instances where price drops intensely, volume explodes, but delivery percentage implies institutional accumulation rather than pure panic offloading.</p>
+            )}
+            {activeSetup === 'Divergence' && (
+              <p><span className="text-purple-400 font-bold mr-2">IDEA 2: DIVERGENCE</span> Scans for symbols testing multi-month lows with average volume, but experiencing extreme anomalies in Delivery % (e.g. {'>'} 85%), indicating quiet smart-money absorption.</p>
+            )}
+            {activeSetup === 'SpringCoil' && (
+              <p><span className="text-green-400 font-bold mr-2">IDEA 3: SPRING COIL</span> Identifies assets going dormant. Both price range and volume dry up dramatically, while delivery percentage remains stable, preceding explosive expansion.</p>
+            )}
         </div>
 
-        <div className={`overflow-x-auto relative group transition-opacity duration-300 ${isRefreshing ? 'opacity-50' : 'opacity-100'} min-h-[250px]`}>
+        <div className={`overflow-x-auto relative group transition-opacity duration-300 ${isRefreshing ? 'opacity-50' : 'opacity-100'} min-h-[250px] bg-[#12141a] rounded-lg border border-white/5`}>
           <table className="w-full text-left font-mono text-xs">
             <thead>
-              <tr className="text-[#888] border-b border-[#ffffff1a]">
-                <th className="pb-2 px-2 font-medium uppercase min-w-[100px]">Ticker</th>
-                <th className="pb-2 px-2 font-medium uppercase text-right">Close (₹)</th>
-                <th className="pb-2 px-2 font-medium uppercase text-right">Conviction Score</th>
-                <th className="pb-2 px-2 font-medium uppercase text-right">Delivery %</th>
-                <th className="pb-2 px-2 font-medium uppercase">Action Plan</th>
-                <th className="pb-2 px-2 font-medium uppercase w-[30%]">Engine Note</th>
+              <tr className="text-[#666] border-b border-white/5 bg-black/20">
+                <th className="py-3 px-3 font-semibold uppercase min-w-[100px] tracking-wider rounded-tl-lg">Ticker</th>
+                <th className="py-3 px-3 font-semibold uppercase tracking-wider">Sector</th>
+                <th className="py-3 px-3 font-semibold uppercase text-right tracking-wider">Close (₹)</th>
+                <th className="py-3 px-3 font-semibold uppercase text-right tracking-wider">Score</th>
+                <th className="py-3 px-3 font-semibold uppercase text-right tracking-wider">Del %</th>
+                <th className="py-3 px-3 font-semibold uppercase w-[25%] hidden md:table-cell tracking-wider">Action Plan</th>
+                <th className="py-3 px-3 font-semibold uppercase w-[20%] hidden lg:table-cell tracking-wider rounded-tr-lg">Engine Note</th>
               </tr>
             </thead>
             <tbody className="text-[#ccc]">
               {dataLoaded && apiData.map((row, idx) => (
-                <tr key={idx} className="border-b border-[#ffffff0a] hover:bg-[#ffffff05] transition-colors">
-                  <td className="py-2.5 px-2">
-        <button 
-          onClick={() => onNavigate?.('Technical Chart', row.ticker)}
-          className="text-[#fafafa] font-bold hover:text-cyan-400 transition-colors flex items-center gap-1 cursor-pointer"
-        >
-          {row.ticker}
-        </button>
-      </td>
-                  <td className="py-2.5 px-2 text-right">{String(row.close?.toFixed(2) || 'N/A')}</td>
-                  <td className="py-2.5 px-2 text-right">
+                <tr key={idx} className="border-b border-white/5 hover:bg-white/5 transition-all duration-200">
+                  <td className="py-3 px-3">
+                    <div className="flex items-center gap-1.5">
+                      <button 
+                        onClick={() => onNavigate?.('Technical Chart', row.ticker)}
+                        className="text-[#fafafa] font-bold hover:text-indigo-400 transition-colors cursor-pointer text-sm"
+                      >
+                        {row.ticker}
+                      </button>
+                      {row.isUncharted && <span className="text-[8px] bg-red-500/10 border border-red-500/20 text-red-400 font-bold px-1.5 py-0.5 rounded tracking-wide">UNCHARTED</span>}
+                    </div>
+                    <div className="text-[9px] text-[#666] tracking-widest uppercase truncate mt-0.5">{row.bucket}</div>
+                  </td>
+                  <td className="py-3 px-3 text-[#888] truncate max-w-[120px]">{row.sector}</td>
+                  <td className="py-3 px-3 text-right text-[#fafafa] font-medium">{row.close.toFixed(2)}</td>
+                  <td className="py-3 px-3 text-right">
                     <div className="flex items-center justify-end gap-2">
-                      <div className="w-16 h-1.5 bg-[#ffffff1a] rounded-full overflow-hidden">
-                         <div className="h-full rounded-full" style={{ width: `${row.score}%`, backgroundColor: row.score > 90 ? '#22c55e' : row.score > 80 ? '#3b82f6' : '#8b5cf6' }}></div>
+                      <div className="w-16 h-1.5 bg-[#ffffff1a] rounded-full overflow-hidden hidden sm:block shadow-inner">
+                         <div className="h-full rounded-full transition-all duration-500" style={{ width: `${row.score}%`, backgroundColor: row.score > 90 ? '#22c55e' : row.score > 80 ? '#3b82f6' : '#8b5cf6', boxShadow: `0 0 8px ${row.score > 90 ? '#22c55e' : row.score > 80 ? '#3b82f6' : '#8b5cf6'}` }}></div>
                       </div>
-                      <span className={row.score > 90 ? 'text-green-400 font-bold' : row.score > 80 ? 'text-blue-400' : 'text-purple-400'}>{String(row.score?.toFixed(1) || 'N/A')}</span>
+                      <span className={`font-bold ${row.score > 90 ? 'text-green-400' : row.score > 80 ? 'text-blue-400' : 'text-purple-400'}`}>{row.score.toFixed(1)}</span>
                     </div>
                   </td>
-                  <td className="py-2.5 px-2 text-right text-gray-300">{String(row.delPerc?.toFixed(1) || 'N/A')}%</td>
-                  <td className="py-2.5 px-2">
-        <div className="flex items-center flex-wrap gap-x-2 gap-y-1 text-[10px] font-mono bg-[#00000033] p-1.5 rounded border border-[#ffffff0a]">
-          <span className="text-green-400 font-bold">En: &gt; ₹{row.entry.toFixed(2)}</span>
-          <span className="text-[#444]">|</span>
-          <span className="text-red-400 font-bold">SL: ₹{row.sl.toFixed(2)}</span>
-          <span className="text-[#444]">|</span>
-          <span className="text-orange-400 font-bold">Risk: {row.risk.toFixed(1)}%</span>
-        </div>
-      </td>
-                  <td className="py-2.5 px-2 text-[#888] italic">{row.note}</td>
+                  <td className="py-3 px-3 text-right text-gray-400 font-medium">{row.delPerc.toFixed(1)}%</td>
+                  <td className="py-3 px-3 hidden md:table-cell">
+                    <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-[10px] font-mono bg-black/40 p-1.5 rounded-md border border-white/5 shadow-inner">
+                      <div className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-green-500"></div><span className="text-gray-300">En <span className="text-green-400 font-bold text-xs ml-0.5">₹{row.entry.toFixed(2)}</span></span></div>
+                      <span className="text-[#333]">|</span>
+                      <div className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-red-500"></div><span className="text-gray-300">SL <span className="text-red-400 font-bold text-xs ml-0.5">₹{row.sl.toFixed(2)}</span></span></div>
+                      <span className="text-[#333]">|</span>
+                      <span className="text-orange-400 font-bold">R {row.risk.toFixed(1)}%</span>
+                    </div>
+                  </td>
+                  <td className="py-3 px-3 text-[#777] italic hidden lg:table-cell truncate max-w-[150px]">{row.note}</td>
                 </tr>
               ))}
             </tbody>
           </table>
           {!dataLoaded && !isRefreshing && (
-            <div className="w-full py-12 text-center text-[#666] text-xs font-mono">Run engine to scan opportunities.</div>
+            <div className="w-full py-16 text-center text-[#555] text-xs font-mono flex flex-col items-center justify-center gap-2">
+                <Target size={24} className="opacity-20" />
+                <span>Run engine to scan opportunities.</span>
+            </div>
           )}
         </div>
       </div>
