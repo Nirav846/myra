@@ -125,10 +125,10 @@ export default function ValueRankerView({ lib }: { lib: Librarian }) {
              <div className="flex flex-col">
                <label className="text-[10px] text-[#888] font-mono uppercase mb-1">Max Results</label>
                <select value={limit} onChange={e => setLimit(Number(e.target.value))} className="w-20 bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] font-mono focus:border-cyan-500 outline-none">
-                 <option value={5}>5</option>
-                 <option value={10}>10</option>
-                 <option value={15}>15</option>
-                 <option value={50}>50</option>
+                 <option className="bg-[#1a1c24] text-[#fafafa]" value={5}>5</option>
+                 <option className="bg-[#1a1c24] text-[#fafafa]" value={10}>10</option>
+                 <option className="bg-[#1a1c24] text-[#fafafa]" value={15}>15</option>
+                 <option className="bg-[#1a1c24] text-[#fafafa]" value={50}>50</option>
                </select>
              </div>
           </div>

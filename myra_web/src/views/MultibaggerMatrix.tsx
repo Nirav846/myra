@@ -208,10 +208,10 @@ export default function MultibaggerMatrixView({ lib }: { lib: Librarian }) {
                   <div className="flex flex-col col-span-2">
                      <label className="text-[10px] text-[#888] font-mono mb-1">Lookback Period (Days)</label>
                      <select value={days} onChange={(e) => setDays(Number(e.target.value))} className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] focus:border-orange-500 outline-none w-full">
-                       <option value={30}>30 Days</option>
-                       <option value={90}>90 Days</option>
-                       <option value={180}>180 Days</option>
-                       <option value={365}>1 Year</option>
+                       <option className="bg-[#1a1c24] text-[#fafafa]" value={30}>30 Days</option>
+                       <option className="bg-[#1a1c24] text-[#fafafa]" value={90}>90 Days</option>
+                       <option className="bg-[#1a1c24] text-[#fafafa]" value={180}>180 Days</option>
+                       <option className="bg-[#1a1c24] text-[#fafafa]" value={365}>1 Year</option>
                      </select>
                   </div>
                </div>

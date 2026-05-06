@@ -196,11 +196,11 @@ export default function SectorFlowView({ lib }: { lib: Librarian }) {
                 onChange={(e) => setFilterCategory(e.target.value)}
                 className="w-full bg-[#1a1c24] border border-[#ffffff1a] rounded px-3 h-[38px] text-sm text-[#fafafa] font-mono select-none outline-none focus:border-cyan-500"
             >
-                <option value="All">All Segments</option>
-                <option value="Large Cap (N50)">Large Cap (N50)</option>
-                <option value="Large Cap (N100)">Large Cap (N100)</option>
-                <option value="Broader Market (N500)">Broader Market (N500)</option>
-                <option value="Deep Frontier">Deep Frontier</option>
+                <option className="bg-[#1a1c24] text-[#fafafa]" value="All">All Segments</option>
+                <option className="bg-[#1a1c24] text-[#fafafa]" value="Large Cap (N50)">Large Cap (N50)</option>
+                <option className="bg-[#1a1c24] text-[#fafafa]" value="Large Cap (N100)">Large Cap (N100)</option>
+                <option className="bg-[#1a1c24] text-[#fafafa]" value="Broader Market (N500)">Broader Market (N500)</option>
+                <option className="bg-[#1a1c24] text-[#fafafa]" value="Deep Frontier">Deep Frontier</option>
             </select>
           </div>
           <div className="flex-1 min-w-[150px]">
@@ -210,13 +210,13 @@ export default function SectorFlowView({ lib }: { lib: Librarian }) {
                 onChange={(e) => setFilterSector(e.target.value)}
                 className="w-full bg-[#1a1c24] border border-[#ffffff1a] rounded px-3 h-[38px] text-sm text-[#fafafa] font-mono select-none outline-none focus:border-cyan-500"
             >
-                <option value="All">All Sectors</option>
-                {availableSectors.map(s => <option key={s} value={s}>{s}</option>)}
+                <option className="bg-[#1a1c24] text-[#fafafa]" value="All">All Sectors</option>
+                {availableSectors.map(s => <option className="bg-[#1a1c24] text-[#fafafa]" key={s} value={s}>{s}</option>)}
                 {isDemo && availableSectors.length === 0 && (
                     <>
-                        <option value="IT Services">IT Services</option>
-                        <option value="Financials">Financials</option>
-                        <option value="Energy">Energy</option>
+                        <option className="bg-[#1a1c24] text-[#fafafa]" value="IT Services">IT Services</option>
+                        <option className="bg-[#1a1c24] text-[#fafafa]" value="Financials">Financials</option>
+                        <option className="bg-[#1a1c24] text-[#fafafa]" value="Energy">Energy</option>
                     </>
                 )}
             </select>

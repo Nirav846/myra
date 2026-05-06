@@ -94,8 +94,8 @@ export default function DataLakeView({ lib }: { lib: Librarian }) {
             />
           </div>
           <select value={category} onChange={e => setCategory(e.target.value)} className="bg-[#0e1117] border border-[#ffffff1a] text-[#ccc] text-xs p-1.5 rounded font-mono focus:outline-none focus:border-blue-500 transition-colors">
-            <option value="Smart Money Concepts">Smart Money Concepts</option>
-            <option value="Enrichment Metrics">Enrichment Metrics</option>
+            <option className="bg-[#1a1c24] text-[#fafafa]" value="Smart Money Concepts">Smart Money Concepts</option>
+            <option className="bg-[#1a1c24] text-[#fafafa]" value="Enrichment Metrics">Enrichment Metrics</option>
           </select>
         </div>
 

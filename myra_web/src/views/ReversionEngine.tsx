@@ -69,24 +69,53 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
     setApiData([]);
     
     try {
-      // Safest query: Fetch the latest day's data for all symbols and sort by Volume.
-      // This avoids window functions (OVER) which might crash older SQLite versions.
+      // We need rolling time-series context (20-day avg volume, 20-day high/low).
+      // To keep it fast, we first constrain to the last 30 trading dates, then compute window functions.
       const result = await lib.executeQuery('_tech_conn', `
-        SELECT 
-          symbol as ticker,
-          date as "Date",
-          open as "Open",
-          high as "High",
-          low as "Low",
-          close as "Close",
-          COALESCE(volume, trades) as "Volume",
-          COALESCE(delivery, delivery_qty) as "Deliverable_Volume",
-          (COALESCE(delivery, delivery_qty) * 100.0 / NULLIF(COALESCE(volume, trades), 0)) as del_perc
-        FROM technical_data
-        WHERE date = (SELECT MAX(date) FROM technical_data)
-        ORDER BY COALESCE(volume, trades) DESC 
-        LIMIT 1000
-      `, {}, 5000);
+        WITH RecentDates AS (
+           SELECT DISTINCT date FROM technical_data ORDER BY date DESC LIMIT 30
+        ),
+        RecentData AS (
+           SELECT td.* FROM technical_data td
+           INNER JOIN RecentDates rd ON td.date = rd.date
+        ),
+        RankedData AS (
+          SELECT 
+            symbol as ticker,
+            date as "Date",
+            open as "Open",
+            high as "High",
+            low as "Low",
+            close as "Close",
+            COALESCE(volume, trades) as "Volume",
+            COALESCE(delivery, delivery_qty) as "Deliverable_Volume",
+            (COALESCE(delivery, delivery_qty) * 100.0 / NULLIF(COALESCE(volume, trades), 0)) as del_perc,
+            
+            AVG(COALESCE(volume, trades)) OVER w20 as avg_vol_20,
+            
+            AVG((COALESCE(delivery, delivery_qty) * 100.0 / NULLIF(COALESCE(volume, trades), 0))) OVER w20 as avg_del_20,
+            AVG((COALESCE(delivery, delivery_qty) * 100.0 / NULLIF(COALESCE(volume, trades), 0)) * (COALESCE(delivery, delivery_qty) * 100.0 / NULLIF(COALESCE(volume, trades), 0))) OVER w20 as avg_del_sq_20,
+
+            MAX(high) OVER w20 as high_20,
+            MIN(low) OVER w20 as low_20,
+            
+            AVG(close) OVER w20 as avg_close_20,
+            AVG(close * close) OVER w20 as avg_close_sq_20,
+            
+            AVG((high - low) / NULLIF(close, 0)) OVER w20 as vol_long,
+            AVG((high - low) / NULLIF(close, 0)) OVER w5 as vol_short,
+
+            ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) as rn
+          FROM RecentData
+          WINDOW 
+            w20 AS (PARTITION BY symbol ORDER BY date ROWS BETWEEN 20 PRECEDING AND 1 PRECEDING),
+            w5 AS (PARTITION BY symbol ORDER BY date ROWS BETWEEN 5 PRECEDING AND 1 PRECEDING)
+        )
+        SELECT * FROM RankedData 
+        WHERE rn = 1 
+        ORDER BY "Volume" DESC 
+        LIMIT 2500
+      `, {}, 15000);
       
       if (result && result.length > 0) {
         // Deterministic processing based on real indicators
@@ -112,15 +141,25 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
   const processSetups = (rawData: any[], setup: SetupType) => {
     // Map raw data into strongly typed SignalData properties
     const parsedData: SignalData[] = rawData.map(r => ({
-        ticker: r.ticker || '',
-        close: Number(r.Close) || 0,
-        high: Number(r.High) || 0,
-        low: Number(r.Low) || 0,
-        volume: Number(r.Volume) || 0,
-        avg_vol_20: Number(r.avg_vol_20) || Math.max(1, Number(r.Volume)), // fallback
-        del_perc: Number(r.del_perc) || 0,
-        high_20: Number(r.high_20) || Number(r.High), // fallback
-        low_20: Number(r.low_20) || Number(r.Low), // fallback
+        ticker: r.ticker || r.symbol || '',
+        close: Number(r.Close ?? r.close) || 0,
+        high: Number(r.High ?? r.high) || 0,
+        low: Number(r.Low ?? r.low) || 0,
+        volume: Number(r.Volume ?? r.volume) || 0,
+        del_perc: Number(r.del_perc ?? r.Del_perc) || 0,
+        
+        avg_vol_20: Number(r.avg_vol_20) || 1, // Let 0 default to 1 to avoid div-by-zero
+        avg_del_20: Number(r.avg_del_20) || 0,
+        avg_del_sq_20: Number(r.avg_del_sq_20) || 0,
+        
+        high_20: Number(r.high_20) || Number(r.High ?? r.high), 
+        low_20: Number(r.low_20) || Number(r.Low ?? r.low), 
+        
+        avg_close_20: Number(r.avg_close_20) || Number(r.Close ?? r.close),
+        avg_close_sq_20: Number(r.avg_close_sq_20) || (Number(r.Close ?? r.close) * Number(r.Close ?? r.close)),
+        
+        vol_long: Number(r.vol_long) || 1,
+        vol_short: Number(r.vol_short) || 1,
     }));
     
     let processed = [];
@@ -362,12 +401,15 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
                   </td>
                   <td className="py-3 px-3 text-right text-gray-400 font-medium">{row.delPerc.toFixed(1)}%</td>
                   <td className="py-3 px-3 hidden md:table-cell">
-                    <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-[10px] font-mono bg-black/40 p-1.5 rounded-md border border-white/5 shadow-inner">
-                      <div className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-green-500"></div><span className="text-gray-300">En <span className="text-green-400 font-bold text-xs ml-0.5">₹{row.entry.toFixed(2)}</span></span></div>
-                      <span className="text-[#333]">|</span>
-                      <div className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-red-500"></div><span className="text-gray-300">SL <span className="text-red-400 font-bold text-xs ml-0.5">₹{row.sl.toFixed(2)}</span></span></div>
-                      <span className="text-[#333]">|</span>
-                      <span className="text-orange-400 font-bold">R {row.risk.toFixed(1)}%</span>
+                    <div className="flex flex-col gap-1 text-[10px] font-mono">
+                      <div className="text-[9px] text-[#888] uppercase tracking-wider mb-0.5">T+1 Buy Stop</div>
+                      <div className="flex items-center flex-wrap gap-x-3 gap-y-1 bg-black/40 p-1.5 rounded-md border border-white/5 shadow-inner">
+                        <div className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-green-500"></div><span className="text-gray-300">En <span className="text-green-400 font-bold text-xs ml-0.5">₹{row.entry.toFixed(2)}</span></span></div>
+                        <span className="text-[#333]">|</span>
+                        <div className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-red-500"></div><span className="text-gray-300">SL <span className="text-red-400 font-bold text-xs ml-0.5">₹{row.sl.toFixed(2)}</span></span></div>
+                        <span className="text-[#333]">|</span>
+                        <span className="text-orange-400 font-bold">R {row.risk.toFixed(1)}%</span>
+                      </div>
                     </div>
                   </td>
                   <td className="py-3 px-3 text-[#777] italic hidden lg:table-cell truncate max-w-[150px]">{row.note}</td>

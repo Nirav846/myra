@@ -1,3 +1,4 @@
+import logging
 import threading
 import time
 
@@ -17,9 +18,17 @@ def resume_enrichment():
     _enrichment_paused.set()  # unblock
 
 
-def wait_if_paused():
-    """Call this periodically in the enrichment loop to check if paused."""
-    _enrichment_paused.wait()  # blocks until resume_enrichment is called
+def wait_if_paused(timeout_seconds: float = 5.0):
+    """
+    Wait for enrichment to be resumed, but only for a limited time.
+    If timeout occurs, log a warning and force resume to prevent permanent deadlock.
+    """
+    if not _enrichment_paused.wait(timeout=timeout_seconds):
+        logging.getLogger(__name__).warning(
+            "Enrichment paused for >%s seconds – forcing resume to avoid deadlock",
+            timeout_seconds,
+        )
+        resume_enrichment()
 
 
 def enrich_features(df: pl.DataFrame, nifty_df: pl.DataFrame) -> pl.DataFrame:

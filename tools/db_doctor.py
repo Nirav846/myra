@@ -158,6 +158,7 @@ class DbDoctor:
                 "benchmarks",
                 "metadata",
                 "lineage_tracking",
+                "sync_log",
             ]
             c.execute("SELECT name FROM sqlite_master WHERE type='table'")
             existing = {row[0] for row in c.fetchall()}
@@ -166,6 +167,27 @@ class DbDoctor:
                 if table not in existing:
                     print(f"  [WARNING] Missing table in meta DB: {table}")
                     self.issues_found += 1
+
+            # Auto-create sync_log if missing
+            if "sync_log" not in existing:
+                if self.dry_run:
+                    print("  [DRY RUN] Would create sync_log table")
+                else:
+                    try:
+                        conn.execute(
+                            """
+                            CREATE TABLE sync_log (
+                                task_name TEXT PRIMARY KEY,
+                                last_run TEXT
+                            )
+                            """
+                        )
+                        conn.commit()
+                        print("  [FIXED] Created sync_log table")
+                        self.issues_fixed += 1
+                    except Exception as e:
+                        print(f"  [ERROR] Failed to create sync_log table: {e}")
+                        self.issues_failed += 1
 
             # Check symbols_master columns
             c.execute(
@@ -236,23 +258,95 @@ class DbDoctor:
         try:
             c = conn.cursor()
 
+            # Expected fundamentals table schema
+            FUNDAMENTALS_EXPECTED_COLS = {
+                "symbol": "TEXT NOT NULL",
+                "date": "TEXT NOT NULL",
+                "pe": "REAL",
+                "sector_pe": "REAL",
+                "market_cap": "REAL",
+                "face_value": "REAL",
+                "issued_size": "INTEGER",
+                "net_margin": "REAL",
+                "roe_ttm": "REAL",
+                "dividend_yield": "REAL",
+                "daily_volatility": "REAL",
+                "annual_volatility": "REAL",
+                "impact_cost": "REAL",
+                "source_ms": "TEXT",
+                "source_nse": "TEXT",
+            }
+
             c.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='fundamentals'"
             )
-            if c.fetchone():
+            if not c.fetchone():
+                print("  [WARNING] 'fundamentals' table missing!")
+                self.issues_found += 1
+                if self.dry_run:
+                    print(
+                        "  [DRY RUN] Would create fundamentals table with full schema"
+                    )
+                else:
+                    try:
+                        conn.execute(
+                            """
+                            CREATE TABLE fundamentals (
+                                symbol TEXT NOT NULL,
+                                date TEXT NOT NULL,
+                                pe REAL,
+                                sector_pe REAL,
+                                market_cap REAL,
+                                face_value REAL,
+                                issued_size INTEGER,
+                                net_margin REAL,
+                                roe_ttm REAL,
+                                dividend_yield REAL,
+                                daily_volatility REAL,
+                                annual_volatility REAL,
+                                impact_cost REAL,
+                                source_ms TEXT,
+                                source_nse TEXT,
+                                PRIMARY KEY (symbol, date)
+                            )
+                            """
+                        )
+                        conn.commit()
+                        print("  [FIXED] Created fundamentals table")
+                        self.issues_fixed += 1
+                    except Exception as e:
+                        print(f"  [ERROR] Failed to create fundamentals table: {e}")
+                        self.issues_failed += 1
+            else:
                 c.execute("PRAGMA table_info(fundamentals)")
                 existing_cols = {row[1] for row in c.fetchall()}
 
-                missing_cols = [
-                    col for col in ["symbol", "sector"] if col not in existing_cols
-                ]
-                for col in missing_cols:
+                missing_cols = {
+                    col: col_type
+                    for col, col_type in FUNDAMENTALS_EXPECTED_COLS.items()
+                    if col not in existing_cols
+                }
+                for col, col_type in missing_cols.items():
                     print(f"  [WARNING] Missing column in fundamentals: {col}")
                     self.issues_found += 1
                     if self.dry_run:
                         print(
-                            f"  [DRY RUN] Would fix: ALTER TABLE fundamentals ADD COLUMN {col} TEXT"
+                            f"  [DRY RUN] Would fix: ALTER TABLE fundamentals ADD COLUMN {col} {col_type}"
                         )
+
+                if missing_cols and not self.dry_run:
+                    try:
+                        conn.execute("BEGIN")
+                        for col, col_type in missing_cols.items():
+                            c.execute(
+                                f"ALTER TABLE fundamentals ADD COLUMN {col} {col_type}"
+                            )
+                            print(f"  [FIXED] Added column {col}")
+                        conn.commit()
+                        self.issues_fixed += len(missing_cols)
+                    except Exception as e:
+                        conn.rollback()
+                        print(f"  [ERROR] Failed to add columns: {e}")
                         self.issues_failed += len(missing_cols)
 
         finally:

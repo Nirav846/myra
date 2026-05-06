@@ -12,9 +12,19 @@ import requests
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
-NSE_INDICES = {
-    "NIFTY 50": "https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%2050",
-    "NIFTY 500": "https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%20500",
+INDEX_SOURCES = {
+    "NIFTY 50": {
+        "type": "api",
+        "url": "https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%2050"
+    },
+    "NIFTY 500": {
+        "type": "csv",
+        "url": "https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv"
+    },
+    "NIFTY SMALLCAP 250": {
+        "type": "csv",
+        "url": "https://www.niftyindices.com/IndexConstituent/ind_niftysmallcap250list.csv"
+    }
 }
 
 
@@ -42,7 +52,7 @@ def sync_index_constituents(index_name, force=False, task_id: int = None):
     if task_id is not None:
         update(task_id, f"Syncing {index_name} constituents…")
 
-    if index_name not in NSE_INDICES:
+    if index_name not in INDEX_SOURCES:
         print(f"[Index Sync] Unknown index: {index_name}")
         return False
 
@@ -70,28 +80,72 @@ def sync_index_constituents(index_name, force=False, task_id: int = None):
 
         print(f"[Index Sync] Syncing {index_name} constituents...")
 
-        # Fetch from NSE API
-        url = NSE_INDICES[index_name]
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "*/*",
-            "Accept-Language": "en-US,en;q=0.9",
-        }
-
-        response = requests.get(url, headers=headers, timeout=30)
-        response.raise_for_status()
-
-        data = response.json()
-        if "data" not in data or not data["data"]:
-            print(f"[Index Sync] No data found for {index_name}")
-            return False
-
-        # Extract symbols
+        source = INDEX_SOURCES[index_name]
         symbols = []
-        for item in data["data"]:
-            symbol = item.get("symbol")
-            if symbol:
-                symbols.append(symbol)  # noqa: PG-APPEND
+
+        if source["type"] == "api":
+            # Use a session to get cookies first
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept": "*/*",
+                "Accept-Language": "en-US,en;q=0.9",
+            }
+            session = requests.Session()
+            session.get("https://www.nseindia.com", headers=headers)  # get cookies
+            response = session.get(source["url"], headers=headers, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            if "data" not in data or not data["data"]:
+                print(f"[Index Sync] No data found for {index_name}")
+                return False
+            for item in data["data"]:
+                symbol = item.get("symbol")
+                if symbol:
+                    symbols.append(symbol)
+
+        elif source["type"] == "csv":
+            try:
+                import io
+                import pandas as pd
+                import time
+
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                    "Accept-Language": "en-US,en;q=0.5",
+                    "Referer": "https://www.niftyindices.com/",
+                    "Connection": "keep-alive",
+                    "Upgrade-Insecure-Requests": "1",
+                }
+
+                # Retry up to 3 times
+                for attempt in range(3):
+                    try:
+                        session = requests.Session()
+                        # First visit the main page to get cookies
+                        session.get("https://www.niftyindices.com/", headers=headers, timeout=10)
+                        response = session.get(source["url"], headers=headers, timeout=30)
+                        response.raise_for_status()
+                        break
+                    except Exception as e:
+                        if attempt == 2:
+                            raise
+                        print(f"[Index Sync] Retry {attempt+1}/3 for {index_name}...")
+                        time.sleep(2)
+
+                df = pd.read_csv(io.StringIO(response.text))
+                # The CSV usually has a column named "Symbol"
+                if "Symbol" in df.columns:
+                    symbols = df["Symbol"].dropna().astype(str).str.strip().tolist()
+                elif "SYMBOL" in df.columns:
+                    symbols = df["SYMBOL"].dropna().astype(str).str.strip().tolist()
+                else:
+                    # Fallback: take first column
+                    symbols = df.iloc[:, 0].dropna().astype(str).str.strip().tolist()
+                print(f"[Index Sync] Downloaded {len(symbols)} symbols from CSV for {index_name}")
+            except Exception as e:
+                print(f"[Index Sync] CSV download failed for {index_name}: {e}")
+                return False
 
         # Filter out dummy / test symbols that NSE sometimes includes
         EXCLUDE_SYMBOLS = {
@@ -148,7 +202,7 @@ def sync_index_constituents(index_name, force=False, task_id: int = None):
                 CREATE TABLE IF NOT EXISTS index_constituents (
                     index_name TEXT,
                     symbol TEXT,
-                    last_updated TEXT,
+                    added_date TEXT,
                     PRIMARY KEY (index_name, symbol)
                 )
                 """
@@ -163,7 +217,7 @@ def sync_index_constituents(index_name, force=False, task_id: int = None):
             today = datetime.now(IST).date().isoformat()
             rows = [(index_name, symbol, today) for symbol in symbols]
             conn.executemany(
-                "INSERT INTO index_constituents (index_name, symbol, last_updated) VALUES (?, ?, ?)",
+                "INSERT INTO index_constituents (index_name, symbol, added_date) VALUES (?, ?, ?)",
                 rows,
             )
 
@@ -224,7 +278,7 @@ def heal_index_if_stale(index_name, expected_count=None):
 
 def get_index_symbols(index_name):
     """Get symbols for a given index from local database."""
-    if index_name not in NSE_INDICES:
+    if index_name not in INDEX_SOURCES:
         return []
 
     metadata_db_path = os.path.join(

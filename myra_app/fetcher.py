@@ -1,16 +1,11 @@
 #!/usr/bin/env python
-import warnings
-
-# Silence Scrapling/Fetcher deprecation warnings BEFORE any other imports
-warnings.filterwarnings("ignore", message=".*deprecated now, and have no effect.*")
-
 import pandas as pd
 
 from myra_core.utils.data_validation import enforce_index_contract
 
 """
-MYRA Smart Fetcher - Resilient Data Acquisition Layer (v3.2 GHOST)
-Powered by scrapling and curl_cffi for human-identical TLS signatures.
+MYRA Smart Fetcher - Resilient Data Acquisition Layer (v3.3 CLOUD)
+Powered by cloudscraper for human-identical TLS signatures.
 EXCLUSIVE GATEKEEPER for all network requests.
 """
 import json
@@ -31,163 +26,71 @@ from io import StringIO
 import numpy as np
 import pandas as pd
 from bs4 import BeautifulSoup
-from scrapling import Fetcher
+import cloudscraper
+import random
+import time
 
 
 class GhostSession:
-    """
-    Stealth Session Manager (TRILOGY ERA)
-    Wraps scrapling.Fetcher to provide human-identical network signatures.
-    Optimized for Bulk Scanning: Persistent connection to prevent N+1 Query overhead.
-    """
-
     def __init__(self, cache_path=None):
-        self.cache_path = cache_path
-        self._conn = None
-        self._init_cache()
-        # Scrapling is now a secondary fallback for bulk scanning
-        self.fetcher = None
-        self.headers = {}
-
-    def _get_conn(self):
-        if self._conn is None and self.cache_path:
-            try:
-                os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
-                self._conn = sqlite3.connect(
-                    self.cache_path, timeout=20, check_same_thread=False
-                )
-                self._conn.execute("PRAGMA journal_mode=WAL;")
-                self._conn.execute("PRAGMA synchronous=NORMAL;")
-            except Exception as e:
-                logger.error(f"Failed to connect to cache DB: {e}")
-        return self._conn
-
-    def _init_cache(self):
-        conn = self._get_conn()
-        if not conn:
-            return
-        try:
-            cursor = conn.execute("PRAGMA table_info(cache)")
-            columns = [info[1] for info in cursor.fetchall()]
-
-            if not columns:
-                conn.execute(
-                    "CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value BLOB, expiry TIMESTAMP, data_hash TEXT)"
-                )
-            elif "data_hash" not in columns:
-                logger.info(
-                    f"Upgrading cache schema in {self.cache_path}: Adding data_hash column."
-                )
-                conn.execute("ALTER TABLE cache ADD COLUMN data_hash TEXT")
-            conn.commit()
-        except Exception as e:
-            logger.error(f"Unexpected error during cache init: {e}", exc_info=True)
-            pass
-
-    def _get_cache(self, url, params=None):
-        conn = self._get_conn()
-        if not conn:
-            return None
-        key = hashlib.md5(
-            f"{url}{json.dumps(params, sort_keys=True)}".encode(), usedforsecurity=False
-        ).hexdigest()
-        try:
-            # Consistent UTC comparison
-            now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
-            res = conn.execute(
-                "SELECT value FROM cache WHERE key = ? AND expiry > ?",
-                (key, now_utc),
-            ).fetchone()
-            return res[0] if res else None
-        except Exception as e:
-            logger.error(f"Unexpected error in _get_cache: {e}", exc_info=True)
-            return None
-
-    def _set_cache(self, url, value, params=None, expire_seconds=86400):
-        conn = self._get_conn()
-        if not conn:
-            return
-        key = hashlib.md5(
-            f"{url}{json.dumps(params, sort_keys=True)}".encode(), usedforsecurity=False
-        ).hexdigest()
-        expiry = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(
-            seconds=expire_seconds
+        # Ignore cache for now (simpler)
+        self.session = cloudscraper.create_scraper(
+            browser={
+                'browser': 'chrome',
+                'platform': 'windows',
+                'desktop': True,
+            }
         )
-        data_hash = (
-            hashlib.md5(value, usedforsecurity=False).hexdigest() if value else None
-        )
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Referer': 'https://www.nseindia.com/',
+        })
+        self.user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.2903.112",
+        ]
+        self.cookies = {}
 
-        try:
-            conn.execute(
-                "INSERT OR REPLACE INTO cache VALUES (?, ?, ?, ?)",
-                (key, value, expiry, data_hash),
-            )
-            conn.commit()
-        except sqlite3.OperationalError as e:
-            if "table cache has 3 columns" in str(e):
-                logger.warning(
-                    "Cache schema mismatch detected during INSERT. Falling back to 3-column insert."
-                )
-                conn.execute(
-                    "INSERT OR REPLACE INTO cache (key, value, expiry) VALUES (?, ?, ?)",
-                    (key, value, expiry),
-                )
-                conn.commit()
-            else:
-                logger.error(f"SQL Error in _set_cache: {e}")
+    def request(self, url, method='GET', data=None, headers=None, use_cache=False):
+        # Random delay to avoid rate limiting
+        time.sleep(random.uniform(0.5, 2.5))
 
-    def get(self, url, params=None, headers=None, timeout=30, bypass_cache=False):
-        """Standardized GET with Requests-First resilience (Fix 5)."""
-        if not bypass_cache:
-            cached = self._get_cache(url, params)
-            if cached:
-
-                class MockResponse:
-                    def __init__(self, content):
-                        self.content = content
-                        self.text = content.decode("utf-8", errors="ignore")
-                        self.status_code = 200
-
-                    def json(self):
-                        return json.loads(self.text)
-
-                return MockResponse(cached)
-
-        current_headers = self.headers.copy()
+        # Start with base headers
+        req_headers = self.session.headers.copy()
+        req_headers['User-Agent'] = random.choice(self.user_agents)
+        # Merge any additional headers passed in
         if headers:
-            current_headers.update(headers)
+            req_headers.update(headers)
+        if self.cookies:
+            req_headers['Cookie'] = '; '.join([f"{k}={v}" for k, v in self.cookies.items()])
 
-        # 1. PRIMARY: Standard Requests (Stable & Fast)
-        import requests
+        if method.upper() == 'GET':
+            resp = self.session.get(url, headers=req_headers, timeout=30)
+        else:
+            resp = self.session.post(url, headers=req_headers, data=data, timeout=30)
 
+        # Capture cookies from response
+        if 'Set-Cookie' in resp.headers:
+            raw_cookies = resp.headers.get('Set-Cookie', '')
+            for cookie_part in raw_cookies.split(','):
+                if '=' in cookie_part:
+                    key_val = cookie_part.split(';')[0]
+                    if '=' in key_val:
+                        key, val = key_val.split('=', 1)
+                        self.cookies[key.strip()] = val.strip()
+        return resp
+
+    def get(self, url, headers=None, **kwargs):
+        return self.request(url, method='GET', headers=headers)
+
+    def close(self):
         try:
-            r = requests.get(
-                url, params=params, headers=current_headers, timeout=timeout
-            )
-            if r.status_code == 200:
-                self._set_cache(url, r.content, params)
-            return r
-        except Exception as e:
-            logger.error(f"Requests error for {url}: {e}")
-            # 2. FALLBACK: Stealth Scrapling (Only if blocked)
-            try:
-                if self.fetcher is None:
-                    from scrapling import Fetcher
-
-                    self.fetcher = Fetcher()
-
-                response = self.fetcher.get(
-                    url, params=params, headers=current_headers, timeout=timeout + 20
-                )
-                response.status_code = getattr(response, "status", 0)
-                response.content = getattr(response, "body", b"")
-
-                if response.status_code == 200:
-                    self._set_cache(url, response.content, params)
-                return response
-            except Exception as e:
-                logger.error(f"Scrapling fallback error for {url}: {e}")
-                return None
+            self.session.close()
+        except:
+            pass
 
 
 class SchemaContractEnforcer:
@@ -843,6 +746,13 @@ class DataFetcher:
             return None, "holiday_skip"
         if not self.is_data_ready(current_date):
             return None, "too_early"
+
+        # --- NEW: Pre-request to establish a session ---
+        # Visiting the main page first helps get the necessary cookies.
+        main_page_url = "https://www.nseindia.com/"
+        print(f"[GHOST] Warming up stealth session via {main_page_url}")
+        self.session.request(main_page_url)
+        # --- End of new code ---
 
         streams = self.registry.get("data_streams", {}).get("market_ohlcv_delivery", [])
 

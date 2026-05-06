@@ -1,4 +1,5 @@
 import functools
+import logging
 import os
 import threading
 import warnings
@@ -295,6 +296,7 @@ class MYRAScreener:
             )
         finally:
             resume_enrichment()
+            logging.debug("Enrichment resumed after scan")
 
         if not results:
             # ... (Stale data warning logic)

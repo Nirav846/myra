@@ -1,11 +1,10 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import LeaderboardView from './views/Leaderboard';
 import FVGScannerView from './views/FVGScanner';
 import AIAnalysisView from './views/AIAnalysis';
 import DataLakeView from './views/DataLake';
 import ToolsView from './views/Tools';
 import MissionControlView from './views/MissionControl';
-import ValueRankerView from './views/ValueRanker';
 import SettingsView from './views/Settings';
 import HistoricalSearchView from './views/HistoricalSearch';
 import SectorFlowView from './views/SectorFlow';
@@ -16,10 +15,62 @@ import AdvancedChartView from './views/AdvancedChart';
 import ReversionEngineView from './views/ReversionEngine';
 import { getLibrarian } from './lib/Librarian';
 import { useSettings } from './lib/SettingsContext';
+import { useHealthStatus } from './hooks/useHealthStatus';
+import { AlertManager } from './lib/AlertManager';
+import { DebugPanel } from './components/DebugPanel';
+import { SavedWorkspaces } from './components/SavedWorkspaces';
 import { AlertCircle, Terminal, Command, Settings as SettingsIcon, PanelLeftClose, PanelLeft } from 'lucide-react';
+import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
+
+const TABS = [
+  { id: 'Mission Control', path: '/mission-control', icon: '🎛️'},
+  { id: 'Leaderboard', path: '/leaderboard', icon: '📊'},
+  { id: 'FVG Scanner', path: '/fvg-scanner', icon: '📡'},
+  { id: 'Historical Search', path: '/historical-search', icon: '🔍'},
+  { id: 'Technical Chart', path: '/chart', icon: '📈'},
+  { id: 'Sector Flow', path: '/sector-flow', icon: '🚥'},
+  { id: 'Reversion Engine', path: '/reversion-engine', icon: '🌀'},
+  { id: 'Ghost Simulator', path: '/ghost-simulator', icon: '👻'},
+  { id: 'Multibagger Matrix', path: '/multibagger-matrix', icon: '🚀'},
+  { id: 'Inst. DOM', path: '/inst-dom', icon: '🧱'},
+  { id: 'Parquet Lake', path: '/parquet-lake', icon: '🌊'},
+  { id: 'Tools & Sync', path: '/tools', icon: '⚙️'}
+];
+
+const ACCENT_MAP: Record<string, { bg600: string; bg50020: string; text300: string; bg500: string; text400: string }> = {
+  indigo: { bg600: 'bg-indigo-600', bg50020: 'bg-indigo-500/20', text300: 'text-indigo-300', bg500: 'bg-indigo-500', text400: 'text-indigo-400' },
+  cyan: { bg600: 'bg-cyan-600', bg50020: 'bg-cyan-500/20', text300: 'text-cyan-300', bg500: 'bg-cyan-500', text400: 'text-cyan-400' },
+  fuchsia: { bg600: 'bg-fuchsia-600', bg50020: 'bg-fuchsia-500/20', text300: 'text-fuchsia-300', bg500: 'bg-fuchsia-500', text400: 'text-fuchsia-400' },
+  green: { bg600: 'bg-green-600', bg50020: 'bg-green-500/20', text300: 'text-green-300', bg500: 'bg-green-500', text400: 'text-green-400' },
+};
+
+const librarian = getLibrarian();
+
+// Hardcoded system stats extracted
+const SYSTEM_HARDWARE_INFO = {
+  cpuModel: "AMD A8-7410",
+  memPercent: 14,
+  memString: "14% / 8GB"
+};
+
+const FOOTER_STATS = {
+  dbSize: "4.2GB",
+  syncStatus: "background_vacuum (100%)",
+  aiTrend: "BULLISH"
+};
+
+interface HealthStatus {
+  connected: boolean;
+  error?: string;
+  count?: number;
+}
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('Mission Control');
+  const navigate = useNavigate();
+  const location = useLocation();
+  const activeTab = TABS.find(t => location.pathname.startsWith(t.path))?.id || 
+                    (location.pathname === '/settings' ? 'Settings' : 'Mission Control');
+
   const [globalSelectedTicker, setGlobalSelectedTicker] = useState<string | undefined>();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDesktopMenuExpanded, setIsDesktopMenuExpanded] = useState(true);
@@ -28,12 +79,25 @@ export default function App() {
     "[DAEMON] Binding _inst_conn to local SQLite",
     "[DAEMON] Cache warmed: 4 tables"
   ]);
-  const librarian = useMemo(() => getLibrarian(), []);
   const { settings } = useSettings();
+  const { health, isConnected } = useHealthStatus();
 
   // Simulate incoming daemon logs for updates
   useEffect(() => {
+    if (settings.autoRefreshInterval === 'Off') return;
+    
+    // map settings to ms
+    const msMap: Record<string, number> = {
+      '10s': 10000,
+      '30s': 30000,
+      '1min': 60000,
+      '5min': 300000
+    };
+    
+    const intervalTime = msMap[settings.autoRefreshInterval] || 10000;
+
     const interval = setInterval(() => {
+      if (document.hidden) return; // Pause when tab is hidden
       const messages = [
         "[SYNC] Parquet indicator lake optimized.",
         "[ALERT] High frequency tick detected on NQ.",
@@ -45,38 +109,42 @@ export default function App() {
         const newLogs = [...prev, messages[Math.floor(Math.random() * messages.length)]];
         return newLogs.slice(-4); // Keep last 4 logs
       });
-    }, 8500);
+    }, intervalTime);
     return () => clearInterval(interval);
-  }, []);
+  }, [settings.autoRefreshInterval]);
 
   // Compute disconnected DBs
-  const disconnectedDBs = Object.entries(librarian.health as Record<string, any>).filter(([_, status]) => !status.connected);
+  const disconnectedDBs = Object.entries(health as Record<string, HealthStatus>).filter(([_, status]) => !status.connected);
 
   // Dynamic Theme mappings based on SettingsContext
   const bgMain = settings.theme === 'pitch-black' ? 'bg-[#000000]' : 'bg-[#0e1117]';
   const bgSidebar = settings.theme === 'pitch-black' ? 'bg-[#0a0a0a]' : 'bg-[#262730]';
   const bgFooter = settings.theme === 'pitch-black' ? 'bg-[#050505]' : 'bg-[#0e1117]';
   const densityClass = settings.density === 'compact' ? 'p-3 gap-3 text-sm' : 'p-6 gap-6 text-base';
+  
+  const accent = ACCENT_MAP[settings.accentColor] || ACCENT_MAP['indigo'];
 
   return (
     <div className={`flex h-screen w-full ${bgMain} text-[#fafafa] font-sans overflow-hidden transition-colors relative`}>
+      <AlertManager />
+      <DebugPanel />
       {isMobileMenuOpen && (
         <div className="fixed inset-0 bg-black/60 z-30 md:hidden backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />
       )}
       {/* Sidebar Navigation */}
-      <aside className={`${isDesktopMenuExpanded ? 'w-64' : 'w-16'} ${bgSidebar} flex flex-col border-r border-[#ffffff1a] absolute md:relative z-40 h-full !flex transform transition-all duration-300 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+      <aside className={`${isDesktopMenuExpanded ? 'w-64' : 'w-16'} ${bgSidebar} flex flex-col border-[#ffffff1a] absolute md:relative z-40 h-full !flex transform transition-all duration-300 ${settings.sidebarPosition === 'Right' ? 'border-l order-last right-0' : 'border-r left-0'} ${isMobileMenuOpen ? 'translate-x-0' : (settings.sidebarPosition === 'Right' ? 'translate-x-full md:translate-x-0' : '-translate-x-full md:translate-x-0')}`}>
         <div className={`p-2 border-b border-[#ffffff1a] flex flex-col items-center`}>
           <div className={`flex items-center justify-between w-full h-6 ${!isDesktopMenuExpanded && 'justify-center'}`}>
             {isDesktopMenuExpanded && (
               <div className="flex items-center gap-2 overflow-hidden">
-                <div className={`w-6 h-6 rounded-md flex items-center justify-center font-bold italic text-white flex-shrink-0 transition-colors ${settings.animations ? 'hover:scale-105' : ''} bg-${settings.accentColor}-600`}>
+                <div className={`w-6 h-6 rounded-md flex items-center justify-center font-bold italic text-white flex-shrink-0 transition-colors ${settings.animations ? 'hover:scale-105' : ''} ${accent.bg600}`}>
                   <Command size={14} />
                 </div>
-                <h1 className="text-sm font-bold tracking-tight whitespace-nowrap">MYRA <span className={`text-${settings.accentColor}-400`}>v3.2</span></h1>
+                <h1 className="text-sm font-bold tracking-tight whitespace-nowrap">MYRA <span className={`${accent.text400}`}>v3.2</span></h1>
               </div>
             )}
             {!isDesktopMenuExpanded && (
-               <div className={`w-6 h-6 rounded-md flex items-center justify-center font-bold italic text-white flex-shrink-0 transition-colors ${settings.animations ? 'hover:scale-105' : ''} bg-${settings.accentColor}-600`}>
+               <div className={`w-6 h-6 rounded-md flex items-center justify-center font-bold italic text-white flex-shrink-0 transition-colors ${settings.animations ? 'hover:scale-105' : ''} ${accent.bg600}`}>
                  <Command size={14} />
                </div>
             )}
@@ -108,32 +176,18 @@ export default function App() {
           ) : (
             <div className="h-6"></div>
           )}
-          {[
-            { id: 'Mission Control', icon: '🎛️'},
-            { id: 'Leaderboard', icon: '📊'},
-            { id: 'FVG Scanner', icon: '📡'},
-            { id: 'Historical Search', icon: '🔍'},
-            { id: 'Technical Chart', icon: '📈'},
-            { id: 'Sector Flow', icon: '🚥'},
-            // { id: 'Value Ranker', icon: '🎯'},
-            { id: 'Reversion Engine', icon: '🌀'},
-            { id: 'Ghost Simulator', icon: '👻'},
-            { id: 'Multibagger Matrix', icon: '🚀'},
-            { id: 'Inst. DOM', icon: '🧱'},
-            { id: 'Parquet Lake', icon: '🌊'},
-            { id: 'Tools & Sync', icon: '⚙️'}
-          ].map((tab) => {
+          {TABS.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
                 onClick={() => {
-                  setActiveTab(tab.id);
+                  navigate(tab.path);
                   setIsMobileMenuOpen(false);
                 }}
                 className={`w-full text-left flex items-center ${isDesktopMenuExpanded ? 'gap-3 px-3' : 'justify-center px-0'} py-2 rounded text-sm transition-colors ${
                   isActive 
-                    ? `bg-${settings.accentColor}-500/20 text-${settings.accentColor}-300` 
+                    ? `${accent.bg50020} ${accent.text300}` 
                     : 'text-[#ccc] hover:bg-[#ffffff0a]'
                 }`}
                 title={!isDesktopMenuExpanded ? tab.id : undefined}
@@ -151,7 +205,7 @@ export default function App() {
           )}
           {isDesktopMenuExpanded && (
             <div className="space-y-2 mt-2 px-3">
-              {Object.entries(librarian.health as Record<string, any>).map(([dbName, status]) => (
+              {Object.entries(librarian.health as Record<string, HealthStatus>).map(([dbName, status]) => (
                 <div key={dbName} className="flex justify-between items-center text-[10px] font-mono">
                   <span className="text-[#666] whitespace-nowrap overflow-hidden text-ellipsis mr-2">{dbName.toUpperCase()}</span> 
                   <span className="flex items-center gap-1.5 shrink-0">
@@ -170,7 +224,7 @@ export default function App() {
           {/* Settings Tab pushed to the bottom before hardware usage */}
           <button
             onClick={() => {
-               setActiveTab('Settings');
+               navigate('/settings');
                setIsMobileMenuOpen(false);
             }}
             className={`w-[calc(100%-1rem)] mx-auto mb-2 flex items-center ${isDesktopMenuExpanded ? 'gap-3 px-3' : 'justify-center px-0'} py-2 rounded text-sm transition-colors ${
@@ -186,18 +240,18 @@ export default function App() {
           
           {isDesktopMenuExpanded ? (
             <div className={`px-4 pt-2 pb-2`}>
-              <div className="text-[10px] text-[#888] font-mono mb-1 uppercase">Hardware: AMD A8-7410</div>
+              <div className="text-[10px] text-[#888] font-mono mb-1 uppercase">Hardware: {SYSTEM_HARDWARE_INFO.cpuModel}</div>
               <div className="h-1 w-full bg-[#333] rounded-full overflow-hidden">
-                <div className={`h-full bg-${settings.accentColor}-500 w-[14%]`}></div>
+                <div className={`h-full ${accent.bg500}`} style={{ width: `${SYSTEM_HARDWARE_INFO.memPercent}%`}}></div>
               </div>
               <div className="flex justify-between mt-1 text-[10px] font-mono text-[#888]">
-                <span>Mem: 14% / 8GB</span><span>CPU: Base</span>
+                <span>Mem: {SYSTEM_HARDWARE_INFO.memString}</span><span>CPU: Base</span>
               </div>
             </div>
           ) : (
              <div className="px-2 pt-2 pb-2 flex flex-col items-center">
-                 <div className={`h-8 w-1 flex-col justify-end flex bg-[#333] rounded overflow-hidden`} title="Mem: 14% / 8GB / AMD A8-7410">
-                     <div className={`w-full bg-${settings.accentColor}-500 h-[14%]`}></div>
+                 <div className={`h-8 w-1 flex-col justify-end flex bg-[#333] rounded overflow-hidden`} title={`Mem: ${SYSTEM_HARDWARE_INFO.memString} / ${SYSTEM_HARDWARE_INFO.cpuModel}`}>
+                     <div className={`w-full ${accent.bg500}`} style={{ height: `${SYSTEM_HARDWARE_INFO.memPercent}%` }}></div>
                  </div>
              </div>
           )}
@@ -233,6 +287,9 @@ export default function App() {
                 <p className="text-[10px] text-[#888] hidden sm:block">Librarian v3.2: Myra React Bridge</p>
               </div>
             </div>
+            <div className="px-4">
+              <SavedWorkspaces />
+            </div>
           </header>
 
           {/* Path-Proof Streamlit UI Error Simulators */}
@@ -241,28 +298,38 @@ export default function App() {
               <AlertCircle className="text-red-400 flex-shrink-0 mt-0.5" size={18} />
               <div>
                 <h3 className="text-red-400 text-sm font-semibold mb-1">Error: Database Missing ({dbName})</h3>
-                <p className="text-[#ccc] text-xs font-mono">{(status as any).error}</p>
+                <p className="text-[#ccc] text-xs font-mono">{status.error || 'Unknown Error'}</p>
               </div>
             </div>
           ))}
 
           <div className="flex-1">
             <div className="max-w-6xl">
-              {activeTab === 'Mission Control' && <MissionControlView lib={librarian} navigateTo={setActiveTab} />}
-              {activeTab === 'Leaderboard' && <LeaderboardView lib={librarian} />}
-              {activeTab === 'FVG Scanner' && <FVGScannerView lib={librarian} />}
-              {activeTab === 'Historical Search' && <HistoricalSearchView lib={librarian} />}
-              {activeTab === 'Technical Chart' && <AdvancedChartView lib={librarian} initialSymbol={globalSelectedTicker} />}
-              {activeTab === 'Sector Flow' && <SectorFlowView lib={librarian} />}
-              {/* {activeTab === 'Value Ranker' && <ValueRankerView lib={librarian} />} */}
-              {activeTab === 'Reversion Engine' && <ReversionEngineView lib={librarian} onNavigate={(tab, symbol) => { setActiveTab(tab); if (symbol) setGlobalSelectedTicker(symbol); }} />}
-              {activeTab === 'Ghost Simulator' && <GhostSimulatorView lib={librarian} />}
-              {activeTab === 'Multibagger Matrix' && <MultibaggerMatrixView lib={librarian} />}
-              {activeTab === 'Inst. DOM' && <InstDOMView lib={librarian} />}
-              {activeTab === 'Parquet Lake' && <DataLakeView lib={librarian} />}
-              {activeTab === 'AEON Model' && <AIAnalysisView lib={librarian} />}
-              {activeTab === 'Tools & Sync' && <ToolsView lib={librarian} />}
-              {activeTab === 'Settings' && <SettingsView />}
+              <Routes>
+                <Route path="/mission-control" element={<MissionControlView lib={librarian} navigateTo={(tab) => {
+                  const target = TABS.find(t => t.id === tab);
+                  if (target) navigate(target.path);
+                }} />} />
+                <Route path="/leaderboard" element={<LeaderboardView lib={librarian} />} />
+                <Route path="/fvg-scanner" element={<FVGScannerView lib={librarian} />} />
+                <Route path="/historical-search" element={<HistoricalSearchView lib={librarian} />} />
+                <Route path="/chart" element={<AdvancedChartView lib={librarian} activeSymbol={globalSelectedTicker} />} />
+                <Route path="/sector-flow" element={<SectorFlowView lib={librarian} />} />
+                <Route path="/reversion-engine" element={<ReversionEngineView lib={librarian} onNavigate={(tab, symbol) => { 
+                  const target = TABS.find(t => t.id === tab);
+                  if (target) navigate(target.path);
+                  if (symbol) setGlobalSelectedTicker(symbol); 
+                }} />} />
+                <Route path="/ghost-simulator" element={<GhostSimulatorView lib={librarian} />} />
+                <Route path="/multibagger-matrix" element={<MultibaggerMatrixView lib={librarian} />} />
+                <Route path="/inst-dom" element={<InstDOMView lib={librarian} />} />
+                <Route path="/parquet-lake" element={<DataLakeView lib={librarian} />} />
+                <Route path="/settings" element={<SettingsView />} />
+                <Route path="/tools" element={<ToolsView lib={librarian} />} />
+                
+                {/* Fallback */}
+                <Route path="*" element={<Navigate to="/mission-control" replace />} />
+              </Routes>
             </div>
           </div>
         </div>
@@ -271,16 +338,19 @@ export default function App() {
         <footer className={`h-10 ${bgFooter} border-t border-blue-500/30 shrink-0 flex items-center justify-between px-4 font-mono text-[11px] shadow-[0_-2px_10px_rgba(59,130,246,0.05)] transition-colors`}>
           <div className="flex items-center gap-4">
             <div>
-              <span className={`text-${settings.accentColor}-400 font-bold`}>DB: </span>
-              <span className="text-white">Connected (Core)</span>
-              <span className="text-[#888]"> (4.2GB)</span>
+              <span className={`${accent.text400} font-bold`}>DB: </span>
+              {isConnected ? 
+                <span className="text-white">Connected (Core)</span> : 
+                <span className="text-red-400">Degraded (Demo)</span>
+              }
+              <span className="text-[#888]"> ({FOOTER_STATS.dbSize})</span>
             </div>
             <div className="text-[#555]">|</div>
             <div className="flex items-center gap-2">
               <span className="text-white font-bold">Status: </span>
-              <span className="text-cyan-400">Sync: background_vacuum (100%)</span>
+              <span className="text-cyan-400">Sync: {FOOTER_STATS.syncStatus}</span>
               <span className="text-white font-bold ml-2">AI-Trend: </span>
-              <span className="text-green-400">BULLISH</span>
+              <span className="text-green-400">{FOOTER_STATS.aiTrend}</span>
             </div>
           </div>
           

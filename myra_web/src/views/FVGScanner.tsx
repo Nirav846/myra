@@ -2,6 +2,7 @@ import { Librarian } from '../lib/Librarian';
 import { useState, useEffect } from 'react';
 import { Copy, Check, RefreshCw } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceArea, ReferenceLine } from 'recharts';
+import { alertBus } from '../lib/AlertManager';
 
 const mockChartData: Record<string, any> = {
   'NQ': {
@@ -89,6 +90,12 @@ export default function FVGScannerView({ lib }: { lib: Librarian }) {
       setDataLoaded(true);
       setLastRefreshed(new Date());
       setIsRefreshing(false);
+      alertBus.emit({
+          title: "New FVG Detected",
+          message: "Bullish divergence FVG logged for BTC on 4H",
+          level: "info",
+          source: "FVG Scanner"
+      });
     }, 600);
   };
 

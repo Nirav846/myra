@@ -52,9 +52,9 @@ export default function AIAnalysisView({ lib }: { lib: Librarian }) {
           <div className="flex flex-col gap-1" title="Select the metric to focus the AI analysis on (e.g. Institutional Flow, Technical Scan).">
             <label className="text-[10px] text-[#888] uppercase font-semibold">Target</label>
             <select value={target} onChange={e => setTarget(e.target.value)} className="bg-[#0e1117] border border-[#ffffff1a] text-[#ccc] text-xs p-1.5 rounded font-mono focus:outline-none focus:border-blue-500 transition-colors">
-              <option value="inst_flow">inst_flow</option>
-              <option value="tech_scan">tech_scan</option>
-              <option value="macro_aggr">macro_aggr</option>
+              <option className="bg-[#1a1c24] text-[#fafafa]" value="inst_flow">inst_flow</option>
+              <option className="bg-[#1a1c24] text-[#fafafa]" value="tech_scan">tech_scan</option>
+              <option className="bg-[#1a1c24] text-[#fafafa]" value="macro_aggr">macro_aggr</option>
             </select>
           </div>
           <div className="flex flex-col gap-1" title="Set the recursion depth for historical data traversal.">
@@ -64,25 +64,25 @@ export default function AIAnalysisView({ lib }: { lib: Librarian }) {
           <div className="flex flex-col gap-1" title="Choose the quantitative model architecture to execute.">
             <label className="text-[10px] text-[#888] uppercase font-semibold">Model</label>
             <select value={model} onChange={e => setModel(e.target.value)} className="bg-[#0e1117] border border-[#ffffff1a] text-[#ccc] text-xs p-1.5 rounded font-mono focus:outline-none focus:border-blue-500 transition-colors">
-              <option value="myra_quant_v2.2">myra_quant_v2.2</option>
-              <option value="myra_macro_v3.0">myra_macro_v3.0</option>
-              <option value="gemini_pro_v1.5">gemini_pro_v1.5</option>
+              <option className="bg-[#1a1c24] text-[#fafafa]" value="myra_quant_v2.2">myra_quant_v2.2</option>
+              <option className="bg-[#1a1c24] text-[#fafafa]" value="myra_macro_v3.0">myra_macro_v3.0</option>
+              <option className="bg-[#1a1c24] text-[#fafafa]" value="gemini_pro_v1.5">gemini_pro_v1.5</option>
             </select>
           </div>
           <div className="flex flex-col gap-1" title="Specify which internal SQLite database sidecar to query data from.">
             <label className="text-[10px] text-[#888] uppercase font-semibold">DB Route</label>
             <select value={dbRoute} onChange={e => setDbRoute(e.target.value)} className="bg-[#0e1117] border border-[#ffffff1a] text-[#ccc] text-xs p-1.5 rounded font-mono focus:outline-none focus:border-blue-500 transition-colors">
-              <option value="_meta_conn">_meta_conn</option>
-              <option value="_inst_conn">_inst_conn</option>
-              <option value="_tech_conn">_tech_conn</option>
+              <option className="bg-[#1a1c24] text-[#fafafa]" value="_meta_conn">_meta_conn</option>
+              <option className="bg-[#1a1c24] text-[#fafafa]" value="_inst_conn">_inst_conn</option>
+              <option className="bg-[#1a1c24] text-[#fafafa]" value="_tech_conn">_tech_conn</option>
             </select>
           </div>
           <div className="flex flex-col gap-1" title="Tune for calculation speed vs processing precision.">
             <label className="text-[10px] text-[#888] uppercase font-semibold">Latency Opt</label>
             <select value={latencyOpt} onChange={e => setLatencyOpt(e.target.value)} className="bg-[#0e1117] border border-[#ffffff1a] text-[#ccc] text-xs p-1.5 rounded font-mono focus:outline-none focus:border-blue-500 transition-colors">
-              <option value="lean">lean</option>
-              <option value="deep">deep</option>
-              <option value="balanced">balanced</option>
+              <option className="bg-[#1a1c24] text-[#fafafa]" value="lean">lean</option>
+              <option className="bg-[#1a1c24] text-[#fafafa]" value="deep">deep</option>
+              <option className="bg-[#1a1c24] text-[#fafafa]" value="balanced">balanced</option>
             </select>
           </div>
         </div>

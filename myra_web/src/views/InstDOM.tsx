@@ -104,11 +104,11 @@ export default function InstDOMView({ lib }: { lib: Librarian }) {
               onChange={e => setLookbackDays(Number(e.target.value))}
               className="w-32 bg-[#1a1c24] border border-[#ffffff1a] rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500 font-mono text-[#fafafa]"
             >
-              <option value={7}>Last 7 Days</option>
-              <option value={30}>Last 30 Days</option>
-              <option value={90}>Last 90 Days</option>
-              <option value={180}>Last 180 Days</option>
-              <option value={365}>1 Year / YTD</option>
+              <option className="bg-[#1a1c24] text-[#fafafa]" value={7}>Last 7 Days</option>
+              <option className="bg-[#1a1c24] text-[#fafafa]" value={30}>Last 30 Days</option>
+              <option className="bg-[#1a1c24] text-[#fafafa]" value={90}>Last 90 Days</option>
+              <option className="bg-[#1a1c24] text-[#fafafa]" value={180}>Last 180 Days</option>
+              <option className="bg-[#1a1c24] text-[#fafafa]" value={365}>1 Year / YTD</option>
             </select>
           </div>
           
