@@ -296,7 +296,7 @@ def process_enrichment_pipeline(lib, conn):
                             row["symbol"],
                             str(row["date"]),
                         )
-                        for _, row in smc_df.iterrows()  # noqa: PG-ITERROWS
+                        for _, row in smc_df.to_pandas().iterrows()  # noqa: PG-ITERROWS
                         if not pd.isna(row[col])
                     ]
 

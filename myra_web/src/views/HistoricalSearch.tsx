@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { Search, Calendar, Activity, BarChart2, Table as TableIcon, Package, TrendingUp, BarChart } from 'lucide-react';
+import { Search, Calendar, Activity, BarChart2, Table as TableIcon, Package, TrendingUp, BarChart, Download, AlertTriangle } from 'lucide-react';
 import { ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { SymbolSearch } from '../components/SymbolSearch';
+import { motion, AnimatePresence } from 'motion/react';
 
 export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
   const [ticker, setTicker] = useState('RELIANCE');
@@ -21,13 +22,14 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
     setIsDemo(!lib.isConnectedToLocalRepo);
     
     try {
+      // SECURE SQL: Using positional placeholders (?) and spreading parameters into args array
       const query = `
-        SELECT date, open, high, low, close, COALESCE(volume, trades) as volume, COALESCE(delivery, 0) as delivery_qty, (COALESCE(delivery, 0) * 100.0 / NULLIF(COALESCE(volume, trades), 0)) as delivery_pct
+        SELECT date, open, high, low, close, volume, delivery, (delivery * 100.0 / NULLIF(volume, 0)) as delivery_pct
         FROM technical_data
-        WHERE symbol = '${ticker}' AND date >= '${startDate}' AND date <= '${endDate}'
+        WHERE symbol = ? AND date >= ? AND date <= ?
         ORDER BY date ASC
       `;
-      const result = await lib.executeQuery('_tech_conn', query);
+      const result = await lib.executeQuery('_tech_conn', query, [ticker, startDate, endDate]);
 
       if (result && result.length > 0) {
         const mapped = result.map((r: any) => ({
@@ -37,9 +39,9 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
             low: Number(r.low || r.Low || 0),
             close: Number(r.close || r.Close || 0),
             volume: Number(r.volume || r.Volume || 0),
-            delivery_qty: Number(r.delivery_qty || r.DeliveryQty || r.delivery || 0),
-            delivery_pct: Number(r.delivery_pct || r.DeliveryPct || r.del_pct || 0),
-            non_delivery: Number(r.volume || r.Volume || 0) - Number(r.delivery_qty || r.DeliveryQty || r.delivery || 0)
+            delivery_qty: Number(r.delivery || 0), 
+            delivery_pct: Number(r.delivery_pct || 0),
+            non_delivery: Number(r.volume || 0) - Number(r.delivery || 0)
         }));
         setData(mapped);
       } else {
@@ -73,7 +75,6 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
       const low = Math.min(open, close) - Math.random() * volatility * 0.5;
       
       const volume = Math.floor(Math.random() * 5000000) + 1000000;
-      // High variability in delivery for testing visualizations
       const delivery_pct = Number((Math.random() * 60 + 15).toFixed(2)); 
       const delivery_qty = Math.floor(volume * (delivery_pct / 100));
       const non_delivery = volume - delivery_qty;
@@ -94,6 +95,22 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
     setData(mock);
   };
 
+  const exportCSV = () => {
+    if (!data) return;
+    const headers = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume', 'DeliveryQty', 'DeliveryPct'];
+    const rows = data.map(r => [r.date, r.open, r.high, r.low, r.close, r.volume, r.delivery_qty, r.delivery_pct]);
+    const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `historical_${ticker}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const summaryStats = useMemo(() => {
     if (!data || data.length === 0) return null;
     const totalVol = data.reduce((acc, curr) => acc + curr.volume, 0);
@@ -107,6 +124,24 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
 
   return (
     <div className="bg-[#1e2028] border border-[#ffffff1a] rounded flex flex-col shadow-xl overflow-hidden min-h-[600px]">
+      {/* Dynamic Demo Banner */}
+      <AnimatePresence>
+        {isDemo && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="bg-yellow-500/10 border-b border-yellow-500/20 px-6 py-2 flex items-center justify-between overflow-hidden"
+          >
+            <div className="flex items-center gap-2 text-yellow-500 text-xs font-medium italic">
+              <AlertTriangle size={14} />
+              <span>ENVIRONMENT: SIMULATED / DEMO MODE ACTIVE</span>
+            </div>
+            <span className="text-[10px] text-yellow-500/60 uppercase tracking-widest font-mono">Mock Data Provided by Librarian Fallback</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="px-6 py-4 border-b border-[#ffffff1a] flex justify-between items-center bg-[#1a1c24]">
         <h3 className="font-medium text-lg flex items-center gap-2">
           <Activity size={20} className="text-blue-400" />
@@ -114,11 +149,6 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
         </h3>
         <div className="flex items-center gap-3">
           {errorMsg && <span className="text-xs text-red-400 font-mono px-2 py-1 bg-red-400/10 rounded">{errorMsg}</span>}
-          {isDemo && (
-            <span className="text-[10px] bg-yellow-500/20 text-yellow-500 px-2 py-1 rounded font-mono border border-yellow-500/30">
-              ⚠️ SIMULATED DATA
-            </span>
-          )}
           <span className="text-xs text-[#888] font-mono">Module: query_layer.delivery</span>
         </div>
       </div>
@@ -133,7 +163,6 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
               initialValue={ticker}
               onSymbolSelect={setTicker}
               placeholder="e.g. RELIANCE"
-              className="mt-1"
             />
           </div>
           
@@ -172,8 +201,22 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
           </button>
         </div>
 
+        {/* Loading Skeletons */}
+        {loading && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="h-24 bg-[#ffffff05] border border-[#ffffff0a] rounded animate-pulse border-dashed" />
+              ))}
+            </div>
+            <div className="h-[400px] bg-[#ffffff05] border border-[#ffffff0a] rounded animate-pulse border-dashed flex items-center justify-center">
+              <div className="text-[#333] font-mono text-xs uppercase tracking-tighter">Initializing Scrutiny Layer...</div>
+            </div>
+          </div>
+        )}
+
         {/* Dashboard Highlight Cards */}
-        {data && summaryStats && (
+        {!loading && data && summaryStats && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-[#1a1c24] border border-green-500/30 rounded p-4 flex flex-col justify-center relative overflow-hidden group">
               <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity"><Package size={100} /></div>
@@ -197,20 +240,28 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
         )}
 
         {/* View Toggle & Content */}
-        {data && (
+        {!loading && data && (
           <div className="flex-1 flex flex-col border border-[#ffffff0a] rounded-lg overflow-hidden bg-[#0e1117]">
-            <div className="flex bg-[#1a1c24] border-b border-[#ffffff0a] p-2 gap-2">
+            <div className="flex justify-between items-center bg-[#1a1c24] border-b border-[#ffffff0a] p-2 pr-4">
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => setViewMode('chart')}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-medium transition-colors ${viewMode === 'chart' ? 'bg-[#ffffff1a] text-white' : 'text-[#888] hover:text-[#ccc]'}`}
+                >
+                  <BarChart2 size={14} /> OHLCV + Delivery Tracking
+                </button>
+                <button 
+                  onClick={() => setViewMode('table')}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-medium transition-colors ${viewMode === 'table' ? 'bg-[#ffffff1a] text-white' : 'text-[#888] hover:text-[#ccc]'}`}
+                >
+                  <TableIcon size={14} /> Raw Vector Grid
+                </button>
+              </div>
               <button 
-                onClick={() => setViewMode('chart')}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-medium transition-colors ${viewMode === 'chart' ? 'bg-[#ffffff1a] text-white' : 'text-[#888] hover:text-[#ccc]'}`}
+                onClick={exportCSV}
+                className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold bg-[#ffffff0a] hover:bg-[#ffffff15] text-[#ccc] transition-all active:scale-95"
               >
-                <BarChart2 size={14} /> OHLCV + Delivery Tracking
-              </button>
-              <button 
-                onClick={() => setViewMode('table')}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-medium transition-colors ${viewMode === 'table' ? 'bg-[#ffffff1a] text-white' : 'text-[#888] hover:text-[#ccc]'}`}
-              >
-                <TableIcon size={14} /> Raw Vector Grid
+                <Download size={14} /> Export CSV
               </button>
             </div>
 
@@ -218,16 +269,25 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
               {viewMode === 'chart' ? (
                 <div className="h-full w-full relative">
                   <ResponsiveContainer width="100%" height={400}>
-                    <ComposedChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <ComposedChart data={data} margin={{ top: 10, right: 30, left: -20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
                       <XAxis dataKey="date" stroke="#666" tick={{ fill: '#666', fontSize: 10 }} tickMargin={10} minTickGap={30} />
                       
                       {/* Left axis for price */}
                       <YAxis yAxisId="price" domain={['auto', 'auto']} stroke="#666" tick={{ fill: '#666', fontSize: 10 }} />
                       
-                      {/* Hidden right axes for volume scale and percentage scale */}
+                      {/* Internal axis for volume scale */}
                       <YAxis yAxisId="volume" orientation="right" hide={true} />
-                      <YAxis yAxisId="pct" orientation="right" hide={true} domain={[0, 100]} />
+                      
+                      {/* Visible right axis for delivery percentage */}
+                      <YAxis 
+                        yAxisId="pct" 
+                        orientation="right" 
+                        domain={[0, 100]} 
+                        stroke="#f43f5e" 
+                        tick={{ fill: '#f43f5e', fontSize: 10 }} 
+                        label={{ value: 'Delivery %', angle: 90, position: 'insideRight', style: { fill: '#f43f5e', fontSize: 10, fontWeight: 'bold' } }}
+                      />
                       
                       <Tooltip 
                         contentStyle={{ backgroundColor: '#1a1c24', border: '1px solid #333', borderRadius: '4px', fontSize: '12px' }}
@@ -241,14 +301,14 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
                       <Legend wrapperStyle={{ fontSize: '11px', color: '#888' }} />
                       
                       {/* Stacked Bars for Volume Decomposition */}
-                      <Bar yAxisId="volume" dataKey="delivery_qty" stackId="vol" fill="#10b981" opacity={0.8} name="Delivery Qty" />
-                      <Bar yAxisId="volume" dataKey="non_delivery" stackId="vol" fill="#333" opacity={0.6} name="Intraday Qty" />
+                      <Bar yAxisId="volume" dataKey="delivery_qty" stackId="vol" fill="#10b981" opacity={0.6} name="Delivery Qty" />
+                      <Bar yAxisId="volume" dataKey="non_delivery" stackId="vol" fill="#333" opacity={0.4} name="Intraday Qty" />
                       
                       {/* Line for Price */}
                       <Line yAxisId="price" type="monotone" dataKey="close" stroke="#3b82f6" strokeWidth={2} dot={false} name="Closing Price (₹)" />
                       
-                      {/* Delivery Percentage Tracking Line */}
-                      <Line yAxisId="pct" type="monotone" dataKey="delivery_pct" stroke="#f43f5e" strokeWidth={1} dot={false} strokeDasharray="4 4" name="Delivery %" />
+                      {/* Delivery Percentage Tracking Line (Visible Axis) */}
+                      <Line yAxisId="pct" type="monotone" dataKey="delivery_pct" stroke="#f43f5e" strokeWidth={1} dot={false} name="Delivery %" />
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>

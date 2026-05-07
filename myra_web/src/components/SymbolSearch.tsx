@@ -44,8 +44,8 @@ export function SymbolSearch({ lib, onSymbolSelect, placeholder = "Search symbol
       setLoading(true);
       try {
         // Query the database for matching symbols
-        const query = `SELECT DISTINCT symbol FROM technical_data WHERE symbol LIKE '${term}%' LIMIT 10`;
-        const result = await lib.executeQuery('_tech_conn', query, {}, 2000);
+        const query = `SELECT DISTINCT symbol FROM technical_data WHERE symbol LIKE ? LIMIT 10`;
+        const result = await lib.executeQuery('_tech_conn', query, [`${term}%`], 2000);
         
         let foundSymbols: string[] = [];
         if (result && result.length > 0) {

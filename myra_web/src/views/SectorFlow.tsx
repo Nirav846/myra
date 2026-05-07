@@ -10,14 +10,14 @@ export default function SectorFlowView({ lib }: { lib: Librarian }) {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isDemo, setIsDemo] = useState(false);
-  const [filterCategory, setFilterCategory] = useState<string>('All');
+  const [filterMcap, setFilterMcap] = useState<string>('All');
   const [filterSector, setFilterSector] = useState<string>('All');
   const [groupBy, setGroupBy] = useState<'sector'|'index'>('sector');
   const [availableSectors, setAvailableSectors] = useState<string[]>([]);
 
   useEffect(() => {
     fetchSectorFlows();
-  }, [groupBy, filterCategory, filterSector]);
+  }, [groupBy, filterMcap, filterSector]);
 
   const fetchSectorFlows = async () => {
     setLoading(true);
@@ -47,14 +47,12 @@ export default function SectorFlowView({ lib }: { lib: Librarian }) {
          for (const m of symbolsResult) {
             const indices = indicesMap.get(m.ticker) || [];
             let bucket = "Deep Frontier";
-            if (indices.some(i => i.includes('NIFTY 50') && !i.includes('NEXT'))) {
+            if (indices.some((i: string) => i.includes('NIFTY 50') && !i.includes('NEXT'))) {
                 bucket = "Large Cap (N50)";
-            } else if (indices.some(i => i.includes('NIFTY NEXT 50'))) {
+            } else if (indices.some((i: string) => i.includes('NIFTY NEXT 50'))) {
                 bucket = "Large Cap (N100)";
-            } else if (m.in_nifty500 === 1 || indices.some(i => i.includes('NIFTY 500'))) {
+            } else if (m.in_nifty500 === 1 || indices.some((i: string) => i.includes('NIFTY 500'))) {
                 bucket = "Broader Market (N500)";
-            } else if (indices.length > 0) {
-                bucket = "Broader Market (N500)"; 
             }
             const normalizedSector = (m.sector && m.sector.trim() !== '') ? m.sector : 'Uncharted Sector';
             sectors.add(normalizedSector);
@@ -68,7 +66,7 @@ export default function SectorFlowView({ lib }: { lib: Librarian }) {
       setAvailableSectors(Array.from(sectors).sort());
 
       const techQuery = `
-        SELECT symbol as ticker, SUM(COALESCE(delivery, delivery_qty) * close) as raw_flow, AVG((COALESCE(delivery, delivery_qty) * 100.0) / NULLIF(COALESCE(volume, trades), 0)) as delivery_pct
+        SELECT symbol as ticker, SUM(delivery * close) as raw_flow, AVG((delivery * 100.0) / NULLIF(volume, 0)) as delivery_pct
         FROM technical_data
         WHERE date >= '${startDate}' AND date <= '${endDate}'
         GROUP BY symbol
@@ -80,7 +78,7 @@ export default function SectorFlowView({ lib }: { lib: Librarian }) {
          for (const t of techResult) {
             const meta = metaMap.get(t.ticker) || { sector: 'Uncharted Sector', bucket: 'Deep Frontier' };
             
-            if (filterCategory !== 'All' && meta.bucket !== filterCategory) continue;
+            if (filterMcap !== 'All' && meta.bucket !== filterMcap) continue;
             if (filterSector !== 'All' && meta.sector !== filterSector) continue;
             
             const groupKey = groupBy === 'sector' ? meta.sector : meta.bucket;
@@ -190,13 +188,13 @@ export default function SectorFlowView({ lib }: { lib: Librarian }) {
             </div>
           </div>
           <div className="flex-1 min-w-[150px]">
-            <label className="block text-xs font-mono text-[#888] uppercase mb-1">Filter Index / Segment</label>
+            <label className="block text-xs font-mono text-[#888] uppercase mb-1">Market Cap Category</label>
             <select 
-                value={filterCategory} 
-                onChange={(e) => setFilterCategory(e.target.value)}
+                value={filterMcap} 
+                onChange={(e) => setFilterMcap(e.target.value)}
                 className="w-full bg-[#1a1c24] border border-[#ffffff1a] rounded px-3 h-[38px] text-sm text-[#fafafa] font-mono select-none outline-none focus:border-cyan-500"
             >
-                <option className="bg-[#1a1c24] text-[#fafafa]" value="All">All Segments</option>
+                <option className="bg-[#1a1c24] text-[#fafafa]" value="All">All</option>
                 <option className="bg-[#1a1c24] text-[#fafafa]" value="Large Cap (N50)">Large Cap (N50)</option>
                 <option className="bg-[#1a1c24] text-[#fafafa]" value="Large Cap (N100)">Large Cap (N100)</option>
                 <option className="bg-[#1a1c24] text-[#fafafa]" value="Broader Market (N500)">Broader Market (N500)</option>

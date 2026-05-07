@@ -46,23 +46,37 @@ const ACCENT_MAP: Record<string, { bg600: string; bg50020: string; text300: stri
 
 const librarian = getLibrarian();
 
-// Hardcoded system stats extracted
-const SYSTEM_HARDWARE_INFO = {
-  cpuModel: "AMD A8-7410",
-  memPercent: 14,
-  memString: "14% / 8GB"
-};
-
-const FOOTER_STATS = {
-  dbSize: "4.2GB",
-  syncStatus: "background_vacuum (100%)",
-  aiTrend: "BULLISH"
-};
-
 interface HealthStatus {
   connected: boolean;
   error?: string;
   count?: number;
+}
+
+const API_BASE = 'http://localhost:8000';
+
+function formatDate(dateStr: string) {
+  if (!dateStr || dateStr === 'Never') return 'Never';
+  try {
+    const d = new Date(dateStr);
+    const day = d.getDate().toString().padStart(2, '0');
+    const month = (d.getMonth() + 1).toString().padStart(2, '0');
+    return `${day}/${month}`;
+  } catch {
+    return 'Never';
+  }
+}
+
+function isToday(dateStr: string) {
+  if (!dateStr || dateStr === 'Never') return false;
+  try {
+    const d = new Date(dateStr);
+    const today = new Date();
+    return d.getDate() === today.getDate() && 
+           d.getMonth() === today.getMonth() && 
+           d.getFullYear() === today.getFullYear();
+  } catch {
+    return false;
+  }
 }
 
 export default function App() {
@@ -74,44 +88,57 @@ export default function App() {
   const [globalSelectedTicker, setGlobalSelectedTicker] = useState<string | undefined>();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDesktopMenuExpanded, setIsDesktopMenuExpanded] = useState(true);
-  const [logs, setLogs] = useState<string[]>([
-    "[SYSTEM] MYRA Daemon starting...",
-    "[DAEMON] Binding _inst_conn to local SQLite",
-    "[DAEMON] Cache warmed: 4 tables"
-  ]);
+  
   const { settings } = useSettings();
   const { health, isConnected } = useHealthStatus();
+  
+  const [pipelineStatus, setPipelineStatus] = useState<any>(null);
+  const [dbSize, setDbSize] = useState<string>("N/A");
+  const [logs, setLogs] = useState<string[]>(["[SYSTEM] Offline mode – no logs"]);
 
-  // Simulate incoming daemon logs for updates
+  // Fetch Live Data
   useEffect(() => {
-    if (settings.autoRefreshInterval === 'Off') return;
-    
-    // map settings to ms
-    const msMap: Record<string, number> = {
-      '10s': 10000,
-      '30s': 30000,
-      '1min': 60000,
-      '5min': 300000
-    };
-    
-    const intervalTime = msMap[settings.autoRefreshInterval] || 10000;
+    const fetchLiveData = async () => {
+      if (!isConnected) {
+        setLogs(["[SYSTEM] Offline mode – no logs"]);
+        return;
+      }
+      try {
+        const [statusRes, sizeRes, logsRes] = await Promise.all([
+          fetch(`${API_BASE}/api/tools/status`),
+          fetch(`${API_BASE}/api/db-size`),
+          fetch(`${API_BASE}/api/logs/recent`)
+        ]);
 
+        if (statusRes.ok) {
+          const data = await statusRes.json();
+          setPipelineStatus(data);
+        }
+        if (sizeRes.ok) {
+          const data = await sizeRes.json();
+          setDbSize(`${(data.size_mb / 1024).toFixed(1)}GB`);
+        } else {
+          setDbSize("N/A");
+        }
+        if (logsRes.ok) {
+          const data = await logsRes.json();
+          setLogs(data.logs);
+        }
+      } catch (err) {
+        console.warn("Backend not reachable for live stats.");
+        setDbSize("N/A");
+        setLogs(["[SYSTEM] Offline mode – no logs"]);
+      }
+    };
+
+    fetchLiveData();
+    const intervalTime = 30000;
     const interval = setInterval(() => {
-      if (document.hidden) return; // Pause when tab is hidden
-      const messages = [
-        "[SYNC] Parquet indicator lake optimized.",
-        "[ALERT] High frequency tick detected on NQ.",
-        "[SYNC] _tech_conn background vacuum complete.",
-        "[DAEMON] Garbage collection freeing memory...",
-        "[API] Fetching latest yield curves."
-      ];
-      setLogs(prev => {
-        const newLogs = [...prev, messages[Math.floor(Math.random() * messages.length)]];
-        return newLogs.slice(-4); // Keep last 4 logs
-      });
+      if (!document.hidden) fetchLiveData();
     }, intervalTime);
+
     return () => clearInterval(interval);
-  }, [settings.autoRefreshInterval]);
+  }, [isConnected]);
 
   // Compute disconnected DBs
   const disconnectedDBs = Object.entries(health as Record<string, HealthStatus>).filter(([_, status]) => !status.connected);
@@ -237,24 +264,6 @@ export default function App() {
             <SettingsIcon size={18} className="text-[#888]" /> 
             {isDesktopMenuExpanded && <span className="whitespace-nowrap">Settings Config</span>}
           </button>
-          
-          {isDesktopMenuExpanded ? (
-            <div className={`px-4 pt-2 pb-2`}>
-              <div className="text-[10px] text-[#888] font-mono mb-1 uppercase">Hardware: {SYSTEM_HARDWARE_INFO.cpuModel}</div>
-              <div className="h-1 w-full bg-[#333] rounded-full overflow-hidden">
-                <div className={`h-full ${accent.bg500}`} style={{ width: `${SYSTEM_HARDWARE_INFO.memPercent}%`}}></div>
-              </div>
-              <div className="flex justify-between mt-1 text-[10px] font-mono text-[#888]">
-                <span>Mem: {SYSTEM_HARDWARE_INFO.memString}</span><span>CPU: Base</span>
-              </div>
-            </div>
-          ) : (
-             <div className="px-2 pt-2 pb-2 flex flex-col items-center">
-                 <div className={`h-8 w-1 flex-col justify-end flex bg-[#333] rounded overflow-hidden`} title={`Mem: ${SYSTEM_HARDWARE_INFO.memString} / ${SYSTEM_HARDWARE_INFO.cpuModel}`}>
-                     <div className={`w-full ${accent.bg500}`} style={{ height: `${SYSTEM_HARDWARE_INFO.memPercent}%` }}></div>
-                 </div>
-             </div>
-          )}
         </div>
       </aside>
 
@@ -332,6 +341,17 @@ export default function App() {
               </Routes>
             </div>
           </div>
+          
+          {/* Terminal Logs */}
+          {isDesktopMenuExpanded && (
+            <div className={`shrink-0 h-24 ${bgSidebar} border-t border-[#ffffff1a] p-2 flex flex-col font-mono text-[10px] text-[#aaa] overflow-y-auto`}>
+              {logs.map((log, idx) => (
+                <div key={idx} className="truncate">
+                  {log}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* MYRA CLI Footer Replication */}
@@ -343,24 +363,25 @@ export default function App() {
                 <span className="text-white">Connected (Core)</span> : 
                 <span className="text-red-400">Degraded (Demo)</span>
               }
-              <span className="text-[#888]"> ({FOOTER_STATS.dbSize})</span>
+              <span className="text-[#888]"> ({dbSize})</span>
             </div>
             <div className="text-[#555]">|</div>
             <div className="flex items-center gap-2">
-              <span className="text-white font-bold">Status: </span>
-              <span className="text-cyan-400">Sync: {FOOTER_STATS.syncStatus}</span>
-              <span className="text-white font-bold ml-2">AI-Trend: </span>
-              <span className="text-green-400">{FOOTER_STATS.aiTrend}</span>
+              <span className="text-white font-bold">Sync Defaults: </span>
+              <span className="text-cyan-400">Fund: {pipelineStatus ? formatDate(pipelineStatus.fundamentals) : 'N/A'}</span>
+              <span className="text-white font-bold ml-1">ETF: </span>
+              <span className="text-cyan-400">{pipelineStatus ? formatDate(pipelineStatus.etf) : 'N/A'}</span>
+              <span className="text-white font-bold ml-1">IDX: </span>
+              <span className="text-cyan-400">{pipelineStatus ? formatDate(pipelineStatus.index) : 'N/A'}</span>
             </div>
           </div>
           
           <div className="flex items-center gap-3">
-            <span className="text-cyan-400 font-bold">BCOPY(20/4)</span>
-            <span className="text-[#555]">|</span>
-            <span className="text-fuchsia-400 font-bold flex items-center gap-1.5">
-              INST(<span className="text-green-400">LIVE</span>)
-              <div className={`w-1.5 h-1.5 rounded-full bg-green-400 ml-0.5 ${settings.animations ? 'animate-pulse' : ''}`}></div>
+            <span className="text-white font-bold">BCOPY:</span>
+            <span className="text-cyan-400 font-bold">
+              {pipelineStatus ? formatDate(pipelineStatus.ingest) : 'N/A'}
             </span>
+            <div className={`w-1.5 h-1.5 rounded-full ${pipelineStatus && isToday(pipelineStatus.ingest) ? 'bg-green-400' : 'bg-yellow-400'} ml-0.5 ${settings.animations ? 'animate-pulse' : ''}`}></div>
           </div>
         </footer>
       </main>

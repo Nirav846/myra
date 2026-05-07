@@ -14,7 +14,7 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isDemo, setIsDemo] = useState(false);
   const [filterSector, setFilterSector] = useState<string>('All');
-  const [filterCategory, setFilterCategory] = useState<string>('All');
+  const [filterMcap, setFilterMcap] = useState<string>('All');
   const [metadataMap, setMetadataMap] = useState<Map<string, { sector: string; indices: string[]; in_nifty500: number }>>(new Map());
   const [availableSectors, setAvailableSectors] = useState<string[]>([]);
 
@@ -24,7 +24,7 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
 
   useEffect(() => {
     fetchData(activeSetup);
-  }, [activeSetup, filterSector, filterCategory]);
+  }, [activeSetup, filterSector, filterMcap]);
 
   const fetchMetadata = async () => {
     try {
@@ -87,14 +87,14 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
             high as "High",
             low as "Low",
             close as "Close",
-            COALESCE(volume, trades) as "Volume",
-            COALESCE(delivery, delivery_qty) as "Deliverable_Volume",
-            (COALESCE(delivery, delivery_qty) * 100.0 / NULLIF(COALESCE(volume, trades), 0)) as del_perc,
+            volume as "Volume",
+            delivery as "Deliverable_Volume",
+            (delivery * 100.0 / NULLIF(volume, 0)) as del_perc,
             
-            AVG(COALESCE(volume, trades)) OVER w20 as avg_vol_20,
+            AVG(volume) OVER w20 as avg_vol_20,
             
-            AVG((COALESCE(delivery, delivery_qty) * 100.0 / NULLIF(COALESCE(volume, trades), 0))) OVER w20 as avg_del_20,
-            AVG((COALESCE(delivery, delivery_qty) * 100.0 / NULLIF(COALESCE(volume, trades), 0)) * (COALESCE(delivery, delivery_qty) * 100.0 / NULLIF(COALESCE(volume, trades), 0))) OVER w20 as avg_del_sq_20,
+            AVG((delivery * 100.0 / NULLIF(volume, 0))) OVER w20 as avg_del_20,
+            AVG((delivery * 100.0 / NULLIF(volume, 0)) * (delivery * 100.0 / NULLIF(volume, 0))) OVER w20 as avg_del_sq_20,
 
             MAX(high) OVER w20 as high_20,
             MIN(low) OVER w20 as low_20,
@@ -176,14 +176,12 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
         const meta = metadataMap.get(item.ticker) || { sector: 'Uncharted Sector', indices: [], in_nifty500: 0 };
         
         let bucket = "Deep Frontier";
-        if (meta.indices.some(i => i.includes('NIFTY 50') && !i.includes('NEXT'))) {
+        if (meta.indices.some((i: string) => i.includes('NIFTY 50') && !i.includes('NEXT'))) {
             bucket = "Large Cap (N50)";
-        } else if (meta.indices.some(i => i.includes('NIFTY NEXT 50'))) {
+        } else if (meta.indices.some((i: string) => i.includes('NIFTY NEXT 50'))) {
             bucket = "Large Cap (N100)";
-        } else if (meta.in_nifty500 === 1 || meta.indices.some(i => i.includes('NIFTY 500'))) {
+        } else if (meta.in_nifty500 === 1 || meta.indices.some((i: string) => i.includes('NIFTY 500'))) {
             bucket = "Broader Market (N500)";
-        } else if (meta.indices.length > 0) {
-            bucket = "Broader Market (N500)"; // fallback for other index members
         }
 
         return {
@@ -196,8 +194,8 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
         if (filterSector !== 'All') {
             if (item.sector !== filterSector) return false;
         }
-        if (filterCategory !== 'All') {
-            if (item.bucket !== filterCategory) return false;
+        if (filterMcap !== 'All') {
+            if (item.bucket !== filterMcap) return false;
         }
         return true;
     });
@@ -258,8 +256,8 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
         if (filterSector !== 'All') {
             if (item.sector !== filterSector) return false;
         }
-        if (filterCategory !== 'All') {
-            if (item.bucket !== filterCategory) return false;
+        if (filterMcap !== 'All') {
+            if (item.bucket !== filterMcap) return false;
         }
         return true;
     }).sort((a, b) => b.score - a.score);
@@ -309,11 +307,12 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
              <div className="flex items-center gap-3 w-full md:w-auto h-full">
                <div className="flex bg-[#0A0A0A] rounded border border-[#333333] shadow-inner items-center h-[34px] overflow-hidden">
                    <select 
-                     value={filterCategory} 
-                     onChange={(e) => setFilterCategory(e.target.value)}
+                     value={filterMcap} 
+                     onChange={(e) => setFilterMcap(e.target.value)}
                      className="bg-transparent border-r border-[#333333] hover:bg-[#1a1c24] transition-colors outline-none text-[#fafafa] text-xs font-mono h-full px-2 cursor-pointer"
+                     title="Market Cap Category"
                    >
-                     <option value="All" className="bg-[#1a1c24] text-white">All Categories</option>
+                     <option value="All" className="bg-[#1a1c24] text-white">All</option>
                      <option value="Large Cap (N50)" className="bg-[#1a1c24] text-white">Large Cap (N50)</option>
                      <option value="Large Cap (N100)" className="bg-[#1a1c24] text-white">Large Cap (N100)</option>
                      <option value="Broader Market (N500)" className="bg-[#1a1c24] text-white">Broader Market (N500)</option>

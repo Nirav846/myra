@@ -1218,7 +1218,7 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
           setDataCache(prev => ({...prev, [symbol]: generateMockData(symbol)}));
           return;
       }
-      const query = `SELECT *, COALESCE(delivery, delivery_qty) as delivery_final, COALESCE(volume, trades) as volume_final FROM technical_data WHERE symbol = '${symbol}' AND date >= '${startDate}' AND date <= '${endDate}' ORDER BY date ASC LIMIT ${settings.maxCandlesPerRequest}`;
+      const query = `SELECT *, delivery as delivery_final, volume as volume_final FROM technical_data WHERE symbol = '${symbol}' AND date >= '${startDate}' AND date <= '${endDate}' ORDER BY date ASC LIMIT ${settings.maxCandlesPerRequest}`;
       const result = await lib.executeQuery('_tech_conn', query, {}, 10000);
       if (signal.aborted) return;
       

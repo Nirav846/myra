@@ -1,125 +1,154 @@
-import { useState } from 'react';
-import { Database, Play, RefreshCw, Layers, Cpu } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { RefreshCw, Play, CheckCircle, AlertTriangle } from 'lucide-react';
 import { Librarian } from '../lib/Librarian';
 
+const API_BASE = 'http://localhost:8000';
+
+interface PipelineStatus {
+  fundamentals: string;
+  etf: string;
+  index: string;
+  ingest: string;
+  db_doctor: string;
+}
+
+const mockStatus: PipelineStatus = {
+  fundamentals: '2026-05-07 18:30:00',
+  etf: '2026-05-07 18:40:00',
+  index: '2026-05-07 18:45:00',
+  ingest: '2026-05-07 16:15:00',
+  db_doctor: '2026-05-07 19:00:00'
+};
+
+const ENDPOINTS = {
+  fundamentals: '/api/tools/sync/fundamentals',
+  etf: '/api/tools/sync/etf',
+  index: '/api/tools/sync/index',
+  ingest: '/api/tools/ingest',
+  db_doctor: '/api/tools/db-doctor'
+};
+
+const TASK_NAMES = {
+  fundamentals: 'Fundamentals Sync',
+  etf: 'ETF Sync',
+  index: 'Index Sync',
+  ingest: 'Daily Ingest',
+  db_doctor: 'DB Doctor'
+};
+
 export default function ToolsView({ lib }: { lib: Librarian }) {
-  const [running, setRunning] = useState<Record<string, boolean>>({});
-  const [logs, setLogs] = useState<Record<string, string>>({});
+  const [status, setStatus] = useState<PipelineStatus | null>(null);
+  const [isOffline, setIsOffline] = useState(false);
+  const [loadingTasks, setLoadingTasks] = useState<Record<string, boolean>>({});
+  const [messages, setMessages] = useState<Record<string, { type: 'success' | 'error', text: string }>>({});
 
-    const tools = [
-      {
-        id: 'tools/force_sync.py',
-        name: 'tools/force_sync.py',
-        description: 'Forces an immediate synchronization of the institutional database ignoring cache TTL.',
-        icon: <RefreshCw size={18} className="text-blue-400" />,
-        color: 'blue'
-      },
-      {
-        id: 'update_fundamentals.py',
-        name: 'update_fundamentals.py',
-        description: 'Fetches the latest Graham metrics and updates the value ranker logic.',
-        icon: <Database size={18} className="text-green-400" />,
-        color: 'green'
-      },
-      {
-        id: 'research/train_aeon.py',
-        name: 'research/train_aeon.py',
-        description: 'Triggers the AEON Model retraining pipeline on the latest indicator Parquet lake.',
-        icon: <Cpu size={18} className="text-red-400" />,
-        color: 'red'
-      },
-      {
-        id: 'myra_app/engine.py',
-        name: 'myra_app/engine.py',
-        description: 'Runs the core Myra calculation engine for standard market hours logging.',
-        icon: <Layers size={18} className="text-fuchsia-400" />,
-        color: 'fuchsia'
-      }
-    ];
-
-  const handleRun = async (toolId: string) => {
-    setRunning(prev => ({ ...prev, [toolId]: true }));
-    setLogs(prev => ({ ...prev, [toolId]: `>> Executing python tools/${toolId}.py...\n` }));
-    
-    // Check if we are connected to the REAL local FastAPI backend
-    if (lib.isConnectedToLocalRepo) {
-      try {
-        setLogs(prev => ({ ...prev, [toolId]: prev[toolId] + `[INFO] Requesting external execution on localhost:8000...\n` }));
-        const response = await fetch('http://localhost:8000/api/tools/execute', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tool_id: toolId })
-        });
-        
-        const data = await response.json();
-        if (response.ok) {
-          setLogs(prev => ({ ...prev, [toolId]: prev[toolId] + data.logs + `\n[FINISH] Status = ${data.success ? 'Success' : 'Failed'}` }));
-        } else {
-          setLogs(prev => ({ ...prev, [toolId]: prev[toolId] + `[ERROR] Network or server error: ${data.detail || response.statusText}` }));
-        }
-      } catch (err) {
-        setLogs(prev => ({ ...prev, [toolId]: prev[toolId] + `[CRITICAL_ERROR] FastAPI server unreachable or script crashed.\n${err}` }));
-      } finally {
-        setRunning(prev => ({ ...prev, [toolId]: false }));
-      }
-      return; 
+  const fetchStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/tools/status`);
+      if (!res.ok) throw new Error('Network response was not ok');
+      const data: PipelineStatus = await res.json();
+      setStatus(data);
+      setIsOffline(false);
+    } catch (e) {
+      console.warn("Backend not reachable. Falling back to mock status.", e);
+      setIsOffline(true);
+      setStatus(mockStatus);
     }
+  }, []);
 
-    // --- FALLBACK: Live Demo Simulator if backend is down ---
-    setTimeout(() => {
-      setLogs(prev => ({ 
-        ...prev, 
-        [toolId]: prev[toolId] + `[INFO] Initializing environment...\n[INFO] Connecting to SQLite sidecars in myra_app/db...\n` 
-      }));
-    }, 800);
+  useEffect(() => {
+    fetchStatus();
+    const intervalId = setInterval(fetchStatus, 30000);
+    return () => clearInterval(intervalId);
+  }, [fetchStatus]);
 
-    setTimeout(() => {
-      setLogs(prev => ({ 
-        ...prev, 
-        [toolId]: prev[toolId] + `[SUCCESS] Operation completed successfully in ${(Math.random() * 2 + 1).toFixed(2)}s.` 
+  const handleRunTask = async (taskKey: keyof typeof ENDPOINTS) => {
+    if (isOffline) return;
+
+    setLoadingTasks(prev => ({ ...prev, [taskKey]: true }));
+    setMessages(prev => { 
+        const next = { ...prev }; 
+        delete next[taskKey]; 
+        return next; 
+    });
+
+    try {
+      const res = await fetch(`${API_BASE}${ENDPOINTS[taskKey]}`, {
+        method: 'POST',
+      });
+      if (!res.ok) throw new Error('Failed to start task');
+      
+      const data = await res.json();
+      setMessages(prev => ({ 
+          ...prev, 
+          [taskKey]: { type: 'success', text: data.message || 'Task completed' } 
       }));
-      setRunning(prev => ({ ...prev, [toolId]: false }));
-    }, 2500);
+      fetchStatus();
+    } catch (e: any) {
+      setMessages(prev => ({ 
+          ...prev, 
+          [taskKey]: { type: 'error', text: e.message || 'Error executing task' } 
+      }));
+    } finally {
+      setLoadingTasks(prev => ({ ...prev, [taskKey]: false }));
+      // Clear message after 5 seconds
+      setTimeout(() => {
+        setMessages(prev => {
+           const next = { ...prev };
+           delete next[taskKey];
+           return next;
+        });
+      }, 5000);
+    }
   };
 
   return (
     <div className="bg-[#1e2028] border border-[#ffffff1a] rounded flex flex-col shadow-xl">
       <div className="px-6 py-4 border-b border-[#ffffff1a] flex justify-between items-center bg-[#1a1c24]">
         <h3 className="font-medium text-lg flex items-center gap-2">
-          Admin Tools & Scripts
+          Pipeline Status
         </h3>
-        <span className="text-xs text-[#888] font-mono">/home/myra/tools</span>
+        <span className="text-xs text-[#888] font-mono">/api/tools</span>
       </div>
 
+      {isOffline && (
+        <div className="bg-yellow-500/10 border-b border-yellow-500/20 px-6 py-3 flex items-center gap-3">
+          <AlertTriangle size={16} className="text-yellow-500" />
+          <span className="text-sm font-medium text-yellow-500">
+            Backend not reachable – using mock status
+          </span>
+        </div>
+      )}
+
       <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-        {tools.map(tool => (
-          <div key={tool.id} className="bg-[#0e1117] border border-[#ffffff1a] rounded-lg overflow-hidden flex flex-col">
-            <div className="p-4 flex gap-3">
-               <div className={`p-2 bg-[${tool.color}]/10 rounded-lg h-fit`}>
-                 {tool.icon}
-               </div>
-               <div className="flex-1">
-                 <h4 className="font-medium text-[#eee]">{tool.name}</h4>
-                 <p className="text-xs text-[#888] mt-1 line-clamp-2">{tool.description}</p>
+        {(Object.keys(TASK_NAMES) as Array<keyof typeof TASK_NAMES>).map(taskKey => (
+          <div key={taskKey} className="bg-[#0e1117] border border-[#ffffff1a] rounded-lg p-5 flex flex-col">
+            <div className="flex justify-between items-start mb-4">
+               <div>
+                 <h4 className="font-medium text-[#eee]">{TASK_NAMES[taskKey]}</h4>
+                 <div className="text-xs text-[#888] mt-1 font-mono">
+                    Last Run: {status ? status[taskKey] : 'Loading...'}
+                 </div>
                </div>
             </div>
             
-            <div className="px-4 pb-4 mt-auto">
-              {logs[tool.id] && (
-                <div className="mb-3 p-2 bg-black rounded border border-[#333] text-[10px] font-mono text-[#aaa] whitespace-pre-wrap h-20 overflow-y-auto">
-                  {logs[tool.id]}
+            <div className="mt-auto pt-2">
+              {messages[taskKey] && (
+                <div className={`mb-3 flex items-center gap-2 text-xs ${messages[taskKey].type === 'success' ? 'text-green-400' : 'text-red-400'}`}>
+                   {messages[taskKey].type === 'success' ? <CheckCircle size={14} /> : <AlertTriangle size={14} />}
+                   {messages[taskKey].text}
                 </div>
               )}
               
               <button 
-                onClick={() => handleRun(tool.id)}
-                disabled={running[tool.id]}
-                className="w-full py-1.5 flex items-center justify-center gap-2 text-xs font-semibold bg-[#262730] hover:bg-[#333] disabled:opacity-50 border border-[#ffffff1a] rounded transition-colors"
+                onClick={() => handleRunTask(taskKey)}
+                disabled={isOffline || loadingTasks[taskKey]}
+                className="w-full py-2 flex items-center justify-center gap-2 text-sm font-semibold bg-[#262730] hover:bg-[#333] disabled:opacity-50 border border-[#ffffff1a] rounded transition-colors"
               >
-                {running[tool.id] ? (
-                  <><RefreshCw size={12} className="animate-spin text-[#888]" /> Running...</>
+                {loadingTasks[taskKey] ? (
+                  <><RefreshCw size={14} className="animate-spin text-[#888]" /> Running...</>
                 ) : (
-                  <><Play size={12} className="text-[#bbb]" /> Execute Script</>
+                  <><Play size={14} className="text-[#bbb]" /> Run Now</>
                 )}
               </button>
             </div>

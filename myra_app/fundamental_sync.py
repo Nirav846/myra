@@ -98,7 +98,7 @@ class FundamentalSync:
                 "languageId": "en-IN",
                 "currencyId": "INR",
                 "universeIds": "E0EXG$XNSE",
-                "securityDataPoints": "ticker,sectorName,industryName,netMargin,roeTTM,dividendYield",
+                "securityDataPoints": "ticker,sectorName,industryName,peRatio,priceToBook,priceToSales,earningsPerShare,bookValuePerShare,revenueGrowth,earningsGrowth,marketCap,enterpriseValue,debtToEquity,returnOnEquity,returnOnAssets,operatingMargin,grossMargin,netMargin,dividendYield,payoutRatio,currentRatio,quickRatio,freeCashFlowYield,beta",
                 "filters": "",
             }
 
@@ -122,9 +122,31 @@ class FundamentalSync:
                         continue
 
                     result[ticker] = {
-                        "net_margin": row.get("netMargin"),
+                        "netMargin": row.get("netMargin"),
                         "roe_ttm": row.get("roeTTM"),
-                        "dividend_yield": row.get("dividendYield"),
+                        "dividendYield": row.get("dividendYield"),
+                        # New fields from expanded Morningstar data
+                        "peRatio": row.get("peRatio"),
+                        "priceToBook": row.get("priceToBook"),
+                        "priceToSales": row.get("priceToSales"),
+                        "earningsPerShare": row.get("earningsPerShare"),
+                        "bookValuePerShare": row.get("bookValuePerShare"),
+                        "revenueGrowth": row.get("revenueGrowth"),
+                        "earningsGrowth": row.get("earningsGrowth"),
+                        "marketCap": row.get("marketCap"),
+                        "enterpriseValue": row.get("enterpriseValue"),
+                        "debtToEquity": row.get("debtToEquity"),
+                        "returnOnEquity": row.get("returnOnEquity"),
+                        "returnOnAssets": row.get("returnOnAssets"),
+                        "operatingMargin": row.get("operatingMargin"),
+                        "grossMargin": row.get("grossMargin"),
+                        "netMargin": row.get("netMargin"),
+                        "dividendYield": row.get("dividendYield"),
+                        "payoutRatio": row.get("payoutRatio"),
+                        "currentRatio": row.get("currentRatio"),
+                        "quickRatio": row.get("quickRatio"),
+                        "freeCashFlowYield": row.get("freeCashFlowYield"),
+                        "beta": row.get("beta"),
                     }
 
                 logger.debug(f"[FundamentalSync] Morningstar page {page}: {len(rows)} rows")
@@ -156,6 +178,21 @@ class FundamentalSync:
             logger.error(f"[FundamentalSync] Failed to read NIFTY 500 symbols: {e}")
             return []
 
+    
+    @staticmethod
+    def _retry_request(url, headers, timeout, max_retries=3):
+        import time
+        for attempt in range(max_retries):
+            try:
+                resp = requests.get(url, headers=headers, timeout=timeout)
+                resp.raise_for_status()
+                return resp
+            except requests.exceptions.RequestException as e:
+                if attempt == max_retries - 1:
+                    raise
+                time.sleep(2 ** attempt)
+        return None
+
     def _fetch_nse_symbol(self, symbol: str) -> dict:
         """Fetch fundamental data for a single symbol from NSE.
 
@@ -170,7 +207,7 @@ class FundamentalSync:
         try:
             # Fetch quote data (PE, sector PE, face value, issued size)
             url1 = NSE_QUOTE_URL.format(symbol=symbol)
-            response1 = requests.get(url1, headers=NSE_HEADERS, timeout=30)
+            response1 = self._retry_request(url1, NSE_HEADERS, 30)
             response1.raise_for_status()
             data1 = response1.json()
 
@@ -193,7 +230,7 @@ class FundamentalSync:
 
             # Fetch trade info (market cap, volatility, impact cost)
             url2 = NSE_TRADE_INFO_URL.format(symbol=symbol)
-            response2 = requests.get(url2, headers=NSE_HEADERS, timeout=30)
+            response2 = self._retry_request(url2, NSE_HEADERS, 30)
             response2.raise_for_status()
             data2 = response2.json()
 
@@ -255,39 +292,52 @@ class FundamentalSync:
     def _merge_and_insert(
         self, ms_data: dict, nse_data: dict, date_str: str
     ):
-        """Merge Morningstar and NSE data and insert into database.
-
-        Args:
-            ms_data: Dict from Morningstar keyed by ticker.
-            nse_data: Dict from NSE keyed by symbol.
-            date_str: Date string in YYYY-MM-DD format.
-        """
-        # Collect all unique symbols
+        """Merge Morningstar and NSE data and insert into database."""
         all_symbols = set(ms_data.keys()) | set(nse_data.keys())
-
         db_path = self._get_valuation_db_path()
         records = []
 
         for symbol in all_symbols:
-            ms_record = ms_data.get(symbol, {})
-            nse_record = nse_data.get(symbol, {})
+            ms = ms_data.get(symbol, {})
+            nse = nse_data.get(symbol, {})
 
             record = {
                 "symbol": symbol,
                 "date": date_str,
-                "pe": nse_record.get("pe"),
-                "sector_pe": nse_record.get("sector_pe"),
-                "market_cap": nse_record.get("market_cap"),
-                "face_value": nse_record.get("face_value"),
-                "issued_size": nse_record.get("issued_size"),
-                "net_margin": ms_record.get("net_margin"),
-                "roe_ttm": ms_record.get("roe_ttm"),
-                "dividend_yield": ms_record.get("dividend_yield"),
-                "daily_volatility": nse_record.get("daily_volatility"),
-                "annual_volatility": nse_record.get("annual_volatility"),
-                "impact_cost": nse_record.get("impact_cost"),
-                "source_ms": "MORNINGSTAR" if ms_record else None,
-                "source_nse": "NSE" if nse_record else None,
+                # NSE fields (already use DB column names)
+                "pe": nse.get("pe"),
+                "sector_pe": nse.get("sector_pe"),
+                "market_cap": nse.get("market_cap"),
+                "face_value": nse.get("face_value"),
+                "issued_size": nse.get("issued_size"),
+                "daily_volatility": nse.get("daily_volatility"),
+                "annual_volatility": nse.get("annual_volatility"),
+                "impact_cost": nse.get("impact_cost"),
+                # Morningstar fields – map camelCase API keys to DB columns
+                "net_margin": ms.get("netMargin"),
+                "roe_ttm": ms.get("roeTTM"),
+                "dividend_yield": ms.get("dividendYield"),
+                "peRatio": ms.get("peRatio"),
+                "priceToBook": ms.get("priceToBook"),
+                "priceToSales": ms.get("priceToSales"),
+                "earningsPerShare": ms.get("earningsPerShare"),
+                "bookValuePerShare": ms.get("bookValuePerShare"),
+                "revenueGrowth": ms.get("revenueGrowth"),
+                "earningsGrowth": ms.get("earningsGrowth"),
+                "marketCap": ms.get("marketCap"),
+                "enterpriseValue": ms.get("enterpriseValue"),
+                "debtToEquity": ms.get("debtToEquity"),
+                "returnOnEquity": ms.get("returnOnEquity"),
+                "returnOnAssets": ms.get("returnOnAssets"),
+                "operatingMargin": ms.get("operatingMargin"),
+                "grossMargin": ms.get("grossMargin"),
+                "payoutRatio": ms.get("payoutRatio"),
+                "currentRatio": ms.get("currentRatio"),
+                "quickRatio": ms.get("quickRatio"),
+                "freeCashFlowYield": ms.get("freeCashFlowYield"),
+                "beta": ms.get("beta"),
+                "source_ms": "MORNINGSTAR" if ms else None,
+                "source_nse": "NSE" if nse else None,
             }
             records.append(record)
 
@@ -295,34 +345,18 @@ class FundamentalSync:
             logger.warning("[FundamentalSync] No records to insert")
             return
 
-        # Batch insert all records
         try:
             with sqlite3.connect(db_path, timeout=30) as conn:
                 self._ensure_table_exists(conn)
-
-                conn.executemany(
-                    """
-                    INSERT OR REPLACE INTO fundamentals (
-                        symbol, date, pe, sector_pe, market_cap, face_value,
-                        issued_size, net_margin, roe_ttm, dividend_yield,
-                        daily_volatility, annual_volatility, impact_cost,
-                        source_ms, source_nse
-                    ) VALUES (
-                        :symbol, :date, :pe, :sector_pe, :market_cap, :face_value,
-                        :issued_size, :net_margin, :roe_ttm, :dividend_yield,
-                        :daily_volatility, :annual_volatility, :impact_cost,
-                        :source_ms, :source_nse
-                    )
-                    """,
-                    records,
-                )
-                conn.commit()
+                # Build INSERT dynamically from record keys
+                columns = list(records[0].keys())
+                placeholders = [f":{c}" for c in columns]
+                sql = f"INSERT OR REPLACE INTO fundamentals ({','.join(columns)}) VALUES ({','.join(placeholders)})"
+                conn.executemany(sql, records)
                 self.inserted = len(records)
                 logger.info(f"[FundamentalSync] Inserted {self.inserted} records")
         except Exception as e:
-            logger.error(f"[FundamentalSync] Database insert failed: {e}")
-            self.errors += 1
-
+            logger.error(f"[FundamentalSync] Insert failed: {e}")
     def _log_summary(self):
         """Log the sync summary."""
         logger.info(

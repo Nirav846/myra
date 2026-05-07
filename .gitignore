@@ -110,4 +110,10 @@ verify_*.py
 test_*.py
 fix_*.py
 inspect_*.py
-simulate_*.py
+simulate_*.py.env
+*.db
+*.db-wal
+*.db-shm
+myra_app/db/*.db
+myra_app/db/*.db-wal
+myra_app/db/*.db-shm
