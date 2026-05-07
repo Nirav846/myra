@@ -34,7 +34,9 @@ NSE_HEADERS = {
 }
 
 NSE_QUOTE_URL = "https://www.nseindia.com/api/quote-equity?symbol={symbol}"
-NSE_TRADE_INFO_URL = "https://www.nseindia.com/api/quote-equity?symbol={symbol}&section=trade_info"
+NSE_TRADE_INFO_URL = (
+    "https://www.nseindia.com/api/quote-equity?symbol={symbol}&section=trade_info"
+)
 
 
 class FundamentalSync:
@@ -53,8 +55,7 @@ class FundamentalSync:
 
     def _ensure_table_exists(self, conn: sqlite3.Connection):
         """Create fundamentals table if it doesn't exist."""
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS fundamentals (
                 symbol              TEXT NOT NULL,
                 date                TEXT NOT NULL,
@@ -63,18 +64,36 @@ class FundamentalSync:
                 market_cap          REAL,
                 face_value          REAL,
                 issued_size         INTEGER,
-                net_margin          REAL,
-                roe_ttm             REAL,
-                dividend_yield      REAL,
                 daily_volatility    REAL,
                 annual_volatility   REAL,
                 impact_cost         REAL,
+                net_margin          REAL,
+                roe_ttm             REAL,
+                dividend_yield      REAL,
+                peRatio             REAL,
+                priceToBook         REAL,
+                priceToSales        REAL,
+                earningsPerShare    REAL,
+                bookValuePerShare   REAL,
+                revenueGrowth       REAL,
+                earningsGrowth      REAL,
+                marketCap           REAL,
+                enterpriseValue     REAL,
+                debtToEquity        REAL,
+                returnOnEquity      REAL,
+                returnOnAssets      REAL,
+                operatingMargin     REAL,
+                grossMargin         REAL,
+                payoutRatio         REAL,
+                currentRatio        REAL,
+                quickRatio          REAL,
+                freeCashFlowYield   REAL,
+                beta                REAL,
                 source_ms           TEXT,
                 source_nse          TEXT,
                 PRIMARY KEY (symbol, date)
             )
-            """
-        )
+            """)
         conn.commit()
 
     def _fetch_morningstar_bulk(self) -> dict:
@@ -149,16 +168,22 @@ class FundamentalSync:
                         "beta": row.get("beta"),
                     }
 
-                logger.debug(f"[FundamentalSync] Morningstar page {page}: {len(rows)} rows")
+                logger.debug(
+                    f"[FundamentalSync] Morningstar page {page}: {len(rows)} rows"
+                )
                 page += 1
 
             except requests.exceptions.RequestException as e:
-                logger.error(f"[FundamentalSync] Morningstar fetch failed on page {page}: {e}")
+                logger.error(
+                    f"[FundamentalSync] Morningstar fetch failed on page {page}: {e}"
+                )
                 self.errors += 1
                 break
 
         self.ms_fetched = len(result)
-        logger.info(f"[FundamentalSync] Morningstar bulk fetch complete: {self.ms_fetched} symbols")
+        logger.info(
+            f"[FundamentalSync] Morningstar bulk fetch complete: {self.ms_fetched} symbols"
+        )
         return result
 
     def _get_nifty_500_symbols(self) -> list:
@@ -178,10 +203,10 @@ class FundamentalSync:
             logger.error(f"[FundamentalSync] Failed to read NIFTY 500 symbols: {e}")
             return []
 
-    
     @staticmethod
     def _retry_request(url, headers, timeout, max_retries=3):
         import time
+
         for attempt in range(max_retries):
             try:
                 resp = requests.get(url, headers=headers, timeout=timeout)
@@ -190,7 +215,7 @@ class FundamentalSync:
             except requests.exceptions.RequestException as e:
                 if attempt == max_retries - 1:
                     raise
-                time.sleep(2 ** attempt)
+                time.sleep(2**attempt)
         return None
 
     def _fetch_nse_symbol(self, symbol: str) -> dict:
@@ -269,7 +294,9 @@ class FundamentalSync:
         Returns:
             Dict keyed by symbol: {symbol: {pe, sector_pe, ...}}
         """
-        logger.info(f"[FundamentalSync] Starting NSE fetch for {len(symbols)} symbols...")
+        logger.info(
+            f"[FundamentalSync] Starting NSE fetch for {len(symbols)} symbols..."
+        )
         result = {}
 
         for i, symbol in enumerate(symbols):
@@ -289,9 +316,7 @@ class FundamentalSync:
         logger.info(f"[FundamentalSync] NSE fetch complete: {self.nse_fetched} symbols")
         return result
 
-    def _merge_and_insert(
-        self, ms_data: dict, nse_data: dict, date_str: str
-    ):
+    def _merge_and_insert(self, ms_data: dict, nse_data: dict, date_str: str):
         """Merge Morningstar and NSE data and insert into database."""
         all_symbols = set(ms_data.keys()) | set(nse_data.keys())
         db_path = self._get_valuation_db_path()
@@ -357,6 +382,7 @@ class FundamentalSync:
                 logger.info(f"[FundamentalSync] Inserted {self.inserted} records")
         except Exception as e:
             logger.error(f"[FundamentalSync] Insert failed: {e}")
+
     def _log_summary(self):
         """Log the sync summary."""
         logger.info(
@@ -388,7 +414,9 @@ class FundamentalSync:
             nse_data = self._fetch_nse_all(nifty_symbols)
         else:
             nse_data = {}
-            logger.warning("[FundamentalSync] No NIFTY 500 symbols found, skipping NSE fetch")
+            logger.warning(
+                "[FundamentalSync] No NIFTY 500 symbols found, skipping NSE fetch"
+            )
 
         # Step 3: Merge and insert
         self._merge_and_insert(ms_data, nse_data, today)

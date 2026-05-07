@@ -149,7 +149,7 @@ def process_enrichment_pipeline(lib, conn):
     try:
         ALLOWED_QUERIES = {
             "prices": "SELECT * FROM prices",
-            "technical_data": "SELECT * FROM technical_data",
+            "technical_data": "SELECT * FROM technical_data WHERE date = (SELECT MAX(date) FROM technical_data)",
             "calculated_indicators": "SELECT * FROM calculated_indicators",
             "fundamentals": "SELECT * FROM fundamentals",
         }
@@ -210,7 +210,7 @@ def process_enrichment_pipeline(lib, conn):
                 "low": pl.Float64,
                 "close": pl.Float64,
                 "vwap": pl.Float64,
-            }
+            },
         )
         nifty_pd = pd.read_sql(
             "SELECT date, close FROM technical_data WHERE symbol LIKE '%NIFTY 50%'",
@@ -302,7 +302,7 @@ def process_enrichment_pipeline(lib, conn):
 
                     if update_data:
                         conn.executemany(
-                            f"UPDATE technical_data SET {col} = ? WHERE symbol = ? AND date = ?",
+                            f"UPDATE technical_data SET {col} = ? WHERE symbol = ? AND date = ? AND {col} IS NULL",
                             update_data,
                         )
                         conn.commit()

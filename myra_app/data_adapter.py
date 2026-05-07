@@ -182,7 +182,8 @@ class DataAdapter:
                 if df is not None and "delivery_percent" not in funda:
                     # Inject delivery_percent from df if not already present
                     deliv_col = next(
-                        (c for c in ["DeliveryPct", "delivery_pct"] if c in df.columns), None
+                        (c for c in ["DeliveryPct", "delivery_pct"] if c in df.columns),
+                        None,
                     )
                     if deliv_col:
                         series = pd.to_numeric(df[deliv_col], errors="coerce")
@@ -217,6 +218,12 @@ class DataAdapter:
                 funda["low_1y"] = (
                     float(df["Low"].iloc[-252:].min())
                     if len(df) >= 252
+                    else float(df["Low"].min())
+                )
+            if not funda.get("low_2y"):
+                funda["low_2y"] = (
+                    float(df["Low"].iloc[-504:].min())
+                    if len(df) >= 504
                     else float(df["Low"].min())
                 )
             deliv_col = next(
