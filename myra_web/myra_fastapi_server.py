@@ -79,38 +79,37 @@ class QueryRequest(BaseModel):
     params: list = []
 
 @app.post("/api/query")
-def execute_query(req: QueryRequest):
-    """
-    Allows the React frontend to run read queries directly against the sidecars.
-    """
-    if req.db not in DB_MAP:
-        raise HTTPException(status_code=400, detail="Invalid database specified.")
+async def execute_query(req: QueryRequest):
+    # Map frontend DB names to actual files
+    db_map = {
+        "_tech_conn": "myra_technical.db",
+        "_meta_conn": "myra_metadata.db",
+        "_val_conn": "myra_valuation.db",
+        "_inst_conn": "myra_institutional.db",
+        "_gov_conn": "myra_governance.db",
+        "_cache_conn": "myra_cache_network.db",
+        "_scoring_conn": "myra_scoring.db",
+        "_cal_conn": "myra_calendar.db",
+    }
     
-    db_path = get_db_path(req.db)
-    if not db_path or not os.path.exists(db_path):
-        raise HTTPException(status_code=404, detail=f"Database file not found: {DB_MAP.get(req.db)}")
+    # Use explicitly defined mapping or fallback to globally defined DB_MAP
+    db_file = db_map.get(req.db) or DB_MAP.get(req.db)
+    if not db_file:
+        raise HTTPException(status_code=400, detail=f"Unknown database: {req.db}")
+
+    db_path = os.path.join(DB_DIR, db_file)
+    if not os.path.exists(db_path):
+        raise HTTPException(status_code=400, detail=f"Database file not found: {db_file}")
 
     try:
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute(req.query, req.params)
-        
-        # If it's a SELECT query, return the rows
-        if req.query.strip().upper().startswith(("SELECT", "PRAGMA", "WITH")):
-            rows = cursor.fetchall()
-            data = [dict(ix) for ix in rows]
-            conn.close()
-            return {"data": data}
-        else:
-            # If it's an UPDATE/INSERT (though UI is mostly read-only)
-            conn.commit()
-            rowcount = cursor.rowcount
-            conn.close()
-            return {"data": [{"rows_affected": rowcount}]}
-            
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        cursor = conn.execute(req.query, req.params)
+        rows = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return rows
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 class ToolRequest(BaseModel):
     tool_id: str
