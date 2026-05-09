@@ -117,3 +117,7 @@ simulate_*.py.env
 myra_app/db/*.db
 myra_app/db/*.db-wal
 myra_app/db/*.db-shm
+node_modules/
+dist/
+.env
+*.local

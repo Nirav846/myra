@@ -2,39 +2,54 @@ import glob
 import os
 import re
 import sqlite3
+import sys
 import time
 from datetime import datetime, timedelta
 
 import pandas as pd
 
 from myra_app.librarian import Librarian
+from myra_app.schema_registry import SchemaRegistry
+from myra_app.utils.date_parser import parse_bhavcopy_date
 from myra_core.utils.myra_log import myra_log
 
 
 def mass_backfill(
     db_path=os.path.join("db", "myra_technical.db"),
     missing_csv=os.path.join("data", "missing_data.csv"),
+    full_mode=False,
 ):
     """
     Massive backfill for all symbols in the database.
     Strict Local Source: Reads strictly from local Bhavcopy CSV files.
     """
-    print(
-        "[MYRA] Initializing Mass Market Backfill (3800 Stocks) via STRICT LOCAL ARCHIVES..."
-    )
+    if full_mode:
+        print(
+            "[MYRA] Initializing FULL REBUILD from Archive (All Symbols & Dates) via STRICT LOCAL ARCHIVES..."
+        )
+    else:
+        print(
+            "[MYRA] Initializing Incremental Backfill (Missing Data Only) via STRICT LOCAL ARCHIVES..."
+        )
 
     lib = Librarian(read_only=True)
     all_symbols = lib.get_all_symbols()
 
-    if not os.path.exists(missing_csv):
-        print("[!] missing_data.csv not found. Please run missing_detector.py first.")
-        return
+    if full_mode:
+        # In full mode, we'll build dates from the archive later
+        unique_missing_dates = []
+    else:
+        if not os.path.exists(missing_csv):
+            print(
+                "[!] missing_data.csv not found. Please run missing_detector.py first."
+            )
+            return
 
-    df_missing = pd.read_csv(missing_csv)
-    df_missing = df_missing[df_missing["symbol"].isin(all_symbols)]
-    unique_missing_dates = df_missing["missing_date"].unique()
+        df_missing = pd.read_csv(missing_csv)
+        df_missing = df_missing[df_missing["symbol"].isin(all_symbols)]
+        unique_missing_dates = df_missing["missing_date"].unique()
 
-    print(f"[*] Found {len(unique_missing_dates)} dates requiring backfill.")
+        print(f"[*] Found {len(unique_missing_dates)} dates requiring backfill.")
 
     conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL;")
@@ -51,33 +66,39 @@ def mass_backfill(
     date_to_file = {}
     for csv_file in all_csvs:
         basename = os.path.basename(csv_file)
-        match = re.search(r"nse_full_(\d{4}-\d{2}-\d{2}|\d{8})\.csv", basename)
-        if match:
-            date_str = match.group(1)
-            if len(date_str) == 8:
-                try:
-                    file_dt = datetime.strptime(date_str, "%d%m%Y")
-                except ValueError:
-                    continue
-            else:
-                try:
-                    file_dt = datetime.strptime(date_str, "%Y-%m-%d")
-                except ValueError:
-                    continue
+        # Extract the date part from filename (remove 'nse_full_' prefix and '.csv' suffix)
+        date_part = basename.replace("nse_full_", "").replace(".csv", "")
 
-            iso_date = file_dt.date().isoformat()
-            date_to_file[iso_date] = csv_file
+        # Use the utility function to parse the date
+        iso_date = parse_bhavcopy_date(date_part)
+
+        if iso_date is None:
+            print(f"Could not parse date from {basename}, skipping")
+            continue
+
+        date_to_file[iso_date] = csv_file
+
+    if full_mode:
+        # In full mode, process all dates from the archive, sorted chronologically
+        unique_missing_dates = sorted(date_to_file.keys())
+        print(
+            f"[*] Found {len(unique_missing_dates)} dates in archive for full rebuild."
+        )
 
     total_dates = len(unique_missing_dates)
 
     for idx, d_str in enumerate(unique_missing_dates, 1):
         myra_log(idx, total_dates, desc=f"Backfilling {d_str}")
 
-        # ARMOR: Force upper and strip on the needed symbols list
-        raw_symbols_needed = df_missing.loc[
-            df_missing["missing_date"] == d_str, "symbol"
-        ].tolist()
-        symbols_needed = [str(s).strip().upper() for s in raw_symbols_needed]
+        if full_mode:
+            # In full mode, skip symbol filtering - keep all valid symbols
+            symbols_needed = None
+        else:
+            # ARMOR: Force upper and strip on the needed symbols list
+            raw_symbols_needed = df_missing.loc[
+                df_missing["missing_date"] == d_str, "symbol"
+            ].tolist()
+            symbols_needed = [str(s).strip().upper() for s in raw_symbols_needed]
 
         if d_str not in date_to_file:
             print(f"\n[!] WARNING: Local CSV missing for date {d_str}. Skipping.")
@@ -92,44 +113,37 @@ def mass_backfill(
                 "processed"
             ] += 1  # Moved counter up to accurately reflect files touched
 
-            df.columns = df.columns.str.strip().str.upper()
+            # Convert all column names to lower case first
+            df.columns = [c.lower() for c in df.columns]
+            # Then strip whitespace
+            df.columns = df.columns.str.strip()
 
-            if "SYMBOL" in df.columns:
-                df["SYMBOL"] = df["SYMBOL"].astype(str).str.strip()
+            if "symbol" in df.columns:
+                df["symbol"] = df["symbol"].astype(str).str.strip()
 
-            if "SERIES" in df.columns:
-                df["SERIES"] = df["SERIES"].astype(str).str.strip()
-                df = df[df["SERIES"].isin(["EQ", "BE", "SM", "ST", "BZ"])]
+            if "series" in df.columns:
+                df["series"] = df["series"].astype(str).str.strip()
+                df["series"] = df["series"].str.upper()
+                df = df[df["series"].isin(["EQ", "BE", "SM", "ST", "BZ"])]
 
-            if "DATE1" in df.columns:
-                df["DATE1"] = pd.to_datetime(df["DATE1"]).dt.strftime("%Y-%m-%d")  # noqa: PG-STRFTIME
-            elif "TIMESTAMP" in df.columns:
-                df["TIMESTAMP"] = pd.to_datetime(df["TIMESTAMP"]).dt.strftime(  # noqa: PG-STRFTIME
+            if "date1" in df.columns:
+                df["date1"] = pd.to_datetime(df["date1"]).dt.strftime(
+                    "%Y-%m-%d"
+                )  # noqa: PG-STRFTIME
+            elif "timestamp" in df.columns:
+                df["timestamp"] = pd.to_datetime(
+                    df["timestamp"]
+                ).dt.strftime(  # noqa: PG-STRFTIME
                     "%Y-%m-%d"
                 )
 
-            rename_map = {
-                "SYMBOL": "symbol",
-                "DATE1": "date",
-                "TIMESTAMP": "date",
-                "OPEN_PRICE": "open",
-                "HIGH_PRICE": "high",
-                "LOW_PRICE": "low",
-                "CLOSE_PRICE": "close",
-                "OPEN": "open",
-                "HIGH": "high",
-                "LOW": "low",
-                "CLOSE": "close",
-                "TOTTRDQTY": "volume",
-                "TTL_TRD_QNTY": "volume",
-                "DELIV_QTY": "delivery",
-                "DELIV_PER": "delivery_pct",
-            }
-            df.rename(columns=rename_map, inplace=True)
-
-            mapped_cols = list(set(rename_map.values()))
-            available_cols = [c for c in mapped_cols if c in df.columns]
-            df = df[available_cols]
+            # Dynamic column renaming using project's schema registry
+            rename_cols = {}
+            for col in df.columns:
+                canonical = SchemaRegistry.get_canonical_column(col)
+                if canonical:
+                    rename_cols[col] = canonical
+            df.rename(columns=rename_cols, inplace=True)
 
             for col in [
                 "symbol",
@@ -148,7 +162,10 @@ def mass_backfill(
             # ARMOR: Force upper and strip on the dataframe before matching
             if "symbol" in df.columns:
                 df["symbol"] = df["symbol"].astype(str).str.strip().str.upper()
-                df = df[df["symbol"].isin(symbols_needed)]
+                if symbols_needed is not None:
+                    # Incremental mode: filter to only needed symbols
+                    df = df[df["symbol"].isin(symbols_needed)]
+                # Full mode: keep all symbols (no filtering)
 
             if df.empty:
                 continue
@@ -237,4 +254,6 @@ def mass_backfill(
 
 
 if __name__ == "__main__":
-    mass_backfill()
+    # Check for --full flag
+    full_mode = "--full" in sys.argv
+    mass_backfill(full_mode=full_mode)

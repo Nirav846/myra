@@ -87,7 +87,7 @@ export default function App() {
 
   const [globalSelectedTicker, setGlobalSelectedTicker] = useState<string | undefined>();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isDesktopMenuExpanded, setIsDesktopMenuExpanded] = useState(true);
+  const [isDesktopMenuExpanded, setIsDesktopMenuExpanded] = useState(false);
   
   const { settings } = useSettings();
   const { health, isConnected } = useHealthStatus();

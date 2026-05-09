@@ -149,23 +149,9 @@ def process_enrichment_pipeline(lib, conn):
     try:
         ALLOWED_QUERIES = {
             "prices": "SELECT * FROM prices",
-            "technical_data": "SELECT * FROM technical_data WHERE date = (SELECT MAX(date) FROM technical_data)",
+            "technical_data": "SELECT * FROM technical_data WHERE date >= date((SELECT MAX(date) FROM technical_data), '-200 days')",
             "calculated_indicators": "SELECT * FROM calculated_indicators",
             "fundamentals": "SELECT * FROM fundamentals",
-        }
-
-        ALLOWED_DROPS = {
-            "prices": "DROP TABLE IF EXISTS prices",
-            "technical_data": "DROP TABLE IF EXISTS technical_data",
-            "calculated_indicators": "DROP TABLE IF EXISTS calculated_indicators",
-            "fundamentals": "DROP TABLE IF EXISTS fundamentals",
-        }
-
-        ALLOWED_RENAMES = {
-            "prices": "ALTER TABLE stg_enriched_market_data RENAME TO prices",
-            "technical_data": "ALTER TABLE stg_enriched_market_data RENAME TO technical_data",
-            "calculated_indicators": "ALTER TABLE stg_enriched_market_data RENAME TO calculated_indicators",
-            "fundamentals": "ALTER TABLE stg_enriched_market_data RENAME TO fundamentals",
         }
 
         import pandas as pd
@@ -212,6 +198,14 @@ def process_enrichment_pipeline(lib, conn):
                 "vwap": pl.Float64,
             },
         )
+
+        # Add data loading stats
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.info(
+            f"Loaded {df_raw.shape[0]} rows for {df_raw['symbol'].n_unique()} symbols over {df_raw['date'].n_unique()} days"
+        )
         nifty_pd = pd.read_sql(
             "SELECT date, close FROM technical_data WHERE symbol LIKE '%NIFTY 50%'",
             conn,
@@ -233,7 +227,16 @@ def process_enrichment_pipeline(lib, conn):
             update(tid, "Computing SMC indicators…")
             print("[MYRA Enrichment] Computing SMC indicators...")
 
+            # Add max_rows parameter to limit data size for robustness
+            max_rows = 500000
+            if len(price_df) > max_rows:
+                price_df = price_df.tail(max_rows)
+                logger.info(f"Limited to last {max_rows} rows for SMC calculation")
+
             # Process all symbols at once with vectorized SMC calculation
+            import time
+
+            t0 = time.time()
             smc_df = calculate_smc_indicators(
                 price_df.rename(
                     columns={
@@ -244,6 +247,14 @@ def process_enrichment_pipeline(lib, conn):
                         "volume": "Volume",
                     }
                 )
+            )
+            print(f"SMC calculation took {time.time()-t0:.1f}s")
+
+            # Pre-filter to only latest date to reduce update data size
+            latest_date = price_df["date"].max()
+            smc_today = smc_df.filter(pl.col("date") == str(latest_date))
+            logger.info(
+                f"Filtered to {len(smc_today)} rows for latest date {latest_date}"
             )
 
             # Write SMC columns to technical_data using efficient batch updates
@@ -287,8 +298,12 @@ def process_enrichment_pipeline(lib, conn):
                 update(tid, progress=pct, eta=eta_str)
 
             # Batch update using executemany for performance
-            for col in smc_columns:
-                if col in smc_df.columns:
+            for i, col in enumerate(smc_columns):
+                if col in smc_today.columns:
+                    # Add progress print every 5 columns
+                    if i % 5 == 0:
+                        print(f"Enrichment column {i+1}/{len(smc_columns)} done")
+
                     # Prepare batch data
                     update_data = [
                         (
@@ -296,13 +311,13 @@ def process_enrichment_pipeline(lib, conn):
                             row["symbol"],
                             str(row["date"]),
                         )
-                        for _, row in smc_df.to_pandas().iterrows()  # noqa: PG-ITERROWS
+                        for _, row in smc_today.to_pandas().iterrows()  # noqa: PG-ITERROWS
                         if not pd.isna(row[col])
                     ]
 
                     if update_data:
                         conn.executemany(
-                            f"UPDATE technical_data SET {col} = ? WHERE symbol = ? AND date = ? AND {col} IS NULL",
+                            f"UPDATE technical_data SET {col} = ? WHERE symbol = ? AND date = ? AND {col} IS NULL AND date = (SELECT MAX(date) FROM technical_data)",
                             update_data,
                         )
                         conn.commit()
@@ -310,22 +325,13 @@ def process_enrichment_pipeline(lib, conn):
             # Check if enrichment should pause after processing all symbols
             wait_if_paused()
 
-        df_enriched.to_pandas().to_sql(
-            "stg_enriched_market_data", conn, if_exists="replace", index=False
-        )
-
-        try:
-            with lib._db_lock:
-                conn.execute("BEGIN TRANSACTION;")
-                conn.execute(ALLOWED_DROPS[table_name])
-                conn.execute(ALLOWED_RENAMES[table_name])
-                conn.execute("COMMIT;")
-        except Exception:
-            with lib._db_lock:
-                conn.execute("ROLLBACK;")
-            raise
-
         update(tid, "Enrichment complete")
+
+        # Print total elapsed time
+        total_elapsed = (datetime.now() - start_time).total_seconds()
+        print(
+            f"Enrichment completed in {total_elapsed:.1f}s ({int(total_elapsed//60)}m {int(total_elapsed%60)}s)"
+        )
 
     except Exception as e:
         import logging
