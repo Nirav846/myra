@@ -89,5 +89,5 @@ zipp>=3.19.1
 textual>=0.82.3
 yfinance>=0.2.40
 pandas_ta>=0.3.14b0
-pywin32>=311
+pywin32>=311; sys_platform == "win32"
 polars>=1.0.0
