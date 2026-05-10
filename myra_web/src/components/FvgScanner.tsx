@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { RefreshCw, AlertCircle, CheckCircle } from 'lucide-react';
+import { useState, useEffect } from "react";
+import { RefreshCw, AlertCircle, CheckCircle } from "lucide-react";
 
 interface FvgData {
   symbol: string;
@@ -65,15 +65,15 @@ LIMIT 50;
     `;
 
     try {
-      const response = await fetch('http://localhost:8000/api/query', {
-        method: 'POST',
+      const response = await fetch("http://localhost:8000/api/query", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          database: '_tech_conn',
+          database: "_tech_conn",
           query: query.trim(),
-          args: {}
+          args: {},
         }),
       });
 
@@ -84,8 +84,8 @@ LIMIT 50;
       const result = await response.json();
       setData(result.data || []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to fetch FVG data');
-      console.error('FVG Scanner error:', e);
+      setError(e instanceof Error ? e.message : "Failed to fetch FVG data");
+      console.error("FVG Scanner error:", e);
     } finally {
       setLoading(false);
     }
@@ -99,8 +99,12 @@ LIMIT 50;
     <div className="bg-[#1a1c24] rounded-lg border border-[#ffffff1a] p-6">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h2 className="text-lg font-bold text-white mb-1">FVG Scanner (Daily)</h2>
-          <p className="text-xs text-[#888]">Fair Value Gaps detected in the last 5 trading days</p>
+          <h2 className="text-lg font-bold text-white mb-1">
+            FVG Scanner (Daily)
+          </h2>
+          <p className="text-xs text-[#888]">
+            Fair Value Gaps detected in the last 5 trading days
+          </p>
         </div>
         <button
           onClick={fetchFvgData}
@@ -137,14 +141,30 @@ LIMIT 50;
           <table className="w-full text-left">
             <thead>
               <tr className="border-b border-[#ffffff1a]">
-                <th className="pb-3 px-4 text-xs font-semibold text-[#888] uppercase tracking-wider">Symbol</th>
-                <th className="pb-3 px-4 text-xs font-semibold text-[#888] uppercase tracking-wider">Date</th>
-                <th className="pb-3 px-4 text-xs font-semibold text-[#888] uppercase tracking-wider">Type</th>
-                <th className="pb-3 px-4 text-xs font-semibold text-[#888] uppercase tracking-wider">Gap Size</th>
-                <th className="pb-3 px-4 text-xs font-semibold text-[#888] uppercase tracking-wider">Gap Bottom</th>
-                <th className="pb-3 px-4 text-xs font-semibold text-[#888] uppercase tracking-wider">Gap Top</th>
-                <th className="pb-3 px-4 text-xs font-semibold text-[#888] uppercase tracking-wider">Close</th>
-                <th className="pb-3 px-4 text-xs font-semibold text-[#888] uppercase tracking-wider">Volume</th>
+                <th className="pb-3 px-4 text-xs font-semibold text-[#888] uppercase tracking-wider">
+                  Symbol
+                </th>
+                <th className="pb-3 px-4 text-xs font-semibold text-[#888] uppercase tracking-wider">
+                  Date
+                </th>
+                <th className="pb-3 px-4 text-xs font-semibold text-[#888] uppercase tracking-wider">
+                  Type
+                </th>
+                <th className="pb-3 px-4 text-xs font-semibold text-[#888] uppercase tracking-wider">
+                  Gap Size
+                </th>
+                <th className="pb-3 px-4 text-xs font-semibold text-[#888] uppercase tracking-wider">
+                  Gap Bottom
+                </th>
+                <th className="pb-3 px-4 text-xs font-semibold text-[#888] uppercase tracking-wider">
+                  Gap Top
+                </th>
+                <th className="pb-3 px-4 text-xs font-semibold text-[#888] uppercase tracking-wider">
+                  Close
+                </th>
+                <th className="pb-3 px-4 text-xs font-semibold text-[#888] uppercase tracking-wider">
+                  Volume
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -153,27 +173,39 @@ LIMIT 50;
                   key={idx}
                   className="border-b border-[#ffffff0a] hover:bg-[#ffffff05] transition-colors"
                 >
-                  <td className="py-3 px-4 font-mono text-sm font-bold text-white">{row.symbol}</td>
-                  <td className="py-3 px-4 font-mono text-sm text-[#ccc]">{row.date}</td>
+                  <td className="py-3 px-4 font-mono text-sm font-bold text-white">
+                    {row.symbol}
+                  </td>
+                  <td className="py-3 px-4 font-mono text-sm text-[#ccc]">
+                    {row.date}
+                  </td>
                   <td className="py-3 px-4">
                     <span
                       className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
-                        row.fvg_type === 'Bullish FVG'
-                          ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                          : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                        row.fvg_type === "Bullish FVG"
+                          ? "bg-green-500/20 text-green-400 border border-green-500/30"
+                          : "bg-red-500/20 text-red-400 border border-red-500/30"
                       }`}
                     >
                       {row.fvg_type}
                     </span>
                   </td>
-                  <td className="py-3 px-4 font-mono text-sm text-[#ccc]">{row.gap_size.toFixed(2)}</td>
-                  <td className="py-3 px-4 font-mono text-sm text-[#ccc]">{row.fvg_bottom.toFixed(2)}</td>
-                  <td className="py-3 px-4 font-mono text-sm text-[#ccc]">{row.fvg_top.toFixed(2)}</td>
-                  <td className="py-3 px-4 font-mono text-sm text-[#ccc]">{row.close.toFixed(2)}</td>
+                  <td className="py-3 px-4 font-mono text-sm text-[#ccc]">
+                    {row.gap_size.toFixed(2)}
+                  </td>
+                  <td className="py-3 px-4 font-mono text-sm text-[#ccc]">
+                    {row.fvg_bottom.toFixed(2)}
+                  </td>
+                  <td className="py-3 px-4 font-mono text-sm text-[#ccc]">
+                    {row.fvg_top.toFixed(2)}
+                  </td>
+                  <td className="py-3 px-4 font-mono text-sm text-[#ccc]">
+                    {row.close.toFixed(2)}
+                  </td>
                   <td className="py-3 px-4 font-mono text-sm text-[#ccc]">
                     {row.volume >= 1000000
-                      ? (row.volume / 1000000).toFixed(2) + 'M'
-                      : (row.volume / 1000).toFixed(1) + 'k'}
+                      ? (row.volume / 1000000).toFixed(2) + "M"
+                      : (row.volume / 1000).toFixed(1) + "k"}
                   </td>
                 </tr>
               ))}

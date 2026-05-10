@@ -35,6 +35,7 @@ class DataAdapter:
             self.librarian = librarian
             _here = os.path.dirname(os.path.abspath(__file__))
             self.db_dir = os.path.join(_here, "db")
+            self._funda_cols_cache = None
             self.initialized = True
 
     def _get_connection(self, path: str):
@@ -205,10 +206,16 @@ class DataAdapter:
                     "SELECT * FROM fundamentals WHERE symbol = ?", (symbol_clean,)
                 ).fetchone()
                 if res:
-                    if not self._funda_cols:
-                        cursor = conn.execute("PRAGMA table_info('fundamentals')")
-                        self._funda_cols = [row[1] for row in cursor.fetchall()]
-                    funda.update(dict(zip(self._funda_cols, res)))
+                    if self._funda_cols_cache is None:
+                        with self._lock:
+                            if self._funda_cols_cache is None:
+                                self._funda_cols_cache = [
+                                    row[1]
+                                    for row in conn.execute(
+                                        "PRAGMA table_info('fundamentals')"
+                                    ).fetchall()
+                                ]
+                    funda.update(dict(zip(self._funda_cols_cache, res)))
             finally:
                 conn.close()
 

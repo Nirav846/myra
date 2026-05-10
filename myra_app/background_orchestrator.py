@@ -132,8 +132,10 @@ def _already_ingested_today() -> bool:
             if last:
                 today = datetime.now(timezone.utc).astimezone(IST).date().isoformat()
                 return last.strip() == today
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(
+                f"[MYRA BG] Unexpected error verifying ingestion metadata: {e}"
+            )
     return False
 
 
@@ -165,12 +167,14 @@ def _ensure_sync_log_table():
     """Create sync_log table if it doesn't exist."""
     try:
         lib = _get_metadata_connection(read_only=False)
-        lib._meta_conn.execute("""
+        lib._meta_conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS sync_log (
                 task_name   TEXT PRIMARY KEY,
                 last_run    TEXT
             )
-        """)
+        """
+        )
         lib._meta_conn.commit()
     except Exception as e:
         logger.warning(f"[MYRA BG] Failed to ensure sync_log table: {e}")
@@ -208,7 +212,7 @@ def _mark_task_run(task_name: str):
         lib = _get_metadata_connection(read_only=False)
         lib._meta_conn.execute(
             "INSERT OR REPLACE INTO sync_log (task_name, last_run) VALUES (?, ?)",
-            (task_name, timestamp)
+            (task_name, timestamp),
         )
         lib._meta_conn.commit()
         logger.info(f"[MYRA BG] Marked {task_name} last_run: {timestamp}")
@@ -666,7 +670,10 @@ def start():
                             "SELECT COUNT(*) FROM etf_blocklist"
                         ).fetchone()[0]
                         _needs_seed = _count < 50
-                    except Exception:
+                    except Exception as e:
+                        logger.error(
+                            f"[MYRA BG] Could not verify ETF blocklist metadata: {e}"
+                        )
                         _needs_seed = True
             if _needs_seed:
                 print("[MYRA BG] Seeding ETF blocklist for first time...")

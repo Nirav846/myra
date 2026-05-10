@@ -5,6 +5,7 @@ Handles all data fetching from archives and multi-DB ingestion.
 Routes to technical.db, institutional.db, and legacy DuckDB cache.
 """
 
+import logging
 import os
 import sqlite3
 from datetime import date, datetime, timedelta
@@ -13,6 +14,8 @@ import pandas as pd
 
 from myra_core.date_utils import PKDateUtilities
 from myra_core.utils.myra_log import myra_log
+
+logger = logging.getLogger(__name__)
 
 
 class LibrarianIngestorMixin:
@@ -26,23 +29,23 @@ class LibrarianIngestorMixin:
         if self._tech_conn:
             try:
                 self._tech_conn.execute("VACUUM")
-            except:
-                pass
+            except Exception as e:
+                logger.error(f"Ingestion error: {e}")
         if self._inst_conn:
             try:
                 self._inst_conn.execute("VACUUM")
-            except:
-                pass
+            except Exception as e:
+                logger.error(f"Ingestion error: {e}")
         if self._meta_conn:
             try:
                 self._meta_conn.execute("VACUUM")
-            except:
-                pass
+            except Exception as e:
+                logger.error(f"Ingestion error: {e}")
         if self._val_conn:
             try:
                 self._val_conn.execute("VACUUM")
-            except:
-                pass
+            except Exception as e:
+                logger.error(f"Ingestion error: {e}")
 
     def _consolidate_csv_archives(self):
         ad = os.path.join(self.data_dir, "Market_Archives")
@@ -70,7 +73,8 @@ class LibrarianIngestorMixin:
             try:
                 df = pd.read_csv(os.path.join(ad, f))
                 return df[[c for c in cols if c in df.columns]]
-            except:
+            except Exception as e:
+                logger.error(f"Ingestion error: {e}")
                 return None
 
         total_files = len(csv_files)
@@ -91,8 +95,8 @@ class LibrarianIngestorMixin:
             for f in csv_files:
                 try:
                     os.remove(os.path.join(ad, f))
-                except:
-                    pass
+                except Exception as e:
+                    logger.error(f"Ingestion error: {e}")
 
     def _fetch_archives(self, start_date, end_date, conn=None, existing_dates=None):
         days = [

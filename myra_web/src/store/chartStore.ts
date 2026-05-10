@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { create } from "zustand";
 
 export interface NormalizedViewport {
   startIndex: number;
@@ -19,5 +19,5 @@ export const useChartStore = create<ChartState>((set) => ({
   viewport: null,
   hoveredIndex: -1,
   setViewport: (viewport) => set({ viewport }),
-  setHoveredIndex: (index) => set({ hoveredIndex: index })
+  setHoveredIndex: (index) => set({ hoveredIndex: index }),
 }));

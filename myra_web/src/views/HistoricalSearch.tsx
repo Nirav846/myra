@@ -1,17 +1,42 @@
-import { useState, useMemo } from 'react';
-import { Librarian } from '../lib/Librarian';
-import { Search, Calendar, Activity, BarChart2, Table as TableIcon, Package, TrendingUp, BarChart, Download, AlertTriangle } from 'lucide-react';
-import { ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
-import { SymbolSearch } from '../components/SymbolSearch';
-import { motion, AnimatePresence } from 'motion/react';
+import { useState, useMemo } from "react";
+import { Librarian } from "../lib/Librarian";
+import {
+  Search,
+  Calendar,
+  Activity,
+  BarChart2,
+  Table as TableIcon,
+  Package,
+  TrendingUp,
+  BarChart,
+  Download,
+  AlertTriangle,
+} from "lucide-react";
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  Line,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+} from "recharts";
+import { SymbolSearch } from "../components/SymbolSearch";
+import { motion, AnimatePresence } from "motion/react";
 
 export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
-  const [ticker, setTicker] = useState('RELIANCE');
-  const [startDate, setStartDate] = useState(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]); // 30 days ago
-  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [ticker, setTicker] = useState("RELIANCE");
+  const [startDate, setStartDate] = useState(
+    new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+  ); // 30 days ago
+  const [endDate, setEndDate] = useState(
+    new Date().toISOString().split("T")[0],
+  );
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<any[] | null>(null);
-  const [viewMode, setViewMode] = useState<'chart' | 'table'>('chart');
+  const [viewMode, setViewMode] = useState<"chart" | "table">("chart");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isDemo, setIsDemo] = useState(false);
 
@@ -20,7 +45,7 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
     setLoading(true);
     setErrorMsg(null);
     setIsDemo(!lib.isConnectedToLocalRepo);
-    
+
     try {
       // SECURE SQL: Using positional placeholders (?) and spreading parameters into args array
       const query = `
@@ -29,30 +54,34 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
         WHERE symbol = ? AND date >= ? AND date <= ?
         ORDER BY date ASC
       `;
-      const result = await lib.executeQuery('_tech_conn', query, [ticker, startDate, endDate]);
+      const result = await lib.executeQuery("_tech_conn", query, [
+        ticker,
+        startDate,
+        endDate,
+      ]);
 
       if (result && result.length > 0) {
         const mapped = result.map((r: any) => ({
-            date: r.date || r.Date || '',
-            open: Number(r.open || r.Open || 0),
-            high: Number(r.high || r.High || 0),
-            low: Number(r.low || r.Low || 0),
-            close: Number(r.close || r.Close || 0),
-            volume: Number(r.volume || r.Volume || 0),
-            delivery_qty: Number(r.delivery || 0), 
-            delivery_pct: Number(r.delivery_pct || 0),
-            non_delivery: Number(r.volume || 0) - Number(r.delivery || 0)
+          date: r.date || r.Date || "",
+          open: Number(r.open || r.Open || 0),
+          high: Number(r.high || r.High || 0),
+          low: Number(r.low || r.Low || 0),
+          close: Number(r.close || r.Close || 0),
+          volume: Number(r.volume || r.Volume || 0),
+          delivery_qty: Number(r.delivery || 0),
+          delivery_pct: Number(r.delivery_pct || 0),
+          non_delivery: Number(r.volume || 0) - Number(r.delivery || 0),
         }));
         setData(mapped);
       } else {
         setIsDemo(true);
-        setErrorMsg('No data found for the given criteria.');
+        setErrorMsg("No data found for the given criteria.");
         generateMockData();
       }
     } catch (e: any) {
       console.error(e);
       setIsDemo(true);
-      setErrorMsg(e.message || 'Database unavailable - generating mock data.');
+      setErrorMsg(e.message || "Database unavailable - generating mock data.");
       generateMockData();
     } finally {
       setLoading(false);
@@ -64,23 +93,23 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
     const mock = [];
     const start = new Date(startDate);
     const end = new Date(endDate);
-    
+
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       if (d.getDay() === 0 || d.getDay() === 6) continue; // Skip weekends
-      
+
       const volatility = currentPrice * 0.02;
       const open = currentPrice + (Math.random() - 0.5) * volatility;
       const close = open + (Math.random() - 0.5) * volatility;
       const high = Math.max(open, close) + Math.random() * volatility * 0.5;
       const low = Math.min(open, close) - Math.random() * volatility * 0.5;
-      
+
       const volume = Math.floor(Math.random() * 5000000) + 1000000;
-      const delivery_pct = Number((Math.random() * 60 + 15).toFixed(2)); 
+      const delivery_pct = Number((Math.random() * 60 + 15).toFixed(2));
       const delivery_qty = Math.floor(volume * (delivery_pct / 100));
       const non_delivery = volume - delivery_qty;
-      
+
       mock.push({
-        date: d.toISOString().split('T')[0],
+        date: d.toISOString().split("T")[0],
         close: Number(close.toFixed(2)),
         open: Number(open.toFixed(2)),
         high: Number(high.toFixed(2)),
@@ -88,7 +117,7 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
         volume,
         delivery_qty,
         delivery_pct,
-        non_delivery
+        non_delivery,
       });
       currentPrice = close;
     }
@@ -97,15 +126,36 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
 
   const exportCSV = () => {
     if (!data) return;
-    const headers = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume', 'DeliveryQty', 'DeliveryPct'];
-    const rows = data.map(r => [r.date, r.open, r.high, r.low, r.close, r.volume, r.delivery_qty, r.delivery_pct]);
-    const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const headers = [
+      "Date",
+      "Open",
+      "High",
+      "Low",
+      "Close",
+      "Volume",
+      "DeliveryQty",
+      "DeliveryPct",
+    ];
+    const rows = data.map((r) => [
+      r.date,
+      r.open,
+      r.high,
+      r.low,
+      r.close,
+      r.volume,
+      r.delivery_qty,
+      r.delivery_pct,
+    ]);
+    const csvContent = [headers, ...rows].map((e) => e.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `historical_${ticker}_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
+    link.setAttribute(
+      "download",
+      `historical_${ticker}_${new Date().toISOString().split("T")[0]}.csv`,
+    );
+    link.style.visibility = "hidden";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -115,10 +165,13 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
     if (!data || data.length === 0) return null;
     const totalVol = data.reduce((acc, curr) => acc + curr.volume, 0);
     const totalDel = data.reduce((acc, curr) => acc + curr.delivery_qty, 0);
-    const avgDelPct = totalVol > 0 ? ((totalDel / totalVol) * 100).toFixed(2) : '0.00';
-    const highestDel = [...data].sort((a,b) => b.delivery_pct - a.delivery_pct)[0];
+    const avgDelPct =
+      totalVol > 0 ? ((totalDel / totalVol) * 100).toFixed(2) : "0.00";
+    const highestDel = [...data].sort(
+      (a, b) => b.delivery_pct - a.delivery_pct,
+    )[0];
     const avgDailyVol = Math.floor(totalVol / data.length);
-    
+
     return { totalVol, totalDel, avgDelPct, highestDel, avgDailyVol };
   }, [data]);
 
@@ -127,9 +180,9 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
       {/* Dynamic Demo Banner */}
       <AnimatePresence>
         {isDemo && (
-          <motion.div 
+          <motion.div
             initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
+            animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             className="bg-yellow-500/10 border-b border-yellow-500/20 px-6 py-2 flex items-center justify-between overflow-hidden"
           >
@@ -137,7 +190,9 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
               <AlertTriangle size={14} />
               <span>ENVIRONMENT: SIMULATED / DEMO MODE ACTIVE</span>
             </div>
-            <span className="text-[10px] text-yellow-500/60 uppercase tracking-widest font-mono">Mock Data Provided by Librarian Fallback</span>
+            <span className="text-[10px] text-yellow-500/60 uppercase tracking-widest font-mono">
+              Mock Data Provided by Librarian Fallback
+            </span>
           </motion.div>
         )}
       </AnimatePresence>
@@ -148,8 +203,14 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
           Historical Engine & Delivery Scrutiny
         </h3>
         <div className="flex items-center gap-3">
-          {errorMsg && <span className="text-xs text-red-400 font-mono px-2 py-1 bg-red-400/10 rounded">{errorMsg}</span>}
-          <span className="text-xs text-[#888] font-mono">Module: query_layer.delivery</span>
+          {errorMsg && (
+            <span className="text-xs text-red-400 font-mono px-2 py-1 bg-red-400/10 rounded">
+              {errorMsg}
+            </span>
+          )}
+          <span className="text-xs text-[#888] font-mono">
+            Module: query_layer.delivery
+          </span>
         </div>
       </div>
 
@@ -157,47 +218,63 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
         {/* Search Controls */}
         <div className="flex flex-wrap gap-4 items-end bg-[#0e1117] p-4 rounded-lg border border-[#ffffff0a]">
           <div className="flex-1 min-w-[200px]">
-            <label className="block text-xs font-mono text-[#888] uppercase mb-1">Ticker Symbol</label>
-            <SymbolSearch 
+            <label className="block text-xs font-mono text-[#888] uppercase mb-1">
+              Ticker Symbol
+            </label>
+            <SymbolSearch
               lib={lib}
               initialValue={ticker}
               onSymbolSelect={setTicker}
               placeholder="e.g. RELIANCE"
             />
           </div>
-          
+
           <div className="w-40">
-            <label className="block text-xs font-mono text-[#888] uppercase mb-1">Start Date</label>
+            <label className="block text-xs font-mono text-[#888] uppercase mb-1">
+              Start Date
+            </label>
             <div className="relative">
-              <Calendar size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555]" />
-              <input 
-                type="date" 
+              <Calendar
+                size={16}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555]"
+              />
+              <input
+                type="date"
                 value={startDate}
-                onChange={e => setStartDate(e.target.value)}
+                onChange={(e) => setStartDate(e.target.value)}
                 className="w-full bg-[#1a1c24] border border-[#ffffff1a] rounded pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono text-[#fafafa] [color-scheme:dark]"
               />
             </div>
           </div>
 
           <div className="w-40">
-            <label className="block text-xs font-mono text-[#888] uppercase mb-1">End Date</label>
+            <label className="block text-xs font-mono text-[#888] uppercase mb-1">
+              End Date
+            </label>
             <div className="relative">
-              <Calendar size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555]" />
-              <input 
-                type="date" 
+              <Calendar
+                size={16}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555]"
+              />
+              <input
+                type="date"
                 value={endDate}
-                onChange={e => setEndDate(e.target.value)}
+                onChange={(e) => setEndDate(e.target.value)}
                 className="w-full bg-[#1a1c24] border border-[#ffffff1a] rounded pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono text-[#fafafa] [color-scheme:dark]"
               />
             </div>
           </div>
 
-          <button 
+          <button
             onClick={handleSearch}
             disabled={loading}
             className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded text-sm transition-colors disabled:opacity-50 h-[38px] flex items-center justify-center min-w-[120px]"
           >
-            {loading ? <Search size={16} className="animate-pulse" /> : 'Fetch Series'}
+            {loading ? (
+              <Search size={16} className="animate-pulse" />
+            ) : (
+              "Fetch Series"
+            )}
           </button>
         </div>
 
@@ -205,12 +282,17 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
         {loading && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {[1, 2, 3].map(i => (
-                <div key={i} className="h-24 bg-[#ffffff05] border border-[#ffffff0a] rounded animate-pulse border-dashed" />
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="h-24 bg-[#ffffff05] border border-[#ffffff0a] rounded animate-pulse border-dashed"
+                />
               ))}
             </div>
             <div className="h-[400px] bg-[#ffffff05] border border-[#ffffff0a] rounded animate-pulse border-dashed flex items-center justify-center">
-              <div className="text-[#333] font-mono text-xs uppercase tracking-tighter">Initializing Scrutiny Layer...</div>
+              <div className="text-[#333] font-mono text-xs uppercase tracking-tighter">
+                Initializing Scrutiny Layer...
+              </div>
             </div>
           </div>
         )}
@@ -219,22 +301,46 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
         {!loading && data && summaryStats && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-[#1a1c24] border border-green-500/30 rounded p-4 flex flex-col justify-center relative overflow-hidden group">
-              <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity"><Package size={100} /></div>
-              <span className="text-[#888] text-xs font-mono mb-1 flex items-center gap-1.5"><Package size={12}/> AGGREGATE DELIVERY %</span>
-              <span className="text-2xl font-bold text-green-400">{summaryStats.avgDelPct}%</span>
-              <span className="text-[10px] text-[#666] mt-1 font-mono">Total Qty: {summaryStats.totalDel.toLocaleString()}</span>
+              <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                <Package size={100} />
+              </div>
+              <span className="text-[#888] text-xs font-mono mb-1 flex items-center gap-1.5">
+                <Package size={12} /> AGGREGATE DELIVERY %
+              </span>
+              <span className="text-2xl font-bold text-green-400">
+                {summaryStats.avgDelPct}%
+              </span>
+              <span className="text-[10px] text-[#666] mt-1 font-mono">
+                Total Qty: {summaryStats.totalDel.toLocaleString()}
+              </span>
             </div>
             <div className="bg-[#1a1c24] border border-fuchsia-500/30 rounded p-4 flex flex-col justify-center relative overflow-hidden group">
-              <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity"><TrendingUp size={100} /></div>
-              <span className="text-[#888] text-xs font-mono mb-1 flex items-center gap-1.5"><TrendingUp size={12}/> HIGH DELIVERY SPIKE</span>
-              <span className="text-2xl font-bold text-fuchsia-400">{summaryStats.highestDel.delivery_pct}%</span>
-              <span className="text-[10px] text-[#666] mt-1 font-mono">Recorded on: {summaryStats.highestDel.date}</span>
+              <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                <TrendingUp size={100} />
+              </div>
+              <span className="text-[#888] text-xs font-mono mb-1 flex items-center gap-1.5">
+                <TrendingUp size={12} /> HIGH DELIVERY SPIKE
+              </span>
+              <span className="text-2xl font-bold text-fuchsia-400">
+                {summaryStats.highestDel.delivery_pct}%
+              </span>
+              <span className="text-[10px] text-[#666] mt-1 font-mono">
+                Recorded on: {summaryStats.highestDel.date}
+              </span>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col justify-center relative overflow-hidden group">
-              <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity"><BarChart size={100} /></div>
-              <span className="text-[#888] text-xs font-mono mb-1 flex items-center gap-1.5"><Activity size={12}/> AVERAGE DAILY VOLUME</span>
-              <span className="text-2xl font-bold text-[#fafafa]">{summaryStats.avgDailyVol.toLocaleString()}</span>
-              <span className="text-[10px] text-[#666] mt-1 font-mono">Across {data.length} trading days</span>
+              <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                <BarChart size={100} />
+              </div>
+              <span className="text-[#888] text-xs font-mono mb-1 flex items-center gap-1.5">
+                <Activity size={12} /> AVERAGE DAILY VOLUME
+              </span>
+              <span className="text-2xl font-bold text-[#fafafa]">
+                {summaryStats.avgDailyVol.toLocaleString()}
+              </span>
+              <span className="text-[10px] text-[#666] mt-1 font-mono">
+                Across {data.length} trading days
+              </span>
             </div>
           </div>
         )}
@@ -244,20 +350,20 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
           <div className="flex-1 flex flex-col border border-[#ffffff0a] rounded-lg overflow-hidden bg-[#0e1117]">
             <div className="flex justify-between items-center bg-[#1a1c24] border-b border-[#ffffff0a] p-2 pr-4">
               <div className="flex gap-2">
-                <button 
-                  onClick={() => setViewMode('chart')}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-medium transition-colors ${viewMode === 'chart' ? 'bg-[#ffffff1a] text-white' : 'text-[#888] hover:text-[#ccc]'}`}
+                <button
+                  onClick={() => setViewMode("chart")}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-medium transition-colors ${viewMode === "chart" ? "bg-[#ffffff1a] text-white" : "text-[#888] hover:text-[#ccc]"}`}
                 >
                   <BarChart2 size={14} /> OHLCV + Delivery Tracking
                 </button>
-                <button 
-                  onClick={() => setViewMode('table')}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-medium transition-colors ${viewMode === 'table' ? 'bg-[#ffffff1a] text-white' : 'text-[#888] hover:text-[#ccc]'}`}
+                <button
+                  onClick={() => setViewMode("table")}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-medium transition-colors ${viewMode === "table" ? "bg-[#ffffff1a] text-white" : "text-[#888] hover:text-[#ccc]"}`}
                 >
                   <TableIcon size={14} /> Raw Vector Grid
                 </button>
               </div>
-              <button 
+              <button
                 onClick={exportCSV}
                 className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold bg-[#ffffff0a] hover:bg-[#ffffff15] text-[#ccc] transition-all active:scale-95"
               >
@@ -266,49 +372,117 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
             </div>
 
             <div className="p-4 flex-1 min-h-[400px]">
-              {viewMode === 'chart' ? (
+              {viewMode === "chart" ? (
                 <div className="h-full w-full relative">
                   <ResponsiveContainer width="100%" height={400}>
-                    <ComposedChart data={data} margin={{ top: 10, right: 30, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
-                      <XAxis dataKey="date" stroke="#666" tick={{ fill: '#666', fontSize: 10 }} tickMargin={10} minTickGap={30} />
-                      
+                    <ComposedChart
+                      data={data}
+                      margin={{ top: 10, right: 30, left: -20, bottom: 0 }}
+                    >
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        stroke="#222"
+                        vertical={false}
+                      />
+                      <XAxis
+                        dataKey="date"
+                        stroke="#666"
+                        tick={{ fill: "#666", fontSize: 10 }}
+                        tickMargin={10}
+                        minTickGap={30}
+                      />
+
                       {/* Left axis for price */}
-                      <YAxis yAxisId="price" domain={['auto', 'auto']} stroke="#666" tick={{ fill: '#666', fontSize: 10 }} />
-                      
+                      <YAxis
+                        yAxisId="price"
+                        domain={["auto", "auto"]}
+                        stroke="#666"
+                        tick={{ fill: "#666", fontSize: 10 }}
+                      />
+
                       {/* Internal axis for volume scale */}
                       <YAxis yAxisId="volume" orientation="right" hide={true} />
-                      
+
                       {/* Visible right axis for delivery percentage */}
-                      <YAxis 
-                        yAxisId="pct" 
-                        orientation="right" 
-                        domain={[0, 100]} 
-                        stroke="#f43f5e" 
-                        tick={{ fill: '#f43f5e', fontSize: 10 }} 
-                        label={{ value: 'Delivery %', angle: 90, position: 'insideRight', style: { fill: '#f43f5e', fontSize: 10, fontWeight: 'bold' } }}
+                      <YAxis
+                        yAxisId="pct"
+                        orientation="right"
+                        domain={[0, 100]}
+                        stroke="#f43f5e"
+                        tick={{ fill: "#f43f5e", fontSize: 10 }}
+                        label={{
+                          value: "Delivery %",
+                          angle: 90,
+                          position: "insideRight",
+                          style: {
+                            fill: "#f43f5e",
+                            fontSize: 10,
+                            fontWeight: "bold",
+                          },
+                        }}
                       />
-                      
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: '#1a1c24', border: '1px solid #333', borderRadius: '4px', fontSize: '12px' }}
-                        itemStyle={{ color: '#ccc' }}
+
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: "#1a1c24",
+                          border: "1px solid #333",
+                          borderRadius: "4px",
+                          fontSize: "12px",
+                        }}
+                        itemStyle={{ color: "#ccc" }}
                         formatter={(value: any, name: string) => {
                           if (name === "Delivery %") return [`${value}%`, name];
-                          if (name === "Delivery Qty" || name === "Intraday Qty") return [value.toLocaleString(), name];
+                          if (
+                            name === "Delivery Qty" ||
+                            name === "Intraday Qty"
+                          )
+                            return [value.toLocaleString(), name];
                           return [value, name];
                         }}
                       />
-                      <Legend wrapperStyle={{ fontSize: '11px', color: '#888' }} />
-                      
+                      <Legend
+                        wrapperStyle={{ fontSize: "11px", color: "#888" }}
+                      />
+
                       {/* Stacked Bars for Volume Decomposition */}
-                      <Bar yAxisId="volume" dataKey="delivery_qty" stackId="vol" fill="#10b981" opacity={0.6} name="Delivery Qty" />
-                      <Bar yAxisId="volume" dataKey="non_delivery" stackId="vol" fill="#333" opacity={0.4} name="Intraday Qty" />
-                      
+                      <Bar
+                        yAxisId="volume"
+                        dataKey="delivery_qty"
+                        stackId="vol"
+                        fill="#10b981"
+                        opacity={0.6}
+                        name="Delivery Qty"
+                      />
+                      <Bar
+                        yAxisId="volume"
+                        dataKey="non_delivery"
+                        stackId="vol"
+                        fill="#333"
+                        opacity={0.4}
+                        name="Intraday Qty"
+                      />
+
                       {/* Line for Price */}
-                      <Line yAxisId="price" type="monotone" dataKey="close" stroke="#3b82f6" strokeWidth={2} dot={false} name="Closing Price (₹)" />
-                      
+                      <Line
+                        yAxisId="price"
+                        type="monotone"
+                        dataKey="close"
+                        stroke="#3b82f6"
+                        strokeWidth={2}
+                        dot={false}
+                        name="Closing Price (₹)"
+                      />
+
                       {/* Delivery Percentage Tracking Line (Visible Axis) */}
-                      <Line yAxisId="pct" type="monotone" dataKey="delivery_pct" stroke="#f43f5e" strokeWidth={1} dot={false} name="Delivery %" />
+                      <Line
+                        yAxisId="pct"
+                        type="monotone"
+                        dataKey="delivery_pct"
+                        stroke="#f43f5e"
+                        strokeWidth={1}
+                        dot={false}
+                        name="Delivery %"
+                      />
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
@@ -317,24 +491,45 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
                   <table className="w-full text-left font-mono text-xs">
                     <thead className="sticky top-0 bg-[#0e1117] z-10">
                       <tr className="text-[#888] border-b border-[#ffffff1a]">
-                        <th className="pb-2 px-2 font-medium uppercase">Date</th>
-                        <th className="pb-2 px-2 font-medium uppercase text-right">Close</th>
-                        <th className="pb-2 px-2 font-medium uppercase text-right">Volume</th>
-                        <th className="pb-2 px-2 font-medium uppercase text-right text-green-400">Delivery QTY</th>
-                        <th className="pb-2 px-4 font-medium uppercase text-right text-fuchsia-400">Del (%)</th>
+                        <th className="pb-2 px-2 font-medium uppercase">
+                          Date
+                        </th>
+                        <th className="pb-2 px-2 font-medium uppercase text-right">
+                          Close
+                        </th>
+                        <th className="pb-2 px-2 font-medium uppercase text-right">
+                          Volume
+                        </th>
+                        <th className="pb-2 px-2 font-medium uppercase text-right text-green-400">
+                          Delivery QTY
+                        </th>
+                        <th className="pb-2 px-4 font-medium uppercase text-right text-fuchsia-400">
+                          Del (%)
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="text-[#ccc]">
                       {data.map((row, idx) => (
-                        <tr key={idx} className="border-b border-[#ffffff0a] hover:bg-[#ffffff05]">
+                        <tr
+                          key={idx}
+                          className="border-b border-[#ffffff0a] hover:bg-[#ffffff05]"
+                        >
                           <td className="py-2 px-2 text-[#888]">{row.date}</td>
-                          <td className="py-2 px-2 text-right">{row.close.toFixed(2)}</td>
-                          <td className="py-2 px-2 text-right text-[#666]">{row.volume.toLocaleString()}</td>
-                          <td className="py-2 px-2 text-right text-green-400 font-medium">{row.delivery_qty.toLocaleString()}</td>
+                          <td className="py-2 px-2 text-right">
+                            {row.close.toFixed(2)}
+                          </td>
+                          <td className="py-2 px-2 text-right text-[#666]">
+                            {row.volume.toLocaleString()}
+                          </td>
+                          <td className="py-2 px-2 text-right text-green-400 font-medium">
+                            {row.delivery_qty.toLocaleString()}
+                          </td>
                           <td className="py-2 px-4 text-right">
-                             <span className={`px-2 py-0.5 rounded ${row.delivery_pct > 50 ? 'bg-fuchsia-500/20 text-fuchsia-400 font-bold' : row.delivery_pct < 30 ? 'bg-red-500/10 text-red-500' : 'text-[#888]'}`}>
-                                {row.delivery_pct}%
-                             </span>
+                            <span
+                              className={`px-2 py-0.5 rounded ${row.delivery_pct > 50 ? "bg-fuchsia-500/20 text-fuchsia-400 font-bold" : row.delivery_pct < 30 ? "bg-red-500/10 text-red-500" : "text-[#888]"}`}
+                            >
+                              {row.delivery_pct}%
+                            </span>
                           </td>
                         </tr>
                       ))}
@@ -349,7 +544,9 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
         {!data && !loading && (
           <div className="flex-1 border border-[#ffffff0a] rounded flex items-center justify-center flex-col text-[#666] bg-[#0e1117] min-h-[300px]">
             <Search size={32} className="mb-3 opacity-20" />
-            <p className="text-sm font-mono">Enter a ticker and date range to query the technical sidecar.</p>
+            <p className="text-sm font-mono">
+              Enter a ticker and date range to query the technical sidecar.
+            </p>
           </div>
         )}
       </div>

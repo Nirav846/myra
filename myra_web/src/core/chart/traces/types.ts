@@ -1,5 +1,5 @@
-import { Candle } from '../../technical-analysis/types';
-import { NormalizedViewport } from '../../../store/chartStore';
+import { Candle } from "../../technical-analysis/types";
+import { NormalizedViewport } from "../../../store/chartStore";
 
 export interface TraceBuilderContext {
   data: Candle[];
@@ -8,6 +8,14 @@ export interface TraceBuilderContext {
 
 export interface TraceBuilder<TResult, TConfig> {
   id: string;
-  buildTraces: (result: TResult, context: TraceBuilderContext, config?: TConfig) => any[];
-  buildShapes?: (result: TResult, context: TraceBuilderContext, config?: TConfig) => any[];
+  buildTraces: (
+    result: TResult,
+    context: TraceBuilderContext,
+    config?: TConfig,
+  ) => any[];
+  buildShapes?: (
+    result: TResult,
+    context: TraceBuilderContext,
+    config?: TConfig,
+  ) => any[];
 }

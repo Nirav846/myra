@@ -57,7 +57,9 @@ def generate_calendar(db_path="calendar.db", start_year=2021, end_year=2026):
             is_trading = False
             holiday_name = fixed_holidays[mm_dd]
 
-        records.append((date_str, 1 if is_trading else 0, holiday_name))  # noqa: PG-APPEND
+        records.append(
+            (date_str, 1 if is_trading else 0, holiday_name)
+        )  # noqa: PG-APPEND
         current_date += timedelta(days=1)
 
     cursor.executemany(

@@ -11,17 +11,17 @@ body {
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #0e1117; 
+  background: #0e1117;
 }
 ::-webkit-scrollbar-thumb {
-  background: #333; 
+  background: #333;
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #555; 
+  background: #555;
 }
 
 /* Hide Plotly's floating tooltips, relying on the custom OHLC header instead */
 .js-plotly-plot .hoverlayer {
-    display: none !important;
+  display: none !important;
 }

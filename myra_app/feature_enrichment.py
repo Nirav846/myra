@@ -292,7 +292,7 @@ def process_enrichment_pipeline(lib, conn):
                 elapsed = (datetime.now() - start_time).total_seconds()
                 if pct > 0:
                     eta_seconds = (elapsed / pct) * (100 - pct)
-                    eta_str = f"~{int(eta_seconds//60)}m {int(eta_seconds%60)}s"
+                    eta_str = f"~{int(eta_seconds // 60)}m {int(eta_seconds % 60)}s"
                 else:
                     eta_str = "calculating…"
                 update(tid, progress=pct, eta=eta_str)
@@ -307,12 +307,12 @@ def process_enrichment_pipeline(lib, conn):
                     # Prepare batch data
                     update_data = [
                         (
-                            float(row[col]) if not pd.isna(row[col]) else None,
+                            float(row[col]) if pd.notna(row[col]) else None,
                             row["symbol"],
                             str(row["date"]),
                         )
-                        for _, row in smc_today.to_pandas().iterrows()  # noqa: PG-ITERROWS
-                        if not pd.isna(row[col])
+                        for row in smc_today.to_pandas().to_dict("records")
+                        if pd.notna(row[col])
                     ]
 
                     if update_data:
@@ -330,7 +330,7 @@ def process_enrichment_pipeline(lib, conn):
         # Print total elapsed time
         total_elapsed = (datetime.now() - start_time).total_seconds()
         print(
-            f"Enrichment completed in {total_elapsed:.1f}s ({int(total_elapsed//60)}m {int(total_elapsed%60)}s)"
+            f"Enrichment completed in {total_elapsed:.1f}s ({int(total_elapsed // 60)}m {int(total_elapsed % 60)}s)"
         )
 
     except Exception as e:

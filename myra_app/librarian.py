@@ -5,6 +5,7 @@ Facade class routing to modular SQLite Sidecars.
 EXCLUSIVE GATEKEEPER for all MYRA data.
 """
 
+import logging
 import os
 
 import pandas as pd
@@ -21,6 +22,8 @@ from myra_app.librarian_intelligence import LibrarianIntelligenceMixin
 from myra_app.librarian_schema import LibrarianSchemaMixin
 from myra_app.librarian_sync import LibrarianSyncMixin
 from myra_core.utils.data_validation import enforce_index_contract, validate_dataframe
+
+logger = logging.getLogger(__name__)
 
 
 class Librarian(
@@ -51,6 +54,7 @@ class Librarian(
         self.fundamental_manager.set_connection(self._val_conn)
 
         self._funda_cols = None  # Cache for fundamentals columns
+        self._tech_cols_cache = None  # Cache for technical_data columns
         from myra_app.fundamental_ranker import FundamentalRanker
 
         self.fundamental_ranker = FundamentalRanker(
@@ -108,8 +112,8 @@ class Librarian(
                         )
                         if d.startswith(str(year)):
                             holidays.add(d)
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.error(f"Error parsing holiday date: {e}")
         except Exception:
             pass
 
@@ -133,8 +137,8 @@ class Librarian(
                             )
                             if d.startswith(str(year)):
                                 holidays.add(d)
-                        except:
-                            pass
+                        except Exception as e:
+                            logger.error(f"Error parsing BSE holiday date: {e}")
             except Exception:
                 pass
 
@@ -299,12 +303,14 @@ class Librarian(
                 try:
                     # Dynamically select only columns that exist in technical_data
                     try:
-                        cols_info = [
-                            r[1]
-                            for r in self._tech_conn.execute(
-                                "PRAGMA table_info('technical_data')"
-                            ).fetchall()
-                        ]
+                        if self._tech_cols_cache is None:
+                            self._tech_cols_cache = [
+                                r[1]
+                                for r in self._tech_conn.execute(
+                                    "PRAGMA table_info('technical_data')"
+                                ).fetchall()
+                            ]
+                        cols_info = self._tech_cols_cache
                     except Exception:
                         cols_info = []
                     desired = [
@@ -421,12 +427,14 @@ class Librarian(
 
             # Dynamically select only available columns to avoid SQL errors on missing fields
             try:
-                cols_info = [
-                    r[1]
-                    for r in self._tech_conn.execute(
-                        "PRAGMA table_info('technical_data')"
-                    ).fetchall()
-                ]
+                if self._tech_cols_cache is None:
+                    self._tech_cols_cache = [
+                        r[1]
+                        for r in self._tech_conn.execute(
+                            "PRAGMA table_info('technical_data')"
+                        ).fetchall()
+                    ]
+                cols_info = self._tech_cols_cache
             except Exception:
                 cols_info = []
             desired = [

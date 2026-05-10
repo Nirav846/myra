@@ -18,7 +18,7 @@ SCANNERS_TO_CHECK = ["107", "109", "110", "2", "3", "12", "28", "35", "A5"]
 for sym in SYMBOLS:
     print(f"\n{'='*60}")
     print(f"DEBUG {sym}")
-    print('='*60)
+    print("=" * 60)
     try:
         df = adapter.get_price_df(sym, lookback_days=LOOKBACK)
         if df.empty:
@@ -38,8 +38,11 @@ for sym in SYMBOLS:
                 if sid == "107":
                     try:
                         import pandas_ta as ta
+
                         bb = ta.bbands(c, length=20)
-                        width = (bb["BBU_20_2.0"].iloc[-1] - bb["BBL_20_2.0"].iloc[-1]) / bb["BBM_20_2.0"].iloc[-1]
+                        width = (
+                            bb["BBU_20_2.0"].iloc[-1] - bb["BBL_20_2.0"].iloc[-1]
+                        ) / bb["BBM_20_2.0"].iloc[-1]
                         extra = f" | Bollinger width: {width:.4f} (<0.05 needed)"
                     except Exception as e:
                         extra = f" | Error computing width: {e}"

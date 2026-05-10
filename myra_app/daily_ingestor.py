@@ -123,7 +123,8 @@ def run_daily_update():
                 f.write(archive_csv)
             print(f"✅ Cleaned CSV saved to {csv_path}")
         except Exception as e:
-            print(f"⚠️ Could not save CSV archive: {e}")
+            logging.warning(f"Could not save CSV archive: {e}")
+            # Fallback – do not stop the pipeline
 
         try:
             df = pd.read_csv(io.StringIO(data_csv))
