@@ -4,7 +4,7 @@ venv/
 .venv/
 env/
 bin/
-lib/
+/lib/
 share/
 include/
 build/
