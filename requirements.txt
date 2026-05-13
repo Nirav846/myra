@@ -1,6 +1,5 @@
 beautifulsoup4
 cloudscraper
-indstocks
 joblib
 matplotlib
 nsepython

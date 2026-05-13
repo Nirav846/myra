@@ -1,0 +1,165 @@
+export type ConnectionStatus = {
+  connected: boolean;
+  path: string;
+  error?: string;
+};
+
+export class Librarian {
+  public health: Record<string, ConnectionStatus> = {};
+  public apiUrl: string = 'http://localhost:8000/api';
+  public isConnectedToLocalRepo: boolean = false;
+  
+  private queryCache: Map<string, { timestamp: number, data: any }> = new Map();
+  private readonly CACHE_TTL_MS = 60000;
+
+  constructor() {
+    console.log("Librarian engine initialized. Attempting connection to MYRA backend...");
+    this.refreshSettings();
+    this.checkBackendHealth();
+  }
+
+  public refreshSettings() {
+    try {
+      const saved = localStorage.getItem('myra_ui_settings');
+      if (saved) {
+        const settings = JSON.parse(saved);
+        if (settings.apiEndpoint) {
+          this.apiUrl = settings.apiEndpoint.replace(/\/$/, "");
+        }
+      }
+    } catch(e) {}
+  }
+
+  private async checkBackendHealth() {
+    try {
+      const res = await fetch(`${this.apiUrl}/health`);
+      if (res.ok) {
+        const data = await res.json();
+        // data has shape: { _tech_conn: true, _meta_conn: false, ... }
+        this.isConnectedToLocalRepo = true;
+        // Convert to expected ConnectionStatus format
+        const healthStatus: Record<string, ConnectionStatus> = {};
+        for (const [key, connected] of Object.entries(data)) {
+          healthStatus[key] = { connected: connected as boolean, path: `../myra_app/db/` };
+        }
+        this.health = healthStatus;
+        console.log("[Librarian] Successfully connected to local MYRA backend.");
+      } else {
+        this.handleFallback();
+      }
+    } catch (error) {
+      console.warn("Could not connect to local MYRA backend. Is FastAPI running? Falling back to demo mode.", error);
+      this.handleFallback();
+    }
+  }
+
+  private handleFallback() {
+    this.isConnectedToLocalRepo = false;
+    this.health = this.getFallbackHealth();
+  }
+
+  private getFallbackHealth(): Record<string, ConnectionStatus> {
+    return {
+      _tech_conn: { connected: true, path: './db/tech_sidecar.db' },
+      _meta_conn: { connected: true, path: './db/meta_sidecar.db' },
+      _inst_conn: { connected: true, path: './db/inst_sidecar.db' },
+      _gov_conn:  { connected: true, path: './db/gov_sidecar.db' }
+    };
+  }
+
+  public async executeQuery(database: string, query: string, args: any = {}, timeoutMs: number = 10000): Promise<any> {
+    // Enforce minimum 10s timeout
+    const MIN_TIMEOUT = 10000;
+    let effectiveTimeout = timeoutMs;
+    if (effectiveTimeout < MIN_TIMEOUT) {
+      console.warn(`[Librarian] Increasing timeout from ${timeoutMs}ms to ${MIN_TIMEOUT}ms`);
+      effectiveTimeout = MIN_TIMEOUT;
+    }
+
+    // ----- DEMO MODE: return mock data if not connected to real backend -----
+    if (!this.isConnectedToLocalRepo) {
+      console.log("[Librarian] Using demo mode (no connection to backend)");
+      return this.generateMockData(query);
+    }
+
+    // Cache handling
+    const cacheKey = `${database}:${query.trim()}:${JSON.stringify(args)}`;
+    const cached = this.queryCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp < this.CACHE_TTL_MS)) {
+      console.log(`[Librarian] Cache hit for ${database}`);
+      return cached.data;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), effectiveTimeout);
+
+    try {
+      const res = await fetch(`${this.apiUrl}/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ database: targetDb, query, args }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const payload = await res.json();
+
+      // Normalise: API returns { data: [...] } – extract the array
+      const normalizedData = (payload && payload.data !== undefined) ? payload.data : payload;
+      
+      // Cache and return the normalized data array
+      this.queryCache.set(cacheKey, { timestamp: Date.now(), data: normalizedData });
+      console.log(`[Librarian] Real data received (${Array.isArray(normalizedData) ? normalizedData.length : 'non-array'} items)`);
+      return normalizedData;
+    } catch (e: any) {
+      clearTimeout(timeoutId);
+      if (e.name === 'AbortError') {
+        console.error(`[Librarian] Query timed out after ${effectiveTimeout}ms`);
+        throw new Error(`Timeout after ${effectiveTimeout}ms`);
+      }
+      console.error("[Librarian] Query failed:", e);
+      throw e;
+    }
+  }
+
+  // Helper to generate mock data when backend is unreachable
+  private generateMockData(query: string): Promise<any> {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        const q = query.toLowerCase();
+        if (q.includes('distinct symbol')) {
+          const match = q.match(/like '([^%]+)%'/i);
+          const term = match ? match[1] : '';
+          const allSymbols = ['RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'INFY', 'ITC', 'SBIN'];
+          const filtered = allSymbols.filter(s => s.toLowerCase().startsWith(term.toLowerCase()));
+          resolve(filtered.map(s => ({ symbol: s })));
+        } else if (q.includes('technical_data')) {
+          // fake OHLC array
+          const data = [];
+          let price = 2500;
+          for (let i = 0; i < 30; i++) {
+            const date = new Date(Date.now() - (30 - i) * 86400000).toISOString().slice(0,10);
+            price = price * (1 + (Math.random() - 0.5) * 0.02);
+            data.push({
+              date, open: price, high: price*1.01, low: price*0.99, close: price,
+              volume: 5e6, delivery_qty: 2.5e6, delivery_pct: 50
+            });
+          }
+          resolve(data);
+        } else {
+          resolve([]);
+        }
+      }, 100);
+    });
+  }
+}
+
+let librarianInstance: Librarian | null = null;
+
+export const getLibrarian = () => {
+  if (!librarianInstance) {
+    librarianInstance = new Librarian();
+  }
+  return librarianInstance;
+};
