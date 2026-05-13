@@ -105,9 +105,22 @@ async def execute_query(req: QueryRequest):
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.execute(req.query, req.params)
-        rows = [dict(row) for row in cursor.fetchall()]
+        
+        try:
+            rows = [dict(row) for row in cursor.fetchall()]
+        except Exception:
+            rows = []
+            
+        if not req.query.lstrip().upper().startswith(("SELECT", "PRAGMA", "WITH", "EXPLAIN")):
+            conn.commit()
+            
+        rowcount = cursor.rowcount
         conn.close()
-        return rows
+        
+        return {
+            "data": rows,
+            "rows_affected": rowcount
+        }
     except sqlite3.Error as e:
         raise HTTPException(status_code=400, detail=str(e))
 

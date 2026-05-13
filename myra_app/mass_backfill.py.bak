@@ -55,27 +55,11 @@ def mass_backfill(
     conn.execute("PRAGMA journal_mode=WAL;")
     cursor = conn.cursor()
 
-    # Create ingestion_rejects table if missing
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS ingestion_rejects (
-            symbol TEXT,
-            date TEXT,
-            reason TEXT,
-            raw_values TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    conn.commit()
-
-    # Start transaction for atomicity
-    conn.execute("BEGIN")
-
     stats = {"processed": 0, "rows": 0, "errors": 0, "skipped": 0}
 
     archive_dir = "data/Market_Archives"
     if not os.path.exists(archive_dir):
         print(f"[!] {archive_dir} not found.")
-        conn.close()
         return
 
     all_csvs = glob.glob(os.path.join(archive_dir, "nse_full_*.csv"))
@@ -171,7 +155,6 @@ def mass_backfill(
                 "volume",
                 "delivery",
                 "delivery_pct",
-                "vwap",
             ]:
                 if col not in df.columns:
                     df[col] = None
@@ -195,7 +178,6 @@ def mass_backfill(
                 "volume",
                 "delivery",
                 "delivery_pct",
-                "vwap",
             ]:
                 if col in df.columns:
                     df[col] = (
@@ -219,58 +201,6 @@ def mass_backfill(
 
             df["delivery_ratio"] = (df["delivery"] / df["volume"]).fillna(0)
 
-            # Row validation before insertion
-            def validate_row(row):
-                reasons = []
-                
-                # Check open/high/low/close > 0
-                for col in ['open', 'high', 'low', 'close']:
-                    if col in row and (pd.isna(row[col]) or float(row[col]) <= 0):
-                        reasons.append(f"{col} <= 0")
-                
-                # Check volume > 0
-                if 'volume' in row and (pd.isna(row['volume']) or int(row['volume']) <= 0):
-                    reasons.append("volume <= 0")
-                
-                # Check delivery between 0 and volume
-                if 'delivery' in row and 'volume' in row:
-                    if not pd.isna(row['delivery']) and not pd.isna(row['volume']):
-                        delivery_val = float(row['delivery'])
-                        volume_val = int(row['volume'])
-                        if delivery_val < 0 or delivery_val > volume_val:
-                            reasons.append("delivery out of range [0, volume]")
-                
-                return reasons
-            
-            # Filter out invalid rows and log rejects
-            valid_rows = []
-            reject_rows = []
-            
-            for _, row in df.iterrows():
-                reject_reasons = validate_row(row)
-                if reject_reasons:
-                    # Log reject to ingestion_rejects table
-                    raw_values = {col: row[col] for col in ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume', 'delivery'] if col in row}
-                    cursor.execute(
-                        "INSERT INTO ingestion_rejects (symbol, date, reason, raw_values) VALUES (?, ?, ?, ?)",
-                        (row.get('symbol', ''), row.get('date', ''), '; '.join(reject_reasons), str(raw_values))
-                    )
-                    reject_rows.append(row)
-                else:
-                    valid_rows.append(row)
-            
-            if reject_rows:
-                conn.commit()
-                print(f"  [REJECTED] {len(reject_rows)} invalid rows skipped and logged")
-            
-            # Replace df with valid rows only
-            if valid_rows:
-                df = pd.DataFrame(valid_rows)
-            else:
-                df = pd.DataFrame()  # Empty if all rows rejected
-                print(f"  [REJECTED] All rows invalid, skipping file")
-                continue
-
             if "date" not in df.columns:
                 df["date"] = d_str
             else:
@@ -291,7 +221,6 @@ def mass_backfill(
                     "delivery",
                     "delivery_pct",
                     "delivery_ratio",
-                    "vwap",
                 ]
             ].values.tolist()
 
@@ -299,8 +228,8 @@ def mass_backfill(
                 cursor.executemany(
                     """
                     INSERT OR REPLACE INTO technical_data
-                    (symbol, date, open, high, low, close, volume, delivery, delivery_pct, delivery_ratio, vwap)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (symbol, date, open, high, low, close, volume, delivery, delivery_pct, delivery_ratio)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     records,
                 )
@@ -309,12 +238,8 @@ def mass_backfill(
         except Exception as e:
             print(f"[!] Error processing {csv_path}: {e}")
             stats["errors"] += 1
-            # Continue processing other dates rather than failing completely
 
     if stats["rows"] > 0:
-        conn.commit()
-    else:
-        # Still need to end the transaction even if no rows were inserted
         conn.commit()
 
     conn.close()

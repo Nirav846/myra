@@ -1,4 +1,4 @@
-import { TraceBuilderContext } from "../chart/traces/types";
+import { TraceBuilderContext } from '../chart/traces/types';
 
 export interface Candle {
   date: string;
@@ -16,10 +16,6 @@ export interface Candle {
 
 export interface IndicatorModule<TResult, TConfig> {
   id: string;
-  calculate: (
-    data: Candle[],
-    config?: TConfig,
-    context?: TraceBuilderContext,
-  ) => TResult;
+  calculate: (data: Candle[], config?: TConfig, context?: TraceBuilderContext) => TResult;
   defaults?: TConfig;
 }

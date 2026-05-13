@@ -1,65 +1,65 @@
-import { IndicatorModule } from "../technical-analysis/types";
-import { TraceBuilder } from "./traces/types";
-import { LayoutBuilder } from "./layout/types";
+import { IndicatorModule } from '../technical-analysis/types';
+import { TraceBuilder } from './traces/types';
+import { LayoutBuilder } from './layout/types';
 
-import { smaIndicator } from "../technical-analysis/indicators/sma";
-import { rsiIndicator } from "../technical-analysis/indicators/rsi";
-import { atrIndicator } from "../technical-analysis/indicators/atr";
-import { fvgIndicator } from "../technical-analysis/indicators/fvg";
-import { swingsIndicator } from "../technical-analysis/indicators/swings";
-import { volumeProfileIndicator } from "../technical-analysis/indicators/volumeProfile";
+import { smaIndicator } from '../technical-analysis/indicators/sma';
+import { rsiIndicator } from '../technical-analysis/indicators/rsi';
+import { atrIndicator } from '../technical-analysis/indicators/atr';
+import { fvgIndicator } from '../technical-analysis/indicators/fvg';
+import { swingsIndicator } from '../technical-analysis/indicators/swings';
+import { volumeProfileIndicator } from '../technical-analysis/indicators/volumeProfile';
 
-import { smaTraceBuilder } from "./traces/smaBuilder";
-import { rsiTraceBuilder } from "./traces/rsiBuilder";
-import { fvgTraceBuilder } from "./traces/fvgBuilder";
-import { volumeProfileTraceBuilder } from "./traces/volumeProfileBuilder";
-import { swingsTraceBuilder } from "./traces/swingsBuilder";
-import { vwapTraceBuilder } from "./traces/vwapBuilder";
-import { volumeTraceBuilder } from "./traces/volumeBuilder";
-import { deliveryTraceBuilder } from "./traces/deliveryBuilder";
-import { niftyOutTraceBuilder } from "./traces/niftyOutBuilder";
-import { delVwapBandsIndicator } from "../technical-analysis/indicators/delVwapBands";
-import { delVwapBandsTraceBuilder } from "./traces/delVwapBandsBuilder";
-import { instBlocksIndicator } from "../technical-analysis/indicators/instBlocks";
-import { instBlocksTraceBuilder } from "./traces/instBlocksBuilder";
-import { delAdIndicator } from "../technical-analysis/indicators/delAd";
-import { delAdTraceBuilder } from "./traces/delAdBuilder";
-import { smartMoneyPrintsIndicator } from "../technical-analysis/indicators/smartMoneyPrints";
-import { smartMoneyPrintsTraceBuilder } from "./traces/smartMoneyPrintsBuilder";
-import { delIntensityCoreIndicator } from "../technical-analysis/indicators/delIntensityCore";
-import { delIntensityCoreTraceBuilder } from "./traces/delIntensityCoreBuilder";
+import { smaTraceBuilder } from './traces/smaBuilder';
+import { rsiTraceBuilder } from './traces/rsiBuilder';
+import { fvgTraceBuilder } from './traces/fvgBuilder';
+import { volumeProfileTraceBuilder } from './traces/volumeProfileBuilder';
+import { swingsTraceBuilder } from './traces/swingsBuilder';
+import { vwapTraceBuilder } from './traces/vwapBuilder';
+import { volumeTraceBuilder } from './traces/volumeBuilder';
+import { deliveryTraceBuilder } from './traces/deliveryBuilder';
+import { niftyOutTraceBuilder } from './traces/niftyOutBuilder';
+import { delVwapBandsIndicator } from '../technical-analysis/indicators/delVwapBands';
+import { delVwapBandsTraceBuilder } from './traces/delVwapBandsBuilder';
+import { instBlocksIndicator } from '../technical-analysis/indicators/instBlocks';
+import { instBlocksTraceBuilder } from './traces/instBlocksBuilder';
+import { delAdIndicator } from '../technical-analysis/indicators/delAd';
+import { delAdTraceBuilder } from './traces/delAdBuilder';
+import { smartMoneyPrintsIndicator } from '../technical-analysis/indicators/smartMoneyPrints';
+import { smartMoneyPrintsTraceBuilder } from './traces/smartMoneyPrintsBuilder';
+import { delIntensityCoreIndicator } from '../technical-analysis/indicators/delIntensityCore';
+import { delIntensityCoreTraceBuilder } from './traces/delIntensityCoreBuilder';
 
-import { fibonacciLayoutBuilder } from "./layout/fibonacciBuilder";
-import { liqVoidsLayoutBuilder } from "./layout/liqVoidsBuilder";
+import { fibonacciLayoutBuilder } from './layout/fibonacciBuilder';
+import { liqVoidsLayoutBuilder } from './layout/liqVoidsBuilder';
 
 class ChartRegistry {
-  private indicators = new Map<string, IndicatorModule<any, any>>();
-  private traceBuilders = new Map<string, TraceBuilder<any, any>>();
-  private layoutBuilders = new Map<string, LayoutBuilder<any>>();
+    private indicators = new Map<string, IndicatorModule<any, any>>();
+    private traceBuilders = new Map<string, TraceBuilder<any, any>>();
+    private layoutBuilders = new Map<string, LayoutBuilder<any>>();
 
-  registerIndicator(indicator: IndicatorModule<any, any>) {
-    this.indicators.set(indicator.id, indicator);
-  }
+    registerIndicator(indicator: IndicatorModule<any, any>) {
+        this.indicators.set(indicator.id, indicator);
+    }
 
-  getIndicator(id: string) {
-    return this.indicators.get(id);
-  }
+    getIndicator(id: string) {
+        return this.indicators.get(id);
+    }
 
-  registerTraceBuilder(builder: TraceBuilder<any, any>) {
-    this.traceBuilders.set(builder.id, builder);
-  }
+    registerTraceBuilder(builder: TraceBuilder<any, any>) {
+        this.traceBuilders.set(builder.id, builder);
+    }
 
-  getTraceBuilder(id: string) {
-    return this.traceBuilders.get(id);
-  }
+    getTraceBuilder(id: string) {
+        return this.traceBuilders.get(id);
+    }
 
-  registerLayoutBuilder(builder: LayoutBuilder<any>) {
-    this.layoutBuilders.set(builder.id, builder);
-  }
+    registerLayoutBuilder(builder: LayoutBuilder<any>) {
+        this.layoutBuilders.set(builder.id, builder);
+    }
 
-  getLayoutBuilder(id: string) {
-    return this.layoutBuilders.get(id);
-  }
+    getLayoutBuilder(id: string) {
+        return this.layoutBuilders.get(id);
+    }
 }
 
 export const chartRegistry = new ChartRegistry();

@@ -1,6 +1,6 @@
-import * as fs from "fs";
+import * as fs from 'fs';
 
-let content = fs.readFileSync("src/views/AdvancedChart.tsx", "utf-8");
+let content = fs.readFileSync('src/views/AdvancedChart.tsx', 'utf-8');
 
 // I will wrap the entire calculation in useMemo down to the Plot element.
 // Wait, `dataIndex` needs `dates`, `opens`, `highs`, `lows`, `closes`, `volumes`, `deliveryPct`, `trendAlignment`, `hoveredIndex`
@@ -12,7 +12,7 @@ const target = /<Plot[\s\S]*?<\/div>\s*<\/div>\s*\);\s*\}\);/;
 const match = content.match(target);
 
 // Let's just create a refactored `ChartItem` by string manipulation.
-// Actually, since I already isolated `ChartItem`, it's not strictly necessary.
+// Actually, since I already isolated `ChartItem`, it's not strictly necessary. 
 // But I can create `const plotElement = useMemo(() => <Plot ... />, [data, toggles, visibleIndices]);`
 // And `hoveredIndex` is purely used in the header.
 

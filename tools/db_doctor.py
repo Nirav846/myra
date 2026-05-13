@@ -131,11 +131,27 @@ class DbDoctor:
             c.execute("PRAGMA table_info(technical_data)")
             pk_cols = [row[1] for row in c.fetchall() if row[5] > 0]
 
+            # If no explicit PRIMARY KEY found, check for UNIQUE index on (symbol, date)
             if not pk_found and len(pk_cols) == 0:
-                print(
-                    "  [WARNING] PRIMARY KEY missing on technical_data. Note: Run a full rebuild to fix."
-                )
-                self.issues_found += 1
+                unique_index_found = False
+                for idx in indexes:
+                    idx_name = idx[1]  # index name
+                    idx_sql = idx[4]  # SQL for the index
+
+                    # Check if this is a UNIQUE index covering (symbol, date)
+                    if (
+                        "UNIQUE" in idx_sql
+                        and "symbol" in idx_sql
+                        and "date" in idx_sql
+                    ):
+                        unique_index_found = True
+                        break
+
+                if not unique_index_found:
+                    print(
+                        "  [WARNING] PRIMARY KEY missing on technical_data. Note: Run a full rebuild to fix."
+                    )
+                    self.issues_found += 1
 
         finally:
             conn.close()
@@ -174,14 +190,12 @@ class DbDoctor:
                     print("  [DRY RUN] Would create sync_log table")
                 else:
                     try:
-                        conn.execute(
-                            """
+                        conn.execute("""
                             CREATE TABLE sync_log (
                                 task_name TEXT PRIMARY KEY,
                                 last_run TEXT
                             )
-                            """
-                        )
+                            """)
                         conn.commit()
                         print("  [FIXED] Created sync_log table")
                         self.issues_fixed += 1
@@ -289,8 +303,7 @@ class DbDoctor:
                     )
                 else:
                     try:
-                        conn.execute(
-                            """
+                        conn.execute("""
                             CREATE TABLE fundamentals (
                                 symbol TEXT NOT NULL,
                                 date TEXT NOT NULL,
@@ -309,8 +322,7 @@ class DbDoctor:
                                 source_nse TEXT,
                                 PRIMARY KEY (symbol, date)
                             )
-                            """
-                        )
+                            """)
                         conn.commit()
                         print("  [FIXED] Created fundamentals table")
                         self.issues_fixed += 1
@@ -352,7 +364,6 @@ class DbDoctor:
         finally:
             conn.close()
         print()
-
 
     def check_technical_data_quality(self):
         print("--- Checking Technical Data Quality ---")
@@ -431,13 +442,11 @@ class DbDoctor:
                     f"  [WARNING] Rows with NULL delivery_pct but valid delivery: {null_pct:,}"
                 )
                 if not self.dry_run:
-                    conn.execute(
-                        """
+                    conn.execute("""
                         UPDATE technical_data
                         SET delivery_pct = ROUND((delivery * 100.0 / volume), 2)
                         WHERE delivery IS NOT NULL AND volume > 0 AND delivery_pct IS NULL
-                    """
-                    )
+                    """)
                     conn.commit()
                     self.issues_fixed += 1
                     print(f"  [FIXED] Backfilled delivery_pct for {null_pct:,} rows")

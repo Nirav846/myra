@@ -1,18 +1,14 @@
-import { Candle, IndicatorModule } from "../types";
+import { Candle, IndicatorModule } from '../types';
 
 export interface ATRConfig {
   period: number;
 }
 
-export const calculateATR = (
-  data: Candle[],
-  periodOrConfig: number | ATRConfig,
-): number[] => {
-  const config =
-    typeof periodOrConfig === "number"
-      ? { period: periodOrConfig }
-      : periodOrConfig;
-
+export const calculateATR = (data: Candle[], periodOrConfig: number | ATRConfig): number[] => {
+  const config = typeof periodOrConfig === 'number'
+    ? { period: periodOrConfig }
+    : periodOrConfig;
+  
   const result: number[] = [];
   let trSum = 0;
   for (let i = 0; i < data.length; i++) {
@@ -22,13 +18,9 @@ export const calculateATR = (
     }
     const high = data[i].high;
     const low = data[i].low;
-    const prevClose = data[i - 1].close;
-    const tr = Math.max(
-      high - low,
-      Math.abs(high - prevClose),
-      Math.abs(low - prevClose),
-    );
-
+    const prevClose = data[i-1].close;
+    const tr = Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
+    
     if (i < config.period) {
       trSum += tr;
       result.push(NaN);
@@ -44,9 +36,9 @@ export const calculateATR = (
 };
 
 export const atrIndicator: IndicatorModule<number[], ATRConfig> = {
-  id: "atr",
+  id: 'atr',
   defaults: {
-    period: 14,
+    period: 14
   },
-  calculate: calculateATR,
+  calculate: calculateATR
 };

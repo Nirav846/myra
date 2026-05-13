@@ -547,10 +547,31 @@ class DataFetcher:
             return True, "CHECK_FAILED"
 
     def fetch_bhavcopy_with_retry(self, current_date):
+        # Circuit breaker: after 3 consecutive failures, wait 30 minutes before retrying
+        consecutive_failures = getattr(self, '_consecutive_failures', 0)
+        
         for i in range(5):
             data, name = self.fetch_ohlcv_delivery(current_date)
             if data:
+                # Reset consecutive failures on success
+                self._consecutive_failures = 0
                 return data, name
+            
+            # Increment consecutive failures
+            consecutive_failures += 1
+            self._consecutive_failures = consecutive_failures
+            
+            # Check if circuit breaker should trigger
+            if consecutive_failures >= 3:
+                wait_time = 30 * 60  # 30 minutes in seconds
+                print(
+                    f"[CIRCUIT BREAKER] {current_date}: {consecutive_failures} consecutive failures. Waiting {wait_time//60} minutes before retry..."
+                )
+                time.sleep(wait_time)
+                # Reset counter after waiting
+                self._consecutive_failures = 0
+                continue
+                
             if self._is_holiday(current_date):
                 break
             print(

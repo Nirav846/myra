@@ -193,22 +193,81 @@ def run_daily_update():
             conn = sqlite3.connect(DB_PATH, check_same_thread=False)
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
+            cursor = conn.cursor()
+            
+            # Create ingestion_rejects table if missing
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS ingestion_rejects (
+                    symbol TEXT,
+                    date TEXT,
+                    reason TEXT,
+                    raw_values TEXT,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.commit()
 
             # Ask SQLite what columns actually exist in the table
             cursor = lib.safe_execute("PRAGMA table_info(technical_data)", conn=conn)
             valid_cols = [info[1] for info in cursor.fetchall()]
 
+            # Row validation before insertion
+            def validate_row(row):
+                reasons = []
+                
+                # Check open/high/low/close > 0
+                for col in ['open', 'high', 'low', 'close']:
+                    if col in row and (pd.isna(row[col]) or float(row[col]) <= 0):
+                        reasons.append(f"{col} <= 0")
+                
+                # Check volume > 0
+                if 'volume' in row and (pd.isna(row['volume']) or int(row['volume']) <= 0):
+                    reasons.append("volume <= 0")
+                
+                # Check delivery between 0 and volume
+                if 'delivery' in row and 'volume' in row:
+                    if not pd.isna(row['delivery']) and not pd.isna(row['volume']):
+                        delivery_val = float(row['delivery'])
+                        volume_val = int(row['volume'])
+                        if delivery_val < 0 or delivery_val > volume_val:
+                            reasons.append("delivery out of range [0, volume]")
+                
+                return reasons
+            
+            # Filter out invalid rows and log rejects
+            valid_rows = []
+            reject_rows = []
+            
+            for _, row in df.iterrows():
+                reject_reasons = validate_row(row)
+                if reject_reasons:
+                    # Log reject to ingestion_rejects table
+                    raw_values = {col: row[col] for col in ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume', 'delivery'] if col in row}
+                    cursor.execute(
+                        "INSERT INTO ingestion_rejects (symbol, date, reason, raw_values) VALUES (?, ?, ?, ?)",
+                        (row.get('symbol', ''), row.get('date', ''), '; '.join(reject_reasons), str(raw_values))
+                    )
+                    reject_rows.append(row)
+                else:
+                    valid_rows.append(row)
+            
+            if reject_rows:
+                conn.commit()
+                print(f"  [REJECTED] {len(reject_rows)} invalid rows skipped and logged")
+            
             # Only keep the columns that the database recognizes
-            df_to_insert = df[[c for c in df.columns if c in valid_cols]]
+            df_to_insert = pd.DataFrame(valid_rows)
+            df_to_insert = df_to_insert[[c for c in df_to_insert.columns if c in valid_cols]]
 
             # Append to DB using INSERT OR REPLACE for robust ingestion
-            cols = df_to_insert.columns.tolist()
-            placeholders = ", ".join(["?"] * len(cols))
-            col_names = ", ".join(cols)
-            sql = f"INSERT OR REPLACE INTO technical_data ({col_names}) VALUES ({placeholders})"
+            if not df_to_insert.empty:
+                cols = df_to_insert.columns.tolist()
+                placeholders = ", ".join(["?"] * len(cols))
+                col_names = ", ".join(cols)
+                sql = f"INSERT OR REPLACE INTO technical_data ({col_names}) VALUES ({placeholders})"
 
-            conn.executemany(sql, df_to_insert.values.tolist())
-            conn.commit()
+                conn.executemany(sql, df_to_insert.values.tolist())
+                conn.commit()
 
             print(
                 f"✅ Successfully added {len(df_to_insert)} rows to Atomic Vault from {source}."

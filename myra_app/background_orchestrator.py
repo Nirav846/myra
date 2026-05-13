@@ -580,7 +580,7 @@ def _task_institutional_sync():
 
 
 def _task_db_backup():
-    """Runs a full DB backup daily at 2 AM IST."""
+    """Runs a full DB backup daily at midnight IST and keeps last 7 daily backups."""
     from myra_app.task_tracker import register, unregister
 
     tid = register("DB backup", task_type="indefinite")
@@ -588,18 +588,26 @@ def _task_db_backup():
         while not _shutdown_event.is_set():
             try:
                 ist_now = datetime.now(timezone.utc).astimezone(IST)
-                # Run between 02:00 and 02:59 IST
-                if ist_now.hour == 2:
+                
+                # Run at midnight IST (00:00-00:59)
+                if ist_now.hour == 0 and ist_now.minute < 5:  # Small window to ensure once per day
                     from myra_app.utils.db_backup import rotate_backups
 
-                    print("[MYRA BG] Running scheduled daily DB backup...")
-                    rotate_backups(task_id=tid)
-                    print("[MYRA BG] Daily DB backup complete.")
-                    # Wait until next hour to avoid multiple runs
-                    # PERFORMANCE IMPROVEMENT: Replace long wait with responsive loop
-                    for _ in range(60):  # 60 * 60 = 3600 seconds total
-                        if _shutdown_event.wait(60):
+                    print("[MYRA BG] Running nightly DB backup at midnight IST...")
+                    rotate_backups(task_id=tid, keep_last_days=7)  # Keep only last 7 days
+                    print("[MYRA BG] Nightly DB backup complete.")
+                    
+                    # Wait until next day to avoid multiple runs
+                    # Calculate seconds until next midnight
+                    tomorrow = ist_now.replace(hour=0, minute=0, second=0) + timedelta(days=1)
+                    seconds_until_midnight = (tomorrow - ist_now).total_seconds()
+                    
+                    # Wait in smaller chunks to be responsive to shutdown
+                    while seconds_until_midnight > 0 and not _shutdown_event.is_set():
+                        wait_time = min(300, seconds_until_midnight)  # Max 5 minutes chunks
+                        if _shutdown_event.wait(wait_time):
                             return
+                        seconds_until_midnight -= wait_time
                 else:
                     # Check again in 30 minutes
                     # PERFORMANCE IMPROVEMENT: Replace long wait with responsive loop
