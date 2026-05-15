@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useRef, memo } from 'react';
+import { useState, useEffect, useMemo, useRef, memo, useCallback, lazy, Suspense } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { PlotlyCanvas } from '../components/chart/PlotlyCanvas';
+const PlotlyCanvas = lazy(() => import('../components/chart/PlotlyCanvas').then(m => ({ default: m.PlotlyCanvas })));
 import { ChartHeader } from '../components/chart/ChartHeader';
 import { ChartSidebar } from '../components/chart/ChartSidebar';
 import { Search, Plus, X, BarChart2, PanelLeftClose, Settings2, Info } from 'lucide-react';
@@ -11,8 +11,14 @@ import { useSettings } from '../lib/SettingsContext';
 import { useChartStore } from '../store/chartStore';
 import { chartRegistry } from '../core/chart/registry';
 import { TraceBuilderContext } from '../core/chart/traces/types';
+import { resolveBucket } from '../lib/bucketUtils';
+import { computeNakedPocs, nakedPocsToShapes } from '../lib/nakedPocTracker';
+import { LiqVoidSettings, SmpSettings, DEFAULT_LIQ_VOID_SETTINGS, DEFAULT_SMP_SETTINGS } from '../lib/indicatorConfig';
+import { computeLiquidityVoids, liqVoidsToShapes } from '../lib/liquidityVoid';
+import { computeSmartMoneyPrints, smpToTraces } from '../lib/smartMoneyPrints';
+import IndicatorSettingsPanel from '../components/IndicatorSettingsPanel';
 
-const usePersistedState = <T,>(key: string, initialValue: T): [T, (val: T) => void] => {
+const usePersistedState = <T,>(key: string, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
   const [state, setState] = useState<T>(() => {
     const saved = localStorage.getItem(key);
     if (saved !== null) {
@@ -25,30 +31,70 @@ const usePersistedState = <T,>(key: string, initialValue: T): [T, (val: T) => vo
     return initialValue;
   });
 
-  const setValue = (value: T) => {
-    setState(value);
-    localStorage.setItem(key, JSON.stringify(value));
-  };
+  useEffect(() => {
+    const t = setTimeout(() => {
+      localStorage.setItem(key, JSON.stringify(state));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [key, state]);
 
-  return [state, setValue];
+  return [state, setState];
 };
 
 
-const ChartItem = memo(({ sym, data, toggles, settings }: any) => {
-    if (!data) return <div key={sym} className="h-[400px] flex items-center justify-center font-mono text-[#888] text-xs animate-pulse">Loading {sym}...</div>;
-    return <ChartItemInner sym={sym} data={data} toggles={toggles} settings={settings} />;
+const ChartItem = memo(({ sym, data, overlayToggles, paneToggles, perfToggles, settings, bucket, liqVoidSettings, smpSettings }: any) => {
+    if (!data) return (
+        <div key={sym} className="bg-[#1a1c24] border border-[#ffffff1a] rounded flex flex-col h-[500px] chart-container relative overflow-hidden">
+            <div className="h-10 bg-[#2a2c34]/50 animate-pulse border-b border-[#ffffff1a] flex items-center px-4 justify-between">
+                <div className="flex gap-2 items-center">
+                    <div className="w-16 h-4 bg-white/10 rounded"></div>
+                    <div className="w-10 h-3 bg-white/5 rounded"></div>
+                </div>
+            </div>
+            <div className="flex-1 flex items-end justify-between px-4 pb-4 gap-1">
+                {Array.from({ length: 40 }).map((_, i) => {
+                    const height = 20 + Math.sin(i * 0.3) * 15 + Math.random() * 10;
+                    return (
+                        <div 
+                            key={i} 
+                            className="bg-white/5 w-full rounded-t-sm animate-pulse" 
+                            style={{ height: `${height}%`, animationDelay: `${i * 0.05}s` }}
+                        ></div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+    return <ChartItemInner sym={sym} data={data} overlayToggles={overlayToggles} paneToggles={paneToggles} perfToggles={perfToggles} settings={settings} bucket={bucket} liqVoidSettings={liqVoidSettings} smpSettings={smpSettings} />;
+}, (prev, next) => {
+    return prev.sym === next.sym && 
+           prev.data === next.data && 
+           prev.overlayToggles === next.overlayToggles &&
+           prev.paneToggles === next.paneToggles &&
+           prev.perfToggles === next.perfToggles &&
+           prev.settings === next.settings &&
+           prev.bucket === next.bucket &&
+           prev.liqVoidSettings === next.liqVoidSettings &&
+           prev.smpSettings === next.smpSettings;
 });
 
-const ChartItemInner = memo(({ sym, data, toggles, settings }: any) => {
+const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, settings, bucket, liqVoidSettings, smpSettings }: any) => {
     const viewport = useChartStore(state => state.viewport);
     const hoveredIndex = useChartStore(state => state.hoveredIndex);
     
-    const computed = useMemo(() => {
-    const dates = data.map(d => d.date);
-    const opens = data.map(d => d.open);
-    const highs = data.map(d => d.high);
-    const lows = data.map(d => d.low);
-    const closes = data.map(d => d.close);
+    // Merge toggles for backward compatibility in internal logic
+    const toggles = useMemo(() => ({
+        ...overlayToggles,
+        ...paneToggles,
+        ...perfToggles
+    }), [overlayToggles, paneToggles, perfToggles]);
+
+    const indicators = useMemo(() => {
+        const dates = data.map(d => d.date);
+        const opens = data.map(d => d.open);
+        const highs = data.map(d => d.high);
+        const lows = data.map(d => d.low);
+        const closes = data.map(d => d.close);
     const volumes = data.map(d => {
         const vol = d.volume_final != null ? Number(d.volume_final) : Number(d.volume);
         return isNaN(vol) ? 0 : vol;
@@ -60,9 +106,9 @@ const ChartItemInner = memo(({ sym, data, toggles, settings }: any) => {
         return isNaN(delVal) ? 0 : delVal;
     });
     const deliveryPct = data.map((d, i) => {
-        if (d.delivery_pct != null) return d.delivery_pct;
+        if (d.delivery_pct != null && !isNaN(Number(d.delivery_pct))) return Number(d.delivery_pct);
         const delVal = deliveryFinal[i];
-        const vol = d.volume || 1;
+        const vol = Math.max(1, Number(d.volume) || 0);
         return (delVal / vol) * 100;
     });
     const deliveryRatio = data.map(d => d.delivery_ratio);
@@ -73,6 +119,8 @@ const ChartItemInner = memo(({ sym, data, toggles, settings }: any) => {
     const niftyOut = data.map(d => d.nifty_outperformance_score);
     const trendAlignment = data.map(d => d.trend_alignment);
     const volumeColors = data.map(d => d.close >= d.open ? '#22c55e' : '#ef4444');
+
+    // Delivery bars are coloured inverse to price direction — a red delivery bar on a green candle highlights divergence.
     const deliveryColorsInverse = data.map(d => d.close >= d.open ? '#ef4444' : '#22c55e');
 
     // Delivery MA
@@ -80,38 +128,34 @@ const ChartItemInner = memo(({ sym, data, toggles, settings }: any) => {
         ? chartRegistry.getIndicator('sma')?.calculate(data.map(d => ({...d, close: d.delivery_final != null ? Number(d.delivery_final) : Number(d.delivery_qty) || 0})), { period: 20 }) || []
         : [];
 
-    const traceCtx: TraceBuilderContext = {
-      data,
-      viewport
-    };
+    const swingsObj = toggles.showSwings ? chartRegistry.getIndicator('swings')?.calculate(data, {}) : null;
 
-    let swingsTraces: any[] = [];
-    if (toggles.showSwings) {
-      const swingsObj = chartRegistry.getIndicator('swings')?.calculate(data, {});
-      if (swingsObj) {
-         swingsTraces.push(...(chartRegistry.getTraceBuilder('swings')?.buildTraces(swingsObj, traceCtx) || []));
-      }
-    }
-    
-    let vwapTraces: any[] = [];
+    const vwapObj = [];
     if (toggles.showVwap) {
-      const vwapObj = [];
+      // VWAP shown is Anchored VWAP (resets per trading day) — for intraday VWAP, use the DB column.
       let cumPV = 0, cumVol = 0;
+      let lastDate = '';
       for (const d of data) {
+        const typPrice = (d.high + d.low + d.close) / 3;
+        const vol = Number(d.volume_final ?? d.volume ?? 0);
+        
+        const dateStr = String(d.date).split('T')[0].split(' ')[0];
+        if (lastDate !== dateStr) {
+            cumPV = 0;
+            cumVol = 0;
+            lastDate = dateStr;
+        }
+
+        cumPV += typPrice * vol;
+        cumVol += vol;
         if (d.vwap != null && !isNaN(d.vwap)) {
           vwapObj.push(d.vwap);
         } else {
-          const typPrice = (d.high + d.low + d.close) / 3;
-          const vol = d.volume_final ?? d.volume ?? 0;
-          cumPV += typPrice * vol;
-          cumVol += vol;
           vwapObj.push(cumVol > 0 ? cumPV / cumVol : null);
         }
       }
-      vwapTraces.push(...(chartRegistry.getTraceBuilder('vwap')?.buildTraces(vwapObj, traceCtx) || []));
     }
 
-    let smasTraces: any[] = [];
     const smaConfigs = [
       { toggle: toggles.showSma20, period: 20, color: '#eab308', width: 1 },
       { toggle: toggles.showSma50, period: 50, color: '#0ea5e9', width: 1 },
@@ -124,19 +168,157 @@ const ChartItemInner = memo(({ sym, data, toggles, settings }: any) => {
     smaConfigs.forEach(cfg => {
       if (cfg.toggle) {
         const p = chartRegistry.getIndicator('sma')?.calculate(data, { period: cfg.period });
-        if (p) {
-          smaResults[cfg.period] = p;
-          smasTraces.push(...(chartRegistry.getTraceBuilder('sma')?.buildTraces(p, traceCtx, { period: cfg.period, color: cfg.color, width: cfg.width, yaxis: 'y' }) || []));
+        if (p) smaResults[cfg.period] = p;
+      }
+    });
+
+    const rsiResult = toggles.showRsi ? chartRegistry.getIndicator('rsi')?.calculate(data, { period: 14 }) || [] : [];
+    const activeFVGs = toggles.showFvg ? chartRegistry.getIndicator('fvg')?.calculate(data, { showMitigated: true }) || [] : [];
+    
+    // Updated LiqVoids and SmartMoney logic
+    const liqVoidsResult = toggles.showLiqVoids 
+        ? computeLiquidityVoids(data, bucket, liqVoidSettings) 
+        : null;
+    const smObj = toggles.showSmartMoney 
+        ? computeSmartMoneyPrints(data, bucket, smpSettings) 
+        : null;
+
+    const diObj = toggles.showDelDivergence ? chartRegistry.getIndicator('delIntensityCore')?.calculate(data, {}) : null;
+    const ibObj = toggles.showInstBlocks ? chartRegistry.getIndicator('instBlocks')?.calculate(data, {}) : null;
+    
+    let dbObj: any = null;
+    if (toggles.showDelVwapBands) {
+        dbObj = { mid: [], upper: [], lower: [] };
+        let cumDPV = 0, cumDel = 0, n = 0, mean = 0, m2 = 0;
+        for (const d of data) {
+            const typPrice = (d.high + d.low + d.close) / 3;
+            // Support either delivery_final or delivery column
+            const del = Number(d.delivery_final ?? d.delivery ?? 0);
+            
+            n++;
+            cumDPV += typPrice * del;
+            cumDel += del;
+            const dwap = cumDel > 0 ? cumDPV / cumDel : null;
+            dbObj.mid.push(dwap);
+            
+            if (dwap !== null && del > 0) {
+                const delta = typPrice - mean;
+                mean += (delta * del) / cumDel;
+                const delta2 = typPrice - mean;
+                m2 += del * delta * delta2;
+                
+                const variance = m2 / cumDel;
+                const stdDev = Math.sqrt(variance);
+                dbObj.upper.push(dwap + stdDev * 1.5);
+                dbObj.lower.push(dwap - stdDev * 1.5);
+            } else {
+                dbObj.upper.push(null);
+                dbObj.lower.push(null);
+            }
         }
+    }
+
+    const daObj = toggles.showDelAD ? chartRegistry.getIndicator('delAd')?.calculate(data, {}) : null;
+
+    let currentY = 0;
+    const gap = 0.04;
+    const activePanes = [toggles.showRsi, toggles.showDelAD, toggles.showDelivery, toggles.showVolume].filter(Boolean).length;
+    // Limit sub-panes to max 60% of total height to ensure price chart is visible
+    const paneHeight = activePanes > 0 ? Math.min(0.16, Math.max(0.05, (0.6 - (activePanes * gap)) / activePanes)) : 0;
+    
+    const rsiDomain = toggles.showRsi ? [currentY, currentY + paneHeight] : [0, 0];
+    if (toggles.showRsi) currentY += paneHeight + gap;
+    
+    const delAdDomain = toggles.showDelAD ? [currentY, currentY + paneHeight] : [0, 0];
+    if (toggles.showDelAD) currentY += paneHeight + gap;
+    
+    const delDomain = toggles.showDelivery ? [currentY, currentY + paneHeight] : [0, 0];
+    if (toggles.showDelivery) currentY += paneHeight + gap;
+    
+    const volDomain = toggles.showVolume ? [currentY, currentY + paneHeight] : [0, 0];
+    if (toggles.showVolume) currentY += paneHeight + gap;
+    
+    const totalPaneSpace = currentY;
+    const safeCurrentY = Math.min(0.65, totalPaneSpace);
+    const priceDomain = [safeCurrentY, 1.0];
+
+    return {
+        dates, opens, highs, lows, closes, volumes, vwap, deliveryFinal, deliveryPct, deliveryRatio, stockReturn, volComp, relVol, divScores, niftyOut, trendAlignment, volumeColors, deliveryColorsInverse,
+        delMaData, swingsObj, vwapObj, smaConfigs, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj,
+        currentY, rsiDomain, delAdDomain, delDomain, volDomain, priceDomain
+    };
+}, [data, toggles]);
+
+const computed = useMemo(() => {
+    const {
+        dates, opens, highs, lows, closes, volumes, vwap, deliveryFinal, deliveryPct, deliveryRatio, stockReturn, volComp, relVol, divScores, niftyOut, trendAlignment, volumeColors, deliveryColorsInverse,
+        delMaData, swingsObj, vwapObj, smaConfigs, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj,
+        currentY, rsiDomain, delAdDomain, delDomain, volDomain, priceDomain
+    } = indicators;
+
+    const traceCtx: TraceBuilderContext = {
+      data,
+      viewport
+    };
+
+    let profileResult: any = null;
+    let vpMaxVolume = 1;
+
+    if (toggles.showDeliveryProfile || toggles.showDeliverySR || toggles.showDelDelta) {
+        let profileData = data;
+        if (viewport && viewport.startIndex !== undefined && viewport.endIndex !== undefined) {
+            if (toggles.profileResolution !== 'cumulative') {
+                profileData = data.slice(Math.floor(viewport.startIndex), Math.ceil(viewport.endIndex) + 1);
+            }
+        }
+        
+        profileResult = chartRegistry.getIndicator('volumeProfile')?.calculate(profileData, { 
+            resolution: toggles.profileResolution,
+            bucket: bucket 
+        });
+        
+        if (profileResult) {
+            vpMaxVolume = profileResult.maxVolume || 1;
+        }
+    }
+
+    let swingsTraces: any[] = [];
+    if (toggles.showSwings && swingsObj) {
+        swingsTraces.push(...(chartRegistry.getTraceBuilder('swings')?.buildTraces(swingsObj, traceCtx) || []));
+    }
+    
+    let vwapTraces: any[] = [];
+    if (toggles.showVwap && vwapObj.length > 0) {
+        vwapTraces.push(...(chartRegistry.getTraceBuilder('vwap')?.buildTraces(vwapObj, traceCtx) || []));
+    }
+
+    let smasTraces: any[] = [];
+    smaConfigs.forEach(cfg => {
+      if (cfg.toggle && smaResults[cfg.period]) {
+        smasTraces.push(...(chartRegistry.getTraceBuilder('sma')?.buildTraces(smaResults[cfg.period], traceCtx, { period: cfg.period, color: cfg.color, width: cfg.width, yaxis: 'y' }) || []));
       }
     });
 
     let rsiTraces: any[] = [];
-    let rsiResult: number[] = [];
     const shapes: any[] = [];
 
-    if (toggles.showRsi) {
-      rsiResult = chartRegistry.getIndicator('rsi')?.calculate(data, { period: 14 }) || [];
+    if (toggles.showNakedPoc && data.length > 0) {
+        // compute avg volatility
+        const atrSum = data.slice(1).reduce((sum: number, d: any, i: number) => {
+            const close = data[i].close;
+            if (close && close > 0) {
+               return sum + ((d.high - d.low) / close);
+            }
+            return sum;
+        }, 0);
+        const avgVol = data.length > 1 ? atrSum / (data.length - 1) : 0.015;
+        
+        const pocs = computeNakedPocs(data, avgVol);
+        const latestDate = data[data.length - 1].date;
+        shapes.push(...nakedPocsToShapes(pocs, latestDate));
+    }
+
+    if (toggles.showRsi && rsiResult.length > 0) {
       const tb = chartRegistry.getTraceBuilder('rsi');
       if (tb) {
          rsiTraces.push(...tb.buildTraces(rsiResult, traceCtx, { period: 14, color: '#8b5cf6', width: 1.5, yaxis: 'y3' }));
@@ -144,8 +326,7 @@ const ChartItemInner = memo(({ sym, data, toggles, settings }: any) => {
       }
     }
 
-    if (toggles.showFvg) {
-        const activeFVGs = chartRegistry.getIndicator('fvg')?.calculate(data, { showMitigated: true }) || [];
+    if (toggles.showFvg && activeFVGs.length > 0) {
         const tb = chartRegistry.getTraceBuilder('fvg');
         if (tb && tb.buildShapes) {
             shapes.push(...tb.buildShapes(activeFVGs, traceCtx, { showMitigated: true }));
@@ -159,94 +340,58 @@ const ChartItemInner = memo(({ sym, data, toggles, settings }: any) => {
         }
     }
 
-    if (toggles.showLiqVoids) {
-        const lb = chartRegistry.getLayoutBuilder('liqVoids');
-        if (lb && lb.buildShapes) {
-            shapes.push(...lb.buildShapes(traceCtx));
-        }
+    if (toggles.showLiqVoids && liqVoidsResult && liqVoidsResult.length > 0) {
+        shapes.push(...liqVoidsToShapes(liqVoidsResult, dates, liqVoidSettings));
     }
 
     let smartMoneyPrintsTraces: any[] = [];
-    if (toggles.showSmartMoney) {
-        const smObj = chartRegistry.getIndicator('smartMoneyPrints')?.calculate(data, {});
-        if (smObj) smartMoneyPrintsTraces.push(...(chartRegistry.getTraceBuilder('smartMoneyPrints')?.buildTraces(smObj, traceCtx) || []));
+    if (toggles.showSmartMoney && smObj && smObj.length > 0) {
+        smartMoneyPrintsTraces.push(...smpToTraces(smObj, dates));
     }
 
     let delIntensityCoreTraces: any[] = [];
-    if (toggles.showDelDivergence) {
-        const diObj = chartRegistry.getIndicator('delIntensityCore')?.calculate(data, {});
-        if (diObj) delIntensityCoreTraces.push(...(chartRegistry.getTraceBuilder('delIntensityCore')?.buildTraces(diObj, traceCtx) || []));
+    if (toggles.showDelDivergence && diObj) {
+        delIntensityCoreTraces.push(...(chartRegistry.getTraceBuilder('delIntensityCore')?.buildTraces(diObj, traceCtx) || []));
     }
 
-    // Volume / Delivery Profile & SR (FRVP)
-    let vpMaxVolume = 1;
     let volProfileTraces: any[] = [];
-    let profileResult: any = null;
     
-    if (toggles.showDeliveryProfile || toggles.showDeliverySR) {
-        profileResult = chartRegistry.getIndicator('volumeProfile')?.calculate(data, { resolution: toggles.profileResolution }, traceCtx);
-        if (profileResult) {
-            vpMaxVolume = profileResult.volProfileX.length > 0 ? Math.max(...profileResult.volProfileX) : 1;
-            if (isNaN(vpMaxVolume) || !isFinite(vpMaxVolume) || vpMaxVolume <= 0) vpMaxVolume = 1;
-            
-            const tb = chartRegistry.getTraceBuilder('volumeProfile');
-            if (tb) {
-                if (toggles.showDeliveryProfile) {
-                   volProfileTraces.push(...tb.buildTraces(profileResult, traceCtx, { resolution: toggles.profileResolution, showDeliveryProfile: true }));
-                }
-                if (tb.buildShapes) {
-                   shapes.push(...tb.buildShapes(profileResult, traceCtx, {
-                       resolution: toggles.profileResolution,
-                       showDeliveryProfile: toggles.showDeliveryProfile,
-                       showDeliverySR: toggles.showDeliverySR
-                   }));
-                }
+    if (profileResult && (toggles.showDeliveryProfile || toggles.showDeliverySR || toggles.showDelDelta)) {
+        const tb = chartRegistry.getTraceBuilder('volumeProfile');
+        if (tb) {
+            if (toggles.showDeliveryProfile || toggles.showDelDelta) {
+                volProfileTraces.push(...tb.buildTraces(profileResult, traceCtx, { 
+                    resolution: toggles.profileResolution, 
+                    showDeliveryProfile: toggles.showDeliveryProfile,
+                    showDelDelta: toggles.showDelDelta
+                }));
+            }
+            if (tb.buildShapes) {
+                shapes.push(...tb.buildShapes(profileResult, traceCtx, {
+                    resolution: toggles.profileResolution,
+                    showDeliveryProfile: toggles.showDeliveryProfile,
+                    showDeliverySR: toggles.showDeliverySR,
+                    showDelDelta: toggles.showDelDelta
+                }));
             }
         }
     }
 
-    const { pocVolY: globalPocVolY, pocDelY: globalPocDelY } = profileResult || { pocVolY: null, pocDelY: null };
+    const { pocVolumePrice: globalPocVolY, pocDeliveryPrice: globalPocDelY } = profileResult || { pocVolumePrice: null, pocDeliveryPrice: null };
 
-    // 4 Intelligent Indicators
     let instBlocksTraces: any[] = [];
-    if (toggles.showInstBlocks) {
-        const ibObj = chartRegistry.getIndicator('instBlocks')?.calculate(data, {});
-        if (ibObj) instBlocksTraces.push(...(chartRegistry.getTraceBuilder('instBlocks')?.buildTraces(ibObj, traceCtx) || []));
+    if (toggles.showInstBlocks && ibObj) {
+        instBlocksTraces.push(...(chartRegistry.getTraceBuilder('instBlocks')?.buildTraces(ibObj, traceCtx) || []));
     }
     
     let delVwapBandsTraces: any[] = [];
-    let dbObj: any;
-    if (toggles.showDelVwapBands) {
-        dbObj = { mid: [], upper: [], lower: [] };
-        let cumDPV = 0, cumDel = 0, squaredDevSum = 0;
-        for (const d of data) {
-            const typPrice = (d.high + d.low + d.close) / 3;
-            // Support either delivery_final or delivery column
-            const del = Number(d.delivery_final ?? d.delivery ?? 0);
-            
-            cumDPV += typPrice * del;
-            cumDel += del;
-            const dwap = cumDel > 0 ? cumDPV / cumDel : null;
-            dbObj.mid.push(dwap);
-            
-            if (dwap !== null) {
-                squaredDevSum += del * Math.pow(typPrice - dwap, 2);
-                const stdDev = cumDel > 0 ? Math.sqrt(squaredDevSum / cumDel) : 0;
-                dbObj.upper.push(dwap + (stdDev * 1.5));
-                dbObj.lower.push(dwap - (stdDev * 1.5));
-            } else {
-                dbObj.upper.push(null);
-                dbObj.lower.push(null);
-            }
-        }
+    if (toggles.showDelVwapBands && dbObj) {
         delVwapBandsTraces.push(...(chartRegistry.getTraceBuilder('delVwapBands')?.buildTraces(dbObj, traceCtx) || []));
     }
 
     let delAdTraces: any[] = [];
-    let daObj: any;
-    if (toggles.showDelAD) {
-        daObj = chartRegistry.getIndicator('delAd')?.calculate(data, {});
-        if (daObj) delAdTraces.push(...(chartRegistry.getTraceBuilder('delAd')?.buildTraces(daObj, traceCtx) || []));
+    if (toggles.showDelAD && daObj) {
+        delAdTraces.push(...(chartRegistry.getTraceBuilder('delAd')?.buildTraces(daObj, traceCtx) || []));
     }
 
     let niftyOutTraces: any[] = [];
@@ -268,32 +413,11 @@ const ChartItemInner = memo(({ sym, data, toggles, settings }: any) => {
         if (tb) {
             deliveryTraces.push(...tb.buildTraces(deliveryFinal, traceCtx, {
                 showMA: toggles.showDelMA,
-                maData: delMaData
+                maData: delMaData,
+                colors: deliveryColorsInverse
             }));
         }
     }
-    let currentY = 0;
-    const gap = 0.04;
-    const activePanes = [toggles.showRsi, toggles.showDelAD, toggles.showDelivery, toggles.showVolume].filter(Boolean).length;
-    // Limit sub-panes to max 60% of total height to ensure price chart is visible
-    const paneHeight = activePanes > 0 ? Math.min(0.16, Math.max(0.05, (0.6 - (activePanes * gap)) / activePanes)) : 0;
-    
-    const rsiDomain = toggles.showRsi ? [currentY, currentY + paneHeight] : [0, 0];
-    if (toggles.showRsi) currentY += paneHeight + gap;
-    
-    const delAdDomain = toggles.showDelAD ? [currentY, currentY + paneHeight] : [0, 0];
-    if (toggles.showDelAD) currentY += paneHeight + gap;
-    
-    const delDomain = toggles.showDelivery ? [currentY, currentY + paneHeight] : [0, 0];
-    if (toggles.showDelivery) currentY += paneHeight + gap;
-    
-    const volDomain = toggles.showVolume ? [currentY, currentY + paneHeight] : [0, 0];
-    if (toggles.showVolume) currentY += paneHeight + gap;
-    
-    const priceDomain = [Math.max(0.1, Math.min(0.8, currentY)), 1];
-
-    
-
     // Build current value annotations for the right-hand Y-axis
     const annotations: any[] = [];
     const lastIdx = dates.length - 1;
@@ -326,7 +450,13 @@ const ChartItemInner = memo(({ sym, data, toggles, settings }: any) => {
         if (toggles.showSma50 && smaResults[50]) pushLabel(smaResults[50][lastIdx], '#ffffff', 'rgba(14, 165, 233, 0.8)'); // 0ea5e9
         if (toggles.showSma150 && smaResults[150]) pushLabel(smaResults[150][lastIdx], '#ffffff', 'rgba(217, 70, 239, 0.8)'); // d946ef
         if (toggles.showSma200 && smaResults[200]) pushLabel(smaResults[200][lastIdx], '#ffffff', 'rgba(249, 115, 22, 0.8)'); // f97316
-        if (toggles.showVwap) pushLabel(vwap[lastIdx], '#ffffff', 'rgba(136, 136, 136, 0.8)', 'y', 'VWAP');
+        
+        if (toggles.showVwap && vwapObj.length > 0) {
+            const vwa = [...vwapObj].reverse().find((v: any) => v != null);
+            const vwapLabel = vwapObj[lastIdx] ?? vwa;
+            pushLabel(vwapLabel, '#ffffff', 'rgba(136, 136, 136, 0.8)', 'y', 'AVWAP (Anc)');
+        }
+        
         if (toggles.showRsi && rsiResult.length > 0) pushLabel(rsiResult[lastIdx], '#ffffff', 'rgba(139, 92, 246, 0.8)', 'y3'); // 8b5cf6
         if (toggles.showNiftyOut) pushLabel(niftyOut[lastIdx], '#ffffff', 'rgba(168, 85, 247, 0.8)', 'y4'); // a855f7
         
@@ -351,97 +481,23 @@ const ChartItemInner = memo(({ sym, data, toggles, settings }: any) => {
     }
     
     return {
-        dates,
-        opens,
-        highs,
-        lows,
-        closes,
-        volumes,
-        vwap,
-        deliveryFinal,
-        deliveryPct,
-        deliveryRatio,
-        stockReturn,
-        volComp,
-        relVol,
-        divScores,
-        niftyOut,
-        trendAlignment,
-        volumeColors,
-        deliveryColorsInverse,
-        smasTraces,
-        rsiTraces,
-        volProfileTraces,
-        vwapTraces,
-        swingsTraces,
-        instBlocksTraces,
-        delVwapBandsTraces,
-        delAdTraces,
-        niftyOutTraces,
-        smartMoneyPrintsTraces,
-        delIntensityCoreTraces,
-        vpMaxVolume,
-        delMaData,
-        shapes,
-        volumeTraces,
-        deliveryTraces,
-        annotations,
-        currentY,
-        rsiDomain,
-        delAdDomain,
-        delDomain,
-        volDomain,
-        priceDomain
+        smasTraces, rsiTraces, volProfileTraces, vwapTraces, swingsTraces, instBlocksTraces, delVwapBandsTraces, delAdTraces, niftyOutTraces, smartMoneyPrintsTraces, delIntensityCoreTraces, shapes, volumeTraces, deliveryTraces, annotations, profileResult, vpMaxVolume
     };
-}, [data, toggles, viewport]);
+}, [indicators, viewport, data, toggles]);
 
 const {
-    dates,
-    opens,
-    highs,
-    lows,
-    closes,
-    volumes,
-    vwap,
-    deliveryFinal,
-    deliveryPct,
-    deliveryRatio,
-    stockReturn,
-    volComp,
-    relVol,
-    divScores,
-    niftyOut,
-    trendAlignment,
-    volumeColors,
-    deliveryColorsInverse,
-    smasTraces,
-    rsiTraces,
-    volProfileTraces,
-    vwapTraces,
-    swingsTraces,
-    instBlocksTraces,
-    delVwapBandsTraces,
-    delAdTraces,
-    niftyOutTraces,
-    smartMoneyPrintsTraces,
-    delIntensityCoreTraces,
-    vpMaxVolume,
-    delMaData,
-    shapes,
-    volumeTraces,
-    deliveryTraces,
-    annotations,
-    currentY,
-    rsiDomain,
-    delAdDomain,
-    delDomain,
-    volDomain,
-    priceDomain
+    dates, opens, highs, lows, closes, volumes, vwap, deliveryFinal, deliveryPct, deliveryRatio, stockReturn, volComp, relVol, divScores, niftyOut, trendAlignment, volumeColors, deliveryColorsInverse,
+    delMaData, swingsObj, vwapObj, smaConfigs, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj,
+    currentY, rsiDomain, delAdDomain, delDomain, volDomain, priceDomain
+} = indicators;
+
+const {
+    smasTraces, rsiTraces, volProfileTraces, vwapTraces, swingsTraces, instBlocksTraces, delVwapBandsTraces, delAdTraces, niftyOutTraces, smartMoneyPrintsTraces, delIntensityCoreTraces, shapes, volumeTraces, deliveryTraces, annotations, profileResult, vpMaxVolume
 } = computed;
 
 const dataIndex = hoveredIndex !== undefined && hoveredIndex >= 0 && hoveredIndex < dates.length 
                   ? hoveredIndex 
-                  : dates.length - 1;
+                  : Math.max(0, dates.length - 1);
 
 
 
@@ -505,7 +561,7 @@ const dataIndex = hoveredIndex !== undefined && hoveredIndex >= 0 && hoveredInde
                                      ...(toggles.showDelVwapBands ? delVwapBandsTraces.map(t => ({...t, hoverinfo: 'none'})) : []),
  
                                      // Volume / Delivery Profile Overlay
-                                     ...(toggles.showDeliveryProfile ? volProfileTraces.map(t => ({...t, hoverinfo: 'none'})) : []),
+                                     ...(toggles.showDeliveryProfile || toggles.showDelDelta ? volProfileTraces.map(t => ({...t, hoverinfo: 'none'})) : []),
  
                                      // Volume Histogram Pane
                                      ...(toggles.showVolume ? volumeTraces.map(t => ({...t, hoverinfo: 'none'})) : []),
@@ -626,7 +682,7 @@ const dataIndex = hoveredIndex !== undefined && hoveredIndex >= 0 && hoveredInde
                                  }}
                                  style={{ width: '100%', height: '100%' }}
                             />
-                        ), [computed, toggles, sym, data, dates, settings?.candlestickStyle, settings?.showGridLines, settings?.fontFamily]);
+                        ), [computed, sym, settings?.candlestickStyle, settings?.showGridLines, settings?.fontFamily]);
 
               return (
                  <div key={sym} className="bg-[#1a1c24] border border-[#ffffff1a] rounded flex flex-col h-[500px] chart-container relative overflow-hidden">
@@ -646,12 +702,14 @@ const dataIndex = hoveredIndex !== undefined && hoveredIndex >= 0 && hoveredInde
                         trendAlignment={trendAlignment}
                     />
                     <div className="flex-1 w-full relative">
-                        {plotElement}
+                        <Suspense fallback={<div className="w-full h-full flex items-center justify-center text-white/50 text-xs">Loading Plotly...</div>}>
+                            {plotElement}
+                        </Suspense>
                     </div>
                  </div>
               );
           
-});
+};
 
 export default function AdvancedChartView({ lib, activeSymbol }: { lib: Librarian, activeSymbol?: string }) {
   const { settings } = useSettings();
@@ -692,7 +750,13 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
   const [showInstBlocks, setShowInstBlocks] = usePersistedState('chart-showInstBlocks', false);
   
   const [showRsi, setShowRsi] = usePersistedState('chart-showRsi', true);
+  const [showDelDelta, setShowDelDelta] = usePersistedState('chart-showDelDelta', false);
+  const [showNakedPoc, setShowNakedPoc] = usePersistedState('chart-showNakedPoc', false);
   
+  const [liqVoidSettings, setLiqVoidSettings] = usePersistedState<LiqVoidSettings>('chart-liqVoidSettings', DEFAULT_LIQ_VOID_SETTINGS);
+  const [smpSettings, setSmpSettings] = usePersistedState<SmpSettings>('chart-smpSettings', DEFAULT_SMP_SETTINGS);
+  const [indicatorSettingsOpen, setIndicatorSettingsOpen] = useState(false);
+
   // Custom indicators on Price
   const [showNiftyOut, setShowNiftyOut] = usePersistedState('chart-showNiftyOut', false);
   const [showLogScale, setShowLogScale] = usePersistedState('chart-showLogScale', false);
@@ -714,12 +778,41 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
   const [earliestLoadedDates, setEarliestLoadedDates] = useState<Record<string, string>>({});
 
   const [aggregatedDataCache, setAggregatedDataCache] = useState<Record<string, any[]>>({});
+  const [fetchErrors, setFetchErrors] = useState<Record<string, string>>({});
   const [isAggregating, setIsAggregating] = useState(false);
   const workerRef = useRef<Worker | null>(null);
+  const workerListenersRef = useRef({ total: 0, map: new Map<string, any[]>() });
 
   useEffect(() => {
-     workerRef.current = new Worker(new URL('../workers/aggregateWorker.ts', import.meta.url), { type: 'module' });
-     return () => workerRef.current?.terminate();
+     const worker = new Worker(new URL('../workers/aggregateWorker.ts', import.meta.url), { type: 'module' });
+     workerRef.current = worker;
+     
+     const handleMessage = (e: MessageEvent) => {
+         if (e.data.type === 'AGGREGATED') {
+             const { symbol, candles } = e.data;
+             const state = workerListenersRef.current;
+             state.map.set(symbol, candles);
+             
+             if (state.map.size === state.total) {
+                 const newAggregated: Record<string, any[]> = {};
+                 state.map.forEach((val, key) => { newAggregated[key] = val; });
+                 setAggregatedDataCache(newAggregated);
+                 setIsAggregating(false);
+             }
+         }
+     };
+
+     worker.addEventListener('message', handleMessage);
+     
+     worker.onerror = (e) => {
+         console.error('[AggregateWorker] crashed:', e);
+         setIsAggregating(false);
+     };
+
+     return () => {
+         worker.removeEventListener('message', handleMessage);
+         worker.terminate();
+     };
   }, []);
 
   useEffect(() => {
@@ -729,7 +822,8 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
           return;
       }
       
-      const total = Object.keys(dataCache).length;
+      const entries = Object.entries(dataCache);
+      const total = entries.length;
       if (total === 0) {
           setAggregatedDataCache({});
           setIsAggregating(false);
@@ -737,23 +831,10 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
       }
 
       setIsAggregating(true);
-      let completed = 0;
-      const newAggregated: Record<string, any[]> = {};
+      workerListenersRef.current = { total, map: new Map() };
       
       if (workerRef.current) {
-          workerRef.current.onmessage = (e) => {
-              if (e.data.type === 'AGGREGATED') {
-                  const { symbol, candles } = e.data;
-                  newAggregated[symbol] = candles;
-                  completed++;
-                  if (completed === total) {
-                      setAggregatedDataCache(newAggregated);
-                      setIsAggregating(false);
-                  }
-              }
-          };
-
-          for (const [sym, data] of Object.entries(dataCache)) {
+          for (const [sym, data] of entries) {
               workerRef.current.postMessage({ type: 'AGGREGATE', data, timeframe: candleTimeframe, symbol: sym });
           }
       }
@@ -763,6 +844,11 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
   const [availableSectors, setAvailableSectors] = useState<string[]>([]);
   
   const [metadataMap, setMetadataMap] = useState<Map<string, { sector: string; indices: string[]; bucket: string }>>(new Map());
+  
+  // Inverted indexes for performance
+  const [indexToSymbols, setIndexToSymbols] = useState<Map<string, Set<string>>>(new Map());
+  const [sectorToSymbols, setSectorToSymbols] = useState<Map<string, Set<string>>>(new Map());
+  const [bucketToSymbols, setBucketToSymbols] = useState<Map<string, Set<string>>>(new Map());
 
   // Fetch all symbols for fast scrolling and available metadata
   useEffect(() => {
@@ -770,51 +856,59 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
      
      const fetchAll = async () => {
          try {
-             const techRes = await lib.executeQuery('_tech_conn', 'SELECT DISTINCT symbol FROM technical_data ORDER BY symbol', {}, 5000);
+             const [techRes, indexRes, sectorRes] = await Promise.all([
+                 lib.executeQuery('_tech_conn', 'SELECT DISTINCT symbol FROM technical_data ORDER BY symbol', {}, 5000),
+                 lib.executeQuery('_meta_conn', 'SELECT symbol, index_name FROM index_constituents LIMIT 5000'),
+                 lib.executeQuery('_meta_conn', 'SELECT symbol, sector, in_nifty500 FROM symbols_master LIMIT 5000')
+             ]);
+
              let techSymbols: string[] = [];
              if (techRes && techRes.length > 0) {
                  techSymbols = techRes.map((r: any) => r.symbol);
              }
              
-             const indexRes = await lib.executeQuery('_meta_conn', 'SELECT symbol, index_name FROM index_constituents LIMIT 5000');
              const indicesMap = new Map<string, Set<string>>();
-             const allIndices = new Set<string>();
+             const allIndicesSet = new Set<string>();
+             const invIndexMap = new Map<string, Set<string>>();
              
              if (indexRes) {
                  indexRes.forEach((row: any) => {
                      if (!indicesMap.has(row.symbol)) indicesMap.set(row.symbol, new Set());
                      indicesMap.get(row.symbol)!.add(row.index_name);
-                     allIndices.add(row.index_name);
+                     allIndicesSet.add(row.index_name);
+
+                     if (!invIndexMap.has(row.index_name)) invIndexMap.set(row.index_name, new Set());
+                     invIndexMap.get(row.index_name)!.add(row.symbol);
                  });
              }
              
-             const sectorRes = await lib.executeQuery('_meta_conn', 'SELECT symbol, sector, in_nifty500 FROM symbols_master LIMIT 5000');
              const sectorMap = new Map<string, { sector: string; bucket: string }>();
-             const allSectors = new Set<string>();
+             const allSectorsSet = new Set<string>();
+             const invSectorMap = new Map<string, Set<string>>();
+             const invBucketMap = new Map<string, Set<string>>();
              
              if (sectorRes) {
                  sectorRes.forEach((row: any) => {
                      const sector = (row.sector && row.sector.trim() !== '') ? row.sector : 'Uncharted Sector';
                      
-                     let bucket = 'Deep Frontier';
-                     const indices = Array.from(indicesMap.get(row.symbol) || []);
-                     if (indices.some(i => i.includes('NIFTY 50') && !i.includes('NEXT'))) {
-                         bucket = 'Large Cap (N50)';
-                     } else if (indices.some(i => i.includes('NIFTY NEXT 50'))) {
-                         bucket = 'Large Cap (N100)';
-                     } else if (indices.some(i => i.includes('NIFTY SMALLCAP 250') || i.includes('SMALL CAP 250'))) {
-                         bucket = 'Nifty Small Cap 250';
-                     } else if (row.in_nifty500 === 1 || indices.some(i => i.includes('500'))) {
-                         bucket = 'Broader Market (N500)';
-                     }
+                     const bucket = resolveBucket(Array.from(indicesMap.get(row.symbol) || []), row.in_nifty500);
 
                      sectorMap.set(row.symbol, { sector, bucket });
-                     allSectors.add(sector);
+                     allSectorsSet.add(sector);
+
+                     if (!invSectorMap.has(sector)) invSectorMap.set(sector, new Set());
+                     invSectorMap.get(sector)!.add(row.symbol);
+
+                     if (!invBucketMap.has(bucket)) invBucketMap.set(bucket, new Set());
+                     invBucketMap.get(bucket)!.add(row.symbol);
                  });
              }
              
-             setAvailableIndices(Array.from(allIndices).sort());
-             setAvailableSectors(Array.from(allSectors).sort());
+             setAvailableIndices(Array.from(allIndicesSet).sort());
+             setAvailableSectors(Array.from(allSectorsSet).sort());
+             setIndexToSymbols(invIndexMap);
+             setSectorToSymbols(invSectorMap);
+             setBucketToSymbols(invBucketMap);
              
              const metaMap = new Map<string, {sector: string, indices: string[], bucket: string}>();
              for (const sym of techSymbols) {
@@ -837,21 +931,27 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
   }, [lib]);
 
   const filteredSymbolsSet = useMemo(() => {
-     if (indexFilter === 'All' && sectorFilter === 'All' && mcapFilter === 'All') return null; // No filter, return null to enable quick fallback
+     if (indexFilter === 'All' && sectorFilter === 'All' && mcapFilter === 'All') return null;
      
-     const result = new Set<string>();
-     for (const sym of allSymbols) {
-         const meta = metadataMap.get(sym) || { sector: 'Uncharted Sector', indices: [], bucket: 'Deep Frontier' };
-         let matchesIndex = indexFilter === 'All' || meta.indices.includes(indexFilter);
-         let matchesSector = sectorFilter === 'All' || meta.sector === sectorFilter;
-         let matchesMcap = mcapFilter === 'All' || meta.bucket === mcapFilter;
-         
-         if (matchesIndex && matchesSector && matchesMcap) {
-             result.add(sym);
-         }
+     let currentSet = new Set(allSymbols);
+
+     if (indexFilter !== 'All') {
+         const idxSet = indexToSymbols.get(indexFilter) || new Set();
+         currentSet = new Set([...currentSet].filter(x => idxSet.has(x)));
      }
-     return result;
-  }, [allSymbols, metadataMap, indexFilter, sectorFilter, mcapFilter]);
+     
+     if (sectorFilter !== 'All') {
+         const secSet = sectorToSymbols.get(sectorFilter) || new Set();
+         currentSet = new Set([...currentSet].filter(x => secSet.has(x)));
+     }
+     
+     if (mcapFilter !== 'All') {
+         const bktSet = bucketToSymbols.get(mcapFilter) || new Set();
+         currentSet = new Set([...currentSet].filter(x => bktSet.has(x)));
+     }
+
+     return currentSet;
+  }, [allSymbols, indexFilter, sectorFilter, mcapFilter, indexToSymbols, sectorToSymbols, bucketToSymbols]);
 
   const effectiveSymbolsDesc = useMemo(() => {
      return filteredSymbolsSet ? Array.from(filteredSymbolsSet) : allSymbols;
@@ -869,60 +969,9 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
 
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const retryControllerRef = useRef<AbortController | null>(null);
 
-  // Fast scrolling logic
-  useEffect(() => {
-    if (!scrollEnabled || effectiveSymbolsDesc.length === 0 || symbols.length === 0) return;
 
-    let timeoutId: any;
-    const handleWheel = (e: WheelEvent) => {
-        if (!containerRef.current?.contains(e.target as Node)) return;
-        
-        e.preventDefault();
-        if (timeoutId) clearTimeout(timeoutId);
-        timeoutId = setTimeout(() => {
-            setSymbols((prevSymbols) => {
-                const currentIndex = effectiveSymbolsDesc.indexOf(prevSymbols[0]);
-                if (currentIndex === -1) return prevSymbols;
-                
-                if (e.deltaY > 0) {
-                    const nextIdx = Math.min(currentIndex + 1, effectiveSymbolsDesc.length - 1);
-                    return [effectiveSymbolsDesc[nextIdx]];
-                } else {
-                    const prevIdx = Math.max(currentIndex - 1, 0);
-                    return [effectiveSymbolsDesc[prevIdx]];
-                }
-            });
-        }, 50);
-    };
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-        if (!scrollEnabled) return;
-        setSymbols((prevSymbols) => {
-            const currentIndex = effectiveSymbolsDesc.indexOf(prevSymbols[0]);
-            if (currentIndex === -1) return prevSymbols;
-            
-            if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                const nextIdx = Math.min(currentIndex + 1, effectiveSymbolsDesc.length - 1);
-                return [effectiveSymbolsDesc[nextIdx]];
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                const prevIdx = Math.max(currentIndex - 1, 0);
-                return [effectiveSymbolsDesc[prevIdx]];
-            }
-            return prevSymbols;
-        });
-    };
-
-    window.addEventListener('wheel', handleWheel, { passive: false });
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-        window.removeEventListener('wheel', handleWheel);
-        window.removeEventListener('keydown', handleKeyDown);
-        if (timeoutId) clearTimeout(timeoutId);
-    };
-  }, [scrollEnabled, effectiveSymbolsDesc, symbols]);
 
   const { startDate, endDate } = useMemo(() => {
     const end = new Date();
@@ -933,19 +982,27 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
     else if (range === '1Y') start.setFullYear(start.getFullYear() - 1);
     else start.setFullYear(start.getFullYear() - 10);
 
-    const twoYearsAgo = new Date();
-    twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
-    if (start < twoYearsAgo) {
-        start.setTime(twoYearsAgo.getTime());
+    if (limitDataRange) {
+        const twoYearsAgo = new Date();
+        twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+        if (start < twoYearsAgo) {
+            start.setTime(twoYearsAgo.getTime());
+        }
     }
 
     return { startDate: start.toISOString().split('T')[0], endDate: end.toISOString().split('T')[0] };
-  }, [range]);
+  }, [range, limitDataRange]);
 
-  const fetchSymbolData = async (symbol: string, signal: AbortSignal, specificStart?: string, specificEnd?: string) => {
+  const fetchSymbolData = useCallback(async (symbol: string, signal: AbortSignal, specificStart?: string, specificEnd?: string) => {
     try {
+      setFetchErrors(prev => {
+          const n = {...prev};
+          delete n[symbol];
+          return n;
+      });
       const qStart = specificStart || startDate;
       const qEnd = specificEnd || endDate;
+      
       if (settings.mockDataMode) {
           const mock = generateMockData(symbol, qStart, qEnd);
           if (specificStart && specificEnd) {
@@ -959,8 +1016,11 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
           setEarliestLoadedDates(prev => ({...prev, [symbol]: qStart}));
           return;
       }
-      const query = `SELECT *, delivery as delivery_final, volume as volume_final FROM technical_data WHERE symbol = '${symbol}' AND date >= '${qStart}' AND date <= '${qEnd}' ORDER BY date ASC`;
-      const result = await lib.executeQuery('_tech_conn', query, {}, 10000);
+
+      const safeSymbol = symbol.replace(/[^A-Z0-9&\-]/g, '').substring(0, 20);
+      const query = 'SELECT *, delivery as delivery_final, volume as volume_final FROM technical_data WHERE symbol = ? AND date >= ? AND date <= ? ORDER BY date ASC';
+      const result = await lib.executeQuery('_tech_conn', query, [safeSymbol, qStart, qEnd], 10000);
+      
       if (signal.aborted) return;
       
       if (result && result.length > 0) {
@@ -976,20 +1036,26 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
           }
           setEarliestLoadedDates(prev => ({...prev, [symbol]: result[0]?.date || qStart}));
       } else {
+          // If no data returned and not a chunk fetch, fallback only if mockDataMode is on or specifically requested
           if (!specificStart) {
-             setDataCache(prev => ({...prev, [symbol]: generateMockData(symbol, qStart, qEnd)}));
-             setEarliestLoadedDates(prev => ({...prev, [symbol]: qStart}));
+              if (settings.mockDataMode) {
+                  setDataCache(prev => ({...prev, [symbol]: generateMockData(symbol, qStart, qEnd)}));
+                  setEarliestLoadedDates(prev => ({...prev, [symbol]: qStart}));
+              } else {
+                  setFetchErrors(prev => ({...prev, [symbol]: `No data found for ${symbol} in selected range.`}));
+              }
           }
       }
     } catch (e) {
       if (signal.aborted) return;
       console.error(e);
-      if (!specificStart) {
+      setFetchErrors(prev => ({...prev, [symbol]: `Network error fetching ${symbol}. Check connection.`}));
+      if (!specificStart && settings.mockDataMode) {
          setDataCache(prev => ({...prev, [symbol]: generateMockData(symbol, startDate, endDate)}));
          setEarliestLoadedDates(prev => ({...prev, [symbol]: startDate}));
       }
     }
-  };
+  }, [startDate, endDate, lib, settings.mockDataMode]);
 
   const generateMockData = (sym: string, startStr: string, endStr: string) => {
     const mock = [];
@@ -998,6 +1064,7 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
     const end = new Date(endStr);
     
     let d = new Date(start);
+    let i = 0;
     while (d <= end) {
         if (d.getDay() !== 0 && d.getDay() !== 6) {
             const volatility = currentPrice * 0.02;
@@ -1007,6 +1074,10 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
             const low = Math.min(open, close) - Math.random() * volatility * 0.5;
             const volume = Math.floor(Math.random() * 5000000) + 100000;
             
+            const idx = mock.length;
+            const isBullFvg = idx >= 2 && Math.random() > 0.95;
+            const isBearFvg = idx >= 2 && !isBullFvg && Math.random() > 0.95;
+
             mock.push({
                 date: d.toISOString().split('T')[0],
                 open, high, low, close, volume,
@@ -1017,19 +1088,21 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
                 stock_return: (Math.random() - 0.5) * 2,
                 volatility_compression_score: Math.random(),
                 relative_volume_score: Math.random() * 2,
+                delivery_divergence_score: (Math.random() - 0.5) * (close > open ? 1 : -1),
                 nifty_outperformance_score: (Math.random() - 0.5),
                 delivery_ma_60: volume * (Math.random() * 0.5 + 0.3),
-                bullish_fvg: Math.random() > 0.95 ? 1 : 0,
-                bearish_fvg: Math.random() > 0.95 ? 1 : 0,
-                fvg_top: high + volatility,
-                fvg_bottom: low - volatility,
-                fvg_freshness: Math.random(),
-                fvg_boundary: Math.random() > 0.9 ? low - volatility : null,
+                bullish_fvg: isBullFvg ? 1 : 0,
+                bearish_fvg: isBearFvg ? 1 : 0,
+                fvg_top: isBullFvg ? high : (isBearFvg ? mock[idx - 2].high : null),
+                fvg_bottom: isBullFvg ? mock[idx - 2].low : (isBearFvg ? low : null),
+                fvg_freshness: (isBullFvg || isBearFvg) ? Math.random() : null,
+                fvg_boundary: null,
                 swing_high: Math.random() > 0.9 ? 1 : null,
                 swing_low: Math.random() > 0.9 ? 1 : null,
-                trend_alignment: Math.floor(Math.random() * 5) - 2
+                trend_alignment: close > open ? Math.floor(Math.random() * 3) : -Math.floor(Math.random() * 3)
             });
             currentPrice = close;
+            i++;
         }
         d.setDate(d.getDate() + 1);
     }
@@ -1038,57 +1111,66 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
 
   // Re-fetch when range changes or symbols added
   useEffect(() => {
+    setDataCache({}); 
+    setAggregatedDataCache({}); 
+    setEarliestLoadedDates({});
+    
     const controller = new AbortController();
-    symbols.forEach(sym => {
+    const uniqueSymbols = Array.from(new Set(symbols));
+    uniqueSymbols.forEach(sym => {
        fetchSymbolData(sym, controller.signal);
     });
     return () => controller.abort();
-  }, [symbols, range]);
+  }, [symbols, range, startDate, endDate, fetchSymbolData]);
 
   // Viewport tracking for Chunk Loading
   const viewport = useChartStore(s => s.viewport);
+  const isFetchingRef = useRef(false);
+  const NSE_INCEPTION_DATE = new Date('2000-01-01'); // Chunk loading stops before NSE's electronic trading era.
+
   useEffect(() => {
-     if (limitDataRange || fetchingRange !== null || symbols.length === 0 || !viewport) return;
+     const controller = new AbortController();
+     if (limitDataRange || fetchingRange !== null || symbols.length === 0 || !viewport || isFetchingRef.current) {
+         return () => controller.abort();
+     }
+
      const currentSym = symbols[0];
-     const maxCandles = aggregatedDataCache[currentSym]?.length || 0;
+     const nearLeftEdge = symbols.some(s => {
+       const len = aggregatedDataCache[s]?.length || 0;
+       return len > 0 && viewport.startIndex < len * 0.1;
+     });
      
      // Only trigger if we're near the left edge and not already fetching
-     if (viewport.startIndex < maxCandles * 0.1 && maxCandles > 0) {
+     if (nearLeftEdge && !isFetchingRef.current) {
          const earliestStr = earliestLoadedDates[currentSym];
-         if (!earliestStr) return;
+         if (!earliestStr) return () => controller.abort();
          
-         const earliestDbDate = new Date('2000-01-01'); // arbitrary far past to stop fetching forever
          const curEarliest = new Date(earliestStr);
-         if (curEarliest <= earliestDbDate) return;
+         if (curEarliest <= NSE_INCEPTION_DATE) return () => controller.abort();
 
+         isFetchingRef.current = true;
          const newStart = new Date(curEarliest);
          newStart.setFullYear(newStart.getFullYear() - 2); // load 2 more years
          const newStartStr = newStart.toISOString().split('T')[0];
          const curEarliestStr = curEarliest.toISOString().split('T')[0];
 
          setFetchingRange({ start: newStart.getFullYear(), end: curEarliest.getFullYear() });
-         
-         const controller = new AbortController();
+         console.debug('[ChunkLoad] Fetching chunk', { symbol: currentSym, start: newStartStr, end: curEarliestStr });
          
          Promise.all(symbols.map(sym => 
              fetchSymbolData(sym, controller.signal, newStartStr, curEarliestStr)
          )).then(() => {
              setFetchingRange(null);
+             isFetchingRef.current = false;
          }).catch(() => {
              setFetchingRange(null);
+             isFetchingRef.current = false;
          });
-         
-         return () => controller.abort();
      }
-  }, [viewport, limitDataRange, symbols, earliestLoadedDates, fetchingRange, aggregatedDataCache]);
+     return () => controller.abort();
+  }, [viewport, limitDataRange, symbols, earliestLoadedDates, fetchingRange, aggregatedDataCache, fetchSymbolData]);
 
-  useEffect(() => {
-      if (scrollEnabled && effectiveSymbolsDesc.length > 0) {
-          if (symbols.length === 1 && !effectiveSymbolsDesc.includes(symbols[0])) {
-              setSymbols([effectiveSymbolsDesc[0]]);
-          }
-      }
-  }, [effectiveSymbolsDesc, scrollEnabled, symbols]);
+
 
   useEffect(() => {
     if (!scrollEnabled || effectiveSymbolsDesc.length === 0 || symbols.length === 0) return;
@@ -1143,18 +1225,33 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
 
   const removeSymbol = (sym: string) => {
     setSymbols(symbols.filter(s => s !== sym));
+    setDataCache(prev => { const n = {...prev}; delete n[sym]; return n; });
+    setAggregatedDataCache(prev => { const n = {...prev}; delete n[sym]; return n; });
+    setEarliestLoadedDates(prev => { const n = {...prev}; delete n[sym]; return n; });
   };
 
-  const memoizedToggles = useMemo(() => ({
+  const overlayToggles = useMemo(() => ({
       showSma20, showSma50, showSma150, showSma200, showFvg, showFibonacci,
-      showVwap, showVolume, showDelivery, showDelMA, showDeliveryProfile, profileResolution,
-      showDeliverySR, showSmartMoney, showDelDivergence, showDelAD, showDelVwapBands,
-      showLiqVoids, showInstBlocks, showRsi, showNiftyOut, showLogScale, showSwings, performanceMode
+      showVwap, showSwings, showNiftyOut, showSmartMoney, showDelDivergence, 
+      showDelVwapBands, showLiqVoids, showInstBlocks, showDelDelta, showNakedPoc
   }), [
       showSma20, showSma50, showSma150, showSma200, showFvg, showFibonacci,
-      showVwap, showVolume, showDelivery, showDelMA, showDeliveryProfile, profileResolution,
-      showDeliverySR, showSmartMoney, showDelDivergence, showDelAD, showDelVwapBands,
-      showLiqVoids, showInstBlocks, showRsi, showNiftyOut, showLogScale, showSwings, performanceMode
+      showVwap, showSwings, showNiftyOut, showSmartMoney, showDelDivergence, 
+      showDelVwapBands, showLiqVoids, showInstBlocks, showDelDelta, showNakedPoc
+  ]);
+
+  const paneToggles = useMemo(() => ({
+      showVolume, showDelivery, showDelMA, showDeliveryProfile, profileResolution,
+      showDeliverySR, showDelAD, showRsi
+  }), [
+      showVolume, showDelivery, showDelMA, showDeliveryProfile, profileResolution,
+      showDeliverySR, showDelAD, showRsi
+  ]);
+
+  const perfToggles = useMemo(() => ({
+      showLogScale, performanceMode
+  }), [
+      showLogScale, performanceMode
   ]);
 
   const sidebarIndicatorToggles = useMemo(() => [
@@ -1173,11 +1270,13 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
     { id: 'del_ma', label: 'Delivery MA (20)', state: showDelMA, set: setShowDelMA },
     { id: 'del_profile', label: 'Vol/Del Profile (FRVP)', state: showDeliveryProfile, set: setShowDeliveryProfile, desc: 'Fixed Range Volume Profile (Visible Area). Shows standard Volume (gray) overlaid with Delivery Volume (cyan) and their POCs.' },
     { id: 'del_sr', label: 'Delivery Auto S/R', state: showDeliverySR, set: setShowDeliverySR, desc: 'Auto-draws support/resistance at high delivery price levels.' },
-    { id: 'smart_money', label: 'Smart Money Prints', state: showSmartMoney, set: setShowSmartMoney, desc: 'Highlights bars with 1.5x average volume and > 60% delivery ratio.' },
+    { id: 'smart_money', label: 'Smart Money Prints', state: showSmartMoney, set: setShowSmartMoney, desc: 'Highlights bars with 1.5x average volume and > 60% delivery ratio.', settingsAction: () => setIndicatorSettingsOpen(true) },
     { id: 'del_divergence', label: 'Delivery Intensity Core', state: showDelDivergence, set: setShowDelDivergence, desc: 'Draws a colored vertical core inside candles representing delivery %. Blue=Institutional, Gold=Divergence, Grey=Retail.' },
     { id: 'del_ad', label: 'Delivery A/D', state: showDelAD, set: setShowDelAD, desc: 'Accumulation/Distribution strictly using delivery volume.' },
     { id: 'del_vwap_bands', label: 'Delivery VWAP (DWAP)', state: showDelVwapBands, set: setShowDelVwapBands, desc: 'DWAP (Delivery Weighted Average Price) with 1.5 standard deviation bands.' },
-    { id: 'liq_voids', label: 'Liquidity Voids', state: showLiqVoids, set: setShowLiqVoids, desc: 'Shaded areas where large price movement occurred on low relative volume (potential gap fills).' },
+    { id: 'del_delta', label: 'Delivery Delta Profile', state: showDelDelta, set: setShowDelDelta, desc: 'Adaptive bin sizes using delta volume (Buyer Init - Seller Init).' },
+    { id: 'naked_poc', label: 'Naked POC Lines', state: showNakedPoc, set: setShowNakedPoc, desc: 'Tracks unrested volume & delivery Nodes until they are tested.' },
+    { id: 'liq_voids', label: 'Liquidity Voids', state: showLiqVoids, set: setShowLiqVoids, desc: 'Shaded areas where large price movement occurred on low relative volume (potential gap fills).', settingsAction: () => setIndicatorSettingsOpen(true) },
     { id: 'inst_blocks', label: 'Inst. Blocks', state: showInstBlocks, set: setShowInstBlocks, desc: 'Massive volume anomalies (> 3.5x average) paired with > 65% delivery.' },
     { id: 'rsi', label: 'RSI Pane', state: showRsi, set: setShowRsi },
     { id: 'limit_data_range', label: 'Limit to 2 Years', state: limitDataRange, set: setLimitDataRange, desc: 'Limit data fetching to recent 2 years to improve performance.', group: 'Hardware' },
@@ -1186,7 +1285,7 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
       showSma20, showSma50, showSma150, showSma200, showVwap, showFvg, showFibonacci, showSwings,
       showNiftyOut, showLogScale, showVolume, showDelivery, showDelMA, showDeliveryProfile, 
       showDeliverySR, showSmartMoney, showDelDivergence, showDelAD, showDelVwapBands, 
-      showLiqVoids, showInstBlocks, showRsi, performanceMode, limitDataRange
+      showLiqVoids, showInstBlocks, showRsi, performanceMode, limitDataRange, showDelDelta, showNakedPoc
   ]);
 
   return (
@@ -1204,29 +1303,48 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
       {/* Main Charts Area */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-6 relative">
           
-          {fetchingRange && (
-              <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-[#2563eb] text-white text-xs px-3 py-1.5 rounded shadow z-50 flex items-center gap-2 border border-[#3b82f6] opacity-90 pointer-events-none">
-                  <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                  Fetching {fetchingRange.start}-{fetchingRange.end}...
-              </div>
-          )}
+          {/* Notifications Container */}
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 pointer-events-none">
+              {fetchingRange && (
+                  <div className="bg-[#2563eb] text-white text-xs px-3 py-1.5 rounded shadow flex items-center gap-2 border border-[#3b82f6] opacity-90">
+                      <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      Fetching {fetchingRange.start}-{fetchingRange.end}...
+                  </div>
+              )}
+              {isAggregating && (
+                  <div className="bg-[#8b5cf6] text-white text-xs px-3 py-1.5 rounded-full shadow-lg flex items-center gap-2 border border-[#7c3aed]">
+                      <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      Aggregating timeframe...
+                  </div>
+              )}
+              {limitDataRange && viewport && viewport.startIndex < (aggregatedDataCache[symbols[0]]?.length ?? 1) * 0.1 && (
+                  <div className="bg-[#1a1c24]/80 backdrop-blur text-gray-400 text-xs px-3 py-1.5 rounded shadow border border-white/5 opacity-80">
+                      Data limited to 2 years (toggle off to load more)
+                  </div>
+              )}
+          </div>
 
-          {isAggregating && (
-              <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-[#8b5cf6] text-white text-xs px-3 py-1.5 rounded-full shadow-lg z-50 flex items-center gap-2 border border-[#7c3aed]">
-                  <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                  Aggregating timeframe...
-              </div>
-          )}
-
-          {limitDataRange && viewport && viewport.startIndex < (aggregatedDataCache[symbols[0]]?.length ?? 1) * 0.1 && (
-              <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-[#1a1c24]/80 backdrop-blur text-gray-400 text-xs px-3 py-1.5 rounded shadow z-50 border border-white/5 opacity-80 pointer-events-none">
-                  Data limited to 2 years (toggle off to load more)
+          {Object.keys(fetchErrors).length > 0 && (
+              <div className="flex flex-col gap-2 mb-4">
+                  {Object.entries(fetchErrors).map(([s, err]) => (
+                      <div key={s} className="bg-red-500/10 border border-red-500/30 text-red-400 text-xs px-4 py-2 rounded flex items-center justify-between">
+                          <span>{err}</span>
+                          <button 
+                            onClick={() => {
+                                if (retryControllerRef.current) retryControllerRef.current.abort();
+                                retryControllerRef.current = new AbortController();
+                                fetchSymbolData(s, retryControllerRef.current.signal);
+                            }}
+                            className="bg-red-500/20 hover:bg-red-500/30 px-2 py-0.5 rounded transition-colors pointer-events-auto"
+                          >Retry</button>
+                      </div>
+                  ))}
               </div>
           )}
 
           {/* Controls Bar */}
-          <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-3">
+          <div className="flex items-start lg:items-center justify-start gap-4 mb-2 flex-col lg:flex-row flex-wrap">
+              <div className="flex flex-wrap items-center gap-3">
                   {!sidebarOpen && (
                       <button 
                          onClick={() => setSidebarOpen(true)}
@@ -1322,7 +1440,28 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
           </div>
           
           {symbols.map((sym, idx) => (
-              <ChartItem key={sym} sym={sym} data={aggregatedDataCache[sym]} toggles={memoizedToggles} settings={settings} />
+              <div key={sym} className="relative">
+                  <ChartItem 
+                    sym={sym} 
+                    data={aggregatedDataCache[sym]} 
+                    overlayToggles={overlayToggles} 
+                    paneToggles={paneToggles} 
+                    perfToggles={perfToggles} 
+                    settings={settings} 
+                    bucket={metadataMap.get(sym)?.bucket ?? null}
+                    liqVoidSettings={liqVoidSettings}
+                    smpSettings={smpSettings}
+                  />
+                  {scrollEnabled && symbols.length === 1 && effectiveSymbolsDesc.length > 0 && (
+                      <div className="absolute top-12 right-12 z-10 pointer-events-none">
+                          <div className="bg-[#1a1c24]/80 backdrop-blur px-3 py-1 rounded-full border border-white/10 shadow-lg flex items-center gap-2">
+                              <span className="text-cyan-400 font-mono text-[10px] font-bold">
+                                  {effectiveSymbolsDesc.indexOf(sym) + 1} / {effectiveSymbolsDesc.length}
+                              </span>
+                          </div>
+                      </div>
+                  )}
+              </div>
           ))}
 
           {symbols.length === 0 && (
@@ -1330,6 +1469,17 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
                 <BarChart2 size={48} className="mb-4 opacity-50" />
                 <p className="font-mono text-sm tracking-tight text-[#aaa]">Search for a ticker to begin analysis</p>
              </div>
+          )}
+
+          {indicatorSettingsOpen && (
+              <IndicatorSettingsPanel
+                 bucket={symbols.length > 0 ? metadataMap.get(symbols[0])?.bucket ?? null : null}
+                 liqVoidSettings={liqVoidSettings}
+                 smpSettings={smpSettings}
+                 onLiqVoidChange={setLiqVoidSettings}
+                 onSmpChange={setSmpSettings}
+                 onClose={() => setIndicatorSettingsOpen(false)}
+              />
           )}
       </div>
     </div>

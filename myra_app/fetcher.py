@@ -362,8 +362,46 @@ class DataFetcher:
         if target_date < ist_now.date():
             return True
         if target_date == ist_now.date():
-            return ist_now.hour > 18 or (ist_now.hour == 18 and ist_now.minute >= 30)
+            ready = ist_now.hour > 18 or (ist_now.hour == 18 and ist_now.minute >= 30)
+            if not ready:
+                print(f"[INFO] Data not ready yet - IST time: {ist_now.hour}:{ist_now.minute:02d}, need 18:30+")
+            return ready
         return False
+
+    def get_fetch_status(self, current_date):
+        """
+        Get detailed status about whether data can be fetched for a date.
+        Returns dict with readiness info.
+        """
+        ist_now = self.get_ist_now()
+        target_date = current_date.date() if hasattr(current_date, "date") else current_date
+
+        status = {
+            "can_fetch": False,
+            "reason": None,
+            "target_date": target_date.isoformat(),
+            "ist_now": ist_now.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+        if self._is_holiday(current_date):
+            status["reason"] = "holiday_or_weekend"
+            return status
+
+        if target_date > ist_now.date():
+            status["reason"] = "future_date"
+            return status
+
+        if target_date == ist_now.date():
+            if ist_now.hour < 18:
+                status["reason"] = "too_early"
+                return status
+            elif ist_now.hour == 18 and ist_now.minute < 30:
+                status["reason"] = "too_early"
+                return status
+
+        status["can_fetch"] = True
+        status["reason"] = "ready"
+        return status
 
     def score_data_quality(self, data, source_type="bhavcopy", current_date=None):
         if data is None:

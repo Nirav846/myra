@@ -20,21 +20,23 @@ export default function InstDOMView({ lib }: { lib: Librarian }) {
     setErrorMsg(null);
     setIsDemo(!lib.isConnectedToLocalRepo);
     try {
-      // In production, this groups Volume by Price Bins using SQL ROUND() or width_bucket() logic
+      // POC computed at typical price (H+L+C)/3 — a proxy for the intraday VWAP level.
       const query = `
-        SELECT ROUND(close, -1) as price_level, SUM(volume) as total_vol, SUM(delivery_qty) as total_del 
-        FROM technical_data 
-        WHERE symbol = '${ticker}' AND date >= date('now', '-${lookbackDays} days')
+        SELECT ROUND(COALESCE(vwap, (high + low + close) / 3), -1) as price_level, 
+               SUM(delivery) as delivery,
+               (SUM(volume) - SUM(delivery)) as intraday
+        FROM technical_data
+        WHERE symbol = ? AND date >= date('now', ?)
         GROUP BY price_level 
         ORDER BY price_level DESC
       `;
-      const result = await lib.executeQuery('_inst_conn', query, {}, 10000); // 10s timeout
+      const result = await lib.executeQuery('_tech_conn', query, [ticker, `-${lookbackDays} days`], 10000); // 10s timeout
       
       if (result && result.length > 0) {
         setData(result.map((r: any) => ({
           price: r.price_level,
-          delivery: Number(r.total_del || 0),
-          intraday: Number(r.total_vol || 0) - Number(r.total_del || 0)
+          delivery: Number(r.delivery || 0),
+          intraday: Math.max(0, Number(r.intraday || 0))
         })));
       } else {
         if (!lib.isConnectedToLocalRepo) generateMockProfile();
@@ -79,9 +81,9 @@ export default function InstDOMView({ lib }: { lib: Librarian }) {
       <div className="px-6 py-4 border-b border-[#ffffff1a] flex justify-between items-center bg-[#1a1c24]">
         <h3 className="font-medium text-lg flex items-center gap-2">
           <AlignRight size={20} className="text-orange-400" />
-          Institutional DOM (Volume Profile)
+          Delivery Volume Profile
         </h3>
-        <span className="text-xs text-[#888] font-mono">Module: _inst_conn.profile</span>
+        <span className="text-xs text-[#888] font-mono">Module: _tech_conn.profile</span>
       </div>
 
       <div className="p-6 flex flex-col gap-6">

@@ -1,27 +1,68 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { Search, Calendar, Activity, BarChart2, Table as TableIcon, Package, TrendingUp, BarChart, Download, AlertTriangle } from 'lucide-react';
+import { Search, Calendar, Activity, BarChart2, Table as TableIcon, Package, TrendingUp, BarChart, Download, AlertTriangle, Info } from 'lucide-react';
 import { ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { SymbolSearch } from '../components/SymbolSearch';
 import { motion, AnimatePresence } from 'motion/react';
+import { useSettings } from '../lib/SettingsContext';
+
+interface HistoricalDataRow {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  delivery_qty: number;
+  delivery_pct: number;
+  non_delivery: number;
+}
 
 export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
+  const { settings } = useSettings();
   const [ticker, setTicker] = useState('RELIANCE');
   const [startDate, setStartDate] = useState(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]); // 30 days ago
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [loading, setLoading] = useState(false);
-  const [data, setData] = useState<any[] | null>(null);
+  const [data, setData] = useState<HistoricalDataRow[] | null>(null);
   const [viewMode, setViewMode] = useState<'chart' | 'table'>('chart');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isDemo, setIsDemo] = useState(false);
+  const [fundaData, setFundaData] = useState<any>(null);
+  const [showFunda, setShowFunda] = useState(false);
+  const [fundaLoading, setFundaLoading] = useState(false);
+
+  const fetchFunda = async (symbol: string) => {
+    setFundaLoading(true);
+    try {
+      const res = await fetch(`http://localhost:8000/api/fundamentals/live/${symbol}`);
+      if (res.ok) {
+        const json = await res.json();
+        setFundaData(json);
+      }
+    } catch (e) {
+      console.warn('Fundamental fetch failed', e);
+    } finally {
+      setFundaLoading(false);
+    }
+  };
 
   const handleSearch = async () => {
     if (!ticker) return;
     setLoading(true);
     setErrorMsg(null);
+    setFundaData(null);
     setIsDemo(!lib.isConnectedToLocalRepo);
     
     try {
+      if (!lib.isConnectedToLocalRepo || settings.mockDataMode) {
+        if (!lib.isConnectedToLocalRepo) setErrorMsg('Database unavailable. Using mock data.');
+        setIsDemo(true);
+        generateMockData();
+        return;
+      }
+
+      setIsDemo(false);
       // SECURE SQL: Using positional placeholders (?) and spreading parameters into args array
       const query = `
         SELECT date, open, high, low, close, volume, delivery, (delivery * 100.0 / NULLIF(volume, 0)) as delivery_pct
@@ -32,7 +73,7 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
       const result = await lib.executeQuery('_tech_conn', query, [ticker, startDate, endDate]);
 
       if (result && result.length > 0) {
-        const mapped = result.map((r: any) => ({
+        const mapped: HistoricalDataRow[] = result.map((r: any) => ({
             date: r.date || r.Date || '',
             open: Number(r.open || r.Open || 0),
             high: Number(r.high || r.High || 0),
@@ -41,22 +82,18 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
             volume: Number(r.volume || r.Volume || 0),
             delivery_qty: Number(r.delivery || 0), 
             delivery_pct: Number(r.delivery_pct || 0),
-            non_delivery: Number(r.volume || 0) - Number(r.delivery || 0)
+            // Historical rows may have delivery > volume due to reporting artifacts; clamp to zero for visual correctness.
+            non_delivery: Math.max(0, Number(r.volume || 0) - Number(r.delivery || 0))
         }));
         setData(mapped);
       } else {
-        if (!lib.isConnectedToLocalRepo) {
-           setErrorMsg('No data found for the given criteria.');
-           generateMockData();
-        } else {
-           setData([]);
-        }
+        setData([]);
       }
     } catch (e: any) {
       console.error(e);
       setErrorMsg(e.message || 'Database unavailable');
-      if (!lib.isConnectedToLocalRepo) generateMockData();
-      else setData([]);
+      setIsDemo(true);
+      generateMockData();
     } finally {
       setLoading(false);
     }
@@ -64,7 +101,7 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
 
   const generateMockData = () => {
     let currentPrice = 2400;
-    const mock = [];
+    const mock: HistoricalDataRow[] = [];
     const start = new Date(startDate);
     const end = new Date(endDate);
     
@@ -220,25 +257,158 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
 
         {/* Dashboard Highlight Cards */}
         {!loading && data && summaryStats && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-[#1a1c24] border border-green-500/30 rounded p-4 flex flex-col justify-center relative overflow-hidden group">
-              <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity"><Package size={100} /></div>
-              <span className="text-[#888] text-xs font-mono mb-1 flex items-center gap-1.5"><Package size={12}/> AGGREGATE DELIVERY %</span>
-              <span className="text-2xl font-bold text-green-400">{summaryStats.avgDelPct}%</span>
-              <span className="text-[10px] text-[#666] mt-1 font-mono">Total Qty: {summaryStats.totalDel.toLocaleString()}</span>
+          <div className="flex flex-col gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-[#1a1c24] border border-green-500/30 rounded p-4 flex flex-col justify-center relative overflow-hidden group">
+                <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity"><Package size={100} /></div>
+                <span className="text-[#888] text-xs font-mono mb-1 flex items-center gap-1.5"><Package size={12}/> AGGREGATE DELIVERY %</span>
+                <span className="text-2xl font-bold text-green-400">{summaryStats.avgDelPct}%</span>
+                <span className="text-[10px] text-[#666] mt-1 font-mono">Total Qty: {summaryStats.totalDel.toLocaleString()}</span>
+              </div>
+              <div className="bg-[#1a1c24] border border-fuchsia-500/30 rounded p-4 flex flex-col justify-center relative overflow-hidden group">
+                <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity"><TrendingUp size={100} /></div>
+                <span className="text-[#888] text-xs font-mono mb-1 flex items-center gap-1.5"><TrendingUp size={12}/> HIGH DELIVERY SPIKE</span>
+                <span className="text-2xl font-bold text-fuchsia-400">{summaryStats.highestDel.delivery_pct}%</span>
+                <span className="text-[10px] text-[#666] mt-1 font-mono">Recorded on: {summaryStats.highestDel.date}</span>
+              </div>
+              <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col justify-center relative overflow-hidden group">
+                <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity"><BarChart size={100} /></div>
+                <span className="text-[#888] text-xs font-mono mb-1 flex items-center gap-1.5"><Activity size={12}/> AVERAGE DAILY VOLUME</span>
+                <span className="text-2xl font-bold text-[#fafafa]">{summaryStats.avgDailyVol.toLocaleString()}</span>
+                <span className="text-[10px] text-[#666] mt-1 font-mono">Across {data.length} trading days</span>
+              </div>
             </div>
-            <div className="bg-[#1a1c24] border border-fuchsia-500/30 rounded p-4 flex flex-col justify-center relative overflow-hidden group">
-              <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity"><TrendingUp size={100} /></div>
-              <span className="text-[#888] text-xs font-mono mb-1 flex items-center gap-1.5"><TrendingUp size={12}/> HIGH DELIVERY SPIKE</span>
-              <span className="text-2xl font-bold text-fuchsia-400">{summaryStats.highestDel.delivery_pct}%</span>
-              <span className="text-[10px] text-[#666] mt-1 font-mono">Recorded on: {summaryStats.highestDel.date}</span>
-            </div>
-            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col justify-center relative overflow-hidden group">
-              <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity"><BarChart size={100} /></div>
-              <span className="text-[#888] text-xs font-mono mb-1 flex items-center gap-1.5"><Activity size={12}/> AVERAGE DAILY VOLUME</span>
-              <span className="text-2xl font-bold text-[#fafafa]">{summaryStats.avgDailyVol.toLocaleString()}</span>
-              <span className="text-[10px] text-[#666] mt-1 font-mono">Across {data.length} trading days</span>
-            </div>
+
+            {data && data.length > 0 && (
+              <div className="border border-[#ffffff0a] rounded-lg bg-[#0e1117]">
+                <button
+                  onClick={() => {
+                    const willOpen = !showFunda;
+                    setShowFunda(willOpen);
+                    if (willOpen) fetchFunda(ticker);
+                  }}
+                  className="w-full px-4 py-3 flex items-center justify-between text-sm font-mono text-[#ccc] hover:text-white"
+                >
+                  <span>📊 Fundamental Snapshot</span>
+                  <span className="text-[10px] text-[#666]">{showFunda ? '▲' : '▼'}</span>
+                </button>
+                {showFunda && (
+                  <div className="px-4 pb-4">
+                    {fundaLoading ? (
+                      <div className="text-xs text-[#666] font-mono animate-pulse py-4 text-center">
+                        Fetching live fundamentals...
+                      </div>
+                    ) : fundaData ? (
+                      <div className="space-y-4">
+                        {/* Source badge */}
+                        <div className="flex justify-end">
+                          <span className={`text-[9px] px-2 py-0.5 rounded-full font-mono ${
+                            fundaData.source === 'live'
+                              ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+                              : 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
+                          }`}>
+                            {fundaData.source === 'live' ? '● Live' : '◌ DB'}
+                          </span>
+                        </div>
+
+                        {/* Valuation Row */}
+                        <div>
+                          <h4 className="text-[10px] font-mono text-[#666] uppercase tracking-wider mb-2">Valuation</h4>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                            <MetricCard label="PE Ratio" value={fundaData.fundamentals?.pe || fundaData.key_metrics?.pe} />
+                            <MetricCard label="PB Ratio" value={fundaData.fundamentals?.pb} />
+                            <MetricCard label="Market Cap" value={fundaData.key_metrics?.market_cap || fundaData.fundamentals?.market_cap} isString />
+                            <MetricCard label="Face Value" value={fundaData.key_metrics?.face_value} isString />
+                          </div>
+                        </div>
+
+                        {/* Profitability Row */}
+                        <div>
+                          <h4 className="text-[10px] font-mono text-[#666] uppercase tracking-wider mb-2">Profitability</h4>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                            <MetricCard label="ROE" value={fundaData.fundamentals?.roe || fundaData.key_metrics?.roe} suffix="%" />
+                            <MetricCard label="ROCE" value={fundaData.key_metrics?.roce} suffix="%" />
+                            <MetricCard label="Net Margin" value={fundaData.fundamentals?.net_margin ? fundaData.fundamentals.net_margin * 100 : null} suffix="%" />
+                            <MetricCard label="Op Margin" value={fundaData.fundamentals?.operating_margin ? fundaData.fundamentals.operating_margin * 100 : null} suffix="%" />
+                          </div>
+                        </div>
+
+                        {/* Shareholding Row */}
+                        {fundaData.shareholding && (
+                          <div>
+                            <h4 className="text-[10px] font-mono text-[#666] uppercase tracking-wider mb-2">
+                              Shareholding
+                              {fundaData.shareholding.period_end && (
+                                <span className="ml-2 text-[#555]">as of {fundaData.shareholding.period_end}</span>
+                              )}
+                            </h4>
+                            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                              <MetricCard label="Promoter" value={fundaData.shareholding.promoter_pct} suffix="%" />
+                              <MetricCard label="FII" value={fundaData.shareholding.fii_pct} suffix="%" />
+                              <MetricCard label="DII" value={fundaData.shareholding.dii_pct} suffix="%" />
+                              <MetricCard label="Public" value={fundaData.shareholding.public_pct} suffix="%" />
+                              <MetricCard label="Govt" value={fundaData.shareholding.government_pct} suffix="%" />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Financial Health Row */}
+                        <div>
+                          <h4 className="text-[10px] font-mono text-[#666] uppercase tracking-wider mb-2">Financial Health</h4>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                            <MetricCard label="Debt/Equity" value={fundaData.fundamentals?.debt_equity} />
+                            <MetricCard label="Current Ratio" value={fundaData.fundamentals?.current_ratio} />
+                            <MetricCard label="Quick Ratio" value={fundaData.fundamentals?.quick_ratio} />
+                            <MetricCard label="FCF Yield" value={fundaData.fundamentals?.free_cash_flow_yield ? fundaData.fundamentals.free_cash_flow_yield * 100 : null} suffix="%" />
+                          </div>
+                        </div>
+
+                        {/* Growth Row */}
+                        <div>
+                          <h4 className="text-[10px] font-mono text-[#666] uppercase tracking-wider mb-2">Growth</h4>
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                            <MetricCard label="Revenue Growth" value={fundaData.fundamentals?.revenue_growth ? fundaData.fundamentals.revenue_growth * 100 : null} suffix="%" color />
+                            <MetricCard label="Earnings Growth" value={fundaData.fundamentals?.earnings_growth ? fundaData.fundamentals.earnings_growth * 100 : null} suffix="%" color />
+                            <MetricCard label="Div Yield" value={fundaData.fundamentals?.dividend_yield} suffix="%" />
+                          </div>
+                        </div>
+
+                        {/* Pros/Cons */}
+                        {fundaData.pros_cons && (fundaData.pros_cons.pros.length > 0 || fundaData.pros_cons.cons.length > 0) && (
+                          <div>
+                            <h4 className="text-[10px] font-mono text-[#666] uppercase tracking-wider mb-2">screener.in Insights</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                              <div className="bg-[#0a1a0a] border border-green-500/20 rounded p-2">
+                                <p className="text-[10px] text-green-400 font-mono mb-1">PROS</p>
+                                {fundaData.pros_cons.pros.length > 0
+                                  ? fundaData.pros_cons.pros.map((p: string, i: number) => (
+                                      <p key={i} className="text-[11px] text-green-300/80 leading-relaxed">• {p}</p>
+                                    ))
+                                  : <p className="text-[11px] text-[#666]">None listed</p>
+                                }
+                              </div>
+                              <div className="bg-[#1a0a0a] border border-red-500/20 rounded p-2">
+                                <p className="text-[10px] text-red-400 font-mono mb-1">CONS</p>
+                                {fundaData.pros_cons.cons.length > 0
+                                  ? fundaData.pros_cons.cons.map((c: string, i: number) => (
+                                      <p key={i} className="text-[11px] text-red-300/80 leading-relaxed">• {c}</p>
+                                    ))
+                                  : <p className="text-[11px] text-[#666]">None listed</p>
+                                }
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-[#666] font-mono py-4 text-center">
+                        No fundamental data available.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -355,6 +525,38 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
             <p className="text-sm font-mono">Enter a ticker and date range to query the technical sidecar.</p>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function MetricCard({ label, value, suffix = '', isString = false, color = false }: {
+  label: string;
+  value: number | string | null | undefined;
+  suffix?: string;
+  isString?: boolean;
+  color?: boolean;
+}) {
+  if (value === null || value === undefined || value === '') {
+    return (
+      <div className="bg-[#1a1c24] border border-[#ffffff0a] p-3 rounded">
+        <div className="text-[10px] text-[#888] font-mono uppercase">{label}</div>
+        <div className="text-sm font-bold text-[#555]">—</div>
+      </div>
+    );
+  }
+
+  const num = typeof value === 'string' ? parseFloat(value) : value;
+  const display = isString ? value : (typeof num === 'number' ? num.toFixed(2) : value);
+  const colorClass = color
+    ? (Number(num) > 0 ? 'text-green-400' : Number(num) < 0 ? 'text-red-400' : 'text-[#fafafa]')
+    : 'text-[#fafafa]';
+
+  return (
+    <div className="bg-[#1a1c24] border border-[#ffffff0a] p-3 rounded">
+      <div className="text-[10px] text-[#888] font-mono uppercase">{label}</div>
+      <div className={`text-sm font-bold ${colorClass}`}>
+        {display}{suffix}
       </div>
     </div>
   );

@@ -21,23 +21,9 @@ export interface VolumeProfileResult {
 
 export const calculateVolumeProfile = (
   data: Candle[], 
-  viewport: NormalizedViewport | null,
   config: VolumeProfileConfig
 ): VolumeProfileResult | null => {
-  let sliceStart = 0;
-  let sliceEnd = data.length - 1;
-
-  if (config.resolution === 'cumulative') {
-      sliceStart = 0;
-      sliceEnd = data.length - 1;
-  } else if (viewport) {
-      sliceStart = Math.max(0, Math.floor(viewport.startIndex));
-      sliceEnd = Math.min(data.length - 1, Math.ceil(viewport.endIndex));
-  }
-  
-  if (sliceStart > sliceEnd) return null;
-
-  let visibleData = data.slice(sliceStart, sliceEnd + 1);
+  let visibleData = data;
 
   if (config.resolution === 'weekly' || config.resolution === 'monthly') {
       const aggregatedMap = new Map();
@@ -72,8 +58,15 @@ export const calculateVolumeProfile = (
 
   if (visibleData.length === 0) return null;
 
-  const vMinL = Math.min(...visibleData.map(d => typeof d.low === 'number' ? d.low : Infinity));
-  const vMaxH = Math.max(...visibleData.map(d => typeof d.high === 'number' ? d.high : -Infinity));
+  const vMinL = visibleData.reduce((min: number, d: any) => {
+      const low = typeof d.low === 'number' ? d.low : Infinity;
+      return low < min ? low : min;
+  }, Infinity);
+  
+  const vMaxH = visibleData.reduce((max: number, d: any) => {
+      const high = typeof d.high === 'number' ? d.high : -Infinity;
+      return high > max ? high : max;
+  }, -Infinity);
   
   if (vMaxH <= vMinL) return null;
 

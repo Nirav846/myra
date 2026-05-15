@@ -66,7 +66,7 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
       icon: <BarChart2 size={24} />,
       items: [
         { label: 'Deals Leaderboard', action: () => navigateTo('Leaderboard') },
-        { label: 'Institutional DOM', action: () => navigateTo('Inst. DOM') },
+        { label: 'Delivery Volume Profile', action: () => navigateTo('Delivery Volume Profile') },
         { label: 'Ghost Simulator', action: () => navigateTo('Ghost Simulator') }
       ]
     },
@@ -91,7 +91,7 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
       textColor: 'text-green-400',
       icon: <Target size={24} />,
       items: [
-        { label: 'Fundamental Ranker', action: null },
+        { label: 'Value Ranker', action: () => navigateTo('Value Ranker') },
         { label: 'Sector Analysis', action: () => navigateTo('Sector Flow') },
         { label: 'Graham Model', action: null }
       ]

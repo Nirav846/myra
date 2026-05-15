@@ -1,76 +1,114 @@
 import { Librarian } from '../lib/Librarian';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, Target, Activity, BarChart2, ShieldAlert } from 'lucide-react';
-import { computeExhaustionSignal, computeDivergenceSignal, computeSpringCoilSignal, SignalData } from '../lib/reversionSignals';
+import { computeExhaustionSignal, computeDivergenceSignal, computeSpringCoilSignal, SignalData, SignalResult } from '../lib/reversionSignals';
+import { useSettings } from '../lib/SettingsContext';
+import { resolveBucket } from '../lib/bucketUtils';
+import PresetChip from '../components/PresetChip';
+import { ReversionConfig } from '../lib/scannerPresets';
 
 type SetupType = 'Exhaustion' | 'Divergence' | 'SpringCoil';
 
+export interface ProcessedSignal extends SignalResult {
+    sector: string;
+    bucket: string;
+    isUncharted: boolean;
+}
+
 export default function ReversionEngineView({ lib, onNavigate }: { lib: Librarian, onNavigate?: (tab: string, symbol?: string) => void }) {
+  const { settings } = useSettings();
   const [activeSetup, setActiveSetup] = useState<SetupType>('Exhaustion');
-  const [dataLoaded, setDataLoaded] = useState(false);
+  const [useMcapThresholds, setUseMcapThresholds] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
-  const [apiData, setApiData] = useState<any[]>([]);
+  const [apiData, setApiData] = useState<ProcessedSignal[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isDemo, setIsDemo] = useState(false);
   const [filterSector, setFilterSector] = useState<string>('All');
   const [filterMcap, setFilterMcap] = useState<string>('All');
   const [metadataMap, setMetadataMap] = useState<Map<string, { sector: string; indices: string[]; in_nifty500: number }>>(new Map());
   const [availableSectors, setAvailableSectors] = useState<string[]>([]);
+  const [metadataLoaded, setMetadataLoaded] = useState(false);
 
   useEffect(() => {
+    let active = true;
+    const fetchMetadata = async () => {
+      try {
+        if (!lib.isConnectedToLocalRepo) {
+            if (active) setMetadataLoaded(true);
+            return;
+        }
+        const symbolsResult = await lib.executeQuery('_meta_conn', 'SELECT symbol, sector, in_nifty500 FROM symbols_master LIMIT 5000');
+        const indexResult = await lib.executeQuery('_meta_conn', 'SELECT symbol, index_name FROM index_constituents LIMIT 5000');
+        
+        const map = new Map<string, { sector: string, indices: string[], in_nifty500: number }>();
+        const sectors = new Set<string>();
+        
+        if (symbolsResult && Array.isArray(symbolsResult)) {
+          symbolsResult.forEach((row: any) => {
+            const normalizedSector = (row.sector && row.sector.trim() !== '') ? row.sector : 'Uncharted Sector';
+            sectors.add(normalizedSector);
+            map.set(row.symbol, { sector: normalizedSector, indices: [], in_nifty500: row.in_nifty500 });
+          });
+        }
+        
+        if (indexResult && Array.isArray(indexResult)) {
+          indexResult.forEach((row: any) => {
+            if (map.has(row.symbol)) {
+                map.get(row.symbol)!.indices.push(row.index_name);
+            } else {
+                map.set(row.symbol, { sector: 'Uncharted Sector', indices: [row.index_name], in_nifty500: 0 });
+            }
+          });
+        }
+        
+        if (!sectors.has('Uncharted Sector')) sectors.add('Uncharted Sector');
+        
+        if (active) {
+            setAvailableSectors(Array.from(sectors).sort());
+            setMetadataMap(map);
+        }
+      } catch(e) {
+        console.warn("Failed to fetch metadata", e);
+      } finally {
+        if (active) setMetadataLoaded(true);
+      }
+    };
     fetchMetadata();
+    return () => { active = false; };
   }, [lib]);
 
-  useEffect(() => {
-    fetchData(activeSetup);
-  }, [activeSetup, filterSector, filterMcap]);
-
-  const fetchMetadata = async () => {
-    try {
-      if (!lib.isConnectedToLocalRepo) return;
-      const symbolsResult = await lib.executeQuery('_meta_conn', 'SELECT symbol, sector, in_nifty500 FROM symbols_master LIMIT 5000');
-      const indexResult = await lib.executeQuery('_meta_conn', 'SELECT symbol, index_name FROM index_constituents LIMIT 5000');
-      
-      const map = new Map<string, { sector: string, indices: string[], in_nifty500: number }>();
-      const sectors = new Set<string>();
-      
-      if (symbolsResult && Array.isArray(symbolsResult)) {
-        symbolsResult.forEach((row: any) => {
-          const normalizedSector = (row.sector && row.sector.trim() !== '') ? row.sector : 'Uncharted Sector';
-          sectors.add(normalizedSector);
-          map.set(row.symbol, { sector: normalizedSector, indices: [], in_nifty500: row.in_nifty500 });
-        });
-      }
-      
-      if (indexResult && Array.isArray(indexResult)) {
-        indexResult.forEach((row: any) => {
-          if (map.has(row.symbol)) {
-              map.get(row.symbol)!.indices.push(row.index_name);
-          } else {
-              map.set(row.symbol, { sector: 'Uncharted Sector', indices: [row.index_name], in_nifty500: 0 });
+  const applyFilters = useCallback((data: ProcessedSignal[]) => {
+      return data.filter(item => {
+          if (filterSector !== 'All') {
+              if (item.sector !== filterSector) return false;
           }
-        });
-      }
-      
-      if (!sectors.has('Uncharted Sector')) sectors.add('Uncharted Sector');
-      
-      setAvailableSectors(Array.from(sectors).sort());
-      setMetadataMap(map);
-    } catch(e) {
-      console.warn("Failed to fetch metadata", e);
-    }
-  };
+          if (filterMcap !== 'All') {
+              if (item.bucket !== filterMcap) return false;
+          }
+          return true;
+      }).sort((a, b) => b.score - a.score).slice(0, 75);
+  }, [filterSector, filterMcap]);
 
-  const fetchData = async (setup: SetupType) => {
+  const fetchData = useCallback(async (setup: SetupType) => {
     setIsRefreshing(true);
     setErrorMsg(null);
-    setIsDemo(!lib.isConnectedToLocalRepo);
+    setIsDemo(false);
     setApiData([]);
     
     try {
-      // We need rolling time-series context (20-day avg volume, 20-day high/low).
-      // To keep it fast, we first constrain to the last 30 trading dates, then compute window functions.
+      if (!lib.isConnectedToLocalRepo || settings.mockDataMode) {
+          if (!lib.isConnectedToLocalRepo) setErrorMsg('Meta Connection Unavailable. Using Mock Data.');
+          setIsDemo(true);
+          const rawMock = generateMockData(setup);
+          const finalMock = applyFilters(rawMock);
+          setApiData(finalMock);
+          return;
+      }
+
+      // Note: We fetch LIMIT 2500 here because scoring and ranking are done in JavaScript,
+      // and we only display the top 75 results. Moving scoring into the SQL query 
+      // directly would improve performance and allow us to drop the LIMIT 2500 constraint.
       const result = await lib.executeQuery('_tech_conn', `
         WITH RecentDates AS (
            SELECT DISTINCT date FROM technical_data ORDER BY date DESC LIMIT 30
@@ -82,13 +120,13 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
         RankedData AS (
           SELECT 
             symbol as ticker,
-            date as "Date",
-            open as "Open",
-            high as "High",
-            low as "Low",
-            close as "Close",
-            volume as "Volume",
-            delivery as "Deliverable_Volume",
+            date as close_date,
+            open as open,
+            high as high,
+            low as low,
+            close as close,
+            volume as volume,
+            delivery as delivery_final,
             (delivery * 100.0 / NULLIF(volume, 0)) as del_perc,
             
             AVG(volume) OVER w20 as avg_vol_20,
@@ -113,56 +151,67 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
         )
         SELECT * FROM RankedData 
         WHERE rn = 1 
-        ORDER BY "Volume" DESC 
+        ORDER BY volume DESC 
         LIMIT 2500
       `, {}, 15000);
       
       if (result && result.length > 0) {
-        // Deterministic processing based on real indicators
-        const mappedData = processSetups(result, setup);
-        setApiData(mappedData);
+        const processed = processSetups(result, setup);
+        const finalMapped = applyFilters(processed);
+        setApiData(finalMapped);
       } else {
-        if (!lib.isConnectedToLocalRepo) generateMockData(setup);
-        else setApiData([]);
+        setApiData([]);
       }
       
-      setDataLoaded(true);
-      setLastRefreshed(new Date());
     } catch (e: any) {
       console.error(e);
       setErrorMsg(e.message || 'Meta Connection Unavailable');
-      if (!lib.isConnectedToLocalRepo) generateMockData(setup);
-      else setApiData([]);
+      setApiData([]);
     } finally {
       setIsRefreshing(false);
+      setLastRefreshed(new Date());
     }
-  };
+  }, [lib, metadataMap, settings.mockDataMode, applyFilters]);
+
+  useEffect(() => {
+    if (metadataLoaded) {
+      fetchData(activeSetup);
+    }
+  }, [activeSetup, filterSector, filterMcap, useMcapThresholds, metadataLoaded, fetchData]);
 
   const processSetups = (rawData: any[], setup: SetupType) => {
-    // Map raw data into strongly typed SignalData properties
-    const parsedData: SignalData[] = rawData.map(r => ({
-        ticker: r.ticker || r.symbol || '',
-        close: Number(r.Close ?? r.close) || 0,
-        high: Number(r.High ?? r.high) || 0,
-        low: Number(r.Low ?? r.low) || 0,
-        volume: Number(r.Volume ?? r.volume) || 0,
-        del_perc: Number(r.del_perc ?? r.Del_perc) || 0,
+    const parsedData: SignalData[] = rawData.map(r => {
+        const ticker = r.ticker || r.symbol || '';
+        const meta = metadataMap.get(ticker) || { sector: 'Uncharted Sector', indices: [], in_nifty500: 0 };
+        const bucket = resolveBucket(meta.indices, meta.in_nifty500);
         
-        avg_vol_20: Number(r.avg_vol_20) || 1, // Let 0 default to 1 to avoid div-by-zero
-        avg_del_20: Number(r.avg_del_20) || 0,
-        avg_del_sq_20: Number(r.avg_del_sq_20) || 0,
-        
-        high_20: Number(r.high_20) || Number(r.High ?? r.high), 
-        low_20: Number(r.low_20) || Number(r.Low ?? r.low), 
-        
-        avg_close_20: Number(r.avg_close_20) || Number(r.Close ?? r.close),
-        avg_close_sq_20: Number(r.avg_close_sq_20) || (Number(r.Close ?? r.close) * Number(r.Close ?? r.close)),
-        
-        vol_long: Number(r.vol_long) || 1,
-        vol_short: Number(r.vol_short) || 1,
-    }));
+        return {
+            ticker: ticker,
+            close: Number(r.close) || 0,
+            high: Number(r.high) || 0,
+            low: Number(r.low) || 0,
+            volume: Number(r.volume) || 0,
+            del_perc: Number(r.del_perc) || 0,
+            
+            avg_vol_20: Number(r.avg_vol_20) || 1, // Let 0 default to 1 to avoid div-by-zero
+            avg_del_20: Number(r.avg_del_20) || 0,
+            avg_del_sq_20: Number(r.avg_del_sq_20) || 0,
+            
+            high_20: Number(r.high_20) || Number(r.high), 
+            low_20: Number(r.low_20) || Number(r.low), 
+            
+            avg_close_20: Number(r.avg_close_20) || Number(r.close),
+            avg_close_sq_20: Number(r.avg_close_sq_20) || (Number(r.close) * Number(r.close)),
+            
+            vol_long: Number(r.vol_long) || 1,
+            vol_short: Number(r.vol_short) || 1,
+            
+            bucket: bucket,
+            useMcap: useMcapThresholds
+        };
+    });
     
-    let processed = [];
+    let processed: SignalResult[] = [];
     if (setup === 'Exhaustion') {
         processed = parsedData.map(computeExhaustionSignal);
     } else if (setup === 'Divergence') {
@@ -171,44 +220,25 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
         processed = parsedData.map(computeSpringCoilSignal);
     }
 
-    // Attach metadata and filter
-    const finalData = processed.map(item => {
+    const finalData: ProcessedSignal[] = processed.map((item, idx) => {
+        const pd = parsedData[idx];
         const meta = metadataMap.get(item.ticker) || { sector: 'Uncharted Sector', indices: [], in_nifty500: 0 };
-        
-        let bucket = "Deep Frontier";
-        if (meta.indices.some((i: string) => i.includes('NIFTY 50') && !i.includes('NEXT'))) {
-            bucket = "Large Cap (N50)";
-        } else if (meta.indices.some((i: string) => i.includes('NIFTY NEXT 50'))) {
-            bucket = "Large Cap (N100)";
-        } else if (meta.indices.some((i: string) => i.includes('NIFTY SMALLCAP 250') || i.includes('SMALL CAP 250'))) {
-            bucket = "Nifty Small Cap 250";
-        } else if (meta.in_nifty500 === 1 || meta.indices.some((i: string) => i.includes('NIFTY 500'))) {
-            bucket = "Broader Market (N500)";
-        }
 
         return {
             ...item,
             sector: meta.sector,
-            bucket: bucket,
+            bucket: pd.bucket,
             isUncharted: meta.sector === 'Uncharted Sector'
         };
-    }).filter(item => {
-        if (filterSector !== 'All') {
-            if (item.sector !== filterSector) return false;
-        }
-        if (filterMcap !== 'All') {
-            if (item.bucket !== filterMcap) return false;
-        }
-        return true;
     });
 
-    return finalData.sort((a, b) => b.score - a.score).slice(0, 75);
+    return finalData;
   };
 
   const generateMockData = (setup: SetupType) => {
     const symbols = ['RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'ICICIBANK', 'HUL', 'SBIN', 'BAJFINANCE', 'BHARTIARTL', 'KOTAKBANK'];
     
-    const mapped = symbols.map(sym => {
+    const mapped: ProcessedSignal[] = symbols.map(sym => {
         let score = 0;
         let note = '';
         let delPerc = 0;
@@ -254,19 +284,9 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
            bucket: bucket,
            isUncharted: false
         };
-    }).filter(item => {
-        if (filterSector !== 'All') {
-            if (item.sector !== filterSector) return false;
-        }
-        if (filterMcap !== 'All') {
-            if (item.bucket !== filterMcap) return false;
-        }
-        return true;
-    }).sort((a, b) => b.score - a.score);
+    });
     
-    setApiData(mapped);
-    setDataLoaded(true);
-    setLastRefreshed(new Date());
+    return mapped;
   };
 
   return (
@@ -280,11 +300,29 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
               Reversion Engine
             </span>
         </div>
-        <span className="text-[10px] font-mono text-cyan-500/70 border border-cyan-500/20 px-2 py-0.5 rounded-full bg-cyan-500/5">v1.2 Quantum</span>
+        <div className="flex items-center gap-3">
+          {lastRefreshed && (
+             <span className="text-xs text-[#888]">Last updated: {lastRefreshed.toLocaleTimeString()}</span>
+          )}
+          <span className="text-[10px] font-mono text-cyan-500/70 border border-cyan-500/20 px-2 py-0.5 rounded-full bg-cyan-500/5">v1.2 Quantum</span>
+        </div>
       </div>
 
       <div className="p-5 space-y-5 relative">
-        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between bg-[#12141a] border border-white/5 p-3 rounded-lg shadow-sm">
+        <div className="flex flex-col gap-3 bg-[#12141a] border border-white/5 p-3 rounded-lg shadow-sm">
+          <PresetChip
+            module="ReversionEngine"
+            currentConfig={{ setup: activeSetup, filterSector, filterMcap }}
+            onLoad={(config) => {
+              const c = config as ReversionConfig;
+              setActiveSetup(c.setup);
+              setFilterSector(c.filterSector);
+              setFilterMcap(c.filterMcap);
+            }}
+            accentColor="cyan"
+          />
+
+          <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
            <div className="flex bg-[#0A0A0A] rounded-md border border-[#333] p-1 gap-1 shadow-inner h-[34px]">
               <button 
                 onClick={() => setActiveSetup('Exhaustion')}
@@ -338,8 +376,19 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
                    </select>
                </div>
                
-               {errorMsg && <span className="text-xs text-red-500 font-mono px-2 py-1 bg-red-500/10 border border-red-500/20 rounded hidden lg:block">{errorMsg}</span>}
-               {isDemo && <span className="text-[10px] bg-yellow-500/20 text-yellow-500 px-2 py-1 rounded border border-yellow-500/20 font-mono hidden lg:block">⚠️ DEMO</span>}
+               {errorMsg && <span className="text-xs text-red-500 font-mono px-2 py-1 bg-red-500/10 border border-red-500/20 rounded block">{errorMsg}</span>}
+               {isDemo && <span className="text-[10px] bg-yellow-500/20 text-yellow-500 px-2 py-1 rounded border border-yellow-500/20 font-mono block">⚠️ DEMO</span>}
+               
+               <label className="flex items-center gap-2 text-xs font-mono text-[#888] hover:text-[#fafafa] cursor-pointer bg-[#1a1c24] px-2 py-1 rounded border border-[#333]">
+                 <input 
+                   type="checkbox" 
+                   checked={useMcapThresholds} 
+                   onChange={(e) => setUseMcapThresholds(e.target.checked)}
+                   className="accent-cyan-500"
+                 />
+                 MCAP-Aware Thresholds
+               </label>
+               
               <button 
                 onClick={() => fetchData(activeSetup)}
                 disabled={isRefreshing}
@@ -349,6 +398,7 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
                 {isRefreshing ? "Scanning..." : "Run"}
               </button>
             </div>
+          </div>
         </div>
 
         <div className="bg-[#12141a]/50 border border-white/5 rounded-lg p-4 text-xs font-mono text-[#888] leading-relaxed shadow-sm">
@@ -377,7 +427,7 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
               </tr>
             </thead>
             <tbody className="text-[#ccc]">
-              {dataLoaded && apiData.map((row, idx) => (
+              {apiData.map((row, idx) => (
                 <tr key={idx} className="border-b border-white/5 hover:bg-white/5 transition-all duration-200">
                   <td className="py-3 px-3">
                     <div className="flex items-center gap-1.5">
@@ -419,7 +469,7 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
               ))}
             </tbody>
           </table>
-          {!dataLoaded && !isRefreshing && (
+          {apiData.length === 0 && !isRefreshing && (
             <div className="w-full py-16 text-center text-[#555] text-xs font-mono flex flex-col items-center justify-center gap-2">
                 <Target size={24} className="opacity-20" />
                 <span>Run engine to scan opportunities.</span>

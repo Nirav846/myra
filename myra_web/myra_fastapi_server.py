@@ -1,3 +1,4 @@
+import json
 import os
 import sqlite3
 import subprocess
@@ -5,6 +6,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
+from myra_app.constants import DB_DIR
+from myra_app.librarian_core import LibrarianCore
 try:
     from myra_app.background_orchestrator import (
         _task_fundamentals_sync,
@@ -301,4 +304,116 @@ async def get_pipeline_status():
         "ingest": _get_last_run("daily_ingest") if '_get_last_run' in globals() else "Never",
         "db_doctor": _get_last_run("db_doctor") if '_get_last_run' in globals() else "Never",
     }
+
+@app.get("/api/fundamentals/live/{symbol}")
+async def get_live_fundamentals(symbol: str):
+    import json, subprocess, sqlite3, os
+    from myra_app.constants import DB_DIR
+    from myra_app.librarian_core import LibrarianCore
+
+    result = {
+        "symbol": symbol.upper(),
+        "source": "db",
+        "fundamentals": {},
+        "shareholding": None,
+        "key_metrics": {},
+        "pros_cons": {"pros": [], "cons": [], "about": ""},
+        "ratios": {},
+        "peer_comparison": [],
+    }
+
+    val_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["valuation"])
+    if os.path.exists(val_path):
+        conn = sqlite3.connect(val_path)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM fundamentals WHERE symbol = ?",
+            (symbol.upper(),),
+        ).fetchone()
+        if row:
+            funda = dict(row)
+            merged = {
+                "symbol": funda.get("symbol"),
+                "sector": funda.get("sector"),
+                "pe": funda.get("peRatio") or funda.get("pe"),
+                "pb": funda.get("priceToBook"),
+                "ps": funda.get("priceToSales"),
+                "roe": funda.get("returnOnEquity") or funda.get("roe"),
+                "eps": funda.get("earningsPerShare") or funda.get("eps"),
+                "book_value": funda.get("bookValuePerShare") or funda.get("book_value"),
+                "market_cap": funda.get("marketCap") or funda.get("market_cap"),
+                "net_margin": funda.get("netMargin") or funda.get("net_margin"),
+                "operating_margin": funda.get("operatingMargin"),
+                "gross_margin": funda.get("grossMargin"),
+                "debt_equity": funda.get("debtToEquity") or funda.get("debt_to_equity"),
+                "current_ratio": funda.get("currentRatio"),
+                "quick_ratio": funda.get("quickRatio"),
+                "dividend_yield": funda.get("dividendYield") or funda.get("dividend_yield"),
+                "free_cash_flow_yield": funda.get("freeCashFlowYield"),
+                "revenue_growth": funda.get("revenueGrowth"),
+                "earnings_growth": funda.get("earningsGrowth"),
+                "payout_ratio": funda.get("payoutRatio"),
+                "beta": funda.get("beta"),
+                "source": funda.get("source_ms") or funda.get("source_nse"),
+                "date": funda.get("date") or funda.get("last_updated"),
+            }
+            result["fundamentals"] = merged
+        conn.close()
+
+    try:
+        import os as _os
+        proc = subprocess.run(
+            ["screener", symbol.upper(), "all"],
+            capture_output=True, text=True, timeout=25,
+            encoding="utf-8", errors="replace",
+            env={**_os.environ, "PYTHONIOENCODING": "utf-8"}
+        )
+        if proc.returncode == 0:
+            data = json.loads(proc.stdout)
+
+            sh = data.get("sections", {}).get("shareholding", {})
+            latest_sh = sh.get("latest", {})
+            if latest_sh:
+                result["shareholding"] = {
+                    "promoter_pct": latest_sh.get("Promoters"),
+                    "fii_pct": latest_sh.get("FIIs"),
+                    "dii_pct": latest_sh.get("DIIs"),
+                    "public_pct": latest_sh.get("Public"),
+                    "government_pct": latest_sh.get("Government"),
+                    "period_end": sh.get("headers", [None])[-1] if sh.get("headers") else None,
+                }
+
+            pc = data.get("sections", {}).get("pros_cons", {})
+            km = pc.get("key_metrics", {})
+            if km:
+                result["key_metrics"] = {
+                    "market_cap": km.get("Market Cap"),
+                    "current_price": km.get("Current Price"),
+                    "high_low": km.get("High / Low"),
+                    "pe": km.get("Stock P/E"),
+                    "book_value": km.get("Book Value"),
+                    "dividend_yield": km.get("Dividend Yield"),
+                    "roce": km.get("ROCE"),
+                    "roe": km.get("ROE"),
+                    "face_value": km.get("Face Value"),
+                }
+            result["pros_cons"] = {
+                "pros": pc.get("pros", []),
+                "cons": pc.get("cons", []),
+                "about": pc.get("about", ""),
+            }
+
+            ratios = data.get("sections", {}).get("ratios", {})
+            if ratios:
+                result["ratios"] = ratios
+
+            peers = data.get("sections", {}).get("peer_comparison", {})
+            if peers:
+                result["peer_comparison"] = peers.get("peers", [])
+
+            result["source"] = "live"
+    except Exception:
+        pass
+
+    return result
 

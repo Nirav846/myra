@@ -7,6 +7,7 @@ import sys
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
+from datetime import datetime, timedelta, timezone, date
 from myra_app.librarian_core import LibrarianCore
 
 DB_DIR = os.path.join(PROJECT_ROOT, "myra_app", "db")
@@ -28,7 +29,7 @@ class DbDoctor:
         self.check_valuation_schema()
         self.check_technical_data_quality()
         self.check_etf_contamination()
-        self.check_scanner_health()
+        self._record_audit_run()
         self.check_wal_mode()
         self.print_summary()
 
@@ -112,7 +113,7 @@ class DbDoctor:
                         )
                         print(f"  [FIXED] Added column {col}")
                         conn.commit()
-                        self.issues_fixed += len(missing_cols)
+                        self.issues_fixed += 1
                 except Exception as e:
                     conn.rollback()
                     print(f"  [ERROR] Failed to add columns: {e}")
@@ -195,7 +196,7 @@ class DbDoctor:
                                 task_name TEXT PRIMARY KEY,
                                 last_run TEXT
                             )
-                            """)
+                        """)
                         conn.commit()
                         print("  [FIXED] Created sync_log table")
                         self.issues_fixed += 1
@@ -250,8 +251,8 @@ class DbDoctor:
                                 f"ALTER TABLE symbols_master ADD COLUMN {col} {add_type}"
                             )
                             print(f"  [FIXED] Added column {col}")
+                            self.issues_fixed += 1
                         conn.commit()
-                        self.issues_fixed += len(missing_cols)
                     except Exception as e:
                         conn.rollback()
                         print(f"  [ERROR] Failed to add columns: {e}")
@@ -322,7 +323,7 @@ class DbDoctor:
                                 source_nse TEXT,
                                 PRIMARY KEY (symbol, date)
                             )
-                            """)
+                        """)
                         conn.commit()
                         print("  [FIXED] Created fundamentals table")
                         self.issues_fixed += 1
@@ -354,8 +355,8 @@ class DbDoctor:
                                 f"ALTER TABLE fundamentals ADD COLUMN {col} {col_type}"
                             )
                             print(f"  [FIXED] Added column {col}")
+                            self.issues_fixed += 1
                         conn.commit()
-                        self.issues_fixed += len(missing_cols)
                     except Exception as e:
                         conn.rollback()
                         print(f"  [ERROR] Failed to add columns: {e}")
@@ -376,60 +377,54 @@ class DbDoctor:
         try:
             c = conn.cursor()
 
-            checks = [
-                (
-                    "Rows with zero/negative close price",
-                    "SELECT COUNT(*) FROM technical_data WHERE close <= 0",
-                ),
-                (
-                    "Rows with delivery > 0 but volume = 0",
-                    "SELECT COUNT(*) FROM technical_data WHERE volume = 0 AND delivery > 0",
-                ),
-                (
-                    "Rows with delivery_ratio > 1.0",
-                    "SELECT COUNT(*) FROM technical_data WHERE delivery_ratio > 1.0",
-                ),
-                (
-                    "Future-dated rows",
-                    "SELECT COUNT(*) FROM technical_data WHERE date > date('now')",
-                ),
-                (
-                    "Rows with delivery data but NULL delivery_source",
-                    "SELECT COUNT(*) FROM technical_data WHERE delivery IS NOT NULL AND delivery_source IS NULL",
-                ),
-            ]
+            # Combine all COUNT(*) queries into a single table scan
+            quality_query = """
+                SELECT
+                    SUM(CASE WHEN close <= 0 THEN 1 ELSE 0 END) AS bad_close,
+                    SUM(CASE WHEN volume = 0 AND delivery > 0 THEN 1 ELSE 0 END) AS bad_del,
+                    SUM(CASE WHEN delivery_ratio > 1.0 THEN 1 ELSE 0 END) AS bad_ratio,
+                    SUM(CASE WHEN date > date('now') THEN 1 ELSE 0 END) AS future_dates,
+                    SUM(CASE WHEN delivery IS NOT NULL AND delivery_source IS NULL THEN 1 ELSE 0 END) AS null_source
+                FROM technical_data
+            """
+            c.execute(quality_query)
+            result = c.fetchone()
+            bad_close, bad_del, bad_ratio, future_dates, null_source = result
 
-            for desc, query in checks:
-                try:
-                    c.execute(query)  # noqa: PG-NPLUS1
-                    count = c.fetchone()[0]
-                    if count > 0:
-                        print(f"  [WARNING] {desc}: {count}")
-                        self.issues_found += 1
-
-                        if "NULL delivery_source" in desc:
-                            if self.dry_run:
-                                print(
-                                    "  [DRY RUN] Would fix: UPDATE technical_data SET delivery_source = 'raw_qty' WHERE delivery IS NOT NULL AND delivery_source IS NULL"
-                                )
-                            else:
-                                try:
-                                    c.execute(  # noqa: PG-NPLUS1
-                                        "UPDATE technical_data SET delivery_source = 'raw_qty' WHERE delivery IS NOT NULL AND delivery_source IS NULL"
-                                    )
-                                    conn.commit()
-                                    print(
-                                        f"  [FIXED] Updated delivery_source for {count} rows"
-                                    )
-                                    self.issues_fixed += 1
-                                except Exception as e:
-                                    print(
-                                        f"  [ERROR] Failed to update delivery_source: {e}"
-                                    )
-                                    self.issues_failed += 1
-                except Exception as e:
-                    print(f"  [ERROR] Quality check failed ({desc}): {e}")
-                    self.issues_failed += 1
+            if bad_close > 0:
+                print(f"  [WARNING] Rows with zero/negative close price: {bad_close}")
+                self.issues_found += 1
+            if bad_del > 0:
+                print(f"  [WARNING] Rows with delivery > 0 but volume = 0: {bad_del}")
+                self.issues_found += 1
+            if bad_ratio > 0:
+                print(f"  [WARNING] Rows with delivery_ratio > 1.0: {bad_ratio}")
+                self.issues_found += 1
+            if future_dates > 0:
+                print(f"  [WARNING] Future-dated rows: {future_dates}")
+                self.issues_found += 1
+            if null_source > 0:
+                print(
+                    f"  [WARNING] Rows with delivery data but NULL delivery_source: {null_source}"
+                )
+                self.issues_found += 1
+                if self.dry_run:
+                    print(
+                        "  [DRY RUN] Would fix: UPDATE technical_data SET delivery_source = 'raw_qty' WHERE delivery IS NOT NULL AND delivery_source IS NULL"
+                    )
+                else:
+                    try:
+                        c.execute(
+                            "UPDATE technical_data SET delivery_source = 'raw_qty' WHERE delivery IS NOT NULL AND delivery_source IS NULL"
+                        )
+                        conn.commit()
+                        print(
+                            f"  [FIXED] Updated delivery_source for {null_source} rows"
+                        )
+                        self.issues_fixed += 1
+                    except Exception as e:
+                        print(f"  [ERROR] Failed to update delivery_source: {e}")
+                        self.issues_failed += 1
 
             # Backfill delivery_pct for rows that have delivery but NULL delivery_pct
             null_pct = conn.execute(
@@ -455,6 +450,42 @@ class DbDoctor:
                         f"  [DRY RUN] Would backfill delivery_pct for {null_pct:,} rows"
                     )
 
+            try:
+                ist_now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+
+                latest_date = conn.execute(
+                    "SELECT MAX(date) FROM technical_data"
+                ).fetchone()[0]
+
+                if latest_date:
+                    db_date = datetime.strptime(latest_date, "%Y-%m-%d").date()
+                    current_date = ist_now.date()
+                    days_behind = (current_date - db_date).days
+
+                    print(f"  [INFO] DB latest date: {latest_date}")
+                    print(f"  [INFO] Current IST date: {current_date.isoformat()}")
+                    print(f"  [INFO] Days behind: {days_behind}")
+
+                    if days_behind >= 2:
+                        print(
+                            f"  [CRITICAL] Database is STALE - {days_behind} days behind current date!"
+                        )
+                        self.issues_found += 1
+                    elif days_behind > 0:
+                        print(
+                            f"  [WARNING] Database is slightly behind - {days_behind} days"
+                        )
+                        self.issues_found += 1
+                    else:
+                        print(f"  [OK] Database is up to date")
+                else:
+                    print(f"  [ERROR] No data found in technical_data table")
+                    self.issues_found += 1
+
+            except Exception as e:
+                print(f"  [ERROR] Staleness check failed: {e}")
+                self.issues_failed += 1
+
         finally:
             conn.close()
         print()
@@ -474,30 +505,22 @@ class DbDoctor:
             self.issues_failed += 1
         print()
 
-    def check_scanner_health(self):
-        """Log skipped symbols by scanner for trend analysis."""
+    def _record_audit_run(self):
+        """Record audit run timestamp for tracking."""
         import json
-        import os
-        from datetime import datetime
 
         log_path = os.path.join(PROJECT_ROOT, "logs", "scanner_skips.json")
 
-        # This is a lightweight check - full per-scanner logging would require
-        # the engine to write skipped symbols, which is out of scope.
-        # For now, we simply note the current skip count for manual review.
         try:
             existing = {}
             if os.path.exists(log_path):
                 with open(log_path, "r") as f:
                     existing = json.load(f)
 
-            # Record today's health score
-            from datetime import date
-
+            # Record today's audit timestamp
             today = date.today().isoformat()
             existing[today] = {
-                "health_score": getattr(self, "health_score", "N/A"),
-                "checked_at": str(datetime.now()),
+                "audit_run": str(datetime.now()),
             }
 
             # Keep only last 90 days
@@ -507,9 +530,9 @@ class DbDoctor:
             os.makedirs(os.path.dirname(log_path), exist_ok=True)
             with open(log_path, "w") as f:
                 json.dump(trimmed, f, indent=2)
-            print("  [INFO] Scanner health logged")
+            print("  [INFO] Audit run logged")
         except Exception as e:
-            print(f"  [WARNING] Scanner health logging failed: {e}")
+            print(f"  [WARNING] Audit logging failed: {e}")
         print()
 
     def check_wal_mode(self):
@@ -519,6 +542,7 @@ class DbDoctor:
             if not os.path.exists(db_path):
                 continue
 
+            conn = None
             try:
                 conn = sqlite3.connect(db_path, check_same_thread=False)
                 c = conn.cursor()
@@ -551,7 +575,7 @@ class DbDoctor:
                 print(f"  [ERROR] Failed to configure WAL mode for {filename}: {e}")
                 self.issues_failed += 1
             finally:
-                if "conn" in locals() and conn:
+                if conn:
                     conn.close()
         print()
 

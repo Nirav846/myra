@@ -9,6 +9,7 @@ interface SidebarToggle {
     desc?: string;
     color?: string;
     group?: string;
+    settingsAction?: () => void;
 }
 
 interface ChartSidebarProps {
@@ -95,6 +96,11 @@ export const ChartSidebar: React.FC<ChartSidebarProps> = ({
                                         </select>
                                     )}
                                     
+                                    {toggle.settingsAction && (
+                                        <button onClick={toggle.settingsAction} className="text-gray-600 hover:text-cyan-500 cursor-pointer transition-colors" title="Settings">
+                                            <Settings2 size={12} />
+                                        </button>
+                                    )}
                                     {toggle.desc && (
                                         <div className="group/hint relative">
                                             <Info size={12} className="text-gray-600 hover:text-cyan-500 cursor-help transition-colors" />

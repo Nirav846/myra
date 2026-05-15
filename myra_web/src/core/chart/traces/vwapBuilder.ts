@@ -10,7 +10,7 @@ export const vwapTraceBuilder: TraceBuilder<number[], any> = {
             mode: 'lines', 
             x: dates, 
             y: result, 
-            name: 'VWAP', 
+            name: 'AVWAP (Anchored)', 
             line: { color: '#888', width: 1.5, dash: 'dot' }, 
             yaxis: 'y', 
             hovertemplate: '%{y:.2f}'

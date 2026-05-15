@@ -18,7 +18,7 @@ class PerformanceVisitor(ast.NodeVisitor):
         self.in_loop = 0
 
     def has_noqa(self, lineno, rule):
-        if lineno > len(self.lines):
+        if lineno <= 0 or lineno > len(self.lines):
             return False
         line_content = self.lines[lineno - 1]
         # Accept both standard and PG-prefixed noqa comments
@@ -29,6 +29,7 @@ class PerformanceVisitor(ast.NodeVisitor):
             "N+1": "PG-NPLUS1",
             "iterrows": "PG-ITERROWS",
             "iloc": "PG-ILOC",
+            "apply": "PG-APPLY",
         }
         pg_rule = pg_rule_map.get(rule, rule)
         return (
@@ -39,6 +40,7 @@ class PerformanceVisitor(ast.NodeVisitor):
 
     def visit_For(self, node):
         # Check if this is a retry loop (common false positive for N+1)
+        # Only skip if the loop has a clear retry pattern: continue/break in except block
         is_retry = False
         if isinstance(node.target, ast.Name) and node.target.id in [
             "i",
@@ -46,7 +48,15 @@ class PerformanceVisitor(ast.NodeVisitor):
             "retry",
             "retries",
         ]:
-            is_retry = True
+            # Check for retry pattern: continue/break inside except block
+            for child in ast.walk(node):
+                if isinstance(child, ast.ExceptHandler):
+                    for body_node in ast.walk(child):
+                        if isinstance(body_node, (ast.Continue, ast.Break)):
+                            is_retry = True
+                            break
+                    if is_retry:
+                        break
 
         if not is_retry:
             self.in_loop += 1
@@ -111,23 +121,35 @@ class PerformanceVisitor(ast.NodeVisitor):
 
     def visit_Subscript(self, node):
         # Catch chained indexing: df[mask]['col']
+        # Only flag when the outer subscript's value looks like a DataFrame
         if isinstance(node.value, ast.Subscript):
-            if not self.has_noqa(node.lineno, "chained"):
-                self.violations.append(
-                    (
-                        node.lineno,
-                        "WARNING",
-                        "Chained indexing detected: df[x][y]. Use .loc[x, y].",
+            # Check if the outer variable name suggests a DataFrame
+            var_name = None
+            if isinstance(node.value.value, ast.Name):
+                var_name = node.value.value.id
+            elif isinstance(node.value.value, ast.Attribute):
+                var_name = node.value.value.attr
+
+            # Only flag if variable name contains df, data, or frame
+            if var_name and any(
+                keyword in var_name.lower() for keyword in ["df", "data", "frame"]
+            ):
+                if not self.has_noqa(node.lineno, "chained"):
+                    self.violations.append(
+                        (
+                            node.lineno,
+                            "WARNING",
+                            "Chained indexing detected: df[x][y]. Use .loc[x, y].",
+                        )
                     )
-                )
         self.generic_visit(node)
 
 
 def check_file(filepath):
     try:
         with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
-            lines = f.readlines()
-            content = "".join(lines)
+            content = f.read()
+            lines = content.splitlines(keepends=True)
             tree = ast.parse(content)
             visitor = PerformanceVisitor(filepath, lines)
             visitor.visit(tree)

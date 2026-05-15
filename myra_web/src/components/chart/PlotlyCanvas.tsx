@@ -14,6 +14,7 @@ export const PlotlyCanvas = memo(({ data, layout, config, style, dates }: Plotly
   const setViewport = useChartStore(state => state.setViewport);
   const setHoveredIndex = useChartStore(state => state.setHoveredIndex);
   const hoverRaf = useRef<number | null>(null);
+  const lastUpdate = useRef<number>(0);
 
   const handleRelayout = (e: any) => {
     if (e['xaxis.range[0]'] !== undefined && e['xaxis.range[1]'] !== undefined) {
@@ -65,6 +66,10 @@ export const PlotlyCanvas = memo(({ data, layout, config, style, dates }: Plotly
         }
 
         if (idx !== undefined && typeof idx === 'number') {
+            const now = performance.now();
+            if (now - lastUpdate.current < 33) return; // 30fps throttle
+            lastUpdate.current = now;
+
             if (hoverRaf.current !== null) {
                 cancelAnimationFrame(hoverRaf.current);
             }

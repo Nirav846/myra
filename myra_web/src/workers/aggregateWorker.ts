@@ -3,19 +3,21 @@ export type AggregateMessage = {
   data: any[];
   timeframe: '1W' | '1w' | '1M' | '1m';
   symbol: string;
+  requestId: number;
 };
 
 export type AggregateResponseMessage = {
   type: 'AGGREGATED';
   candles: any[];
   symbol: string;
+  requestId: number;
 };
 
 self.onmessage = (e: MessageEvent<AggregateMessage>) => {
   if (e.data.type === 'AGGREGATE') {
-    const { data, timeframe, symbol } = e.data;
+    const { data, timeframe, symbol, requestId } = e.data;
     if (data.length === 0) {
-      self.postMessage({ type: 'AGGREGATED', candles: [], symbol });
+      self.postMessage({ type: 'AGGREGATED', candles: [], symbol, requestId });
       return;
     }
 
@@ -57,6 +59,6 @@ self.onmessage = (e: MessageEvent<AggregateMessage>) => {
         aggregated.push(currentCandle);
     }
 
-    self.postMessage({ type: 'AGGREGATED', candles: aggregated, symbol });
+    self.postMessage({ type: 'AGGREGATED', candles: aggregated, symbol, requestId });
   }
 };

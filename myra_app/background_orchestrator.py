@@ -21,10 +21,11 @@ _ROOT = os.path.dirname(_HERE)
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
+from myra_app.constants import DB_DIR
 from myra_app.librarian_core import LibrarianCore
 from myra_app.utils.index_sync import sync_index_constituents
 
-logger = logging.getLogger("myra.orchestrator")
+logger = logging.getLogger(__name__)
 
 # ─── Shared shutdown event ────────────────────────────────────────────────────
 _shutdown_event = threading.Event()
@@ -40,24 +41,25 @@ _pool_lock = threading.Lock()
 def _get_metadata_connection(read_only: bool = True) -> LibrarianCore:
     """Get or create a thread-local LibrarianCore connection for metadata operations."""
     thread_name = threading.current_thread().name
+    pool_key = f"{thread_name}:{'ro' if read_only else 'rw'}"
     with _pool_lock:
-        if thread_name in _connection_pool:
-            lib = _connection_pool[thread_name]
+        if pool_key in _connection_pool:
+            lib = _connection_pool[pool_key]
             # Verify connection is still alive
             if lib._meta_conn is not None:
                 return lib
             else:
                 # Connection died, remove and recreate
-                del _connection_pool[thread_name]
+                del _connection_pool[pool_key]
                 logger.warning(
                     f"[MYRA BG] Recreating dead metadata connection for thread {thread_name}"
                 )
 
         # Create new connection
         lib = LibrarianCore(read_only=read_only)
-        _connection_pool[thread_name] = lib
+        _connection_pool[pool_key] = lib
         logger.debug(
-            f"[MYRA BG] Created new metadata connection for thread {thread_name}"
+            f"[MYRA BG] Created new metadata connection for thread {thread_name} (read_only={read_only})"
         )
         return lib
 
@@ -88,8 +90,8 @@ def _graceful_shutdown(signum=None, frame=None):
     """
     if _shutdown_event.is_set():
         return  # Already shutting down
-    print(
-        "\n[MYRA] Shutdown signal received. Waiting for background tasks to finish..."
+    logger.info(
+        "[MYRA] Shutdown signal received. Waiting for background tasks to finish..."
     )
     _shutdown_event.set()
 
@@ -108,35 +110,72 @@ def _graceful_shutdown(signum=None, frame=None):
                 logger.warning(f"[MYRA BG] Failed to close pooled connection: {e}")
         _connection_pool.clear()
 
-    print("[MYRA] All background tasks finished. DB is safe. Goodbye.")
+    logger.info("[MYRA] All background tasks finished. DB is safe. Goodbye.")
 
 
-# ─── Helper: check if today already ingested ──────────────────────────────────
+# ─── Helper: check if today already ingested with DB truth verification ────────
 
 
 def _already_ingested_today() -> bool:
-    # PERFORMANCE IMPROVEMENT: Reuse thread-local connection instead of creating/closing
+    """
+    Verify if today's data is actually in the database.
+    DB truth takes precedence over metadata - if DB is stale,
+    we should NOT trust metadata alone.
+    """
     try:
+        from myra_app.daily_ingestor import get_db_latest_date
+
+        today = datetime.now(timezone.utc).astimezone(IST).date().isoformat()
+        db_latest = get_db_latest_date()
+
+        if db_latest == today:
+            return True
+
+        if db_latest and db_latest != today:
+            db_date = datetime.strptime(db_latest, "%Y-%m-%d").date()
+            today_date = datetime.strptime(today, "%Y-%m-%d").date()
+            if db_date < today_date:
+                logger.warning(
+                    f"[MYRA BG] DB is behind ({db_latest} vs {today}). Not trusting metadata."
+                )
+                return False
+
         lib = _get_metadata_connection(read_only=True)
         last = lib.get_metadata("last_sync_date")
         if last:
-            today = datetime.now(timezone.utc).astimezone(IST).date().isoformat()
-            return last.strip() == today
+            metadata_date = last.strip()
+            if metadata_date != today:
+                return False
+            if db_latest != today:
+                logger.warning(
+                    f"[MYRA BG] Metadata says {metadata_date} but DB is at {db_latest}. NOT trusting metadata."
+                )
+                return False
+            return True
     except Exception as e:
         logger.warning(f"[MYRA BG] Failed to check ingestion status: {e}")
-        # Fallback to original method on error
-        try:
-            lib = LibrarianCore(read_only=True)
-            last = lib.get_metadata("last_sync_date")
-            lib.close()
-            if last:
-                today = datetime.now(timezone.utc).astimezone(IST).date().isoformat()
-                return last.strip() == today
-        except Exception as e:
-            logger.warning(
-                f"[MYRA BG] Unexpected error verifying ingestion metadata: {e}"
-            )
     return False
+
+
+def _is_db_stale(days_threshold: int = 1) -> bool:
+    """
+    Check if database is stale (more than threshold days behind current date).
+    Default threshold is 1 day - if DB is 1+ days behind, trigger catch-up.
+    """
+    try:
+        from myra_app.daily_ingestor import get_db_latest_date, is_trading_day
+
+        db_latest = get_db_latest_date()
+        if not db_latest:
+            return True
+        ist_now = datetime.now(timezone.utc).astimezone(IST)
+        db_date = datetime.strptime(db_latest, "%Y-%m-%d").date()
+        current_date = ist_now.date()
+        days_behind = (current_date - db_date).days
+        return days_behind >= days_threshold
+    except Exception as e:
+        logger.warning(f"[MYRA BG] Failed to check DB staleness: {e}")
+        return False
 
 
 def _mark_ingested_today():
@@ -162,22 +201,32 @@ def _mark_ingested_today():
 
 # ─── Sync Log Helpers ─────────────────────────────────────────────────────────
 
+WEEKLY_INTERVAL_DAYS = 7
+
 
 def _ensure_sync_log_table():
     """Create sync_log table if it doesn't exist."""
     try:
         lib = _get_metadata_connection(read_only=False)
-        lib._meta_conn.execute(
-            """
+        lib._meta_conn.execute("""
             CREATE TABLE IF NOT EXISTS sync_log (
                 task_name   TEXT PRIMARY KEY,
                 last_run    TEXT
             )
-        """
-        )
+        """)
         lib._meta_conn.commit()
     except Exception as e:
         logger.warning(f"[MYRA BG] Failed to ensure sync_log table: {e}")
+
+
+def _is_task_due(task_name: str, interval_days: int = WEEKLY_INTERVAL_DAYS) -> bool:
+    """Check if task is due to run based on interval."""
+    last_run = _get_last_run(task_name)
+    if last_run is None:
+        return True
+    ist_now = datetime.now(timezone.utc).astimezone(IST)
+    days_since = (ist_now - last_run).days
+    return days_since >= interval_days
 
 
 def _get_last_run(task_name: str) -> datetime | None:
@@ -234,12 +283,12 @@ def _task_db_doctor():
         return
     tid = register("DB health check")
     try:
-        print("[MYRA BG] Running DB health check...")
+        logger.info("[MYRA BG] Running DB health check...")
         from tools.db_doctor import DbDoctor
 
         doctor = DbDoctor()
         doctor.run()
-        print("[MYRA BG] DB health check complete.")
+        logger.info("[MYRA BG] DB health check complete.")
     except Exception as e:
         logger.error(f"[MYRA BG] DB Doctor failed: {e}")
     finally:
@@ -260,34 +309,49 @@ def _task_daily_ingest(force: bool = False):
 
     # Skip weekends (unless forced)
     if not force and ist_now.weekday() >= 5:
-        print(f"[MYRA BG] {ist_now.date()} is a weekend – skipping daily ingest.")
+        logger.info(f"[MYRA BG] {ist_now.date()} is a weekend – skipping daily ingest.")
         return
 
     # Skip before 6 PM IST (data not yet available) unless forced
     if not force and ist_now.hour < 18:
-        print(
-            f"[MYRA BG] Market data not yet available (IST: {ist_now.strftime('%H:%M')}). Skipping."  # noqa: PG-STRFTIME
+        logger.info(
+            f"[MYRA BG] Market data not yet available (IST: {ist_now.strftime('%H:%M')}). Skipping."
         )
-        return
-
-    # Skip if already ingested today (unless forced)
-    if not force and _already_ingested_today():
-        print("[MYRA BG] Today's data already ingested. Skipping.")
         return
 
     tid = register("Daily ingest")
     try:
-        print(
-            f"[MYRA BG] {ist_now.date()} is a trading day. Fetching today's bhavcopy..."
+        logger.info(
+            f"[MYRA BG] {ist_now.date()} is a trading day. Starting DB-gap-driven ingestion..."
         )
-        from myra_app.daily_ingestor import run_daily_update
+        from myra_app.daily_ingestor import run_daily_update, get_db_latest_date
 
-        run_daily_update()
-        _mark_ingested_today()
-        _mark_task_run("daily_ingest")
-        print("[MYRA BG] Daily ingest complete.")
+        result = run_daily_update(force_date=None, skip_backfill=False)
+
+        logger.info(
+            f"[MYRA BG] Ingestion result: success={result.get('success')}, "
+            f"rows={result.get('total_rows_inserted')}, "
+            f"backfill={result.get('backfill_performed')}"
+        )
+
+        if result.get("success") and result.get("total_rows_inserted", 0) > 0:
+            new_latest = get_db_latest_date()
+            logger.info(f"[MYRA BG] DB latest date after ingestion: {new_latest}")
+            _mark_ingested_today()
+            _mark_task_run("daily_ingest")
+            logger.info("[MYRA BG] Daily ingest complete - metadata updated.")
+        elif result.get("success") and result.get("total_rows_inserted", 0) == 0:
+            logger.info(
+                "[MYRA BG] Ingestion succeeded but no new rows - may be before market close"
+            )
+        else:
+            failed_dates = result.get("dates_failed", [])
+            error_msg = result.get("error", "Unknown error")
+            logger.error(
+                f"[MYRA BG] Ingestion failed! Failed dates: {failed_dates}, Error: {error_msg}"
+            )
     except Exception as e:
-        logger.error(f"[MYRA BG] Daily ingest failed: {e}")
+        logger.error(f"[MYRA BG] Daily ingest failed with exception: {e}")
     finally:
         unregister(tid)
 
@@ -299,6 +363,7 @@ def _task_watchdog():
     """
     Polls every 60 seconds. When a new trading day is detected after
     6 PM IST, triggers daily ingest automatically.
+    Also detects stale DB and triggers catch-up.
     Runs for the entire session lifetime.
     """
     from myra_app.task_tracker import register, update, unregister
@@ -306,31 +371,42 @@ def _task_watchdog():
     tid = register("Background sync watchdog", task_type="indefinite")
     try:
         last_checked_date = None
+        last_stale_check = None
 
         while not _shutdown_event.is_set():
-            _shutdown_event.wait(timeout=60)  # Sleep 60s, wake early on shutdown
+            _shutdown_event.wait(timeout=60)
             if _shutdown_event.is_set():
                 break
 
             try:
-                # PERFORMANCE IMPROVEMENT: Compute timezone once per iteration
                 ist_now = datetime.now(timezone.utc).astimezone(IST)
                 today = ist_now.date().isoformat()
 
-                # Update watchdog status with timestamp
                 update(
                     tid,
-                    f"Watching – Last check: {ist_now.strftime('%H:%M:%S')}",  # noqa: PG-STRFTIME
-                )  # noqa: PG-STRFTIME
+                    f"Watching – Last check: {ist_now.strftime('%H:%M:%S')}",
+                )
 
-                # New day detected after 6 PM IST
+                if _is_db_stale(days_threshold=2):
+                    if last_stale_check != today:
+                        logger.info(
+                            f"[MYRA BG] Database is STALE (2+ days behind). Triggering catch-up..."
+                        )
+                        last_stale_check = today
+                        _task_daily_ingest(force=True)
+                    else:
+                        logger.info(
+                            f"[MYRA BG] DB still stale, catch-up already attempted today"
+                        )
+                    continue
+
                 if (
                     today != last_checked_date
                     and ist_now.weekday() < 5
                     and ist_now.hour >= 18
                     and not _already_ingested_today()
                 ):
-                    print(
+                    logger.info(
                         f"[MYRA BG] New trading day detected ({today}). Auto-fetching bhavcopy..."
                     )
                     _task_daily_ingest()
@@ -346,43 +422,42 @@ def _task_watchdog():
 
 
 def _task_etf_sync():
-    """Syncs ETF blocklist from NSE every Sunday. Runs immediately if overdue."""
+    """Syncs ETF blocklist from NSE every 7 days. Runs immediately if overdue."""
     from myra_app.task_tracker import register, unregister
 
     if _shutdown_event.is_set():
         return
 
-    # Check if overdue (>7 days) and run immediately if needed
     if _is_task_overdue("etf_sync", days=7):
         tid = register("ETF sync", task_type="one-shot")
         try:
-            print("[MYRA BG] ETF sync overdue – running now...")
+            logger.info("[MYRA BG] ETF sync overdue – running now...")
             from myra_app.utils.etf_sync import sync_etf_list
 
             sync_etf_list(task_id=tid)
             _mark_task_run("etf_sync")
-            print("[MYRA BG] ETF sync complete (catch-up).")
+            logger.info("[MYRA BG] ETF sync complete (catch-up).")
         except Exception as e:
             logger.error(f"[MYRA BG] ETF sync (catch-up) failed: {e}")
         finally:
             unregister(tid)
 
-    # Enter normal weekly schedule
+    if _shutdown_event.is_set():
+        return
+
     tid = register("ETF sync", task_type="indefinite")
     try:
         while not _shutdown_event.is_set():
             try:
-                ist_now = datetime.now(timezone.utc).astimezone(IST)
-                if ist_now.weekday() == 6:  # Sunday
+                if _is_task_due("etf_sync", WEEKLY_INTERVAL_DAYS):
                     from myra_app.utils.etf_sync import sync_etf_list
 
-                    print("[MYRA BG] Sunday ETF sync running...")
+                    logger.info("[MYRA BG] ETF sync due – running...")
                     sync_etf_list(task_id=tid)
                     _mark_task_run("etf_sync")
             except Exception as e:
                 logger.error(f"[MYRA BG] ETF sync failed: {e}")
-            # PERFORMANCE IMPROVEMENT: Replace long wait with responsive loop
-            for _ in range(60):  # 60 * 60 = 3600 seconds total
+            for _ in range(60):
                 if _shutdown_event.wait(60):
                     return
     finally:
@@ -393,17 +468,16 @@ def _task_etf_sync():
 
 
 def _task_index_sync():
-    """Syncs NIFTY indices from NSE every Sunday. Runs immediately if overdue."""
+    """Syncs NIFTY indices from NSE every 7 days. Runs immediately if overdue."""
     from myra_app.task_tracker import register, unregister
 
     if _shutdown_event.is_set():
         return
 
-    # Check if overdue (>7 days) and run immediately if needed
     if _is_task_overdue("index_sync", days=7):
         tid = register("Index sync", task_type="one-shot")
         try:
-            print("[MYRA BG] Index sync overdue – running now...")
+            logger.info("[MYRA BG] Index sync overdue – running now...")
             from myra_app.utils.index_sync import (
                 heal_index_if_stale,
                 sync_index_constituents,
@@ -413,20 +487,21 @@ def _task_index_sync():
                 sync_index_constituents(idx, task_id=tid)
             heal_index_if_stale("NIFTY 500", expected_count=500)
             _mark_task_run("index_sync")
-            print("[MYRA BG] Index sync complete (catch-up).")
+            logger.info("[MYRA BG] Index sync complete (catch-up).")
         except Exception as e:
             logger.error(f"[MYRA BG] Index sync (catch-up) failed: {e}")
         finally:
             unregister(tid)
 
-    # Enter normal weekly schedule
+    if _shutdown_event.is_set():
+        return
+
     tid = register("Index sync", task_type="indefinite")
     try:
         while not _shutdown_event.is_set():
             try:
-                ist_now = datetime.now(timezone.utc).astimezone(IST)
-                if ist_now.weekday() == 6:  # Sunday
-                    print("[MYRA BG] Sunday index sync running...")
+                if _is_task_due("index_sync", WEEKLY_INTERVAL_DAYS):
+                    logger.info("[MYRA BG] Index sync due – running...")
                     from myra_app.utils.index_sync import (
                         heal_index_if_stale,
                         sync_index_constituents,
@@ -435,13 +510,11 @@ def _task_index_sync():
                     for idx in ["NIFTY 50", "NIFTY 500", "NIFTY SMALLCAP 250"]:
                         sync_index_constituents(idx, task_id=tid)
 
-                    # Self-heal: verify NIFTY 500 count (most critical for default universe)
                     heal_index_if_stale("NIFTY 500", expected_count=500)
                     _mark_task_run("index_sync")
             except Exception as e:
                 logger.error(f"[MYRA BG] Index sync/heal failed: {e}")
-            # PERFORMANCE IMPROVEMENT: Replace long wait with responsive loop
-            for _ in range(60):  # 60 * 60 = 3600 seconds total
+            for _ in range(60):
                 if _shutdown_event.wait(60):
                     return
     finally:
@@ -452,23 +525,22 @@ def _task_index_sync():
 
 
 def _task_fundamentals_sync():
-    """Weekly fundamentals full sync (Sunday). Runs immediately if overdue."""
+    """Weekly fundamentals full sync every 7 days. Runs immediately if overdue."""
     from myra_app.task_tracker import register, unregister, update
 
     if _shutdown_event.is_set():
         return
 
-    # Check if overdue (>7 days) and run immediately if needed
     if _is_task_overdue("fundamentals_sync", days=7):
         tid = register("Fundamentals sync", task_type="one-shot")
         try:
-            print("[MYRA BG] Fundamentals sync overdue – running now...")
+            logger.info("[MYRA BG] Fundamentals sync overdue – running now...")
             from myra_app.fundamental_sync import FundamentalSync
 
             sync = FundamentalSync()
             result = sync.run_full_sync()
             _mark_task_run("fundamentals_sync")
-            print(
+            logger.info(
                 f"[MYRA BG] Fundamentals sync complete (catch-up). "
                 f"MS: {result['ms_fetched']}, NSE: {result['nse_fetched']}, "
                 f"Inserted: {result['inserted']}, Errors: {result['errors']}"
@@ -478,35 +550,28 @@ def _task_fundamentals_sync():
         finally:
             unregister(tid)
 
-    # Enter normal weekly schedule
     tid = register("Fundamentals sync", task_type="indefinite")
     try:
         while not _shutdown_event.is_set():
             try:
-                ist_now = datetime.now(timezone.utc).astimezone(IST)
-                if ist_now.weekday() == 6:  # Sunday
+                if _is_task_due("fundamentals_sync", WEEKLY_INTERVAL_DAYS):
                     update(tid, "Running full fundamentals sync...")
-                    print("[MYRA BG] Sunday full fundamentals sync running...")
+                    logger.info("[MYRA BG] Fundamentals sync due – running...")
                     from myra_app.fundamental_sync import FundamentalSync
 
                     sync = FundamentalSync()
                     result = sync.run_full_sync()
                     _mark_task_run("fundamentals_sync")
-                    print(
+                    logger.info(
                         f"[MYRA BG] Fundamentals sync complete. "
                         f"MS: {result['ms_fetched']}, NSE: {result['nse_fetched']}, "
                         f"Inserted: {result['inserted']}, Errors: {result['errors']}"
                     )
-                # Wait 1 hour between checks
-                for _ in range(60):
-                    if _shutdown_event.wait(60):
-                        return
             except Exception as e:
                 logger.error(f"[MYRA BG] Fundamentals sync failed: {e}")
-                # Wait 1 hour before retry
-                for _ in range(60):
-                    if _shutdown_event.wait(60):
-                        return
+            for _ in range(60):
+                if _shutdown_event.wait(60):
+                    return
     finally:
         unregister(tid)
 
@@ -526,12 +591,14 @@ def _task_fundamentals_daily():
                 # Run on weekdays after 6 PM, after daily ingest
                 if ist_now.weekday() < 5 and ist_now.hour >= 18:
                     update(tid, "Running lightweight Morningstar sync...")
-                    print("[MYRA BG] Daily lightweight fundamentals sync running...")
+                    logger.info(
+                        "[MYRA BG] Daily lightweight fundamentals sync running..."
+                    )
                     from myra_app.fundamental_sync import FundamentalSync
 
                     sync = FundamentalSync()
                     result = sync.run_ms_only()
-                    print(
+                    logger.info(
                         f"[MYRA BG] Fundamentals daily sync complete. "
                         f"MS: {result['ms_fetched']}, Inserted: {result['inserted']}, "
                         f"Errors: {result['errors']}"
@@ -559,19 +626,46 @@ def _task_fundamentals_daily():
 
 
 def _task_institutional_sync():
-    """Syncs bulk/block deals from NSE. Insider trades removed."""
+    """Syncs bulk/block deals from NSE every 7 days. Runs immediately if overdue."""
     from myra_app.task_tracker import register, unregister
 
     if _shutdown_event.is_set():
         return
+
+    if _is_task_overdue("institutional_sync", days=7):
+        tid = register("Institutional sync", task_type="one-shot")
+        try:
+            logger.info("[MYRA BG] Institutional sync overdue – running now...")
+            from myra_app.utils.institutional_sync import sync_institutional_data
+
+            sync_institutional_data(task_id=tid)
+            _mark_task_run("institutional_sync")
+            logger.info("[MYRA BG] Institutional sync complete (catch-up).")
+        except Exception as e:
+            logger.error(f"[MYRA BG] Institutional sync (catch-up) failed: {e}")
+        finally:
+            unregister(tid)
+
+    if _shutdown_event.is_set():
+        return
+
     tid = register("Institutional sync", task_type="indefinite")
     try:
-        from myra_app.utils.institutional_sync import sync_institutional_data
+        while not _shutdown_event.is_set():
+            try:
+                if _is_task_due("institutional_sync", WEEKLY_INTERVAL_DAYS):
+                    from myra_app.utils.institutional_sync import (
+                        sync_institutional_data,
+                    )
 
-        print("[MYRA BG] Running institutional sync...")
-        sync_institutional_data(task_id=tid)  # Only sync if table is empty
-    except Exception as e:
-        logger.error(f"[MYRA BG] Institutional sync failed: {e}")
+                    logger.info("[MYRA BG] Institutional sync due – running...")
+                    sync_institutional_data(task_id=tid)
+                    _mark_task_run("institutional_sync")
+            except Exception as e:
+                logger.error(f"[MYRA BG] Institutional sync failed: {e}")
+            for _ in range(60):
+                if _shutdown_event.wait(60):
+                    return
     finally:
         unregister(tid)
 
@@ -587,33 +681,19 @@ def _task_db_backup():
     try:
         while not _shutdown_event.is_set():
             try:
-                ist_now = datetime.now(timezone.utc).astimezone(IST)
-                
-                # Run at midnight IST (00:00-00:59)
-                if ist_now.hour == 0 and ist_now.minute < 5:  # Small window to ensure once per day
+                if _is_task_due("db_backup", interval_days=1):
                     from myra_app.utils.db_backup import rotate_backups
 
-                    print("[MYRA BG] Running nightly DB backup at midnight IST...")
-                    rotate_backups(task_id=tid, keep_last_days=7)  # Keep only last 7 days
-                    print("[MYRA BG] Nightly DB backup complete.")
-                    
-                    # Wait until next day to avoid multiple runs
-                    # Calculate seconds until next midnight
-                    tomorrow = ist_now.replace(hour=0, minute=0, second=0) + timedelta(days=1)
-                    seconds_until_midnight = (tomorrow - ist_now).total_seconds()
-                    
-                    # Wait in smaller chunks to be responsive to shutdown
-                    while seconds_until_midnight > 0 and not _shutdown_event.is_set():
-                        wait_time = min(300, seconds_until_midnight)  # Max 5 minutes chunks
-                        if _shutdown_event.wait(wait_time):
-                            return
-                        seconds_until_midnight -= wait_time
-                else:
-                    # Check again in 30 minutes
-                    # PERFORMANCE IMPROVEMENT: Replace long wait with responsive loop
-                    for _ in range(30):  # 30 * 60 = 1800 seconds total
-                        if _shutdown_event.wait(60):
-                            return
+                    logger.info("[MYRA BG] Running nightly DB backup...")
+                    rotate_backups(task_id=tid, keep_last_days=7)
+                    logger.info("[MYRA BG] Nightly DB backup complete.")
+                    _mark_task_run("db_backup")
+
+                # Check again in 30 minutes
+                # PERFORMANCE IMPROVEMENT: Replace long wait with responsive loop
+                for _ in range(30):  # 30 * 60 = 1800 seconds total
+                    if _shutdown_event.wait(60):
+                        return
             except Exception as e:
                 logger.error(f"[MYRA BG] Daily DB backup failed: {e}")
                 # PERFORMANCE IMPROVEMENT: Replace long wait with responsive loop
@@ -627,12 +707,38 @@ def _task_db_backup():
 # ─── Public entry point ───────────────────────────────────────────────────────
 
 
-def start():
+def _set_seed_flag(flag_key: str):
+    """Set the seed flag in metadata."""
+    try:
+        lib = LibrarianCore(read_only=False)
+        lib.set_metadata(flag_key, "1")
+        lib.close()
+    except Exception as e:
+        logger.warning(f"Failed to set seed flag {flag_key}: {e}")
+
+
+def _seed_if_needed(flag_key: str, check_fn, seed_fn):
     """
-    Call this from myra.py on startup.
-    Launches all background tasks as daemon threads.
+    Generic helper for seeding logic.
+    Checks if seeding is needed based on check_fn, runs seed_fn if so.
     """
-    # Register signal handlers here, not at module level
+    try:
+        lib = LibrarianCore(read_only=True)
+        if lib.get_metadata(flag_key) == "1":
+            lib.close()
+            logger.info(f"[MYRA BG] {flag_key} seeding already done, skipping")
+            return
+        lib.close()
+
+        if check_fn():
+            seed_fn()
+        _set_seed_flag(flag_key)
+    except Exception as e:
+        logger.warning(f"{flag_key} seed check failed: {e}")
+
+
+def _register_signals():
+    """Register signal handlers for graceful shutdown."""
     signal.signal(signal.SIGINT, _graceful_shutdown)
     signal.signal(signal.SIGTERM, _graceful_shutdown)
     try:
@@ -644,207 +750,109 @@ def start():
     except ImportError:
         pass
 
-    # Ensure sync_log table exists for task tracking
-    _ensure_sync_log_table()
 
-    # Run DB Doctor synchronously first — schema must be ready before any data tasks
-    print("[MYRA BG] Running startup DB health check (synchronous)...")
-    _task_db_doctor()
+def _run_seed_checks():
+    """Run all seed checks in a background thread."""
+    import os
+    import sqlite3
 
-    # Seed ETF list on first run if DB is empty
-    try:
-        import os
-        import sqlite3
+    from myra_app.librarian import Librarian
+    from myra_app.librarian_core import LibrarianCore
 
-        from myra_app.librarian_core import LibrarianCore
+    # Seed ETF list
+    def etf_check():
+        _meta_db = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "db",
+            LibrarianCore.DB_MAP["meta"],
+        )
+        if os.path.exists(_meta_db):
+            try:
+                with sqlite3.connect(_meta_db, timeout=5) as _c:
+                    _count = _c.execute(
+                        "SELECT COUNT(*) FROM etf_blocklist"
+                    ).fetchone()[0]
+                    return _count < 50
+            except Exception as e:
+                logger.error(f"Could not verify ETF blocklist: {e}")
+        return True
+
+    def etf_seed():
+        logger.info("[MYRA BG] Seeding ETF blocklist for first time...")
         from myra_app.utils.etf_sync import sync_etf_list
 
-        # PERFORMANCE IMPROVEMENT: Use persistent metadata flag to avoid re-seeding
-        lib = LibrarianCore(read_only=True)
-        seed_flag = lib.get_metadata("seed_etf_done")
+        sync_etf_list(force=True)
+        logger.info("[MYRA BG] ETF seeding complete")
+
+    _seed_if_needed("seed_etf_done", etf_check, etf_seed)
+
+    # Seed NIFTY 500 index
+    def index_check():
+        lib = Librarian()
+        lib.connect()
+        result = len(lib.get_index_symbols("NIFTY 500")) < 100
         lib.close()
+        return result
 
-        if seed_flag != "1":
-            _meta_db = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)),
-                "db",
-                LibrarianCore.DB_MAP["meta"],
-            )
-            _needs_seed = True
-            if os.path.exists(_meta_db):
-                with sqlite3.connect(_meta_db, timeout=5) as _c:
-                    try:
-                        _count = _c.execute(
-                            "SELECT COUNT(*) FROM etf_blocklist"
-                        ).fetchone()[0]
-                        _needs_seed = _count < 50
-                    except Exception as e:
-                        logger.error(
-                            f"[MYRA BG] Could not verify ETF blocklist metadata: {e}"
-                        )
-                        _needs_seed = True
-            if _needs_seed:
-                print("[MYRA BG] Seeding ETF blocklist for first time...")
-                sync_etf_list(force=True)
-                # Mark as seeded
-                lib = LibrarianCore(read_only=False)
-                lib.set_metadata("seed_etf_done", "1")
-                lib.close()
-                logger.info("[MYRA BG] ETF seeding marked as complete")
-            else:
-                # Already seeded, mark flag
-                lib = LibrarianCore(read_only=False)
-                lib.set_metadata("seed_etf_done", "1")
-                lib.close()
-                logger.info("[MYRA BG] ETF seeding flag set (already has data)")
-        else:
-            logger.info("[MYRA BG] ETF seeding already done, skipping")
-    except Exception as e:
-        logger.warning(f"ETF seed failed: {e}")
+    def index_seed():
+        logger.info("[MYRA BG] Seeding NIFTY 500 constituents...")
+        sync_index_constituents("NIFTY 500", force=True)
+        logger.info("[MYRA BG] Index seeding complete")
 
-    # Seed NIFTY 500 on first run if empty
-    try:
-        from myra_app.librarian import Librarian
-        from myra_app.librarian_core import LibrarianCore
+    _seed_if_needed("seed_index_done", index_check, index_seed)
 
-        # PERFORMANCE IMPROVEMENT: Use persistent metadata flag to avoid re-seeding
-        lib_meta = LibrarianCore(read_only=True)
-        seed_flag = lib_meta.get_metadata("seed_index_done")
-        lib_meta.close()
-
-        if seed_flag != "1":
-            lib = Librarian()
-            lib.connect()
-            if len(lib.get_index_symbols("NIFTY 500")) < 100:
-                print("[MYRA BG] Seeding NIFTY 500 constituents...")
-                sync_index_constituents("NIFTY 500", force=True)
-                # Mark as seeded
-                lib_meta = LibrarianCore(read_only=False)
-                lib_meta.set_metadata("seed_index_done", "1")
-                lib_meta.close()
-                logger.info("[MYRA BG] Index seeding marked as complete")
-            else:
-                # Already seeded, mark flag
-                lib_meta = LibrarianCore(read_only=False)
-                lib_meta.set_metadata("seed_index_done", "1")
-                lib_meta.close()
-                logger.info("[MYRA BG] Index seeding flag set (already has data)")
-            lib.close()
-        else:
-            logger.info("[MYRA BG] Index seeding already done, skipping")
-    except Exception as e:
-        logger.warning(f"NIFTY 500 seed failed: {e}")
-
-    # Seed fundamentals if empty
-    try:
-        import os
-        import sqlite3
-
-        from myra_app.constants import DB_DIR
-        from myra_app.librarian_core import LibrarianCore
-
-        # PERFORMANCE IMPROVEMENT: Use persistent metadata flag to avoid re-seeding
-        lib_meta = LibrarianCore(read_only=True)
-        seed_flag = lib_meta.get_metadata("seed_fundamentals_done")
-        lib_meta.close()
-
-        if seed_flag != "1":
-            val_db = os.path.join(DB_DIR, "myra_valuation.db")
-            if os.path.exists(val_db):
+    # Seed fundamentals
+    def fundamentals_check():
+        val_db = os.path.join(DB_DIR, "myra_valuation.db")
+        if os.path.exists(val_db):
+            try:
                 with sqlite3.connect(val_db, timeout=5) as vconn:
-                    # Check if ANY fundamental metric is missing
                     missing = vconn.execute(
                         "SELECT COUNT(*) FROM fundamentals WHERE pe IS NULL OR pe=0 "
                         "OR roe IS NULL OR roe=0 OR market_cap IS NULL OR market_cap=0"
                     ).fetchone()[0]
-                    if missing > 500:  # >500 stocks with blanks → seed
-                        print(f"[MYRA BG] Seeding fundamentals for {missing} stocks...")
-                        sync_fundamentals(force=True)
-                        # Mark as seeded
-                        lib_meta = LibrarianCore(read_only=False)
-                        lib_meta.set_metadata("seed_fundamentals_done", "1")
-                        lib_meta.close()
-                        logger.info("[MYRA BG] Fundamentals seeding marked as complete")
-                    else:
-                        # Already seeded, mark flag
-                        lib_meta = LibrarianCore(read_only=False)
-                        lib_meta.set_metadata("seed_fundamentals_done", "1")
-                        lib_meta.close()
-                        logger.info(
-                            "[MYRA BG] Fundamentals seeding flag set (already has data)"
-                        )
-        else:
-            logger.info("[MYRA BG] Fundamentals seeding already done, skipping")
-    except Exception as e:
-        logger.warning(f"Fundamentals seed check failed: {e}")
+                    return missing > 500
+            except Exception as e:
+                logger.warning(f"Could not check fundamentals: {e}")
+        return True
 
-    # Seed institutional data if table is empty
-    try:
-        import os
-        import sqlite3
+    def fundamentals_seed():
+        logger.info("[MYRA BG] Seeding fundamentals...")
+        from myra_app.fundamental_sync import FundamentalSync
 
-        from myra_app.constants import DB_DIR
-        from myra_app.librarian_core import LibrarianCore
+        sync = FundamentalSync()
+        sync.run_full_sync()
+        logger.info("[MYRA BG] Fundamentals seeding complete")
 
-        # PERFORMANCE IMPROVEMENT: Use persistent metadata flag to avoid re-seeding
-        lib_meta = LibrarianCore(read_only=True)
-        seed_flag = lib_meta.get_metadata("seed_institutional_done")
-        lib_meta.close()
+    _seed_if_needed("seed_fundamentals_done", fundamentals_check, fundamentals_seed)
 
-        if seed_flag != "1":
-            inst_db = os.path.join(DB_DIR, "myra_institutional.db")
-            if os.path.exists(inst_db):
+    # Seed institutional data
+    def institutional_check():
+        inst_db = os.path.join(DB_DIR, "myra_institutional.db")
+        if os.path.exists(inst_db):
+            try:
                 with sqlite3.connect(inst_db, timeout=5) as iconn:
                     count = iconn.execute(
                         "SELECT COUNT(*) FROM large_deals"
                     ).fetchone()[0]
-                    if count < 100:
-                        print("[MYRA BG] Seeding institutional data...")
-                        from myra_app.utils.institutional_sync import (
-                            sync_institutional_data,
-                        )
+                    return count < 100
+            except Exception as e:
+                logger.warning(f"Could not check institutional data: {e}")
+        return True
 
-                        sync_institutional_data(force=True)
-                        # Mark as seeded
-                        lib_meta = LibrarianCore(read_only=False)
-                        lib_meta.set_metadata("seed_institutional_done", "1")
-                        lib_meta.close()
-                        logger.info(
-                            "[MYRA BG] Institutional seeding marked as complete"
-                        )
-                    else:
-                        # Already seeded, mark flag
-                        lib_meta = LibrarianCore(read_only=False)
-                        lib_meta.set_metadata("seed_institutional_done", "1")
-                        lib_meta.close()
-                        logger.info(
-                            "[MYRA BG] Institutional seeding flag set (already has data)"
-                        )
-        else:
-            logger.info("[MYRA BG] Institutional seeding already done, skipping")
-    except Exception as e:
-        logger.warning(f"Institutional seed check failed: {e}")
+    def institutional_seed():
+        logger.info("[MYRA BG] Seeding institutional data...")
+        from myra_app.utils.institutional_sync import sync_institutional_data
 
-    # Initial backup on first startup
-    try:
-        from myra_app.utils.db_backup import rotate_backups
+        sync_institutional_data(force=True)
+        _mark_task_run("institutional_sync")
+        logger.info("[MYRA BG] Institutional seeding complete")
 
-        backup_dir = os.path.join(DB_DIR, "backups")
-        if not os.path.exists(backup_dir) or len(os.listdir(backup_dir)) == 0:
-            print("[MYRA BG] Creating initial DB backup...")
-            rotate_backups()
-    except Exception as e:
-        logger.warning(f"Initial backup check failed: {e}")
+    _seed_if_needed("seed_institutional_done", institutional_check, institutional_seed)
 
-    # Catch-up: Run daily ingest immediately if overdue (>1 day)
-    try:
-        if _is_task_overdue("daily_ingest", days=1):
-            print("[MYRA BG] Daily ingest overdue – running catch-up now...")
-            _task_daily_ingest(force=True)
-    except Exception as e:
-        logger.warning(f"[MYRA BG] Daily ingest catch-up failed: {e}")
 
-    # Now launch remaining tasks as background threads
+def _launch_background_threads():
+    """Launch all background tasks as daemon threads."""
     tasks = [
         ("daily-ingest", _task_daily_ingest),
         ("watchdog", _task_watchdog),
@@ -855,11 +863,51 @@ def start():
         ("institutional-sync", _task_institutional_sync),
         ("db-backup", _task_db_backup),
     ]
+    threads = [
+        threading.Thread(target=fn, name=f"myra-bg-{name}", daemon=True)
+        for name, fn in tasks
+    ]
     with _task_lock:
-        for name, fn in tasks:
-            t = threading.Thread(target=fn, name=f"myra-bg-{name}", daemon=True)
+        for t in threads:
             t.start()
-            _active_tasks.append(t)  # noqa: PG-APPEND
-            logger.info(f"[MYRA BG] Started task: {name}")
+        _active_tasks.extend(threads)
+    for name, _ in tasks:
+        logger.info(f"[MYRA BG] Started task: {name}")
 
-    print("[MYRA BG] Background orchestrator running.")
+
+def start():
+    """
+    Call this from myra.py on startup.
+    Launches all background tasks as daemon threads.
+    """
+    _register_signals()
+
+    _ensure_sync_log_table()
+
+    logger.info("[MYRA BG] Running startup DB health check (synchronous)...")
+    _task_db_doctor()
+
+    threading.Thread(target=_run_seed_checks, daemon=True).start()
+
+    # Initial backup on first startup
+    try:
+        from myra_app.utils.db_backup import rotate_backups
+
+        backup_dir = os.path.join(DB_DIR, "backups")
+        if not os.path.exists(backup_dir) or len(os.listdir(backup_dir)) == 0:
+            logger.info("[MYRA BG] Creating initial DB backup...")
+            rotate_backups()
+    except Exception as e:
+        logger.warning(f"Initial backup check failed: {e}")
+
+    # Catch-up: Run daily ingest immediately if overdue (>1 day)
+    try:
+        if _is_task_overdue("daily_ingest", days=1):
+            logger.info("[MYRA BG] Daily ingest overdue – running catch-up now...")
+            _task_daily_ingest(force=True)
+    except Exception as e:
+        logger.warning(f"[MYRA BG] Daily ingest catch-up failed: {e}")
+
+    _launch_background_threads()
+
+    logger.info("[MYRA BG] Background orchestrator running.")

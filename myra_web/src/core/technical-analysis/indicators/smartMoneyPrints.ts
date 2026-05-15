@@ -4,28 +4,39 @@ export interface SmartMoneyPrintsResult {
     x: string[];
     y: number[];
     text: string[];
+    colors: string[];
+    fillColors: string[];
+    sizes: number[];
 }
 
 export const smartMoneyPrintsIndicator: IndicatorModule<any, SmartMoneyPrintsResult> = {
     id: 'smartMoneyPrints',
     
-    calculate: (data, config, context) => { // we use data directly
+    calculate: (data, config, context) => {
         const dates: string[] = [];
         const ys: number[] = [];
         const text: string[] = [];
+        const colors: string[] = [];
+        const fillColors: string[] = [];
+        const sizes: number[] = [];
         
-        // simple SMA over 20 for volumes
         const avgVol20: number[] = [];
+        let windowSum = 0;
+
         for (let i = 0; i < data.length; i++) {
-            if (i < 19) {
-                // For the first 19 bars, we can compute a shorter SMA or just use 0 and not trigger it.
-                // It's safer to not trigger smart money prints until we have at least 20 periods
-                avgVol20.push(0);
-                continue;
+            const currentVol = data[i].volume_final != null ? Number(data[i].volume_final) : Number(data[i].volume) || 0;
+            windowSum += currentVol;
+
+            if (i >= 20) {
+                const oldVol = data[i - 20].volume_final != null ? Number(data[i - 20].volume_final) : Number(data[i - 20].volume) || 0;
+                windowSum -= oldVol;
             }
-            let sum = 0;
-            for (let j = 0; j < 20; j++) sum += (data[i-j].volume_final != null ? Number(data[i-j].volume_final) : Number(data[i-j].volume) || 0);
-            avgVol20.push(sum / 20);
+
+            if (i < 19) {
+                avgVol20.push(0);
+            } else {
+                avgVol20.push(windowSum / 20);
+            }
         }
 
         for (let i = 0; i < data.length; i++) {
@@ -34,20 +45,31 @@ export const smartMoneyPrintsIndicator: IndicatorModule<any, SmartMoneyPrintsRes
             const delPct = d.delivery_pct != null ? d.delivery_pct : (d.delivery_final ? (Number(d.delivery_final) / vol * 100) : 0) || 0;
             const avgV = avgVol20[i];
             
-             // Criteria: High relative volume (>1.5x 20MA) AND high delivery % (>60%)
-             // Require we have at least 20 periods (avgV > 0)
-             if (avgV > 0 && vol > avgV * 1.5 && delPct > 60) {
-                 dates.push(d.date);
-                 const isBullish = d.close >= d.open;
-                 ys.push(isBullish ? d.low * 0.99 : d.high * 1.01);
-                 text.push(`Smart Money<br>Rel Vol: ${(vol/avgV).toFixed(1)}x<br>Del: ${(delPct).toFixed(1)}%`);
-             }
+            if (avgV > 0 && vol > avgV * 1.5 && delPct > 60) {
+                dates.push(d.date);
+                const isBullish = d.close >= d.open;
+                ys.push(isBullish ? d.low * 0.99 : d.high * 1.01);
+                
+                const volMult = vol / avgV;
+                text.push(`Smart Money<br>Rel Vol: ${volMult.toFixed(1)}x<br>Del: ${(delPct).toFixed(1)}%`);
+                
+                colors.push(isBullish ? '#22c55e' : '#ef4444');
+                fillColors.push(isBullish ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)');
+                
+                // Scale marker size based on relative volume multiplier. Base size = 10, max = 24.
+                const scaledSize = Math.min(24, 10 + (volMult - 1.5) * 4);
+                sizes.push(scaledSize);
+            }
         }
         
         return {
             x: dates,
             y: ys,
-            text
+            text,
+            colors,
+            fillColors,
+            sizes
         };
     }
 };
+

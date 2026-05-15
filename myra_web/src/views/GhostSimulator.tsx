@@ -1,6 +1,15 @@
 import { useState } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { Ghost, CheckCircle2, Play, Settings2, ShieldAlert } from 'lucide-react';
+import { Ghost, CheckCircle2, Play, Settings2, ShieldAlert, AlertTriangle } from 'lucide-react';
+
+interface SimulationResults {
+  totalTrades: number;
+  winRate: number;
+  avgReturn: number;
+  maxDrawdown: number;
+  sharpe: number;
+  profitFactor: number;
+}
 
 export default function GhostSimulatorView({ lib }: { lib: Librarian }) {
   const [params, setParams] = useState({
@@ -12,11 +21,13 @@ export default function GhostSimulatorView({ lib }: { lib: Librarian }) {
   });
   
   const [running, setRunning] = useState(false);
-  const [results, setResults] = useState<any>(null);
+  const [results, setResults] = useState<SimulationResults | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const runSimulation = () => {
     setRunning(true);
     setResults(null);
+    setErrorMsg(null);
     
     // Simulate backtesting Python engine calculation
     setTimeout(() => {
@@ -39,7 +50,14 @@ export default function GhostSimulatorView({ lib }: { lib: Librarian }) {
           <Ghost size={20} className="text-purple-400" />
           Ghost Trade Simulator
         </h3>
-        <span className="text-xs text-[#888] font-mono">Module: backtest.engine</span>
+        <div className="flex gap-2 items-center">
+            {errorMsg && (
+              <span className="text-[10px] bg-red-500/20 text-red-500 px-2 py-1 rounded font-mono border border-red-500/30 flex items-center gap-1">
+                 <AlertTriangle size={10} /> {errorMsg}
+              </span>
+            )}
+            <span className="text-xs text-[#888] font-mono">Module: backtest.engine</span>
+        </div>
       </div>
 
       <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">

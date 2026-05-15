@@ -37,27 +37,9 @@ def run_with_hard_timeout(func, args, timeout=30):
     Forcibly kills workers that hang at the C-extension level (scrapling/curl_cffi).
     DEPRECATED: Use multiprocessing.Pool for high-throughput scans.
     """
-    import multiprocessing as mp
-
-    q = mp.Queue()
-
-    def wrapper(q, *args):
-        try:
-            res = func(*args)
-            q.put(res)
-        except Exception:
-            q.put(None)
-
-    p = mp.Process(target=wrapper, args=(q, *args))
-    p.start()
-    p.join(timeout)
-
-    if p.is_alive():
-        p.terminate()
-        p.join()
-        return None
-
-    return q.get() if not q.empty() else None
+    raise DeprecationWarning(
+        "run_with_hard_timeout is deprecated. Use multiprocessing.Pool for high-throughput scans."
+    )
 
 
 class ScanWatchdog(threading.Thread):
@@ -84,6 +66,10 @@ class ScanWatchdog(threading.Thread):
                 print(
                     f"\n[CRITICAL] SCANNER STUCK FOR {self.timeout}s! Emergency abort."
                 )
+                # Hard exit is necessary here because the scanner may be stuck
+                # at the C-extension level (scrapling/curl_cffi) and cannot be
+                # interrupted via normal exception handling.
+                # Ensure DB connections are closed before exit.
                 os._exit(1)
             time.sleep(10)
 
@@ -96,8 +82,13 @@ class Engine:
         self.librarian = librarian
 
     def calculate_accuracy(
-        self, symbol: str, strategy_name: str, df: pd.DataFrame = None, funda: dict = {}
+        self,
+        symbol: str,
+        strategy_name: str,
+        df: pd.DataFrame = None,
+        funda: dict = None,
     ) -> str:
+        funda = funda or {}
         if df is None or df.empty:
             try:
                 adapter = DataAdapter(librarian=self.librarian)
@@ -189,8 +180,6 @@ class Engine:
         as_of_date: str = None,
         silent: bool = False,
     ):
-        import time
-
         start_time = time.time()
         precomputed = {}
         lib = self.librarian
@@ -261,20 +250,28 @@ class Engine:
             )
 
             try:
-                import os
-                import sqlite3
+                # Use lib._meta_conn if available to reuse connection pool
+                if lib._meta_conn:
+                    meta_df = pd.read_sql(
+                        "SELECT symbol, instrument_type FROM symbols_master",
+                        lib._meta_conn,
+                    )
+                else:
+                    # Fallback to direct connection if _meta_conn not available
+                    import os
+                    import sqlite3
 
-                from myra_app.librarian_core import LibrarianCore
+                    from myra_app.librarian_core import LibrarianCore
 
-                meta_conn = sqlite3.connect(
-                    os.path.join(os.getcwd(), "db", LibrarianCore.DB_MAP["meta"]),
-                    timeout=10,
-                    check_same_thread=False,
-                )
-                meta_df = pd.read_sql(
-                    "SELECT symbol, instrument_type FROM symbols_master", meta_conn
-                )
-                meta_conn.close()
+                    meta_conn = sqlite3.connect(
+                        os.path.join(os.getcwd(), "db", LibrarianCore.DB_MAP["meta"]),
+                        timeout=10,
+                        check_same_thread=False,
+                    )
+                    meta_df = pd.read_sql(
+                        "SELECT symbol, instrument_type FROM symbols_master", meta_conn
+                    )
+                    meta_conn.close()
                 equity_symbols = set(
                     meta_df.loc[
                         meta_df["instrument_type"] == "EQUITY", "symbol"
@@ -310,12 +307,14 @@ class Engine:
             placeholders = ",".join(["?"] * len(target_symbols))
             muhurat_dates = lib.get_muhurat_dates()
             if muhurat_dates:
-                mh_placeholders = ",".join([f"'{d}'" for d in muhurat_dates])
+                mh_placeholders = ",".join(["?"] * len(muhurat_dates))
                 query = f"SELECT * FROM technical_data WHERE symbol IN ({placeholders}) AND date NOT IN ({mh_placeholders}) ORDER BY symbol, date"
+                params = target_symbols + list(muhurat_dates)
             else:
                 query = f"SELECT * FROM technical_data WHERE symbol IN ({placeholders}) ORDER BY symbol, date"
+                params = target_symbols
             raw_df = pl.read_database(
-                query, lib._tech_conn, execute_options={"parameters": target_symbols}
+                query, lib._tech_conn, execute_options={"parameters": params}
             )
 
             if not raw_df.is_empty():
@@ -348,6 +347,7 @@ class Engine:
         watchdog = ScanWatchdog(timeout=120)
         watchdog.start()
 
+        results = []
         try:
             results = run_workers(
                 payloads, strategy_name, lib.db_path, silent=silent, watchdog=watchdog
@@ -378,7 +378,7 @@ class Engine:
         skipped = [
             r for r in results if isinstance(r, dict) and r.get("status") == "SKIPPED"
         ]
-        if failed:
+        if failed and not silent:
             print(f"\n❌ Failed Symbols ({len(failed)}):")
             for f in failed[:10]:
                 print(f"   • {f['symbol']}: {f.get('error', 'unknown')}")
@@ -389,7 +389,7 @@ class Engine:
         results = [
             r
             for r in results
-            if isinstance(r, dict) and r.get("signal") or r.get("Stock")
+            if isinstance(r, dict) and (r.get("signal") or r.get("Stock"))
         ]
 
         if not silent:
@@ -399,13 +399,12 @@ class Engine:
             )
 
         try:
-            lineage_path = self.fetcher.lineage.save()
-            if not silent:
-                print(f"[MYRA] Data Lineage saved to {lineage_path}")
+            # Use librarian.lineage if available, otherwise skip gracefully
+            if hasattr(self.librarian, "lineage"):
+                lineage_path = self.librarian.lineage.save()
+                if not silent:
+                    print(f"[MYRA] Data Lineage saved to {lineage_path}")
         except Exception:
             pass
 
         return results, {}
-
-
-from myra_app.smc_manager import SMCManager

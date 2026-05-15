@@ -1,79 +1,158 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { Map as MapIcon, Activity, TrendingUp, Calendar, Search } from 'lucide-react';
+import { Map as MapIcon, Activity, TrendingUp, Calendar, RefreshCw } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from 'recharts';
+import { useSettings } from '../lib/SettingsContext';
+import { resolveBucket } from '../lib/bucketUtils';
+
+interface SectorData {
+  name: string;
+  flow: number;
+  avg_del: number;
+}
+
+const toLocalDate = (d: Date) => {
+  const offset = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - offset).toISOString().split('T')[0];
+};
 
 export default function SectorFlowView({ lib }: { lib: Librarian }) {
-  const [data, setData] = useState<any[]>([]);
-  const [startDate, setStartDate] = useState(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]); // Default 7 days ago
-  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const { settings } = useSettings();
+  const [data, setData] = useState<SectorData[]>([]);
+  const [startDate, setStartDate] = useState(toLocalDate(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)));
+  const [endDate, setEndDate] = useState(toLocalDate(new Date()));
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isDemo, setIsDemo] = useState(false);
   const [filterMcap, setFilterMcap] = useState<string>('All');
   const [filterSector, setFilterSector] = useState<string>('All');
   const [groupBy, setGroupBy] = useState<'sector'|'index'>('sector');
+  const [netDirectionalFlow, setNetDirectionalFlow] = useState(false);
   const [availableSectors, setAvailableSectors] = useState<string[]>([]);
+  const [metaMap, setMetaMap] = useState<Map<string, { sector: string; bucket: string }>>(new Map());
+  const [metaLoaded, setMetaLoaded] = useState(false);
 
   useEffect(() => {
-    fetchSectorFlows();
-  }, [groupBy, filterMcap, filterSector]);
+    let active = true;
+    const fetchMeta = async () => {
+      if (!lib.isConnectedToLocalRepo) {
+        if (active) setMetaLoaded(true);
+        return;
+      }
+      try {
+        const symbolsQuery = `SELECT symbol as ticker, sector, in_nifty500 FROM symbols_master LIMIT 10000`;
+        const symbolsResult = await lib.executeQuery('_meta_conn', symbolsQuery, {}, 12000);
+        
+        const indexResult = await lib.executeQuery('_meta_conn', 'SELECT symbol, index_name FROM index_constituents LIMIT 5000');
+        const indicesMap = new Map<string, string[]>();
+        if (indexResult && Array.isArray(indexResult)) {
+          indexResult.forEach((row: any) => {
+            if (indicesMap.has(row.symbol)) {
+                indicesMap.get(row.symbol)!.push(row.index_name);
+            } else {
+                indicesMap.set(row.symbol, [row.index_name]);
+            }
+          });
+        }
 
-  const fetchSectorFlows = async () => {
+        const mMap = new Map();
+        const sectors = new Set<string>();
+        
+        if (symbolsResult && Array.isArray(symbolsResult)) {
+           for (const m of symbolsResult) {
+              const indices = indicesMap.get(m.ticker) || [];
+              const bucket = resolveBucket(indices, m.in_nifty500);
+              const normalizedSector = (m.sector && m.sector.trim() !== '') ? m.sector : 'Uncharted Sector';
+              sectors.add(normalizedSector);
+              mMap.set(m.ticker, {
+                  sector: normalizedSector,
+                  bucket: bucket
+              });
+           }
+        }
+        if (active) {
+          setAvailableSectors(Array.from(sectors).sort());
+          setMetaMap(mMap);
+          setMetaLoaded(true);
+        }
+      } catch (err) {
+        console.error(err);
+        if (active) setMetaLoaded(true);
+      }
+    };
+    fetchMeta();
+    return () => { active = false; };
+  }, [lib]);
+
+  const generateMockData = useCallback(() => {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const diffTime = Math.abs(end.getTime() - start.getTime());
+    const diffDays = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+    const scale = (diffDays / 7);
+
+    let mockData: SectorData[] = [];
+    if (groupBy === 'sector') {
+        mockData = [
+          { name: 'IT Services', flow: 4500000000 * scale, avg_del: 68.2 },
+          { name: 'Financials', flow: 3800000000 * scale, avg_del: 55.4 },
+          { name: 'Auto', flow: 2100000000 * scale, avg_del: 61.1 },
+          { name: 'Pharma', flow: 1800000000 * scale, avg_del: 42.8 },
+          { name: 'FMCG', flow: 1200000000 * scale, avg_del: 71.5 },
+          { name: 'Energy', flow: 950000000 * scale, avg_del: 35.2 },
+          { name: 'Metals', flow: -400000000 * scale, avg_del: 22.1 },
+        ];
+    } else {
+        mockData = [
+          { name: 'Large Cap (N50)', flow: 9500000000 * scale, avg_del: 62.2 },
+          { name: 'Large Cap (N100)', flow: 4200000000 * scale, avg_del: 58.4 },
+          { name: 'Broader Market (N500)', flow: 2100000000 * scale, avg_del: 60.1 },
+          { name: 'Deep Frontier', flow: 600000000 * scale, avg_del: 45.8 },
+        ];
+    }
+
+    if (filterSector !== 'All') {
+        mockData = mockData.filter(d => d.name === filterSector || groupBy !== 'sector');
+    }
+    if (filterMcap !== 'All') {
+        mockData = mockData.filter(d => d.name === filterMcap || groupBy !== 'index');
+    }
+
+    setData(mockData);
+  }, [startDate, endDate, groupBy, filterSector, filterMcap]);
+
+  const fetchSectorFlows = useCallback(async () => {
+    if (!metaLoaded) return;
     setLoading(true);
     setErrorMsg(null);
-    setIsDemo(!lib.isConnectedToLocalRepo);
+    console.debug('[SectorFlow] Fetching', { startDate, endDate, filterMcap, filterSector, groupBy });
+    
+    if (new Date(startDate) > new Date(endDate)) {
+      setErrorMsg('Start date must be before end date.');
+      setLoading(false);
+      return;
+    }
+
+    const mockMode = !lib.isConnectedToLocalRepo || settings.mockDataMode;
+    setIsDemo(mockMode);
     
     try {
-      const symbolsQuery = `SELECT symbol as ticker, sector, in_nifty500 FROM symbols_master`;
-      const symbolsResult = await lib.executeQuery('_meta_conn', symbolsQuery, {}, 12000);
-      
-      const indexResult = await lib.executeQuery('_meta_conn', 'SELECT symbol, index_name FROM index_constituents LIMIT 5000');
-      const indicesMap = new Map<string, string[]>();
-      if (indexResult && Array.isArray(indexResult)) {
-        indexResult.forEach((row: any) => {
-          if (indicesMap.has(row.symbol)) {
-              indicesMap.get(row.symbol)!.push(row.index_name);
-          } else {
-              indicesMap.set(row.symbol, [row.index_name]);
-          }
-        });
+      if (mockMode) {
+        if (!lib.isConnectedToLocalRepo) setErrorMsg('Database unavailable - generating mock data.');
+        generateMockData();
+        setLoading(false);
+        return;
       }
 
-      const metaMap = new Map();
-      const sectors = new Set<string>();
-      
-      if (symbolsResult) {
-         for (const m of symbolsResult) {
-            const indices = indicesMap.get(m.ticker) || [];
-            let bucket = "Deep Frontier";
-            if (indices.some((i: string) => i.includes('NIFTY 50') && !i.includes('NEXT'))) {
-                bucket = "Large Cap (N50)";
-            } else if (indices.some((i: string) => i.includes('NIFTY NEXT 50'))) {
-                bucket = "Large Cap (N100)";
-            } else if (indices.some((i: string) => i.includes('NIFTY SMALLCAP 250') || i.includes('SMALL CAP 250'))) {
-                bucket = "Nifty Small Cap 250";
-            } else if (m.in_nifty500 === 1 || indices.some((i: string) => i.includes('NIFTY 500'))) {
-                bucket = "Broader Market (N500)";
-            }
-            const normalizedSector = (m.sector && m.sector.trim() !== '') ? m.sector : 'Uncharted Sector';
-            sectors.add(normalizedSector);
-            metaMap.set(m.ticker, {
-                sector: normalizedSector,
-                bucket: bucket
-            });
-         }
-      }
-      
-      setAvailableSectors(Array.from(sectors).sort());
-
+      // SECURE SQL: Parameterize date filtering
       const techQuery = `
-        SELECT symbol as ticker, SUM(delivery * close) as raw_flow, AVG((delivery * 100.0) / NULLIF(volume, 0)) as delivery_pct
+        /* Delivery-weighted turnover proxy using daily VWAP as transaction price. Not true capital flow; suitable for cross-sector comparison within a date range. */
+        SELECT symbol as ticker, ${netDirectionalFlow ? 'SUM(CASE WHEN close >= open THEN delivery * COALESCE(vwap, (high + low + close) / 3) ELSE -delivery * COALESCE(vwap, (high + low + close) / 3) END)' : 'SUM(delivery * COALESCE(vwap, (high + low + close) / 3))'} as raw_flow, SUM(delivery) * 100.0 / NULLIF(SUM(volume), 0) as delivery_pct
         FROM technical_data
-        WHERE date >= '${startDate}' AND date <= '${endDate}'
+        WHERE date >= ? AND date <= ?
         GROUP BY symbol
       `;
-      const techResult = await lib.executeQuery('_tech_conn', techQuery, {}, 12000);
+      const techResult = await lib.executeQuery('_tech_conn', techQuery, [startDate, endDate], 12000);
 
       if (techResult && techResult.length > 0) {
          const flowMap: any = {};
@@ -95,7 +174,7 @@ export default function SectorFlowView({ lib }: { lib: Librarian }) {
             }
          }
 
-         const finalData = Object.keys(flowMap).map(key => ({
+         const finalData: SectorData[] = Object.keys(flowMap).map(key => ({
             name: key,
             flow: flowMap[key].capital_flow,
             avg_del: flowMap[key].count > 0 ? (flowMap[key].sum_delivery / flowMap[key].count) : 0
@@ -103,55 +182,33 @@ export default function SectorFlowView({ lib }: { lib: Librarian }) {
          
          setData(finalData);
       } else {
-        if (!lib.isConnectedToLocalRepo) {
-           setErrorMsg('No data returned for timeframe.');
-           generateMockData();
-        } else {
-           setData([]);
-        }
+        setData([]);
       }
     } catch (e: any) {
       console.error(e);
       setErrorMsg(e.message || 'Database unavailable - generating mock data.');
-      if (!lib.isConnectedToLocalRepo) generateMockData();
-      else setData([]);
+      setIsDemo(true);
+      generateMockData();
     } finally {
       setLoading(false);
     }
-  };
+  }, [lib, settings.mockDataMode, startDate, endDate, filterMcap, filterSector, groupBy, netDirectionalFlow, metaLoaded, metaMap, generateMockData]);
 
-  const generateMockData = () => {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const diffTime = Math.abs(end.getTime() - start.getTime());
-    const diffDays = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
-    const scale = (diffDays / 7);
+  useEffect(() => {
+    fetchSectorFlows();
+  }, [fetchSectorFlows]);
 
-    if (groupBy === 'sector') {
-        setData([
-          { name: 'IT Services', flow: 4500000000 * scale, avg_del: 68.2 },
-          { name: 'Financials', flow: 3800000000 * scale, avg_del: 55.4 },
-          { name: 'Auto', flow: 2100000000 * scale, avg_del: 61.1 },
-          { name: 'Pharma', flow: 1800000000 * scale, avg_del: 42.8 },
-          { name: 'FMCG', flow: 1200000000 * scale, avg_del: 71.5 },
-          { name: 'Energy', flow: 950000000 * scale, avg_del: 35.2 },
-          { name: 'Metals', flow: -400000000 * scale, avg_del: 22.1 },
-        ]);
-    } else {
-        setData([
-          { name: 'Large Cap (N50)', flow: 9500000000 * scale, avg_del: 62.2 },
-          { name: 'Large Cap (N100)', flow: 4200000000 * scale, avg_del: 58.4 },
-          { name: 'Broader Market (N500)', flow: 2100000000 * scale, avg_del: 60.1 },
-          { name: 'Deep Frontier', flow: 600000000 * scale, avg_del: 45.8 },
-        ]);
-    }
-  };
+  const uniqueSectors = useMemo(() =>
+    data.length > 0 ? [...new Set(data.map(d => d.name))] : [],
+  [data]);
 
   const formatCurrency = (val: number) => {
-    if (Math.abs(val) > 1000000000) return `₹${(val / 1000000000).toFixed(1)}B`;
-    if (Math.abs(val) > 1000000) return `₹${(val / 1000000).toFixed(1)}M`;
-    return `₹${val}`;
+    if (Math.abs(val) >= 1000000000) return `₹${(val / 1000000000).toFixed(1)}B`;
+    if (Math.abs(val) >= 1000000) return `₹${(val / 1000000).toFixed(1)}M`;
+    return `₹${Math.round(val).toLocaleString()}`;
   };
+
+  const displaySectors = availableSectors.length > 0 ? availableSectors : uniqueSectors;
 
   return (
     <div className="bg-[#1e2028] border border-[#ffffff1a] rounded flex flex-col shadow-xl min-h-[600px]">
@@ -207,111 +264,116 @@ export default function SectorFlowView({ lib }: { lib: Librarian }) {
                 <option className="bg-[#1a1c24] text-[#fafafa]" value="Deep Frontier">Deep Frontier</option>
             </select>
           </div>
-          <div className="flex-1 min-w-[150px]">
-            <label className="block text-xs font-mono text-[#888] uppercase mb-1">Filter Sector</label>
-            <select 
-                value={filterSector} 
-                onChange={(e) => setFilterSector(e.target.value)}
-                className="w-full bg-[#1a1c24] border border-[#ffffff1a] rounded px-3 h-[38px] text-sm text-[#fafafa] font-mono select-none outline-none focus:border-cyan-500"
+            <div className="flex-1 min-w-[150px]">
+              <label className="block text-xs font-mono text-[#888] uppercase mb-1">Filter Sector</label>
+              <select 
+                  value={filterSector} 
+                  onChange={(e) => setFilterSector(e.target.value)}
+                  className="w-full bg-[#1a1c24] border border-[#ffffff1a] rounded px-3 h-[38px] text-sm text-[#fafafa] font-mono select-none outline-none focus:border-cyan-500"
+              >
+                  <option className="bg-[#1a1c24] text-[#fafafa]" value="All">All Sectors</option>
+                  {displaySectors.map(s => <option className="bg-[#1a1c24] text-[#fafafa]" key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            
+            <div className="w-36">
+              <label className="block text-xs font-mono text-[#888] uppercase mb-1">Start Date</label>
+              <div className="relative">
+                <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555]" />
+                <input 
+                  type="date" 
+                  value={startDate}
+                  onChange={e => setStartDate(e.target.value)}
+                  className="w-full bg-[#1a1c24] border border-[#ffffff1a] rounded pl-8 pr-2 h-[38px] text-xs focus:outline-none focus:border-cyan-500 font-mono text-[#fafafa] [color-scheme:dark]"
+                />
+              </div>
+            </div>
+
+            <div className="w-36">
+              <label className="block text-xs font-mono text-[#888] uppercase mb-1">End Date</label>
+              <div className="relative">
+                <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555]" />
+                <input 
+                  type="date" 
+                  value={endDate}
+                  onChange={e => setEndDate(e.target.value)}
+                  className="w-full bg-[#1a1c24] border border-[#ffffff1a] rounded pl-8 pr-2 h-[38px] text-xs focus:outline-none focus:border-cyan-500 font-mono text-[#fafafa] [color-scheme:dark]"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-end mb-[5px] mr-2">
+               <label className="flex items-center gap-2 text-xs font-mono text-[#888] uppercase cursor-pointer">
+                  <input 
+                     type="checkbox" 
+                     className="accent-cyan-500 w-4 h-4 cursor-pointer"
+                     checked={netDirectionalFlow}
+                     onChange={e => setNetDirectionalFlow(e.target.checked)}
+                  />
+                  Net Directional Flow
+               </label>
+            </div>
+
+            <button 
+              onClick={fetchSectorFlows}
+              disabled={loading}
+              className="px-6 h-[38px] bg-cyan-600 hover:bg-cyan-700 text-white font-medium rounded text-sm transition-colors disabled:opacity-50 flex items-center justify-center min-w-[120px] gap-2"
             >
-                <option className="bg-[#1a1c24] text-[#fafafa]" value="All">All Sectors</option>
-                {availableSectors.map(s => <option className="bg-[#1a1c24] text-[#fafafa]" key={s} value={s}>{s}</option>)}
-                {isDemo && availableSectors.length === 0 && (
-                    <>
-                        <option className="bg-[#1a1c24] text-[#fafafa]" value="IT Services">IT Services</option>
-                        <option className="bg-[#1a1c24] text-[#fafafa]" value="Financials">Financials</option>
-                        <option className="bg-[#1a1c24] text-[#fafafa]" value="Energy">Energy</option>
-                    </>
-                )}
-            </select>
+              {loading ? <RefreshCw size={16} className="animate-spin" /> : <Activity size={16} />}
+              {loading ? 'Crunching...' : 'Analyze Flow'}
+            </button>
+          </div>
+
+          <div className="bg-[#0e1117] border border-[#ffffff0a] p-4 rounded-lg flex items-center gap-3">
+            <TrendingUp className="text-cyan-400" size={24} />
+            <div>
+               <h4 className="font-semibold text-sm">Net Capital Flow (Custom Range)</h4>
+               <p className="text-xs text-[#888] mt-1 pr-6">Measures total capital absorbed by institutional delivery across correlated sectors or indices. Darker bars indicate higher underlying delivery percentages over the selected period.</p>
+            </div>
+          </div>
+
+          <div className="flex-1 bg-[#1a1c24] rounded-lg border border-[#ffffff0a] p-4 h-[400px] min-h-[400px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 50 }}>
+                <XAxis 
+                  dataKey="name" 
+                  stroke="#888" 
+                  tick={{ fill: '#888', fontSize: 11 }} 
+                  angle={-45} 
+                  textAnchor="end" 
+                />
+                <YAxis 
+                  stroke="#666" 
+                  tickFormatter={formatCurrency} 
+                  tick={{ fill: '#666', fontSize: 10 }}
+                />
+                <Tooltip 
+                  cursor={{ fill: '#ffffff0a' }}
+                  contentStyle={{ backgroundColor: '#0e1117', border: '1px solid #333', borderRadius: '4px' }}
+                  formatter={(value: number, name: string) => {
+                    if (name === "Net Flow") return formatCurrency(value);
+                    return value;
+                  }}
+                />
+                <Bar dataKey="flow" name="Net Flow">
+                  {data.map((entry, index) => {
+                     // Color intensity based on delivery percentage
+                     const isNegative = entry.flow < 0;
+                     const intensity = entry.avg_del > 60 ? '500' : entry.avg_del > 40 ? '600' : '800';
+                     const color = isNegative ? '#ef4444' : (intensity === '500' ? '#06b6d4' : intensity === '600' ? '#0891b2' : '#155e75');
+                     return <Cell key={`cell-${index}`} fill={color} />;
+                  })}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           </div>
           
-          <div className="w-36">
-            <label className="block text-xs font-mono text-[#888] uppercase mb-1">Start Date</label>
-            <div className="relative">
-              <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555]" />
-              <input 
-                type="date" 
-                value={startDate}
-                onChange={e => setStartDate(e.target.value)}
-                className="w-full bg-[#1a1c24] border border-[#ffffff1a] rounded pl-8 pr-2 h-[38px] text-xs focus:outline-none focus:border-cyan-500 font-mono text-[#fafafa] [color-scheme:dark]"
-              />
-            </div>
+          <div className="flex gap-4 justify-end text-xs font-mono text-[#666]">
+             <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-cyan-500 rounded-sm"></div> Strong Accumulation (&gt;60% Del)</div>
+             <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-cyan-700 rounded-sm"></div> Weak Absorption</div>
+             <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-red-500 rounded-sm"></div> Capital Outflow</div>
           </div>
-
-          <div className="w-36">
-            <label className="block text-xs font-mono text-[#888] uppercase mb-1">End Date</label>
-            <div className="relative">
-              <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555]" />
-              <input 
-                type="date" 
-                value={endDate}
-                onChange={e => setEndDate(e.target.value)}
-                className="w-full bg-[#1a1c24] border border-[#ffffff1a] rounded pl-8 pr-2 h-[38px] text-xs focus:outline-none focus:border-cyan-500 font-mono text-[#fafafa] [color-scheme:dark]"
-              />
-            </div>
-          </div>
-
-          <button 
-            onClick={fetchSectorFlows}
-            disabled={loading}
-            className="px-6 h-[38px] bg-cyan-600 hover:bg-cyan-700 text-white font-medium rounded text-sm transition-colors disabled:opacity-50 flex items-center justify-center min-w-[120px] gap-2"
-          >
-            {loading ? <Search size={16} className="animate-pulse" /> : <Activity size={16} />}
-            {loading ? 'Crunching...' : 'Analyze Flow'}
-          </button>
-        </div>
-
-        <div className="bg-[#0e1117] border border-[#ffffff0a] p-4 rounded-lg flex items-center gap-3">
-          <TrendingUp className="text-cyan-400" size={24} />
-          <div>
-             <h4 className="font-semibold text-sm">Net Capital Flow (Custom Range)</h4>
-             <p className="text-xs text-[#888] mt-1 pr-6">Measures total capital absorbed by institutional delivery across correlated sectors or indices. Darker bars indicate higher underlying delivery percentages over the selected period.</p>
-          </div>
-        </div>
-
-        <div className="flex-1 bg-[#1a1c24] rounded-lg border border-[#ffffff0a] p-4 min-h-[400px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 50 }}>
-              <XAxis 
-                dataKey="name" 
-                stroke="#888" 
-                tick={{ fill: '#888', fontSize: 11 }} 
-                angle={-45} 
-                textAnchor="end" 
-              />
-              <YAxis 
-                stroke="#666" 
-                tickFormatter={formatCurrency} 
-                tick={{ fill: '#666', fontSize: 10 }}
-              />
-              <Tooltip 
-                cursor={{ fill: '#ffffff0a' }}
-                contentStyle={{ backgroundColor: '#0e1117', border: '1px solid #333', borderRadius: '4px' }}
-                formatter={(value: number, name: string) => {
-                  if (name === "Net Flow") return formatCurrency(value);
-                  return value;
-                }}
-              />
-              <Bar dataKey="flow" name="Net Flow">
-                {data.map((entry, index) => {
-                   // Color intensity based on delivery percentage
-                   const isNegative = entry.flow < 0;
-                   const intensity = entry.avg_del > 60 ? '500' : entry.avg_del > 40 ? '600' : '800';
-                   const color = isNegative ? '#ef4444' : (intensity === '500' ? '#06b6d4' : intensity === '600' ? '#0891b2' : '#155e75');
-                   return <Cell key={`cell-${index}`} fill={color} />;
-                })}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-        
-        <div className="flex gap-4 justify-end text-xs font-mono text-[#666]">
-           <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-cyan-400 rounded-sm"></div> Strong Accumulation (&gt;60% Del)</div>
-           <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-cyan-700 rounded-sm"></div> Weak Absorption</div>
-           <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-red-500 rounded-sm"></div> Capital Outflow</div>
         </div>
       </div>
-    </div>
-  );
-}
+    );
+  }

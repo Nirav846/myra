@@ -11,20 +11,25 @@ import SectorFlowView from './views/SectorFlow';
 import GhostSimulatorView from './views/GhostSimulator';
 import MultibaggerMatrixView from './views/MultibaggerMatrix';
 import InstDOMView from './views/InstDOM';
+import FiiDiiScannerView from './views/FiiDiiScanner';
+import PriceDeliveryDivergenceScannerView from './views/PriceDeliveryDivergenceScanner';
 import AdvancedChartView from './views/AdvancedChart';
 import ReversionEngineView from './views/ReversionEngine';
+import ValueRankerView from './views/ValueRanker';
 import { getLibrarian } from './lib/Librarian';
 import { useSettings } from './lib/SettingsContext';
 import { useHealthStatus } from './hooks/useHealthStatus';
 import { AlertManager } from './lib/AlertManager';
 import { DebugPanel } from './components/DebugPanel';
 import { SavedWorkspaces } from './components/SavedWorkspaces';
-import { AlertCircle, Terminal, Command, Settings as SettingsIcon, PanelLeftClose, PanelLeft } from 'lucide-react';
+import ScannerPresetsPanel from './components/ScannerPresetsPanel';
+import { AlertCircle, Terminal, Command, Settings as SettingsIcon, PanelLeftClose, PanelLeft, SlidersHorizontal } from 'lucide-react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 
 const TABS = [
   { id: 'Mission Control', path: '/mission-control', icon: '🎛️'},
   { id: 'Leaderboard', path: '/leaderboard', icon: '📊'},
+  { id: 'Price-Delivery Divergence', path: '/price-delivery-divergence', icon: '📉'},
   { id: 'FVG Scanner', path: '/fvg-scanner', icon: '📡'},
   { id: 'Historical Search', path: '/historical-search', icon: '🔍'},
   { id: 'Technical Chart', path: '/chart', icon: '📈'},
@@ -32,7 +37,9 @@ const TABS = [
   { id: 'Reversion Engine', path: '/reversion-engine', icon: '🌀'},
   { id: 'Ghost Simulator', path: '/ghost-simulator', icon: '👻'},
   { id: 'Multibagger Matrix', path: '/multibagger-matrix', icon: '🚀'},
-  { id: 'Inst. DOM', path: '/inst-dom', icon: '🧱'},
+  { id: 'Value Ranker', path: '/value-ranker', icon: '🎯'},
+  { id: 'Delivery Volume Profile', path: '/inst-dom', icon: '🧱'},
+  { id: 'FII/DII Scanner', path: '/fii-dii-scanner', icon: '🏢'},
   { id: 'Parquet Lake', path: '/parquet-lake', icon: '🌊'},
   { id: 'Tools & Sync', path: '/tools', icon: '⚙️'}
 ];
@@ -87,6 +94,7 @@ export default function App() {
                     (location.pathname === '/settings' ? 'Settings' : 'Mission Control');
 
   const [globalSelectedTicker, setGlobalSelectedTicker] = useState<string | undefined>();
+  const [showPresetsPanel, setShowPresetsPanel] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDesktopMenuExpanded, setIsDesktopMenuExpanded] = useState(false);
   
@@ -156,6 +164,20 @@ export default function App() {
     <div className={`flex h-screen w-full ${bgMain} text-[#fafafa] font-sans overflow-hidden transition-colors relative`}>
       <AlertManager />
       <DebugPanel />
+      {showPresetsPanel && (
+        <ScannerPresetsPanel
+          onClose={() => setShowPresetsPanel(false)}
+          onLoad={(preset) => {
+            let path = '/';
+            if (preset.module === 'ReversionEngine') path = '/reversion-engine';
+            else if (preset.module === 'MultibaggerMatrix') path = '/multibagger-matrix';
+            else if (preset.module === 'PriceDeliveryDivergence') path = '/price-delivery-divergence';
+            else if (preset.module === 'ValueRanker') path = '/value-ranker';
+            navigate(path);
+            setShowPresetsPanel(false);
+          }}
+        />
+      )}
       {isMobileMenuOpen && (
         <div className="fixed inset-0 bg-black/60 z-30 md:hidden backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />
       )}
@@ -297,7 +319,15 @@ export default function App() {
                 <p className="text-[10px] text-[#888] hidden sm:block">Librarian v3.2: Myra React Bridge</p>
               </div>
             </div>
-            <div className="px-4">
+            <div className="px-4 flex items-center gap-2">
+              <button
+                onClick={() => setShowPresetsPanel(true)}
+                className="flex items-center gap-2 px-3 py-1.5 text-[10px] bg-[#ffffff0a] border border-[#ffffff1a] rounded font-mono text-[#888] hover:text-white transition-colors"
+                title="Scanner Presets"
+              >
+                <SlidersHorizontal size={14} />
+                <span className="hidden sm:inline">Presets</span>
+              </button>
               <SavedWorkspaces />
             </div>
           </header>
@@ -321,6 +351,11 @@ export default function App() {
                   if (target) navigate(target.path);
                 }} />} />
                 <Route path="/leaderboard" element={<LeaderboardView lib={librarian} />} />
+                <Route path="/price-delivery-divergence" element={<PriceDeliveryDivergenceScannerView lib={librarian} onNavigate={(tab, symbol) => {
+                  const target = TABS.find(t => t.id === tab);
+                  if (target) navigate(target.path);
+                  if (symbol) setGlobalSelectedTicker(symbol);
+                }} />} />
                 <Route path="/fvg-scanner" element={<FVGScannerView lib={librarian} />} />
                 <Route path="/historical-search" element={<HistoricalSearchView lib={librarian} />} />
                 <Route path="/chart" element={<AdvancedChartView lib={librarian} activeSymbol={globalSelectedTicker} />} />
@@ -332,7 +367,13 @@ export default function App() {
                 }} />} />
                 <Route path="/ghost-simulator" element={<GhostSimulatorView lib={librarian} />} />
                 <Route path="/multibagger-matrix" element={<MultibaggerMatrixView lib={librarian} />} />
+                <Route path="/value-ranker" element={<ValueRankerView lib={librarian} onNavigate={(tab, symbol) => { 
+                  const target = TABS.find(t => t.id === tab);
+                  if (target) navigate(target.path);
+                  if (symbol) setGlobalSelectedTicker(symbol); 
+                }} />} />
                 <Route path="/inst-dom" element={<InstDOMView lib={librarian} />} />
+                <Route path="/fii-dii-scanner" element={<FiiDiiScannerView lib={librarian} />} />
                 <Route path="/parquet-lake" element={<DataLakeView lib={librarian} />} />
                 <Route path="/settings" element={<SettingsView />} />
                 <Route path="/tools" element={<ToolsView lib={librarian} />} />

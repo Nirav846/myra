@@ -31,6 +31,7 @@ import { delIntensityCoreTraceBuilder } from './traces/delIntensityCoreBuilder';
 
 import { fibonacciLayoutBuilder } from './layout/fibonacciBuilder';
 import { liqVoidsLayoutBuilder } from './layout/liqVoidsBuilder';
+import { liqVoidsIndicator } from '../technical-analysis/indicators/liqVoids';
 
 class ChartRegistry {
     private indicators = new Map<string, IndicatorModule<any, any>>();
@@ -76,6 +77,7 @@ chartRegistry.registerIndicator(instBlocksIndicator);
 chartRegistry.registerIndicator(delAdIndicator);
 chartRegistry.registerIndicator(smartMoneyPrintsIndicator);
 chartRegistry.registerIndicator(delIntensityCoreIndicator);
+chartRegistry.registerIndicator(liqVoidsIndicator);
 
 chartRegistry.registerTraceBuilder(smaTraceBuilder);
 chartRegistry.registerTraceBuilder(rsiTraceBuilder);

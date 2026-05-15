@@ -1,3 +1,5 @@
+import { getThreshold, McapBucket } from './mcapDefaults';
+
 export interface SignalData {
     ticker: string;
     close: number;
@@ -18,6 +20,9 @@ export interface SignalData {
     
     vol_long: number;
     vol_short: number;
+    
+    bucket: string;
+    useMcap: boolean;
 }
 
 export interface SignalResult {
@@ -38,11 +43,18 @@ function calculateRisk(entry: number, sl: number): number {
 
 export function computeExhaustionSignal(data: SignalData): SignalResult {
     const hasHistory = data.avg_vol_20 !== 1;
+    const bucket = data.bucket as McapBucket;
+    const useMcap = data.useMcap;
+
+    const threshVolSpike = useMcap ? getThreshold('volumeSpike', bucket) : 1.5;
+    const threshPriceDrop = useMcap ? getThreshold('priceDeclinePct', bucket) / 100 : 0.02;
+    const threshDelFloor = useMcap ? getThreshold('deliveryFloor', bucket) : 55;
     
     // A. Exhaustion Signal
     // Mathematically: Signal ≈ Volume_Spike * Return_Severity * Delivery_Z
     
-    const volSpike = hasHistory ? (data.volume / data.avg_vol_20) : 1;
+    const avg_vol_safe = data.avg_vol_20 > 0 ? data.avg_vol_20 : 1;
+    const volSpike = hasHistory ? (data.volume / avg_vol_safe) : 1;
     const priceDrop = (hasHistory && data.high_20 > 0) ? ((data.high_20 - data.close) / data.high_20) : 0;
     
     // Z-Score of Delivery
@@ -54,15 +66,15 @@ export function computeExhaustionSignal(data: SignalData): SignalResult {
     let note = "Watching";
     
     if (hasHistory) {
-      // Normalize components to 0-100 scale heuristics
-      // Vol Spike > 1.5 is good. Max out around 3x.
-      const volScore = Math.min(30, Math.max(0, (volSpike - 1) * 15));
-      // Price drop > 2% is good. Max out around 10%.
-      const dropScore = Math.min(30, Math.max(0, priceDrop * 300));
-      // Z-del > 1 is good. Max out around 3.
-      const delScore = Math.min(40, Math.max(0, z_del * 13));
-      
-      score = volScore + dropScore + delScore;
+      if (!useMcap || (volSpike >= threshVolSpike && priceDrop >= threshPriceDrop && data.del_perc >= threshDelFloor)) {
+          const volScore = Math.min(30, Math.max(0, (volSpike - threshVolSpike) * 15)) + 15;
+          const dropScore = Math.min(30, Math.max(0, (priceDrop - threshPriceDrop) * 300)) + 15;
+          const delScore = Math.min(40, Math.max(0, z_del * 13));
+          
+          score = volScore + dropScore + delScore;
+      } else {
+          score = 0;
+      }
     } else {
       score = 40 + (data.volume % 30);
     }
@@ -93,6 +105,11 @@ export function computeExhaustionSignal(data: SignalData): SignalResult {
 
 export function computeDivergenceSignal(data: SignalData): SignalResult {
     const hasHistory = data.avg_vol_20 !== 1;
+    const bucket = data.bucket as McapBucket;
+    const useMcap = data.useMcap;
+
+    const threshNearLow = useMcap ? getThreshold('nearLowPct', bucket) / 100 : 0.02;
+    const threshDelSpike = useMcap ? getThreshold('deliverySpikePct', bucket) : 75;
     
     // B. Divergence Signal
     // True quant form: Divergence = Z(Delivery) - Z(Price Momentum)
@@ -107,13 +124,18 @@ export function computeDivergenceSignal(data: SignalData): SignalResult {
     
     // Divergence magnitude
     const divergence = z_del - z_price;
+    const nearLowDist = hasHistory && data.low_20 > 0 ? (data.close - data.low_20) / data.low_20 : 0;
     
     let score = 0;
     let note = "Watching";
     
     if (hasHistory) {
-      // If divergence > 2 (e.g. z_del = +1.5, z_price = -0.5), it's a strong signal.
-      score = Math.min(100, Math.max(0, 30 + (divergence * 20)));
+      if (!useMcap || (nearLowDist <= threshNearLow && data.del_perc >= threshDelSpike)) {
+        // If divergence > 2 (e.g. z_del = +1.5, z_price = -0.5), it's a strong signal.
+        score = Math.min(100, Math.max(0, 30 + (divergence * 20)));
+      } else {
+        score = 0;
+      }
     } else {
       score = 40 + (data.volume % 30);
     }
@@ -142,6 +164,11 @@ export function computeDivergenceSignal(data: SignalData): SignalResult {
 
 export function computeSpringCoilSignal(data: SignalData): SignalResult {
     const hasHistory = data.avg_vol_20 !== 1;
+    const bucket = data.bucket as McapBucket;
+    const useMcap = data.useMcap;
+
+    const threshRangeContraction = useMcap ? getThreshold('rangeContraction', bucket) : 0.6;
+    const threshVolContraction = useMcap ? getThreshold('volContraction', bucket) : 0.6;
     
     // C. Spring Coil
     // Proper quant version: σ_short < σ_long , Volume ↓
@@ -153,12 +180,16 @@ export function computeSpringCoilSignal(data: SignalData): SignalResult {
     let note = "Watching";
     
     if (hasHistory) {
-        // We want vol_ratio < 0.6 (short term compression is much tighter than long term)
-        const compressionScore = Math.max(0, (1 - vol_ratio) * 60);
-        // We want volume to be relatively low (e.g. 0.5x avg)
-        const dryUpScore = Math.max(0, (1 - volDryUp) * 40);
-        
-        score = Math.min(100, compressionScore + dryUpScore);
+        if (!useMcap || (vol_ratio <= threshRangeContraction && volDryUp <= threshVolContraction)) {
+            // We want vol_ratio < 0.6 (short term compression is much tighter than long term)
+            const compressionScore = Math.max(0, ((useMcap ? threshRangeContraction : 0.6) - vol_ratio) * 60) + (useMcap ? 20 : 0);
+            // We want volume to be relatively low (e.g. 0.5x avg)
+            const dryUpScore = Math.max(0, ((useMcap ? threshVolContraction : 0.6) - volDryUp) * 40) + (useMcap ? 20 : 0);
+            
+            score = Math.min(100, compressionScore + dryUpScore);
+        } else {
+            score = 0;
+        }
     } else {
         score = 40 + (data.volume % 30);
     }
