@@ -1,146 +1,93 @@
-# MYRA (Myra Yield & Research Analytics)
+# MYRA – Personal NSE Stock Screening & Analysis Platform
 
-![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
-![SQLite](https://img.shields.io/badge/Database-SQLite%20(Sidecars)-blue)
-![Parquet](https://img.shields.io/badge/Storage-Parquet%20Lake-orange)
-![License](https://img.shields.io/badge/License-MIT-green.svg)
+MYRA is a comprehensive stock screening and analysis platform for the National Stock Exchange (NSE) of India, combining institutional data tracking, SMC (Smart Money Concepts) enrichment, and interactive visualization tools.
 
-**MYRA** is an atomic trading system for the National Stock Exchange (NSE) of India. It combines a factor-based positional scoring engine (v2.5), institutional activity tracking, and resilient data pipelines for 1-24 month holdings.
+## Key Features
 
----
+- **Daily bhavcopy ingestion** – Automated EOD data ingestion from NSE Market Archives
+- **Fundamentals sync** – Morningstar API integration for PE, ROE, margins, and valuation metrics
+- **SMC enrichment** – Fair Value Gaps (FVG), swing levels, liquidity distance, trend alignment
+- **Institutional data** – Insider trades, large deals, bulk deals, block deals, FII/DII flows
+- **Interactive charts** – Plotly-powered visualization with custom indicator registry
+- **Scanner suite** – 15+ pre-built scanners (FVG, Ghost, InstDOM, Price-Delivery Divergence, Value Ranker)
+- **CI/CD** – GitHub Actions with lint, type-check, and security scanning
 
-## 🚀 Key Features
+## Tech Stack
 
-*   **⚡ v2.5 Positional Engine**: Factor-based ranking with trend, stability, delivery, liquidity, base, and fundamental scores
-*   **🏦 Institutional Intelligence**: Tracks insider trades (> ₹10L), large deals, and delivery divergence scoring
-*   **🧬 Strategy Framework**: Modular BaseStrategy with market mood detection, Kelly criterion sizing, and AI hooks
-*   **🛡️ Resilient Data Pipeline**: Watchdog for stuck scans, process timeouts, and adaptive source selection
-*   **🏎️ Performance First**: Vectorized operations, multiprocessing worker pool, and optimized SQLite sidecars
+- **Backend:** Python 3.12, FastAPI, SQLite (WAL mode), Polars, Pandas, yfinance
+- **Frontend:** React + Vite, TypeScript, Plotly, Zustand
+- **Data Processing:** Vectorized operations, multiprocessing worker pool
+- **Database:** SQLite sidecars (technical, valuation, institutional, meta)
 
----
+## Prerequisites
 
-## 🏗️ Architecture: Atomic Trading System
+- Python 3.12
+- Node.js 20
+- Git
+- 8 GB RAM recommended
 
-MYRA operates on a modular architecture with SQLite sidecars and a Parquet Indicator Lake to prevent file locking and schema contention.
+## Quick Start
 
-### 1. SQLite Sidecars
-*   `technical.db`: OHLCV, delivery, VWAP data
-*   `institutional.db`: Insider trades, large deals
-*   `meta.db`: Symbols master, benchmarks
-*   `valuation.db`: Fundamentals, quarterly results
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/Nirav846/myra.git
+   cd myra
+   ```
 
-### 2. Modular Components
-*   **Engine (UNIVERSAL SQL v12)**: Unified precompute for scans
-*   **PositionalScorer**: Vectorized scoring with regime adjustment
-*   **Librarian**: Decomposed into Core, Intelligence, Ingestor, Sync modules
-*   **Factors**: BaseFactor abstract class with DeliveryFactor, RSFactor, IASFactor
-*   **Strategies**: BaseStrategy framework with 30+ implementations
+2. **Set up Python virtual environment:**
+   ```bash
+   python -m venv venv
+   venv\Scripts\activate  # On Windows
+   ```
 
----
+3. **Install Python dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-## 🛠️ Tech Stack
+4. **Install frontend dependencies:**
+   ```bash
+   cd myra_web
+   npm install
+   cd ..
+   ```
 
-*   **Core Language:** Python 3.10+
-*   **Databases:** SQLite (sidecars)
-*   **Data Lake Storage:** Apache Parquet
-*   **Analytics & Quant:** `pandas`, `numpy`, `pandas_ta`
-*   **Machine Learning:** `xgboost`, `tensorflow`
-*   **UI / CLI Experience:** `rich`, `myra_log`
-*   **NSE Data:** `myra_core` (localized), `morningstartools`
+5. **Prepare data:**
+   - Ensure `data/Market_Archives/` contains bhavcopy CSV files, or
+   - Run `python myra_app/mass_backfill.py` to backfill historical data
 
----
+6. **Start the web application:**
+   ```bash
+   start_myra_web.bat  # On Windows
+   # Or manually:
+   # Terminal 1: python myra_web/myra_fastapi_server.py
+   # Terminal 2: cd myra_web && npm run dev
+   ```
 
-## ⚙️ Installation & Setup
+## Usage
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/yourusername/myra.git
-    cd myra
-    ```
+1. Open http://localhost:3000 in your browser
+2. Navigate the dashboard to view market breadth, sector flow, and scanner results
+3. Run scanners from the sidebar (FVG Scanner, Ghost Simulator, InstDOM, etc.)
+4. Configure scanner parameters using PresetChip controls
+5. Export results to CSV or view interactive charts
 
-2.  **Set up a virtual environment:**
-    ```bash
-    python -m venv venv
-    source venv/bin/activate  # On Windows: venv\Scripts\activate
-    ```
+## Folder Structure
 
-3.  **Install dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
+- `myra_app/` – Backend application (engine, ingestors, managers, strategies)
+- `myra_web/` – Frontend React application (FastAPI server, views, chart engine)
+- `myra_core/` – Core utilities and NSE data fetching
+- `tools/` – Maintenance scripts (db_doctor, rebuild_technical_index, performance_guard)
+- `data/` – SQLite databases (technical.db, valuation.db, institutional.db, meta.db)
+- `conductor/` – Workflow orchestration and background tasks
+- `config/` – Configuration files
+- `logs/` – Application logs
 
----
+## Documentation
 
-## 🖥️ Usage Examples
+- [ARCHITECTURE.md](ARCHITECTURE.md) – Data flow, database schema, and design decisions
+- [CONTRIBUTING.md](CONTRIBUTING.md) – Development setup, code style, and contribution guidelines
 
-**Run the Core Scanner:**
-```bash
-python myra_app/myra.py
-# Select strategy (e.g., 34 for Surpriver v2, 31 for AEON Agent)
-```
+## License
 
-**Positional Analysis:**
-```bash
-python myra_app/positional_engine.py --regime neutral --universe nifty500
-```
-
-**Data Backfill:**
-```bash
-python tools/backfill_year.py --target institutional --year 2024
-```
-
----
-
-## 📂 Project Structure
-
-```text
-MYRA/
-├── myra_core/          # Localized dependencies from PKScreener
-├── myra_app/           # Main application
-│   ├── engine.py       # Universal SQL precompute engine
-│   ├── positional_engine.py  # v2.5 scoring system
-│   ├── factors/        # Modular factor implementations
-│   ├── strategies/     # 30+ strategy implementations
-│   └── librarian/      # Modular data persistence
-├── tools/              # Utilities and maintenance scripts
-├── test/               # Test suite
-├── data/               # SQLite sidecars
-├── conductor/          # Workflow orchestration
-└── PROJECT_RULES.md    # Engineering guidelines
-```
-
----
-
-## 🤝 Contribution Guidelines
-
-MYRA is built on strict engineering principles. Before contributing:
-
-1. Read `PROJECT_RULES.md`
-2. No loops on large datasets (use vectorized operations)
-3. All dates must be `datetime64[ns]`
-4. Thread-safe database access with locks
-5. Include tests for new features
-
-**PR Title Format:**
-* Performance: `⚡ [description]`
-* Security: `🔒 [description]`
-* Features: `✨ [description]`
-
----
-
-## 📊 Strategy Ecosystem
-
-### Core Strategies
-*   **Surpriver v2**: Multi-window institutional accumulation detection
-*   **AEON Agent**: Evolutionary Strategy optimization for SMC timing
-*   **Smart Money**: Delivery spikes, absorption, institutional flow
-
-### Alpha Strategies
-*   Delivery clusters, liquidity vacuums, supply absorption
-*   RS leaders, bear traps, stage 2 continuation
-*   Bottom hunter, multibagger early detection
-
-### Scanners
-*   Technical: RSI divergence, VWAP pullback, breakouts
-*   Institutional: Insider signals, large deal momentum
-*   Fundamental: Value, growth, quality screens
+MIT License
