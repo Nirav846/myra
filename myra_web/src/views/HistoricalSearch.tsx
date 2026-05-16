@@ -31,14 +31,32 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
   const [fundaData, setFundaData] = useState<any>(null);
   const [showFunda, setShowFunda] = useState(false);
   const [fundaLoading, setFundaLoading] = useState(false);
+  const [sentimentData, setSentimentData] = useState<any>(null);
+
+  const [pledgeData, setPledgeData] = useState<any>(null);
 
   const fetchFunda = async (symbol: string) => {
     setFundaLoading(true);
     try {
-      const res = await fetch(`http://localhost:8000/api/fundamentals/live/${symbol}`);
-      if (res.ok) {
-        const json = await res.json();
+      const [fundaRes, sentRes, pledgeRes] = await Promise.all([
+        fetch(`http://localhost:8000/api/fundamentals/live/${symbol}`),
+        fetch(`http://localhost:8000/api/finstack/social-sentiment/${symbol}`).catch(() => null),
+        fetch(`http://localhost:8000/api/finstack/pledge-alert/${symbol}`).catch(() => null)
+      ]);
+      
+      if (fundaRes.ok) {
+        const json = await fundaRes.json();
         setFundaData(json);
+      }
+      
+      if (sentRes && sentRes.ok) {
+        const sentJson = await sentRes.json();
+        setSentimentData(sentJson);
+      }
+
+      if (pledgeRes && pledgeRes.ok) {
+        const pledgeJson = await pledgeRes.json();
+        setPledgeData(pledgeJson);
       }
     } catch (e) {
       console.warn('Fundamental fetch failed', e);
@@ -342,12 +360,13 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
                                 <span className="ml-2 text-[#555]">as of {fundaData.shareholding.period_end}</span>
                               )}
                             </h4>
-                            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                            <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
                               <MetricCard label="Promoter" value={fundaData.shareholding.promoter_pct} suffix="%" />
                               <MetricCard label="FII" value={fundaData.shareholding.fii_pct} suffix="%" />
                               <MetricCard label="DII" value={fundaData.shareholding.dii_pct} suffix="%" />
                               <MetricCard label="Public" value={fundaData.shareholding.public_pct} suffix="%" />
                               <MetricCard label="Govt" value={fundaData.shareholding.government_pct} suffix="%" />
+                              <MetricCard label="Pledged %" value={pledgeData?.pledge_pct} suffix="%" tooltip="Promoter shares pledged as collateral. Rising pledge is a corporate governance red flag." color />
                             </div>
                           </div>
                         )}
@@ -372,6 +391,38 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
                             <MetricCard label="Div Yield" value={fundaData.fundamentals?.dividend_yield} suffix="%" />
                           </div>
                         </div>
+
+                        {/* Social Sentiment Row */}
+                        {sentimentData && (
+                          <div>
+                            <h4 className="text-[10px] font-mono text-[#666] uppercase tracking-wider mb-2">Social Sentiment</h4>
+                            <div className="bg-[#1a1c24] border border-[#ffffff0a] p-3 rounded">
+                              <div className="flex items-center gap-4">
+                                <div className="text-[10px] text-[#888] font-mono uppercase w-32 shrink-0">Score: {sentimentData.score}</div>
+                                <div className="flex-1 bg-[#ffffff0a] h-1.5 rounded relative overflow-hidden flex items-center">
+                                  <div className="absolute left-1/2 top-0 bottom-0 w-px bg-[#444] z-10"></div>
+                                  {sentimentData.score > 0 ? (
+                                    <div className="absolute left-1/2 top-0 bottom-0 bg-green-500/80" style={{ width: `${Math.min(sentimentData.score / 2, 50)}%` }}></div>
+                                  ) : (
+                                    <div className="absolute right-1/2 top-0 bottom-0 bg-red-500/80" style={{ width: `${Math.min(Math.abs(sentimentData.score) / 2, 50)}%` }}></div>
+                                  )}
+                                </div>
+                                <div className={`text-xs font-bold font-mono w-24 text-right ${sentimentData.overall_sentiment === 'BULLISH' ? 'text-green-400' : sentimentData.overall_sentiment === 'BEARISH' ? 'text-red-400' : 'text-gray-400'}`}>
+                                  {sentimentData.overall_sentiment}
+                                </div>
+                              </div>
+                              {sentimentData.sources && (
+                                <div className="mt-3 pt-2 border-t border-[#ffffff0a] text-[9px] font-mono text-[#666] flex flex-wrap gap-3">
+                                  {Object.entries(sentimentData.sources).map(([src, details]: [string, any]) => (
+                                    <span key={src}>
+                                      {src.replace('_', ' ').toUpperCase()}: {details.mentions || 0} mentions
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
 
                         {/* Pros/Cons */}
                         {fundaData.pros_cons && (fundaData.pros_cons.pros.length > 0 || fundaData.pros_cons.cons.length > 0) && (
@@ -530,17 +581,25 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
   );
 }
 
-function MetricCard({ label, value, suffix = '', isString = false, color = false }: {
+function MetricCard({ label, value, suffix = '', isString = false, color = false, tooltip }: {
   label: string;
   value: number | string | null | undefined;
   suffix?: string;
   isString?: boolean;
   color?: boolean;
+  tooltip?: string;
 }) {
   if (value === null || value === undefined || value === '') {
     return (
       <div className="bg-[#1a1c24] border border-[#ffffff0a] p-3 rounded">
-        <div className="text-[10px] text-[#888] font-mono uppercase">{label}</div>
+        <div className="text-[10px] text-[#888] font-mono uppercase flex items-center gap-1">
+          {label}
+          {tooltip && (
+            <span title={tooltip}>
+              <Info size={10} className="text-[#888] cursor-help" />
+            </span>
+          )}
+        </div>
         <div className="text-sm font-bold text-[#555]">—</div>
       </div>
     );
@@ -554,7 +613,14 @@ function MetricCard({ label, value, suffix = '', isString = false, color = false
 
   return (
     <div className="bg-[#1a1c24] border border-[#ffffff0a] p-3 rounded">
-      <div className="text-[10px] text-[#888] font-mono uppercase">{label}</div>
+      <div className="text-[10px] text-[#888] font-mono uppercase flex items-center gap-1">
+        {label}
+        {tooltip && (
+          <span title={tooltip}>
+            <Info size={10} className="text-[#888] cursor-help" />
+          </span>
+        )}
+      </div>
       <div className={`text-sm font-bold ${colorClass}`}>
         {display}{suffix}
       </div>

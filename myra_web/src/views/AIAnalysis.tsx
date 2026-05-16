@@ -1,124 +1,154 @@
 import { useState } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { generateAnalysis } from '../lib/ai';
-import { Copy, Check } from 'lucide-react';
+import { SymbolSearch } from '../components/SymbolSearch';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+
+interface FinStackAgent {
+  name: string;
+  signal: string;
+  reasoning: string[];
+}
+
+interface FinStackResponse {
+  consensus: string;
+  score: number;
+  agents: FinStackAgent[];
+  summary: string;
+}
 
 export default function AIAnalysisView({ lib }: { lib: Librarian }) {
-  const [target, setTarget] = useState('inst_flow');
-  const [depth, setDepth] = useState('32');
-  const [model, setModel] = useState('myra_quant_v2.2');
-  const [dbRoute, setDbRoute] = useState('_meta_conn');
-  const [latencyOpt, setLatencyOpt] = useState('lean');
-
-  const [result, setResult] = useState<string | null>(null);
+  const [ticker, setTicker] = useState('');
+  const [result, setResult] = useState<FinStackResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  const displayCommand = `GENERATE_PROMPT --target=${target} --depth=${depth} --model=${model} --inject_params={db_route: '${dbRoute}', latency_opt: '${latencyOpt}'}`;
+  const [error, setError] = useState<string | null>(null);
+  const [expandedAgents, setExpandedAgents] = useState<{ [key: string]: boolean }>({});
 
   const runAnalysis = async () => {
+    if (!ticker) return;
     setLoading(true);
     setResult(null);
+    setError(null);
     try {
-      const prompt = `Execute MYRA Option 35 Prompt: Run a high-level quantitative analysis based on the latest macro conditions. \nApply the following engine constraints:\n- Target: ${target}\n- Depth: ${depth}\n- Model: ${model}\n- Database Route: ${dbRoute}\n- Latency Opt: ${latencyOpt}\n\nPlease generate a quantitative interpretation report answering the prompt.`;
-      const res = await generateAnalysis(prompt);
-      setResult(res || 'No analysis generated.');
+      const res = await fetch(`http://localhost:8000/api/finstack/stock-brief/${ticker.toUpperCase()}`);
+      if (!res.ok) {
+        throw new Error('Analysis request failed');
+      }
+      const data = await res.json();
+      setResult(data);
     } catch (e: any) {
       console.error(e);
-      setResult('Error generating analysis: ' + e.message);
+      setError(e.message || 'Error generating analysis');
     }
     setLoading(false);
   };
 
-  const handleCopy = () => {
-    if (result) {
-      navigator.clipboard.writeText(result);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
+  const toggleAgent = (name: string) => {
+    setExpandedAgents(prev => ({ ...prev, [name]: !prev[name] }));
   };
 
   return (
     <div className="bg-[#262730] rounded-lg border border-[#ffffff1a] flex flex-col overflow-hidden">
       <div className="p-3 border-b border-[#ffffff1a] bg-[#ffffff05] flex justify-between items-center">
-        <span className="text-xs font-semibold uppercase tracking-wider text-[#fafafa]">AI Analysis: Option 35</span>
-        <span className="text-[10px] font-mono text-[#666]">SQL: {dbRoute}.execute()</span>
+        <span className="text-xs font-semibold uppercase tracking-wider text-[#fafafa]">FinStack AI Analysis</span>
       </div>
 
       <div className="p-4 space-y-4">
-        
-        {/* Filter Controls Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 bg-[#ffffff05] p-3 rounded border border-[#ffffff0a]">
-          <div className="flex flex-col gap-1" title="Select the metric to focus the AI analysis on (e.g. Institutional Flow, Technical Scan).">
-            <label className="text-[10px] text-[#888] uppercase font-semibold">Target</label>
-            <select value={target} onChange={e => setTarget(e.target.value)} className="bg-[#0e1117] border border-[#ffffff1a] text-[#ccc] text-xs p-1.5 rounded font-mono focus:outline-none focus:border-blue-500 transition-colors">
-              <option className="bg-[#1a1c24] text-[#fafafa]" value="inst_flow">inst_flow</option>
-              <option className="bg-[#1a1c24] text-[#fafafa]" value="tech_scan">tech_scan</option>
-              <option className="bg-[#1a1c24] text-[#fafafa]" value="macro_aggr">macro_aggr</option>
-            </select>
+        <div className="flex items-end gap-3">
+          <div className="w-64 relative z-10 flex flex-col gap-1">
+             <label className="text-[10px] text-[#888] uppercase mb-1 font-semibold font-mono tracking-wider ml-1">
+               Target Ticker
+             </label>
+             <SymbolSearch 
+               lib={lib} 
+               onSymbolSelect={setTicker} 
+               placeholder="Search NSE ticker..." 
+               className="h-9"
+             />
           </div>
-          <div className="flex flex-col gap-1" title="Set the recursion depth for historical data traversal.">
-            <label className="text-[10px] text-[#888] uppercase font-semibold">Depth</label>
-            <input type="number" value={depth} onChange={e => setDepth(e.target.value)} className="bg-[#0e1117] border border-[#ffffff1a] text-[#ccc] text-xs p-1.5 rounded font-mono focus:outline-none focus:border-blue-500 transition-colors" />
-          </div>
-          <div className="flex flex-col gap-1" title="Choose the quantitative model architecture to execute.">
-            <label className="text-[10px] text-[#888] uppercase font-semibold">Model</label>
-            <select value={model} onChange={e => setModel(e.target.value)} className="bg-[#0e1117] border border-[#ffffff1a] text-[#ccc] text-xs p-1.5 rounded font-mono focus:outline-none focus:border-blue-500 transition-colors">
-              <option className="bg-[#1a1c24] text-[#fafafa]" value="myra_quant_v2.2">myra_quant_v2.2</option>
-              <option className="bg-[#1a1c24] text-[#fafafa]" value="myra_macro_v3.0">myra_macro_v3.0</option>
-              <option className="bg-[#1a1c24] text-[#fafafa]" value="gemini_pro_v1.5">gemini_pro_v1.5</option>
-            </select>
-          </div>
-          <div className="flex flex-col gap-1" title="Specify which internal SQLite database sidecar to query data from.">
-            <label className="text-[10px] text-[#888] uppercase font-semibold">DB Route</label>
-            <select value={dbRoute} onChange={e => setDbRoute(e.target.value)} className="bg-[#0e1117] border border-[#ffffff1a] text-[#ccc] text-xs p-1.5 rounded font-mono focus:outline-none focus:border-blue-500 transition-colors">
-              <option className="bg-[#1a1c24] text-[#fafafa]" value="_meta_conn">_meta_conn</option>
-              <option className="bg-[#1a1c24] text-[#fafafa]" value="_inst_conn">_inst_conn</option>
-              <option className="bg-[#1a1c24] text-[#fafafa]" value="_tech_conn">_tech_conn</option>
-            </select>
-          </div>
-          <div className="flex flex-col gap-1" title="Tune for calculation speed vs processing precision.">
-            <label className="text-[10px] text-[#888] uppercase font-semibold">Latency Opt</label>
-            <select value={latencyOpt} onChange={e => setLatencyOpt(e.target.value)} className="bg-[#0e1117] border border-[#ffffff1a] text-[#ccc] text-xs p-1.5 rounded font-mono focus:outline-none focus:border-blue-500 transition-colors">
-              <option className="bg-[#1a1c24] text-[#fafafa]" value="lean">lean</option>
-              <option className="bg-[#1a1c24] text-[#fafafa]" value="deep">deep</option>
-              <option className="bg-[#1a1c24] text-[#fafafa]" value="balanced">balanced</option>
-            </select>
-          </div>
-        </div>
-        
-        <div className="bg-[#0e1117] p-3 rounded font-mono text-[11px] text-[#88d] border border-[#ffffff0a] italic">
-          {displayCommand}
-        </div>
-
-        <div className="flex justify-end">
           <button 
             onClick={runAnalysis} 
-            disabled={loading} 
-            className="font-mono text-xs px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white transition-colors disabled:opacity-50 flex items-center"
+            disabled={loading || !ticker} 
+            className="font-mono text-xs px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white transition-colors disabled:opacity-50 flex items-center h-9"
           >
             {loading ? (
               <>
                 <div className="animate-spin h-3 w-3 border-2 border-[#fafafa] border-t-transparent rounded-full mr-2"></div>
-                Executing...
+                Analyzing...
               </>
             ) : (
-              'Execute Option 35'
+              'Generate Analysis'
             )}
           </button>
         </div>
 
+        {error && (
+          <div className="text-xs text-red-400 font-mono py-4">
+            No analysis available. ({error})
+          </div>
+        )}
+
         {result && (
-          <div className="relative group">
-            <button 
-              onClick={handleCopy}
-              className="absolute top-0 right-0 p-1.5 bg-[#1a1c24] border border-[#ffffff1a] rounded text-[#888] hover:text-[#fff] hover:bg-[#ffffff1a] transition-colors z-10"
-              title="Copy Output"
-            >
-              {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
-            </button>
-            <div className="p-4 bg-[#0e1117] border border-[#ffffff1a] rounded text-[#ccc] whitespace-pre-wrap font-mono text-xs h-64 overflow-y-auto w-full">
-              {result}
+          <div className="space-y-4">
+            {/* Header info */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 bg-[#ffffff05] p-3 rounded border border-[#ffffff0a]">
+              <div className="bg-[#1a1c24] border border-[#ffffff0a] p-3 rounded">
+                <div className="text-[10px] text-[#888] font-mono uppercase">Consensus</div>
+                <div className={`text-lg font-bold ${
+                  result.consensus === 'BUY' || result.consensus === 'BULLISH' ? 'text-green-400' :
+                  result.consensus === 'SELL' || result.consensus === 'BEARISH' ? 'text-red-400' : 'text-yellow-400'
+                }`}>
+                  {result.consensus}
+                </div>
+              </div>
+              <div className="bg-[#1a1c24] border border-[#ffffff0a] p-3 rounded">
+                <div className="text-[10px] text-[#888] font-mono uppercase">Confidence Score</div>
+                <div className="text-lg font-bold text-[#fafafa]">{result.score}%</div>
+              </div>
+            </div>
+
+            {/* Summary */}
+            {result.summary && (
+              <div className="bg-[#0e1117] p-4 rounded border border-[#ffffff0a] font-mono text-xs text-[#ccc] leading-relaxed">
+                <div className="text-[10px] text-[#888] mb-2 font-semibold">SUMMARY</div>
+                {result.summary}
+              </div>
+            )}
+
+            {/* Agents */}
+            <div className="space-y-2">
+              <div className="text-[10px] text-[#888] font-mono uppercase font-semibold mt-4 mb-2">Agent Reasoning</div>
+              {result.agents?.map((agent, i) => (
+                <div key={agent.name || i} className="border border-[#ffffff0a] rounded bg-[#0e1117] overflow-hidden">
+                  <button
+                    onClick={() => toggleAgent(agent.name)}
+                    className="w-full px-4 py-3 flex items-center justify-between text-xs font-mono text-[#ccc] hover:bg-[#ffffff05]"
+                  >
+                    <div className="flex items-center gap-2">
+                       {expandedAgents[agent.name] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                       <span className="font-semibold text-white">{agent.name}</span>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                       agent.signal === 'BULLISH' || agent.signal === 'BUY' ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
+                       agent.signal === 'BEARISH' || agent.signal === 'SELL' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                       'bg-gray-500/10 text-gray-400 border border-gray-500/20'
+                    }`}>
+                      {agent.signal}
+                    </span>
+                  </button>
+                  {expandedAgents[agent.name] && (
+                    <div className="px-4 pb-4 pt-1 border-t border-[#ffffff0a]">
+                      <ul className="space-y-2">
+                        {agent.reasoning?.map((reason, idx) => (
+                           <li key={idx} className="text-[11px] font-mono text-[#aaa] leading-relaxed flex gap-2">
+                             <span className="text-[#666] shrink-0">•</span>
+                             <span>{reason}</span>
+                           </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         )}
