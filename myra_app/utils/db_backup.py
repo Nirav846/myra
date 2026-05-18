@@ -13,8 +13,8 @@ from myra_app.constants import DB_DIR
 logger = logging.getLogger("myra.db_backup")
 
 
-def rotate_backups(task_id: int = None):
-    """Copy myra_technical.db to backups/ with date stamp. Keep last 2."""
+def rotate_backups(task_id: int = None, keep_last_days: int = 2):
+    """Copy myra_technical.db to backups/ with date stamp. Keep last N backups."""
     from myra_app.task_tracker import update
 
     if task_id is not None:
@@ -37,11 +37,10 @@ def rotate_backups(task_id: int = None):
         if task_id is not None:
             update(task_id, f"Backup saved as {stamp}")
 
-        # Cleanup: keep only last 2 backups
         backups = sorted(
             [f for f in os.listdir(backup_dir) if f.startswith("myra_technical_")]
         )
-        while len(backups) > 2:
+        while len(backups) > keep_last_days:
             old = backups.pop(0)
             os.remove(os.path.join(backup_dir, old))
             print(f"[MYRA BACKUP] Removed old backup: {old}")

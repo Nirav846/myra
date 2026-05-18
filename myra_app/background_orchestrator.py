@@ -371,7 +371,6 @@ def _task_watchdog():
     tid = register("Background sync watchdog", task_type="indefinite")
     try:
         last_checked_date = None
-        last_stale_check = None
 
         while not _shutdown_event.is_set():
             _shutdown_event.wait(timeout=60)
@@ -388,16 +387,20 @@ def _task_watchdog():
                 )
 
                 if _is_db_stale(days_threshold=2):
-                    if last_stale_check != today:
-                        logger.info(
-                            f"[MYRA BG] Database is STALE (2+ days behind). Triggering catch-up..."
-                        )
-                        last_stale_check = today
+                    ist_now = datetime.now(timezone.utc).astimezone(IST)
+                    last_attempt = _get_last_run("stale_catchup")
+                    already_tried_today = (
+                        last_attempt is not None and last_attempt.date() == ist_now.date()
+                    )
+
+                    if not already_tried_today:
+                        logger.info("[MYRA BG] Database is STALE (2+ days behind). Triggering catch-up...")
+                        _mark_task_run("stale_catchup")
                         _task_daily_ingest(force=True)
-                    else:
-                        logger.info(
-                            f"[MYRA BG] DB still stale, catch-up already attempted today"
-                        )
+                    elif ist_now.hour >= 18 and ist_now.minute >= 30 and not _already_ingested_today():
+                        logger.info("[MYRA BG] Market closed – retrying post-close ingestion...")
+                        _mark_task_run("stale_catchup")
+                        _task_daily_ingest(force=True)
                     continue
 
                 if (
@@ -896,7 +899,7 @@ def start():
         backup_dir = os.path.join(DB_DIR, "backups")
         if not os.path.exists(backup_dir) or len(os.listdir(backup_dir)) == 0:
             logger.info("[MYRA BG] Creating initial DB backup...")
-            rotate_backups()
+            rotate_backups()  # keep_last_days defaults to 2 for initial backup
     except Exception as e:
         logger.warning(f"Initial backup check failed: {e}")
 
@@ -905,6 +908,7 @@ def start():
         if _is_task_overdue("daily_ingest", days=1):
             logger.info("[MYRA BG] Daily ingest overdue – running catch-up now...")
             _task_daily_ingest(force=True)
+            _mark_task_run("stale_catchup")
     except Exception as e:
         logger.warning(f"[MYRA BG] Daily ingest catch-up failed: {e}")
 

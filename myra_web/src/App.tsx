@@ -23,11 +23,15 @@ import { AlertManager } from './lib/AlertManager';
 import { DebugPanel } from './components/DebugPanel';
 import { SavedWorkspaces } from './components/SavedWorkspaces';
 import ScannerPresetsPanel from './components/ScannerPresetsPanel';
-import { AlertCircle, Terminal, Command, Settings as SettingsIcon, PanelLeftClose, PanelLeft, SlidersHorizontal } from 'lucide-react';
+import MLLabView from './views/MLLabView';
+import LaunchpadScannerView from './views/LaunchpadScanner';
+import { AlertCircle, Terminal, Command, Settings as SettingsIcon, PanelLeftClose, PanelLeft, SlidersHorizontal, BrainCircuit, Rocket } from 'lucide-react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 
 const TABS = [
   { id: 'Mission Control', path: '/mission-control', icon: '🎛️'},
+  { id: 'ML Lab', path: '/ml-lab', icon: <BrainCircuit size={18} />},
+  { id: 'Launchpad Scanner', path: '/launchpad-scanner', icon: <Rocket size={18} />},
   { id: 'Leaderboard', path: '/leaderboard', icon: '📊'},
   { id: 'Price-Delivery Divergence', path: '/price-delivery-divergence', icon: '📉'},
   { id: 'FVG Scanner', path: '/fvg-scanner', icon: '📡'},
@@ -349,6 +353,11 @@ export default function App() {
                 <Route path="/mission-control" element={<MissionControlView lib={librarian} navigateTo={(tab) => {
                   const target = TABS.find(t => t.id === tab);
                   if (target) navigate(target.path);
+                }} />} />
+                <Route path="/ml-lab" element={<MLLabView lib={librarian} />} />
+                <Route path="/launchpad-scanner" element={<LaunchpadScannerView lib={librarian} onNavigate={(tab, symbol) => {
+                  const target = TABS.find(t => t.id === tab);
+                  if (target) navigate(`${target.path}?symbol=${symbol}`);
                 }} />} />
                 <Route path="/leaderboard" element={<LeaderboardView lib={librarian} />} />
                 <Route path="/price-delivery-divergence" element={<PriceDeliveryDivergenceScannerView lib={librarian} onNavigate={(tab, symbol) => {
