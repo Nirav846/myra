@@ -1,11 +1,15 @@
 {
-  "trigger_zscore_min": 2.0,
-  "trigger_del_pct_min": 55.0,
-  "trigger_window_days": 5,
-  "digestion_min_days": 10,
-  "digestion_max_days": 120,
-  "breakout_range_mult": 1.0,
-  "breakout_vol_mult": 1.5,
-  "breakout_del_pct_min": 50.0,
-  "confirm_window": 5
+    "trigger_zscore_min": 2.0,
+    "trigger_vol_zscore_min": 2.5,
+    "trigger_del_pct_min": 45.0,
+    "trigger_vol_fallback_del_min": 40.0,
+    "trigger_window_days": 5,
+    "digestion_min_days": 20,
+    "digestion_max_days": 180,
+    "breakout_range_mult": 1.02,
+    "breakout_vol_mult": 1.3,
+    "breakout_del_pct_min": 10.0,
+    "confirm_window": 5,
+    "confirm_max_drawdown_pct": 8.0,
+    "not_extended_mult": 1.02
 }

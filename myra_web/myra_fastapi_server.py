@@ -35,21 +35,9 @@ app.add_middleware(
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "myra_app", "db"))
 
-# Map your DB sidecars internally
-DB_MAP = {
-    "tech": "myra_technical.db",
-    "meta": "myra_metadata.db",
-    "inst": "myra_institutional.db",
-    "gov": "myra_governance.db",
-    "_tech_conn": "myra_technical.db",
-    "_meta_conn": "myra_metadata.db",
-    "_inst_conn": "myra_institutional.db",
-    "_gov_conn": "myra_governance.db"
-}
-
 def get_db_path(db_key: str):
     """Safely construct the path to a specific SQLite sidecar."""
-    filename = DB_MAP.get(db_key)
+    filename = LibrarianCore.DB_MAP.get(db_key)
     if not filename:
         return None
     return os.path.join(DB_DIR, filename)
@@ -61,8 +49,8 @@ def health_check():
     The React UI polls this endpoint to update the green/yellow status lights in the sidebar.
     """
     status = {}
-    for key, filename in DB_MAP.items():
-        db_path = get_db_path(key)
+    for key, filename in LibrarianCore.DB_MAP.items():
+        db_path = os.path.join(DB_DIR, filename)
         if db_path and os.path.exists(db_path):
             try:
                 # Fast heartbeat check
@@ -83,21 +71,22 @@ class QueryRequest(BaseModel):
 
 @app.post("/api/query")
 async def execute_query(req: QueryRequest):
-    # Map frontend DB names to actual files
-    db_map = {
-        "_tech_conn": "myra_technical.db",
-        "_meta_conn": "myra_metadata.db",
-        "_val_conn": "myra_valuation.db",
-        "_inst_conn": "myra_institutional.db",
-        "_gov_conn": "myra_governance.db",
-        "_cache_conn": "myra_cache_network.db",
-        "_scoring_conn": "myra_scoring.db",
-        "_cal_conn": "myra_calendar.db",
+    # Map frontend DB connection names to LibrarianCore canonical keys
+    frontend_to_canonical = {
+        "_tech_conn": "tech",
+        "_meta_conn": "meta",
+        "_val_conn": "valuation",
+        "_inst_conn": "inst",
+        "_gov_conn": "gov",
+        "_cache_conn": "cache",
+        "_scoring_conn": "scoring",
+        "_cal_conn": "cal",
     }
-    
-    # Use explicitly defined mapping or fallback to globally defined DB_MAP
-    db_file = db_map.get(req.db) or DB_MAP.get(req.db)
+
+    canonical_key = frontend_to_canonical.get(req.db) or req.db
+    db_file = LibrarianCore.DB_MAP.get(canonical_key)
     if not db_file:
+        raise HTTPException(status_code=400, detail=f"Unknown database: {req.db}")
         raise HTTPException(status_code=400, detail=f"Unknown database: {req.db}")
 
     db_path = os.path.join(DB_DIR, db_file)

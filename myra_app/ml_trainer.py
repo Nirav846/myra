@@ -5,8 +5,9 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 import xgboost as xgb
+from myra_app.constants import DB_DIR
 from myra_app.librarian import Librarian
-
+from myra_app.librarian_core import LibrarianCore
 
 DEFAULT_CONFIG = {
     "lookback_days": 252,
@@ -106,7 +107,8 @@ class MLTrainer:
             "SELECT symbol FROM technical_data "
             "WHERE date >= date('now', ?) "
             "GROUP BY symbol HAVING COUNT(*) >= ?",
-            conn, params=(f"-{lookback} days", min_samples)
+            conn,
+            params=(f"-{lookback} days", min_samples),
         )["symbol"].tolist()
         print(f"Step 1: {len(syms)} qualifying symbols ({time.time()-t0:.1f}s)")
 
@@ -136,7 +138,9 @@ class MLTrainer:
         X = df[features].select_dtypes(include=[np.number]).fillna(0)
         y = df["target"]
         meta = {"symbols": df["symbol"], "dates": df["date"]}
-        print(f"Step 4: final X shape {X.shape}, classes {y.nunique()} ({time.time()-t0:.1f}s)")
+        print(
+            f"Step 4: final X shape {X.shape}, classes {y.nunique()} ({time.time()-t0:.1f}s)"
+        )
         return X, y, meta
 
     def train(self):
@@ -144,7 +148,9 @@ class MLTrainer:
         X, y, meta = self.extract_features_and_targets()
 
         if X.empty:
-            return {"error": "Insufficient data for training. Need more symbols with sufficient history."}
+            return {
+                "error": "Insufficient data for training. Need more symbols with sufficient history."
+            }
 
         print(f"[ML] Total samples: {len(X)}")
 
@@ -178,6 +184,7 @@ class MLTrainer:
         self.model.save_model("models/forward_return.xgb")
 
         import gc
+
         gc.collect()
 
         self.metadata = {
@@ -193,12 +200,14 @@ class MLTrainer:
         with open("models/model_metadata.json", "w") as f:
             json.dump(self.metadata, f, indent=2)
 
-        print(f"[ML] Model trained. Train Acc: {train_acc:.4f}, Test Acc: {test_acc:.4f}")
+        print(
+            f"[ML] Model trained. Train Acc: {train_acc:.4f}, Test Acc: {test_acc:.4f}"
+        )
 
         fi = self.config["features"]
         imp = self.model.feature_importances_
 
-        if hasattr(self, 'lib') and self.lib:
+        if hasattr(self, "lib") and self.lib:
             self.lib._tech_conn.close()
             self.lib._meta_conn.close()
             self.lib._inst_conn.close()
@@ -208,12 +217,11 @@ class MLTrainer:
             "train_accuracy": float(train_acc),
             "test_accuracy": float(test_acc),
             "feature_importance": [
-                {"feature": fi[i], "importance": float(imp[i])}
-                for i in range(len(fi))
+                {"feature": fi[i], "importance": float(imp[i])} for i in range(len(fi))
             ],
             "train_samples": int(len(X_train)),
             "test_samples": int(len(X_test)),
-            "model_saved": True
+            "model_saved": True,
         }
 
     def predict_today(self):
@@ -235,8 +243,7 @@ class MLTrainer:
             SELECT symbol, {', '.join(features)}
             FROM technical_data
             WHERE date = ?
-            """
-            ,
+            """,
             (latest_date,),
         ).fetchall()
 
@@ -265,14 +272,17 @@ class MLTrainer:
             pred_idx = list(self.model.classes_).index(pred)
             confidence = round(prob[pred_idx] * 100, 1)
 
-            results.append({
-                "symbol": row["symbol"],
-                "prediction": pred,
-                "confidence": confidence,
-                "probabilities": {
-                    cls: round(p * 100, 1) for cls, p in zip(self.model.classes_, prob)
+            results.append(
+                {
+                    "symbol": row["symbol"],
+                    "prediction": pred,
+                    "confidence": confidence,
+                    "probabilities": {
+                        cls: round(p * 100, 1)
+                        for cls, p in zip(self.model.classes_, prob)
+                    },
                 }
-            })
+            )
 
         results.sort(key=lambda x: x["confidence"], reverse=True)
 
@@ -318,6 +328,9 @@ LAUNCHPAD_DEFAULT_CONFIG = {
         "close_location_avg",
         "nifty_return_digestion",
         "sector_relative_strength",
+        "fti_trigger",
+        "fti_avg_digestion",
+        "free_float_mcap",
     ],
     "xgb_params": {
         "n_estimators": 150,
@@ -348,153 +361,161 @@ class LaunchpadPredictor:
                 return {**LAUNCHPAD_DEFAULT_CONFIG, **json.load(f)}
         return LAUNCHPAD_DEFAULT_CONFIG.copy()
 
+    def _get_fundamentals_for_symbol(self, symbol: str):
+        try:
+            val_db = os.path.join(DB_DIR, LibrarianCore.DB_MAP["valuation"])
+            if not os.path.exists(val_db):
+                return {}
+            with sqlite3.connect(val_db) as conn:
+                row = conn.execute(
+                    "SELECT market_cap, sector FROM fundamentals WHERE symbol = ?",
+                    (symbol,),
+                ).fetchone()
+                if row:
+                    return {"market_cap": row[0], "sector": row[1]}
+        except Exception:
+            pass
+        return {}
+
+    def _get_promoter_pct(self, symbol: str):
+        try:
+            inst_db = os.path.join(DB_DIR, LibrarianCore.DB_MAP["institutional"])
+            if not os.path.exists(inst_db):
+                return 50.0
+            with sqlite3.connect(inst_db) as conn:
+                row = conn.execute(
+                    "SELECT promoter_pct FROM fii_dii_history WHERE symbol = ? ORDER BY date DESC LIMIT 1",
+                    (symbol,),
+                ).fetchone()
+                if row and row[0] is not None:
+                    return float(row[0])
+        except Exception:
+            pass
+        return 50.0
+
+    def _compute_fti_features(
+        self, df_tech: pd.DataFrame, symbol: str, trig_date: str, end_date: str
+    ):
+        funda = self._get_fundamentals_for_symbol(symbol)
+        mcap = funda.get("market_cap")
+        promoter_pct = self._get_promoter_pct(symbol)
+
+        if mcap and mcap > 0:
+            free_float_mcap = mcap * (1.0 - promoter_pct / 100.0)
+        else:
+            free_float_mcap = 0.0
+
+        trig_row = df_tech[df_tech["date"] == trig_date]
+        if not trig_row.empty:
+            r = trig_row.iloc[0]
+            del_qty = r.get("delivery", 0) or 0
+            price = r.get("vwap", r.get("close", 0)) or 0
+            delivery_value_trigger = del_qty * price
+        else:
+            delivery_value_trigger = 0.0
+
+        digest_rows = df_tech[df_tech["date"] > trig_date]
+        if not digest_rows.empty and "delivery" in digest_rows.columns:
+            digest_del = digest_rows["delivery"].fillna(0)
+            digest_price = digest_rows.get(
+                "vwap", digest_rows.get("close", pd.Series([0] * len(digest_rows)))
+            ).fillna(0)
+            if isinstance(digest_price, pd.DataFrame):
+                digest_price = digest_price.iloc[:, 0]
+            digest_values = digest_del * digest_price
+            avg_delivery_value_digestion = float(digest_values.mean())
+        else:
+            avg_delivery_value_digestion = 0.0
+
+        if free_float_mcap > 0:
+            fti_trigger = delivery_value_trigger / free_float_mcap * 100
+            fti_avg_digestion = avg_delivery_value_digestion / free_float_mcap * 100
+        else:
+            fti_trigger = 0.0
+            fti_avg_digestion = 0.0
+
+        return {
+            "fti_trigger": round(fti_trigger, 6),
+            "fti_avg_digestion": round(fti_avg_digestion, 6),
+            "free_float_mcap": round(free_float_mcap, 2),
+        }
+
     def extract_features_and_targets(self):
+        import pandas as pd
+        import numpy as np
+        import time
+
         conn = self.lib._tech_conn
+
+        t0 = time.time()
         events = pd.read_sql("SELECT * FROM launchpad_events", conn)
         if events.empty:
             return pd.DataFrame(), pd.DataFrame(), {}
 
-        features = self.config["features"]
-        lookback = self.config["lookback_days"]
+        # Get unique symbols that have at least one event
+        symbols = events["symbol"].unique().tolist()
+        placeholders = ",".join(["?"] * len(symbols))
 
-        rows_list = []
+        # Load ALL technical data for those symbols in one query
+        tech = pd.read_sql(
+            f"SELECT * FROM technical_data WHERE symbol IN ({placeholders}) ORDER BY symbol, date",
+            conn,
+            params=symbols,
+        )
+        print(
+            f"Step 1: {len(tech)} rows loaded for {len(symbols)} symbols ({time.time()-t0:.1f}s)"
+        )
+
+        # Build features per event by slicing into the pre‑loaded DataFrame
+        rows = []
         for _, ev in events.iterrows():
             sym = ev["symbol"]
             trig_date = ev["trigger_date"]
-            bdate = ev["breakout_date"]
-            digest_low_date = ev["digestion_low_date"]
+            bdate = ev.get("breakout_date")
+            digest_low_date = ev.get("digestion_low_date")
 
-            query = f"""
-                SELECT * FROM technical_data
-                WHERE symbol = ?
-                  AND date >= ?
-                  AND date <= ?
-                ORDER BY date
-            """
-            start_search = trig_date
-            end_search = bdate
-            try:
-                df = pd.read_sql(query, conn, params=(sym, start_search, end_search))
-            except Exception:
-                continue
+            if not bdate or pd.isna(bdate):
+                continue  # skip failure events (no breakout)
 
-            if df.empty or len(df) < 5:
-                continue
-
-            df["del_zscore"] = (
-                (df["delivery_pct"] - df["delivery_pct"].rolling(20, min_periods=10).mean())
-                / (df["delivery_pct"].rolling(20, min_periods=10).std() + 1e-9)
+            # Slice the pre‑loaded DataFrame for this symbol + date range
+            mask = (
+                (tech["symbol"] == sym)
+                & (tech["date"] >= trig_date)
+                & (tech["date"] <= bdate)
             )
-            high_low = df["high"] - df["low"]
-            high_close = (df["high"] - df["close"].shift(1)).abs()
-            low_close = (df["low"] - df["close"].shift(1)).abs()
-            tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-            df["atr"] = tr.rolling(14, min_periods=5).mean()
-            df["vol_avg"] = df["volume"].rolling(20, min_periods=10).mean()
+            df = tech.loc[mask].copy()
+            if len(df) < 10:
+                continue
 
-            try:
-                trig_zscore = float(df["del_zscore"].max())
-            except Exception:
-                trig_zscore = 0.0
+            df = df.sort_values("date")
+            df["del_zscore"] = (
+                df["delivery_pct"]
+                - df["delivery_pct"].rolling(20, min_periods=10).mean()
+            ) / (df["delivery_pct"].rolling(20, min_periods=10).std() + 1e-9)
+            df["range_atr_ratio"] = (df["high"] - df["low"]) / (
+                (df["high"] - df["low"]).rolling(14, min_periods=5).mean() + 1e-9
+            )
+            df["vol_ratio"] = df["volume"] / (
+                df["volume"].rolling(20, min_periods=10).mean() + 1e-9
+            )
 
-            try:
-                digest_zscore_min = float(df["del_zscore"].min())
-            except Exception:
-                digest_zscore_min = 0.0
-
-            try:
-                del_pct_avg = float(df["delivery_pct"].mean())
-            except Exception:
-                del_pct_avg = 0.0
-
-            try:
-                day_range = df["high"] - df["low"]
-                rr = day_range / (df["atr"] + 1e-9)
-                range_atr_min = float(rr.min())
-            except Exception:
-                range_atr_min = 0.0
-
-            try:
-                vr = df["volume"] / (df["vol_avg"] + 1e-9)
-                vol_ratio_min = float(vr.min())
-            except Exception:
-                vol_ratio_min = 0.0
-
-            max_dd = float(ev.get("max_drawdown_pct", 0.0))
-            days_since = int(ev.get("days_to_breakout", 0))
-
-            try:
-                close_loc = (df["close"] - df["low"]) / (df["high"] - df["low"] + 1e-9)
-                close_location_avg = float(close_loc.mean())
-            except Exception:
-                close_location_avg = 0.5
-
-            try:
-                nifty_rows = pd.read_sql(
-                    "SELECT date, close FROM technical_data WHERE symbol = 'NIFTY' AND date >= ? AND date <= ? ORDER BY date",
-                    conn,
-                    params=(start_search, end_search),
-                )
-                if not nifty_rows.empty:
-                    nifty_ret = (nifty_rows["close"].iloc[-1] / nifty_rows["close"].iloc[0] - 1) * 100
-                else:
-                    nifty_ret = 0.0
-            except Exception:
-                nifty_ret = 0.0
-
-            try:
-                sector_query = """
-                    SELECT AVG(stock_return) as avg_sector_ret
-                    FROM technical_data
-                    WHERE date = ?
-                      AND symbol IN (
-                          SELECT symbol FROM technical_data
-                          WHERE date = ?
-                            AND symbol != ?
-                            AND stock_return IS NOT NULL
-                      )
-                """
-                sector_row = pd.read_sql(
-                    "SELECT stock_return FROM technical_data WHERE symbol = ? AND date = ? ORDER BY date DESC LIMIT 1",
-                    conn,
-                    params=(sym, end_search),
-                )
-                if not sector_row.empty:
-                    stock_ret = float(sector_row["stock_return"].iloc[0])
-                else:
-                    stock_ret = 0.0
-                sector_relative_strength = stock_ret - nifty_ret
-            except Exception:
-                sector_relative_strength = 0.0
-
-            row_data = {
-                "delivery_zscore_trigger": trig_zscore,
-                "delivery_zscore_min_digestion": digest_zscore_min,
-                "delivery_pct_avg_digestion": del_pct_avg,
-                "range_atr_ratio_min": range_atr_min,
-                "vol_ratio_min": vol_ratio_min,
-                "max_drawdown_pct": max_dd,
-                "days_since_trigger": days_since,
-                "close_location_avg": close_location_avg,
-                "nifty_return_digestion": nifty_ret,
-                "sector_relative_strength": sector_relative_strength,
+            features = {
+                "del_zscore_min": df["del_zscore"].min(),
+                "del_zscore_mean": df["del_zscore"].mean(),
+                "range_atr_min": df["range_atr_ratio"].min(),
+                "vol_ratio_min": df["vol_ratio"].min(),
+                "digestion_days": len(df),
+                "max_drawdown_pct": ev.get("max_drawdown_pct", 0),
+                "return_pct": ev.get("return_pct", 0),
+                "success": ev.get("success", 0),
             }
-            rows_list.append(row_data)
+            rows.append(features)
 
-        if not rows_list:
-            return pd.DataFrame(), pd.DataFrame(), {}
-
-        X = pd.DataFrame(rows_list)
-        y = pd.DataFrame({
-            "success": events["success"].values[:len(X)],
-            "return_pct": events["return_pct"].values[:len(X)],
-            "days_to_breakout": events["days_to_breakout"].values[:len(X)],
-        })
-        meta = {
-            "symbols": events["symbol"].values[:len(X)],
-            "trigger_dates": events["trigger_date"].values[:len(X)],
-        }
-        return X, y, meta
+        X = pd.DataFrame(rows)
+        y = X[["return_pct", "success"]].copy()
+        X = X.drop(columns=["return_pct", "success"])
+        print(f"Step 2: {len(X)} feature rows extracted ({time.time()-t0:.1f}s)")
+        return X, y, {}
 
     def train(self):
         from sklearn.metrics import accuracy_score, mean_squared_error
@@ -504,7 +525,9 @@ class LaunchpadPredictor:
         X, y, meta = self.extract_features_and_targets()
 
         if X.empty:
-            return {"error": "Insufficient data for training. Run launchpad labelling first."}
+            return {
+                "error": "Insufficient data for training. Run launchpad labelling first."
+            }
 
         print(f"[Launchpad] Total samples: {len(X)}")
 
@@ -519,7 +542,9 @@ class LaunchpadPredictor:
         y_val = y.iloc[train_end:val_end]
         y_test = y.iloc[val_end:]
 
-        print(f"[Launchpad] Train: {len(X_train)}, Val: {len(X_val)}, Test: {len(X_test)}")
+        print(
+            f"[Launchpad] Train: {len(X_train)}, Val: {len(X_val)}, Test: {len(X_test)}"
+        )
 
         params = self.config["xgb_params"]
 
@@ -554,13 +579,21 @@ class LaunchpadPredictor:
 
         train_pred_ret = self.regressor.predict(X_train)[:, 0]
         test_pred_ret = self.regressor.predict(X_test)[:, 0]
-        train_rmse_ret = float(np.sqrt(mean_squared_error(y_train["return_pct"], train_pred_ret)))
-        test_rmse_ret = float(np.sqrt(mean_squared_error(y_test["return_pct"], test_pred_ret)))
+        train_rmse_ret = float(
+            np.sqrt(mean_squared_error(y_train["return_pct"], train_pred_ret))
+        )
+        test_rmse_ret = float(
+            np.sqrt(mean_squared_error(y_test["return_pct"], test_pred_ret))
+        )
 
         train_pred_days = self.regressor.predict(X_train)[:, 1]
         test_pred_days = self.regressor.predict(X_test)[:, 1]
-        train_rmse_days = float(np.sqrt(mean_squared_error(y_train["days_to_breakout"], train_pred_days)))
-        test_rmse_days = float(np.sqrt(mean_squared_error(y_test["days_to_breakout"], test_pred_days)))
+        train_rmse_days = float(
+            np.sqrt(mean_squared_error(y_train["days_to_breakout"], train_pred_days))
+        )
+        test_rmse_days = float(
+            np.sqrt(mean_squared_error(y_test["days_to_breakout"], test_pred_days))
+        )
 
         os.makedirs("models", exist_ok=True)
         import joblib
@@ -570,9 +603,14 @@ class LaunchpadPredictor:
             "models/launchpad_xgb.joblib",
         )
 
-        importance_cls = dict(zip(self.config["features"], self.classifier.feature_importances_))
+        importance_cls = dict(
+            zip(self.config["features"], self.classifier.feature_importances_)
+        )
         importance_reg = dict(
-            zip(self.config["features"], self.regressor.estimators_[0].feature_importances_.tolist())
+            zip(
+                self.config["features"],
+                self.regressor.estimators_[0].feature_importances_.tolist(),
+            )
         )
 
         self.metadata = {
@@ -596,7 +634,9 @@ class LaunchpadPredictor:
         with open("models/launchpad_metadata.json", "w") as f:
             json.dump(self.metadata, f, indent=2)
 
-        print(f"[Launchpad] Model trained. Acc: {test_acc:.4f}, RMSE ret: {test_rmse_ret:.4f}, RMSE days: {test_rmse_days:.4f}")
+        print(
+            f"[Launchpad] Model trained. Acc: {test_acc:.4f}, RMSE ret: {test_rmse_ret:.4f}, RMSE days: {test_rmse_days:.4f}"
+        )
 
         return {
             "train_accuracy": float(train_acc),
@@ -615,167 +655,83 @@ class LaunchpadPredictor:
         }
 
     def predict_current(self):
+        import pandas as pd
+        import numpy as np
         import joblib
-
-        model_path = "models/launchpad_xgb.joblib"
-        if not os.path.exists(model_path):
-            return {"error": "No trained launchpad model found. Run /api/ml/launchpad/train first."}
-
-        model_data = joblib.load(model_path)
-        classifier = model_data["classifier"]
-        regressor = model_data["regressor"]
-
+        import os
         conn = self.lib._tech_conn
-        latest_date = conn.execute("SELECT MAX(date) FROM technical_data").fetchone()[0]
-        if not latest_date:
-            return {"error": "No data available."}
 
-        events = pd.read_sql("SELECT * FROM launchpad_events WHERE breakout_date IS NULL OR breakout_date = ''", conn)
-        if events.empty:
-            return {"predictions": [], "message": "No stocks currently in digestion phase."}
+        # Find stocks currently in digestion (trigger exists, no breakout yet)
+        current = pd.read_sql("""
+            SELECT * FROM launchpad_events
+            WHERE success = 0
+              AND trigger_date >= date('now', '-180 days')
+            ORDER BY trigger_date DESC
+        """, conn)
 
-        lookback = self.config["lookback_days"]
-        predictions = []
+        if current.empty:
+            return []
 
-        for _, ev in events.iterrows():
-            sym = ev["symbol"]
-            trig_date = ev["trigger_date"]
-            try:
-                df = pd.read_sql(
-                    "SELECT * FROM technical_data WHERE symbol = ? AND date >= ? AND date <= ? ORDER BY date",
-                    conn,
-                    params=(sym, trig_date, latest_date),
-                )
-            except Exception:
-                continue
+        model = joblib.load('models/launchpad_xgb.joblib')
+        rows = []
 
-            if df.empty or len(df) < 5:
-                continue
+        for _, ev in current.iterrows():
+            sym = ev['symbol']
+            trig = ev['trigger_date']
 
-            df["del_zscore"] = (
-                (df["delivery_pct"] - df["delivery_pct"].rolling(20, min_periods=10).mean())
-                / (df["delivery_pct"].rolling(20, min_periods=10).std() + 1e-9)
-            )
-            high_low = df["high"] - df["low"]
-            high_close = (df["high"] - df["close"].shift(1)).abs()
-            low_close = (df["low"] - df["close"].shift(1)).abs()
-            tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-            df["atr"] = tr.rolling(14, min_periods=5).mean()
-            df["vol_avg"] = df["volume"].rolling(20, min_periods=10).mean()
+            # Compute digestion features from trigger to today
+            feats = conn.execute("""
+                SELECT
+                    MIN((td.delivery_pct - td.avg_del) / (NULLIF(td.std_del, 0) + 1e-9)) AS del_zscore_min,
+                    AVG((td.delivery_pct - td.avg_del) / (NULLIF(td.std_del, 0) + 1e-9)) AS del_zscore_mean,
+                    MIN(td.range_atr_ratio) AS range_atr_min,
+                    MIN(td.vol_ratio) AS vol_ratio_min,
+                    COUNT(*) AS digestion_days,
+                    COALESCE(e.max_drawdown_pct, 0) AS max_drawdown_pct
+                FROM launchpad_events e
+                JOIN (
+                    SELECT symbol, date, delivery_pct, volume, high, low,
+                        (high - low) / (AVG(high - low) OVER w14 + 1e-9) AS range_atr_ratio,
+                        volume / (AVG(volume) OVER w20 + 1e-9) AS vol_ratio,
+                        AVG(delivery_pct) OVER w20 AS avg_del,
+                        (AVG(delivery_pct * delivery_pct) OVER w20 -
+                         AVG(delivery_pct) OVER w20 * AVG(delivery_pct) OVER w20) AS std_del
+                    FROM technical_data
+                    WINDOW w14 AS (PARTITION BY symbol ORDER BY date ROWS BETWEEN 13 PRECEDING AND CURRENT ROW),
+                           w20 AS (PARTITION BY symbol ORDER BY date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW)
+                ) td ON td.symbol = e.symbol
+                   AND td.date >= e.trigger_date
+                   AND td.date <= date('now')
+                WHERE e.symbol = ? AND e.trigger_date = ?
+                GROUP BY e.symbol, e.trigger_date
+            """, (sym, trig)).fetchone()
 
-            try:
-                trig_zscore = float(df["del_zscore"].max())
-            except Exception:
-                trig_zscore = 0.0
+            if feats and feats[0] is not None:
+                feature_values = list(feats)
+            else:
+                # Not enough digestion data yet — fill with neutral values
+                feature_values = [0.0, 0.0, 1.0, 1.0, 5, 0.0]
 
-            try:
-                digest_zscore_min = float(df["del_zscore"].min())
-            except Exception:
-                digest_zscore_min = 0.0
+            rows.append(feature_values + [sym, trig])
 
-            try:
-                del_pct_avg = float(df["delivery_pct"].mean())
-            except Exception:
-                del_pct_avg = 0.0
+        X = pd.DataFrame(rows, columns=[
+            'del_zscore_min', 'del_zscore_mean', 'range_atr_min',
+            'vol_ratio_min', 'digestion_days', 'max_drawdown_pct',
+            'symbol', 'trigger_date'
+        ])
 
-            try:
-                day_range = df["high"] - df["low"]
-                rr = day_range / (df["atr"] + 1e-9)
-                range_atr_min = float(rr.min())
-            except Exception:
-                range_atr_min = 0.0
-
-            try:
-                vr = df["volume"] / (df["vol_avg"] + 1e-9)
-                vol_ratio_min = float(vr.min())
-            except Exception:
-                vol_ratio_min = 0.0
-
-            try:
-                trig_price = float(ev["trigger_peak_price"])
-                digest_low = float(ev["digestion_low_price"])
-                max_dd = ((trig_price - digest_low) / trig_price) * 100
-            except Exception:
-                max_dd = 0.0
-
-            try:
-                days_since = (pd.Timestamp(latest_date) - pd.Timestamp(trig_date)).days
-            except Exception:
-                days_since = 0
-
-            try:
-                close_loc = (df["close"] - df["low"]) / (df["high"] - df["low"] + 1e-9)
-                close_location_avg = float(close_loc.mean())
-            except Exception:
-                close_location_avg = 0.5
-
-            try:
-                nifty_rows = pd.read_sql(
-                    "SELECT date, close FROM technical_data WHERE symbol = 'NIFTY' AND date >= ? AND date <= ? ORDER BY date",
-                    conn,
-                    params=(trig_date, latest_date),
-                )
-                if not nifty_rows.empty:
-                    nifty_ret = (nifty_rows["close"].iloc[-1] / nifty_rows["close"].iloc[0] - 1) * 100
-                else:
-                    nifty_ret = 0.0
-            except Exception:
-                nifty_ret = 0.0
-
-            try:
-                stock_ret_row = pd.read_sql(
-                    "SELECT stock_return FROM technical_data WHERE symbol = ? AND date = ? ORDER BY date DESC LIMIT 1",
-                    conn,
-                    params=(sym, latest_date),
-                )
-                if not stock_ret_row.empty:
-                    stock_ret = float(stock_ret_row["stock_return"].iloc[0])
-                else:
-                    stock_ret = 0.0
-                sector_relative_strength = stock_ret - nifty_ret
-            except Exception:
-                sector_relative_strength = 0.0
-
-            feat_dict = {
-                "delivery_zscore_trigger": trig_zscore,
-                "delivery_zscore_min_digestion": digest_zscore_min,
-                "delivery_pct_avg_digestion": del_pct_avg,
-                "range_atr_ratio_min": range_atr_min,
-                "vol_ratio_min": vol_ratio_min,
-                "max_drawdown_pct": max_dd,
-                "days_since_trigger": days_since,
-                "close_location_avg": close_location_avg,
-                "nifty_return_digestion": nifty_ret,
-                "sector_relative_strength": sector_relative_strength,
-            }
-            X_pred = pd.DataFrame([feat_dict])
-
-            prob_success = float(classifier.predict_proba(X_pred)[0][1])
-            pred_ret = float(regressor.predict(X_pred)[0][0])
-            pred_days = float(regressor.predict(X_pred)[0][1])
-
-            confidence = "low"
-            if prob_success > 0.7:
-                confidence = "high"
-            elif prob_success > 0.5:
-                confidence = "medium"
-
-            predictions.append({
-                "symbol": sym,
-                "trigger_date": trig_date,
-                "breakout_probability": round(prob_success, 4),
-                "expected_return_pct": round(pred_ret, 2),
-                "expected_days_to_breakout": round(pred_days, 1),
-                "confidence": confidence,
+        preds = model.predict(X.drop(columns=['symbol', 'trigger_date']))
+        results = []
+        for i, row in X.iterrows():
+            results.append({
+                'symbol': row['symbol'],
+                'trigger_date': row['trigger_date'],
+                'predicted_return_pct': round(float(preds[i, 0]), 2),
+                'predicted_days_to_breakout': round(float(preds[i, 1]), 1),
+                'current_digestion_days': int(row['digestion_days']),
             })
 
-        predictions.sort(key=lambda x: x["breakout_probability"], reverse=True)
-
-        return {
-            "date": latest_date,
-            "predictions": predictions,
-            "total_symbols": len(predictions),
-        }
+        return results
 
     def get_feature_importance(self):
         import joblib

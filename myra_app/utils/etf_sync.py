@@ -472,6 +472,14 @@ def sync_etf_list(force: bool = False, task_id: int = None) -> bool:
             conn.commit()
             print(f"[MYRA ETF] Synced {len(symbols)} ETF symbols from {source}")
 
+            if source == "nse_api":
+                try:
+                    purged = purge_etf_rows_from_technical_db()
+                    if purged:
+                        logger.info(f"Purged {purged} ETF rows from technical_data after NSE sync")
+                except Exception as e:
+                    logger.warning(f"ETF purge after sync failed (non-fatal): {e}")
+
             if task_id is not None:
                 update(task_id, "ETF sync complete")
 

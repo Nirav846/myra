@@ -334,16 +334,17 @@ def _task_daily_ingest(force: bool = False):
             f"backfill={result.get('backfill_performed')}"
         )
 
-        if result.get("success") and result.get("total_rows_inserted", 0) > 0:
+        if result.get("success"):
             new_latest = get_db_latest_date()
             logger.info(f"[MYRA BG] DB latest date after ingestion: {new_latest}")
             _mark_ingested_today()
             _mark_task_run("daily_ingest")
-            logger.info("[MYRA BG] Daily ingest complete - metadata updated.")
-        elif result.get("success") and result.get("total_rows_inserted", 0) == 0:
-            logger.info(
-                "[MYRA BG] Ingestion succeeded but no new rows - may be before market close"
-            )
+            if result.get("total_rows_inserted", 0) > 0:
+                logger.info("[MYRA BG] Daily ingest complete - metadata updated.")
+            else:
+                logger.info(
+                    "[MYRA BG] Ingestion succeeded but no new rows - DB is already up to date."
+                )
         else:
             failed_dates = result.get("dates_failed", [])
             error_msg = result.get("error", "Unknown error")
@@ -386,7 +387,7 @@ def _task_watchdog():
                     f"Watching – Last check: {ist_now.strftime('%H:%M:%S')}",
                 )
 
-                if _is_db_stale(days_threshold=2):
+                if _is_db_stale(days_threshold=1):
                     ist_now = datetime.now(timezone.utc).astimezone(IST)
                     last_attempt = _get_last_run("stale_catchup")
                     already_tried_today = (
@@ -394,7 +395,7 @@ def _task_watchdog():
                     )
 
                     if not already_tried_today:
-                        logger.info("[MYRA BG] Database is STALE (2+ days behind). Triggering catch-up...")
+                        logger.info("[MYRA BG] Database is STALE (1+ days behind). Triggering catch-up...")
                         _mark_task_run("stale_catchup")
                         _task_daily_ingest(force=True)
                     elif ist_now.hour >= 18 and ist_now.minute >= 30 and not _already_ingested_today():
@@ -591,6 +592,11 @@ def _task_fundamentals_daily():
         while not _shutdown_event.is_set():
             try:
                 ist_now = datetime.now(timezone.utc).astimezone(IST)
+                if not _is_task_overdue("fundamentals_daily", days=1):
+                    for _ in range(30):
+                        if _shutdown_event.wait(60):
+                            return
+                    continue
                 # Run on weekdays after 6 PM, after daily ingest
                 if ist_now.weekday() < 5 and ist_now.hour >= 18:
                     update(tid, "Running lightweight Morningstar sync...")
@@ -606,6 +612,7 @@ def _task_fundamentals_daily():
                         f"MS: {result['ms_fetched']}, Inserted: {result['inserted']}, "
                         f"Errors: {result['errors']}"
                     )
+                    _mark_task_run("fundamentals_daily")
                     # Wait until next day to avoid multiple runs
                     for _ in range(360):  # 6 hours
                         if _shutdown_event.wait(60):
@@ -870,9 +877,15 @@ def _launch_background_threads():
         threading.Thread(target=fn, name=f"myra-bg-{name}", daemon=True)
         for name, fn in tasks
     ]
+    sync_task_names = {"etf-sync", "index-sync", "fundamentals-sync", "institutional-sync"}
+    stagger_seconds = 30
     with _task_lock:
-        for t in threads:
+        for i, t in enumerate(threads):
             t.start()
+            prev_name = tasks[i][0] if i > 0 else None
+            if prev_name in sync_task_names:
+                logger.info(f"[MYRA BG] Staggering next sync task by {stagger_seconds}s...")
+                time.sleep(stagger_seconds)
         _active_tasks.extend(threads)
     for name, _ in tasks:
         logger.info(f"[MYRA BG] Started task: {name}")

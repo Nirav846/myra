@@ -10,7 +10,10 @@
     "days_since_trigger",
     "close_location_avg",
     "nifty_return_digestion",
-    "sector_relative_strength"
+    "sector_relative_strength",
+    "fti_trigger",
+    "fti_avg_digestion",
+    "free_float_mcap"
   ],
   "xgb_params": {
     "n_estimators": 150,
