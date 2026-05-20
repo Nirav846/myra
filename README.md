@@ -68,6 +68,25 @@ MYRA is a comprehensive stock screening and analysis platform for the National S
    - Install the `finstack` package to enable the Morning Brief feature
    - Without it, `/api/finstack/morning-brief` returns a graceful "unavailable" status
 
+## 🤝 Contributors Welcome
+
+MYRA is open‑source and actively maintained.  
+We welcome contributions of all kinds—scanners, indicators, documentation, tests, and bug fixes.
+
+### How to contribute
+
+1. **Fork** the repo and clone it locally.
+2. Pick an issue from the [Issues tab](https://github.com/Nirav846/myra/issues) or open a new one.
+3. Create a feature branch (`feature/my‑new‑scanner`) and make your changes.
+4. Run `npx tsc --noEmit` and `flake8 myra_app` to verify your code.
+5. Submit a **Pull Request** against `main`.
+
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for code style, branch naming, and detailed instructions on adding scanners or indicators.
+
+### Good first issues
+
+Look for issues labeled **`good first issue`**—they're small, self‑contained tasks ideal for new contributors.
+
 ## Usage
 
 1. Open http://localhost:3000 in your browser
