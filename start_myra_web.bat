@@ -18,7 +18,7 @@ timeout /t 2 /nobreak >nul
 
 :: ---------- FastAPI backend ----------
 echo [2/3] Starting FastAPI backend ...
-start /min "MYRA Backend" cmd /k "cd /d D:\01screener\Myra && python -m uvicorn myra_web.myra_fastapi_server:app --reload --host 0.0.0.0 --port 8000"
+start "MYRA Backend" cmd /k "cd /d D:\01screener\Myra && python run_fastapi.py"
 
 timeout /t 2 /nobreak >nul
 

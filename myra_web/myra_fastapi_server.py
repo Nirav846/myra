@@ -73,20 +73,19 @@ class QueryRequest(BaseModel):
 async def execute_query(req: QueryRequest):
     # Map frontend DB connection names to LibrarianCore canonical keys
     frontend_to_canonical = {
-        "_tech_conn": "tech",
+        "_tech_conn": "technical",
         "_meta_conn": "meta",
         "_val_conn": "valuation",
-        "_inst_conn": "inst",
-        "_gov_conn": "gov",
-        "_cache_conn": "cache",
+        "_inst_conn": "institutional",
+        "_gov_conn": "governance",
+        "_cache_conn": "network_cache",
         "_scoring_conn": "scoring",
-        "_cal_conn": "cal",
+        "_cal_conn": "calendar",
     }
 
     canonical_key = frontend_to_canonical.get(req.db) or req.db
     db_file = LibrarianCore.DB_MAP.get(canonical_key)
     if not db_file:
-        raise HTTPException(status_code=400, detail=f"Unknown database: {req.db}")
         raise HTTPException(status_code=400, detail=f"Unknown database: {req.db}")
 
     db_path = os.path.join(DB_DIR, db_file)
@@ -208,7 +207,7 @@ async def get_market_breadth():
     Return advances / declines for the latest trading date in technical_data.
     An advance = close > previous close; decline = close < previous close.
     """
-    tech_db = os.path.join(DB_DIR, DB_MAP["tech"])
+    tech_db = os.path.join(DB_DIR, LibrarianCore.DB_MAP["technical"])
     try:
         with sqlite3.connect(tech_db) as conn:
             # Find latest date
@@ -253,7 +252,7 @@ async def get_market_breadth():
 async def get_db_size():
     """Return size of the main technical database."""
     try:
-        tech_path = os.path.join(DB_DIR, DB_MAP["tech"])
+        tech_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["technical"])
         size_mb = os.path.getsize(tech_path) / (1024 * 1024)
         return {"size_mb": round(size_mb, 1)}
     except Exception as e:
@@ -519,3 +518,17 @@ async def launchpad_feature_importance():
     from myra_app.ml_trainer import LaunchpadPredictor
     predictor = LaunchpadPredictor()
     return predictor.get_feature_importance()
+
+
+@app.get("/api/finstack/morning-brief")
+async def finstack_morning_brief():
+    from myra_app.utils.finstack_bridge import get_morning_brief
+    result = await get_morning_brief()
+    return result
+
+
+@app.get("/api/finstack/scan-pledge-risks")
+async def finstack_scan_pledge_risks():
+    from myra_app.utils.finstack_bridge import scan_pledge_risks
+    result = await scan_pledge_risks()
+    return result
