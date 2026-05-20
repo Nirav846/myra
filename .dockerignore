@@ -1,0 +1,65 @@
+# Git
+.git/
+.gitignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Node
+myra_web/node_modules/
+myra_web/dist/
+
+# Database files (mounted as volumes)
+*.db
+db/
+data/
+
+# Environment
+.env
+.env.*
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+*.md
+docs/
+HELP FILES/
+
+# Other
+dummy_test.db
+test_*.db
+test_*.py
+check_*.py
+generate_labels.py
+bandit_report.txt
+eslint_report.txt
+flake8_errors.txt
+data_quality_report.txt
+drift_audit.md
+TARGETED_AUDIT_FINDINGS.md
+MYRA_AI_READY.txt
+MYRA_Audit_Report.txt
+AUDIT_REPORT.md
+stepbystepreport.md
+PROMPT.txt
+PROMPTRESULT.txt
+TARGETED_AUDIT_FINDINGS.md
+skills-lock.json
+=
