@@ -48,21 +48,34 @@ def health_check():
     Checks if the databases in myra_app/db exist and can be connected to.
     The React UI polls this endpoint to update the green/yellow status lights in the sidebar.
     """
-    status = {}
-    for key, filename in LibrarianCore.DB_MAP.items():
-        db_path = os.path.join(DB_DIR, filename)
-        if db_path and os.path.exists(db_path):
-            try:
-                # Fast heartbeat check
-                conn = sqlite3.connect(db_path)
-                conn.execute("SELECT 1")
-                conn.close()
-                status[key] = True
-            except Exception:
-                status[key] = False
+    canonical_to_frontend = {
+        "technical": "_tech_conn",
+        "meta": "_meta_conn",
+        "valuation": "_val_conn",
+        "institutional": "_inst_conn",
+        "governance": "_gov_conn",
+        "network_cache": "_cache_conn",
+        "scoring": "_scoring_conn",
+        "calendar": "_cal_conn",
+    }
+    health = {}
+    for canonical_key, frontend_key in canonical_to_frontend.items():
+        db_file = LibrarianCore.DB_MAP.get(canonical_key)
+        if db_file:
+            db_path = os.path.join(DB_DIR, db_file)
+            if os.path.exists(db_path):
+                try:
+                    conn = sqlite3.connect(db_path)
+                    conn.execute("SELECT 1")
+                    conn.close()
+                    health[frontend_key] = {"connected": True, "path": db_path}
+                except Exception:
+                    health[frontend_key] = {"connected": False, "path": db_path}
+            else:
+                health[frontend_key] = {"connected": False, "path": None}
         else:
-            status[key] = False
-    return status
+            health[frontend_key] = {"connected": False, "path": None}
+    return {"health": health}
 
 class QueryRequest(BaseModel):
     db: str

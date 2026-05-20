@@ -37,8 +37,7 @@ export class Librarian {
   // Attempt to ping your local Python server
   private async checkBackendHealth() {
     try {
-      const baseUrl = this.apiUrl.endsWith('/api') ? this.apiUrl.slice(0, -4) : this.apiUrl;
-      const res = await fetch(`${baseUrl}/api/health`);
+      const res = await fetch(`${this.apiUrl}/health`);
       if (res.ok) {
         const data = await res.json();
         this.isConnectedToLocalRepo = true;
@@ -59,13 +58,11 @@ export class Librarian {
 
   private getFallbackHealth() {
     return {
-      _tech: { connected: true, path: './db/tech_sidecar.db' },
-      _meta: { connected: true, path: './db/meta_sidecar.db' },
-      _inst: { connected: true, path: './db/inst_sidecar.db' },
-      _gov:  { 
-        connected: true, 
-        path: './db/gov_sidecar.db'
-      }
+      _tech_conn: { connected: true, path: './db/tech_sidecar.db' },
+      _meta_conn: { connected: true, path: './db/meta_sidecar.db' },
+      _val_conn: { connected: true, path: './db/valuation_sidecar.db' },
+      _inst_conn: { connected: true, path: './db/inst_sidecar.db' },
+      _gov_conn:  { connected: true, path: './db/gov_sidecar.db' }
     };
   }
 
@@ -177,8 +174,7 @@ export class Librarian {
     let targetDb = database;
 
     try {
-      const baseUrl = this.apiUrl.endsWith('/api') ? this.apiUrl.slice(0, -4) : this.apiUrl;
-      const res = await fetch(`${baseUrl}/api/query`, {
+      const res = await fetch(`${this.apiUrl}/query`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 

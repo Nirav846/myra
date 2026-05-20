@@ -17,8 +17,7 @@ export function useHealthStatus() {
     };
 
     const pingHealth = () => {
-        const baseUrl = lib.apiUrl.endsWith('/api') ? lib.apiUrl.slice(0, -4) : lib.apiUrl;
-        return fetch(`${baseUrl}/api/health`).then(res => {
+        return fetch(`${lib.apiUrl}/health`).then(res => {
             if (res.ok) return res.json();
             throw new Error("unhealthy");
         }).then(data => {
