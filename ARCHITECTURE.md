@@ -41,10 +41,18 @@ background_orchestrator.py (daemon threads)
 
 FastAPI Server (myra_fastapi_server.py)
          │
-         ├─► /api/query (SQL queries)
-         ├─► /api/tools/status (DB health)
-         ├─► /api/market-breadth (breadth metrics)
-         └─► /api/scanner/* (scanner endpoints)
+         ├─► /api/health (DB connection status)
+         ├─► /api/query (SQL queries via POST)
+         ├─► /api/market-breadth (advances/declines)
+         ├─► /api/tools/status (pipeline task timestamps)
+         ├─► /api/tools/execute (run maintenance scripts)
+         ├─► /api/db-size (database size in MB)
+         ├─► /api/ml/status (ML model status)
+         ├─► /api/ml/train (train ML model)
+         ├─► /api/ml/predict (get predictions)
+         ├─► /api/ml/launchpad/predict (launchpad predictions)
+         ├─► /api/finstack/morning-brief (FinStack MCP, optional)
+         └─► /api/fundamentals/live/{symbol} (live fundamentals)
 
 React Frontend (myra_web/src/)
          │

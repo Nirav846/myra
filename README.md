@@ -58,11 +58,15 @@ MYRA is a comprehensive stock screening and analysis platform for the National S
 
 6. **Start the web application:**
    ```bash
-   start_myra_web.bat  # On Windows
+   start_myra_web.bat  # On Windows (recommended)
    # Or manually:
-   # Terminal 1: python myra_web/myra_fastapi_server.py
-   # Terminal 2: cd myra_web && npm run dev
+   # Terminal 1: python run_fastapi.py   (backend on port 8000)
+   # Terminal 2: cd myra_web && npm run dev  (frontend on port 3000)
    ```
+
+7. **Optional – FinStack MCP:**
+   - Install the `finstack` package to enable the Morning Brief feature
+   - Without it, `/api/finstack/morning-brief` returns a graceful "unavailable" status
 
 ## Usage
 
