@@ -2,41 +2,21 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
 import { Rocket, Filter, AlertCircle, ArrowUpRight } from 'lucide-react';
 
-interface Prediction {
+interface RealPrediction {
   symbol: string;
-  sector?: string;
-  market_cap?: number;
   trigger_date: string;
-  days_since_trigger: number;
-  current_price: number;
-  predicted_price_lower: number;
-  predicted_price_upper: number;
-  breakout_probability: number;
-  expected_return: number;
-  confidence: 'High' | 'Medium' | 'Low';
+  predicted_return_pct: number;
+  predicted_days_to_breakout: number;
+  current_digestion_days: number;
 }
-
-interface LaunchpadResponse {
-  predictions?: Prediction[];
-  error?: string;
-}
-
-const resolveBucket = (mcap: number | undefined) => {
-  if (!mcap) return 'Unknown';
-  if (mcap > 20000) return 'Large Cap';
-  if (mcap > 5000) return 'Mid Cap';
-  return 'Small Cap';
-};
 
 export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librarian; onNavigate: (tab: string, symbol: string) => void }) {
-  const [data, setData] = useState<Prediction[] | null>(null);
+  const [data, setData] = useState<RealPrediction[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Filters
-  const [sectorFilter, setSectorFilter] = useState<string>('All');
-  const [bucketFilter, setBucketFilter] = useState<string>('All');
-  const [minProb, setMinProb] = useState<number>(30);
+  const [minReturn, setMinReturn] = useState<number>(0);
 
   const fetchPredictions = useCallback(async () => {
     setLoading(true);
@@ -44,12 +24,8 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
     try {
       const res = await fetch('http://localhost:8000/api/ml/launchpad/predict');
       if (res.ok) {
-        const json: LaunchpadResponse = await res.json();
-        if (json.error) {
-           setError(json.error);
-        } else {
-           setData(json.predictions || []);
-        }
+        const json: RealPrediction[] = await res.json();
+        setData(json);
       } else {
         const err = await res.json();
         setError(err.detail || 'Failed to fetch predictions');
@@ -66,37 +42,29 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
     fetchPredictions();
   }, [fetchPredictions]);
 
-  const sectors = useMemo(() => {
-    if (!data) return [];
-    const set = new Set(data.map(d => d.sector || 'Unknown'));
-    return Array.from(set).sort();
-  }, [data]);
-
-  const buckets = useMemo(() => {
-    if (!data) return [];
-    const set = new Set(data.map(d => resolveBucket(d.market_cap)));
-    return Array.from(set).sort();
-  }, [data]);
-
   const filteredData = useMemo(() => {
     if (!data) return [];
     return data
-      .filter(d => sectorFilter === 'All' || (d.sector || 'Unknown') === sectorFilter)
-      .filter(d => bucketFilter === 'All' || resolveBucket(d.market_cap) === bucketFilter)
-      .filter(d => d.breakout_probability * 100 >= minProb)
-      .sort((a, b) => b.breakout_probability - a.breakout_probability);
-  }, [data, sectorFilter, bucketFilter, minProb]);
+      .filter(d => (d.predicted_return_pct * 100) >= minReturn)
+      .sort((a, b) => b.predicted_return_pct - a.predicted_return_pct);
+  }, [data, minReturn]);
 
   const avgExpectedReturn = useMemo(() => {
     if (filteredData.length === 0) return 0;
-    const total = filteredData.reduce((acc, curr) => acc + curr.expected_return, 0);
+    const total = filteredData.reduce((acc, curr) => acc + curr.predicted_return_pct, 0);
     return total / filteredData.length;
   }, [filteredData]);
 
   const highestConfidence = useMemo(() => {
     if (filteredData.length === 0) return null;
-    return filteredData[0]; // Already sorted by probability
+    return filteredData[0]; // Already sorted by return
   }, [filteredData]);
+
+  const getConfidence = (ret: number) => {
+    if (ret > 0.08) return 'High';
+    if (ret > 0.04) return 'Medium';
+    return 'Low';
+  };
 
   if (error || (data && data.length === 0)) {
     return (
@@ -177,7 +145,7 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
                         {highestConfidence.symbol}
                     </span>
                     <span className="text-xs px-2 py-0.5 rounded bg-green-500/10 text-green-400 font-mono">
-                      {(highestConfidence.breakout_probability * 100).toFixed(1)}% Prob
+                      {(highestConfidence.predicted_return_pct * 100).toFixed(2)}% Return
                     </span>
                    </>
                 ) : (
@@ -192,40 +160,18 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
             <div className="flex items-center gap-2 mb-1 text-xs text-[#888] w-full">
                <Filter size={14} /> <span className="font-mono uppercase font-semibold">Filters</span>
             </div>
-            <div className="flex flex-col gap-1 w-48">
-              <label className="text-[10px] text-[#888] font-mono">Sector</label>
-              <select 
-                value={sectorFilter} 
-                onChange={e => setSectorFilter(e.target.value)}
-                className="bg-[#1a1c24] border border-[#ffffff1a] text-[#ccc] text-xs p-1.5 rounded font-mono focus:outline-none"
-              >
-                <option value="All">All Sectors</option>
-                {sectors.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1 w-48">
-              <label className="text-[10px] text-[#888] font-mono">Market Cap</label>
-              <select 
-                value={bucketFilter} 
-                onChange={e => setBucketFilter(e.target.value)}
-                className="bg-[#1a1c24] border border-[#ffffff1a] text-[#ccc] text-xs p-1.5 rounded font-mono focus:outline-none"
-              >
-                <option value="All">All Caps</option>
-                {buckets.map(b => <option key={b} value={b}>{b}</option>)}
-              </select>
-            </div>
             <div className="flex flex-col gap-1 w-64">
               <div className="flex justify-between items-center text-[10px] text-[#888] font-mono">
-                  <span>Min Breakout Prob</span>
-                  <span>{minProb}%</span>
+                  <span>Min Exp Return</span>
+                  <span>{minReturn}%</span>
               </div>
               <input 
                 type="range" 
-                min="0" 
-                max="100" 
-                step="5" 
-                value={minProb} 
-                onChange={e => setMinProb(parseInt(e.target.value))}
+                min="-10" 
+                max="50" 
+                step="1" 
+                value={minReturn} 
+                onChange={e => setMinReturn(parseInt(e.target.value))}
                 className="w-full accent-cyan-500"
               />
             </div>
@@ -238,13 +184,9 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
                 <thead className="bg-[#0e1117] text-[#888] sticky top-0">
                   <tr>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider">Symbol</th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider">Sector</th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider">Mkt Cap</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Trigger Date</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Age (Days)</th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Current Price</th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Launch Range</th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Prob %</th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Predicted Days to Breakout</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Exp. Return</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center">Confidence</th>
                   </tr>
@@ -252,10 +194,12 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                        <td colSpan={10} className="px-4 py-8 text-center text-[#666]">No setups match current filters.</td>
+                        <td colSpan={6} className="px-4 py-8 text-center text-[#666]">No setups match current filters.</td>
                     </tr>
                   ) : (
-                    filteredData.map((row, i) => (
+                    filteredData.map((row, i) => {
+                      const conf = getConfidence(row.predicted_return_pct);
+                      return (
                       <tr key={i} className="hover:bg-[#ffffff05] transition-colors">
                         <td className="px-4 py-3 text-[#fafafa] font-bold">
                            <button 
@@ -265,35 +209,26 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
                              {row.symbol} <ArrowUpRight size={12} className="opacity-0 group-hover:opacity-100" />
                            </button>
                         </td>
-                        <td className="px-4 py-3 text-[#ccc] truncate max-w-[120px]" title={row.sector}>{row.sector || '-'}</td>
-                        <td className="px-4 py-3 text-[#ccc]">{resolveBucket(row.market_cap)}</td>
                         <td className="px-4 py-3 text-[#aaa] text-right">{row.trigger_date}</td>
-                        <td className="px-4 py-3 text-[#ccc] text-right font-bold">{row.days_since_trigger}</td>
-                        <td className="px-4 py-3 text-[#fafafa] text-right">₹{row.current_price?.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-[#ccc] text-right">
-                           ₹{row.predicted_price_lower?.toFixed(1)} <span className="text-[#666]">-</span> ₹{row.predicted_price_upper?.toFixed(1)}
-                        </td>
+                        <td className="px-4 py-3 text-[#ccc] text-right font-bold">{row.current_digestion_days}</td>
+                        <td className="px-4 py-3 text-[#ccc] text-right">{row.predicted_days_to_breakout?.toFixed(1) || '-'}</td>
                         <td className="px-4 py-3 text-right">
-                           <span className={row.breakout_probability > 0.6 ? 'text-green-400 font-bold' : row.breakout_probability > 0.4 ? 'text-yellow-400' : 'text-[#888]'}>
-                               {(row.breakout_probability * 100).toFixed(1)}%
-                           </span>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                           <span className={row.expected_return > 0 ? 'text-cyan-400 font-bold' : 'text-red-400'}>
-                               {(row.expected_return * 100).toFixed(2)}%
+                           <span className={row.predicted_return_pct > 0 ? 'text-cyan-400 font-bold' : 'text-red-400'}>
+                               {(row.predicted_return_pct * 100).toFixed(2)}%
                            </span>
                         </td>
                         <td className="px-4 py-3 text-center">
                            <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold 
-                              ${row.confidence === 'High' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 
-                                row.confidence === 'Medium' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' : 
+                              ${conf === 'High' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 
+                                conf === 'Medium' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' : 
                                 'bg-red-500/10 text-red-400 border border-red-500/20'}`}
                            >
-                             {row.confidence}
+                             {conf}
                            </span>
                         </td>
                       </tr>
-                    ))
+                      );
+                    })
                   )}
                 </tbody>
               </table>

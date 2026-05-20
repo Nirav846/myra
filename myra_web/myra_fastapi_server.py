@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from myra_app.constants import DB_DIR
 from myra_app.librarian_core import LibrarianCore
+
 try:
     from myra_app.background_orchestrator import (
         _task_fundamentals_sync,
@@ -35,12 +36,14 @@ app.add_middleware(
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "myra_app", "db"))
 
+
 def get_db_path(db_key: str):
     """Safely construct the path to a specific SQLite sidecar."""
     filename = LibrarianCore.DB_MAP.get(db_key)
     if not filename:
         return None
     return os.path.join(DB_DIR, filename)
+
 
 @app.get("/api/health")
 def health_check():
@@ -77,10 +80,12 @@ def health_check():
             health[frontend_key] = {"connected": False, "path": None}
     return {"health": health}
 
+
 class QueryRequest(BaseModel):
     db: str
     query: str
     params: list = []
+
 
 @app.post("/api/query")
 async def execute_query(req: QueryRequest):
@@ -103,33 +108,38 @@ async def execute_query(req: QueryRequest):
 
     db_path = os.path.join(DB_DIR, db_file)
     if not os.path.exists(db_path):
-        raise HTTPException(status_code=400, detail=f"Database file not found: {db_file}")
+        raise HTTPException(
+            status_code=400, detail=f"Database file not found: {db_file}"
+        )
 
     try:
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.execute(req.query, req.params)
-        
+
         try:
             rows = [dict(row) for row in cursor.fetchall()]
         except Exception:
             rows = []
-            
-        if not req.query.lstrip().upper().startswith(("SELECT", "PRAGMA", "WITH", "EXPLAIN")):
+
+        if (
+            not req.query.lstrip()
+            .upper()
+            .startswith(("SELECT", "PRAGMA", "WITH", "EXPLAIN"))
+        ):
             conn.commit()
-            
+
         rowcount = cursor.rowcount
         conn.close()
-        
-        return {
-            "data": rows,
-            "rows_affected": rowcount
-        }
+
+        return {"data": rows, "rows_affected": rowcount}
     except sqlite3.Error as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+
 class ToolRequest(BaseModel):
     tool_id: str
+
 
 @app.post("/api/tools/execute")
 def execute_tool(req: ToolRequest):
@@ -140,34 +150,40 @@ def execute_tool(req: ToolRequest):
         "force_sync": "tools/force_sync.py",
         "force_backfill": "tools/force_backfill.py",
         "train_aeon": "research/train_aeon.py",
-        "repair_indicators": "tools/repair_calculated_indicators.py"
+        "repair_indicators": "tools/repair_calculated_indicators.py",
     }
-    
+
     script_path = tool_map.get(req.tool_id)
     if not script_path:
         raise HTTPException(status_code=400, detail="Tool mapping not found")
-        
+
     full_script_path = os.path.join(BASE_DIR, script_path.replace("/", os.sep))
-    
+
     if not os.path.exists(full_script_path):
-        raise HTTPException(status_code=404, detail=f"Script not found at {full_script_path}")
+        raise HTTPException(
+            status_code=404, detail=f"Script not found at {full_script_path}"
+        )
 
     try:
         # Run the Python script synchronously, capturing output
         # For long-running scripts >1 minute, you would typically use Celery or BackgroundTasks here
-        result = subprocess.run(["python", full_script_path], capture_output=True, text=True, timeout=120)
-        
+        result = subprocess.run(
+            ["python", full_script_path], capture_output=True, text=True, timeout=120
+        )
+
         combined_logs = result.stdout + "\n" + result.stderr
         return {
             "success": result.returncode == 0,
-            "logs": combined_logs.strip() or "Script executed silently."
+            "logs": combined_logs.strip() or "Script executed silently.",
         }
     except subprocess.TimeoutExpired:
         return {"success": False, "logs": "Execution timed out after 120 seconds."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # Note: Parquet Route (/api/parquet) could be added here using pandas/pyarrow to serve DataLakeView
+
 
 @app.post("/api/tools/sync/fundamentals")
 async def force_fundamentals_sync():
@@ -178,6 +194,7 @@ async def force_fundamentals_sync():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/api/tools/sync/etf")
 async def force_etf_sync():
     """Trigger ETF blocklist sync NOW."""
@@ -186,6 +203,7 @@ async def force_etf_sync():
         return {"success": True, "message": "ETF sync completed"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/tools/sync/index")
 async def force_index_sync():
@@ -196,6 +214,7 @@ async def force_index_sync():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/api/tools/ingest")
 async def force_daily_ingest():
     """Trigger daily bhavcopy ingest NOW."""
@@ -205,6 +224,7 @@ async def force_daily_ingest():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/api/tools/db-doctor")
 async def run_db_doctor():
     """Run DB Doctor health check NOW."""
@@ -213,6 +233,7 @@ async def run_db_doctor():
         return {"success": True, "message": "DB Doctor completed"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/market-breadth")
 async def get_market_breadth():
@@ -228,38 +249,42 @@ async def get_market_breadth():
             latest = latest_row[0] if latest_row else None
             if not latest:
                 return {"advances": 0, "declines": 0, "total": 0, "date": None}
-            
+
             # We'll use a simple approach: fetch all symbols with their close on latest date
             # and the previous close from the previous trading day.
             prev_row = conn.execute(
                 "SELECT MAX(date) FROM technical_data WHERE date < ?", (latest,)
             ).fetchone()
             prev_date = prev_row[0] if prev_row else None
-            
+
             if not prev_date:
                 return {"advances": 0, "declines": 0, "total": 0, "date": latest}
-            
+
             # For each symbol, get close on latest date and prev close on prev_date
-            rows = conn.execute("""
+            rows = conn.execute(
+                """
                 SELECT a.symbol, a.close as close_today, b.close as close_prev
                 FROM technical_data a
                 JOIN technical_data b ON a.symbol = b.symbol AND b.date = ?
                 WHERE a.date = ?
                   AND a.close > 0 AND b.close > 0
-            """, (prev_date, latest)).fetchall()
-            
+            """,
+                (prev_date, latest),
+            ).fetchall()
+
             advances = sum(1 for r in rows if r[1] > r[2])
             declines = sum(1 for r in rows if r[1] < r[2])
             total = advances + declines
-            
+
             return {
                 "advances": advances,
                 "declines": declines,
                 "total": total,
-                "date": latest
+                "date": latest,
             }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/db-size")
 async def get_db_size():
@@ -271,18 +296,21 @@ async def get_db_size():
     except Exception as e:
         raise HTTPException(status_code=500, detail="Cannot read DB size")
 
+
 @app.get("/api/system-info")
 async def get_system_info():
     """Return CPU and memory usage (simple psutil)."""
     try:
         import psutil
+
         return {
             "cpu_percent": psutil.cpu_percent(interval=0.1),
             "memory_percent": psutil.virtual_memory().percent,
-            "memory_total_gb": round(psutil.virtual_memory().total / (1024**3), 1)
+            "memory_total_gb": round(psutil.virtual_memory().total / (1024**3), 1),
         }
     except ImportError:
         return {"error": "psutil not installed"}
+
 
 @app.get("/api/logs/recent")
 async def get_recent_logs():
@@ -295,16 +323,26 @@ async def get_recent_logs():
     except Exception:
         return {"logs": ["No log file found. Start the pipeline to populate."]}
 
+
 @app.get("/api/tools/status")
 async def get_pipeline_status():
     """Return last run times of all background tasks."""
     return {
-        "fundamentals": _get_last_run("fundamentals_sync") if '_get_last_run' in globals() else "Never",
-        "etf": _get_last_run("etf_sync") if '_get_last_run' in globals() else "Never",
-        "index": _get_last_run("index_sync") if '_get_last_run' in globals() else "Never",
-        "ingest": _get_last_run("daily_ingest") if '_get_last_run' in globals() else "Never",
-        "db_doctor": _get_last_run("db_doctor") if '_get_last_run' in globals() else "Never",
+        "fundamentals": _get_last_run("fundamentals_sync")
+        if "_get_last_run" in globals()
+        else "Never",
+        "etf": _get_last_run("etf_sync") if "_get_last_run" in globals() else "Never",
+        "index": _get_last_run("index_sync")
+        if "_get_last_run" in globals()
+        else "Never",
+        "ingest": _get_last_run("daily_ingest")
+        if "_get_last_run" in globals()
+        else "Never",
+        "db_doctor": _get_last_run("db_doctor")
+        if "_get_last_run" in globals()
+        else "Never",
     }
+
 
 @app.get("/api/fundamentals/live/{symbol}")
 async def get_live_fundamentals(symbol: str):
@@ -349,7 +387,8 @@ async def get_live_fundamentals(symbol: str):
                 "debt_equity": funda.get("debtToEquity") or funda.get("debt_to_equity"),
                 "current_ratio": funda.get("currentRatio"),
                 "quick_ratio": funda.get("quickRatio"),
-                "dividend_yield": funda.get("dividendYield") or funda.get("dividend_yield"),
+                "dividend_yield": funda.get("dividendYield")
+                or funda.get("dividend_yield"),
                 "free_cash_flow_yield": funda.get("freeCashFlowYield"),
                 "revenue_growth": funda.get("revenueGrowth"),
                 "earnings_growth": funda.get("earningsGrowth"),
@@ -363,11 +402,15 @@ async def get_live_fundamentals(symbol: str):
 
     try:
         import os as _os
+
         proc = subprocess.run(
             ["screener", symbol.upper(), "all"],
-            capture_output=True, text=True, timeout=25,
-            encoding="utf-8", errors="replace",
-            env={**_os.environ, "PYTHONIOENCODING": "utf-8"}
+            capture_output=True,
+            text=True,
+            timeout=25,
+            encoding="utf-8",
+            errors="replace",
+            env={**_os.environ, "PYTHONIOENCODING": "utf-8"},
         )
         if proc.returncode == 0:
             data = json.loads(proc.stdout)
@@ -381,7 +424,9 @@ async def get_live_fundamentals(symbol: str):
                     "dii_pct": latest_sh.get("DIIs"),
                     "public_pct": latest_sh.get("Public"),
                     "government_pct": latest_sh.get("Government"),
-                    "period_end": sh.get("headers", [None])[-1] if sh.get("headers") else None,
+                    "period_end": sh.get("headers", [None])[-1]
+                    if sh.get("headers")
+                    else None,
                 }
 
             pc = data.get("sections", {}).get("pros_cons", {})
@@ -422,15 +467,35 @@ async def get_live_fundamentals(symbol: str):
 @app.get("/api/ml/status")
 async def ml_status():
     """Check if a trained model exists and when it was last trained."""
-    from myra_app.ml_trainer import MLTrainer
-    trainer = MLTrainer()
-    return trainer.get_status()
+    import os
+
+    model_path = "models/forward_return.xgb"
+    metadata_path = "models/model_metadata.json"
+    if not os.path.exists(model_path):
+        return {
+            "exists": False,
+            "message": "No trained model found. Run /api/ml/train to train a model.",
+        }
+    try:
+        if os.path.exists(metadata_path):
+            with open(metadata_path) as f:
+                meta = json.load(f)
+            return {
+                "exists": True,
+                "trained_at": meta.get("trained_at"),
+                "train_accuracy": meta.get("train_accuracy"),
+                "test_accuracy": meta.get("test_accuracy"),
+            }
+        return {"exists": True, "message": "Model exists but metadata not found."}
+    except Exception as e:
+        return {"exists": False, "error": str(e)}
 
 
 @app.post("/api/ml/train")
 async def ml_train(config: dict = None):
     """Train a new model. Optionally pass a config dict to override defaults."""
     from myra_app.ml_trainer import MLTrainer
+
     trainer = MLTrainer(config)
     result = trainer.train()
     return result
@@ -440,6 +505,7 @@ async def ml_train(config: dict = None):
 async def ml_predict():
     """Return today's predictions for all symbols."""
     from myra_app.ml_trainer import MLTrainer
+
     trainer = MLTrainer()
     return trainer.predict_today()
 
@@ -448,6 +514,7 @@ async def ml_predict():
 async def ml_feature_importance():
     """Return feature importance from the latest model."""
     from myra_app.ml_trainer import MLTrainer
+
     trainer = MLTrainer()
     return trainer.get_feature_importance()
 
@@ -469,7 +536,11 @@ async def ml_update_config(config: dict):
             pass
 
     for key, value in config.items():
-        if isinstance(value, dict) and key in existing_config and isinstance(existing_config[key], dict):
+        if (
+            isinstance(value, dict)
+            and key in existing_config
+            and isinstance(existing_config[key], dict)
+        ):
             existing_config[key].update(value)
         else:
             existing_config[key] = value
@@ -484,6 +555,7 @@ async def ml_update_config(config: dict):
 async def ml_get_config():
     """Get current ML configuration."""
     import json, os
+
     if os.path.exists("models/ml_config.json"):
         with open("models/ml_config.json") as f:
             return json.load(f)
@@ -494,6 +566,7 @@ async def ml_get_config():
 async def label_launchpad_events(config: dict = None):
     """Run launchpad event labelling. Optionally pass config to override defaults."""
     from myra_app.launchpad_labels import LaunchpadLabeler
+
     labeler = LaunchpadLabeler(config)
     result = labeler.run()
     return result
@@ -503,6 +576,7 @@ async def label_launchpad_events(config: dict = None):
 async def train_launchpad(config: dict = None):
     """Train the launchpad prediction model. Optionally pass config."""
     from myra_app.ml_trainer import LaunchpadPredictor
+
     predictor = LaunchpadPredictor(config)
     result = predictor.train()
     return result
@@ -511,9 +585,141 @@ async def train_launchpad(config: dict = None):
 @app.get("/api/ml/launchpad/predict")
 async def predict_launchpad():
     """Get current launchpad predictions for stocks in digestion phase."""
-    from myra_app.ml_trainer import LaunchpadPredictor
-    predictor = LaunchpadPredictor()
-    return predictor.predict_current()
+    import os
+
+    model_path = "models/launchpad_xgb.joblib"
+    if not os.path.exists(model_path):
+        return {
+            "predictions": [],
+            "status": "no_model",
+            "message": "Launchpad model not trained yet.",
+        }
+    try:
+        import sqlite3
+        import pandas as pd
+        import numpy as np
+        import joblib
+        from myra_app.librarian_core import LibrarianCore
+
+        tech_db = os.path.join(DB_DIR, LibrarianCore.DB_MAP["technical"])
+        val_db = os.path.join(DB_DIR, LibrarianCore.DB_MAP["valuation"])
+
+        with sqlite3.connect(tech_db) as conn:
+            events = conn.execute(
+                "SELECT symbol, trigger_date FROM launchpad_events WHERE success = 0 AND trigger_date >= date('now', '-180 days') ORDER BY trigger_date DESC"
+            ).fetchall()
+
+        if not events:
+            return {
+                "predictions": [],
+                "status": "no_events",
+                "message": "No stocks in digestion phase.",
+            }
+
+        model = joblib.load(model_path)
+        results = []
+        for sym, trig in events[:20]:  # Limit to 20 for performance
+            try:
+                with sqlite3.connect(tech_db) as conn:
+                    row = conn.execute(
+                        "SELECT date, close, volume, delivery, high, low FROM technical_data WHERE symbol = ? AND date >= ? ORDER BY date ASC LIMIT 30",
+                        (sym, trig),
+                    ).fetchall()
+
+                if len(row) < 2:
+                    continue
+
+                closes = [r[1] for r in row]
+                volumes = [r[2] for r in row]
+                deliveries = [r[3] for r in row]
+                highs = [r[4] for r in row]
+                lows = [r[5] for r in row]
+
+                first_close = closes[0]
+                last_close = closes[-1]
+                max_dd = (
+                    (min(closes) - first_close) / first_close * 100
+                    if first_close > 0
+                    else 0
+                )
+                avg_vol = np.mean(volumes) if volumes else 1
+                avg_del = np.mean(deliveries) if deliveries else 0
+                avg_range = (
+                    np.mean([h - l for h, l in zip(highs, lows)]) if highs else 1
+                )
+
+                del_vals = deliveries
+                if len(del_vals) > 1:
+                    del_mean = np.mean(del_vals)
+                    del_std = np.std(del_vals) if len(del_vals) > 1 else 1
+                    del_zscores = [(d - del_mean) / (del_std + 1e-9) for d in del_vals]
+                    del_z_min = min(del_zscores)
+                    del_z_mean = np.mean(del_zscores)
+                else:
+                    del_z_min = 0.0
+                    del_z_mean = 0.0
+
+                features = [
+                    del_z_min,
+                    del_z_mean,
+                    avg_range / (avg_range + 1e-9),
+                    volumes[-1] / (avg_vol + 1e-9),
+                    len(row),
+                    max_dd,
+                ]
+                X = pd.DataFrame(
+                    [features],
+                    columns=[
+                        "del_zscore_min",
+                        "del_zscore_mean",
+                        "range_atr_min",
+                        "vol_ratio_min",
+                        "digestion_days",
+                        "max_drawdown_pct",
+                    ],
+                )
+                preds = model.predict(X)
+                predicted_return_pct = round(float(preds[0, 0]), 2)
+                breakout_probability = round(
+                    1 / (1 + np.exp(-predicted_return_pct / 10)), 4
+                )
+                confidence = (
+                    "High"
+                    if breakout_probability >= 0.7
+                    else ("Medium" if breakout_probability >= 0.4 else "Low")
+                )
+
+                sector = None
+                mcap = None
+                if os.path.exists(val_db):
+                    with sqlite3.connect(val_db) as vconn:
+                        vrow = vconn.execute(
+                            "SELECT COALESCE(marketCap, market_cap), sector FROM fundamentals WHERE symbol = ? LIMIT 1",
+                            (sym,),
+                        ).fetchone()
+                        if vrow:
+                            mcap = float(vrow[0]) if vrow[0] else None
+                            sector = vrow[1]
+
+                results.append(
+                    {
+                        "symbol": sym,
+                        "trigger_date": trig,
+                        "predicted_return_pct": predicted_return_pct,
+                        "predicted_days_to_breakout": round(float(preds[0, 1]), 1),
+                        "current_digestion_days": len(row),
+                        "sector": sector,
+                        "market_cap": mcap,
+                        "breakout_probability": breakout_probability,
+                        "confidence": confidence,
+                    }
+                )
+            except Exception:
+                continue
+
+        return {"predictions": results, "status": "ok"}
+    except Exception as e:
+        return {"predictions": [], "status": "error", "message": str(e)}
 
 
 @app.get("/api/ml/launchpad/status")
@@ -529,19 +735,22 @@ async def launchpad_status():
 async def launchpad_feature_importance():
     """Get feature importance from the launchpad model."""
     from myra_app.ml_trainer import LaunchpadPredictor
+
     predictor = LaunchpadPredictor()
     return predictor.get_feature_importance()
 
 
 @app.get("/api/finstack/morning-brief")
 async def finstack_morning_brief():
-    from myra_app.utils.finstack_bridge import get_morning_brief
-    result = await get_morning_brief()
-    return result
+    return {
+        "status": "unavailable",
+        "message": "FinStack MCP server not installed. Install finstack package to enable.",
+    }
 
 
 @app.get("/api/finstack/scan-pledge-risks")
 async def finstack_scan_pledge_risks():
     from myra_app.utils.finstack_bridge import scan_pledge_risks
+
     result = await scan_pledge_risks()
     return result

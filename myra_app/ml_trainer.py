@@ -659,28 +659,34 @@ class LaunchpadPredictor:
         import numpy as np
         import joblib
         import os
+        import sqlite3
+
         conn = self.lib._tech_conn
 
         # Find stocks currently in digestion (trigger exists, no breakout yet)
-        current = pd.read_sql("""
+        current = pd.read_sql(
+            """
             SELECT * FROM launchpad_events
             WHERE success = 0
               AND trigger_date >= date('now', '-180 days')
             ORDER BY trigger_date DESC
-        """, conn)
+        """,
+            conn,
+        )
 
         if current.empty:
             return []
 
-        model = joblib.load('models/launchpad_xgb.joblib')
+        model = joblib.load("models/launchpad_xgb.joblib")
         rows = []
 
         for _, ev in current.iterrows():
-            sym = ev['symbol']
-            trig = ev['trigger_date']
+            sym = ev["symbol"]
+            trig = ev["trigger_date"]
 
             # Compute digestion features from trigger to today
-            feats = conn.execute("""
+            feats = conn.execute(
+                """
                 SELECT
                     MIN((td.delivery_pct - td.avg_del) / (NULLIF(td.std_del, 0) + 1e-9)) AS del_zscore_min,
                     AVG((td.delivery_pct - td.avg_del) / (NULLIF(td.std_del, 0) + 1e-9)) AS del_zscore_mean,
@@ -704,7 +710,9 @@ class LaunchpadPredictor:
                    AND td.date <= date('now')
                 WHERE e.symbol = ? AND e.trigger_date = ?
                 GROUP BY e.symbol, e.trigger_date
-            """, (sym, trig)).fetchone()
+            """,
+                (sym, trig),
+            ).fetchone()
 
             if feats and feats[0] is not None:
                 feature_values = list(feats)
@@ -714,22 +722,73 @@ class LaunchpadPredictor:
 
             rows.append(feature_values + [sym, trig])
 
-        X = pd.DataFrame(rows, columns=[
-            'del_zscore_min', 'del_zscore_mean', 'range_atr_min',
-            'vol_ratio_min', 'digestion_days', 'max_drawdown_pct',
-            'symbol', 'trigger_date'
-        ])
+        X = pd.DataFrame(
+            rows,
+            columns=[
+                "del_zscore_min",
+                "del_zscore_mean",
+                "range_atr_min",
+                "vol_ratio_min",
+                "digestion_days",
+                "max_drawdown_pct",
+                "symbol",
+                "trigger_date",
+            ],
+        )
 
-        preds = model.predict(X.drop(columns=['symbol', 'trigger_date']))
+        preds = model.predict(X.drop(columns=["symbol", "trigger_date"]))
+
+        val_db = os.path.join(DB_DIR, LibrarianCore.DB_MAP["valuation"])
+        fundamentals_cache = {}
+        if os.path.exists(val_db):
+            with sqlite3.connect(val_db) as val_conn:
+                for _, row in X.iterrows():
+                    sym = row["symbol"]
+                    funda_row = val_conn.execute(
+                        "SELECT COALESCE(marketCap, market_cap) AS market_cap, sector FROM fundamentals WHERE symbol = ? LIMIT 1",
+                        (sym,),
+                    ).fetchone()
+                    if funda_row:
+                        fundamentals_cache[sym] = {
+                            "market_cap": (
+                                float(funda_row[0])
+                                if funda_row[0] is not None
+                                else None
+                            ),
+                            "sector": funda_row[1],
+                        }
+                    else:
+                        fundamentals_cache[sym] = {"market_cap": None, "sector": None}
+
         results = []
         for i, row in X.iterrows():
-            results.append({
-                'symbol': row['symbol'],
-                'trigger_date': row['trigger_date'],
-                'predicted_return_pct': round(float(preds[i, 0]), 2),
-                'predicted_days_to_breakout': round(float(preds[i, 1]), 1),
-                'current_digestion_days': int(row['digestion_days']),
-            })
+            predicted_return_pct = round(float(preds[i, 0]), 2)
+            breakout_probability = round(
+                1 / (1 + np.exp(-predicted_return_pct / 10)), 4
+            )
+            if breakout_probability >= 0.7:
+                confidence = "High"
+            elif breakout_probability >= 0.4:
+                confidence = "Medium"
+            else:
+                confidence = "Low"
+
+            sym = row["symbol"]
+            funda = fundamentals_cache.get(sym, {"market_cap": None, "sector": None})
+
+            results.append(
+                {
+                    "symbol": sym,
+                    "trigger_date": row["trigger_date"],
+                    "predicted_return_pct": predicted_return_pct,
+                    "predicted_days_to_breakout": round(float(preds[i, 1]), 1),
+                    "current_digestion_days": int(row["digestion_days"]),
+                    "sector": funda["sector"],
+                    "market_cap": funda["market_cap"],
+                    "breakout_probability": breakout_probability,
+                    "confidence": confidence,
+                }
+            )
 
         return results
 

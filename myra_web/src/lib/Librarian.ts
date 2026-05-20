@@ -67,7 +67,7 @@ export class Librarian {
   }
 
   // Generic query executor that routes to your Python backend
-  public async executeQuery(database: string, query: string, args: any = {}, timeoutMs: number = 8000): Promise<any> {
+  public async executeQuery(database: string, query: string, args: any = {}, timeoutMs: number = 30000): Promise<any> {
     const isDebug = localStorage.getItem('myra_ui_settings') ? JSON.parse(localStorage.getItem('myra_ui_settings') as string).debugMode : false;
     const startTime = performance.now();
 
@@ -226,7 +226,7 @@ export class Librarian {
           }));
       }
       if (e.name === 'AbortError') {
-         console.warn(`[Librarian] Query timed out after ${timeoutMs}ms:`, query.substring(0, 50) + '...');
+         console.warn(`[Librarian] Query timed out after 30000ms:`, query.substring(0, 50) + '...');
          throw new Error("Local backend timeout. Operation aborted.");
       }
       console.error("[Librarian] Execution Exception:", e);

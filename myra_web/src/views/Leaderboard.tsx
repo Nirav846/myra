@@ -42,7 +42,7 @@ export default function LeaderboardView({ lib }: { lib: Librarian }) {
       // Fetch metadata for market cap normalization
       let mcapMap: Record<string, number> = {};
       try {
-        const metaRes = await lib.executeQuery('_meta_conn', 'SELECT symbol, market_cap FROM equity_metadata', {}, 5000);
+        const metaRes = await lib.executeQuery('_val_conn', 'SELECT symbol, COALESCE(marketCap, market_cap) AS market_cap FROM fundamentals', {}, 5000);
         if (metaRes) {
           metaRes.forEach((row: any) => {
             if (row.market_cap) mcapMap[row.symbol] = Number(row.market_cap);
