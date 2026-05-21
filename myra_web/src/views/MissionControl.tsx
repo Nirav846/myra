@@ -17,27 +17,33 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
   const [pipelineStatus, setPipelineStatus] = useState<any>(null);
   const [morningBrief, setMorningBrief] = useState<any>(null);
   const [pledgeRisks, setPledgeRisks] = useState<any[] | null | undefined>(undefined);
+  const [niftyOutlook, setNiftyOutlook] = useState<any>(null);
+  const [divergence, setDivergence] = useState<any>(null);
+  const [sebiAlerts, setSebiAlerts] = useState<any>(null);
   const [isOffline, setIsOffline] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [bRes, pRes, mRes, pledgeRes] = await Promise.all([
+        const [bRes, pRes, mRes, pledgeRes, outRes, divRes, sebiRes] = await Promise.all([
           fetch(`${ROOT_BASE}/api/market-breadth`),
           fetch(`${ROOT_BASE}/api/tools/status`),
-          fetch(`${ROOT_BASE}/api/finstack/morning-brief`),
-          fetch(`${ROOT_BASE}/api/finstack/scan-pledge-risks`).catch(() => null)
+          fetch(`${ROOT_BASE}/api/finstack/morning-brief`).catch(() => null),
+          fetch(`${ROOT_BASE}/api/finstack/scan-pledge-risks`).catch(() => null),
+          fetch(`${ROOT_BASE}/api/finstack/nifty-outlook`).catch(() => null),
+          fetch(`${ROOT_BASE}/api/finstack/fii-retail-divergence`).catch(() => null),
+          fetch(`${ROOT_BASE}/api/finstack/sebi-alerts`).catch(() => null)
         ]);
 
-        if (bRes.ok) {
+        if (bRes && bRes.ok) {
           const bData = await bRes.json();
           setBreadth(bData);
         }
-        if (pRes.ok) {
+        if (pRes && pRes.ok) {
           const pData = await pRes.json();
           setPipelineStatus(pData);
         }
-        if (mRes.ok) {
+        if (mRes && mRes.ok) {
           const mData = await mRes.json();
           setMorningBrief(mData);
         }
@@ -47,6 +53,9 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
         } else {
           setPledgeRisks(null);
         }
+        if (outRes && outRes.ok) setNiftyOutlook(await outRes.json());
+        if (divRes && divRes.ok) setDivergence(await divRes.json());
+        if (sebiRes && sebiRes.ok) setSebiAlerts(await sebiRes.json());
         setIsOffline(false);
       } catch (err) {
         setIsOffline(true);
@@ -148,6 +157,15 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
     return 'text-[#fafafa]';
   };
 
+  const getVixInterpretation = (vixObj: any) => {
+    if (!vixObj || !vixObj.interpretation) return "Interpretation unavailable";
+    const val = vixObj.current_vix;
+    if (val < 13) return vixObj.interpretation.below_13;
+    if (val < 18) return vixObj.interpretation['13_to_18'];
+    if (val < 25) return vixObj.interpretation['18_to_25'];
+    return vixObj.interpretation.above_25;
+  };
+
   return (
     <div className="flex flex-col gap-6">
       {isOffline && (
@@ -160,7 +178,7 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
       )}
 
       {/* System Metrics Strip */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex items-center justify-between">
           <div className="w-full">
             <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider mb-1">Market Breadth (NIFTY)</div>
@@ -181,6 +199,109 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
             )}
           </div>
         </div>
+
+        {/* Nifty Outlook Widget */}
+        <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col justify-center">
+          <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider mb-1">Nifty Outlook</div>
+          {!niftyOutlook && !isOffline ? (
+            <div className="text-sm text-[#ccc] py-1">Analyzing...</div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-2">
+                <span className={`text-xs font-bold font-mono ${getValueColor(niftyOutlook?.probability_up - 50)}`}>
+                  {niftyOutlook?.probability_up}% UP
+                </span>
+                <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+                    niftyOutlook?.probability_up > 50 ? 'bg-green-500/10 text-green-400 border-green-500/20' : 
+                    'bg-red-500/10 text-red-400 border-red-500/20'
+                 }`}>
+                  {niftyOutlook?.signal}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                <div>
+                  <div className="text-[9px] text-[#888] font-mono uppercase tracking-wider pb-1">Bull Factors</div>
+                  <ul className="space-y-0.5 max-h-16 overflow-y-auto pr-1">
+                    {niftyOutlook?.bull_factors?.map((f: string, i: number) => (
+                      <li key={i} className="text-[9px] text-green-400 font-mono flex gap-1 leading-tight"><span className="shrink-0">•</span><span>{f}</span></li>
+                    ))}
+                    {!niftyOutlook?.bull_factors?.length && <li className="text-[9px] text-[#666] font-mono">None</li>}
+                  </ul>
+                </div>
+                <div>
+                  <div className="text-[9px] text-[#888] font-mono uppercase tracking-wider pb-1">Bear Factors</div>
+                  <ul className="space-y-0.5 max-h-16 overflow-y-auto pr-1">
+                    {niftyOutlook?.bear_factors?.map((f: string, i: number) => (
+                      <li key={i} className="text-[9px] text-red-400 font-mono flex gap-1 leading-tight"><span className="shrink-0">•</span><span>{f}</span></li>
+                    ))}
+                    {!niftyOutlook?.bear_factors?.length && <li className="text-[9px] text-[#666] font-mono">None</li>}
+                  </ul>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* FII/Retail Divergence Widget */}
+        <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col justify-center">
+          <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider mb-1">Smart Money vs Retail</div>
+          {!divergence && !isOffline ? (
+            <div className="text-sm text-[#ccc] py-1">Scanning flows...</div>
+          ) : (
+            <>
+              <div className="text-sm font-bold text-[#fafafa] mb-1">{divergence?.signal || 'Neutral'}</div>
+              <div className="mt-1">
+                 <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+                    divergence?.confidence === 'High' ? 'bg-green-500/10 text-green-400 border-green-500/20' : 
+                    divergence?.confidence === 'Medium' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' : 
+                    'bg-[#ffffff05] text-[#888] border-[#ffffff1a]'
+                 }`}>
+                   {divergence?.confidence} Confidence
+                 </span>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* SEBI Alerts Widget */}
+        <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col justify-center">
+          <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider mb-1">SEBI Enforcement</div>
+          {!sebiAlerts && !isOffline ? (
+            <div className="text-sm text-[#ccc] py-1">Checking alerts...</div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 mb-2">
+                <span className={`text-xl font-bold font-mono ${sebiAlerts?.count > 0 ? 'text-red-400' : 'text-green-400'}`}>
+                  {sebiAlerts?.count || 0}
+                </span>
+                <span className="text-[10px] text-[#666] font-mono uppercase">Recent Actions</span>
+                {sebiAlerts?.count > 0 && (
+                  <span className="ml-auto bg-red-500/10 text-red-400 text-[9px] font-mono px-1.5 py-0.5 rounded border border-red-500/20 uppercase">
+                    Risk
+                  </span>
+                )}
+              </div>
+              
+              {sebiAlerts?.count > 0 && (
+                <details className="group mt-auto">
+                  <summary className="text-[10px] text-[#888] font-mono cursor-pointer hover:text-[#ccc] transition-colors outline-none list-none flex justify-between items-center">
+                    <span>View Companies</span>
+                    <span className="text-[#555] group-open:rotate-180 transition-transform">▼</span>
+                  </summary>
+                  <div className="mt-2 max-h-20 overflow-y-auto pr-1 space-y-1">
+                    {sebiAlerts?.recent_actions?.map((act: any, i: number) => (
+                      <div key={i} className="flex justify-between items-center text-[9px] font-mono border-b border-[#ffffff1a] pb-1 last:border-0 last:pb-0">
+                        <span className="text-[#fafafa] truncate pr-2" title={act.type}>{act.company}</span>
+                        <span className="text-[#aaa] shrink-0">{act.date}</span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+            </>
+          )}
+        </div>
+
         <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col justify-center">
           <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider mb-1">⚠️ Pledge Risk Alert</div>
           {pledgeRisks === undefined ? (
@@ -276,103 +397,169 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
       </div>
 
       {/* Morning Brief Widget */}
-      {morningBrief && (
+      {morningBrief && morningBrief.market_brief && (
         <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded-xl p-4 flex flex-col gap-4 mt-2">
           <div className="flex justify-between items-center border-b border-[#ffffff1a] pb-3">
             <h3 className="text-sm font-semibold uppercase tracking-wider text-[#888]">Morning Brief</h3>
             <span className="text-[10px] text-[#555] font-mono">{morningBrief.timestamp}</span>
           </div>
 
-          {/* Top row */}
+          {/* Row 1: Market Indices */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider pb-1">GIFT Nifty</div>
-              <div className={`text-xs font-mono font-bold ${getValueColor(morningBrief.gift_nifty)}`}>{morningBrief.gift_nifty}</div>
+              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider pb-1">NIFTY 50</div>
+              <div className="text-xs font-mono font-bold text-[#fafafa]">{morningBrief.market_brief.nifty?.value}</div>
+              <div className={`text-xs font-mono ${getValueColor(morningBrief.market_brief.nifty?.change_pct)}`}>
+                 {morningBrief.market_brief.nifty?.change > 0 ? '+' : ''}{morningBrief.market_brief.nifty?.change} ({morningBrief.market_brief.nifty?.change_pct > 0 ? '+' : ''}{morningBrief.market_brief.nifty?.change_pct}%)
+              </div>
             </div>
             <div>
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider pb-1">VIX</div>
-              <div className={`text-xs font-mono font-bold ${getValueColor(morningBrief.vix)}`}>{morningBrief.vix}</div>
+              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider pb-1">SENSEX</div>
+              <div className="text-xs font-mono font-bold text-[#fafafa]">{morningBrief.market_brief.sensex?.value}</div>
+              <div className={`text-xs font-mono ${getValueColor(morningBrief.market_brief.sensex?.change_pct)}`}>
+                 {morningBrief.market_brief.sensex?.change > 0 ? '+' : ''}{morningBrief.market_brief.sensex?.change} ({morningBrief.market_brief.sensex?.change_pct > 0 ? '+' : ''}{morningBrief.market_brief.sensex?.change_pct}%)
+              </div>
             </div>
             <div>
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider pb-1">FII Net</div>
-              <div className={`text-xs font-mono font-bold ${getValueColor(morningBrief.fii_dii?.fii_net)}`}>{morningBrief.fii_dii?.fii_net}</div>
+              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider pb-1">BANK NIFTY</div>
+              <div className="text-xs font-mono font-bold text-[#fafafa]">{morningBrief.market_brief.bank_nifty?.value}</div>
+              <div className={`text-xs font-mono ${getValueColor(morningBrief.market_brief.bank_nifty?.change_pct)}`}>
+                 {morningBrief.market_brief.bank_nifty?.change > 0 ? '+' : ''}{morningBrief.market_brief.bank_nifty?.change} ({morningBrief.market_brief.bank_nifty?.change_pct > 0 ? '+' : ''}{morningBrief.market_brief.bank_nifty?.change_pct}%)
+              </div>
             </div>
             <div>
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider pb-1">DII Net</div>
-              <div className={`text-xs font-mono font-bold ${getValueColor(morningBrief.fii_dii?.dii_net)}`}>{morningBrief.fii_dii?.dii_net}</div>
+              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider pb-1">INDIA VIX</div>
+              <div className="text-xs font-mono font-bold text-[#fafafa]">{morningBrief.pre_market?.india_vix?.current_vix}</div>
+              <div className="text-[10px] font-mono text-[#ccc] truncate" title={morningBrief.pre_market?.india_vix?.signal}>{morningBrief.pre_market?.india_vix?.signal}</div>
             </div>
           </div>
 
-          {/* Middle row: NIFTY setup */}
-          <div className="bg-[#0e1117] border border-[#ffffff0a] p-3 rounded-lg mt-1">
-            <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider mb-2">Nifty Setup</div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div>
-                <div className="text-[9px] text-[#666] font-mono uppercase tracking-widest pb-1">Expected Open</div>
-                <div className="text-xs text-[#ccc] font-mono">{morningBrief.nifty_setup?.open}</div>
-              </div>
-              <div>
-                <div className="text-[9px] text-[#666] font-mono uppercase tracking-widest pb-1">Support</div>
-                <div className="text-xs text-[#ccc] font-mono">{morningBrief.nifty_setup?.support}</div>
-              </div>
-              <div>
-                <div className="text-[9px] text-[#666] font-mono uppercase tracking-widest pb-1">Resistance</div>
-                <div className="text-xs text-[#ccc] font-mono">{morningBrief.nifty_setup?.resistance}</div>
-              </div>
-              <div>
-                <div className="text-[9px] text-[#666] font-mono uppercase tracking-widest pb-1">Bias</div>
-                <div className={`text-xs font-mono font-bold ${getValueColor(morningBrief.nifty_setup?.bias)}`}>{morningBrief.nifty_setup?.bias}</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Bottom row: BANKNIFTY setup & Events */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-1">
+          {/* Row 2: Top Movers */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-[#0e1117] border border-[#ffffff0a] p-3 rounded-lg">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider mb-2">BankNifty Setup</div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="text-[9px] text-[#666] font-mono uppercase tracking-widest pb-1">Expected Open</div>
-                  <div className="text-xs text-[#ccc] font-mono">{morningBrief.banknifty_setup?.open}</div>
-                </div>
-                <div>
-                  <div className="text-[9px] text-[#666] font-mono uppercase tracking-widest pb-1">Support</div>
-                  <div className="text-xs text-[#ccc] font-mono">{morningBrief.banknifty_setup?.support}</div>
-                </div>
-                <div>
-                  <div className="text-[9px] text-[#666] font-mono uppercase tracking-widest pb-1">Resistance</div>
-                  <div className="text-xs text-[#ccc] font-mono">{morningBrief.banknifty_setup?.resistance}</div>
-                </div>
-                <div>
-                  <div className="text-[9px] text-[#666] font-mono uppercase tracking-widest pb-1">Bias</div>
-                  <div className={`text-xs font-mono font-bold ${getValueColor(morningBrief.banknifty_setup?.bias)}`}>{morningBrief.banknifty_setup?.bias}</div>
-                </div>
+              <div className="text-[10px] text-green-400 font-mono uppercase tracking-wider mb-2">Top Gainers</div>
+              <div className="space-y-1">
+                 {morningBrief.top_gainers?.map((g: any, i: number) => (
+                    <div key={i} className="flex justify-between text-xs font-mono">
+                      <span className="text-[#fafafa]">{g.symbol}</span>
+                      <span className="text-[#ccc]">{g.ltp} <span className="text-green-400 ml-2">+{g.change_pct}%</span></span>
+                    </div>
+                 ))}
+                 {(!morningBrief.top_gainers || morningBrief.top_gainers.length === 0) && (
+                    <div className="text-xs font-mono text-[#666]">No data</div>
+                 )}
               </div>
             </div>
-            
-            {/* Key Events */}
             <div className="bg-[#0e1117] border border-[#ffffff0a] p-3 rounded-lg">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider mb-2">Key Events</div>
-              <ul className="space-y-1.5 mt-2 flex flex-col justify-center">
-                {morningBrief.key_events?.slice(0, 3).map((ev: string, i: number) => (
-                  <li key={i} className="text-[10px] font-mono text-[#aaa] flex gap-2 leading-relaxed">
-                    <span className="text-[#666] shrink-0">•</span>
-                    <span>{ev}</span>
-                  </li>
-                ))}
-                {(!morningBrief.key_events || morningBrief.key_events.length === 0) && (
-                  <li className="text-[10px] font-mono text-[#666]">No key events listed.</li>
-                )}
-              </ul>
+              <div className="text-[10px] text-red-400 font-mono uppercase tracking-wider mb-2">Top Losers</div>
+              <div className="space-y-1">
+                 {morningBrief.top_losers?.map((l: any, i: number) => (
+                    <div key={i} className="flex justify-between text-xs font-mono">
+                      <span className="text-[#fafafa]">{l.symbol}</span>
+                      <span className="text-[#ccc]">{l.ltp} <span className="text-red-400 ml-2">{l.change_pct}%</span></span>
+                    </div>
+                 ))}
+                 {(!morningBrief.top_losers || morningBrief.top_losers.length === 0) && (
+                    <div className="text-xs font-mono text-[#666]">No data</div>
+                 )}
+              </div>
             </div>
           </div>
 
-          {/* Outlook */}
-          {morningBrief.outlook && (
-            <div className="mt-2 text-xs font-mono text-[#ccc] leading-relaxed border-l-2 border-[#ffffff1a] pl-3 py-1 bg-[#ffffff05] rounded-r p-2">
-              {morningBrief.outlook}
+          {/* Row 3: Institutional Flow + Sector Performance */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+             <div>
+               <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider pb-1">FII Net</div>
+               <div className={`text-xs font-mono font-bold ${getValueColor(morningBrief.institutional_flow?.fii_net)}`}>{morningBrief.institutional_flow?.fii_net}</div>
+             </div>
+             <div>
+               <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider pb-1">DII Net</div>
+               <div className={`text-xs font-mono font-bold ${getValueColor(morningBrief.institutional_flow?.dii_net)}`}>{morningBrief.institutional_flow?.dii_net}</div>
+             </div>
+             <div className="col-span-2">
+               <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider pb-1">Leading Sectors</div>
+               <div className="flex gap-2 flex-wrap text-[10px] font-mono">
+                 {morningBrief.sector_performance?.map((s: any, i: number) => (
+                    <span key={i} className="bg-[#0e1117] border border-[#ffffff1a] px-2 py-1 rounded text-[#ccc] whitespace-nowrap">
+                       {s.sector} <span className={getValueColor(s.change_pct)}>{s.change_pct > 0 ? '+' : ''}{s.change_pct}%</span>
+                    </span>
+                 ))}
+                 {(!morningBrief.sector_performance || morningBrief.sector_performance.length === 0) && (
+                    <span className="text-[#666]">No sector data</span>
+                 )}
+               </div>
+             </div>
+          </div>
+
+          {/* Row 4: Pre-Market Outlook */}
+          <div className="bg-[#0e1117] border border-[#ffffff0a] p-3 rounded-lg grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+               <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider pb-1">Pre-market Direction</div>
+               <div className="flex items-center gap-2">
+                 <span className="text-xs text-[#fafafa] font-bold font-mono">GIFT NIFTY: {morningBrief.pre_market?.gift_nifty?.value}</span>
+                 <span className={`text-xs font-mono ${getValueColor(morningBrief.pre_market?.gift_nifty?.change)}`}>
+                    {morningBrief.pre_market?.gift_nifty?.change > 0 ? '+' : ''}{morningBrief.pre_market?.gift_nifty?.change}
+                 </span>
+               </div>
+               <div className="text-[10px] text-[#ccc] font-mono mt-1">
+                  Probability Up: <span className={getValueColor(morningBrief.pre_market?.nifty_direction?.probability_up - 50)}>{morningBrief.pre_market?.nifty_direction?.probability_up}%</span> ({morningBrief.pre_market?.nifty_direction?.signal})
+               </div>
             </div>
+            <div className="grid grid-cols-2 gap-2">
+               <div>
+                 <div className="text-[9px] text-[#888] font-mono uppercase tracking-wider pb-1">Bull Factors</div>
+                 <ul className="space-y-0.5">
+                    {morningBrief.pre_market?.nifty_direction?.bull_factors?.map((f: string, i: number) => (
+                       <li key={i} className="text-[9px] text-green-400 font-mono flex gap-1"><span className="shrink-0">•</span><span>{f}</span></li>
+                    ))}
+                    {(!morningBrief.pre_market?.nifty_direction?.bull_factors || morningBrief.pre_market.nifty_direction.bull_factors.length === 0) && (
+                       <li className="text-[10px] text-[#666] font-mono">None identified</li>
+                    )}
+                 </ul>
+               </div>
+               <div>
+                 <div className="text-[9px] text-[#888] font-mono uppercase tracking-wider pb-1">Bear Factors</div>
+                 <ul className="space-y-0.5">
+                    {morningBrief.pre_market?.nifty_direction?.bear_factors?.map((f: string, i: number) => (
+                       <li key={i} className="text-[9px] text-red-400 font-mono flex gap-1"><span className="shrink-0">•</span><span>{f}</span></li>
+                    ))}
+                    {(!morningBrief.pre_market?.nifty_direction?.bear_factors || morningBrief.pre_market.nifty_direction.bear_factors.length === 0) && (
+                       <li className="text-[10px] text-[#666] font-mono">None identified</li>
+                    )}
+                 </ul>
+               </div>
+            </div>
+          </div>
+
+          {/* Row 5: Key Events */}
+          {(morningBrief.key_events?.length > 0 || morningBrief.morning_text) && (
+             <div className="bg-[#0e1117] border border-[#ffffff0a] p-3 rounded-lg">
+               <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider mb-2">Key Events & Briefing</div>
+               <div className="space-y-1.5 flex flex-col justify-center text-[#aaa] font-mono whitespace-pre-wrap text-[10px] leading-relaxed">
+                 {morningBrief.key_events && morningBrief.key_events.length > 0 ? (
+                    morningBrief.key_events.map((ev: string, i: number) => (
+                       <div key={i} className="flex gap-2"><span className="text-[#666] shrink-0">•</span><span>{ev}</span></div>
+                    ))
+                 ) : (
+                    morningBrief.morning_text
+                 )}
+               </div>
+             </div>
           )}
+
+          {/* Row 6: VIX Interpretation (Collapsible) */}
+          <div className="border border-[#ffffff1a] rounded-lg overflow-hidden">
+             <details className="group">
+                <summary className="bg-[#1a1c24] cursor-pointer p-3 text-[10px] font-mono uppercase tracking-wider text-[#888] hover:text-[#ccc] transition-colors flex justify-between items-center list-none outline-none">
+                  <span>VIX Interpretation ({morningBrief.pre_market?.india_vix?.current_vix})</span>
+                  <span className="text-[#555] group-open:rotate-180 transition-transform">▼</span>
+                </summary>
+                <div className="p-3 pt-0 bg-[#1a1c24] text-[10px] font-mono text-[#aaa]">
+                   {getVixInterpretation(morningBrief.pre_market?.india_vix)}
+                </div>
+             </details>
+          </div>
+
         </div>
       )}
     </div>

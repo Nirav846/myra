@@ -740,12 +740,36 @@ async def launchpad_feature_importance():
     return predictor.get_feature_importance()
 
 
+@app.get("/api/finstack/nifty-outlook")
+async def finstack_nifty_outlook():
+    from myra_app.utils.finstack_bridge import get_nifty_outlook
+    result = await get_nifty_outlook()
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result["error"])
+    return result
+
+@app.get("/api/finstack/fii-retail-divergence")
+async def finstack_fii_retail_divergence():
+    from myra_app.utils.finstack_bridge import get_fii_retail_divergence
+    result = await get_fii_retail_divergence()
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result["error"])
+    return result
+
+@app.get("/api/finstack/sebi-alerts")
+async def finstack_sebi_alerts():
+    from myra_app.utils.finstack_bridge import get_sebi_alerts
+    result = await get_sebi_alerts()
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result["error"])
+    return result
+
 @app.get("/api/finstack/morning-brief")
 async def finstack_morning_brief():
-    return {
-        "status": "unavailable",
-        "message": "FinStack MCP server not installed. Install finstack package to enable.",
-    }
+    from myra_app.utils.finstack_bridge import get_morning_brief
+
+    result = await get_morning_brief()
+    return result
 
 
 @app.get("/api/finstack/scan-pledge-risks")

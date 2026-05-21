@@ -64,3 +64,15 @@ async def get_pledge_alert(symbol: str) -> dict:
 
 async def scan_pledge_risks() -> dict:
     return await _call_tool_async("scan_pledge_risks")
+
+
+async def get_nifty_outlook() -> dict:
+    return await _call_tool_async("get_nifty_outlook")
+
+
+async def get_fii_retail_divergence() -> dict:
+    return await _call_tool_async("get_fii_retail_divergence", {"symbol": "RELIANCE"})
+
+
+async def get_sebi_alerts() -> dict:
+    return await _call_tool_async("get_sebi_alerts")
