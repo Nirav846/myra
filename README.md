@@ -2,6 +2,10 @@
 
 MYRA is a comprehensive stock screening and analysis platform for the National Stock Exchange (NSE) of India, combining institutional data tracking, SMC (Smart Money Concepts) enrichment, and interactive visualization tools.
 
+[![Contributors Welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
+Already cloned MYRA and made improvements? [Open a pull request](CONTRIBUTING.md) and we'll merge it.
+
 ## Key Features
 
 - **Daily bhavcopy ingestion** – Automated EOD data ingestion from NSE Market Archives
@@ -75,11 +79,12 @@ We welcome contributions of all kinds—scanners, indicators, documentation, tes
 
 ### How to contribute
 
-1. **Fork** the repo and clone it locally.
-2. Pick an issue from the [Issues tab](https://github.com/Nirav846/myra/issues) or open a new one.
-3. Create a feature branch (`feature/my‑new‑scanner`) and make your changes.
-4. Run `npx tsc --noEmit` and `flake8 myra_app` to verify your code.
-5. Submit a **Pull Request** against `main`.
+1. If you've already cloned MYRA and made improvements, fork the repo, push your branch, and open a PR – we'd love to merge it.
+2. **Fork** the repo and clone it locally.
+3. Pick an issue from the [Issues tab](https://github.com/Nirav846/myra/issues) or open a new one.
+4. Create a feature branch (`feature/my‑new‑scanner`) and make your changes.
+5. Run `npx tsc --noEmit` and `flake8 myra_app` to verify your code.
+6. Submit a **Pull Request** against `main`.
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) for code style, branch naming, and detailed instructions on adding scanners or indicators.
 
