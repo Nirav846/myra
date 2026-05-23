@@ -8,6 +8,7 @@ interface RealPrediction {
   predicted_return_pct: number;
   predicted_days_to_breakout: number;
   current_digestion_days: number;
+  market_cap?: number | null;
 }
 
 export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librarian; onNavigate: (tab: string, symbol: string) => void }) {
@@ -186,6 +187,7 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider">Symbol</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Trigger Date</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Age (Days)</th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Mkt Cap</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Predicted Days to Breakout</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Exp. Return</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center">Confidence</th>
@@ -194,7 +196,7 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                        <td colSpan={6} className="px-4 py-8 text-center text-[#666]">No setups match current filters.</td>
+                        <td colSpan={7} className="px-4 py-8 text-center text-[#666]">No setups match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((row, i) => {
@@ -211,6 +213,11 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
                         </td>
                         <td className="px-4 py-3 text-[#aaa] text-right">{row.trigger_date}</td>
                         <td className="px-4 py-3 text-[#ccc] text-right font-bold">{row.current_digestion_days}</td>
+                        <td className="px-4 py-3 text-[#ccc] text-right">
+                          {row.market_cap != null
+                            ? `₹${Math.round(row.market_cap / 10000000).toLocaleString('en-IN')}Cr`
+                            : '—'}
+                        </td>
                         <td className="px-4 py-3 text-[#ccc] text-right">{row.predicted_days_to_breakout?.toFixed(1) || '-'}</td>
                         <td className="px-4 py-3 text-right">
                            <span className={row.predicted_return_pct > 0 ? 'text-cyan-400 font-bold' : 'text-red-400'}>

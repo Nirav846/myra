@@ -59,6 +59,7 @@ class FundamentalSync:
             CREATE TABLE IF NOT EXISTS fundamentals (
                 symbol              TEXT NOT NULL,
                 date                TEXT NOT NULL,
+                sector              TEXT,
                 pe                  REAL,
                 sector_pe           REAL,
                 market_cap          REAL,
@@ -141,6 +142,7 @@ class FundamentalSync:
                         continue
 
                     result[ticker] = {
+                        "sector": row.get("sectorName") or row.get("industryName"),
                         "netMargin": row.get("netMargin"),
                         "roe_ttm": row.get("roeTTM"),
                         "dividendYield": row.get("dividendYield"),
@@ -339,6 +341,7 @@ class FundamentalSync:
                 "annual_volatility": nse.get("annual_volatility"),
                 "impact_cost": nse.get("impact_cost"),
                 # Morningstar fields – map camelCase API keys to DB columns
+                "sector": ms.get("sector"),
                 "net_margin": ms.get("netMargin"),
                 "roe_ttm": ms.get("roeTTM"),
                 "dividend_yield": ms.get("dividendYield"),

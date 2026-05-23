@@ -137,9 +137,10 @@ def enrich_features(df: pl.DataFrame, nifty_df: pl.DataFrame) -> pl.DataFrame:
     return df
 
 
-def process_enrichment_pipeline(lib, conn):
+def process_enrichment_pipeline(lib, conn, target_date=None):
     """
     Handles the DB transaction and applies the enrichment logic.
+    If target_date is provided, only data from that date backward is processed.
     """
     from datetime import datetime
     from myra_app.task_tracker import register, update, unregister
@@ -147,9 +148,14 @@ def process_enrichment_pipeline(lib, conn):
     tid = register("Enrichment pipeline", task_type="batch")
     start_time = datetime.now()
     try:
+        date_ref = (
+            f"'{target_date}'"
+            if target_date
+            else "(SELECT MAX(date) FROM technical_data)"
+        )
         ALLOWED_QUERIES = {
             "prices": "SELECT * FROM prices",
-            "technical_data": "SELECT * FROM technical_data WHERE date >= date((SELECT MAX(date) FROM technical_data), '-200 days')",
+            "technical_data": f"SELECT * FROM technical_data WHERE date >= date({date_ref}, '-200 days')",
             "calculated_indicators": "SELECT * FROM calculated_indicators",
             "fundamentals": "SELECT * FROM fundamentals",
         }
@@ -250,8 +256,8 @@ def process_enrichment_pipeline(lib, conn):
             )
             print(f"SMC calculation took {time.time()-t0:.1f}s")
 
-            # Pre-filter to only latest date to reduce update data size
-            latest_date = price_df["date"].max()
+            # Pre-filter to only target date (or latest date) to reduce update data size
+            latest_date = target_date if target_date else price_df["date"].max()
             smc_today = smc_df.filter(pl.col("date") == str(latest_date))
             logger.info(
                 f"Filtered to {len(smc_today)} rows for latest date {latest_date}"
@@ -310,14 +316,26 @@ def process_enrichment_pipeline(lib, conn):
                             float(row[col]) if pd.notna(row[col]) else None,
                             row["symbol"],
                             str(row["date"]),
+                            target_date,
+                        )
+                        if target_date
+                        else (
+                            float(row[col]) if pd.notna(row[col]) else None,
+                            row["symbol"],
+                            str(row["date"]),
                         )
                         for row in smc_today.to_pandas().to_dict("records")
                         if pd.notna(row[col])
                     ]
 
                     if update_data:
+                        if target_date:
+                            date_filter = "AND date = ?"
+                        else:
+                            date_filter = "AND date = (SELECT MAX(date) FROM technical_data)"
+
                         conn.executemany(
-                            f"UPDATE technical_data SET {col} = ? WHERE symbol = ? AND date = ? AND {col} IS NULL AND date = (SELECT MAX(date) FROM technical_data)",
+                            f"UPDATE technical_data SET {col} = ? WHERE symbol = ? AND date = ? AND {col} IS NULL {date_filter}",
                             update_data,
                         )
                         conn.commit()

@@ -975,12 +975,12 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
 
   const { startDate, endDate } = useMemo(() => {
     const end = new Date();
-    const start = new Date();
-    if (range === '1M') start.setMonth(start.getMonth() - 1);
-    else if (range === '3M') start.setMonth(start.getMonth() - 3);
-    else if (range === '6M') start.setMonth(start.getMonth() - 6);
-    else if (range === '1Y') start.setFullYear(start.getFullYear() - 1);
-    else start.setFullYear(start.getFullYear() - 10);
+    let start: Date;
+    if (range === '1M') { start = new Date(); start.setMonth(start.getMonth() - 1); }
+    else if (range === '3M') { start = new Date(); start.setMonth(start.getMonth() - 3); }
+    else if (range === '6M') { start = new Date(); start.setMonth(start.getMonth() - 6); }
+    else if (range === '1Y') { start = new Date(); start.setFullYear(start.getFullYear() - 1); }
+    else start = new Date('2015-01-01');
 
     if (limitDataRange) {
         const twoYearsAgo = new Date();

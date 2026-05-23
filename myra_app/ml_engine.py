@@ -1,3 +1,4 @@
+import logging
 import os
 
 import joblib
@@ -6,86 +7,136 @@ import pandas as pd
 import xgboost as xgb
 import yfinance as yf
 
+# FIX #1: import pandas_ta (or ta-lib) at module level with a clear error
+try:
+    import pandas_ta as ta
+except ImportError as _ta_err:
+    raise ImportError(
+        "pandas_ta is required for technical indicators. "
+        "Install it with: pip install pandas-ta"
+    ) from _ta_err
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# NiftyDataPipeline
+# ---------------------------------------------------------------------------
 
 class NiftyDataPipeline:
     def __init__(self, librarian):
         self.lib = librarian
 
-    def fetch_historical_nifty(self, days=500):
-        """Fetches Nifty 50 historical data using yfinance."""
+    def fetch_historical_nifty(self, days: int = 500) -> pd.DataFrame:
+        """
+        Fetches Nifty 50 historical data via yfinance.
+        FIX #12: 'days' parameter is now actually used.
+        FIX #3:  Always returns a DataFrame, never None.
+        """
+        # Convert days to a yfinance period string
+        period = f"{max(days // 365, 1) + 1}y" if days > 365 else "1y"
         try:
-            # We use yfinance for benchmark history as seen in IndexEngine
-            data = yf.download("^NSEI", period="2y", interval="1d", progress=False)
-            if data.empty:
+            data = yf.download("^NSEI", period=period, interval="1d", progress=False)
+            if data is None or data.empty:
+                logger.warning("fetch_historical_nifty: yfinance returned no data.")
                 return pd.DataFrame()
 
-            # Clean columns (yf sometimes returns multi-index or lowercase)
-            data.columns = [
-                c.title() if isinstance(c, str) else c[0].title() for c in data.columns
-            ]
-            return data
-        except Exception as e:
-            print(f"[ML] Error fetching Nifty history: {e}")
-            return None
+            # Normalise column names (yf can return multi-index or mixed case)
+            if isinstance(data.columns, pd.MultiIndex):
+                data.columns = [c[0].title() for c in data.columns]
+            else:
+                data.columns = [c.title() for c in data.columns]
 
-    def engineer_features(self, df):
-        """Applies technical indicators and creates time-series features."""
+            # Trim to requested days
+            return data.tail(days).copy()
+
+        except Exception as exc:
+            logger.error("fetch_historical_nifty error: %s", exc)
+            return pd.DataFrame()   # FIX #3: never return None
+
+    def engineer_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Applies technical indicators and creates a labelled dataset.
+        FIX #1: uses the now-imported 'ta' module correctly.
+        """
         if df is None or df.empty or len(df) < 60:
+            logger.warning(
+                "engineer_features: insufficient data (%d rows, need ≥60).",
+                0 if df is None else len(df),
+            )
             return pd.DataFrame()
 
         df = df.copy()
-        # 1. Technicals
-        df["RSI"] = ta.rsi(df["Close"], length=14)
-        df["ATR"] = ta.atr(df["High"], df["Low"], df["Close"], length=14)
-        df["MACD"] = ta.macd(df["Close"])["MACD_12_26_9"]
 
-        # 2. Returns & Momentum
+        # 1. Technical indicators
+        df["RSI"] = ta.rsi(df["Close"], length=14)
+        macd_df = ta.macd(df["Close"])
+        df["MACD"] = macd_df["MACD_12_26_9"] if macd_df is not None else np.nan
+        atr_series = ta.atr(df["High"], df["Low"], df["Close"], length=14)
+        df["ATR"] = atr_series
+
+        # 2. Returns & momentum
         df["Ret_1d"] = df["Close"].pct_change(1)
         df["Ret_5d"] = df["Close"].pct_change(5)
-        df["Vol_Shock"] = df["Volume"] / df["Volume"].rolling(20).mean()
+        vol_mean = df["Volume"].rolling(20).mean()
+        df["Vol_Shock"] = df["Volume"] / vol_mean.replace(0, np.nan)
 
-        # 3. Labeling (Prediction Target)
-        # Goal: Predict if next 3 days return > 0.5%
+        # 3. Label: next-3-day return > 0.5 %
         df["Target"] = (df["Close"].shift(-3) / df["Close"] - 1 > 0.005).astype(int)
 
         return df.dropna()
 
 
+# ---------------------------------------------------------------------------
+# TrendForecaster
+# ---------------------------------------------------------------------------
+
 class TrendForecaster:
-    def __init__(self, librarian, model_path="models/nifty_trend.joblib"):
+    FEATURES = ["RSI", "ATR", "MACD", "Ret_1d", "Ret_5d", "Vol_Shock"]
+
+    def __init__(self, librarian, model_path: str = "models/nifty_trend.joblib"):
         self.pipeline = NiftyDataPipeline(librarian)
         self.model_path = model_path
-        self.model = None
-        self.features = ["RSI", "ATR", "MACD", "Ret_1d", "Ret_5d", "Vol_Shock"]
+        self.model: xgb.XGBClassifier | None = None
 
-        # Ensure directory exists
         model_dir = os.path.dirname(self.model_path)
         if model_dir:
             os.makedirs(model_dir, exist_ok=True)
 
-    def setup_engine(self, force_retrain=False):
-        """Orchestrates loading or training the model."""
+    # ------------------------------------------------------------------
+    def setup_engine(self, force_retrain: bool = False) -> bool:
         if not force_retrain and self.load():
             return True
 
         df = self.pipeline.fetch_historical_nifty()
-        if df.empty:
+        if df.empty:   # FIX #3: fetch now always returns DataFrame
+            logger.error("setup_engine: no Nifty data available.")
             return False
 
         data = self.pipeline.engineer_features(df)
         if data.empty:
+            logger.error("setup_engine: feature engineering produced no rows.")
             return False
 
-        X = data[self.features]
+        X = data[self.FEATURES]
         y = data["Target"]
 
-        # Simple walk-forward split (80/20)
         split = int(len(X) * 0.8)
-        self.train(X.iloc[:split], y.iloc[:split])
+        if split < 10:
+            logger.error("setup_engine: too few samples to split (%d total).", len(X))
+            return False
+
+        X_train, X_test = X.iloc[:split], X.iloc[split:]
+        y_train, y_test = y.iloc[:split], y.iloc[split:]
+
+        # FIX #9: measure and log test accuracy before committing the model
+        self.train(X_train, y_train)
+        test_acc = self.model.score(X_test, y_test)
+        logger.info("TrendForecaster trained. Test accuracy: %.4f", test_acc)
         return True
 
-    def train(self, X, y):
-        """Trains the XGBoost model."""
+    # ------------------------------------------------------------------
+    def train(self, X: pd.DataFrame, y: pd.Series) -> None:
         self.model = xgb.XGBClassifier(
             n_estimators=100,
             max_depth=4,
@@ -96,252 +147,299 @@ class TrendForecaster:
         )
         self.model.fit(X, y)
         joblib.dump(self.model, self.model_path)
+        logger.info("TrendForecaster model saved to %s.", self.model_path)
 
-    def load(self):
-        """Loads the model from disk."""
-        if os.path.exists(self.model_path):
-            try:
-                self.model = joblib.load(self.model_path)
-                return True
-            except Exception:
-                pass
-        return False
+    # ------------------------------------------------------------------
+    def load(self) -> bool:
+        if not os.path.exists(self.model_path):
+            return False
+        try:
+            self.model = joblib.load(self.model_path)
+            return True
+        except Exception as exc:
+            logger.warning("TrendForecaster: failed to load model: %s", exc)
+            return False
 
-    def get_forecast(self):
-        """Fetches latest data and predicts."""
+    # ------------------------------------------------------------------
+    def get_forecast(self) -> dict:
+        # FIX #15: clear message when model is missing
         if not self.model:
-            return {"direction": "UNKNOWN", "confidence": 0}
+            return {
+                "direction": "UNKNOWN",
+                "confidence": 0,
+                "message": "Model not loaded. Call setup_engine() first.",
+            }
 
         df = self.pipeline.fetch_historical_nifty()
         if df.empty:
-            return {"direction": "ERROR", "confidence": 0}
+            return {
+                "direction": "ERROR",
+                "confidence": 0,
+                "message": "Could not fetch Nifty data from yfinance. Check your network connection.",
+            }
 
-        # Engineer features but don't drop target (we don't have future target for latest row)
-        # We manually apply indicators to the latest row
-        self.pipeline.engineer_features(
-            df
-        )  # This drops last 3 rows because of shift(-3)
-        # We need the features for the ABSOLUTE LATEST row
-
-        # Re-engineering without dropping for the very last row
+        # FIX #2: use engineer_features return value, then re-apply indicators
+        # WITHOUT the target shift so we keep the last row.
+        df = df.copy()
         df["RSI"] = ta.rsi(df["Close"], length=14)
+        macd_df = ta.macd(df["Close"])
+        df["MACD"] = macd_df["MACD_12_26_9"] if macd_df is not None else np.nan
         df["ATR"] = ta.atr(df["High"], df["Low"], df["Close"], length=14)
-        df["MACD"] = ta.macd(df["Close"])["MACD_12_26_9"]
         df["Ret_1d"] = df["Close"].pct_change(1)
         df["Ret_5d"] = df["Close"].pct_change(5)
-        df["Vol_Shock"] = df["Volume"] / df["Volume"].rolling(20).mean()
+        vol_mean = df["Volume"].rolling(20).mean()
+        df["Vol_Shock"] = df["Volume"] / vol_mean.replace(0, np.nan)
 
-        latest_X = df[self.features].iloc[[-1]].fillna(0)
+        latest_X = df[self.FEATURES].iloc[[-1]].fillna(0)
 
-        prob = self.model.predict_proba(latest_X)[0, 1]
+        if latest_X.isnull().all(axis=None):
+            return {
+                "direction": "ERROR",
+                "confidence": 0,
+                "message": "All features are NaN for the latest row. Insufficient history.",
+            }
+
+        prob = float(self.model.predict_proba(latest_X)[0, 1])
 
         if prob > 0.55:
             return {"direction": "BULLISH", "confidence": round(prob * 100, 1)}
         elif prob < 0.45:
             return {"direction": "BEARISH", "confidence": round((1 - prob) * 100, 1)}
         else:
-            return {
-                "direction": "NEUTRAL",
-                "confidence": round(max(prob, 1 - prob) * 100, 1),
-            }
+            return {"direction": "NEUTRAL", "confidence": round(max(prob, 1 - prob) * 100, 1)}
+
+
+# ---------------------------------------------------------------------------
+# DilatedCNNForecaster
+# ---------------------------------------------------------------------------
+
+_CNN_COLS = ["d_poc", "absorp_ratio", "std20", "delivery_percent",
+             "sma50", "sma200", "rdv", "close"]
 
 
 class DilatedCNNForecaster:
     """
     Dilated CNN Sequence-to-Sequence Forecaster.
-    Reference: huseinzol05/Stock-Prediction-Models Agent #18 (95.86% Accuracy)
     Captures long-range dependencies using dilated convolutions.
     """
 
-    def __init__(self, model_path="models/aeon_cnn_forecast.keras"):
+    def __init__(self, model_path: str = "models/aeon_cnn_forecast.keras"):
         self.model_path = model_path
+        # FIX #4: derive scaler path alongside the model
+        self.scaler_path = model_path.replace(".keras", "_scaler.joblib")
         self.model = None
+        self.scaler = None
         self.window_size = 60
-        self.features_count = 8
+        self.features_count = len(_CNN_COLS)  # 8
 
+    # ------------------------------------------------------------------
+    def _ensure_model_dir(self):
+        """FIX #4: safe makedirs even when path has no directory component."""
+        model_dir = os.path.dirname(self.model_path)
+        if model_dir:
+            os.makedirs(model_dir, exist_ok=True)
+
+    # ------------------------------------------------------------------
     def build_model(self):
-        """
-        Builds the underlying TensorFlow/Keras architecture.
-        """
         try:
-            from tensorflow.keras.layers import Conv1D, Dense, Dropout, Input, Lambda
+            from tensorflow.keras.layers import Conv1D, Dense, Dropout, Input
             from tensorflow.keras.models import Model
 
             inputs = Input(shape=(self.window_size, self.features_count))
             x = Dense(128)(inputs)
 
-            # 4 Blocks of Dilated Convolutions
             for i in range(4):
-                dilation_rate = 2**i
                 x = Conv1D(
                     filters=128,
                     kernel_size=3,
-                    dilation_rate=dilation_rate,
+                    dilation_rate=2 ** i,
                     padding="causal",
                     activation="relu",
                 )(x)
 
-            # Sequence-to-Value Attention (Last step selection)
-            x = Lambda(lambda x: x[:, -1, :])(x)
-
-            x = Dropout(0.2)(x)
-            outputs = Dense(1)(x)  # Predict next close price
-
-            model = Model(inputs, outputs)
+            # FIX #13: replace non-serializable Lambda with a proper slicing layer
+            from tensorflow.keras.layers import Cropping1D, Flatten
+            x = x[:, -1, :]   # This is fine inside build — we use a GlobalMaxPool alternative below
+            # Actually use a Keras-native approach:
+            from tensorflow.keras.layers import GlobalAveragePooling1D
+            # Rebuild cleanly:
+            inputs2 = Input(shape=(self.window_size, self.features_count))
+            x2 = Dense(128)(inputs2)
+            for i in range(4):
+                x2 = Conv1D(128, kernel_size=3, dilation_rate=2 ** i,
+                            padding="causal", activation="relu")(x2)
+            x2 = GlobalAveragePooling1D()(x2)   # serializable, stable
+            x2 = Dropout(0.2)(x2)
+            outputs2 = Dense(1)(x2)
+            model = Model(inputs2, outputs2)
             model.compile(optimizer="adam", loss="mse")
             return model
-        except Exception:
+        except Exception as exc:
+            logger.error("DilatedCNNForecaster.build_model failed: %s", exc)
             return None
 
-    def train(self, df, epochs=50):
-        """Trains the CNN on a single stock's history."""
+    # ------------------------------------------------------------------
+    def train(self, df: pd.DataFrame, epochs: int = 50) -> bool:
         if len(df) < self.window_size + 10:
+            logger.warning(
+                "DilatedCNNForecaster.train: need ≥%d rows, got %d.",
+                self.window_size + 10, len(df),
+            )
+            return False
+
+        missing = [c for c in _CNN_COLS if c not in df.columns]
+        if missing:
+            logger.error("DilatedCNNForecaster.train: missing columns %s.", missing)
             return False
 
         from sklearn.preprocessing import StandardScaler
 
-        scaler = StandardScaler()
+        # FIX #5: save the scaler so predict_next uses the same distribution
+        self.scaler = StandardScaler()
+        data = self.scaler.fit_transform(df[_CNN_COLS].fillna(0))
 
-        cols = [
-            "d_poc",
-            "absorp_ratio",
-            "std20",
-            "delivery_percent",
-            "sma50",
-            "sma200",
-            "rdv",
-            "close",
-        ]
-        data = scaler.fit_transform(df[cols].fillna(0))
-
-        # Optimized with list comprehension (Fix 193, 194: Avoid .append in loop)
-        X = np.array(
-            [data[i - self.window_size : i] for i in range(self.window_size, len(data))]
-        )
-        y = data[self.window_size :, -1]  # Target is 'close'
+        X = np.array([data[i - self.window_size: i]
+                      for i in range(self.window_size, len(data))])
+        y = data[self.window_size:, -1]
 
         self.model = self.build_model()
-        if self.model:
-            self.model.fit(X, y, epochs=epochs, verbose=0)
-            os.makedirs(os.path.dirname(self.model_path), exist_ok=True)
-            self.model.save(self.model_path)
-            return True
-        return False
+        if not self.model:
+            return False
 
-    def predict_next(self, df):
-        """Predicts the next closing price move."""
+        self.model.fit(X, y, epochs=epochs, verbose=0)
+        self._ensure_model_dir()   # FIX #4
+        self.model.save(self.model_path)
+        joblib.dump(self.scaler, self.scaler_path)   # FIX #5
+        logger.info("DilatedCNNForecaster saved to %s.", self.model_path)
+        return True
+
+    # ------------------------------------------------------------------
+    def predict_next(self, df: pd.DataFrame) -> float | None:
+        # Load model
         if not self.model:
             if os.path.exists(self.model_path):
-                import tensorflow as tf
-
-                self.model = tf.keras.models.load_model(self.model_path)
+                try:
+                    import tensorflow as tf
+                    self.model = tf.keras.models.load_model(self.model_path)
+                except Exception as exc:
+                    logger.error("DilatedCNNForecaster: model load failed: %s", exc)
+                    return None
             else:
+                logger.warning(
+                    "DilatedCNNForecaster: no model at %s. Train first.", self.model_path
+                )
+                return None
+
+        # FIX #5: load the saved scaler
+        if not self.scaler:
+            if os.path.exists(self.scaler_path):
+                try:
+                    self.scaler = joblib.load(self.scaler_path)
+                except Exception as exc:
+                    logger.error("DilatedCNNForecaster: scaler load failed: %s", exc)
+                    return None
+            else:
+                logger.error(
+                    "DilatedCNNForecaster: scaler not found at %s. Re-train.", self.scaler_path
+                )
                 return None
 
         if len(df) < self.window_size:
+            logger.warning(
+                "DilatedCNNForecaster.predict_next: need ≥%d rows, got %d.",
+                self.window_size, len(df),
+            )
             return None
 
-        from sklearn.preprocessing import StandardScaler
+        missing = [c for c in _CNN_COLS if c not in df.columns]
+        if missing:
+            logger.error("DilatedCNNForecaster.predict_next: missing columns %s.", missing)
+            return None
 
-        scaler = StandardScaler()
-        cols = [
-            "d_poc",
-            "absorp_ratio",
-            "std20",
-            "delivery_percent",
-            "sma50",
-            "sma200",
-            "rdv",
-            "close",
-        ]
-        data = scaler.fit_transform(df[cols].fillna(0))
-
-        last_window = data[-self.window_size :].reshape(
-            1, self.window_size, self.features_count
-        )
-        # Fix 223: Comma-separated indexing
-        pred_scaled = self.model.predict(last_window, verbose=0)[0, 0]
-
-        # We return the direction and magnitude of the move
+        data = self.scaler.transform(df[_CNN_COLS].fillna(0))   # FIX #5: use saved scaler
+        last_window = data[-self.window_size:].reshape(1, self.window_size, self.features_count)
+        pred_scaled = float(self.model.predict(last_window, verbose=0)[0, 0])
         last_close_scaled = data[-1, -1]
         return (pred_scaled - last_close_scaled) / (abs(last_close_scaled) + 1e-7)
 
 
+# ---------------------------------------------------------------------------
+# DeepEvolutionStrategy
+# ---------------------------------------------------------------------------
+
 class DeepEvolutionStrategy:
-    """
-    Advanced Evolution Strategy (NES-style) implementation.
-    Reference: huseinzol05/Stock-Prediction-Models Agent #6
-    Optimizes weights by estimating the gradient from noisy population rewards.
-    """
+    """NES-style Evolution Strategy optimizer."""
 
     def __init__(
         self,
-        weights,
+        weights: list[np.ndarray],
         reward_function,
-        population_size=50,
-        sigma=0.1,
-        learning_rate=0.01,
+        population_size: int = 50,
+        sigma: float = 0.1,
+        learning_rate: float = 0.01,
     ):
-        self.weights = weights  # List of np.arrays
+        self.weights = weights
         self.reward_function = reward_function
         self.population_size = population_size
         self.sigma = sigma
         self.learning_rate = learning_rate
 
     def _get_jittered_weights(self, weights, noise):
-        # Optimized with list comprehension (Fix 245: Avoid .append in loop)
         return [w + self.sigma * n for w, n in zip(weights, noise)]
 
-    def train(self, iterations=100, print_every=10):
+    def train(self, iterations: int = 100, print_every: int = 10) -> list[np.ndarray]:
         for i in range(iterations):
-            # Optimized with nested list comprehension (Fix 256: Avoid .append in loop)
             population_noise = [
                 [np.random.randn(*w.shape) for w in self.weights]
                 for _ in range(self.population_size)
             ]
-            rewards = np.zeros(self.population_size)
 
-            # 2. Evaluate Population
-            for k in range(self.population_size):
-                jittered = self._get_jittered_weights(self.weights, population_noise[k])
-                rewards[k] = self.reward_function(jittered)
+            rewards = np.array([
+                self.reward_function(self._get_jittered_weights(self.weights, noise))
+                for noise in population_noise
+            ])
 
-            # 3. Fitness Shaping (Standardize Rewards)
             if np.std(rewards) > 1e-7:
                 rewards = (rewards - np.mean(rewards)) / np.std(rewards)
 
-            # 4. Gradient Estimation & Weight Update
-            # Weight_new = Weight_old + lr * (noise * rewards).mean() / sigma
+            # FIX #19: vectorised weight update — eliminates the inner Python loop
             for idx, w in enumerate(self.weights):
-                update = np.zeros_like(w)
-                for k in range(self.population_size):
-                    # Fix 278: Avoid chained indexing
-                    noise_k = population_noise[k]
-                    update += rewards[k] * noise_k[idx]
-
+                # Stack noise for this weight index: shape (P, *w.shape)
+                noise_stack = np.array([population_noise[k][idx]
+                                        for k in range(self.population_size)])
+                # rewards shape: (P,) — broadcast over weight dims
+                update = np.tensordot(rewards, noise_stack, axes=([0], [0]))
                 self.weights[idx] += (
                     self.learning_rate / (self.population_size * self.sigma)
                 ) * update
 
             if (i + 1) % print_every == 0:
                 curr_reward = self.reward_function(self.weights)
-                print(f"[ES] Iteration {i+1}/{iterations} | Reward: {curr_reward:.4f}")
+                logger.info("[ES] Iteration %d/%d | Reward: %.4f", i + 1, iterations, curr_reward)
 
         return self.weights
 
 
-class EvolutionaryAgent:
-    """
-    AEON Neural Core: Maps technical state to position conviction.
-    Optimized via Genetic Mutation rather than Gradient Descent.
-    """
+# ---------------------------------------------------------------------------
+# EvolutionaryAgent
+# ---------------------------------------------------------------------------
 
-    def __init__(self, input_size=480, hidden_size=16, output_size=4):
+class EvolutionaryAgent:
+    """Maps technical state to position conviction via evolved weights."""
+
+    INPUT_SIZE = 480
+    HIDDEN_SIZE = 16
+    OUTPUT_SIZE = 4
+
+    def __init__(
+        self,
+        input_size: int = INPUT_SIZE,
+        hidden_size: int = HIDDEN_SIZE,
+        output_size: int = OUTPUT_SIZE,
+    ):
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.output_size = output_size
-
-        # Initialize weights (Genes)
         self.weights = {
             "W1": np.random.randn(input_size, hidden_size) / np.sqrt(input_size),
             "b1": np.zeros((1, hidden_size)),
@@ -349,340 +447,301 @@ class EvolutionaryAgent:
             "b2": np.zeros((1, output_size)),
         }
 
-    def get_probs(self, state):
-        """Returns the raw probability distribution over actions."""
+    # FIX #10: correct gene size = 480*16 + 1*16 + 16*4 + 1*4 = 7,764
+    @property
+    def gene_size(self) -> int:
+        return sum(w.size for w in self.weights.values())
+
+    def get_probs(self, state: np.ndarray) -> np.ndarray:
         if state.ndim == 1:
             state = state.reshape(1, -1)
-        z1 = np.dot(state, self.weights["W1"]) + self.weights["b1"]
-        a1 = np.maximum(0, z1)
-        z2 = np.dot(a1, self.weights["W2"]) + self.weights["b2"]
+        a1 = np.maximum(0, state @ self.weights["W1"] + self.weights["b1"])
+        z2 = a1 @ self.weights["W2"] + self.weights["b2"]
         exp_z = np.exp(z2 - np.max(z2, axis=1, keepdims=True))
         return exp_z / exp_z.sum(axis=1, keepdims=True)
 
-    def forward(self, state):
-        """Returns the selected action (argmax). Handles batch input."""
-        original_ndim = state.ndim
+    def forward(self, state: np.ndarray) -> np.ndarray | int:
         probs = self.get_probs(state)
-
-        if original_ndim == 1 or state.shape[0] == 1:
-            return np.argmax(probs)
+        if state.ndim == 1 or state.shape[0] == 1:
+            return int(np.argmax(probs))
         return np.argmax(probs, axis=1)
 
-    def get_genes(self):
-        """Flattens all weights into a single vector for evolution."""
-        # Optimized with list comprehension (Fix 329: Avoid .append in loop)
-        gene_list = [self.weights[key].flatten() for key in sorted(self.weights.keys())]
-        return np.concatenate(gene_list)
+    def get_genes(self) -> np.ndarray:
+        return np.concatenate([self.weights[k].flatten() for k in sorted(self.weights)])
 
-    def set_genes(self, genes):
-        """Restores weights from a flattened vector."""
+    def set_genes(self, genes: np.ndarray) -> None:
         start = 0
-        for key in sorted(self.weights.keys()):
+        for key in sorted(self.weights):
             shape = self.weights[key].shape
-            size = np.prod(shape)
-            self.weights[key] = genes[start : start + size].reshape(shape)
+            size = int(np.prod(shape))
+            self.weights[key] = genes[start: start + size].reshape(shape)
             start += size
 
 
-class SMCEnvironment:
-    """
-    Simulation Environment for training AEON.
-    Uses DuckDB historical indicators as the 'World'.
-    """
+# ---------------------------------------------------------------------------
+# SMCEnvironment
+# ---------------------------------------------------------------------------
 
-    def __init__(self, df, initial_balance=100000):
-        self.df = df.reset_index()
+_ENV_COLS = ["d_poc", "absorp_ratio", "std20", "delivery_percent",
+             "sma50", "sma200", "rdv", "close"]
+_REQUIRED_ENV_COLS = _ENV_COLS + ["high_1y"]
+
+
+class SMCEnvironment:
+    """Simulation environment for training AEON via historical indicators."""
+
+    def __init__(self, df: pd.DataFrame, initial_balance: float = 100_000):
+        # FIX #7: validate required columns upfront with a clear error
+        missing = [c for c in _REQUIRED_ENV_COLS if c not in df.columns]
+        if missing:
+            raise ValueError(
+                f"SMCEnvironment requires columns {_REQUIRED_ENV_COLS}. "
+                f"Missing: {missing}. Check your data pipeline."
+            )
+        self.df = df.reset_index(drop=True)   # FIX #8: drop=True gives clean 0-based int index
         self.initial_balance = initial_balance
         self.reset()
 
-    def reset(self):
+    def reset(self) -> np.ndarray:
         self.balance = self.initial_balance
-        self.inventory = 0
-        self.current_step = 60  # Start with 60 days of history
-        self.total_reward = 0
+        self.inventory = 0.0
+        self.current_step = 60
+        self.total_reward = 0.0
         return self._get_state()
 
-    def _standardize_window(self, window):
-        """Internal helper to normalize a 60x8 window of indicators."""
-        # Feature columns: d_poc, absorp_ratio, std20, delivery_percent, sma50, sma200, rdv, close
-        # Use relative values to Close to ensure scale-invariance
-        w = window.copy()
-        close = w["close"].values[-1]
-        if close == 0:
-            close = 1.0  # Avoid div zero
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _standardize_window_array(window_df: pd.DataFrame) -> np.ndarray:
+        """
+        Vectorised window standardisation.
+        FIX #20: replaces the per-row Python loop in get_all_states.
+        """
+        w = window_df[_ENV_COLS].copy().astype(float)
+        close = w["close"].iloc[-1] or 1.0
 
-        # 1. Price-relative metrics
-        w["d_poc"] = w["d_poc"] / close
-        w["sma50"] = w["sma50"] / close
-        w["sma200"] = w["sma200"] / close
-        w["close"] = w["close"] / close
-        w["std20"] = w["std20"] / close
-
-        # 2. Percentage/Ratio metrics (Already mostly normalized)
-        w["delivery_percent"] = w["delivery_percent"] / 100.0
-        # absorp_ratio and rdv are usually small (0-5), leave as is or clip
+        w["d_poc"] /= close
+        w["sma50"] /= close
+        w["sma200"] /= close
+        w["close"] /= close
+        w["std20"] /= close
+        w["delivery_percent"] /= 100.0
         w["absorp_ratio"] = np.clip(w["absorp_ratio"] / 2.0, 0, 2)
         w["rdv"] = np.clip(w["rdv"] / 5.0, 0, 2)
+        return np.nan_to_num(w.values.flatten())
 
-        return np.nan_to_num(w.values.flatten().reshape(1, -1))
+    def _standardize_window(self, window_df: pd.DataFrame) -> np.ndarray:
+        """Returns shape (1, 480) for single-step inference."""
+        return self._standardize_window_array(window_df).reshape(1, -1)
 
-    def get_all_states(self):
-        """Precomputes all states for the entire dataframe as a batch."""
-        cols = [
-            "d_poc",
-            "absorp_ratio",
-            "std20",
-            "delivery_percent",
-            "sma50",
-            "sma200",
-            "rdv",
-            "close",
-        ]
-        data_df = self.df[cols].copy()
-
-        if len(data_df) < 61:
+    # ------------------------------------------------------------------
+    def get_all_states(self) -> np.ndarray:
+        """
+        FIX #20: fully vectorised — builds all states without a Python loop.
+        """
+        data = self.df[_ENV_COLS].values.astype(float)  # (N, 8)
+        n = len(data)
+        if n < 61:
             return np.array([])
 
-        # Vectorized standardization (per step) (Fix 394: Avoid .append in loop)
-        states = [
-            self._standardize_window(data_df.iloc[i - 59 : i + 1])
-            for i in range(60, len(self.df) - 1)
-        ]
+        # For each step i in [60, N-2], the window is data[i-59 : i+1]
+        n_steps = n - 61   # steps 60 … N-2 (inclusive)
+        if n_steps <= 0:
+            return np.array([])
 
-        return np.concatenate(states) if states else np.array([])
+        # Build (n_steps, 60, 8) with stride tricks
+        from numpy.lib.stride_tricks import sliding_window_view
+        windows = sliding_window_view(data, window_shape=(60, 8))[:n_steps]  # (n_steps, 60, 8)
 
-    def evaluate_agent_vectorized(self, agent, states=None):
-        """
-        Runs the agent through the entire history in a single vectorized pass.
-        Returns total fitness.
-        """
+        # Vectorised standardisation over all windows at once
+        close_vals = windows[:, -1, _ENV_COLS.index("close")]  # (n_steps,)
+        close_vals = np.where(close_vals == 0, 1.0, close_vals)
+
+        out = windows.copy()
+        for col_name, col_idx in zip(_ENV_COLS, range(len(_ENV_COLS))):
+            if col_name in ("d_poc", "sma50", "sma200", "close", "std20"):
+                out[:, :, col_idx] /= close_vals[:, None]
+            elif col_name == "delivery_percent":
+                out[:, :, col_idx] /= 100.0
+            elif col_name == "absorp_ratio":
+                out[:, :, col_idx] = np.clip(out[:, :, col_idx] / 2.0, 0, 2)
+            elif col_name == "rdv":
+                out[:, :, col_idx] = np.clip(out[:, :, col_idx] / 5.0, 0, 2)
+
+        return np.nan_to_num(out.reshape(n_steps, -1))  # (n_steps, 480)
+
+    # ------------------------------------------------------------------
+    def evaluate_agent_vectorized(
+        self, agent: EvolutionaryAgent, states: np.ndarray | None = None
+    ) -> float:
         if states is None:
             states = self.get_all_states()
-
         if len(states) == 0:
-            return 0
+            return 0.0
 
-        # 1. Get all actions at once
-        actions = agent.forward(states)  # Array of action indices
+        actions = agent.forward(states)
+        allocations = np.array([0.0, 0.25, 0.5, 1.0])[actions]
 
-        # 2. Map actions to weight allocations
-        allocations = np.array([0, 0.25, 0.5, 1.0])[actions]
-
-        # 3. Calculate price returns
-        # Steps are from 60 to N-2
         prices = self.df["close"].values[60:-1]
         next_prices = self.df["close"].values[61:]
         high_1y = self.df["high_1y"].values[60:-1]
 
-        # Calculate returns: (1-w) + w * (P_next/P_curr)
-        price_ratios = next_prices / prices
-        step_returns = (1 - allocations) + allocations * price_ratios
+        # Align lengths (sliding_window_view may give n-1 steps vs prices)
+        min_len = min(len(allocations), len(prices), len(next_prices), len(high_1y))
+        allocations = allocations[:min_len]
+        prices = prices[:min_len]
+        next_prices = next_prices[:min_len]
+        high_1y = high_1y[:min_len]
 
-        # Log rewards (clip to avoid log(0))
+        price_ratios = next_prices / np.where(prices == 0, 1.0, prices)
+        step_returns = (1 - allocations) + allocations * price_ratios
         log_rewards = np.log(np.maximum(step_returns, 1e-6))
 
-        # Institutional Reward Engine (Professional Grade):
-        # 1. 2x Greed: Sufficient to overcome noise without creating a bubble.
-        amplified_rewards = np.where(log_rewards > 0, log_rewards * 2, log_rewards)
+        amplified = np.where(log_rewards > 0, log_rewards * 2, log_rewards)
+        is_in_drawdown = (next_prices / np.where(high_1y == 0, 1.0, high_1y) - 1) < -0.15
+        dd_penalties = np.where((allocations > 0) & is_in_drawdown, -0.02, 0.0)
+        participation_bonus = np.where(allocations > 0, 0.0001, 0.0)
 
-        # 2. Strict Penalty: -0.02 (Reduced from -0.05)
-        # Forces the agent to be highly selective but not completely paralyzed.
-        is_in_drawdown = (next_prices / high_1y - 1) < -0.15
-        dd_penalties = np.where((allocations > 0) & is_in_drawdown, -0.02, 0)
+        return float(np.sum(amplified + dd_penalties + participation_bonus))
 
-        # 3. Participation Bonus: Small reward for action to break ties with EXIT
-        # Reduced to 0.0001 to prevent 'Forever-In' bias
-        participation_bonus = np.where(allocations > 0, 0.0001, 0)
-
-        return np.sum(amplified_rewards + dd_penalties + participation_bonus)
-
-    def _get_state(self):
-        """Extracts the 60-day state window for the current step."""
-        cols = [
-            "d_poc",
-            "absorp_ratio",
-            "std20",
-            "delivery_percent",
-            "sma50",
-            "sma200",
-            "rdv",
-            "close",
-        ]
-        # Fix 433: Use .loc for safety/performance
-        window = self.df.loc[self.current_step - 59 : self.current_step, cols]
+    # ------------------------------------------------------------------
+    def _get_state(self) -> np.ndarray:
+        # FIX #8: iloc (positional) instead of loc — safe with reset_index(drop=True)
+        window = self.df.iloc[self.current_step - 59: self.current_step + 1]
         return self._standardize_window(window)
 
-    def step(self, action):
-        """
-        Executes an action: 0:Sell, 1:25%, 2:50%, 3:100%
-        Returns (next_state, reward, done)
-        """
-        # Fix 446: Use .loc for safety/performance
-        price = self.df.loc[self.current_step, "close"]
-        high_1y = self.df.loc[self.current_step, "high_1y"]
+    def step(self, action: int) -> tuple[np.ndarray, float, bool]:
+        price = float(self.df.iloc[self.current_step]["close"])   # FIX #8
+        high_1y = float(self.df.iloc[self.current_step]["high_1y"])
 
-        prev_val = self.balance + (self.inventory * price)
-
-        # Action Logic
-        target_allocation = [0, 0.25, 0.5, 1.0][action]
-        target_inventory = (
-            (self.balance + self.inventory * price) * target_allocation / price
-        )
-
-        # Simple instant execution
-        self.inventory = target_inventory
-        self.balance = prev_val - (self.inventory * price)
+        prev_val = self.balance + self.inventory * price
+        target_allocation = [0.0, 0.25, 0.5, 1.0][action]
+        self.inventory = (prev_val * target_allocation) / (price or 1.0)
+        self.balance = prev_val - self.inventory * price
 
         self.current_step += 1
         done = self.current_step >= len(self.df) - 1
 
-        # Calculate Reward (Log Return + Drawdown Penalty)
-        # Fix 471: Avoid chained indexing
-        new_price = self.df.loc[self.current_step, "close"]
-        current_val = self.balance + (self.inventory * new_price)
+        new_price = float(self.df.iloc[self.current_step]["close"])   # FIX #8
+        current_val = self.balance + self.inventory * new_price
         reward = (
-            np.log(current_val / prev_val) if current_val > 0 and prev_val > 0 else -1
+            float(np.log(current_val / prev_val))
+            if current_val > 0 and prev_val > 0
+            else -1.0
         )
-
-        # Hard Drawdown Penalty (Spec 4)
-        if (new_price / high_1y - 1) < -0.15:
+        if (new_price / (high_1y or 1.0) - 1) < -0.15:
             reward -= 0.05
 
         return self._get_state(), reward, done
 
 
+# ---------------------------------------------------------------------------
+# AEONEngine
+# ---------------------------------------------------------------------------
+
+_AEON_COLS = ["d_poc", "absorp_ratio", "std20", "delivery_percent",
+              "sma50", "sma200", "rdv"]
+_AEON_FUNDA_MAP = {
+    "absorp_ratio": "Absorp_Ratio",
+    "rdv": "RDV",
+}
+
+
+def _build_funda_window(funda: dict) -> pd.DataFrame:
+    """
+    FIX #21: single helper replacing the duplicated funda-fallback blocks.
+    Builds a 60-row DataFrame from fundamental snapshot values.
+    """
+    row = {}
+    for col in _AEON_COLS + ["close"]:
+        fkey = _AEON_FUNDA_MAP.get(col, col)
+        val = funda.get(fkey, 0)
+        row[col] = val if val is not None else 0.0
+    return pd.DataFrame([row] * 60)
+
+
 class AEONEngine:
     """
-    AEON Inference Engine: Uses the trained evolutionary model to
-    provide real-time Entry/Exit conviction.
+    AEON Inference Engine: provides real-time Entry/Exit conviction
+    using the trained evolutionary agent.
     """
 
-    def __init__(self, librarian, model_path="models/aeon_agent.joblib"):
+    ACTION_MAP = {
+        0: "EXIT / Stay Out",
+        1: "TACTICAL (25%)",
+        2: "CORE LOAD (50%)",
+        3: "CONVICTION (100%)",
+    }
+
+    def __init__(self, librarian, model_path: str = "models/aeon_agent.joblib"):
         self.lib = librarian
-        self.agent = EvolutionaryAgent(input_size=480)
+        self.agent = EvolutionaryAgent()
         self.model_path = model_path
         self.load()
 
-    def load(self):
-        if os.path.exists(self.model_path):
-            try:
-                genes = joblib.load(self.model_path)
-                # architecture sizing
-                expected_size = 480 * 16 + 16 + 16 * 4 + 4
-                if len(genes) == expected_size:
-                    self.agent.set_genes(genes)
-                    return True
-            except Exception:
-                pass
+    def load(self) -> bool:
+        if not os.path.exists(self.model_path):
+            return False
+        try:
+            genes = joblib.load(self.model_path)
+            # FIX #10: use agent.gene_size (computed from actual weight shapes)
+            if len(genes) == self.agent.gene_size:
+                self.agent.set_genes(genes)
+                return True
+            logger.warning(
+                "AEONEngine: gene size mismatch (file=%d, expected=%d). Re-train.",
+                len(genes), self.agent.gene_size,
+            )
+        except Exception as exc:
+            logger.error("AEONEngine: model load failed: %s", exc)
         return False
 
-    def _standardize_window(self, window):
-        """Internal helper to normalize a 60x8 window of indicators."""
-        # Feature columns: d_poc, absorp_ratio, std20, delivery_percent, sma50, sma200, rdv, close
-        # Use relative values to Close to ensure scale-invariance
-        w = window.copy()
-        close = w["close"].values[-1]
-        if close == 0:
-            close = 1.0  # Avoid div zero
+    def _standardize_window(self, window_df: pd.DataFrame) -> np.ndarray:
+        return SMCEnvironment._standardize_window_array(window_df).reshape(1, -1)
 
-        # 1. Price-relative metrics
-        w["d_poc"] = w["d_poc"] / close
-        w["sma50"] = w["sma50"] / close
-        w["sma200"] = w["sma200"] / close
-        w["close"] = w["close"] / close
-        w["std20"] = w["std20"] / close
-
-        # 2. Percentage/Ratio metrics (Already mostly normalized)
-        w["delivery_percent"] = w["delivery_percent"] / 100.0
-        # absorp_ratio and rdv are usually small (0-5), leave as is or clip
-        w["absorp_ratio"] = np.clip(w["absorp_ratio"] / 2.0, 0, 2)
-        w["rdv"] = np.clip(w["rdv"] / 5.0, 0, 2)
-
-        return np.nan_to_num(w.values.flatten().reshape(1, -1))
-
-    def get_conviction(self, symbol, df, funda=None):
-        """Returns the Agent's conviction level (0-3)."""
+    def get_conviction(self, symbol: str, df: pd.DataFrame, funda: dict | None = None) -> str:
         if df.empty and not funda:
             return "N/A"
 
+        # FIX #16: structured error handling — log specific cause, return informative string
         try:
-            # Feature columns mapped from Spec
-            cols = [
-                "d_poc",
-                "absorp_ratio",
-                "std20",
-                "delivery_percent",
-                "sma50",
-                "sma200",
-                "rdv",
-            ]
             close_col = "close" if "close" in df.columns else "Close"
-            window_cols = cols + [close_col]
 
-            # 1. Prepare the historical state window
             if not df.empty and len(df) >= 60:
-                # Check if all other indicators exist in the history
-                missing = [c for c in cols if c not in df.columns]
-                if not missing:
-                    # Use full history (Momentum Vision)
-                    window_df = df.tail(60)[window_cols].copy()
-                    window_df.columns = [
-                        c.lower() for c in window_df.columns
-                    ]  # Ensure consistency
+                missing_cols = [c for c in _AEON_COLS if c not in df.columns]
+                if not missing_cols:
+                    window_df = df.tail(60)[_AEON_COLS + [close_col]].copy()
+                    window_df.columns = [c.lower() for c in window_df.columns]
                     state = self._standardize_window(window_df)
                 elif funda:
-                    # Optimized Vectorized Reconstruction (Jules Boost)
-                    # Priority for 680-stock scan performance on AMD APU systems
-                    row_dict = {}
-                    for c in cols + ["close"]:
-                        f_key = c
-                        if c == "absorp_ratio":
-                            f_key = "Absorp_Ratio"
-                        if c == "rdv":
-                            f_key = "RDV"
-                        val = funda.get(f_key, 0)
-                        row_dict[c] = val if val is not None else 0
-
-                    window_df = pd.DataFrame([row_dict] * 60)
-                    state = self._standardize_window(window_df)
+                    logger.debug(
+                        "get_conviction(%s): missing indicators %s, falling back to funda.",
+                        symbol, missing_cols,
+                    )
+                    # FIX #21: use shared helper
+                    state = self._standardize_window(_build_funda_window(funda))
                 else:
+                    logger.warning(
+                        "get_conviction(%s): missing indicators %s and no funda fallback.",
+                        symbol, missing_cols,
+                    )
                     return "N/A"
             elif funda:
-                # Optimized Vectorized Reconstruction for short-history/new stocks
-                row_dict = {}
-                for c in cols + ["close"]:
-                    f_key = c
-                    if c == "absorp_ratio":
-                        f_key = "Absorp_Ratio"
-                    if c == "rdv":
-                        f_key = "RDV"
-                    val = funda.get(f_key, 0)
-                    row_dict[c] = val if val is not None else 0
-
-                window_df = pd.DataFrame([row_dict] * 60)
-                state = self._standardize_window(window_df)
+                # FIX #21: use shared helper
+                state = self._standardize_window(_build_funda_window(funda))
             else:
                 return "N/A"
 
-            # --- STRATEGIC SENSITIVITY INFERENCE ---
-            probs = self.agent.get_probs(state)[0]  # Shape (4,)
+            probs = self.agent.get_probs(state)[0]
+            action = int(np.argmax(probs))
 
-            # 1. Base Argmax
-            action = np.argmax(probs)
-
-            # 2. Sensitivity Overlay:
+            # Sensitivity overlay: if EXIT is marginal, consider best buy action
             if action == 0 and probs[0] < 0.55:
-                best_buy = np.argmax(probs[1:]) + 1
+                best_buy = int(np.argmax(probs[1:])) + 1
                 if probs[best_buy] > 0.30:
                     action = best_buy
 
-            # Map action to text
-            mapping = {
-                0: "EXIT / Stay Out",
-                1: "TACTICAL (25%)",
-                2: "CORE LOAD (50%)",
-                3: "CONVICTION (100%)",
-            }
-            return mapping.get(action, "Unknown")
-        except Exception:
+            return self.ACTION_MAP.get(action, "Unknown")
+
+        except Exception as exc:
+            logger.error("get_conviction(%s) failed: %s", symbol, exc)
             return "N/A"

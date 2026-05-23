@@ -1,27 +1,25 @@
 {
-  "lookback_days": 120,
-  "features": [
-    "delivery_zscore_trigger",
-    "delivery_zscore_min_digestion",
-    "delivery_pct_avg_digestion",
-    "range_atr_ratio_min",
-    "vol_ratio_min",
-    "max_drawdown_pct",
-    "days_since_trigger",
-    "close_location_avg",
-    "nifty_return_digestion",
-    "sector_relative_strength",
-    "fti_trigger",
-    "fti_avg_digestion",
-    "free_float_mcap"
-  ],
-  "xgb_params": {
-    "n_estimators": 150,
-    "max_depth": 4,
-    "learning_rate": 0.05,
-    "subsample": 0.8,
-    "colsample_bytree": 0.8,
-    "random_state": 42
-  },
-  "train_val_test_split": [0.70, 0.15, 0.15]
+    "lookback_days": 120,
+    "features": [
+        "del_zscore_min",
+        "del_zscore_mean",
+        "range_atr_min",
+        "vol_ratio_min",
+        "digestion_days",
+        "max_drawdown_pct",
+        "close_min",
+        "vwap_min",
+        "volume_min",
+        "liquidity_min",
+        "fvg_freshness_min"
+    ],
+    "xgb_params": {
+        "n_estimators": 150,
+        "max_depth": 4,
+        "learning_rate": 0.05,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "random_state": 42
+    },
+    "train_val_test_split": [0.70, 0.15, 0.15]
 }

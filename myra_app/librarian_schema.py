@@ -286,5 +286,13 @@ class LibrarianSchemaMixin:
                     "CREATE INDEX IF NOT EXISTS idx_master_industry ON symbols_master (industry)",
                     conn=self._meta_conn,
                 )
+                self.safe_execute(
+                    "CREATE INDEX IF NOT EXISTS idx_master_nifty500 ON symbols_master (in_nifty500)",
+                    conn=self._meta_conn,
+                )
+                self.safe_execute(
+                    "CREATE INDEX IF NOT EXISTS idx_constituents_symbol ON index_constituents (symbol)",
+                    conn=self._meta_conn,
+                )
         except Exception:
             pass

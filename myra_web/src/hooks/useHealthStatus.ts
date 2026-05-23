@@ -6,7 +6,7 @@ export function useHealthStatus() {
   const lib = getLibrarian();
   const { settings } = useSettings();
   const [health, setHealth] = useState(lib.health);
-  const [isConnected, setIsConnected] = useState(lib.isConnectedToLocalRepo);
+  const [isConnected, setIsConnected] = useState(true);
 
   useEffect(() => {
     let interval: any;

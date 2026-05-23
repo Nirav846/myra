@@ -740,6 +740,14 @@ async def launchpad_feature_importance():
     return predictor.get_feature_importance()
 
 
+@app.get("/api/ml/factor-importance")
+async def factor_importance():
+    from myra_app.ml_trainer import FactorDiscovery
+    fd = FactorDiscovery()
+    result = fd.discover_factors()
+    return result
+
+
 @app.get("/api/finstack/nifty-outlook")
 async def finstack_nifty_outlook():
     from myra_app.utils.finstack_bridge import get_nifty_outlook

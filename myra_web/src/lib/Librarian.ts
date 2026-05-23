@@ -7,8 +7,17 @@ export type ConnectionStatus = {
 export class Librarian {
   public health: Record<string, ConnectionStatus> = {};
   public apiUrl: string = 'http://localhost:8000/api'; // Target for your local MYRA repo
-  public isConnectedToLocalRepo: boolean = false;
+  public isConnectedToLocalRepo: boolean = true;
   
+  // Rate limit concurrent queries to avoid SQLite contention
+  private static _lastQueryTime = 0;
+  private async _throttle() {
+    const now = Date.now();
+    const wait = Math.max(0, 200 - (now - Librarian._lastQueryTime));
+    Librarian._lastQueryTime = now + wait;
+    if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  }
+
   // LRU / TTL In-Memory Cache for rapid UI tab switching 
   private queryCache: Map<string, { timestamp: number, data: any }> = new Map();
   private readonly CACHE_TTL_MS = 60000; // 60 seconds
@@ -68,6 +77,7 @@ export class Librarian {
 
   // Generic query executor that routes to your Python backend
   public async executeQuery(database: string, query: string, args: any = {}, timeoutMs: number = 30000): Promise<any> {
+    await this._throttle();
     const isDebug = localStorage.getItem('myra_ui_settings') ? JSON.parse(localStorage.getItem('myra_ui_settings') as string).debugMode : false;
     const startTime = performance.now();
 

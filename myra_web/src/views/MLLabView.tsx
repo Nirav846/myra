@@ -47,7 +47,7 @@ const LAUNCHPAD_FEATURES = [
 ];
 
 export default function MLLabView({ lib }: { lib: Librarian }) {
-  const [labMode, setLabMode] = useState<'forward_return' | 'launchpad'>('forward_return');
+  const [labMode, setLabMode] = useState<'forward_return' | 'launchpad' | 'factor_importance'>('forward_return');
   const [toast, setToast] = useState<{message: string, type: 'success'|'error'} | null>(null);
 
   const showToast = (message: string, type: 'success' | 'error') => {
@@ -88,6 +88,11 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
   const [lpFetchingImportance, setLpFetchingImportance] = useState(false);
   const [lpImportance, setLpImportance] = useState<FeatureImportance[] | null>(null);
 
+  // --- FACTOR IMPORTANCE STATE ---
+  const [factorData, setFactorData] = useState<{ top_features: FeatureImportance[]; by_category: Record<string, FeatureImportance[]>; trained_at: string } | null>(null);
+  const [factorLoading, setFactorLoading] = useState(false);
+  const [factorError, setFactorError] = useState(false);
+
   const fetchStatus = useCallback(async () => {
     try {
       const res = await fetch('http://localhost:8000/api/ml/status');
@@ -127,6 +132,20 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
     fetchLpStatus();
     fetchConfig();
   }, [fetchStatus, fetchLpStatus, fetchConfig]);
+
+  useEffect(() => {
+    if (labMode !== 'factor_importance') return;
+    setFactorLoading(true);
+    setFactorError(false);
+    fetch('http://localhost:8000/api/ml/factor-importance')
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) { setFactorError(true); setFactorData(null); }
+        else setFactorData(data);
+      })
+      .catch(() => setFactorError(true))
+      .finally(() => setFactorLoading(false));
+  }, [labMode]);
 
   const saveConfig = async (payload: any) => {
     try {
@@ -256,6 +275,12 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
           className={`px-4 py-2 text-xs font-semibold uppercase tracking-wider rounded flex items-center gap-2 ${labMode === 'launchpad' ? 'bg-red-600 text-white' : 'bg-[#ffffff0a] text-[#888] hover:text-[#ccc]'}`}
         >
           Launchpad
+        </button>
+        <button
+          onClick={() => setLabMode('factor_importance')}
+          className={`px-4 py-2 text-xs font-semibold uppercase tracking-wider rounded ${labMode === 'factor_importance' ? 'bg-emerald-600 text-white' : 'bg-[#ffffff0a] text-[#888] hover:text-[#ccc]'}`}
+        >
+          Factor Importance
         </button>
       </div>
 
@@ -440,7 +465,7 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
             </div>
           </div>
         </div>
-      ) : (
+      ) : labMode === 'launchpad' ? (
         /* ================= LAUNCHPAD MODE ================= */
         <div className="flex flex-1 overflow-hidden p-4 gap-4 pt-2">
           {/* LEFT PANEL - LAUNCHPAD */}
@@ -609,6 +634,45 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
              </div>
           </div>
 
+        </div>
+      ) : (
+        /* ================= FACTOR IMPORTANCE MODE ================= */
+        <div className="flex flex-1 overflow-hidden p-4 pt-2">
+          <div className="flex-1 flex flex-col bg-[#0e1117] border border-[#ffffff1a] rounded-xl overflow-hidden relative p-4">
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-[#fafafa] flex items-center gap-2 mb-4">
+              Factor Importance
+            </h3>
+            <div className="flex-1 overflow-auto">
+              {factorLoading ? (
+                <div className="h-full flex items-center justify-center text-xs font-mono text-[#888] animate-pulse">
+                  Running factor discovery...
+                </div>
+              ) : factorError || !factorData ? (
+                <div className="h-full flex items-center justify-center text-xs font-mono text-[#666]">
+                  Not enough data for factor discovery.
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {Object.entries(factorData.by_category).map(([category, features]) => (
+                    <div key={category}>
+                      <h4 className="text-xs font-semibold uppercase tracking-wider text-[#fafafa] mb-2">{category}</h4>
+                      <div className="h-48 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={features} layout="vertical" margin={{ top: 5, right: 30, left: 100, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#ffffff1a" horizontal={false} />
+                            <XAxis type="number" stroke="#666" tick={{ fill: '#666', fontSize: 10 }} />
+                            <YAxis type="category" dataKey="feature" stroke="#666" tick={{ fill: '#888', fontSize: 10 }} width={120} />
+                            <Tooltip contentStyle={{ backgroundColor: '#0e1117', borderColor: '#333', fontSize: '11px', fontFamily: 'monospace' }} itemStyle={{ color: '#fafafa' }} formatter={(val: number) => [val.toFixed(4), 'Importance']} />
+                            <Bar dataKey="importance" fill="#10b981" radius={[0, 4, 4, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

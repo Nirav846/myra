@@ -232,6 +232,7 @@ def _add_delivery_ma(df: pl.DataFrame) -> pl.DataFrame:
         df = df.with_columns(
             [
                 pl.col("delivery_qty")
+                .cast(pl.Float64)
                 .rolling_mean(window_size=60)
                 .over("symbol")
                 .alias("delivery_ma_60")
@@ -241,6 +242,7 @@ def _add_delivery_ma(df: pl.DataFrame) -> pl.DataFrame:
         df = df.with_columns(
             [
                 pl.col("delivery")
+                .cast(pl.Float64)
                 .rolling_mean(window_size=60)
                 .over("symbol")
                 .alias("delivery_ma_60")
