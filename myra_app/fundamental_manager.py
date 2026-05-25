@@ -141,6 +141,12 @@ class FundamentalManager:
             mcap = latest.get("market_cap")
             sect = latest.get("sector")
 
+            promoter_pct = latest.get("promoter_holding")
+            public_pct = (100 - promoter_pct) if promoter_pct is not None else None
+            ff_pct = public_pct  # free float = public holding in Indian market
+            ff_mcap = (mcap * ff_pct / 100) if mcap and ff_pct else None
+            ff_shares = None  # requires price, not available here
+
             # Calculate Growth Metrics
             profit_growth = 0
             sales_growth = 0
@@ -159,8 +165,8 @@ class FundamentalManager:
 
             v_conn.execute(
                 """
-                INSERT INTO fundamentals (symbol, pe, roe, eps, book_value, market_cap, sector, last_updated)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO fundamentals (symbol, pe, roe, eps, book_value, market_cap, sector, industry, promoter_holding_pct, public_holding_pct, free_float_pct, free_float_market_cap, last_updated)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (symbol) DO UPDATE SET
                     pe = EXCLUDED.pe,
                     roe = EXCLUDED.roe,
@@ -168,9 +174,14 @@ class FundamentalManager:
                     book_value = EXCLUDED.book_value,
                     market_cap = COALESCE(EXCLUDED.market_cap, fundamentals.market_cap),
                     sector = COALESCE(EXCLUDED.sector, fundamentals.sector),
+                    industry = COALESCE(EXCLUDED.industry, fundamentals.industry),
+                    promoter_holding_pct = COALESCE(EXCLUDED.promoter_holding_pct, fundamentals.promoter_holding_pct),
+                    public_holding_pct = COALESCE(EXCLUDED.public_holding_pct, fundamentals.public_holding_pct),
+                    free_float_pct = COALESCE(EXCLUDED.free_float_pct, fundamentals.free_float_pct),
+                    free_float_market_cap = COALESCE(EXCLUDED.free_float_market_cap, fundamentals.free_float_market_cap),
                     last_updated = EXCLUDED.last_updated
             """,
-                (symbol_clean, pe, roe, eps, bv, mcap, sect, date.today().isoformat()),
+                (symbol_clean, pe, roe, eps, bv, mcap, sect, sect, promoter_pct, public_pct, ff_pct, ff_mcap, date.today().isoformat()),
             )
 
             v_conn.commit()

@@ -9,9 +9,10 @@ interface SymbolSearchProps {
   className?: string;
   initialValue?: string;
   filterSymbols?: string[] | Set<string> | null;
+  clearOnSelect?: boolean;
 }
 
-export function SymbolSearch({ lib, onSymbolSelect, placeholder = "Search symbol...", className = "", initialValue = "", clearOnSelect = false, filterSymbols = null }: SymbolSearchProps & { clearOnSelect?: boolean }) {
+export function SymbolSearch({ lib, onSymbolSelect, placeholder = "Search symbol...", className = "", initialValue = "", clearOnSelect = false, filterSymbols = null }: SymbolSearchProps) {
   const [inputValue, setInputValue] = useState(initialValue);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -54,23 +55,32 @@ export function SymbolSearch({ lib, onSymbolSelect, placeholder = "Search symbol
       }
 
       try {
-        // Query the database for matching symbols
-        const query = `SELECT DISTINCT symbol FROM technical_data WHERE symbol LIKE ? LIMIT 10`;
-        const result = await lib.executeQuery('_tech_conn', query, [`${term}%`], 2000);
-        
+        // Query symbols_master first (broader coverage), fall back to technical_data
         let foundSymbols: string[] = [];
-        if (result && result.length > 0) {
-          foundSymbols = result.map((r: any) => r.symbol);
-        } else {
-          // Fallback demo symbols
+        try {
+          const metaResult = await lib.executeQuery('_meta_conn', 'SELECT symbol FROM symbols_master WHERE symbol LIKE ? AND is_active = 1 LIMIT 10', [`${term}%`], 2000);
+          if (metaResult && metaResult.length > 0) {
+            foundSymbols = metaResult.map((r: any) => r.symbol);
+          }
+        } catch (e) { /* fall through */ }
+
+        if (foundSymbols.length === 0) {
+          try {
+            const techResult = await lib.executeQuery('_tech_conn', 'SELECT DISTINCT symbol FROM technical_data WHERE symbol LIKE ? LIMIT 10', [`${term}%`], 2000);
+            if (techResult && techResult.length > 0) {
+              foundSymbols = techResult.map((r: any) => r.symbol);
+            }
+          } catch (e) { /* fall through */ }
+        }
+
+        if (foundSymbols.length === 0) {
           const demoSymbols = ['RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'INFY', 'ITC', 'SBIN', 'BHARTIARTL', 'BAJFINANCE', 'KOTAKBANK', 'NIFTY', 'BANKNIFTY'];
           foundSymbols = demoSymbols.filter(s => s.startsWith(term));
         }
-        
+
         setSuggestions(foundSymbols);
         setSelectedIndex(-1);
       } catch (e) {
-        // Fallback demo symbols on error
         const demoSymbols = ['RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'INFY', 'ITC', 'SBIN', 'BHARTIARTL', 'BAJFINANCE', 'KOTAKBANK', 'NIFTY', 'BANKNIFTY'];
         setSuggestions(demoSymbols.filter(s => s.startsWith(term)));
       } finally {
@@ -117,7 +127,9 @@ export function SymbolSearch({ lib, onSymbolSelect, placeholder = "Search symbol
   return (
     <div className={`relative ${className}`} ref={wrapperRef}>
       <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#666]" />
-      <input 
+      <input
+        id="chart-symbol-search"
+        name="symbol"
         ref={inputRef}
         type="text" 
         value={inputValue} 

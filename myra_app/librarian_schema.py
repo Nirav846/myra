@@ -18,6 +18,7 @@ class LibrarianSchemaMixin:
             "sector_locked": "INTEGER DEFAULT 0",
             "is_active": "INTEGER DEFAULT 1",
             "instrument_type": "TEXT DEFAULT 'EQUITY'",
+            "bse_scrip_code": "TEXT",
         }
         for col, col_type in columns.items():
             try:
@@ -51,7 +52,8 @@ class LibrarianSchemaMixin:
                     sector_locked INTEGER DEFAULT 0,
                     is_active INTEGER DEFAULT 1,
                     instrument_type TEXT DEFAULT 'EQUITY',
-                    last_fundamental_update TEXT
+                    last_fundamental_update TEXT,
+                    bse_scrip_code TEXT
                 )
             """,
                 conn=self._meta_conn,
@@ -172,6 +174,14 @@ class LibrarianSchemaMixin:
                     book_value REAL,
                     market_cap REAL,
                     sector TEXT,
+                    industry TEXT,
+                    insider_holding_pct REAL,
+                    promoter_holding_pct REAL,
+                    public_holding_pct REAL,
+                    free_float_pct REAL,
+                    free_float_market_cap REAL,
+                    free_float_shares REAL,
+                    shares_outstanding REAL,
                     last_updated TEXT
                 )
             """,
@@ -264,6 +274,10 @@ class LibrarianSchemaMixin:
                 )
                 self.safe_execute(
                     "CREATE INDEX IF NOT EXISTS idx_tech_symbol ON technical_data (symbol)",
+                    conn=self._tech_conn,
+                )
+                self.safe_execute(
+                    "CREATE INDEX IF NOT EXISTS idx_tech_date_symbol ON technical_data (date, symbol)",
                     conn=self._tech_conn,
                 )
 

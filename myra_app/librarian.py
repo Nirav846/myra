@@ -286,6 +286,20 @@ class Librarian(
         ).fetchall()
         return [r[0] for r in res]
 
+    def search_symbols(self, query: str) -> list[dict]:
+        """Return up to 15 symbols matching the query (by symbol or sector)."""
+        if not self._meta_conn:
+            return []
+        q = f"%{query.upper()}%"
+        try:
+            rows = self._meta_conn.execute(
+                "SELECT symbol, sector, industry FROM symbols_master WHERE (symbol LIKE ? OR sector LIKE ?) AND is_active = 1 LIMIT 15",
+                (q, q)
+            ).fetchall()
+            return [{"symbol": r[0], "name": r[1] or r[2] or "", "sector": r[1] or "", "industry": r[2] or ""} for r in rows]
+        except Exception:
+            return []
+
     def get_market_regime(self):
         # Market regime will transition to Parquet Indicators in Phase 3
         return "NEUTRAL (Modular Transition)"

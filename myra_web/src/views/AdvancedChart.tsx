@@ -3,9 +3,10 @@ import { Librarian } from '../lib/Librarian';
 const PlotlyCanvas = lazy(() => import('../components/chart/PlotlyCanvas').then(m => ({ default: m.PlotlyCanvas })));
 import { ChartHeader } from '../components/chart/ChartHeader';
 import { ChartSidebar } from '../components/chart/ChartSidebar';
-import { Search, Plus, X, BarChart2, PanelLeftClose, Settings2, Info } from 'lucide-react';
+import { Search, Plus, X, BarChart2, PanelLeftClose, Settings2, Info, Crosshair } from 'lucide-react';
 import { SymbolSearch } from '../components/SymbolSearch';
 import { useSettings } from '../lib/SettingsContext';
+import { useCrosshair } from '../hooks/useCrosshair';
 
 // Removed static import of aggregateData, using worker instead
 import { useChartStore } from '../store/chartStore';
@@ -42,7 +43,7 @@ const usePersistedState = <T,>(key: string, initialValue: T): [T, React.Dispatch
 };
 
 
-const ChartItem = memo(({ sym, data, overlayToggles, paneToggles, perfToggles, settings, bucket, liqVoidSettings, smpSettings }: any) => {
+const ChartItem = memo(({ sym, data, overlayToggles, paneToggles, perfToggles, settings, bucket, liqVoidSettings, smpSettings, crosshairEnabled }: any) => {
     if (!data) return (
         <div key={sym} className="bg-[#1a1c24] border border-[#ffffff1a] rounded flex flex-col h-[500px] chart-container relative overflow-hidden">
             <div className="h-10 bg-[#2a2c34]/50 animate-pulse border-b border-[#ffffff1a] flex items-center px-4 justify-between">
@@ -65,7 +66,7 @@ const ChartItem = memo(({ sym, data, overlayToggles, paneToggles, perfToggles, s
             </div>
         </div>
     );
-    return <ChartItemInner sym={sym} data={data} overlayToggles={overlayToggles} paneToggles={paneToggles} perfToggles={perfToggles} settings={settings} bucket={bucket} liqVoidSettings={liqVoidSettings} smpSettings={smpSettings} />;
+    return <ChartItemInner sym={sym} data={data} overlayToggles={overlayToggles} paneToggles={paneToggles} perfToggles={perfToggles} settings={settings} bucket={bucket} liqVoidSettings={liqVoidSettings} smpSettings={smpSettings} crosshairEnabled={crosshairEnabled} />;
 }, (prev, next) => {
     return prev.sym === next.sym && 
            prev.data === next.data && 
@@ -74,13 +75,22 @@ const ChartItem = memo(({ sym, data, overlayToggles, paneToggles, perfToggles, s
            prev.perfToggles === next.perfToggles &&
            prev.settings === next.settings &&
            prev.bucket === next.bucket &&
-           prev.liqVoidSettings === next.liqVoidSettings &&
-           prev.smpSettings === next.smpSettings;
+    prev.liqVoidSettings === next.liqVoidSettings &&
+    prev.smpSettings === next.smpSettings &&
+    prev.crosshairEnabled === next.crosshairEnabled;
 });
 
-const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, settings, bucket, liqVoidSettings, smpSettings }: any) => {
+const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, settings, bucket, liqVoidSettings, smpSettings, crosshairEnabled }: any) => {
     const viewport = useChartStore(state => state.viewport);
     const hoveredIndex = useChartStore(state => state.hoveredIndex);
+    const plotRef = useRef<any>(null);
+    useCrosshair(plotRef, {
+      enabled: crosshairEnabled,
+      lineColor: '#ffaa00',
+      lineWidth: 1,
+      lineDash: 'dot',
+      opacity: 0.5,
+    });
     
     // Merge toggles for backward compatibility in internal logic
     const toggles = useMemo(() => ({
@@ -503,6 +513,7 @@ const dataIndex = hoveredIndex !== undefined && hoveredIndex >= 0 && hoveredInde
 
               const plotElement = useMemo(() => (
                             <PlotlyCanvas
+                                 plotRef={plotRef}
                                  dates={dates}
                                  data={[
                                      // Main Candlestick
@@ -763,7 +774,8 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
   const [performanceMode, setPerformanceMode] = usePersistedState('chart-performance-mode', false);
 
   const [showSwings, setShowSwings] = usePersistedState('chart-showSwings', true);
-  
+  const [crosshairEnabled, setCrosshairEnabled] = usePersistedState('chart-crosshair', true);
+
   const [limitDataRange, setLimitDataRange] = usePersistedState('chart-limitDataRange', true);
   
   const [scrollEnabled, setScrollEnabled] = usePersistedState('chart-scrollEnabled', false);
@@ -778,7 +790,8 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
   const [earliestLoadedDates, setEarliestLoadedDates] = useState<Record<string, string>>({});
 
   const [aggregatedDataCache, setAggregatedDataCache] = useState<Record<string, any[]>>({});
-  const [fetchErrors, setFetchErrors] = useState<Record<string, string>>({});
+  interface FetchError { id: number; symbol: string; message: string }
+  const [fetchErrors, setFetchErrors] = useState<FetchError[]>([]);
   const [isAggregating, setIsAggregating] = useState(false);
   const workerRef = useRef<Worker | null>(null);
   const workerListenersRef = useRef({ total: 0, map: new Map<string, any[]>() });
@@ -995,11 +1008,7 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
 
   const fetchSymbolData = useCallback(async (symbol: string, signal: AbortSignal, specificStart?: string, specificEnd?: string) => {
     try {
-      setFetchErrors(prev => {
-          const n = {...prev};
-          delete n[symbol];
-          return n;
-      });
+      setFetchErrors(prev => prev.filter(e => e.symbol !== symbol));
       const qStart = specificStart || startDate;
       const qEnd = specificEnd || endDate;
       
@@ -1042,14 +1051,14 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
                   setDataCache(prev => ({...prev, [symbol]: generateMockData(symbol, qStart, qEnd)}));
                   setEarliestLoadedDates(prev => ({...prev, [symbol]: qStart}));
               } else {
-                  setFetchErrors(prev => ({...prev, [symbol]: `No data found for ${symbol} in selected range.`}));
+                   setFetchErrors(prev => [...prev, { id: Date.now(), symbol, message: `No data found for ${symbol} in selected range.` }]);
               }
           }
       }
     } catch (e) {
       if (signal.aborted) return;
       console.error(e);
-      setFetchErrors(prev => ({...prev, [symbol]: `Network error fetching ${symbol}. Check connection.`}));
+       setFetchErrors(prev => [...prev, { id: Date.now(), symbol, message: `Network error fetching ${symbol}. Check connection.` }]);
       if (!specificStart && settings.mockDataMode) {
          setDataCache(prev => ({...prev, [symbol]: generateMockData(symbol, startDate, endDate)}));
          setEarliestLoadedDates(prev => ({...prev, [symbol]: startDate}));
@@ -1324,19 +1333,26 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
               )}
           </div>
 
-          {Object.keys(fetchErrors).length > 0 && (
+          {fetchErrors.length > 0 && (
               <div className="flex flex-col gap-2 mb-4">
-                  {Object.entries(fetchErrors).map(([s, err]) => (
-                      <div key={s} className="bg-red-500/10 border border-red-500/30 text-red-400 text-xs px-4 py-2 rounded flex items-center justify-between">
-                          <span>{err}</span>
-                          <button 
-                            onClick={() => {
-                                if (retryControllerRef.current) retryControllerRef.current.abort();
-                                retryControllerRef.current = new AbortController();
-                                fetchSymbolData(s, retryControllerRef.current.signal);
-                            }}
-                            className="bg-red-500/20 hover:bg-red-500/30 px-2 py-0.5 rounded transition-colors pointer-events-auto"
-                          >Retry</button>
+                  {fetchErrors.map(err => (
+                      <div key={err.id} className="bg-red-500/10 border border-red-500/30 text-red-400 text-xs px-4 py-2 rounded flex items-center justify-between gap-3">
+                          <span className="flex-1">{err.message}</span>
+                          <div className="flex items-center gap-2">
+                              <button 
+                                onClick={() => {
+                                    if (retryControllerRef.current) retryControllerRef.current.abort();
+                                    retryControllerRef.current = new AbortController();
+                                    fetchSymbolData(err.symbol, retryControllerRef.current.signal);
+                                }}
+                                className="bg-red-500/20 hover:bg-red-500/30 px-2 py-0.5 rounded transition-colors"
+                              >Retry</button>
+                              <button 
+                                onClick={() => setFetchErrors(prev => prev.filter(e => e.id !== err.id))}
+                                className="text-red-400/60 hover:text-red-300 transition-colors"
+                                title="Dismiss"
+                              ><X size={14} /></button>
+                          </div>
                       </div>
                   ))}
               </div>
@@ -1436,6 +1452,14 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
                       />
                       <span className="text-[10px] font-mono text-[#666] group-hover:text-white transition-colors">Fast Scroll</span>
                   </label>
+                  <button
+                      onClick={() => setCrosshairEnabled(prev => !prev)}
+                      className={`flex items-center gap-1.5 text-[10px] font-mono px-2 py-1 rounded transition-colors border ${crosshairEnabled ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30' : 'bg-[#1a1c24] text-[#666] border-[#ffffff1a] hover:text-white'}`}
+                      title="Toggle Crosshair"
+                  >
+                      <Crosshair size={12} />
+                      Crosshair
+                  </button>
               </div>
           </div>
           
@@ -1451,6 +1475,7 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
                     bucket={metadataMap.get(sym)?.bucket ?? null}
                     liqVoidSettings={liqVoidSettings}
                     smpSettings={smpSettings}
+                    crosshairEnabled={crosshairEnabled}
                   />
                   {scrollEnabled && symbols.length === 1 && effectiveSymbolsDesc.length > 0 && (
                       <div className="absolute top-12 right-12 z-10 pointer-events-none">

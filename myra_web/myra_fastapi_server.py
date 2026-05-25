@@ -2,8 +2,10 @@ import json
 import os
 import sqlite3
 import subprocess
-from fastapi import FastAPI, HTTPException
+import time
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Optional
 from myra_app.constants import DB_DIR
@@ -21,6 +23,9 @@ try:
 except ImportError:
     pass
 
+_finstack_cache = {}
+CACHE_TTL = 300  # 5 minutes
+
 app = FastAPI(title="MYRA v3.2 API Bridge")
 
 # Allow the React frontend to communicate with this local API
@@ -31,6 +36,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    return JSONResponse(status_code=500, content={"detail": f"Internal server error: {exc}"})
+
 
 # Use the expected folder structure: Myra\myra_web (this project) side-by-side with Myra\myra_app
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -78,7 +88,28 @@ def health_check():
                 health[frontend_key] = {"connected": False, "path": None}
         else:
             health[frontend_key] = {"connected": False, "path": None}
-    return {"health": health}
+
+    # Data coverage metrics for fundamentals table
+    val_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["valuation"])
+    coverage = {"error": "not available"}
+    if os.path.exists(val_path):
+        try:
+            conn = sqlite3.connect(val_path)
+            total = conn.execute("SELECT COUNT(*) FROM fundamentals").fetchone()[0]
+            coverage = {
+                "total_symbols": total,
+                "shares_outstanding": conn.execute("SELECT COUNT(*) FROM fundamentals WHERE shares_outstanding IS NOT NULL").fetchone()[0],
+                "insider_holding_pct": conn.execute("SELECT COUNT(*) FROM fundamentals WHERE insider_holding_pct IS NOT NULL").fetchone()[0],
+                "promoter_holding_pct": conn.execute("SELECT COUNT(*) FROM fundamentals WHERE promoter_holding_pct IS NOT NULL").fetchone()[0],
+                "industry": conn.execute("SELECT COUNT(*) FROM fundamentals WHERE industry IS NOT NULL").fetchone()[0],
+                "free_float_pct": conn.execute("SELECT COUNT(*) FROM fundamentals WHERE free_float_pct IS NOT NULL").fetchone()[0],
+                "market_cap": conn.execute("SELECT COUNT(*) FROM fundamentals WHERE market_cap IS NOT NULL").fetchone()[0],
+                "pe": conn.execute("SELECT COUNT(*) FROM fundamentals WHERE pe IS NOT NULL").fetchone()[0],
+            }
+            conn.close()
+        except Exception:
+            coverage = {"error": "query failed"}
+    return {"health": health, "coverage": coverage}
 
 
 class QueryRequest(BaseModel):
@@ -748,41 +779,145 @@ async def factor_importance():
     return result
 
 
+@app.get("/api/search/symbols")
+async def search_symbols(q: str = Query(..., min_length=1)):
+    from myra_app.librarian import Librarian
+    lib = Librarian(read_only=True)
+    return lib.search_symbols(q)
+
+
+def _validate_finstack(result: dict) -> dict:
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result["error"])
+    if "_raw" in result:
+        raise HTTPException(status_code=502, detail="FinStack MCP returned non-JSON response")
+    return result
+
+
 @app.get("/api/finstack/nifty-outlook")
 async def finstack_nifty_outlook():
+    cache_key = "nifty_outlook"
+    now = time.time()
+    if cache_key in _finstack_cache and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL:
+        return _finstack_cache[cache_key]["data"]
     from myra_app.utils.finstack_bridge import get_nifty_outlook
-    result = await get_nifty_outlook()
-    if "error" in result:
-        raise HTTPException(status_code=500, detail=result["error"])
-    return result
+    try:
+        data = await get_nifty_outlook()
+        _finstack_cache[cache_key] = {"ts": now, "data": data}
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/finstack/fii-retail-divergence")
-async def finstack_fii_retail_divergence():
+async def finstack_fii_retail_divergence(symbol: str = "RELIANCE"):
+    cache_key = f"fii_divergence:{symbol}"
+    now = time.time()
+    if cache_key in _finstack_cache and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL:
+        return _finstack_cache[cache_key]["data"]
     from myra_app.utils.finstack_bridge import get_fii_retail_divergence
-    result = await get_fii_retail_divergence()
-    if "error" in result:
-        raise HTTPException(status_code=500, detail=result["error"])
-    return result
+    try:
+        data = await get_fii_retail_divergence(symbol)
+        _finstack_cache[cache_key] = {"ts": now, "data": data}
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/finstack/sebi-alerts")
-async def finstack_sebi_alerts():
-    from myra_app.utils.finstack_bridge import get_sebi_alerts
-    result = await get_sebi_alerts()
-    if "error" in result:
-        raise HTTPException(status_code=500, detail=result["error"])
-    return result
+
+# @app.get("/api/finstack/sebi-alerts")
+# async def finstack_sebi_alerts():
+#     from myra_app.utils.finstack_bridge import get_sebi_alerts
+#     result = await get_sebi_alerts()
+#     return _validate_finstack(result)
+
 
 @app.get("/api/finstack/morning-brief")
 async def finstack_morning_brief():
+    cache_key = "morning_brief"
+    now = time.time()
+    if cache_key in _finstack_cache and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL:
+        return _finstack_cache[cache_key]["data"]
     from myra_app.utils.finstack_bridge import get_morning_brief
+    try:
+        data = await get_morning_brief()
+        _finstack_cache[cache_key] = {"ts": now, "data": data}
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-    result = await get_morning_brief()
-    return result
+
+# @app.get("/api/finstack/scan-pledge-risks")
+# async def finstack_scan_pledge_risks():
+#     from myra_app.utils.finstack_bridge import scan_pledge_risks
+#     result = await scan_pledge_risks()
+#     return _validate_finstack(result)
 
 
-@app.get("/api/finstack/scan-pledge-risks")
-async def finstack_scan_pledge_risks():
-    from myra_app.utils.finstack_bridge import scan_pledge_risks
+# ── Missing routes wired up ─────────────────────────────────────────────
 
-    result = await scan_pledge_risks()
-    return result
+@app.get("/api/finstack/stock-brief/{symbol}")
+async def finstack_stock_brief(symbol: str):
+    from myra_app.utils.finstack_bridge import get_stock_brief
+    result = await get_stock_brief(symbol)
+    return _validate_finstack(result)
+
+
+@app.get("/api/finstack/stock-brief")
+async def stock_brief(symbol: str = Query(..., description="Stock symbol, e.g., RELIANCE")):
+    cache_key = f"stock_brief:{symbol}"
+    now = time.time()
+    if cache_key in _finstack_cache and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL:
+        return _finstack_cache[cache_key]["data"]
+    from myra_app.utils.finstack_bridge import get_stock_brief
+    try:
+        data = await get_stock_brief(symbol=symbol.upper())
+        _finstack_cache[cache_key] = {"ts": now, "data": data}
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/finstack/social-sentiment/{symbol}")
+async def finstack_social_sentiment(symbol: str):
+    from myra_app.utils.finstack_bridge import get_social_sentiment
+    result = await get_social_sentiment(symbol)
+    return _validate_finstack(result)
+
+
+@app.get("/api/finstack/pledge-alert/{symbol}")
+async def finstack_pledge_alert(symbol: str):
+    from myra_app.utils.finstack_bridge import get_pledge_alert
+    result = await get_pledge_alert(symbol)
+    return _validate_finstack(result)
+
+
+@app.get("/api/finstack/unusual-activity")
+async def unusual_activity(symbol: str = Query(..., description="Stock symbol, e.g., RELIANCE")):
+    cache_key = f"unusual_activity:{symbol}"
+    now = time.time()
+    if cache_key in _finstack_cache and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL:
+        return _finstack_cache[cache_key]["data"]
+    from myra_app.utils.finstack_bridge import detect_unusual_activity
+    try:
+        data = await detect_unusual_activity(symbol=symbol.upper())
+        _finstack_cache[cache_key] = {"ts": now, "data": data}
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/finstack/stock-timeline")
+async def finstack_stock_timeline(symbol: str = ""):
+    if not symbol:
+        raise HTTPException(status_code=400, detail="query parameter 'symbol' is required")
+    cache_key = f"stock_timeline:{symbol}"
+    now = time.time()
+    if cache_key in _finstack_cache and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL:
+        return _finstack_cache[cache_key]["data"]
+    from myra_app.utils.finstack_bridge import get_stock_timeline
+    try:
+        data = await get_stock_timeline(symbol)
+        _finstack_cache[cache_key] = {"ts": now, "data": data}
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

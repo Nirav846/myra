@@ -6,6 +6,8 @@ import { SymbolSearch } from '../components/SymbolSearch';
 import { motion, AnimatePresence } from 'motion/react';
 import { useSettings } from '../lib/SettingsContext';
 
+const API_BASE = 'http://localhost:8000/api';
+
 interface HistoricalDataRow {
   date: string;
   open: number;
@@ -39,9 +41,9 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
     setFundaLoading(true);
     try {
       const [fundaRes, sentRes, pledgeRes] = await Promise.all([
-        fetch(`http://localhost:8000/api/fundamentals/live/${symbol}`),
-        fetch(`http://localhost:8000/api/finstack/social-sentiment/${symbol}`).catch(() => null),
-        fetch(`http://localhost:8000/api/finstack/pledge-alert/${symbol}`).catch(() => null)
+        fetch(`${API_BASE}/fundamentals/live/${symbol}`),
+        fetch(`${API_BASE}/finstack/social-sentiment/${symbol}`).catch(() => null),
+        fetch(`${API_BASE}/finstack/pledge-alert/${symbol}`).catch(() => null)
       ]);
       
       if (fundaRes.ok) {
@@ -51,12 +53,12 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
       
       if (sentRes && sentRes.ok) {
         const sentJson = await sentRes.json();
-        setSentimentData(sentJson);
+        setSentimentData(sentJson && !sentJson._raw ? sentJson : null);
       }
 
       if (pledgeRes && pledgeRes.ok) {
         const pledgeJson = await pledgeRes.json();
-        setPledgeData(pledgeJson);
+        setPledgeData(pledgeJson && !pledgeJson._raw ? pledgeJson : null);
       }
     } catch (e) {
       console.warn('Fundamental fetch failed', e);

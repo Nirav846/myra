@@ -8,9 +8,10 @@ interface PlotlyCanvasProps {
   config?: any;
   style?: React.CSSProperties;
   dates: string[];
+  plotRef?: React.RefObject<any | null>;
 }
 
-export const PlotlyCanvas = memo(({ data, layout, config, style, dates }: PlotlyCanvasProps) => {
+export const PlotlyCanvas = memo(({ data, layout, config, style, dates, plotRef }: PlotlyCanvasProps) => {
   const setViewport = useChartStore(state => state.setViewport);
   const setHoveredIndex = useChartStore(state => state.setHoveredIndex);
   const hoverRaf = useRef<number | null>(null);
@@ -89,6 +90,7 @@ export const PlotlyCanvas = memo(({ data, layout, config, style, dates }: Plotly
 
   return (
     <Plot
+      ref={plotRef}
       data={data}
       layout={layout}
       config={config}

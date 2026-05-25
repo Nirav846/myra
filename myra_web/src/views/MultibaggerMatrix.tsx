@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Librarian } from '../lib/Librarian';
 import { Rocket, ShieldAlert, Zap, ArrowUpDown, AlertTriangle, ChevronUp, ChevronDown } from 'lucide-react';
 import { ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, ZAxis, Tooltip, CartesianGrid, Cell, ReferenceLine } from 'recharts';
@@ -52,6 +52,9 @@ export default function MultibaggerMatrixView({ lib }: { lib: Librarian }) {
   const [minRoeInput, setMinRoeInput] = useState(minRoe);
   const [minEpsInput, setMinEpsInput] = useState(minEps);
   const [daysInput, setDaysInput] = useState(days);
+
+  const fetchActiveRef = useRef<{ active: boolean } | null>(null);
+  const fundCacheRef = useRef<{ data: any[]; params: { minRoe: number; minEps: number; excludeCyclical: boolean } } | null>(null);
 
   // Sorting State
   const [sortConfig, setSortConfig] = useState<{ key: keyof MultibaggerData, direction: 'asc' | 'desc' } | null>({ key: 'multibagger_index', direction: 'desc' });
@@ -157,124 +160,125 @@ export default function MultibaggerMatrixView({ lib }: { lib: Librarian }) {
 
   const fetchMultibaggerCandidates = useCallback(async () => {
     if (!metadataLoaded) return;
+    const run = { active: true };
+    fetchActiveRef.current = run;
     setIsLoading(true);
     setErrorMsg(null);
     const mockMode = !lib.isConnectedToLocalRepo || settings.mockDataMode;
-    
+
     try {
-      let usedMock = false;
       if (mockMode) {
         if (!lib.isConnectedToLocalRepo) setErrorMsg('Database unavailable - generating mock data.');
         setIsDemo(true);
         generateMockCandidates();
-        usedMock = true;
+        return;
       }
 
-      if (!usedMock) {
-        setIsDemo(false);
+      setIsDemo(false);
 
-        const safeMinRoe = Math.max(-100, Math.min(100, Number(minRoe) || 0));
-        const safeMinEps = Math.max(-1000, Math.min(1000, Number(minEps) || 0));
-        const safeDays = Math.max(1, Math.min(365 * 3, Math.floor(Number(days) || 180)));
+      const safeMinRoe = Math.max(-100, Math.min(100, Number(minRoe) || 0));
+      const safeMinEps = Math.max(-1000, Math.min(1000, Number(minEps) || 0));
+      const safeDays = Math.max(1, Math.min(365 * 3, Math.floor(Number(days) || 180)));
 
-        // 2. Fetch fundamentals
-      let fundQuery = `
-        SELECT symbol as ticker, sector, COALESCE(returnOnEquity, roe) as returnOnEquity, COALESCE(earningsPerShare, eps) as earningsPerShare, peRatio
-        FROM fundamentals
-        WHERE COALESCE(returnOnEquity, roe) > ? AND COALESCE(earningsPerShare, eps) > ?
-      `;
-      if (excludeCyclical) {
-        fundQuery += ` AND sector NOT IN ('Metals', 'Chemicals', 'Energy', 'Mining', 'Materials')`;
-      }
-      const fundResult = await lib.executeQuery('_val_conn', fundQuery, [safeMinRoe, safeMinEps], 12000);
-      
-      if (fundResult && fundResult.length > 0) {
-        const candidateTickers = fundResult
-            .filter((r: any) => {
-               const bucket = metadataMap.get(r.ticker)?.bucket || "Deep Frontier";
-               return filterMcap === 'All' || bucket === filterMcap;
-            })
-            .map((r: any) => r.ticker as string);
-
-        if (candidateTickers.length === 0) {
-            setData([]);
-            return;
-        }
-
-        const placeholders = candidateTickers.map(() => '?').join(',');
-        
-        // 3. Fetch Accumulation
-        const techQuery = `
-          SELECT symbol as ticker, SUM(delivery) * 100.0 / NULLIF(SUM(volume), 0) as accumulation
-          FROM technical_data
-          WHERE date >= date('now', ?) AND symbol IN (${placeholders})
-          GROUP BY symbol
-        `;
-        const techResult = await lib.executeQuery('_tech_conn', techQuery, [`-${safeDays} days`, ...candidateTickers], 12000);
-        
-        const techMap = new Map();
-        if (techResult && techResult.length > 0) {
-           for (const t of techResult) {
-              techMap.set(t.ticker, t.accumulation || 0);
-           }
-        }
-
-        // 4. Fetch price to calculate exact earnings yield from technicals, or fallback to PE
-        const priceQuery = `
-          SELECT symbol as ticker, close FROM technical_data 
-          WHERE date = (SELECT MAX(date) FROM technical_data) AND symbol IN (${placeholders})
-        `;
-        const priceResult = await lib.executeQuery('_tech_conn', priceQuery, [...candidateTickers], 12000);
-        const priceMap = new Map();
-        if (priceResult) {
-            for (const p of priceResult) {
-                priceMap.set(p.ticker, p.close);
-            }
-        }
-        
-        // Re-applies the bucket filter to fundResult rows (since fundResult contains all symbols).
-        const bucketFilteredSet = new Set(candidateTickers);
-        let mapped: MultibaggerData[] = fundResult.filter((d: any) => bucketFilteredSet.has(d.ticker)).map((d: any) => {
-          const accumulation = techMap.get(d.ticker) || 0;
-          const estPrice = ((Number(d.peRatio) || 0) * (Number(d.earningsPerShare) || 0)) || 1;
-          const closePrice = priceMap.get(d.ticker) || estPrice;
-          const earningsYield = closePrice ? (Number(d.earningsPerShare) / closePrice) : 0;
-          const earningsYieldPct = earningsYield * 100;
-          const bucket = metadataMap.get(d.ticker)?.bucket || "Deep Frontier";
-          const roe = Number(d.returnOnEquity);
-          
-          return {
-            ticker: d.ticker,
-            sector: d.sector,
-            returnOnEquity: roe,
-            earningsPerShare: Number(d.earningsPerShare),
-            peRatio: Number(d.peRatio),
-            bucket,
-            accumulation,
-            earningsYield: earningsYieldPct,
-            multibagger_index: calcMultibaggerIndex(roe, earningsYieldPct, accumulation),
-            moat_score: calcMoatScore(roe)
-          };
-        });
-
-        if (requireAccumulation) {
-          mapped = mapped.filter((d) => d.accumulation >= 50);
-        }
-
-        mapped.sort((a, b) => b.multibagger_index - a.multibagger_index);
-        
-        setData(mapped.slice(0, 100));
+      // Cache fundamentals: only re-fetch when filter params change
+      const fundParamsKey = { minRoe: safeMinRoe, minEps: safeMinEps, excludeCyclical };
+      const fundCached = fundCacheRef.current;
+      let fundResult: any[];
+      if (fundCached &&
+          fundCached.params.minRoe === fundParamsKey.minRoe &&
+          fundCached.params.minEps === fundParamsKey.minEps &&
+          fundCached.params.excludeCyclical === fundParamsKey.excludeCyclical) {
+        fundResult = fundCached.data;
       } else {
+        let fundQuery = `
+          SELECT symbol as ticker, sector, COALESCE(returnOnEquity, roe) as returnOnEquity, COALESCE(earningsPerShare, eps) as earningsPerShare, peRatio
+          FROM fundamentals
+          WHERE COALESCE(returnOnEquity, roe) > ? AND COALESCE(earningsPerShare, eps) > ?
+        `;
+        if (excludeCyclical) {
+          fundQuery += ` AND sector NOT IN ('Metals', 'Chemicals', 'Energy', 'Mining', 'Materials')`;
+        }
+        fundResult = await lib.executeQuery('_val_conn', fundQuery, [safeMinRoe, safeMinEps], 12000) || [];
+        if (!run.active) return;
+        fundCacheRef.current = { data: fundResult, params: fundParamsKey };
+      }
+
+      if (fundResult.length === 0) {
         setData([]);
+        return;
       }
+
+      const candidateTickers = fundResult
+          .filter((r: any) => {
+             const bucket = metadataMap.get(r.ticker)?.bucket || "Deep Frontier";
+             return filterMcap === 'All' || bucket === filterMcap;
+          })
+          .map((r: any) => r.ticker as string);
+
+      if (candidateTickers.length === 0) {
+        setData([]);
+        return;
       }
+
+      const placeholders = candidateTickers.map(() => '?').join(',');
+
+      // Run accumulation and price queries in parallel
+      const techQuery = `
+        SELECT symbol as ticker, SUM(delivery) * 100.0 / NULLIF(SUM(volume), 0) as accumulation
+        FROM technical_data
+        WHERE date >= date('now', ?) AND symbol IN (${placeholders})
+        GROUP BY symbol
+      `;
+      const priceQuery = `
+        SELECT symbol as ticker, close FROM technical_data
+        WHERE date = (SELECT MAX(date) FROM technical_data) AND symbol IN (${placeholders})
+      `;
+      const [techResult, priceResult] = await Promise.all([
+        lib.executeQuery('_tech_conn', techQuery, [`-${safeDays} days`, ...candidateTickers], 30000),
+        lib.executeQuery('_tech_conn', priceQuery, [...candidateTickers], 12000),
+      ]);
+      if (!run.active) return;
+
+      const techMap = new Map();
+      if (techResult && techResult.length > 0) {
+        for (const t of techResult) techMap.set(t.ticker, t.accumulation || 0);
+      }
+      const priceMap = new Map();
+      if (priceResult) {
+        for (const p of priceResult) priceMap.set(p.ticker, p.close);
+      }
+
+      const bucketFilteredSet = new Set(candidateTickers);
+      let mapped: MultibaggerData[] = fundResult.filter((d: any) => bucketFilteredSet.has(d.ticker)).map((d: any) => {
+        const accumulation = techMap.get(d.ticker) || 0;
+        const estPrice = ((Number(d.peRatio) || 0) * (Number(d.earningsPerShare) || 0)) || 1;
+        const closePrice = priceMap.get(d.ticker) || estPrice;
+        const earningsYield = closePrice ? (Number(d.earningsPerShare) / closePrice) : 0;
+        const earningsYieldPct = earningsYield * 100;
+        const bucket = metadataMap.get(d.ticker)?.bucket || "Deep Frontier";
+        const roe = Number(d.returnOnEquity);
+
+        return {
+          ticker: d.ticker, sector: d.sector,
+          returnOnEquity: roe, earningsPerShare: Number(d.earningsPerShare),
+          peRatio: Number(d.peRatio), bucket,
+          accumulation, earningsYield: earningsYieldPct,
+          multibagger_index: calcMultibaggerIndex(roe, earningsYieldPct, accumulation),
+          moat_score: calcMoatScore(roe),
+        };
+      });
+
+      if (requireAccumulation) mapped = mapped.filter((d) => d.accumulation >= 50);
+      mapped.sort((a, b) => b.multibagger_index - a.multibagger_index);
+      setData(mapped.slice(0, 100));
     } catch (e: any) {
+      if (!run.active) return;
       console.error(e);
       setErrorMsg(e.message || 'Database unavailable - generating mock data.');
       setIsDemo(true);
       generateMockCandidates();
     } finally {
-      setIsLoading(false);
+      if (run.active) setIsLoading(false);
     }
   }, [lib, settings.mockDataMode, minRoe, minEps, days, excludeCyclical, requireAccumulation, filterMcap, metadataLoaded, metadataMap, generateMockCandidates]);
 

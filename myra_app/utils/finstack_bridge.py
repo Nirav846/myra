@@ -70,9 +70,21 @@ async def get_nifty_outlook() -> dict:
     return await _call_tool_async("get_nifty_outlook")
 
 
-async def get_fii_retail_divergence() -> dict:
-    return await _call_tool_async("get_fii_retail_divergence", {"symbol": "RELIANCE"})
+async def get_fii_retail_divergence(symbol: str = "RELIANCE") -> dict:
+    return await _call_tool_async("get_fii_retail_divergence", {"symbol": symbol.upper()})
 
 
 async def get_sebi_alerts() -> dict:
     return await _call_tool_async("get_sebi_alerts")
+
+
+async def detect_unusual_activity(symbol: str) -> dict:
+    return await _call_tool_async("detect_unusual_activity", {"symbol": symbol.upper()})
+
+
+async def promoter_shareholding(symbol: str) -> dict:
+    return await _call_tool_async("promoter_shareholding", {"symbol": symbol.upper()})
+
+
+async def nse_quote(symbol: str) -> dict:
+    return await _call_tool_async("nse_quote", {"symbol": symbol.upper()})

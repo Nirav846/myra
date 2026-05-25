@@ -6,6 +6,7 @@ export type ConnectionStatus = {
 
 export class Librarian {
   public health: Record<string, ConnectionStatus> = {};
+  public coverage: Record<string, number> = {};
   public apiUrl: string = 'http://localhost:8000/api'; // Target for your local MYRA repo
   public isConnectedToLocalRepo: boolean = true;
   
@@ -51,6 +52,7 @@ export class Librarian {
         const data = await res.json();
         this.isConnectedToLocalRepo = true;
         this.health = data.health || this.getFallbackHealth();
+        this.coverage = data.coverage || {};
       } else {
         this.handleFallback();
       }

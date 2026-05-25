@@ -16,6 +16,8 @@ interface FinStackResponse {
   summary: string;
 }
 
+const API_BASE = 'http://localhost:8000/api';
+
 export default function AIAnalysisView({ lib }: { lib: Librarian }) {
   const [ticker, setTicker] = useState('');
   const [result, setResult] = useState<FinStackResponse | null>(null);
@@ -29,11 +31,15 @@ export default function AIAnalysisView({ lib }: { lib: Librarian }) {
     setResult(null);
     setError(null);
     try {
-      const res = await fetch(`http://localhost:8000/api/finstack/stock-brief/${ticker.toUpperCase()}`);
+      const res = await fetch(`${API_BASE}/finstack/stock-brief/${ticker.toUpperCase()}`);
       if (!res.ok) {
-        throw new Error('Analysis request failed');
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.detail || 'Analysis request failed');
       }
       const data = await res.json();
+      if (!data || data._raw) {
+        throw new Error('FinStack returned an unexpected response');
+      }
       setResult(data);
     } catch (e: any) {
       console.error(e);

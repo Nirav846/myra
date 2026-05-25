@@ -1,79 +1,88 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { Layers, AlignRight, Activity } from 'lucide-react';
+import { AlignRight, Activity, TrendingUp } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import { SymbolSearch } from '../components/SymbolSearch';
 
 export default function InstDOMView({ lib }: { lib: Librarian }) {
   const [data, setData] = useState<any[]>([]);
-  const [ticker, setTicker] = useState('NIFTY');
+  const [ticker, setTicker] = useState('RELIANCE');
   const [lookbackDays, setLookbackDays] = useState(30);
   const [isLoading, setIsLoading] = useState(false);
   const [isDemo, setIsDemo] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [totals, setTotals] = useState<{ delivery: number; intraday: number; delPct: number } | null>(null);
+  const fetchRef = useRef<{ active: boolean } | null>(null);
 
   useEffect(() => {
     fetchProfile();
   }, [ticker, lookbackDays]);
 
   const fetchProfile = async () => {
+    const run = { active: true };
+    fetchRef.current = run;
     setIsLoading(true);
     setErrorMsg(null);
     setIsDemo(!lib.isConnectedToLocalRepo);
     try {
-      // POC computed at typical price (H+L+C)/3 — a proxy for the intraday VWAP level.
       const query = `
-        SELECT ROUND(COALESCE(vwap, (high + low + close) / 3), -1) as price_level, 
-               SUM(delivery) as delivery,
-               (SUM(volume) - SUM(delivery)) as intraday
+        SELECT 
+          CASE 
+            WHEN AVG(close) >= 5000 THEN ROUND(COALESCE(vwap, (high + low + close) / 3), -2)
+            WHEN AVG(close) >= 100 THEN ROUND(COALESCE(vwap, (high + low + close) / 3), -1)
+            ELSE ROUND(COALESCE(vwap, (high + low + close) / 3), 0)
+          END as price_level, 
+          SUM(delivery) as delivery,
+          (SUM(volume) - SUM(delivery)) as intraday
         FROM technical_data
         WHERE symbol = ? AND date >= date('now', ?)
         GROUP BY price_level 
         ORDER BY price_level DESC
       `;
-      const result = await lib.executeQuery('_tech_conn', query, [ticker, `-${lookbackDays} days`], 10000); // 10s timeout
-      
+      const result = await lib.executeQuery('_tech_conn', query, [ticker, `-${lookbackDays} days`], 15000);
+      if (!run.active) return;
+
       if (result && result.length > 0) {
-        setData(result.map((r: any) => ({
+        const mapped = result.map((r: any) => ({
           price: r.price_level,
           delivery: Number(r.delivery || 0),
           intraday: Math.max(0, Number(r.intraday || 0))
-        })));
+        }));
+        setData(mapped);
+        const totDel = mapped.reduce((s: number, r: any) => s + r.delivery, 0);
+        const totInt = mapped.reduce((s: number, r: any) => s + r.intraday, 0);
+        setTotals({ delivery: totDel, intraday: totInt, delPct: totDel + totInt > 0 ? (totDel / (totDel + totInt)) * 100 : 0 });
       } else {
+        setData([]);
+        setTotals(null);
         if (!lib.isConnectedToLocalRepo) generateMockProfile();
-        else setData([]);
+        if (lib.isConnectedToLocalRepo) setErrorMsg(`No data found for ${ticker} in selected range.`);
       }
     } catch (e: any) {
+      if (!run.active) return;
       console.error(e);
       setErrorMsg(e.message || "Query failed. Local sidecar may be offline.");
       if (!lib.isConnectedToLocalRepo) generateMockProfile();
       else setData([]);
     } finally {
-      setIsLoading(false);
+      if (run.active) setIsLoading(false);
     }
   };
 
   const generateMockProfile = () => {
+    const basePrice = 2400;
     const mock = [];
-    const basePrice = ticker === 'NIFTY' ? 22000 : 2400;
-    
-    // Create a bell-curve-like volume profile simulating a Point of Control
-    for(let i=15; i>=-15; i--) {
-       const price = basePrice + (i * 10);
-       // Gaussian approximation weight
-       const weight = Math.exp(-(i*i)/100); 
-       
-       const totalVol = Math.floor(Math.random() * 200000 + (1000000 * weight));
-       // If price is near POC (i=0 to 2), Institutional Delivery spikes aggressively
-       const delivery_pct = (i >= -2 && i <= 2) ? 0.65 : (Math.random() * 0.2 + 0.1); 
-       const delivery = Math.floor(totalVol * delivery_pct);
-       
-       mock.push({ 
-         price: price.toString(), 
-         delivery, 
-         intraday: totalVol - delivery 
-       });
+    for (let i = 15; i >= -15; i--) {
+      const price = basePrice + (i * 10);
+      const weight = Math.exp(-(i * i) / 100);
+      const totalVol = Math.floor(Math.random() * 200000 + (1000000 * weight));
+      const delivery_pct = (i >= -2 && i <= 2) ? 0.65 : (Math.random() * 0.2 + 0.1);
+      mock.push({ price, delivery: Math.floor(totalVol * delivery_pct), intraday: totalVol - Math.floor(totalVol * delivery_pct) });
     }
     setData(mock);
+    const totDel = mock.reduce((s, r) => s + r.delivery, 0);
+    const totInt = mock.reduce((s, r) => s + r.intraday, 0);
+    setTotals({ delivery: totDel, intraday: totInt, delPct: totDel + totInt > 0 ? (totDel / (totDel + totInt)) * 100 : 0 });
   };
 
   return (
@@ -91,12 +100,14 @@ export default function InstDOMView({ lib }: { lib: Librarian }) {
         <div className="flex flex-wrap gap-4 items-center bg-[#0e1117] p-3 rounded-lg border border-[#ffffff0a]">
           <div className="flex items-center gap-3">
             <label className="text-xs font-mono text-[#888] uppercase">Target Ticker</label>
-            <input 
-              type="text" 
-              value={ticker}
-              onChange={e => setTicker(e.target.value.toUpperCase())}
-              className="w-32 bg-[#1a1c24] border border-[#ffffff1a] rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500 font-mono text-[#fafafa] uppercase"
-            />
+            <div className="w-40">
+              <SymbolSearch
+                lib={lib}
+                initialValue={ticker}
+                onSymbolSelect={(sym) => setTicker(sym)}
+                placeholder="Ticker..."
+              />
+            </div>
           </div>
           
           <div className="flex items-center gap-3 border-l border-[#ffffff1a] pl-4">
@@ -114,9 +125,15 @@ export default function InstDOMView({ lib }: { lib: Librarian }) {
             </select>
           </div>
           
-          <div className="ml-auto flex items-center gap-3">
-             {errorMsg && <span className="text-[10px] text-red-400 font-mono px-2 py-1 bg-red-500/10 rounded border border-red-500/20">{errorMsg}</span>}
-             {isDemo && <span className="text-[10px] text-yellow-500 font-mono px-2 py-1 bg-yellow-500/10 rounded border border-yellow-500/20 px-2">⚠️ DEMO DATA</span>}
+           <div className="ml-auto flex items-center gap-3">
+              {totals && !isLoading && (
+                <span className="text-[10px] font-mono text-[#888] hidden md:flex items-center gap-2 border-r border-[#ffffff1a] pr-3">
+                  <TrendingUp size={11} className="text-green-400" />
+                  Del: {(totals.delPct).toFixed(1)}%
+                </span>
+              )}
+              {errorMsg && <span className="text-[10px] text-red-400 font-mono px-2 py-1 bg-red-500/10 rounded border border-red-500/20">{errorMsg}</span>}
+              {isDemo && <span className="text-[10px] text-yellow-500 font-mono px-2 py-1 bg-yellow-500/10 rounded border border-yellow-500/20">⚠️ DEMO DATA</span>}
              {isLoading && <span className="text-[10px] text-blue-400 font-mono animate-pulse">Calculating DOM...</span>}
             <span className="text-[10px] text-fuchsia-400 font-mono hidden md:flex items-center gap-2">
               <Activity size={12}/> Detects Hidden Liquidity
@@ -126,26 +143,34 @@ export default function InstDOMView({ lib }: { lib: Librarian }) {
 
         {/* DOM Profile Chart */}
         <div className="flex-1 bg-[#0e1117] rounded-lg border border-[#ffffff0a] p-4 min-h-[400px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#222" horizontal={false} />
-              <XAxis type="number" stroke="#666" tick={{ fill: '#666', fontSize: 10 }} />
-              <YAxis 
-                type="category" 
-                dataKey="price" 
-                stroke="#ccc" 
-                tick={{ fill: '#ccc', fontSize: 11, fontWeight: 'bold' }} 
-                width={80} 
-              />
-              <Tooltip 
-                cursor={{ fill: '#ffffff0a' }}
-                contentStyle={{ backgroundColor: '#1a1c24', border: '1px solid #333', borderRadius: '4px', fontSize: '12px' }}
-                formatter={(value: number) => value.toLocaleString()}
-              />
-              <Bar dataKey="delivery" stackId="a" fill="#10b981" name="Institutional Delivery" />
-              <Bar dataKey="intraday" stackId="a" fill="#333333" name="Intraday / Speculation" />
-            </BarChart>
-          </ResponsiveContainer>
+          {data.length === 0 && !isLoading && (
+            <div className="h-full flex items-center justify-center text-sm font-mono text-[#666]">
+              {errorMsg || `No delivery data for ${ticker} in selected range.`}
+            </div>
+          )}
+          {data.length > 0 && (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={data} layout="vertical" margin={{ top: 5, right: 40, left: 20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#222" horizontal={false} />
+                <XAxis type="number" stroke="#666" tick={{ fill: '#666', fontSize: 10 }} tickFormatter={(v: number) => v >= 1_000_000 ? (v / 1_000_000).toFixed(1) + 'M' : v >= 1000 ? (v / 1000).toFixed(0) + 'k' : String(v)} />
+                <YAxis
+                  type="category"
+                  dataKey="price"
+                  stroke="#ccc"
+                  tick={{ fill: '#ccc', fontSize: 11, fontWeight: 'bold' }}
+                  width={80}
+                />
+                <Tooltip
+                  cursor={{ fill: '#ffffff0a' }}
+                  contentStyle={{ backgroundColor: '#1a1c24', border: '1px solid #333', borderRadius: '4px', fontSize: '12px' }}
+                  formatter={(value: number) => value.toLocaleString()}
+                />
+
+                <Bar dataKey="delivery" stackId="a" fill="#10b981" name="Institutional Delivery" />
+                <Bar dataKey="intraday" stackId="a" fill="#333333" name="Intraday / Speculation" />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </div>
     </div>

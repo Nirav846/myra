@@ -103,7 +103,7 @@ export default function App() {
   const [isDesktopMenuExpanded, setIsDesktopMenuExpanded] = useState(false);
   
   const { settings } = useSettings();
-  const { health, isConnected } = useHealthStatus();
+  const { health, coverage, isConnected } = useHealthStatus();
   
   const [pipelineStatus, setPipelineStatus] = useState<any>(null);
   const [dbSize, setDbSize] = useState<string>("N/A");
@@ -270,6 +270,18 @@ export default function App() {
                   </span>
                 </div>
               ))}
+            </div>
+          )}
+          {isDesktopMenuExpanded && coverage?.total_symbols > 0 && (
+            <div className="mt-2 px-3 space-y-1">
+              <div className="text-[9px] text-[#555] uppercase tracking-wider font-semibold">Fundamentals Coverage</div>
+              <div className="text-[9px] font-mono space-y-0.5">
+                <div className="flex justify-between"><span className="text-[#888]">shares_outstanding</span><span className={coverage.shares_outstanding > 0 ? 'text-green-400' : 'text-yellow-400'}>{coverage.shares_outstanding}/{coverage.total_symbols}</span></div>
+                <div className="flex justify-between"><span className="text-[#888]">insider_holding</span><span className={coverage.insider_holding_pct > 0 ? 'text-green-400' : 'text-yellow-400'}>{coverage.insider_holding_pct}/{coverage.total_symbols}</span></div>
+                <div className="flex justify-between"><span className="text-[#888]">promoter_holding</span><span className={coverage.promoter_holding_pct > 0 ? 'text-green-400' : 'text-yellow-400'}>{coverage.promoter_holding_pct}/{coverage.total_symbols}</span></div>
+                <div className="flex justify-between"><span className="text-[#888]">industry</span><span className={coverage.industry > 0 ? 'text-green-400' : 'text-yellow-400'}>{coverage.industry}/{coverage.total_symbols}</span></div>
+                <div className="flex justify-between"><span className="text-[#888]">free_float</span><span className={coverage.free_float_pct > 0 ? 'text-green-400' : 'text-yellow-400'}>{coverage.free_float_pct}/{coverage.total_symbols}</span></div>
+              </div>
             </div>
           )}
         </nav>

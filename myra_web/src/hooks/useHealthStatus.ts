@@ -6,6 +6,7 @@ export function useHealthStatus() {
   const lib = getLibrarian();
   const { settings } = useSettings();
   const [health, setHealth] = useState(lib.health);
+  const [coverage, setCoverage] = useState(lib.coverage);
   const [isConnected, setIsConnected] = useState(true);
 
   useEffect(() => {
@@ -13,6 +14,7 @@ export function useHealthStatus() {
     
     const checkState = () => {
         setHealth({...lib.health});
+        setCoverage({...lib.coverage});
         setIsConnected(lib.isConnectedToLocalRepo);
     };
 
@@ -22,6 +24,7 @@ export function useHealthStatus() {
             throw new Error("unhealthy");
         }).then(data => {
             lib.health = data.health || lib.health;
+            lib.coverage = data.coverage || lib.coverage;
             lib.isConnectedToLocalRepo = true;
             checkState();
         }).catch(() => {
@@ -53,5 +56,5 @@ export function useHealthStatus() {
     };
   }, [settings.autoRefreshInterval]);
 
-  return { health, isConnected };
+  return { health, coverage, isConnected };
 }
