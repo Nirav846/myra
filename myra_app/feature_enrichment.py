@@ -45,7 +45,7 @@ def enrich_features(df: pl.DataFrame, nifty_df: pl.DataFrame) -> pl.DataFrame:
     df = df.sort(["symbol", "date"])
 
     # Ensure critical columns exist to prevent crash
-    for col in ["delivery_qty", "high", "low", "volume", "close"]:
+    for col in ["delivery", "high", "low", "volume", "close"]:
         if col not in df.columns:
             df = df.with_columns(pl.lit(1.0).alias(col))
 
@@ -102,8 +102,8 @@ def enrich_features(df: pl.DataFrame, nifty_df: pl.DataFrame) -> pl.DataFrame:
     df = df.with_columns(
         [
             (
-                pl.col("delivery_qty")
-                / pl.col("delivery_qty").rolling_mean(100, min_periods=5).over("symbol")
+                pl.col("delivery")
+                / pl.col("delivery").rolling_mean(100, min_periods=5).over("symbol")
             ).alias("delivery_divergence_score"),
             (
                 (pl.col("high") - pl.col("low"))
@@ -124,8 +124,6 @@ def enrich_features(df: pl.DataFrame, nifty_df: pl.DataFrame) -> pl.DataFrame:
     # Minimalist Cleanup: Apply defaults only AFTER calculations are done
     df = df.with_columns(
         [
-            pl.col("delivery_divergence_score").fill_nan(1.0).fill_null(1.0),
-            pl.col("volatility_compression_score").fill_nan(1.0).fill_null(1.0),
             pl.col("relative_volume_score").fill_nan(1.0).fill_null(1.0),
             pl.col("nifty_outperformance_score").fill_nan(0.0).fill_null(0.0),
         ]
@@ -193,9 +191,8 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
             infer_schema_length=None,
             schema_overrides={
                 "volume": pl.Int64,
-                "delivery": pl.Int64,
+                "delivery": pl.Float64,
                 "trades": pl.Int64,
-                "delivery_qty": pl.Float64,
                 "delivery_pct": pl.Float64,
                 "open": pl.Float64,
                 "high": pl.Float64,
@@ -283,6 +280,13 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
                 "has_bullish_fvg",
             ]
 
+            score_columns = [
+                "delivery_divergence_score",
+                "volatility_compression_score",
+                "relative_volume_score",
+                "nifty_outperformance_score",
+            ]
+
             # Add missing columns to technical_data table
             for i, col in enumerate(smc_columns):
                 if col in smc_df.columns:
@@ -302,6 +306,15 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
                 else:
                     eta_str = "calculating…"
                 update(tid, progress=pct, eta=eta_str)
+
+            # Add missing score columns to technical_data table
+            for col in score_columns:
+                try:
+                    conn.execute(
+                        f"ALTER TABLE technical_data ADD COLUMN {col} REAL"
+                    )
+                except:
+                    pass  # Column already exists
 
             # Batch update using executemany for performance
             for i, col in enumerate(smc_columns):
@@ -339,6 +352,25 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
                             update_data,
                         )
                         conn.commit()
+
+            # Write enrichment score columns row by row
+            enriched_today = df_enriched.filter(pl.col("date") == str(latest_date))
+            for row in enriched_today.iter_rows(named=True):
+                symbol = row["symbol"]
+                date_str = str(row["date"])
+                score_values = {}
+                for col in score_columns:
+                    if col in row:
+                        val = row[col]
+                        if val is not None:
+                            score_values[col] = float(val)
+                if score_values:
+                    set_clauses = [f"{c}=?" for c in score_values]
+                    conn.execute(
+                        f"UPDATE technical_data SET {','.join(set_clauses)} WHERE symbol=? AND date=?",
+                        list(score_values.values()) + [symbol, date_str]
+                    )
+            conn.commit()
 
             # Check if enrichment should pause after processing all symbols
             wait_if_paused()

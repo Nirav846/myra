@@ -3,6 +3,7 @@ import { Activity, BarChart2, BrainCircuit, Target, Database, RotateCw } from 'l
 import { Librarian } from '../lib/Librarian';
 import { useLazyWidgetData } from '../hooks/useLazyWidgetData';
 import { SymbolAutocomplete } from '../components/SymbolAutocomplete';
+import ErrorBoundary from '../components/ErrorBoundary';
 
 const API_BASE = 'http://localhost:8000/api';
 const ROOT_BASE = API_BASE.replace(/\/api$/, '');
@@ -50,13 +51,6 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
     return res.json();
   });
 
-  const unusualWidget = useLazyWidgetData<any>('unusual_activity', async () => {
-    const sym = fiiSymbol || 'RELIANCE';
-    const res = await fetch(`${ROOT_BASE}/api/finstack/unusual-activity?symbol=${sym}`);
-    if (!res.ok) throw new Error('Failed to load unusual activity');
-    return res.json();
-  });
-
   const stockBrief = useLazyWidgetData<any>('stock_brief', async () => {
     const sym = briefSymbol || 'RELIANCE';
     const res = await fetch(`${ROOT_BASE}/api/finstack/stock-brief?symbol=${sym}`);
@@ -99,6 +93,7 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
     {
       title: 'Technicals',
       color: 'yellow',
+      ringClass: 'focus-within:ring-yellow-500/50',
       borderColor: 'border-yellow-500/50',
       bgColor: 'bg-yellow-500/10',
       textColor: 'text-yellow-400',
@@ -112,6 +107,7 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
     {
       title: 'Institutional',
       color: 'fuchsia',
+      ringClass: 'focus-within:ring-fuchsia-500/50',
       borderColor: 'border-fuchsia-500/50',
       bgColor: 'bg-fuchsia-500/10',
       textColor: 'text-fuchsia-400',
@@ -125,6 +121,7 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
     {
       title: 'ML / EXP',
       color: 'cyan',
+      ringClass: 'focus-within:ring-cyan-500/50',
       borderColor: 'border-cyan-500/50',
       bgColor: 'bg-cyan-500/10',
       textColor: 'text-cyan-400',
@@ -138,6 +135,7 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
     {
       title: 'Value',
       color: 'green',
+      ringClass: 'focus-within:ring-green-500/50',
       borderColor: 'border-green-500/50',
       bgColor: 'bg-green-500/10',
       textColor: 'text-green-400',
@@ -197,6 +195,7 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
   return (
     <div className="flex flex-col gap-6">
       {/* Morning Brief Widget */}
+      <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded-xl p-4 text-red-400 text-xs font-mono">Morning Brief widget crashed</div>}>
       <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded-xl p-4 flex flex-col gap-4">
         <div className="flex items-center justify-between border-b border-[#ffffff1a] pb-3">
           <h3 className="text-sm font-semibold uppercase tracking-wider text-[#888]">Morning Brief</h3>
@@ -214,165 +213,172 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
           <div className="text-sm text-[#ccc] py-8 text-center">Loading morning brief...</div>
         ) : briefWidget.error ? (
           <div className="text-[10px] text-red-400 font-mono text-center py-8">{briefWidget.error}</div>
-        ) : !briefWidget.data?.market_brief ? (
+        ) : !briefWidget.data?.indices ? (
           <div className="text-sm text-[#666] py-8 text-center font-mono">Click Refresh to load morning brief</div>
         ) : (
           <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider pb-1">NIFTY 50</div>
-              <div className="text-xs font-mono font-bold text-[#fafafa]">{briefWidget.data.market_brief.nifty?.value}</div>
-              <div className={`text-xs font-mono ${getValueColor(briefWidget.data.market_brief.nifty?.change_pct)}`}>
-                 {briefWidget.data.market_brief.nifty?.change > 0 ? '+' : ''}{briefWidget.data.market_brief.nifty?.change} ({briefWidget.data.market_brief.nifty?.change_pct > 0 ? '+' : ''}{briefWidget.data.market_brief.nifty?.change_pct}%)
+          {/* Top row: Index tiles */}
+          <div className="flex flex-row flex-wrap gap-2">
+            <div className="flex-1 min-w-[120px] bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg">
+              <div className="text-[9px] text-[#888] font-mono uppercase tracking-wider">NIFTY 50</div>
+              <div className="text-xs font-mono font-bold tabular-nums text-[#fafafa]">{briefWidget.data.indices.nifty50?.value ?? '—'}</div>
+              <div className={`text-[10px] font-mono tabular-nums ${getValueColor(briefWidget.data.indices.nifty50?.change_pct)}`}>
+                {briefWidget.data.indices.nifty50?.change > 0 ? '+' : ''}{briefWidget.data.indices.nifty50?.change ?? '—'} ({briefWidget.data.indices.nifty50?.change_pct > 0 ? '+' : ''}{briefWidget.data.indices.nifty50?.change_pct ?? '—'}%)
               </div>
             </div>
-            <div>
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider pb-1">SENSEX</div>
-              <div className="text-xs font-mono font-bold text-[#fafafa]">{briefWidget.data.market_brief.sensex?.value}</div>
-              <div className={`text-xs font-mono ${getValueColor(briefWidget.data.market_brief.sensex?.change_pct)}`}>
-                 {briefWidget.data.market_brief.sensex?.change > 0 ? '+' : ''}{briefWidget.data.market_brief.sensex?.change} ({briefWidget.data.market_brief.sensex?.change_pct > 0 ? '+' : ''}{briefWidget.data.market_brief.sensex?.change_pct}%)
+            <div className="flex-1 min-w-[120px] bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg">
+              <div className="text-[9px] text-[#888] font-mono uppercase tracking-wider">SENSEX</div>
+              <div className="text-xs font-mono font-bold tabular-nums text-[#fafafa]">{briefWidget.data.indices.sensex?.value ?? '—'}</div>
+              <div className={`text-[10px] font-mono tabular-nums ${getValueColor(briefWidget.data.indices.sensex?.change_pct)}`}>
+                {briefWidget.data.indices.sensex?.change > 0 ? '+' : ''}{briefWidget.data.indices.sensex?.change ?? '—'} ({briefWidget.data.indices.sensex?.change_pct > 0 ? '+' : ''}{briefWidget.data.indices.sensex?.change_pct ?? '—'}%)
               </div>
             </div>
-            <div>
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider pb-1">BANK NIFTY</div>
-              <div className="text-xs font-mono font-bold text-[#fafafa]">{briefWidget.data.market_brief.bank_nifty?.value}</div>
-              <div className={`text-xs font-mono ${getValueColor(briefWidget.data.market_brief.bank_nifty?.change_pct)}`}>
-                 {briefWidget.data.market_brief.bank_nifty?.change > 0 ? '+' : ''}{briefWidget.data.market_brief.bank_nifty?.change} ({briefWidget.data.market_brief.bank_nifty?.change_pct > 0 ? '+' : ''}{briefWidget.data.market_brief.bank_nifty?.change_pct}%)
+            <div className="flex-1 min-w-[120px] bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg">
+              <div className="text-[9px] text-[#888] font-mono uppercase tracking-wider">BANK NIFTY</div>
+              <div className="text-xs font-mono font-bold tabular-nums text-[#fafafa]">{briefWidget.data.indices.bank_nifty?.value ?? '—'}</div>
+              <div className={`text-[10px] font-mono tabular-nums ${getValueColor(briefWidget.data.indices.bank_nifty?.change_pct)}`}>
+                {briefWidget.data.indices.bank_nifty?.change > 0 ? '+' : ''}{briefWidget.data.indices.bank_nifty?.change ?? '—'} ({briefWidget.data.indices.bank_nifty?.change_pct > 0 ? '+' : ''}{briefWidget.data.indices.bank_nifty?.change_pct ?? '—'}%)
               </div>
             </div>
-            <div>
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider pb-1">INDIA VIX</div>
-              <div className="text-xs font-mono font-bold text-[#fafafa]">{briefWidget.data.pre_market?.india_vix?.current_vix}</div>
-              <div className="text-[10px] font-mono text-[#ccc] truncate" title={briefWidget.data.pre_market?.india_vix?.signal}>{briefWidget.data.pre_market?.india_vix?.signal}</div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-[#0e1117] border border-[#ffffff0a] p-3 rounded-lg">
-              <div className="text-[10px] text-green-400 font-mono uppercase tracking-wider mb-2">Top Gainers</div>
-              <div className="space-y-1">
-                 {briefWidget.data.top_gainers?.map((g: any, i: number) => (
-                    <div key={i} className="flex justify-between text-xs font-mono">
-                      <span className="text-[#fafafa]">{g.symbol}</span>
-                      <span className="text-[#ccc]">{g.ltp} <span className="text-green-400 ml-2">+{g.change_pct}%</span></span>
-                    </div>
-                 ))}
-                 {(!briefWidget.data.top_gainers || briefWidget.data.top_gainers.length === 0) && (
-                    <div className="text-xs font-mono text-[#666]">No data</div>
-                 )}
-              </div>
-            </div>
-            <div className="bg-[#0e1117] border border-[#ffffff0a] p-3 rounded-lg">
-              <div className="text-[10px] text-red-400 font-mono uppercase tracking-wider mb-2">Top Losers</div>
-              <div className="space-y-1">
-                 {briefWidget.data.top_losers?.map((l: any, i: number) => (
-                    <div key={i} className="flex justify-between text-xs font-mono">
-                      <span className="text-[#fafafa]">{l.symbol}</span>
-                      <span className="text-[#ccc]">{l.ltp} <span className="text-red-400 ml-2">{l.change_pct}%</span></span>
-                    </div>
-                 ))}
-                 {(!briefWidget.data.top_losers || briefWidget.data.top_losers.length === 0) && (
-                    <div className="text-xs font-mono text-[#666]">No data</div>
-                 )}
+            <div className="flex-1 min-w-[120px] bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg">
+              <div className="text-[9px] text-[#888] font-mono uppercase tracking-wider">INDIA VIX</div>
+              <div className="text-xs font-mono font-bold tabular-nums text-[#fafafa]">{briefWidget.data.pre_market?.india_vix?.current_vix ?? '—'}</div>
+              <div className="text-[9px] font-mono text-[#ccc] truncate" title={briefWidget.data.pre_market?.india_vix?.signal || ''}>{briefWidget.data.pre_market?.india_vix?.signal || '—'}</div>
+              <div className="text-[8px] font-mono text-[#666] truncate mt-0.5" title={getVixInterpretation(briefWidget.data.pre_market?.india_vix)}>
+                {getVixInterpretation(briefWidget.data.pre_market?.india_vix)}
               </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-             <div>
-               <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider pb-1">FII Net</div>
-               <div className={`text-xs font-mono font-bold ${getValueColor(briefWidget.data.institutional_flow?.fii_net)}`}>{briefWidget.data.institutional_flow?.fii_net}</div>
-             </div>
-             <div>
-               <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider pb-1">DII Net</div>
-               <div className={`text-xs font-mono font-bold ${getValueColor(briefWidget.data.institutional_flow?.dii_net)}`}>{briefWidget.data.institutional_flow?.dii_net}</div>
-             </div>
-             <div className="col-span-2">
-               <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider pb-1">Leading Sectors</div>
-               <div className="flex gap-2 flex-wrap text-[10px] font-mono">
-                 {briefWidget.data.sector_performance?.map((s: any, i: number) => (
-                    <span key={i} className="bg-[#0e1117] border border-[#ffffff1a] px-2 py-1 rounded text-[#ccc] whitespace-nowrap">
-                       {s.sector} <span className={getValueColor(s.change_pct)}>{s.change_pct > 0 ? '+' : ''}{s.change_pct}%</span>
-                    </span>
-                 ))}
-                 {(!briefWidget.data.sector_performance || briefWidget.data.sector_performance.length === 0) && (
-                    <span className="text-[#666]">No sector data</span>
-                 )}
-               </div>
-             </div>
-          </div>
+          <div className="border-t border-[#ffffff0a]"></div>
 
-          <div className="bg-[#0e1117] border border-[#ffffff0a] p-3 rounded-lg grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-               <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider pb-1">Pre-market Direction</div>
-               <div className="flex items-center gap-2">
-                 <span className="text-xs text-[#fafafa] font-bold font-mono">GIFT NIFTY: {briefWidget.data.pre_market?.gift_nifty?.value}</span>
-                 <span className={`text-xs font-mono ${getValueColor(briefWidget.data.pre_market?.gift_nifty?.change)}`}>
-                    {briefWidget.data.pre_market?.gift_nifty?.change > 0 ? '+' : ''}{briefWidget.data.pre_market?.gift_nifty?.change}
-                 </span>
-               </div>
-               <div className="text-[10px] text-[#ccc] font-mono mt-1">
-                  Probability Up: <span className={getValueColor(briefWidget.data.pre_market?.nifty_direction?.probability_up - 50)}>{briefWidget.data.pre_market?.nifty_direction?.probability_up}%</span> ({briefWidget.data.pre_market?.nifty_direction?.signal})
-               </div>
-            </div>
+          {/* Second row: 2-column grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {/* Left: Gainers + Losers */}
             <div className="grid grid-cols-2 gap-2">
-               <div>
-                 <div className="text-[9px] text-[#888] font-mono uppercase tracking-wider pb-1">Bull Factors</div>
-                 <ul className="space-y-0.5">
-                    {briefWidget.data.pre_market?.nifty_direction?.bull_factors?.map((f: string, i: number) => (
-                       <li key={i} className="text-[9px] text-green-400 font-mono flex gap-1"><span className="shrink-0">•</span><span>{f}</span></li>
-                    ))}
-                    {(!briefWidget.data.pre_market?.nifty_direction?.bull_factors || briefWidget.data.pre_market.nifty_direction.bull_factors.length === 0) && (
-                       <li className="text-[10px] text-[#666] font-mono">None identified</li>
-                    )}
-                 </ul>
-               </div>
-               <div>
-                 <div className="text-[9px] text-[#888] font-mono uppercase tracking-wider pb-1">Bear Factors</div>
-                 <ul className="space-y-0.5">
-                    {briefWidget.data.pre_market?.nifty_direction?.bear_factors?.map((f: string, i: number) => (
-                       <li key={i} className="text-[9px] text-red-400 font-mono flex gap-1"><span className="shrink-0">•</span><span>{f}</span></li>
-                    ))}
-                    {(!briefWidget.data.pre_market?.nifty_direction?.bear_factors || briefWidget.data.pre_market.nifty_direction.bear_factors.length === 0) && (
-                       <li className="text-[10px] text-[#666] font-mono">None identified</li>
-                    )}
-                 </ul>
-               </div>
+              <div className="bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg">
+                <div className="text-[9px] text-green-400 font-mono uppercase tracking-wider mb-1">Gainers</div>
+                <div className="space-y-0.5">
+                  {briefWidget.data.market_movers?.gainers?.slice(0, 5).map((g: any, i: number) => (
+                    <div key={i} className="flex justify-between text-[10px] font-mono">
+                      <span className="text-[#fafafa]">{g.symbol}</span>
+                      <span className="text-green-400">+{g.change_pct}%</span>
+                    </div>
+                  ))}
+                  {(!briefWidget.data.market_movers?.gainers || briefWidget.data.market_movers.gainers.length === 0) && (
+                    <div className="text-[10px] font-mono text-[#666]">—</div>
+                  )}
+                </div>
+              </div>
+              <div className="bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg">
+                <div className="text-[9px] text-red-400 font-mono uppercase tracking-wider mb-1">Losers</div>
+                <div className="space-y-0.5">
+                  {briefWidget.data.market_movers?.losers?.slice(0, 5).map((l: any, i: number) => (
+                    <div key={i} className="flex justify-between text-[10px] font-mono">
+                      <span className="text-[#fafafa]">{l.symbol}</span>
+                      <span className="text-red-400">{l.change_pct}%</span>
+                    </div>
+                  ))}
+                  {(!briefWidget.data.market_movers?.losers || briefWidget.data.market_movers.losers.length === 0) && (
+                    <div className="text-[10px] font-mono text-[#666]">—</div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Right: Market Flows + Pre-market */}
+            <div className="space-y-2">
+              <div className="bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg">
+                <div className="text-[9px] text-[#888] font-mono uppercase tracking-wider mb-1">Market Flows</div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-mono border-b border-[#ffffff0a] pb-1 mb-1">
+                  {(() => {
+                    const fii = briefWidget.data?.institutional_flow?.data?.find((d: any) => d.category?.startsWith('FII'));
+                    const dii = briefWidget.data?.institutional_flow?.data?.find((d: any) => d.category === 'DII');
+                    return (
+                      <>
+                        {fii && <span>FII: <span className={parseFloat(fii.netValue) >= 0 ? 'text-green-400' : 'text-red-400'}>₹{fii.netValue} Cr</span></span>}
+                        {dii && <span>DII: <span className={parseFloat(dii.netValue) >= 0 ? 'text-green-400' : 'text-red-400'}>₹{dii.netValue} Cr</span></span>}
+                        {!fii && !dii && <span className="text-[#666]">—</span>}
+                      </>
+                    );
+                  })()}
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[9px] font-mono">
+                  {briefWidget.data.sector_performance?.sectors?.slice(0, 6).map((s: any, i: number) => (
+                    <span key={i} className="whitespace-nowrap">
+                      {s.sector} <span className={getValueColor(s.change_pct)}>{s.change_pct > 0 ? '+' : ''}{s.change_pct}%</span>
+                    </span>
+                  ))}
+                  {(!briefWidget.data.sector_performance?.sectors || briefWidget.data.sector_performance.sectors.length === 0) && (
+                    <span className="text-[#666]">—</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg">
+                <div className="text-[9px] text-[#888] font-mono uppercase tracking-wider mb-1">Pre-market</div>
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] font-mono">
+                  {(() => {
+                    const giftNifty = briefWidget.data?.pre_market?.gift_nifty;
+                    const giftHasData = giftNifty && Object.keys(giftNifty).length > 0;
+                    return (
+                      <>
+                        <span>GIFT: <span className="text-[#fafafa]">{giftHasData ? (giftNifty.value || '—') : '—'}</span></span>
+                        <span>VIX: <span className="text-[#fafafa]">{briefWidget.data.pre_market?.india_vix?.current_vix ?? '—'}</span></span>
+                      </>
+                    );
+                  })()}
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] font-mono mt-1">
+                  {briefWidget.data.pre_market?.nifty_direction && (
+                    <span className="whitespace-nowrap">
+                      Nifty: <span className={getValueColor(briefWidget.data.pre_market.nifty_direction.probability_up - 50)}>{briefWidget.data.pre_market.nifty_direction.probability_up}% ↑</span>
+                      ({briefWidget.data.pre_market.nifty_direction.signal})
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[8px] font-mono mt-1">
+                  {briefWidget.data.pre_market?.nifty_direction?.bull_factors && briefWidget.data.pre_market.nifty_direction.bull_factors.length > 0 && (
+                    <span className="text-green-400">Bull: {briefWidget.data.pre_market.nifty_direction.bull_factors.join(', ')}</span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[8px] font-mono">
+                  {briefWidget.data.pre_market?.nifty_direction?.bear_factors && briefWidget.data.pre_market.nifty_direction.bear_factors.length > 0 && (
+                    <span className="text-red-400">Bear: {briefWidget.data.pre_market.nifty_direction.bear_factors.join(', ')}</span>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 
-          {(briefWidget.data.key_events?.length > 0 || briefWidget.data.morning_text) && (
-             <div className="bg-[#0e1117] border border-[#ffffff0a] p-3 rounded-lg">
-               <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider mb-2">Key Events & Briefing</div>
-               <div className="space-y-1.5 flex flex-col justify-center text-[#aaa] font-mono whitespace-pre-wrap text-[10px] leading-relaxed">
-                 {briefWidget.data.key_events && briefWidget.data.key_events.length > 0 ? (
-                    briefWidget.data.key_events.map((ev: string, i: number) => (
-                       <div key={i} className="flex gap-2"><span className="text-[#666] shrink-0">•</span><span>{ev}</span></div>
-                    ))
-                 ) : (
-                    briefWidget.data.morning_text
-                 )}
-               </div>
-             </div>
-          )}
+          <div className="border-t border-[#ffffff0a]"></div>
 
-          <div className="border border-[#ffffff1a] rounded-lg overflow-hidden">
-             <details className="group">
-                <summary className="bg-[#1a1c24] cursor-pointer p-3 text-[10px] font-mono uppercase tracking-wider text-[#888] hover:text-[#ccc] transition-colors flex justify-between items-center list-none outline-none">
-                  <span>VIX Interpretation ({briefWidget.data.pre_market?.india_vix?.current_vix})</span>
-                  <span className="text-[#555] group-open:rotate-180 transition-transform">▼</span>
-                </summary>
-                <div className="p-3 pt-0 bg-[#1a1c24] text-[10px] font-mono text-[#aaa]">
-                   {getVixInterpretation(briefWidget.data.pre_market?.india_vix)}
-                </div>
-             </details>
-          </div>
+          {/* Bottom row: collapsible Key Events & Briefing */}
+          {(briefWidget.data.key_events?.length > 0 || briefWidget.data.morning_text) && (
+            <details className="bg-[#0e1117] border border-[#ffffff0a] rounded-lg">
+              <summary className="cursor-pointer p-2 text-[9px] font-mono uppercase tracking-wider text-[#888] hover:text-[#ccc] transition-colors flex justify-between items-center list-none outline-none">
+                <span>Key Events & Briefing</span>
+                <span className="text-[#555]">▼</span>
+              </summary>
+              <div className="px-2 pb-2 max-h-40 overflow-y-auto text-[9px] font-mono text-[#aaa] space-y-1">
+                {briefWidget.data.key_events && briefWidget.data.key_events.length > 0 ? (
+                  briefWidget.data.key_events.map((ev: string, i: number) => (
+                    <div key={i} className="flex gap-2"><span className="text-[#666] shrink-0">•</span><span>{ev}</span></div>
+                  ))
+                ) : (
+                  <div className="whitespace-pre-wrap">{briefWidget.data.morning_text}</div>
+                )}
+              </div>
+            </details>
+          )}
           </>
         )}
       </div>
+      </ErrorBoundary>
 
       {/* System Metrics Strip */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[10px] font-mono">Market Breadth crashed</div>}>
         <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col justify-center">
           <div className="flex items-center justify-between mb-1">
             <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Market Breadth (NIFTY)</div>
@@ -406,8 +412,10 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
             </>
           )}
         </div>
+        </ErrorBoundary>
 
         {/* Nifty Outlook Widget */}
+        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[10px] font-mono">Nifty Outlook crashed</div>}>
         <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col justify-center">
           <div className="flex items-center justify-between mb-1">
             <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Nifty Outlook</div>
@@ -463,8 +471,10 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
             </>
           )}
         </div>
+        </ErrorBoundary>
 
         {/* FII/Retail Divergence Widget */}
+        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[10px] font-mono">FII Divergence crashed</div>}>
         <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col justify-center">
           <div className="flex items-center justify-between mb-1">
             <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Smart Money vs Retail</div>
@@ -502,8 +512,10 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
             </>
           )}
         </div>
+        </ErrorBoundary>
 
         {/* Stock Brief (AI Multi‑Agent Debate) Widget */}
+        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[10px] font-mono">Stock Brief crashed</div>}>
         <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col justify-center">
           <div className="flex items-center justify-between mb-1">
             <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Stock Brief (AI Debate)</div>
@@ -524,32 +536,37 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
             <div className="text-sm text-[#ccc] py-1">Running AI debate...</div>
           ) : stockBrief.error ? (
             <div className="text-[10px] text-red-400 font-mono mt-1">{stockBrief.error}</div>
-          ) : !stockBrief.data ? (
+          ) : !stockBrief.data?.consensus ? (
             <div className="text-sm text-[#666] py-1 font-mono">Click Refresh to load</div>
           ) : (
             <>
               <div className="flex items-center justify-between mb-2">
-                <span className={`text-xs font-bold font-mono ${getValueColor(stockBrief.data.consensus === 'Bullish' ? 1 : stockBrief.data.consensus === 'Bearish' ? -1 : 0)}`}>
-                  {stockBrief.data.consensus || 'Neutral'}
+                <span className={`text-xs font-bold font-mono ${getValueColor(stockBrief.data.consensus?.signal === 'BUY' ? 1 : stockBrief.data.consensus?.signal === 'SELL' ? -1 : 0)}`}>
+                  {stockBrief.data.consensus?.signal || 'HOLD'}
                 </span>
                 <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
-                  stockBrief.data.confidence === 'High' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
-                  stockBrief.data.confidence === 'Medium' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' :
+                  stockBrief.data.consensus?.strength === 'strong' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
+                  stockBrief.data.consensus?.strength === 'neutral' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' :
                   'bg-[#ffffff05] text-[#888] border-[#ffffff1a]'
                 }`}>
-                  {stockBrief.data.confidence || ''} Confidence
+                  {stockBrief.data.consensus?.strength === 'strong' ? 'High' : stockBrief.data.consensus?.strength === 'neutral' ? 'Medium' : 'Low'} Confidence
                 </span>
               </div>
-              {stockBrief.data.debate_summary && (
-                <div className="text-[9px] text-[#aaa] font-mono leading-relaxed mt-1 max-h-20 overflow-y-auto pr-1">
-                  {stockBrief.data.debate_summary}
-                </div>
-              )}
+              <div className="text-[9px] text-[#aaa] font-mono leading-relaxed mt-1 max-h-20 overflow-y-auto pr-1 space-y-0.5">
+                {stockBrief.data.debate?.slice(0, 6).filter(Boolean).map((agent: any, idx: number) => (
+                  <div key={idx} className="flex items-start gap-1 text-[9px] text-[#aaa] font-mono leading-snug">
+                    <span className="text-[10px] shrink-0 mt-0.5">{agent.verdict === 'BUY' ? '🟢' : agent.verdict === 'SELL' ? '🔴' : '🟡'}</span>
+                    <span><b className="text-[#ccc]">{agent.agent}:</b> {agent.one_liner || agent.verdict}</span>
+                  </div>
+                ))}
+              </div>
             </>
           )}
         </div>
+        </ErrorBoundary>
 
         {/* Stock Timeline Widget */}
+        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[10px] font-mono">Stock Timeline crashed</div>}>
         <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col justify-center">
           <div className="flex items-center justify-between mb-1">
             <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Stock Timeline</div>
@@ -596,6 +613,9 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
             </>
           )}
         </div>
+        </ErrorBoundary>
+
+        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[10px] font-mono">System Architecture crashed</div>}>
         <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex items-center justify-between">
           <div>
             <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider mb-1">System Architecture</div>
@@ -616,6 +636,7 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
           </div>
           <Database size={32} className="text-[#444]" />
         </div>
+        </ErrorBoundary>
       </div>
 
       {/* Tactical Command Grid */}
@@ -625,7 +646,7 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
       
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {categories.map((cat, idx) => (
-          <div key={idx} className={`bg-[#0e1117] border ${cat.borderColor} rounded-xl overflow-hidden flex flex-col transition-all hover:shadow-lg focus-within:ring-2 focus-within:ring-${cat.color}-500/50`}>
+          <div key={idx} className={`bg-[#0e1117] border ${cat.borderColor} rounded-xl overflow-hidden flex flex-col transition-all hover:shadow-lg focus-within:ring-2 ${cat.ringClass}`}>
             {/* Header Banner */}
             <div className={`${cat.bgColor} border-b ${cat.borderColor} p-4 flex items-center gap-3`}>
               <div className={`${cat.textColor}`}>

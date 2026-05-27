@@ -30,6 +30,7 @@ MORNINGSTAR_HEADERS = {
 NSE_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Accept": "application/json",
+    "Accept-Language": "en-US,en;q=0.9",
     "Referer": "https://www.nseindia.com/",
 }
 
@@ -47,6 +48,18 @@ class FundamentalSync:
         self.nse_fetched = 0
         self.inserted = 0
         self.errors = 0
+        self._nse_session = self._init_nse_session()
+
+    @staticmethod
+    def _init_nse_session():
+        """Create a requests Session with valid NSE cookies via homepage warm-up."""
+        session = requests.Session()
+        session.headers.update(NSE_HEADERS)
+        try:
+            session.get("https://www.nseindia.com", headers=NSE_HEADERS, timeout=15)
+        except Exception as e:
+            logger.warning(f"[FundamentalSync] NSE homepage warm-up failed: {e}")
+        return session
 
     def _get_valuation_db_path(self) -> str:
         """Get the valuation database path from DB_MAP."""
@@ -205,20 +218,19 @@ class FundamentalSync:
             logger.error(f"[FundamentalSync] Failed to read NIFTY 500 symbols: {e}")
             return []
 
-    @staticmethod
-    def _retry_request(url, headers, timeout, max_retries=3):
-        import time
-
+    def _nse_request(self, url, timeout=30, max_retries=3):
         for attempt in range(max_retries):
             try:
-                resp = requests.get(url, headers=headers, timeout=timeout)
+                resp = self._nse_session.get(url, headers=NSE_HEADERS, timeout=timeout)
                 resp.raise_for_status()
                 return resp
             except requests.exceptions.RequestException as e:
                 if attempt == max_retries - 1:
                     raise
                 time.sleep(2**attempt)
-        return None
+                # Re-warm the session on retry in case cookies expired
+                if attempt > 0:
+                    self._nse_session = self._init_nse_session()
 
     def _fetch_nse_symbol(self, symbol: str) -> dict:
         """Fetch fundamental data for a single symbol from NSE.
@@ -234,7 +246,7 @@ class FundamentalSync:
         try:
             # Fetch quote data (PE, sector PE, face value, issued size)
             url1 = NSE_QUOTE_URL.format(symbol=symbol)
-            response1 = self._retry_request(url1, NSE_HEADERS, 30)
+            response1 = self._nse_request(url1)
             response1.raise_for_status()
             data1 = response1.json()
 
@@ -257,7 +269,7 @@ class FundamentalSync:
 
             # Fetch trade info (market cap, volatility, impact cost)
             url2 = NSE_TRADE_INFO_URL.format(symbol=symbol)
-            response2 = self._retry_request(url2, NSE_HEADERS, 30)
+            response2 = self._nse_request(url2)
             response2.raise_for_status()
             data2 = response2.json()
 

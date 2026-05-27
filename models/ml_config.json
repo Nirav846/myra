@@ -6,7 +6,9 @@
   "features": [
     "close",
     "volume",
-    "delivery"
+    "delivery",
+    "relative_volume_score",
+    "volatility_compression_score"
   ],
   "xgb_params": {
     "n_estimators": 200,
@@ -29,5 +31,25 @@
     "delivery_pct_min": 10,
     "digestion_window_days": 10,
     "breakout_volume_mult": 2.5
+  },
+  "launchpad_features": [
+    "del_zscore_min",
+    "del_zscore_mean",
+    "range_atr_min",
+    "vol_ratio_min",
+    "digestion_days",
+    "max_drawdown_pct",
+    "close_min",
+    "vwap_min",
+    "volume_min",
+    "liquidity_min",
+    "fvg_freshness_min"
+  ],
+  "launchpad_hyperparameters": {
+    "n_estimators": 200,
+    "max_depth": 5,
+    "learning_rate": 0.05,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8
   }
 }

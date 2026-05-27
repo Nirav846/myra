@@ -9,21 +9,15 @@ echo   MYRA - Starting Local Development
 echo ========================================
 echo.
 
-:: ---------- Pipeline ----------
-echo [1/3] Starting data pipeline ...
-start /min "MYRA Pipeline" cmd /k "cd /d D:\01screener\Myra && python run_pipeline.py"
-
-:: Give it a moment to initialize
-timeout /t 2 /nobreak >nul
-
 :: ---------- FastAPI backend ----------
-echo [2/3] Starting FastAPI backend ...
+echo [1/2] Starting FastAPI backend ...
+echo Pipeline not auto-started. Visit /data-sync to run.
 start "MYRA Backend" cmd /k "cd /d D:\01screener\Myra && python run_fastapi.py"
 
 timeout /t 2 /nobreak >nul
 
 :: ---------- Vite frontend ----------
-echo [3/3] Starting Vite frontend ...
+echo [2/2] Starting Vite frontend ...
 start /min "MYRA Frontend" cmd /k "cd /d D:\01screener\Myra\myra_web && npm run dev"
 
 echo.

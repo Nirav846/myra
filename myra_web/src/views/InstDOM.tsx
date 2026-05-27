@@ -28,8 +28,8 @@ export default function InstDOMView({ lib }: { lib: Librarian }) {
       const query = `
         SELECT 
           CASE 
-            WHEN AVG(close) >= 5000 THEN ROUND(COALESCE(vwap, (high + low + close) / 3), -2)
-            WHEN AVG(close) >= 100 THEN ROUND(COALESCE(vwap, (high + low + close) / 3), -1)
+            WHEN close >= 5000 THEN ROUND(COALESCE(vwap, (high + low + close) / 3), -2)
+            WHEN close >= 100 THEN ROUND(COALESCE(vwap, (high + low + close) / 3), -1)
             ELSE ROUND(COALESCE(vwap, (high + low + close) / 3), 0)
           END as price_level, 
           SUM(delivery) as delivery,

@@ -96,7 +96,7 @@ def main():
     )
 
     conn.close()
-    lib.disconnect()
+    lib.close()
 
 
 if __name__ == "__main__":
