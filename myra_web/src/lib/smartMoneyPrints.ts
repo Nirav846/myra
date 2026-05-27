@@ -102,7 +102,7 @@ export function computeSmartMoneyPrints(data: any[], bucket: string | null, sett
     return prints;
 }
 
-export function smpToTraces(smps: SmartMoneyPrint[], dates: string[]): any[] {
+export function smpToTraces(smps: SmartMoneyPrint[], dateToIndex: Map<string, number>): any[] {
     const tracesMap: Record<SmpType, any> = {
         'accumulation': { x: [], y: [], text: [], marker: { symbol: 'triangle-up', size: [], color: 'rgba(34,197,94,1)', opacity: [], line: { width: 0 } }, name: 'Accumulation' },
         'distribution': { x: [], y: [], text: [], marker: { symbol: 'triangle-down', size: [], color: 'rgba(239,68,68,1)', opacity: [], line: { width: 0 } }, name: 'Distribution' },
@@ -113,7 +113,9 @@ export function smpToTraces(smps: SmartMoneyPrint[], dates: string[]): any[] {
 
     smps.forEach(smp => {
         const tr = tracesMap[smp.type];
-        tr.x.push(smp.date);
+        const idx = dateToIndex.get(smp.date);
+        if (idx === undefined) return;
+        tr.x.push(idx);
         
         let yOffset = 0;
         if (smp.type === 'accumulation' || smp.type === 'absorption') {

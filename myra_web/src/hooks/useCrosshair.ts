@@ -1,133 +1,236 @@
 import { useEffect, useRef, useCallback } from 'react';
-import Plotly from 'plotly.js-dist-min';
+import { useChartStore } from '../store/chartStore';
+import {
+  getGraphDiv,
+  clientToDataCoords,
+  nearestVisibleCandle,
+  getCandleCenterX,
+} from '../utils/chartCoords';
+import type { CrosshairOverlayHandle } from '../components/chart/CrosshairOverlay';
+
+interface UseCrosshairOptions {
+  enabled?: boolean;
+  dates?: string[];
+  dataLength?: number;
+  formatDate?: (index: number) => string;
+  formatPrice?: (price: number) => string;
+}
 
 export function useCrosshair(
   plotRef: React.RefObject<any>,
-  options: { enabled?: boolean; lineColor?: string; lineWidth?: number; lineDash?: string; opacity?: number } = {}
+  overlayHandleRef: React.RefObject<CrosshairOverlayHandle | null>,
+  options: UseCrosshairOptions = {},
 ) {
   const {
     enabled = true,
-    lineColor = '#ffaa00',
-    lineWidth = 1,
-    lineDash = 'dot',
-    opacity = 0.6,
+    dates = [],
+    dataLength = 0,
+    formatDate: formatDateFn,
+    formatPrice: formatPriceFn,
   } = options;
 
-  const lastCall = useRef(0);
+  const setHoveredIndex = useChartStore(state => state.setHoveredIndex);
   const rafId = useRef<number | null>(null);
+  const lastUpdate = useRef<number>(0);
+  const mouseEventRef = useRef<MouseEvent | null>(null);
+  const listenersAttached = useRef(false);
 
-  const clear = useCallback(() => {
-    const el = plotRef?.current?.el || plotRef?.current;
-    if (!el) return;
-    if (rafId.current) cancelAnimationFrame(rafId.current);
-    const layout = el.layout || {};
-    const existingShapes = layout.shapes || [];
-    const existingAnnotations = layout.annotations || [];
-    const filteredShapes = existingShapes.filter((s: any) => s._isCrosshair !== true);
-    const filteredAnnotations = existingAnnotations.filter((a: any) => a._isCrosshair !== true);
-    if (filteredShapes.length !== existingShapes.length || filteredAnnotations.length !== existingAnnotations.length) {
-      Plotly.relayout(el, { shapes: filteredShapes, annotations: filteredAnnotations });
+  const hideCrosshair = useCallback(() => {
+    if (!overlayHandleRef.current) return;
+    const el = overlayHandleRef.current.refs;
+    if (el.vLine) el.vLine.style.display = 'none';
+    if (el.hLine) el.hLine.style.display = 'none';
+    if (el.priceLabel) el.priceLabel.style.display = 'none';
+    if (el.dateLabel) el.dateLabel.style.display = 'none';
+  }, [overlayHandleRef]);
+
+  const updateCrosshairVerticalOnly = useCallback((
+    snappedIndex: number,
+    snappedX: number,
+  ) => {
+    if (!overlayHandleRef.current) return;
+    const el = overlayHandleRef.current.refs;
+
+    if (el.vLine) {
+      el.vLine.style.display = 'block';
+      el.vLine.style.transform = `translateX(${snappedX}px)`;
     }
-  }, [plotRef]);
+    if (el.hLine) el.hLine.style.display = 'none';
+    if (el.priceLabel) el.priceLabel.style.display = 'none';
 
-  const update = useCallback(
-    (xval: any, yval: number) => {
-      const el = plotRef?.current?.el || plotRef?.current;
-      if (!el || !enabled) return;
+    if (el.dateLabel) {
+      el.dateLabel.style.display = 'block';
+      const dateText = formatDateFn
+        ? formatDateFn(snappedIndex)
+        : dates[snappedIndex] || '';
+      el.dateLabel.textContent = dateText;
+      const dw = el.dateLabel.offsetWidth || 80;
+      const pw = el.dateLabel.parentElement?.offsetWidth || 0;
+      el.dateLabel.style.left = `${Math.max(dw / 2, Math.min(snappedX, pw - dw / 2))}px`;
+    }
+  }, [overlayHandleRef, dates, formatDateFn]);
 
-      const now = performance.now();
-      if (now - lastCall.current < 16) {
-        if (rafId.current) cancelAnimationFrame(rafId.current);
-        rafId.current = requestAnimationFrame(() => update(xval, yval));
-        return;
-      }
-      lastCall.current = now;
+  const updateCrosshairFull = useCallback((
+    snappedIndex: number,
+    price: number,
+    snappedX: number,
+    snappedY: number,
+  ) => {
+    if (!overlayHandleRef.current) return;
+    const el = overlayHandleRef.current.refs;
 
-      const shapes: any[] = [
-        {
-          type: 'line',
-          x0: xval, y0: 0, x1: xval, y1: 1,
-          xref: 'x', yref: 'paper',
-          line: { color: lineColor, width: lineWidth, dash: lineDash as any },
-          opacity, _isCrosshair: true,
-        },
-        {
-          type: 'line',
-          x0: 0, y0: yval, x1: 1, y1: yval,
-          xref: 'paper', yref: 'y',
-          line: { color: lineColor, width: lineWidth, dash: lineDash as any },
-          opacity, _isCrosshair: true,
-        },
-      ];
+    if (el.vLine) {
+      el.vLine.style.display = 'block';
+      el.vLine.style.transform = `translateX(${snappedX}px)`;
+    }
+    if (el.hLine) {
+      el.hLine.style.display = 'block';
+      el.hLine.style.transform = `translateY(${snappedY}px)`;
+    }
 
-      const dateStr = formatDate(xval);
-      const priceStr = yval != null ? yval.toFixed(2) : '';
+    if (el.priceLabel) {
+      el.priceLabel.style.display = 'block';
+      el.priceLabel.textContent = formatPriceFn
+        ? formatPriceFn(price)
+        : price.toFixed(2);
+      const ph = el.priceLabel.offsetHeight || 16;
+      const maxY = (el.priceLabel.parentElement?.offsetHeight || 0) - ph;
+      el.priceLabel.style.top = `${Math.max(ph / 2, Math.min(snappedY, maxY + ph / 2))}px`;
+    }
 
-      const annotations: any[] = [];
-      if (dateStr) {
-        annotations.push({
-          x: xval, y: 0, xref: 'x', yref: 'paper',
-          text: dateStr, showarrow: false,
-          font: { size: 11, color: '#fff', family: 'monospace' },
-          bgcolor: 'rgba(20,20,20,0.85)', borderpad: 2,
-          yanchor: 'bottom', yshift: -6, _isCrosshair: true,
-        });
-      }
-      if (priceStr) {
-        annotations.push({
-          x: 0, y: yval, xref: 'paper', yref: 'y',
-          text: priceStr, showarrow: false,
-          font: { size: 11, color: '#fff', family: 'monospace' },
-          bgcolor: 'rgba(20,20,20,0.85)', borderpad: 2,
-          xanchor: 'left', xshift: 4, _isCrosshair: true,
-        });
-      }
+    if (el.dateLabel) {
+      el.dateLabel.style.display = 'block';
+      const dateText = formatDateFn
+        ? formatDateFn(snappedIndex)
+        : dates[snappedIndex] || '';
+      el.dateLabel.textContent = dateText;
+      const dw = el.dateLabel.offsetWidth || 80;
+      const pw = el.dateLabel.parentElement?.offsetWidth || 0;
+      el.dateLabel.style.left = `${Math.max(dw / 2, Math.min(snappedX, pw - dw / 2))}px`;
+    }
+  }, [overlayHandleRef, dates, formatDateFn, formatPriceFn]);
 
-      const layout = el.layout || {};
-      const existingShapes = (layout.shapes || []).filter((s: any) => s._isCrosshair !== true);
-      const existingAnnotations = (layout.annotations || []).filter((a: any) => a._isCrosshair !== true);
-      Plotly.relayout(el, {
-        shapes: [...existingShapes, ...shapes],
-        annotations: [...existingAnnotations, ...annotations],
-      });
-    },
-    [enabled, lineColor, lineWidth, lineDash, opacity, plotRef]
-  );
+  const isMouseInYAxisPane = useCallback((gd: any, clientY: number, yAxisKey: string): boolean => {
+    const ax = gd._fullLayout[yAxisKey];
+    if (!ax) return false;
+    const rect = gd.getBoundingClientRect();
+    const graphY = clientY - rect.top;
+    return graphY >= ax._offset && graphY <= ax._offset + ax._length;
+  }, []);
+
+  const processMouseMove = useCallback(() => {
+    const e = mouseEventRef.current;
+    if (!e || !overlayHandleRef.current || !overlayHandleRef.current.refs.overlay) return;
+
+    const gd = getGraphDiv(plotRef);
+    if (!gd || !gd._fullLayout) {
+      hideCrosshair();
+      return;
+    }
+
+    const coords = clientToDataCoords(gd, e.clientX, e.clientY);
+    if (!coords) {
+      hideCrosshair();
+      return;
+    }
+
+    const snappedIndex = nearestVisibleCandle(gd, coords.dataX, dataLength);
+    const clampedIndex = Math.max(0, Math.min(dataLength - 1, snappedIndex));
+
+    if (clampedIndex >= 0 && clampedIndex < dataLength) {
+      setHoveredIndex(clampedIndex);
+    }
+
+    const overlayRect = overlayHandleRef.current.refs.overlay.getBoundingClientRect();
+
+    const candleCenterClientX = getCandleCenterX(gd, clampedIndex);
+    const snappedX = candleCenterClientX != null
+      ? candleCenterClientX - overlayRect.left
+      : e.clientX - overlayRect.left;
+
+    const inMainPane = isMouseInYAxisPane(gd, e.clientY, 'yaxis');
+
+    if (inMainPane && coords.dataY != null) {
+      const gdRect = gd.getBoundingClientRect();
+      const yaxis = gd._fullLayout.yaxis;
+      const priceYPixel = yaxis.d2p(coords.dataY);
+      const priceY = gdRect.top + yaxis._offset + priceYPixel;
+      const snappedY = priceY - overlayRect.top;
+      updateCrosshairFull(clampedIndex, coords.dataY, snappedX, snappedY);
+    } else {
+      updateCrosshairVerticalOnly(clampedIndex, snappedX);
+    }
+  }, [plotRef, overlayHandleRef, dataLength, setHoveredIndex, hideCrosshair, isMouseInYAxisPane, updateCrosshairFull, updateCrosshairVerticalOnly]);
 
   useEffect(() => {
-    const el = plotRef?.current?.el || plotRef?.current;
-    if (!el) return;
+    if (!enabled) return;
 
-    const onHover = (data: any) => {
-      if (data.points && data.points.length > 0) {
-        const pt = data.points[0];
-        update(pt.x, pt.y);
+    listenersAttached.current = false;
+    let mountCleanup: (() => void) | null = null;
+    let isMounted = true;
+
+    const tryAttach = () => {
+      if (!isMounted) return;
+      if (listenersAttached.current) return;
+
+      const gd = getGraphDiv(plotRef);
+      const oh = overlayHandleRef.current;
+      if (!gd || !gd._fullLayout || !oh || !oh.refs || !oh.refs.overlay) {
+        requestAnimationFrame(tryAttach);
+        return;
       }
-    };
-    const onUnhover = () => clear();
 
-    el.on('plotly_hover', onHover);
-    el.on('plotly_unhover', onUnhover);
+      listenersAttached.current = true;
+
+      const handleMouseMove = (e: MouseEvent) => {
+        mouseEventRef.current = e;
+        const now = performance.now();
+        if (now - lastUpdate.current < 8) {
+          if (rafId.current) cancelAnimationFrame(rafId.current);
+          rafId.current = requestAnimationFrame(processMouseMove);
+          return;
+        }
+        lastUpdate.current = now;
+        processMouseMove();
+      };
+
+      const handleMouseLeave = () => {
+        mouseEventRef.current = null;
+        if (rafId.current) {
+          cancelAnimationFrame(rafId.current);
+          rafId.current = null;
+        }
+        setHoveredIndex(-1);
+        hideCrosshair();
+      };
+
+      gd.addEventListener('mousemove', handleMouseMove);
+      gd.addEventListener('mouseleave', handleMouseLeave);
+
+      mountCleanup = () => {
+        gd.removeEventListener('mousemove', handleMouseMove);
+        gd.removeEventListener('mouseleave', handleMouseLeave);
+        if (rafId.current) {
+          cancelAnimationFrame(rafId.current);
+          rafId.current = null;
+        }
+        mouseEventRef.current = null;
+        listenersAttached.current = false;
+        hideCrosshair();
+        setHoveredIndex(-1);
+      };
+    };
+
+    tryAttach();
 
     return () => {
-      try { el.removeListener('plotly_hover', onHover); } catch (e) {}
-      try { el.removeListener('plotly_unhover', onUnhover); } catch (e) {}
-      clear();
-    };
-  }, [plotRef?.current, update, clear]);
-
-  function formatDate(xval: any): string {
-    if (xval == null) return '';
-    if (typeof xval === 'string' && xval.match(/^\d{4}-\d{2}-\d{2}/)) {
-      const d = new Date(xval);
-      return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-    }
-    if (typeof xval === 'number') {
-      const d = new Date(xval);
-      if (!isNaN(d.getTime())) {
-        return d.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      isMounted = false;
+      if (mountCleanup) mountCleanup();
+      if (rafId.current) {
+        cancelAnimationFrame(rafId.current);
+        rafId.current = null;
       }
-    }
-    return String(xval);
-  }
+      listenersAttached.current = false;
+    };
+  }, [enabled, plotRef, overlayHandleRef, dataLength, setHoveredIndex, hideCrosshair, processMouseMove]);
 }

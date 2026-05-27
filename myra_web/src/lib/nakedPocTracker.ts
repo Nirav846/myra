@@ -63,14 +63,16 @@ export function computeNakedPocs(data: any[], avgVolatility: number): NakedPoc[]
   return pocs;
 }
 
-export function nakedPocsToShapes(pocs: NakedPoc[], latestDate: string): any[] {
+export function nakedPocsToShapes(pocs: NakedPoc[], latestIndex: number, dateToIndex?: Map<string, number>): any[] {
   const shapes: any[] = [];
+  const d2i = dateToIndex;
   pocs.forEach(poc => {
     if (!poc.retested) {
+      const x0 = d2i ? (d2i.get(poc.dateStr) ?? 0) : 0;
       shapes.push({
         type: 'line',
-        x0: poc.dateStr,
-        x1: latestDate,
+        x0: x0 - 0.5,
+        x1: latestIndex + 0.5,
         y0: poc.price,
         y1: poc.price,
         line: { color: poc.color, width: 1, dash: 'dot' },

@@ -5,13 +5,12 @@ export const smaTraceBuilder: TraceBuilder<number[], SMAConfig> = {
   id: 'sma',
   buildTraces: (result: number[], context: TraceBuilderContext, config?: SMAConfig) => {
     const cfg = { ...smaIndicator.defaults, ...config };
-    const dates = context.data.map(d => d.date);
     
     return [
       {
         type: 'scattergl' as const,
         mode: 'lines' as const,
-        x: dates,
+        x: context.candleIndexes,
         y: result,
         name: cfg.name || `SMA${cfg.period}`,
         line: { color: cfg.color, width: cfg.width },

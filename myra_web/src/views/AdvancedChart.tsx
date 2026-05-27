@@ -3,6 +3,8 @@ import { Librarian } from '../lib/Librarian';
 const PlotlyCanvas = lazy(() => import('../components/chart/PlotlyCanvas').then(m => ({ default: m.PlotlyCanvas })));
 import { ChartHeader } from '../components/chart/ChartHeader';
 import { ChartSidebar } from '../components/chart/ChartSidebar';
+import CrosshairOverlay from '../components/chart/CrosshairOverlay';
+import type { CrosshairOverlayHandle } from '../components/chart/CrosshairOverlay';
 import { Search, Plus, X, BarChart2, PanelLeftClose, Settings2, Info, Crosshair } from 'lucide-react';
 import { SymbolSearch } from '../components/SymbolSearch';
 import { useSettings } from '../lib/SettingsContext';
@@ -18,6 +20,7 @@ import { LiqVoidSettings, SmpSettings, DEFAULT_LIQ_VOID_SETTINGS, DEFAULT_SMP_SE
 import { computeLiquidityVoids, liqVoidsToShapes } from '../lib/liquidityVoid';
 import { computeSmartMoneyPrints, smpToTraces } from '../lib/smartMoneyPrints';
 import IndicatorSettingsPanel from '../components/IndicatorSettingsPanel';
+import { createCandleIndexes, buildDateToIndexMap } from '../utils/chartCoords';
 
 const usePersistedState = <T,>(key: string, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
   const [state, setState] = useState<T>(() => {
@@ -84,12 +87,24 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
     const viewport = useChartStore(state => state.viewport);
     const hoveredIndex = useChartStore(state => state.hoveredIndex);
     const plotRef = useRef<any>(null);
-    useCrosshair(plotRef, {
+    const overlayHandleRef = useRef<CrosshairOverlayHandle | null>(null);
+
+    const dates = useMemo(() => (data ? data.map((d: any) => d.date) : []) as string[], [data]);
+
+    const formatCrosshairDate = useCallback((idx: number) => {
+      const d = data?.[idx]?.date;
+      if (!d) return '';
+      if (typeof d === 'string' && d.match(/^\d{4}-\d{2}-\d{2}/)) {
+        return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      }
+      return String(d);
+    }, [data]);
+
+    useCrosshair(plotRef, overlayHandleRef, {
       enabled: crosshairEnabled,
-      lineColor: '#ffaa00',
-      lineWidth: 1,
-      lineDash: 'dot',
-      opacity: 0.5,
+      dates,
+      dataLength: data?.length || 0,
+      formatDate: formatCrosshairDate,
     });
     
     // Merge toggles for backward compatibility in internal logic
@@ -99,8 +114,35 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
         ...perfToggles
     }), [overlayToggles, paneToggles, perfToggles]);
 
+    const xTickInfo = useMemo(() => {
+        if (dates.length === 0) return { tickvals: [] as number[], ticktext: [] as string[] };
+        const vp = viewport;
+        let startIdx = 0;
+        let endIdx = dates.length - 1;
+        if (vp && isFinite(vp.startIndex) && isFinite(vp.endIndex)) {
+            startIdx = Math.max(0, Math.floor(vp.startIndex));
+            endIdx = Math.min(dates.length - 1, Math.ceil(vp.endIndex));
+        }
+        const visibleCount = endIdx - startIdx + 1;
+        const maxTicks = toggles.performanceMode ? 5 : Math.max(3, Math.min(12, Math.floor(visibleCount / 15)));
+        const step = Math.max(1, Math.floor(visibleCount / maxTicks));
+        
+        const tickvals: number[] = [];
+        const ticktext: string[] = [];
+        for (let i = startIdx; i <= endIdx; i += step) {
+            tickvals.push(i);
+            const d = dates[i];
+            if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}/.test(d)) {
+                const dt = new Date(d);
+                ticktext.push(dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }));
+            } else {
+                ticktext.push(String(d));
+            }
+        }
+        return { tickvals, ticktext };
+    }, [dates, viewport, toggles.performanceMode]);
+
     const indicators = useMemo(() => {
-        const dates = data.map(d => d.date);
         const opens = data.map(d => d.open);
         const highs = data.map(d => d.high);
         const lows = data.map(d => d.low);
@@ -109,6 +151,9 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
         const vol = d.volume_final != null ? Number(d.volume_final) : Number(d.volume);
         return isNaN(vol) ? 0 : vol;
     });
+    
+    const candleIndexes = createCandleIndexes(data.length);
+    const dateToIndex = buildDateToIndexMap(dates);
     
     const vwap = data.map(d => d.vwap);
     const deliveryFinal = data.map(d => {
@@ -253,22 +298,24 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
     const priceDomain = [safeCurrentY, 1.0];
 
     return {
-        dates, opens, highs, lows, closes, volumes, vwap, deliveryFinal, deliveryPct, deliveryRatio, stockReturn, volComp, relVol, divScores, niftyOut, trendAlignment, volumeColors, deliveryColorsInverse,
+        opens, highs, lows, closes, volumes, vwap, deliveryFinal, deliveryPct, deliveryRatio, stockReturn, volComp, relVol, divScores, niftyOut, trendAlignment, volumeColors, deliveryColorsInverse,
         delMaData, swingsObj, vwapObj, smaConfigs, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj,
-        currentY, rsiDomain, delAdDomain, delDomain, volDomain, priceDomain
+        currentY, rsiDomain, delAdDomain, delDomain, volDomain, priceDomain, candleIndexes, dateToIndex
     };
 }, [data, toggles]);
 
 const computed = useMemo(() => {
     const {
-        dates, opens, highs, lows, closes, volumes, vwap, deliveryFinal, deliveryPct, deliveryRatio, stockReturn, volComp, relVol, divScores, niftyOut, trendAlignment, volumeColors, deliveryColorsInverse,
+        opens, highs, lows, closes, volumes, vwap, deliveryFinal, deliveryPct, deliveryRatio, stockReturn, volComp, relVol, divScores, niftyOut, trendAlignment, volumeColors, deliveryColorsInverse,
         delMaData, swingsObj, vwapObj, smaConfigs, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj,
         currentY, rsiDomain, delAdDomain, delDomain, volDomain, priceDomain
     } = indicators;
 
     const traceCtx: TraceBuilderContext = {
       data,
-      viewport
+      viewport,
+      candleIndexes,
+      dateToIndex,
     };
 
     let profileResult: any = null;
@@ -324,8 +371,8 @@ const computed = useMemo(() => {
         const avgVol = data.length > 1 ? atrSum / (data.length - 1) : 0.015;
         
         const pocs = computeNakedPocs(data, avgVol);
-        const latestDate = data[data.length - 1].date;
-        shapes.push(...nakedPocsToShapes(pocs, latestDate));
+        const latestIndex = data.length - 1;
+        shapes.push(...nakedPocsToShapes(pocs, latestIndex, dateToIndex));
     }
 
     if (toggles.showRsi && rsiResult.length > 0) {
@@ -351,12 +398,12 @@ const computed = useMemo(() => {
     }
 
     if (toggles.showLiqVoids && liqVoidsResult && liqVoidsResult.length > 0) {
-        shapes.push(...liqVoidsToShapes(liqVoidsResult, dates, liqVoidSettings));
+        shapes.push(...liqVoidsToShapes(liqVoidsResult, dates, liqVoidSettings, dateToIndex));
     }
 
     let smartMoneyPrintsTraces: any[] = [];
     if (toggles.showSmartMoney && smObj && smObj.length > 0) {
-        smartMoneyPrintsTraces.push(...smpToTraces(smObj, dates));
+        smartMoneyPrintsTraces.push(...smpToTraces(smObj, dateToIndex));
     }
 
     let delIntensityCoreTraces: any[] = [];
@@ -496,9 +543,9 @@ const computed = useMemo(() => {
 }, [indicators, viewport, data, toggles]);
 
 const {
-    dates, opens, highs, lows, closes, volumes, vwap, deliveryFinal, deliveryPct, deliveryRatio, stockReturn, volComp, relVol, divScores, niftyOut, trendAlignment, volumeColors, deliveryColorsInverse,
+    opens, highs, lows, closes, volumes, vwap, deliveryFinal, deliveryPct, deliveryRatio, stockReturn, volComp, relVol, divScores, niftyOut, trendAlignment, volumeColors, deliveryColorsInverse,
     delMaData, swingsObj, vwapObj, smaConfigs, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj,
-    currentY, rsiDomain, delAdDomain, delDomain, volDomain, priceDomain
+    currentY, rsiDomain, delAdDomain, delDomain, volDomain, priceDomain, candleIndexes, dateToIndex
 } = indicators;
 
 const {
@@ -511,7 +558,8 @@ const dataIndex = hoveredIndex !== undefined && hoveredIndex >= 0 && hoveredInde
 
 
 
-              const plotElement = useMemo(() => (
+              const plotElement = useMemo(() => {
+                            return (
                             <PlotlyCanvas
                                  plotRef={plotRef}
                                  dates={dates}
@@ -519,7 +567,7 @@ const dataIndex = hoveredIndex !== undefined && hoveredIndex >= 0 && hoveredInde
                                      // Main Candlestick
                                      {
                                          type: 'candlestick',
-                                         x: dates, open: opens, high: highs, low: lows, close: closes,
+                                         x: candleIndexes, open: opens, high: highs, low: lows, close: closes,
                                          name: sym, yaxis: 'y',
                                          increasing: {
                                              line: {color: '#22c55e', width: 1.5}, 
@@ -601,21 +649,25 @@ const dataIndex = hoveredIndex !== undefined && hoveredIndex >= 0 && hoveredInde
                                      },
                                      hoverdistance: 20,
                                      dragmode: 'zoom',
-                                     xaxis: {
-                                        rangeslider: { visible: true, borderwidth: 1, bordercolor: 'rgba(255,255,255,0.1)' },
-                                        showgrid: !toggles.performanceMode && (settings?.showGridLines ?? false),
-                                        gridcolor: 'rgba(255,255,255,0.05)',
-                                        type: 'category',
-                                        nticks: toggles.performanceMode ? 5 : 10,
-                                        showspikes: !toggles.performanceMode,
-                                        showspiketext: false,
-                                        spikemode: 'across',
-                                        spikesnap: 'cursor',
-                                        showline: true,
-                                        spikedash: 'solid',
-                                        spikecolor: '#555',
-                                        spikethickness: 1,
-                                     },
+                                      xaxis: {
+                                         rangeslider: { visible: true, borderwidth: 1, bordercolor: 'rgba(255,255,255,0.1)' },
+                                         showgrid: !toggles.performanceMode && (settings?.showGridLines ?? false),
+                                         gridcolor: 'rgba(255,255,255,0.05)',
+                                         type: 'linear',
+                                         tickmode: 'array',
+                                         tickvals: xTickInfo.tickvals,
+                                         ticktext: xTickInfo.ticktext,
+                                         nticks: toggles.performanceMode ? 5 : 10,
+                                         showspikes: !toggles.performanceMode,
+                                         showspiketext: false,
+                                         spikemode: 'across',
+                                         spikesnap: 'cursor',
+                                         showline: true,
+                                         spikedash: 'solid',
+                                         spikecolor: '#555',
+                                         spikethickness: 1,
+                                         rangemode: 'normal',
+                                      },
                                      xaxis2: {
                                         overlaying: 'x',
                                         side: 'top',
@@ -691,9 +743,10 @@ const dataIndex = hoveredIndex !== undefined && hoveredIndex >= 0 && hoveredInde
                                      displaylogo: false,
                                      scrollZoom: true
                                  }}
-                                 style={{ width: '100%', height: '100%' }}
-                            />
-                        ), [computed, sym, settings?.candlestickStyle, settings?.showGridLines, settings?.fontFamily]);
+                                  style={{ width: '100%', height: '100%' }}
+                             />
+                          );
+                      }, [computed, sym, settings?.candlestickStyle, settings?.showGridLines, settings?.fontFamily, candleIndexes, dates, xTickInfo]);
 
               return (
                  <div key={sym} className="bg-[#1a1c24] border border-[#ffffff1a] rounded flex flex-col h-[500px] chart-container relative overflow-hidden">
@@ -716,6 +769,9 @@ const dataIndex = hoveredIndex !== undefined && hoveredIndex >= 0 && hoveredInde
                         <Suspense fallback={<div className="w-full h-full flex items-center justify-center text-white/50 text-xs">Loading Plotly...</div>}>
                             {plotElement}
                         </Suspense>
+                        {crosshairEnabled && (
+                            <CrosshairOverlay ref={overlayHandleRef} />
+                        )}
                     </div>
                  </div>
               );

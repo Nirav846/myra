@@ -4,6 +4,8 @@ import { NormalizedViewport } from '../../../store/chartStore';
 export interface TraceBuilderContext {
   data: Candle[];
   viewport: NormalizedViewport | null;
+  candleIndexes: number[];
+  dateToIndex: Map<string, number>;
 }
 
 export interface TraceBuilder<TResult, TConfig> {

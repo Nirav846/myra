@@ -1,11 +1,13 @@
 import io
 import logging
-import os
+from pathlib import Path
 
 import pandas as pd
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
+from myra_app.constants import DATA_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -35,21 +37,42 @@ def update_isin_bridge():
         # Clean column names to handle any trailing spaces
         df.columns = df.columns.str.strip()
 
-        # Extract required columns and rename ISIN NUMBER to ISIN
-        mapping_df = df[["SYMBOL", "ISIN NUMBER"]].rename(
-            columns={"ISIN NUMBER": "ISIN"}
-        )
+        # Defensively find the ISIN column under any known name
+        isin_candidates = ["ISIN NUMBER", "ISIN", "isin"]
+        isin_col = None
+        for col in isin_candidates:
+            if col in df.columns:
+                isin_col = col
+                break
+
+        if isin_col is None:
+            logger.warning(
+                "No ISIN column found in NSE equity CSV (looked for %s). "
+                "Skipping ISIN rename.", isin_candidates
+            )
+            mapping_df = df[["SYMBOL"]].copy()
+            mapping_df["ISIN"] = None
+        else:
+            mapping_df = df[["SYMBOL", isin_col]].rename(
+                columns={isin_col: "ISIN"}
+            )
 
         # Save to parquet
-        data_dir = os.path.join(os.getcwd(), "data")
-        if not os.path.exists(data_dir):
-            os.makedirs(data_dir)
+        data_dir = Path(DATA_DIR)
+        data_dir.mkdir(parents=True, exist_ok=True)
 
-        parquet_path = os.path.join(data_dir, "isin_bridge.parquet")
+        parquet_path = data_dir / "isin_bridge.parquet"
         mapping_df.to_parquet(parquet_path, index=False)
         logger.info(f"Successfully updated ISIN bridge at {parquet_path}")
         return True
 
+    except RuntimeError as e:
+        if "cannot schedule new futures" in str(e):
+            logger.warning(
+                "ISIN update skipped due to interpreter shutdown: %s", e
+            )
+            return False
+        raise
     except Exception as e:
         logger.warning(
             f"ISIN update failed, falling back to yesterday's cache. Error: {str(e)}"

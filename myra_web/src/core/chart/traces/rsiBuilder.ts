@@ -5,13 +5,12 @@ export const rsiTraceBuilder: TraceBuilder<number[], RSIConfig> = {
   id: 'rsi',
   buildTraces: (result: number[], context: TraceBuilderContext, config?: RSIConfig) => {
     const cfg = { ...rsiIndicator.defaults, ...config };
-    const dates = context.data.map(d => d.date);
     
     return [
       {
         type: 'scattergl' as const,
         mode: 'lines' as const,
-        x: dates,
+        x: context.candleIndexes,
         y: result,
         name: `RSI(${cfg.period})`,
         line: { color: cfg.color, width: cfg.width },

@@ -1,4 +1,4 @@
-import { memo, useRef, useEffect, useCallback } from 'react';
+import { memo, useRef, useCallback } from 'react';
 import Plot from 'react-plotly.js';
 import { useChartStore } from '../../store/chartStore';
 
@@ -17,21 +17,12 @@ export const PlotlyCanvas = memo(({ data, layout, config, style, dates, plotRef 
   const hoverRaf = useRef<number | null>(null);
   const lastUpdate = useRef<number>(0);
 
-  const handleRelayout = (e: any) => {
+  const handleRelayout = useCallback((e: any) => {
     if (e['xaxis.range[0]'] !== undefined && e['xaxis.range[1]'] !== undefined) {
-      let from = e['xaxis.range[0]'];
-      let to = e['xaxis.range[1]'];
+      const from = Number(e['xaxis.range[0]']);
+      const to = Number(e['xaxis.range[1]']);
       
-      if (typeof from === 'string') {
-         const idx = dates.indexOf(from);
-         if (idx !== -1) from = idx;
-      }
-      if (typeof to === 'string') {
-         const idx = dates.indexOf(to);
-         if (idx !== -1) to = idx;
-      }
-      
-      if (typeof from === 'number' && typeof to === 'number') {
+      if (isFinite(from) && isFinite(to)) {
           const startIndex = Math.min(from, to);
           const endIndex = Math.max(from, to);
           setViewport({
@@ -47,39 +38,30 @@ export const PlotlyCanvas = memo(({ data, layout, config, style, dates, plotRef 
     } else if (e['xaxis.autorange']) {
         setViewport(null);
     }
-  };
+  }, [setViewport, dates]);
 
   const handleHover = useCallback((e: any) => {
-    if (e.points && e.points.length > 0) {
-        const pt = e.points[0];
-        let idx = pt.pointIndex !== undefined ? pt.pointIndex : pt.pointNumber;
-        
-        if (typeof idx !== 'number' && pt.x) {
-            const dateIdx = dates.indexOf(pt.x);
-            if (dateIdx !== -1) {
-                idx = dateIdx;
-            }
-        }
-        
-        // Sometimes Plotly candlestick pointNumber is an array [index, ...]
-        if (Array.isArray(idx)) {
-            idx = idx[0];
-        }
-
-        if (idx !== undefined && typeof idx === 'number') {
-            const now = performance.now();
-            if (now - lastUpdate.current < 33) return; // 30fps throttle
-            lastUpdate.current = now;
-
-            if (hoverRaf.current !== null) {
-                cancelAnimationFrame(hoverRaf.current);
-            }
-            hoverRaf.current = requestAnimationFrame(() => {
-                setHoveredIndex(idx);
-            });
-        }
+    if (!e.points || e.points.length === 0) return;
+    const pt = e.points[0];
+    let idx = pt.pointIndex !== undefined ? pt.pointIndex : pt.pointNumber;
+    
+    if (Array.isArray(idx)) {
+        idx = idx[0];
     }
-  }, [setHoveredIndex, dates]);
+
+    if (typeof idx === 'number' && isFinite(idx)) {
+        const now = performance.now();
+        if (now - lastUpdate.current < 33) return;
+        lastUpdate.current = now;
+
+        if (hoverRaf.current !== null) {
+            cancelAnimationFrame(hoverRaf.current);
+        }
+        hoverRaf.current = requestAnimationFrame(() => {
+            setHoveredIndex(idx);
+        });
+    }
+  }, [setHoveredIndex]);
 
   const handleUnhover = useCallback(() => {
     if (hoverRaf.current !== null) {

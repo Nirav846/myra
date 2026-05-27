@@ -6,11 +6,13 @@ export const instBlocksTraceBuilder: TraceBuilder<InstBlocksResult, any> = {
 
     buildTraces: (result, context) => {
         if (result.dates.length === 0) return [];
+        const { dateToIndex } = context;
+        const x = result.dates.map(d => dateToIndex.get(d) ?? 0);
         return [
             {
                 type: 'scattergl',
                 mode: 'markers+text',
-                x: result.dates, y: result.y,
+                x, y: result.y,
                 hovertext: result.text,
                 text: result.dates.map(() => 'IB'),
                 textposition: 'bottom center',

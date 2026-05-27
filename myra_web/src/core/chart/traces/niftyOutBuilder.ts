@@ -3,11 +3,10 @@ import { TraceBuilder } from './types';
 export const niftyOutTraceBuilder: TraceBuilder<number[], any> = {
     id: 'niftyOut',
     buildTraces: (result, context) => {
-        const dates = context.data.map(d => d.date);
         return [{
             type: 'scattergl',
             mode: 'lines',
-            x: dates,
+            x: context.candleIndexes,
             y: result,
             name: 'Nifty Outperf.',
             line: { color: '#a855f7', width: 1.5 },

@@ -8,12 +8,11 @@ export interface DeliveryConfig {
 export const deliveryTraceBuilder: TraceBuilder<number[], DeliveryConfig> = {
     id: 'delivery',
     buildTraces: (result, context, config) => {
-        const dates = context.data.map(d => d.date);
         const deliveryColorsInverse = context.data.map(d => d.close >= d.open ? '#ef4444' : '#22c55e');
         
         const traces: any[] = [{
             type: 'bar',
-            x: dates,
+            x: context.candleIndexes,
             y: result,
             name: 'Del Qty',
             yaxis: 'y5',
@@ -25,7 +24,7 @@ export const deliveryTraceBuilder: TraceBuilder<number[], DeliveryConfig> = {
             traces.push({
                 type: 'scattergl',
                 mode: 'lines',
-                x: dates,
+                x: context.candleIndexes,
                 y: config.maData,
                 name: 'Del MA (20)',
                 yaxis: 'y5',

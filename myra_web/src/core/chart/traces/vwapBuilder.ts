@@ -4,11 +4,10 @@ export const vwapTraceBuilder: TraceBuilder<number[], any> = {
     id: 'vwap',
 
     buildTraces: (result, context) => {
-        const dates = context.data.map(d => d.date);
         return [{
             type: 'scattergl', 
             mode: 'lines', 
-            x: dates, 
+            x: context.candleIndexes, 
             y: result, 
             name: 'AVWAP (Anchored)', 
             line: { color: '#888', width: 1.5, dash: 'dot' }, 

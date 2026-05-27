@@ -166,12 +166,17 @@ export function computeLiquidityVoids(data: any[], bucket: string | null, settin
   });
 }
 
-export function liqVoidsToShapes(voids: LiquidityVoid[], dates: string[], settings: LiqVoidSettings): any[] {
+export function liqVoidsToShapes(voids: LiquidityVoid[], dates: string[], settings: LiqVoidSettings, dateToIndex?: Map<string, number>): any[] {
    const shapes: any[] = [];
    if (dates.length === 0) return shapes;
-   const latestDate = dates[dates.length - 1];
+   const latestIndex = dates.length - 1;
+   const d2i = dateToIndex ?? new Map(dates.map((d, i) => [d, i]));
 
    voids.forEach(vd => {
+       const x0i = d2i.get(vd.startDate);
+       if (x0i === undefined) return;
+       const x1i = vd.endDate ? (d2i.get(vd.endDate) ?? latestIndex) : latestIndex;
+
        const opacities = {
            'unfilled': 0.8,
            'partial': 0.4,
@@ -184,7 +189,7 @@ export function liqVoidsToShapes(voids: LiquidityVoid[], dates: string[], settin
        shapes.push({
            type: 'rect',
            xref: 'x', yref: 'y',
-           x0: vd.startDate, x1: vd.endDate || latestDate,
+           x0: x0i - 0.5, x1: x1i + 0.5,
            y0: vd.bottomPrice, y1: vd.topPrice,
            fillcolor: color,
            line: { width: lineThick, color: color },
