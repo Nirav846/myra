@@ -89,11 +89,17 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
     }
   }, [timelineSymbol]);
 
+  const ringColorMap: Record<string, string> = {
+    yellow: 'focus-within:ring-yellow-500/50',
+    fuchsia: 'focus-within:ring-fuchsia-500/50',
+    cyan: 'focus-within:ring-cyan-500/50',
+    green: 'focus-within:ring-green-500/50',
+  };
+
   const categories = [
     {
       title: 'Technicals',
       color: 'yellow',
-      ringClass: 'focus-within:ring-yellow-500/50',
       borderColor: 'border-yellow-500/50',
       bgColor: 'bg-yellow-500/10',
       textColor: 'text-yellow-400',
@@ -107,7 +113,6 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
     {
       title: 'Institutional',
       color: 'fuchsia',
-      ringClass: 'focus-within:ring-fuchsia-500/50',
       borderColor: 'border-fuchsia-500/50',
       bgColor: 'bg-fuchsia-500/10',
       textColor: 'text-fuchsia-400',
@@ -121,7 +126,6 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
     {
       title: 'ML / EXP',
       color: 'cyan',
-      ringClass: 'focus-within:ring-cyan-500/50',
       borderColor: 'border-cyan-500/50',
       bgColor: 'bg-cyan-500/10',
       textColor: 'text-cyan-400',
@@ -135,7 +139,6 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
     {
       title: 'Value',
       color: 'green',
-      ringClass: 'focus-within:ring-green-500/50',
       borderColor: 'border-green-500/50',
       bgColor: 'bg-green-500/10',
       textColor: 'text-green-400',
@@ -646,7 +649,7 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
       
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {categories.map((cat, idx) => (
-          <div key={idx} className={`bg-[#0e1117] border ${cat.borderColor} rounded-xl overflow-hidden flex flex-col transition-all hover:shadow-lg focus-within:ring-2 ${cat.ringClass}`}>
+          <div key={idx} className={`bg-[#0e1117] border ${cat.borderColor} rounded-xl overflow-hidden flex flex-col transition-all hover:shadow-lg focus-within:ring-2 ${ringColorMap[cat.color]}`}>
             {/* Header Banner */}
             <div className={`${cat.bgColor} border-b ${cat.borderColor} p-4 flex items-center gap-3`}>
               <div className={`${cat.textColor}`}>
