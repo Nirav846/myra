@@ -142,6 +142,9 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
         return { tickvals, ticktext };
     }, [dates, viewport, toggles.performanceMode]);
 
+    const candleIndexes = createCandleIndexes(data.length);
+    const dateToIndex = buildDateToIndexMap(dates);
+
     const indicators = useMemo(() => {
         const opens = data.map(d => d.open);
         const highs = data.map(d => d.high);
@@ -151,9 +154,6 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
         const vol = d.volume_final != null ? Number(d.volume_final) : Number(d.volume);
         return isNaN(vol) ? 0 : vol;
     });
-    
-    const candleIndexes = createCandleIndexes(data.length);
-    const dateToIndex = buildDateToIndexMap(dates);
     
     const vwap = data.map(d => d.vwap);
     const deliveryFinal = data.map(d => {
@@ -300,7 +300,7 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
     return {
         opens, highs, lows, closes, volumes, vwap, deliveryFinal, deliveryPct, deliveryRatio, stockReturn, volComp, relVol, divScores, niftyOut, trendAlignment, volumeColors, deliveryColorsInverse,
         delMaData, swingsObj, vwapObj, smaConfigs, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj,
-        currentY, rsiDomain, delAdDomain, delDomain, volDomain, priceDomain, candleIndexes, dateToIndex
+        currentY, rsiDomain, delAdDomain, delDomain, volDomain, priceDomain
     };
 }, [data, toggles]);
 
@@ -545,7 +545,7 @@ const computed = useMemo(() => {
 const {
     opens, highs, lows, closes, volumes, vwap, deliveryFinal, deliveryPct, deliveryRatio, stockReturn, volComp, relVol, divScores, niftyOut, trendAlignment, volumeColors, deliveryColorsInverse,
     delMaData, swingsObj, vwapObj, smaConfigs, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj,
-    currentY, rsiDomain, delAdDomain, delDomain, volDomain, priceDomain, candleIndexes, dateToIndex
+    currentY, rsiDomain, delAdDomain, delDomain, volDomain, priceDomain
 } = indicators;
 
 const {

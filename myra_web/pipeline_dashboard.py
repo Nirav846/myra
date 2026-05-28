@@ -548,6 +548,7 @@ class PipelineManager:
 
         timeout_sec = self.TASK_TIMEOUTS.get(task_id, 1800)
         timer = threading.Timer(timeout_sec, self._on_timeout)
+        timer.daemon = True
         timer.start()
 
         error = None
@@ -655,6 +656,17 @@ def get_pipeline_checks():
 
 @router.post("/run")
 def run_pipeline(req: RunRequest):
+    # Auto-reset if the pipeline has been "running" for > 5 minutes (likely a crashed thread)
+    if manager._state["status"] == "running" and manager._state.get("started_at"):
+        from datetime import datetime
+        started = datetime.fromisoformat(manager._state["started_at"])
+        elapsed = (datetime.now(IST) - started).total_seconds()
+        if elapsed > 300:  # 5 minutes
+            manager._state["status"] = "idle"
+            manager._state["active_task_id"] = None
+            manager._state["message"] = "Previous run timed out — auto-reset"
+            manager._state["progress_pct"] = 0
+            manager._persist_state()
     if manager.get_run_status()["status"] == "running":
         raise HTTPException(400, "Pipeline is already running")
 
@@ -684,6 +696,18 @@ def get_run_status():
 def cancel_pipeline():
     manager.cancel()
     return {"success": True, "message": "Cancellation requested"}
+
+
+@router.post("/force-reset")
+def force_reset():
+    manager._cancel_event.set()
+    manager._state["status"] = "idle"
+    manager._state["active_task_id"] = None
+    manager._state["message"] = "Force reset by user"
+    manager._state["progress_pct"] = 0
+    manager._timeout_occurred = False
+    manager._persist_state()
+    return {"success": True, "message": "Pipeline force-reset to idle"}
 
 
 @router.get("/events")

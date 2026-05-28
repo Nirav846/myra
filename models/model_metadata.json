@@ -1,25 +1,29 @@
 {
-  "trained_at": "2026-05-18T10:00:28.605213",
-  "train_samples": 301076,
-  "test_samples": 75269,
-  "train_accuracy": 0.3918,
-  "test_accuracy": 0.3747,
+  "trained_at": "2026-05-27T21:18:41.437834",
+  "train_samples": 591764,
+  "test_samples": 147942,
+  "train_accuracy": 0.393,
+  "test_accuracy": 0.381,
   "features": [
-    "delivery_pct",
     "close",
     "volume",
-    "delivery"
+    "delivery",
+    "delivery_pct",
+    "relative_volume_score",
+    "volatility_compression_score"
   ],
   "config": {
-    "lookback_days": 252,
+    "lookback_days": 500,
     "forward_days": 5,
     "min_samples_per_symbol": 100,
     "test_split_pct": 0.2,
     "features": [
-      "delivery_pct",
       "close",
       "volume",
-      "delivery"
+      "delivery",
+      "delivery_pct",
+      "relative_volume_score",
+      "volatility_compression_score"
     ],
     "xgb_params": {
       "n_estimators": 200,
@@ -28,6 +32,40 @@
       "subsample": 0.8,
       "colsample_bytree": 0.8,
       "random_state": 42
+    },
+    "hyperparameters": {
+      "lookback_days": 252,
+      "forward_prediction_days": 5,
+      "n_estimators": 200,
+      "max_depth": 6,
+      "learning_rate": 0.05,
+      "test_split_pct": 20
+    },
+    "launchpad_label_config": {
+      "z_score_min": 2,
+      "delivery_pct_min": 10,
+      "digestion_window_days": 10,
+      "breakout_volume_mult": 2.5
+    },
+    "launchpad_features": [
+      "del_zscore_min",
+      "del_zscore_mean",
+      "range_atr_min",
+      "vol_ratio_min",
+      "digestion_days",
+      "max_drawdown_pct",
+      "close_min",
+      "vwap_min",
+      "volume_min",
+      "liquidity_min",
+      "fvg_freshness_min"
+    ],
+    "launchpad_hyperparameters": {
+      "n_estimators": 200,
+      "max_depth": 5,
+      "learning_rate": 0.05,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8
     }
   }
 }

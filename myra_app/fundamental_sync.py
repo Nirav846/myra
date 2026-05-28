@@ -1,6 +1,6 @@
 """MYRA Fundamental Data Sync Module.
 
-Fetches and stores fundamental data from Morningstar (bulk) and NSE (per-symbol).
+Fetches and stores fundamental data from Morningstar (bulk) and yfinance/NSE (per-symbol).
 Stores data in myra_valuation.db fundamentals table.
 """
 
@@ -10,6 +10,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import requests
+import yfinance as yf
 
 from myra_app.constants import DB_DIR
 from myra_app.librarian_core import LibrarianCore
@@ -39,16 +40,19 @@ NSE_TRADE_INFO_URL = (
     "https://www.nseindia.com/api/quote-equity?symbol={symbol}&section=trade_info"
 )
 
+# Toggle: set True to re-enable direct NSE API calls if NSE unblocks in the future
+USE_NSE = False
+
 
 class FundamentalSync:
-    """Syncs fundamental data from Morningstar and NSE into myra_valuation.db."""
+    """Syncs fundamental data from Morningstar and yfinance/NSE into myra_valuation.db."""
 
     def __init__(self):
         self.ms_fetched = 0
         self.nse_fetched = 0
         self.inserted = 0
         self.errors = 0
-        self._nse_session = self._init_nse_session()
+        self._nse_session = self._init_nse_session() if USE_NSE else None
 
     @staticmethod
     def _init_nse_session():
@@ -232,15 +236,54 @@ class FundamentalSync:
                 if attempt > 0:
                     self._nse_session = self._init_nse_session()
 
-    def _fetch_nse_symbol(self, symbol: str) -> dict:
-        """Fetch fundamental data for a single symbol from NSE.
+    def _fetch_yfinance_symbol(self, symbol: str) -> dict:
+        """Fetch fundamental data for a single symbol from yfinance.
 
         Args:
             symbol: The stock symbol to fetch data for.
 
         Returns:
-            Dict with NSE fundamental data or empty dict on error.
+            Dict with yfinance fundamental data or empty dict on error.
         """
+        result = {}
+        try:
+            ticker = yf.Ticker(f"{symbol}.NS")
+            info = ticker.info
+            if not info:
+                return result
+
+            if info.get("marketCap") is not None:
+                result["market_cap"] = info["marketCap"]
+            if info.get("trailingPE") is not None:
+                result["pe"] = info["trailingPE"]
+            if info.get("faceValue") is not None:
+                result["face_value"] = info["faceValue"]
+            if info.get("sharesOutstanding") is not None:
+                result["issued_size"] = info["sharesOutstanding"]
+
+        except Exception as e:
+            logger.warning(
+                f"[FundamentalSync] yfinance fetch failed for {symbol}: {e}"
+            )
+            self.errors += 1
+
+        return result
+
+    def _fetch_nse_symbol(self, symbol: str) -> dict:
+        """Fetch fundamental data for a single symbol.
+
+        Uses yfinance as fallback (USE_NSE = False, the default).
+        Set USE_NSE = True to re-enable direct NSE API calls.
+
+        Args:
+            symbol: The stock symbol to fetch data for.
+
+        Returns:
+            Dict with fundamental data or empty dict on error.
+        """
+        if not USE_NSE:
+            return self._fetch_yfinance_symbol(symbol)
+
         result = {}
 
         try:
@@ -300,7 +343,7 @@ class FundamentalSync:
         return result
 
     def _fetch_nse_all(self, symbols: list) -> dict:
-        """Fetch fundamental data for all symbols from NSE.
+        """Fetch fundamental data for all symbols (via yfinance if USE_NSE=False).
 
         Args:
             symbols: List of symbols to fetch.
@@ -308,8 +351,9 @@ class FundamentalSync:
         Returns:
             Dict keyed by symbol: {symbol: {pe, sector_pe, ...}}
         """
+        source = "NSE" if USE_NSE else "yfinance"
         logger.info(
-            f"[FundamentalSync] Starting NSE fetch for {len(symbols)} symbols..."
+            f"[FundamentalSync] Starting {source} fetch for {len(symbols)} symbols..."
         )
         result = {}
 
@@ -325,9 +369,9 @@ class FundamentalSync:
 
             # Log progress every 50 symbols
             if (i + 1) % 50 == 0:
-                logger.info(f"[FundamentalSync] NSE progress: {i + 1}/{len(symbols)}")
+                logger.info(f"[FundamentalSync] {source} progress: {i + 1}/{len(symbols)}")
 
-        logger.info(f"[FundamentalSync] NSE fetch complete: {self.nse_fetched} symbols")
+        logger.info(f"[FundamentalSync] {source} fetch complete: {self.nse_fetched} symbols")
         return result
 
     def _merge_and_insert(self, ms_data: dict, nse_data: dict, date_str: str):
@@ -377,7 +421,7 @@ class FundamentalSync:
                 "freeCashFlowYield": ms.get("freeCashFlowYield"),
                 "beta": ms.get("beta"),
                 "source_ms": "MORNINGSTAR" if ms else None,
-                "source_nse": "NSE" if nse else None,
+                "source_nse": "YFINANCE" if (nse and not USE_NSE) else ("NSE" if nse else None),
             }
             records.append(record)
 
@@ -400,17 +444,18 @@ class FundamentalSync:
 
     def _log_summary(self):
         """Log the sync summary."""
+        source = "NSE" if USE_NSE else "YFINANCE"
         logger.info(
             f"[FundamentalSync] Summary - MS fetched: {self.ms_fetched}, "
-            f"NSE fetched: {self.nse_fetched}, Inserted: {self.inserted}, "
+            f"{source} fetched: {self.nse_fetched}, Inserted: {self.inserted}, "
             f"Errors: {self.errors}"
         )
 
     def run_full_sync(self):
-        """Run full sync: Morningstar bulk + NSE NIFTY 500.
+        """Run full sync: Morningstar bulk + yfinance/NSE NIFTY 500.
 
-        Morningstar is fetched first for all symbols, then NSE for NIFTY 500.
-        Data is merged and inserted with today's date.
+        Morningstar is fetched first for all symbols, then yfinance (or NSE if
+        USE_NSE=True) for NIFTY 500. Data is merged and inserted with today's date.
         """
         logger.info("[FundamentalSync] Starting full sync...")
         self.ms_fetched = 0
@@ -430,7 +475,7 @@ class FundamentalSync:
         else:
             nse_data = {}
             logger.warning(
-                "[FundamentalSync] No NIFTY 500 symbols found, skipping NSE fetch"
+                "[FundamentalSync] No NIFTY 500 symbols found, skipping per-symbol fetch"
             )
 
         # Step 3: Merge and insert
@@ -466,8 +511,9 @@ class FundamentalSync:
         }
 
     def run_nse_only(self):
-        """Run NSE NIFTY 500 only - can be called separately."""
-        logger.info("[FundamentalSync] Starting NSE-only sync...")
+        """Run per-symbol fetch (yfinance or NSE) for NIFTY 500 symbols."""
+        source = "NSE" if USE_NSE else "yfinance"
+        logger.info(f"[FundamentalSync] Starting {source}-only sync...")
         self.ms_fetched = 0
         self.nse_fetched = 0
         self.inserted = 0

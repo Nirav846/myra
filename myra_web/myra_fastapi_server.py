@@ -566,6 +566,8 @@ async def ml_status():
                 "trained_at": meta.get("trained_at"),
                 "train_accuracy": meta.get("train_accuracy"),
                 "test_accuracy": meta.get("test_accuracy"),
+                "train_samples": meta.get("train_samples"),
+                "test_samples": meta.get("test_samples"),
             }
         return {"exists": True, "message": "Model exists but metadata not found."}
     except Exception as e:

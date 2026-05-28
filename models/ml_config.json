@@ -1,12 +1,13 @@
 {
-  "lookback_days": 252,
+  "lookback_days": 500,
   "forward_days": 5,
-  "min_samples_per_symbol": 200,
+  "min_samples_per_symbol": 100,
   "test_split_pct": 0.2,
   "features": [
     "close",
     "volume",
     "delivery",
+    "delivery_pct",
     "relative_volume_score",
     "volatility_compression_score"
   ],

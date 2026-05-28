@@ -39,7 +39,7 @@ export default function InstDOMView({ lib }: { lib: Librarian }) {
         GROUP BY price_level 
         ORDER BY price_level DESC
       `;
-      const result = await lib.executeQuery('_tech_conn', query, [ticker, `-${lookbackDays} days`], 15000);
+      const result = await lib.executeQuery('_tech_conn', query, [ticker, `-${lookbackDays} days`], 30000);
       if (!run.active) return;
 
       if (result && result.length > 0) {

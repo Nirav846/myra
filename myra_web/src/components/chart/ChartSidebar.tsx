@@ -71,14 +71,14 @@ export const ChartSidebar: React.FC<ChartSidebarProps> = ({
                         <div className="space-y-1.5 px-1">
                             {groupToggles.map((toggle) => (
                                 <div key={toggle.id} className="group relative flex items-center gap-2">
-                                    <label className="flex items-center gap-2 cursor-pointer flex-1 group-hover:text-white">
+                                    <label className="flex items-center gap-2 cursor-pointer flex-1 group-hover:text-white min-w-0">
                                         <input 
                                             type="checkbox" 
                                             checked={toggle.state} 
                                             onChange={e => toggle.set(e.target.checked)} 
-                                            className="accent-cyan-500 w-3.5 h-3.5 rounded border-[#ffffff33] bg-transparent focus:ring-offset-0 focus:ring-0" 
+                                            className="accent-cyan-500 w-3.5 h-3.5 shrink-0 rounded border-[#ffffff33] bg-transparent focus:ring-offset-0 focus:ring-0" 
                                         />
-                                        <span className="text-[11px] font-mono transition-colors group-hover:brightness-150" style={{ color: toggle.color || '#ccc' }}>
+                                        <span className="text-[11px] font-mono transition-colors group-hover:brightness-150 min-w-0" style={{ color: toggle.color || '#ccc' }}>
                                             {toggle.label}
                                         </span>
                                     </label>
