@@ -14,6 +14,8 @@ interface ChartHeaderProps {
     volComp: number[];
     divScores: number[];
     trendAlignment: number[];
+    atr: number[];
+    atrPct: number[];
 }
 
 export const ChartHeader: React.FC<ChartHeaderProps> = ({
@@ -29,7 +31,9 @@ export const ChartHeader: React.FC<ChartHeaderProps> = ({
     relVol,
     volComp,
     divScores,
-    trendAlignment
+    trendAlignment,
+    atr,
+    atrPct
 }) => {
     const lastIdx = dataIndex;
     const dClose = closes[lastIdx];
@@ -79,11 +83,16 @@ export const ChartHeader: React.FC<ChartHeaderProps> = ({
                )}
                
                {trend != null && !Number.isNaN(trend) && (
-                   <span className="text-[#888] hidden lg:inline">TREND<span className={`font-bold ml-1 ${trend > 0 ? 'text-green-400' : (trend < 0 ? 'text-red-400' : 'text-[#fafafa]')}`}>
-                       {trend}
-                   </span></span>
-               )}
-            </div>
+                    <span className="text-[#888] hidden lg:inline">TREND<span className={`font-bold ml-1 ${trend > 0 ? 'text-green-400' : (trend < 0 ? 'text-red-400' : 'text-[#fafafa]')}`}>
+                        {trend}
+                    </span></span>
+                )}
+                
+                {atr[lastIdx] != null && !isNaN(atr[lastIdx]) && atr[lastIdx] > 0 && (
+                    <span className="text-[#888]">ATR<span className="text-orange-400 ml-1">{atr[lastIdx].toFixed(2)}</span>
+                    <span className="text-[#888] ml-1">({atrPct[lastIdx]?.toFixed(1)}%)</span></span>
+                )}
+             </div>
         </div>
     );
 };

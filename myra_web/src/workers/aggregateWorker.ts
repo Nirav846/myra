@@ -4,6 +4,7 @@ export type AggregateMessage = {
   timeframe: '1W' | '1w' | '1M' | '1m';
   symbol: string;
   requestId: number;
+  batchId: number;
 };
 
 export type AggregateResponseMessage = {
@@ -11,13 +12,14 @@ export type AggregateResponseMessage = {
   candles: any[];
   symbol: string;
   requestId: number;
+  batchId: number;
 };
 
 self.onmessage = (e: MessageEvent<AggregateMessage>) => {
   if (e.data.type === 'AGGREGATE') {
-    const { data, timeframe, symbol, requestId } = e.data;
+    const { data, timeframe, symbol, requestId, batchId } = e.data;
     if (data.length === 0) {
-      self.postMessage({ type: 'AGGREGATED', candles: [], symbol, requestId });
+      self.postMessage({ type: 'AGGREGATED', candles: [], symbol, requestId, batchId });
       return;
     }
 
@@ -59,6 +61,6 @@ self.onmessage = (e: MessageEvent<AggregateMessage>) => {
         aggregated.push(currentCandle);
     }
 
-    self.postMessage({ type: 'AGGREGATED', candles: aggregated, symbol, requestId });
+    self.postMessage({ type: 'AGGREGATED', candles: aggregated, symbol, requestId, batchId });
   }
 };
