@@ -457,6 +457,22 @@ const computed = useMemo(() => {
         if (tb) niftyOutTraces.push(...tb.buildTraces(niftyOut, traceCtx));
     }
 
+    let deliveryOverlayTraces: any[] = [];
+    if (toggles.showDeliveryOverlay) {
+        const scores = divScores.map((s: any) => s != null ? Number(s) : null);
+        deliveryOverlayTraces.push({
+            x: candleIndexes,
+            y: scores,
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Delivery Divergence',
+            yaxis: 'y7',
+            line: { color: 'rgba(255,255,255,0.4)', width: 1 },
+            hoverinfo: 'none',
+            showlegend: false,
+        });
+    }
+
     // Sub-panes builders
     let volumeTraces: any[] = [];
     if (toggles.showVolume) {
@@ -538,7 +554,7 @@ const computed = useMemo(() => {
     }
     
     return {
-        smasTraces, rsiTraces, volProfileTraces, vwapTraces, swingsTraces, instBlocksTraces, delVwapBandsTraces, delAdTraces, niftyOutTraces, smartMoneyPrintsTraces, delIntensityCoreTraces, shapes, volumeTraces, deliveryTraces, annotations, profileResult, vpMaxVolume
+        smasTraces, rsiTraces, volProfileTraces, vwapTraces, swingsTraces, instBlocksTraces, delVwapBandsTraces, delAdTraces, niftyOutTraces, smartMoneyPrintsTraces, delIntensityCoreTraces, shapes, volumeTraces, deliveryTraces, annotations, profileResult, vpMaxVolume, deliveryOverlayTraces
     };
 }, [indicators, viewport, data, toggles]);
 
@@ -549,7 +565,7 @@ const {
 } = indicators;
 
 const {
-    smasTraces, rsiTraces, volProfileTraces, vwapTraces, swingsTraces, instBlocksTraces, delVwapBandsTraces, delAdTraces, niftyOutTraces, smartMoneyPrintsTraces, delIntensityCoreTraces, shapes, volumeTraces, deliveryTraces, annotations, profileResult, vpMaxVolume
+    smasTraces, rsiTraces, volProfileTraces, vwapTraces, swingsTraces, instBlocksTraces, delVwapBandsTraces, delAdTraces, niftyOutTraces, smartMoneyPrintsTraces, delIntensityCoreTraces, shapes, volumeTraces, deliveryTraces, annotations, profileResult, vpMaxVolume, deliveryOverlayTraces
 } = computed;
 
 const dataIndex = hoveredIndex !== undefined && hoveredIndex >= 0 && hoveredIndex < dates.length 
@@ -559,12 +575,123 @@ const dataIndex = hoveredIndex !== undefined && hoveredIndex >= 0 && hoveredInde
 
 
               const plotElement = useMemo(() => {
-                            return (
+                  const chartLayout: any = {
+                      autosize: true,
+                      margin: { l: 40, r: 40, t: 10, b: 24 },
+                      plot_bgcolor: '#1a1c24',
+                      paper_bgcolor: '#1a1c24',
+                      font: { color: '#888', family: settings?.fontFamily === 'Monospace' ? 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' : settings?.fontFamily === 'Sans-serif' ? 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' : 'system-ui' },
+                      showlegend: false,
+                      hovermode: 'x',
+                      hoverlabel: {
+                          bgcolor: 'rgba(0,0,0,0)',
+                          bordercolor: 'rgba(0,0,0,0)',
+                          font: { color: 'rgba(0,0,0,0)' }
+                      },
+                      hoverdistance: 20,
+                      dragmode: 'zoom',
+                      xaxis: {
+                          rangeslider: { visible: true, borderwidth: 1, bordercolor: 'rgba(255,255,255,0.1)' },
+                          showgrid: !toggles.performanceMode && (settings?.showGridLines ?? false),
+                          gridcolor: 'rgba(255,255,255,0.05)',
+                          type: 'linear',
+                          tickmode: 'array',
+                          tickvals: xTickInfo.tickvals,
+                          ticktext: xTickInfo.ticktext,
+                          nticks: toggles.performanceMode ? 5 : 10,
+                          showspikes: !toggles.performanceMode,
+                          showspiketext: false,
+                          spikemode: 'across',
+                          spikesnap: 'cursor',
+                          showline: true,
+                          spikedash: 'solid',
+                          spikecolor: '#555',
+                          spikethickness: 1,
+                          rangemode: 'normal',
+                      },
+                      xaxis2: {
+                          overlaying: 'x',
+                          side: 'top',
+                          type: 'linear',
+                          showgrid: false,
+                          zeroline: false,
+                          showticklabels: false,
+                          range: [0, (vpMaxVolume || 1) * 3]
+                      },
+                      barmode: 'overlay',
+                      yaxis: {
+                          domain: priceDomain,
+                          showgrid: !toggles.performanceMode && (settings?.showGridLines ?? false),
+                          gridcolor: 'rgba(255,255,255,0.05)',
+                          zeroline: false,
+                          autorange: true,
+                          type: toggles.showLogScale ? 'log' : 'linear',
+                          showspikes: !toggles.performanceMode,
+                          showspiketext: false,
+                          spikemode: 'across',
+                          spikesnap: 'cursor',
+                          showline: true,
+                          spikedash: 'solid',
+                          spikecolor: '#555',
+                          spikethickness: 1,
+                      },
+                      yaxis2: {
+                          domain: volDomain,
+                          gridcolor: 'rgba(255,255,255,0.05)',
+                          zeroline: false,
+                          showticklabels: true,
+                          tickformat: '.2s',
+                          visible: toggles.showVolume
+                      },
+                      yaxis3: {
+                          domain: rsiDomain,
+                          gridcolor: 'rgba(255,255,255,0.05)',
+                          zeroline: false,
+                          tickvals: [0, 30, 50, 70, 100],
+                          visible: toggles.showRsi
+                      },
+                      yaxis4: {
+                          domain: priceDomain,
+                          side: 'right',
+                          overlaying: 'y',
+                          showgrid: false,
+                          zeroline: false,
+                          visible: toggles.showNiftyOut
+                      },
+                      yaxis5: {
+                          domain: delDomain,
+                          gridcolor: 'rgba(255,255,255,0.05)',
+                          zeroline: false,
+                          tickformat: '.2s',
+                          visible: toggles.showDelivery
+                      },
+                      yaxis6: {
+                          domain: delAdDomain,
+                          gridcolor: 'rgba(255,255,255,0.05)',
+                          zeroline: false,
+                          tickformat: '.2s',
+                          visible: toggles.showDelAD,
+                          title: { text: 'Del. A/D', font: { size: 10, color: '#888' } }
+                      },
+                      shapes: shapes,
+                      annotations: annotations
+                  };
+                  if (toggles.showDeliveryOverlay) {
+                      chartLayout.yaxis7 = {
+                          overlaying: 'y',
+                          side: 'right',
+                          showgrid: false,
+                          zeroline: false,
+                          showticklabels: false,
+                          title: '',
+                      };
+                  }
+                  return (
                             <PlotlyCanvas
-                                 plotRef={plotRef}
-                                 dates={dates}
-                                 data={[
-                                     // Main Candlestick
+                                  plotRef={plotRef}
+                                  dates={dates}
+                                  data={[
+                                      // Main Candlestick
                                      {
                                          type: 'candlestick',
                                          x: candleIndexes, open: opens, high: highs, low: lows, close: closes,
@@ -605,8 +732,11 @@ const dataIndex = hoveredIndex !== undefined && hoveredIndex >= 0 && hoveredInde
                                      // Overlays
                                      ...vwapTraces.map(t => ({...t, hoverinfo: 'none'})),
                                      ...smasTraces.map(t => ({...t, hoverinfo: 'none'})),
-                                     ...niftyOutTraces.map(t => ({...t, hoverinfo: 'none'})),
-                                     
+                                      ...niftyOutTraces.map(t => ({...t, hoverinfo: 'none'})),
+                                      
+                                      // Delivery Divergence Overlay
+                                      ...(toggles.showDeliveryOverlay ? deliveryOverlayTraces.map(t => ({...t, hoverinfo: 'none'})) : []),
+                                      
                                      // Swing points
                                      ...swingsTraces.map(t => ({...t, hoverinfo: 'none'})),
                                      
@@ -634,107 +764,7 @@ const dataIndex = hoveredIndex !== undefined && hoveredIndex >= 0 && hoveredInde
                                      // Delivery A/D
                                      ...(toggles.showDelAD ? delAdTraces.map(t => ({...t, hoverinfo: 'none'})) : [])
                                  ]}
-                                 layout={{
-                                     autosize: true,
-                                     margin: { l: 40, r: 40, t: 10, b: 24 }, // minimal padding
-                                     plot_bgcolor: '#1a1c24',
-                                     paper_bgcolor: '#1a1c24',
-                                     font: { color: '#888', family: settings?.fontFamily === 'Monospace' ? 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' : settings?.fontFamily === 'Sans-serif' ? 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' : 'system-ui' },
-                                     showlegend: false,
-                                     hovermode: 'x',
-                                     hoverlabel: {
-                                         bgcolor: 'rgba(0,0,0,0)',
-                                         bordercolor: 'rgba(0,0,0,0)',
-                                         font: { color: 'rgba(0,0,0,0)' }
-                                     },
-                                     hoverdistance: 20,
-                                     dragmode: 'zoom',
-                                      xaxis: {
-                                         rangeslider: { visible: true, borderwidth: 1, bordercolor: 'rgba(255,255,255,0.1)' },
-                                         showgrid: !toggles.performanceMode && (settings?.showGridLines ?? false),
-                                         gridcolor: 'rgba(255,255,255,0.05)',
-                                         type: 'linear',
-                                         tickmode: 'array',
-                                         tickvals: xTickInfo.tickvals,
-                                         ticktext: xTickInfo.ticktext,
-                                         nticks: toggles.performanceMode ? 5 : 10,
-                                         showspikes: !toggles.performanceMode,
-                                         showspiketext: false,
-                                         spikemode: 'across',
-                                         spikesnap: 'cursor',
-                                         showline: true,
-                                         spikedash: 'solid',
-                                         spikecolor: '#555',
-                                         spikethickness: 1,
-                                         rangemode: 'normal',
-                                      },
-                                     xaxis2: {
-                                        overlaying: 'x',
-                                        side: 'top',
-                                        type: 'linear',
-                                        showgrid: false,
-                                        zeroline: false,
-                                        showticklabels: false,
-                                        range: [0, (vpMaxVolume || 1) * 3] // Bars take up max 1/3 of chart
-                                     },
-                                     barmode: 'overlay',
-                                     yaxis: {
-                                        domain: priceDomain,
-                                        showgrid: !toggles.performanceMode && (settings?.showGridLines ?? false),
-                                        gridcolor: 'rgba(255,255,255,0.05)',
-                                        zeroline: false,
-                                        autorange: true,
-                                        type: toggles.showLogScale ? 'log' : 'linear',
-                                        showspikes: !toggles.performanceMode,
-                                        showspiketext: false,
-                                        spikemode: 'across',
-                                        spikesnap: 'cursor',
-                                        showline: true,
-                                        spikedash: 'solid',
-                                        spikecolor: '#555',
-                                        spikethickness: 1,
-                                     },
-                                     yaxis2: {
-                                        domain: volDomain,
-                                        gridcolor: 'rgba(255,255,255,0.05)',
-                                        zeroline: false,
-                                        showticklabels: true,
-                                        tickformat: '.2s',
-                                        visible: toggles.showVolume
-                                     },
-                                     yaxis3: {
-                                        domain: rsiDomain,
-                                        gridcolor: 'rgba(255,255,255,0.05)',
-                                        zeroline: false,
-                                        tickvals: [0, 30, 50, 70, 100],
-                                        visible: toggles.showRsi
-                                     },
-                                     yaxis4: {
-                                        domain: priceDomain,
-                                        side: 'right',
-                                        overlaying: 'y',
-                                        showgrid: false,
-                                        zeroline: false,
-                                        visible: toggles.showNiftyOut
-                                     },
-                                     yaxis5: {
-                                        domain: delDomain,
-                                        gridcolor: 'rgba(255,255,255,0.05)',
-                                        zeroline: false,
-                                        tickformat: '.2s',
-                                        visible: toggles.showDelivery
-                                     },
-                                     yaxis6: {
-                                        domain: delAdDomain,
-                                        gridcolor: 'rgba(255,255,255,0.05)',
-                                        zeroline: false,
-                                        tickformat: '.2s',
-                                        visible: toggles.showDelAD,
-                                        title: { text: 'Del. A/D', font: { size: 10, color: '#888' } }
-                                     },
-                                     shapes: shapes,
-                                     annotations: annotations
-                                 }}
+                                  layout={chartLayout}
                                  config={{
                                      responsive: true,
                                      displayModeBar: true,
@@ -828,6 +858,7 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
   const [showNiftyOut, setShowNiftyOut] = usePersistedState('chart-showNiftyOut', false);
   const [showLogScale, setShowLogScale] = usePersistedState('chart-showLogScale', false);
   const [performanceMode, setPerformanceMode] = usePersistedState('chart-performance-mode', false);
+  const [showDeliveryOverlay, setShowDeliveryOverlay] = usePersistedState('chart-showDeliveryOverlay', false);
 
   const [showSwings, setShowSwings] = usePersistedState('chart-showSwings', true);
   const [crosshairEnabled, setCrosshairEnabled] = usePersistedState('chart-crosshair', true);
@@ -1298,11 +1329,13 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
   const overlayToggles = useMemo(() => ({
       showSma20, showSma50, showSma150, showSma200, showFvg, showFibonacci,
       showVwap, showSwings, showNiftyOut, showSmartMoney, showDelDivergence, 
-      showDelVwapBands, showLiqVoids, showInstBlocks, showDelDelta, showNakedPoc
+      showDelVwapBands, showLiqVoids, showInstBlocks, showDelDelta, showNakedPoc,
+      showDeliveryOverlay
   }), [
       showSma20, showSma50, showSma150, showSma200, showFvg, showFibonacci,
       showVwap, showSwings, showNiftyOut, showSmartMoney, showDelDivergence, 
-      showDelVwapBands, showLiqVoids, showInstBlocks, showDelDelta, showNakedPoc
+      showDelVwapBands, showLiqVoids, showInstBlocks, showDelDelta, showNakedPoc,
+      showDeliveryOverlay
   ]);
 
   const paneToggles = useMemo(() => ({
@@ -1515,6 +1548,13 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
                   >
                       <Crosshair size={12} />
                       Crosshair
+                  </button>
+                  <button
+                      onClick={() => setShowDeliveryOverlay(prev => !prev)}
+                      className={`flex items-center gap-1.5 text-[10px] font-mono px-2 py-1 rounded transition-colors border ${showDeliveryOverlay ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30' : 'bg-[#1a1c24] text-[#666] border-[#ffffff1a] hover:text-white'}`}
+                      title="Toggle Delivery Divergence Overlay"
+                  >
+                      Delivery Overlay
                   </button>
               </div>
           </div>

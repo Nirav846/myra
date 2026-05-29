@@ -27,6 +27,7 @@ import Navbar from './components/Navbar';
 import MLLabView from './views/MLLabView';
 import LaunchpadScannerView from './views/LaunchpadScanner';
 import DataSyncView from './views/DataSync';
+import DeliveryAnomalyScannerView from './views/DeliveryAnomalyScanner';
 import { AlertCircle, Settings as SettingsIcon, SlidersHorizontal, BrainCircuit, Rocket, Database, RotateCw } from 'lucide-react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 
@@ -48,6 +49,7 @@ const TABS = [
   { id: 'FII/DII Scanner', path: '/fii-dii-scanner', icon: '🏢'},
   { id: 'Parquet Lake', path: '/parquet-lake', icon: '🌊'},
   { id: 'Data Sync', path: '/data-sync', icon: <Database size={18} />},
+  { id: 'Delivery Anomaly', path: '/delivery-anomaly', icon: '📦'},
 ];
 
 const ACCENT_MAP: Record<string, { bg600: string; bg50020: string; text300: string; bg500: string; text400: string }> = {
@@ -240,6 +242,11 @@ export default function App() {
                 <Route path="/parquet-lake" element={<DataLakeView lib={librarian} />} />
                 <Route path="/settings" element={<SettingsView />} />
                 <Route path="/data-sync" element={<DataSyncView />} />
+                <Route path="/delivery-anomaly" element={<DeliveryAnomalyScannerView lib={librarian} onNavigate={(tab, symbol) => {
+                  const target = TABS.find(t => t.id === tab);
+                  if (target) navigate(target.path);
+                  if (symbol) setGlobalSelectedTicker(symbol);
+                }} />} />
 
                 {/* Fallback */}
                 <Route path="*" element={<Navigate to="/mission-control" replace />} />

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Librarian } from '../lib/Librarian';
 import { GitCompare, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, ArrowUpDown } from 'lucide-react';
 import { useSettings } from '../lib/SettingsContext';
@@ -6,6 +6,8 @@ import { resolveBucket } from '../lib/bucketUtils';
 import { useHealthStatus } from '../hooks/useHealthStatus';
 import PresetChip from '../components/PresetChip';
 import { DivergenceConfig } from '../lib/scannerPresets';
+import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
+import { fetchMarketCapMap } from '../lib/marketCapCache';
 
 interface ScannerData {
     symbol: string;
@@ -64,6 +66,9 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
     // Filtering controls
     const [filterSector, setFilterSector] = useState('All');
     const [filterMcap, setFilterMcap] = useState('All');
+    const [mcapRange, setMcapRange] = useState<{ min: number; max: number } | null>(null);
+    const mcapMapRef = useRef<Map<string, number>>(new Map());
+    useEffect(() => { fetchMarketCapMap().then(m => mcapMapRef.current = m); }, []);
 
     const [settingsOpen, setSettingsOpen] = useState(true);
     const [sortConfig, setSortConfig] = useState<{ key: keyof ScannerData, direction: 'asc' | 'desc' } | null>({ key: 'score', direction: 'desc' });
@@ -287,6 +292,10 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
             
             if (filterSector !== 'All' && meta.sector !== filterSector) return;
             if (filterMcap !== 'All' && meta.bucket !== filterMcap) return;
+            if (mcapRange) {
+                const mcap = mcapMapRef.current.get(d.ticker);
+                if (mcap === undefined || mcap < mcapRange.min || mcap > mcapRange.max) return;
+            }
 
             results.push({
                 symbol: d.ticker,
@@ -300,7 +309,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
         });
 
         return results;
-    }, [rawData, priceMetric, deliveryMetric, priceDirection, minPriceChange, minDeliveryChange, minRelativeVolume, minScore, scoreWeighting, filterSector, filterMcap, metadataMap]);
+    }, [rawData, priceMetric, deliveryMetric, priceDirection, minPriceChange, minDeliveryChange, minRelativeVolume, minScore, scoreWeighting, filterSector, filterMcap, metadataMap, mcapRange]);
 
     const sortedData = useMemo(() => {
         if (!sortConfig) return processedData;
@@ -502,7 +511,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                         <span className="text-2xl text-[#fafafa] font-semibold">{summaries.avgDel > 0 ? '+' : ''}{summaries.avgDel.toFixed(1)}%</span>
                     </div>
                 </div>
-                <div className="grid grid-cols-2 lg:grid-cols-1 gap-2 min-w-[200px] h-full items-center">
+                <div className="flex flex-wrap gap-3 items-end">
                       <div className="flex flex-col">
                          <label className="text-[10px] text-[#888] font-mono mb-1">Sector Filter</label>
                          <select value={filterSector} onChange={(e) => setFilterSector(e.target.value)} className="bg-[#2a2c34] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] focus:border-orange-500 outline-none w-full">
@@ -520,6 +529,9 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                              <option value="Broader Market (N500)">Broader Market (N500)</option>
                              <option value="Deep Frontier">Deep Frontier</option>
                          </select>
+                      </div>
+                      <div className="max-w-[280px] flex-shrink-0">
+                          <MarketCapRangeFilter onChange={setMcapRange} />
                       </div>
                 </div>
             </div>

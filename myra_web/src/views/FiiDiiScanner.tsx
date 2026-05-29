@@ -1,10 +1,12 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Librarian } from '../lib/Librarian';
 import { Building2, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, ArrowUpDown } from 'lucide-react';
 import { useSettings } from '../lib/SettingsContext';
 import { resolveBucket } from '../lib/bucketUtils';
 import { useHealthStatus } from '../hooks/useHealthStatus';
 import { useNavigate } from 'react-router-dom';
+import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
+import { fetchMarketCapMap } from '../lib/marketCapCache';
 
 interface ScannerData {
     symbol: string;
@@ -40,6 +42,10 @@ export default function FiiDiiScannerView({ lib }: { lib: Librarian }) {
     // Summaries
     const [totalDeals, setTotalDeals] = useState(0);
     const [netFiiFlow, setNetFiiFlow] = useState<number | null>(null);
+
+    const [mcapRange, setMcapRange] = useState<{ min: number; max: number } | null>(null);
+    const mcapMapRef = useRef<Map<string, number>>(new Map());
+    useEffect(() => { fetchMarketCapMap().then(m => mcapMapRef.current = m); }, []);
 
     // Fetch Metadata Once
     useEffect(() => {
@@ -240,8 +246,15 @@ export default function FiiDiiScannerView({ lib }: { lib: Librarian }) {
         if (filterMcap !== 'All') {
             filtered = filtered.filter(d => d.bucket === filterMcap);
         }
+        if (mcapRange) {
+            const map = mcapMapRef.current;
+            filtered = filtered.filter(d => {
+                const mcap = map.get(d.symbol);
+                return mcap !== undefined && mcap >= mcapRange.min && mcap <= mcapRange.max;
+            });
+        }
         return filtered;
-    }, [data, minScore, filterSector, filterMcap]);
+    }, [data, minScore, filterSector, filterMcap, mcapRange]);
 
     const sortedData = useMemo(() => {
         if (!sortConfig) return filteredData;
@@ -297,7 +310,7 @@ export default function FiiDiiScannerView({ lib }: { lib: Librarian }) {
             </div>
 
             {/* Controls */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 border-b border-[#ffffff1a] bg-[#1a1c24]">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4 p-4 border-b border-[#ffffff1a] bg-[#1a1c24]">
                 <div className="flex flex-col">
                     <div className="flex justify-between text-[10px] text-[#888] font-mono mb-1">
                         <label>Lookback Period</label>
@@ -344,6 +357,10 @@ export default function FiiDiiScannerView({ lib }: { lib: Librarian }) {
                         onChange={(e) => setMinScore(Number(e.target.value))}
                         className="w-full accent-blue-500"
                     />
+                </div>
+
+                <div className="max-w-[280px] flex-shrink-0">
+                    <MarketCapRangeFilter onChange={setMcapRange} />
                 </div>
             </div>
 

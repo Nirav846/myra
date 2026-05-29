@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { AlignRight, Activity, TrendingUp } from 'lucide-react';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import { AlignRight, Activity, TrendingUp, Loader2 } from 'lucide-react';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, Legend } from 'recharts';
 import { SymbolSearch } from '../components/SymbolSearch';
 
 export default function InstDOMView({ lib }: { lib: Librarian }) {
@@ -12,26 +12,33 @@ export default function InstDOMView({ lib }: { lib: Librarian }) {
   const [isDemo, setIsDemo] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [totals, setTotals] = useState<{ delivery: number; intraday: number; delPct: number } | null>(null);
+  const [latestClose, setLatestClose] = useState<number | null>(null);
   const fetchRef = useRef<{ active: boolean } | null>(null);
 
-  useEffect(() => {
-    fetchProfile();
-  }, [ticker, lookbackDays]);
-
-  const fetchProfile = async () => {
+  const fetchProfile = useCallback(async () => {
+    if (fetchRef.current) fetchRef.current.active = false;
     const run = { active: true };
     fetchRef.current = run;
     setIsLoading(true);
     setErrorMsg(null);
-    setIsDemo(!lib.isConnectedToLocalRepo);
+    setIsDemo(false);
     try {
+      const closeResult = await lib.executeQuery('_tech_conn',
+        'SELECT close FROM technical_data WHERE symbol = ? ORDER BY date DESC LIMIT 1',
+        [ticker], 5000
+      );
+      if (!run.active) return;
+      const refClose = closeResult && closeResult.length > 0 ? Number(closeResult[0].close) : null;
+      setLatestClose(refClose);
+
+      let dp: number;
+      if (refClose && refClose >= 5000) dp = -2;
+      else if (refClose && refClose >= 100) dp = -1;
+      else dp = 0;
+
       const query = `
         SELECT 
-          CASE 
-            WHEN close >= 5000 THEN ROUND(COALESCE(vwap, (high + low + close) / 3), -2)
-            WHEN close >= 100 THEN ROUND(COALESCE(vwap, (high + low + close) / 3), -1)
-            ELSE ROUND(COALESCE(vwap, (high + low + close) / 3), 0)
-          END as price_level, 
+          ROUND(COALESCE(vwap, (high + low + close) / 3), ?) as price_level, 
           SUM(delivery) as delivery,
           (SUM(volume) - SUM(delivery)) as intraday
         FROM technical_data
@@ -39,7 +46,7 @@ export default function InstDOMView({ lib }: { lib: Librarian }) {
         GROUP BY price_level 
         ORDER BY price_level DESC
       `;
-      const result = await lib.executeQuery('_tech_conn', query, [ticker, `-${lookbackDays} days`], 30000);
+      const result = await lib.executeQuery('_tech_conn', query, [dp, ticker, `-${lookbackDays} days`], 30000);
       if (!run.active) return;
 
       if (result && result.length > 0) {
@@ -67,13 +74,19 @@ export default function InstDOMView({ lib }: { lib: Librarian }) {
     } finally {
       if (run.active) setIsLoading(false);
     }
-  };
+  }, [ticker, lookbackDays, lib]);
+
+  useEffect(() => {
+    fetchProfile();
+  }, [fetchProfile]);
 
   const generateMockProfile = () => {
-    const basePrice = 2400;
+    setIsDemo(true);
+    const basePrice = Math.random() > 0.5 ? Math.floor(Math.random() * 400 + 50) : Math.floor(Math.random() * 4500 + 500);
+    const step = basePrice >= 5000 ? 100 : basePrice >= 100 ? 10 : 1;
     const mock = [];
     for (let i = 15; i >= -15; i--) {
-      const price = basePrice + (i * 10);
+      const price = Math.round(basePrice / step) * step + (i * step);
       const weight = Math.exp(-(i * i) / 100);
       const totalVol = Math.floor(Math.random() * 200000 + (1000000 * weight));
       const delivery_pct = (i >= -2 && i <= 2) ? 0.65 : (Math.random() * 0.2 + 0.1);
@@ -84,6 +97,23 @@ export default function InstDOMView({ lib }: { lib: Librarian }) {
     const totInt = mock.reduce((s, r) => s + r.intraday, 0);
     setTotals({ delivery: totDel, intraday: totInt, delPct: totDel + totInt > 0 ? (totDel / (totDel + totInt)) * 100 : 0 });
   };
+
+  const poc = useMemo(() => {
+    if (data.length === 0) return null;
+    let maxVol = 0;
+    let pocPrice = 0;
+    for (const d of data) {
+      const total = d.delivery + d.intraday;
+      if (total > maxVol) { maxVol = total; pocPrice = d.price; }
+    }
+    return pocPrice;
+  }, [data]);
+
+  const cmpPrice = useMemo(() => {
+    if (latestClose === null) return null;
+    const step = data.length > 1 ? Math.abs(data[0].price - data[1].price) : 1;
+    return Math.round(latestClose / step) * step;
+  }, [latestClose, data]);
 
   return (
     <div className="bg-[#1e2028] border border-[#ffffff1a] rounded flex flex-col shadow-xl min-h-[600px]">
@@ -135,20 +165,26 @@ export default function InstDOMView({ lib }: { lib: Librarian }) {
               {errorMsg && <span className="text-[10px] text-red-400 font-mono px-2 py-1 bg-red-500/10 rounded border border-red-500/20">{errorMsg}</span>}
               {isDemo && <span className="text-[10px] text-yellow-500 font-mono px-2 py-1 bg-yellow-500/10 rounded border border-yellow-500/20">⚠️ DEMO DATA</span>}
              {isLoading && <span className="text-[10px] text-blue-400 font-mono animate-pulse">Calculating DOM...</span>}
-            <span className="text-[10px] text-fuchsia-400 font-mono hidden md:flex items-center gap-2">
-              <Activity size={12}/> Detects Hidden Liquidity
+            <span className="text-[10px] text-fuchsia-400 font-mono hidden md:flex items-center gap-2" title="Shows price levels where institutional delivery volume is concentrated relative to total volume traded. High delivery % at a price level indicates strong-hand accumulation.">
+              <Activity size={12}/> Delivery Profile (?)
             </span>
           </div>
         </div>
 
         {/* DOM Profile Chart */}
-        <div className="flex-1 bg-[#0e1117] rounded-lg border border-[#ffffff0a] p-4 min-h-[400px]">
-          {data.length === 0 && !isLoading && (
+        <div className="flex-1 bg-[#0e1117] rounded-lg border border-[#ffffff0a] p-4 h-[500px]">
+          {isLoading && (
+            <div className="h-full flex flex-col items-center justify-center gap-3">
+              <Loader2 size={24} className="animate-spin text-orange-500/50" />
+              <span className="text-xs font-mono text-[#666] animate-pulse">Loading volume profile...</span>
+            </div>
+          )}
+          {!isLoading && data.length === 0 && (
             <div className="h-full flex items-center justify-center text-sm font-mono text-[#666]">
               {errorMsg || `No delivery data for ${ticker} in selected range.`}
             </div>
           )}
-          {data.length > 0 && (
+          {!isLoading && data.length > 0 && (
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data} layout="vertical" margin={{ top: 5, right: 40, left: 20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#222" horizontal={false} />
@@ -163,9 +199,19 @@ export default function InstDOMView({ lib }: { lib: Librarian }) {
                 <Tooltip
                   cursor={{ fill: '#ffffff0a' }}
                   contentStyle={{ backgroundColor: '#1a1c24', border: '1px solid #333', borderRadius: '4px', fontSize: '12px' }}
-                  formatter={(value: number) => value.toLocaleString()}
+                  formatter={(value: number, name: string, props: any) => {
+                    if (!props.payload) return [value.toLocaleString(), name];
+                    const total = props.payload.delivery + props.payload.intraday;
+                    const delPct = total > 0 ? ((props.payload.delivery / total) * 100).toFixed(1) : '0.0';
+                    if (name === 'Institutional Delivery') {
+                      return [`${value.toLocaleString()} (${delPct}%)`, 'Institutional Delivery'];
+                    }
+                    return [value.toLocaleString(), 'Intraday / Speculation'];
+                  }}
                 />
-
+                {poc !== null && <ReferenceLine y={poc} stroke="#8884d8" strokeDasharray="6 4" label={{ value: 'POC', position: 'right', fill: '#8884d8', fontSize: 10 }} />}
+                {cmpPrice !== null && <ReferenceLine y={cmpPrice} stroke="#f97316" strokeDasharray="6 4" label={{ value: 'CMP', position: 'right', fill: '#f97316', fontSize: 10 }} />}
+                <Legend wrapperStyle={{ fontSize: '11px', color: '#888' }} />
                 <Bar dataKey="delivery" stackId="a" fill="#10b981" name="Institutional Delivery" />
                 <Bar dataKey="intraday" stackId="a" fill="#333333" name="Intraday / Speculation" />
               </BarChart>

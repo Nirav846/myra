@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
 import { Rocket, Filter, AlertCircle, ArrowUpRight, RefreshCw, CheckCircle, Clock, AlertTriangle, XCircle } from 'lucide-react';
+import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
+import { fetchMarketCapMap } from '../lib/marketCapCache';
 
 interface ScanPrediction {
   symbol: string;
@@ -81,6 +83,10 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
   const [staleBannerOpen, setStaleBannerOpen] = useState(true);
 
   const [minReturn, setMinReturn] = useState<number>(0);
+  const [mcapRange, setMcapRange] = useState<{ min: number; max: number } | null>(null);
+  const mcapMapRef = useRef<Map<string, number>>(new Map());
+
+  useEffect(() => { fetchMarketCapMap().then(m => mcapMapRef.current = m); }, []);
 
   const mountedRef = useRef(true);
   const scanAbortRef = useRef<AbortController | null>(null);
@@ -89,10 +95,16 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
   const predictions = scanStatus?.predictions ?? [];
 
   const filteredData = useMemo(() => {
-    return predictions
-      .filter(d => d.predicted_return_pct >= minReturn)
-      .sort((a, b) => b.predicted_return_pct - a.predicted_return_pct);
-  }, [predictions, minReturn]);
+    let result = predictions.filter(d => d.predicted_return_pct >= minReturn);
+    if (mcapRange) {
+      const map = mcapMapRef.current;
+      result = result.filter(d => {
+        const mcap = map.get(d.symbol);
+        return mcap !== undefined && mcap >= mcapRange.min && mcap <= mcapRange.max;
+      });
+    }
+    return result.sort((a, b) => b.predicted_return_pct - a.predicted_return_pct);
+  }, [predictions, minReturn, mcapRange]);
 
   const avgExpectedReturn = useMemo(() => {
     if (filteredData.length === 0) return 0;
@@ -406,6 +418,9 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
                 onChange={e => setMinReturn(parseInt(e.target.value))}
                 className="w-full accent-cyan-500"
               />
+            </div>
+            <div className="max-w-[280px] flex-shrink-0">
+              <MarketCapRangeFilter onChange={setMcapRange} />
             </div>
           </div>
 

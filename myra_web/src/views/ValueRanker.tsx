@@ -1,9 +1,11 @@
 import { Librarian } from '../lib/Librarian';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Copy, Check, RefreshCw, Target } from 'lucide-react';
 import PresetChip from '../components/PresetChip';
 import { ValueRankerConfig } from '../lib/scannerPresets';
 import { resolveBucket } from '../lib/bucketUtils';
+import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
+import { fetchMarketCapMap } from '../lib/marketCapCache';
 
 interface RankerData {
   symbol: string;
@@ -39,6 +41,9 @@ export default function ValueRankerView({ lib, onNavigate }: { lib: Librarian, o
   
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isDemo, setIsDemo] = useState(false);
+  const [mcapRange, setMcapRange] = useState<{ min: number; max: number } | null>(null);
+  const mcapMapRef = useRef<Map<string, number>>(new Map());
+  useEffect(() => { fetchMarketCapMap().then(m => mcapMapRef.current = m); }, []);
 
   // Sorting
   const [sortCol, setSortCol] = useState<keyof RankerData>('score');
@@ -301,6 +306,15 @@ export default function ValueRankerView({ lib, onNavigate }: { lib: Librarian, o
 
   const [isLoading, setIsLoading] = useState(false);
 
+  const displayData = useMemo(() => {
+    if (!mcapRange) return apiData;
+    const map = mcapMapRef.current;
+    return apiData.filter(d => {
+      const mcap = map.get(d.symbol);
+      return mcap !== undefined && mcap >= mcapRange.min && mcap <= mcapRange.max;
+    });
+  }, [apiData, mcapRange]);
+
   return (
     <div className="bg-[#262730] rounded-lg flex flex-col h-full overflow-hidden">
       <div className="p-4 border-b border-[#ffffff1a] bg-[#ffffff05] flex justify-between items-center shrink-0">
@@ -409,6 +423,9 @@ export default function ValueRankerView({ lib, onNavigate }: { lib: Librarian, o
                         <option value="Small/Mid Cap">Small/Mid Cap</option>
                       </select>
                     </div>
+                    <div className="max-w-[280px] flex-shrink-0 self-end">
+                        <MarketCapRangeFilter onChange={setMcapRange} />
+                    </div>
                 </div>
                 <div className="flex items-center gap-3">
                     {errorMsg && <span className="text-xs text-red-400 font-mono px-2 py-1 bg-red-400/10 rounded">{errorMsg}</span>}
@@ -418,9 +435,9 @@ export default function ValueRankerView({ lib, onNavigate }: { lib: Librarian, o
             </div>
         </div>
 
-        {dataLoaded && apiData.length > 0 && (
+        {dataLoaded && displayData.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 shrink-0">
-            {apiData.slice(0, 3).map((topDog, i) => (
+            {displayData.slice(0, 3).map((topDog, i) => (
               <div key={topDog.symbol} onClick={() => onNavigate?.('Technical Chart', topDog.symbol)} className="bg-[#12141a] border border-[#ffffff1a] p-3 rounded-lg flex items-center justify-between hover:border-green-500/50 cursor-pointer group transition-colors shadow-sm">
                  <div>
                    <h3 className="font-bold text-white text-sm group-hover:text-green-400 inline-flex items-center gap-2">
@@ -464,7 +481,7 @@ export default function ValueRankerView({ lib, onNavigate }: { lib: Librarian, o
                   </tr>
                 </thead>
                 <tbody className="text-[#ccc] divide-y divide-[#ffffff0a]">
-                  {dataLoaded && apiData && apiData.map((row, idx) => (
+                  {dataLoaded && displayData && displayData.map((row, idx) => (
                     <tr key={idx} className="hover:bg-[#ffffff05] transition-colors group">
                       <td className="py-2.5 px-3">
                          <span onClick={() => onNavigate?.('Technical Chart', row.symbol)} className="text-[#fafafa] font-bold cursor-pointer hover:text-green-400">
@@ -490,7 +507,7 @@ export default function ValueRankerView({ lib, onNavigate }: { lib: Librarian, o
                   ))}
                 </tbody>
               </table>
-              {dataLoaded && apiData.length === 0 && (
+              {dataLoaded && displayData.length === 0 && (
                 <div className="w-full py-12 text-center text-[#666] text-xs font-mono flex flex-col items-center">
                     <Target size={24} className="mb-2 opacity-30" />
                     No stocks pass the current filters
