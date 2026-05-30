@@ -370,7 +370,7 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
                         f"UPDATE technical_data SET {','.join(set_clauses)} WHERE symbol=? AND date=?",
                         list(score_values.values()) + [symbol, date_str]
                     )
-            conn.commit()
+                conn.commit()
 
             # Check if enrichment should pause after processing all symbols
             wait_if_paused()

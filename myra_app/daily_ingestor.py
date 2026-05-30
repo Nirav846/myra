@@ -9,12 +9,25 @@ from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
+from myra_app.constants import DB_DIR
 from myra_app.fetcher import DataFetcher
 from myra_app.librarian_core import LibrarianCore
 
-DB_PATH = os.path.join("db", LibrarianCore.DB_MAP["technical"])
+DB_PATH = os.path.join(DB_DIR, LibrarianCore.DB_MAP["technical"])
 
 IST = timezone(timedelta(hours=5, minutes=30))
+
+NSE_HOLIDAYS_BASELINE = {
+    "2025-02-26","2025-03-14","2025-03-31","2025-04-14","2025-04-18",
+    "2025-05-01","2025-05-12","2025-08-15","2025-08-27","2025-10-02",
+    "2025-10-21","2025-10-22","2025-11-05","2025-11-12","2025-12-25",
+    "2026-02-26","2026-03-16","2026-03-31","2026-04-14","2026-04-17",
+    "2026-05-01","2026-05-28","2026-08-17","2026-09-02","2026-10-02",
+    "2026-10-22","2026-11-09","2026-11-25","2026-12-25",
+    "2027-02-15","2027-03-05","2027-03-22","2027-04-14","2027-04-02",
+    "2027-05-01","2027-05-21","2027-08-15","2027-09-10","2027-10-02",
+    "2027-10-10","2027-10-29","2027-11-17","2027-12-25",
+}
 
 
 def get_db_latest_date(db_path: str = None) -> str | None:
@@ -58,11 +71,13 @@ def is_trading_day(dt: datetime) -> bool:
     """Check if a given datetime is a trading day (not weekend, not holiday)."""
     if dt.weekday() >= 5:
         return False
-    calendar_db_path = os.path.join("db", LibrarianCore.DB_MAP["calendar"])
+    date_str = dt.date().isoformat()
+    if date_str in NSE_HOLIDAYS_BASELINE:
+        return False
+    calendar_db_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["calendar"])
     if os.path.exists(calendar_db_path):
         try:
             with sqlite3.connect(calendar_db_path) as cal_conn:
-                date_str = dt.date().isoformat()
                 cal_res = cal_conn.execute(
                     "SELECT is_trading_day FROM market_calendar WHERE date = ?",
                     (date_str,),
@@ -128,7 +143,7 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
         db_before = get_db_row_count(target_date=current_date.date().isoformat())
         result["db_before"] = db_before
 
-        calendar_db_path = os.path.join("db", LibrarianCore.DB_MAP["calendar"])
+        calendar_db_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["calendar"])
         if os.path.exists(calendar_db_path):
             try:
                 with sqlite3.connect(calendar_db_path) as cal_conn:
@@ -176,6 +191,17 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
             return result
         elif data_csv == "holiday_skip":
             print("🛑 Market Holiday or Weekend. Skipping fetch.")
+            try:
+                import sqlite3
+                calendar_db_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["calendar"])
+                if os.path.exists(calendar_db_path):
+                    with sqlite3.connect(calendar_db_path) as cal_conn:
+                        cal_conn.execute(
+                            "INSERT OR REPLACE INTO market_calendar (date, is_trading_day, holiday_name) VALUES (?, 0, 'NSE holiday (auto-detected)')",
+                            (current_date.date().isoformat(),),
+                        )
+            except Exception:
+                pass
             result["success"] = True
             result["skipped"] = True
             result["skip_reason"] = "holiday_or_weekend"
@@ -239,6 +265,7 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
             os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
             lib = LibrarianCore(read_only=False)
             conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+            conn.execute("PRAGMA busy_timeout = 30000")  # 30 seconds for pipeline writers
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
             cursor = conn.cursor()
@@ -306,6 +333,17 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
 
             if result["rows_inserted"] == 0 and db_after == db_before:
                 print(f"⚠️ WARNING: No new rows inserted for {current_date.date().isoformat()}")
+                try:
+                    import sqlite3
+                    calendar_db_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["calendar"])
+                    if os.path.exists(calendar_db_path):
+                        with sqlite3.connect(calendar_db_path) as cal_conn:
+                            cal_conn.execute(
+                                "INSERT OR REPLACE INTO market_calendar (date, is_trading_day, holiday_name) VALUES (?, 0, 'Likely holiday (zero rows)')",
+                                (current_date.date().isoformat(),),
+                            )
+                except Exception:
+                    pass
                 result["success"] = False
                 result["error"] = "no_rows_inserted"
                 conn.close()
@@ -325,6 +363,7 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
                 enrichment_lib.connect()
                 print("[MYRA] Running enrichment on new rows...")
                 process_enrichment_pipeline(enrichment_lib, conn)
+                conn.commit()
                 print("[MYRA] Enrichment complete.")
             except Exception as e:
                 print(f"[!] Enrichment after ingestion failed: {e}")

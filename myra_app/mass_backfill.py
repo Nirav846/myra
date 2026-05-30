@@ -52,6 +52,7 @@ def mass_backfill(
         print(f"[*] Found {len(unique_missing_dates)} dates requiring backfill.")
 
     conn = sqlite3.connect(db_path, check_same_thread=False)
+    conn.execute("PRAGMA busy_timeout = 30000")
     conn.execute("PRAGMA journal_mode=WAL;")
     cursor = conn.cursor()
 

@@ -41,6 +41,7 @@ class DataAdapter:
     def _get_connection(self, path: str):
         """Thread-safe connection factory with WAL mode."""
         conn = sqlite3.connect(path, check_same_thread=False)
+        conn.execute("PRAGMA busy_timeout = 30000")
         conn.execute("PRAGMA journal_mode=WAL;")
         return conn
 

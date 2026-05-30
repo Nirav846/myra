@@ -57,6 +57,7 @@ class LaunchpadLabeler:
     def _get_conn(self):
         if self.conn is None:
             self.conn = sqlite3.connect(self.tech_db)
+            self.conn.execute("PRAGMA busy_timeout = 30000")
         return self.conn
 
     def _close_conn(self):

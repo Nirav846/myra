@@ -8,6 +8,7 @@ Guarantees clean DB shutdown on Ctrl+C, window close, or taskkill.
 import logging
 import os
 import signal
+import sqlite3
 import sys
 import threading
 import time
@@ -26,6 +27,22 @@ from myra_app.librarian_core import LibrarianCore
 from myra_app.utils.index_sync import sync_index_constituents
 
 logger = logging.getLogger(__name__)
+
+# ─── Active-queries flag (file-based, shared with FastAPI server) ────────────
+_ACTIVE_QUERIES_FILE = os.path.join(DB_DIR, ".active_queries")
+
+
+def _has_active_queries() -> bool:
+    """Check if any user queries are currently in flight."""
+    try:
+        if os.path.exists(_ACTIVE_QUERIES_FILE):
+            with open(_ACTIVE_QUERIES_FILE) as f:
+                count = int(f.read().strip() or "0")
+            return count > 0
+    except (FileNotFoundError, ValueError):
+        pass
+    return False
+
 
 # ─── Shared shutdown event ────────────────────────────────────────────────────
 _shutdown_event = threading.Event()
@@ -334,6 +351,10 @@ def _task_daily_ingest(force: bool = False):
             f"backfill={result.get('backfill_performed')}"
         )
 
+        if not result.get('success') and result.get('total_rows_inserted', 0) == 0 and not result.get('dates_failed'):
+            logger.info("[MYRA BG] Ingestion returned no new rows – DB is already current.")
+            result['success'] = True
+
         if result.get("success"):
             new_latest = get_db_latest_date()
             logger.info(f"[MYRA BG] DB latest date after ingestion: {new_latest}")
@@ -371,7 +392,7 @@ def _task_watchdog():
 
     tid = register("Background sync watchdog", task_type="indefinite")
     try:
-        last_checked_date = None
+        last_checked_date = datetime.now(timezone.utc).astimezone(IST).date()
 
         while not _shutdown_event.is_set():
             _shutdown_event.wait(timeout=60)
@@ -386,6 +407,11 @@ def _task_watchdog():
                     tid,
                     f"Watching – Last check: {ist_now.strftime('%H:%M:%S')}",
                 )
+
+                if _has_active_queries():
+                    logger.debug("[MYRA BG] Active queries detected – sleeping 30s")
+                    _shutdown_event.wait(timeout=30)
+                    continue
 
                 if _is_db_stale(days_threshold=1):
                     ist_now = datetime.now(timezone.utc).astimezone(IST)
@@ -891,6 +917,26 @@ def _launch_background_threads():
         logger.info(f"[MYRA BG] Started task: {name}")
 
 
+def _ensure_calendar_db():
+    """Create/verify the calendar DB and market_calendar table on startup."""
+    try:
+        calendar_db_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["calendar"])
+        os.makedirs(os.path.dirname(calendar_db_path), exist_ok=True)
+        conn = sqlite3.connect(calendar_db_path)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS market_calendar (
+                date TEXT PRIMARY KEY,
+                is_trading_day INTEGER NOT NULL DEFAULT 1,
+                holiday_name TEXT
+            )
+        """)
+        conn.commit()
+        conn.close()
+        logger.info(f"[MYRA BG] Calendar database verified at {calendar_db_path}")
+    except Exception as e:
+        logger.warning(f"[MYRA BG] Failed to initialize calendar database: {e}")
+
+
 def start():
     """
     Call this from myra.py on startup.
@@ -899,6 +945,7 @@ def start():
     _register_signals()
 
     _ensure_sync_log_table()
+    _ensure_calendar_db()
 
     logger.info("[MYRA BG] Running startup DB health check (synchronous)...")
     _task_db_doctor()

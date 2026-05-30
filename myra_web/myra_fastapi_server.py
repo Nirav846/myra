@@ -26,6 +26,41 @@ try:
 except ImportError:
     pass
 
+_active_queries_file = os.path.join(DB_DIR, ".active_queries")
+_queries_lock = threading.Lock()
+
+
+def _inc_active_queries():
+    with _queries_lock:
+        try:
+            os.makedirs(os.path.dirname(_active_queries_file), exist_ok=True)
+            count = 0
+            if os.path.exists(_active_queries_file):
+                with open(_active_queries_file) as f:
+                    count = int(f.read().strip() or "0")
+            with open(_active_queries_file, 'w') as f:
+                f.write(str(count + 1))
+        except Exception:
+            pass
+
+
+def _dec_active_queries():
+    with _queries_lock:
+        try:
+            if not os.path.exists(_active_queries_file):
+                return
+            with open(_active_queries_file) as f:
+                count = int(f.read().strip() or "0")
+            count -= 1
+            if count <= 0:
+                os.remove(_active_queries_file)
+            else:
+                with open(_active_queries_file, 'w') as f:
+                    f.write(str(count))
+        except Exception:
+            pass
+
+
 _finstack_cache = {}
 CACHE_TTL = 300  # 5 minutes
 
@@ -193,8 +228,10 @@ async def execute_query(req: QueryRequest):
             status_code=400, detail=f"Database file not found: {db_file}"
         )
 
+    _inc_active_queries()
     try:
         conn = sqlite3.connect(db_path)
+        conn.execute("PRAGMA busy_timeout = 15000")  # 15 seconds
         conn.row_factory = sqlite3.Row
         cursor = conn.execute(req.query, req.params)
 
@@ -214,8 +251,14 @@ async def execute_query(req: QueryRequest):
         conn.close()
 
         return {"data": rows, "rows_affected": rowcount}
+    except sqlite3.OperationalError as e:
+        if "locked" in str(e) or "busy" in str(e):
+            raise HTTPException(status_code=503, detail="Database busy – please retry in a moment")
+        raise HTTPException(status_code=400, detail=str(e))
     except sqlite3.Error as e:
         raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        _dec_active_queries()
 
 
 class ToolRequest(BaseModel):

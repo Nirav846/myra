@@ -185,64 +185,78 @@ export class Librarian {
 
     let targetDb = database;
 
-    try {
-      const res = await fetch(`${this.apiUrl}/query`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          db: targetDb, 
-          query: query, 
-          params: Array.isArray(args) ? args : [] 
-        }),
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-      
-      if (!res.ok) throw new Error(`Database query failed (Status ${res.status})`);
-      
-      const json = await res.json();
-      // Unwrap {data: [...]} envelope from FastAPI
-      const payload = Array.isArray(json) ? json : (json.data ?? json);
-      
-      // Store successful payload into RAM
-      this.queryCache.set(cacheKey, { timestamp: Date.now(), data: payload });
-      if (isDebug) {
-          const duration = performance.now() - startTime;
-          console.log(`[Librarian SQL IN] Took ${(duration).toFixed(1)}ms. Rows: ${payload.length}`);
-          window.dispatchEvent(new CustomEvent('librarian-debug', {
-              detail: {
-                  type: 'response',
-                  database,
-                  query,
-                  duration,
-                  rows: payload.length,
-                  timestamp: Date.now()
-              }
-          }));
+    const maxRetries = 1;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const res = await fetch(`${this.apiUrl}/query`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            db: targetDb, 
+            query: query, 
+            params: Array.isArray(args) ? args : [] 
+          }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        
+        if (res.status === 503 && attempt < maxRetries) {
+          console.warn(`[Librarian] Database busy – retrying in 2s (attempt ${attempt + 1}/${maxRetries})`);
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
+        }
+
+        if (!res.ok) throw new Error(`Database query failed (Status ${res.status})`);
+        
+        const json = await res.json();
+        // Unwrap {data: [...]} envelope from FastAPI
+        const payload = Array.isArray(json) ? json : (json.data ?? json);
+        
+        // Store successful payload into RAM
+        this.queryCache.set(cacheKey, { timestamp: Date.now(), data: payload });
+        if (isDebug) {
+            const duration = performance.now() - startTime;
+            console.log(`[Librarian SQL IN] Took ${(duration).toFixed(1)}ms. Rows: ${payload.length}`);
+            window.dispatchEvent(new CustomEvent('librarian-debug', {
+                detail: {
+                    type: 'response',
+                    database,
+                    query,
+                    duration,
+                    rows: payload.length,
+                    timestamp: Date.now()
+                }
+            }));
+        }
+        return payload;
+      } catch (e: any) {
+        clearTimeout(timeoutId);
+        if (isDebug) {
+            const duration = performance.now() - startTime;
+            console.error(`[Librarian SQL ERROR] Took ${(duration).toFixed(1)}ms. Error: `, e);
+            window.dispatchEvent(new CustomEvent('librarian-debug', {
+                detail: {
+                    type: 'error',
+                    database,
+                    query,
+                    duration,
+                    error: e.message || String(e),
+                    timestamp: Date.now()
+                }
+            }));
+        }
+        if (e.name === 'AbortError') {
+           console.warn(`[Librarian] Query timed out after 30000ms:`, query.substring(0, 50) + '...');
+           throw new Error("Local backend timeout. Operation aborted.");
+        }
+        if (attempt < maxRetries && e.message?.includes('503')) {
+          console.warn(`[Librarian] Database busy – retrying in 2s (attempt ${attempt + 1}/${maxRetries})`);
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
+        }
+        console.error("[Librarian] Execution Exception:", e);
+        throw e;
       }
-      return payload;
-    } catch (e: any) {
-      clearTimeout(timeoutId);
-      if (isDebug) {
-          const duration = performance.now() - startTime;
-          console.error(`[Librarian SQL ERROR] Took ${(duration).toFixed(1)}ms. Error: `, e);
-          window.dispatchEvent(new CustomEvent('librarian-debug', {
-              detail: {
-                  type: 'error',
-                  database,
-                  query,
-                  duration,
-                  error: e.message || String(e),
-                  timestamp: Date.now()
-              }
-          }));
-      }
-      if (e.name === 'AbortError') {
-         console.warn(`[Librarian] Query timed out after 30000ms:`, query.substring(0, 50) + '...');
-         throw new Error("Local backend timeout. Operation aborted.");
-      }
-      console.error("[Librarian] Execution Exception:", e);
-      throw e;
     }
   }
 }
