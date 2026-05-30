@@ -22,11 +22,14 @@ export interface DivergenceConfig {
     priceDirection: 'Falling' | 'Rising';
     minPriceChange: number;
     minDeliveryChange: number;
+    minAbsDeliveryPct: number;
     minRelativeVolume: number;
     minScore: number;
     scoreWeighting: 'Balanced' | 'Price' | 'Delivery';
     filterSector: string;
     filterMcap: string;
+    minConsecutiveDays?: number;
+    minRR?: number;
 }
 
 export interface ValueRankerConfig {
@@ -138,6 +141,40 @@ export const DEFAULT_PRESETS: ScannerPreset[] = [
             lookbackBars: 21, priceMetric: 'Typical', deliveryMetric: 'Pct', priceDirection: 'Rising',
             minPriceChange: 0, minDeliveryChange: 2, minRelativeVolume: 1.0, minScore: 40, scoreWeighting: 'Balanced',
             filterSector: 'All', filterMcap: 'All'
+        }
+    },
+    // --- Smart Money Presets ---
+    {
+        id: 'pdd-sm-accumulation',
+        name: 'Accumulation Hunt',
+        module: 'PriceDeliveryDivergence',
+        description: 'Falling price on VWAP with high delivery % — institutional accumulation.',
+        config: {
+            lookbackBars: 10, priceMetric: 'VWAP', deliveryMetric: 'Pct', priceDirection: 'Falling',
+            minPriceChange: -3, minDeliveryChange: 8, minAbsDeliveryPct: 45, minRelativeVolume: 1.2,
+            minScore: 65, scoreWeighting: 'Delivery', filterSector: 'All', filterMcap: 'Large Cap (N100)'
+        }
+    },
+    {
+        id: 'pdd-sm-breakout',
+        name: 'Breakout Confirm',
+        module: 'PriceDeliveryDivergence',
+        description: 'Price breaking out with high delivery volume — trend confirmed.',
+        config: {
+            lookbackBars: 5, priceMetric: 'Close', deliveryMetric: 'Pct', priceDirection: 'Rising',
+            minPriceChange: 4, minDeliveryChange: 10, minAbsDeliveryPct: 30, minRelativeVolume: 1.5,
+            minScore: 60, scoreWeighting: 'Balanced', filterSector: 'All', filterMcap: 'All'
+        }
+    },
+    {
+        id: 'pdd-sm-distribution',
+        name: 'Distribution Warning',
+        module: 'PriceDeliveryDivergence',
+        description: 'Price rising but delivery % falling — distribution / smart money exit.',
+        config: {
+            lookbackBars: 10, priceMetric: 'VWAP', deliveryMetric: 'Pct', priceDirection: 'Rising',
+            minPriceChange: 2, minDeliveryChange: -8, minAbsDeliveryPct: 0, minRelativeVolume: 1.3,
+            minScore: 50, scoreWeighting: 'Delivery', filterSector: 'All', filterMcap: 'All'
         }
     },
     {

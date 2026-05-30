@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { GitCompare, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, ArrowUpDown } from 'lucide-react';
+import { GitCompare, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, ArrowUpDown, BarChart2 } from 'lucide-react';
 import { useSettings } from '../lib/SettingsContext';
 import { resolveBucket } from '../lib/bucketUtils';
 import { useHealthStatus } from '../hooks/useHealthStatus';
@@ -8,6 +8,8 @@ import PresetChip from '../components/PresetChip';
 import { DivergenceConfig } from '../lib/scannerPresets';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
+import { useDebouncedCallback } from 'use-debounce';
+import BacktestPanel from './BacktestPanel';
 
 interface ScannerData {
     symbol: string;
@@ -16,7 +18,19 @@ interface ScannerData {
     priceChangePct: number;
     deliveryChangePct: number;
     relativeVolume: number;
+    relativeStrength: number;
+    position52W: number;
     score: number;
+    consecutiveHighDeliveryDays: number;
+    detectedBaseLength: number;
+    triggerPrice: number;
+    stopLossPrice: number;
+    targetPrice: number;
+    riskReward: number;
+    latestClose: number;
+    baseTightness: number;
+    alreadyTriggered: boolean;
+    nearEarnings: boolean;
 }
 
 interface RawData {
@@ -33,6 +47,19 @@ interface RawData {
     past_delivery_pct: number;
     avg_volume: number;
     latest_volume: number;
+    consecutiveHighDeliveryDays: number;
+    detected_base_length: number;
+    base_high_5: number;
+    base_low_5: number;
+    base_high_10: number;
+    base_low_10: number;
+    base_high_21: number;
+    base_low_21: number;
+    base_high_45: number;
+    base_low_45: number;
+    atr_14: number;
+    high_52w: number;
+    low_52w: number;
 }
 
 export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: { lib: Librarian, onNavigate?: (tab: string, symbol?: string) => void }) {
@@ -63,14 +90,53 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
     const [minScore, setMinScore] = useState(50);
     const [scoreWeighting, setScoreWeighting] = useState<'Balanced' | 'Price' | 'Delivery'>('Balanced');
 
+    // Debounced display states for smooth slider UX
+    const [minPriceChangeDisplay, setMinPriceChangeDisplay] = useState(minPriceChange);
+    const setMinPriceChangeDebounced = useDebouncedCallback(setMinPriceChange, 100);
+    const [minDeliveryChangeDisplay, setMinDeliveryChangeDisplay] = useState(minDeliveryChange);
+    const setMinDeliveryChangeDebounced = useDebouncedCallback(setMinDeliveryChange, 100);
+    const [minRelativeVolumeDisplay, setMinRelativeVolumeDisplay] = useState(minRelativeVolume);
+    const setMinRelativeVolumeDebounced = useDebouncedCallback(setMinRelativeVolume, 100);
+    const [minScoreDisplay, setMinScoreDisplay] = useState(minScore);
+    const setMinScoreDebounced = useDebouncedCallback(setMinScore, 100);
+
     // Filtering controls
+    const [minAbsDeliveryPct, setMinAbsDeliveryPct] = useState(0);
+    const [minConsecutiveDays, setMinConsecutiveDays] = useState(0);
+    const [minRR, setMinRR] = useState(0);
     const [filterSector, setFilterSector] = useState('All');
     const [filterMcap, setFilterMcap] = useState('All');
     const [mcapRange, setMcapRange] = useState<{ min: number; max: number } | null>(null);
     const mcapMapRef = useRef<Map<string, number>>(new Map());
     useEffect(() => { fetchMarketCapMap().then(m => mcapMapRef.current = m); }, []);
 
+    const [earningsProximitySet, setEarningsProximitySet] = useState<Set<string>>(new Set());
+    const [hideNearEarnings, setHideNearEarnings] = useState(false);
+
+    const [watchlist, setWatchlist] = useState<Set<string>>(() => {
+        try {
+            const stored = localStorage.getItem('divergence_watchlist');
+            return stored ? new Set(JSON.parse(stored)) : new Set();
+        } catch { return new Set(); }
+    });
+    const [showWatchlistOnly, setShowWatchlistOnly] = useState(false);
+    const [showNewOnly, setShowNewOnly] = useState(false);
+    const [previousSymbols, setPreviousSymbols] = useState<Set<string>>(new Set());
+    const [newSymbols, setNewSymbols] = useState<Set<string>>(new Set());
+    const toggleWatchlist = useCallback((symbol: string) => {
+        setWatchlist(prev => {
+            const next = new Set(prev);
+            next.has(symbol) ? next.delete(symbol) : next.add(symbol);
+            localStorage.setItem('divergence_watchlist', JSON.stringify(Array.from(next)));
+            return next;
+        });
+    }, []);
+
+    const [niftyChangePct, setNiftyChangePct] = useState(0);
+    const [filterRSNegative, setFilterRSNegative] = useState(false);
+    const [maxPosition52W, setMaxPosition52W] = useState(100);
     const [settingsOpen, setSettingsOpen] = useState(true);
+    const [backtestSymbol, setBacktestSymbol] = useState<string | null>(null);
     const [sortConfig, setSortConfig] = useState<{ key: keyof ScannerData, direction: 'asc' | 'desc' } | null>({ key: 'score', direction: 'desc' });
 
     // Fetch Metadata Once
@@ -106,13 +172,28 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                         });
                     }
                 }
+                const earningsQuery = `
+                    SELECT symbol, action_date
+                    FROM corporate_actions
+                    WHERE action_type IN ('RESULTS', 'QUARTERLY_RESULTS', 'AGM')
+                      AND action_date BETWEEN date('now', '-5 days') AND date('now', '+10 days')
+                `;
+                const earningsResult = await lib.executeQuery('_meta_conn', earningsQuery, {}, 8000).catch(() => null);
+                const earningsSet = new Set<string>();
+                if (earningsResult && Array.isArray(earningsResult)) {
+                    earningsResult.forEach((r: any) => { if (r.symbol) earningsSet.add(r.symbol); });
+                }
                 if (active) {
+                    setEarningsProximitySet(earningsSet);
                     setMetadataMap(metaMap);
                     setMetadataLoaded(true);
                 }
             } catch (e) {
                 console.error(e);
-                if (active) setMetadataLoaded(true);
+                if (active) {
+                    setEarningsProximitySet(new Set());
+                    setMetadataLoaded(true);
+                }
             }
         };
         fetchMeta();
@@ -139,32 +220,157 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
 
             /* Note: Computing AVG(volume) inside the windowed subquery can be heavy for large datasets. Consider optimizing with a separate CTE if performance degrades. */
             const query = `
-                SELECT symbol as ticker,
-                       MAX(CASE WHEN rn_desc = 1 THEN close END) as latest_close,
-                       MAX(CASE WHEN rn_desc = 1 THEN vwap END) as latest_vwap,
-                       MAX(CASE WHEN rn_desc = 1 THEN (high + low + close)/3 END) as latest_typical,
-                       MAX(CASE WHEN rn_desc = ? THEN close END) as past_close,
-                       MAX(CASE WHEN rn_desc = ? THEN vwap END) as past_vwap,
-                       MAX(CASE WHEN rn_desc = ? THEN (high + low + close)/3 END) as past_typical,
-                       
-                       MAX(CASE WHEN rn_desc = 1 THEN delivery END) as latest_delivery_qty,
-                       MAX(CASE WHEN rn_desc = ? THEN delivery END) as past_delivery_qty,
-                       
-                       MAX(CASE WHEN rn_desc = 1 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) as latest_delivery_pct,
-                       MAX(CASE WHEN rn_desc = ? THEN (delivery * 100.0 / NULLIF(volume, 0)) END) as past_delivery_pct,
-                       
-                       AVG(volume) as avg_volume,
-                       MAX(CASE WHEN rn_desc = 1 THEN volume END) as latest_volume
+    WITH baseline AS (
+        SELECT symbol,
+               AVG(volume) AS avg_volume_20d
+        FROM (
+            SELECT symbol, volume,
+                   ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
+            FROM technical_data
+        )
+        WHERE rn BETWEEN 2 AND 21
+        GROUP BY symbol
+    ),
+    windowed AS (
+        SELECT symbol, close, vwap, high, low, volume, delivery,
+               ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn_desc
+        FROM technical_data
+    ),
+    streaks AS (
+        SELECT symbol,
+               CASE WHEN MAX(CASE WHEN rn_desc = 1 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
+               THEN 1 ELSE 0 END
+               +
+               CASE WHEN MAX(CASE WHEN rn_desc = 1 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
+                AND  MAX(CASE WHEN rn_desc = 2 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
+               THEN 1 ELSE 0 END
+               +
+               CASE WHEN MAX(CASE WHEN rn_desc = 1 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
+                AND  MAX(CASE WHEN rn_desc = 2 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
+                AND  MAX(CASE WHEN rn_desc = 3 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
+               THEN 1 ELSE 0 END
+               +
+               CASE WHEN MAX(CASE WHEN rn_desc = 1 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
+                AND  MAX(CASE WHEN rn_desc = 2 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
+                AND  MAX(CASE WHEN rn_desc = 3 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
+                AND  MAX(CASE WHEN rn_desc = 4 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
+               THEN 1 ELSE 0 END
+               +
+               CASE WHEN MAX(CASE WHEN rn_desc = 1 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
+                AND  MAX(CASE WHEN rn_desc = 2 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
+                AND  MAX(CASE WHEN rn_desc = 3 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
+                AND  MAX(CASE WHEN rn_desc = 4 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
+                AND  MAX(CASE WHEN rn_desc = 5 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
+               THEN 1 ELSE 0 END
+               AS consecutive_streak
+        FROM windowed
+        WHERE rn_desc <= 5
+        GROUP BY symbol
+    ),
+    multiframe AS (
+        SELECT symbol,
+               MAX(CASE WHEN rn_desc = 1  THEN close END) AS c1,
+               MAX(CASE WHEN rn_desc = 5  THEN close END) AS c5,
+               MAX(CASE WHEN rn_desc = 10 THEN close END) AS c10,
+               MAX(CASE WHEN rn_desc = 21 THEN close END) AS c21,
+               MAX(CASE WHEN rn_desc = 45 THEN close END) AS c45,
+               MAX(CASE WHEN rn_desc = 1  THEN (delivery * 100.0 / NULLIF(volume, 0)) END) AS d1,
+               MAX(CASE WHEN rn_desc = 5  THEN (delivery * 100.0 / NULLIF(volume, 0)) END) AS d5,
+               MAX(CASE WHEN rn_desc = 10 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) AS d10,
+               MAX(CASE WHEN rn_desc = 21 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) AS d21,
+               MAX(CASE WHEN rn_desc = 45 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) AS d45
+        FROM windowed
+        WHERE rn_desc <= 45
+        GROUP BY symbol
+    ),
+    atr_data AS (
+        SELECT symbol,
+               AVG(high - low) AS atr_14
+        FROM (
+            SELECT symbol, high, low,
+                   ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
+            FROM technical_data
+        )
+        WHERE rn BETWEEN 1 AND 14
+        GROUP BY symbol
+    )
+    SELECT
+        w.symbol AS ticker,
+        MAX(CASE WHEN w.rn_desc = 1 THEN w.close END)                              AS latest_close,
+        MAX(CASE WHEN w.rn_desc = 1 THEN w.vwap END)                               AS latest_vwap,
+        MAX(CASE WHEN w.rn_desc = 1 THEN (w.high + w.low + w.close) / 3 END)       AS latest_typical,
+        MAX(CASE WHEN w.rn_desc = ? THEN w.close END)                              AS past_close,
+        MAX(CASE WHEN w.rn_desc = ? THEN w.vwap END)                               AS past_vwap,
+        MAX(CASE WHEN w.rn_desc = ? THEN (w.high + w.low + w.close) / 3 END)       AS past_typical,
+        MAX(CASE WHEN w.rn_desc = 1 THEN w.delivery END)                           AS latest_delivery_qty,
+        MAX(CASE WHEN w.rn_desc = ? THEN w.delivery END)                           AS past_delivery_qty,
+        MAX(CASE WHEN w.rn_desc = 1 THEN (w.delivery * 100.0 / NULLIF(w.volume, 0)) END)  AS latest_delivery_pct,
+        MAX(CASE WHEN w.rn_desc = ? THEN (w.delivery * 100.0 / NULLIF(w.volume, 0)) END)  AS past_delivery_pct,
+        COALESCE(b.avg_volume_20d, AVG(w.volume)) AS avg_volume,
+        MAX(CASE WHEN w.rn_desc = 1 THEN w.volume END)                             AS latest_volume,
+        MAX(CASE WHEN w.rn_desc <= 5  THEN w.high END) AS base_high_5,
+        MIN(CASE WHEN w.rn_desc <= 5  THEN w.low  END) AS base_low_5,
+        MAX(CASE WHEN w.rn_desc <= 10 THEN w.high END) AS base_high_10,
+        MIN(CASE WHEN w.rn_desc <= 10 THEN w.low  END) AS base_low_10,
+        MAX(CASE WHEN w.rn_desc <= 21 THEN w.high END) AS base_high_21,
+        MIN(CASE WHEN w.rn_desc <= 21 THEN w.low  END) AS base_low_21,
+        MAX(CASE WHEN w.rn_desc <= 45 THEN w.high END) AS base_high_45_w,
+        MIN(CASE WHEN w.rn_desc <= 45 THEN w.low  END) AS base_low_45_w,
+        COALESCE(a.atr_14, (MAX(w.high) - MIN(w.low)) / 10.0) AS atr_14,
+        MAX(CASE WHEN w.rn_desc <= 252 THEN w.high END) AS high_52w,
+        MIN(CASE WHEN w.rn_desc <= 252 THEN w.low  END) AS low_52w,
+        COALESCE(s.consecutive_streak, 0) AS consecutive_high_delivery_days,
+        ROUND(
+            CASE 
+                WHEN (mf.d1 - mf.d5)  / (ABS((mf.c1 - mf.c5)  / NULLIF(mf.c5,  0) * 100) + 0.5) >
+                     (mf.d1 - mf.d10) / (ABS((mf.c1 - mf.c10) / NULLIF(mf.c10, 0) * 100) + 0.5)
+                 AND (mf.d1 - mf.d5)  / (ABS((mf.c1 - mf.c5)  / NULLIF(mf.c5,  0) * 100) + 0.5) >
+                     (mf.d1 - mf.d21) / (ABS((mf.c1 - mf.c21) / NULLIF(mf.c21, 0) * 100) + 0.5)
+                 AND (mf.d1 - mf.d5)  / (ABS((mf.c1 - mf.c5)  / NULLIF(mf.c5,  0) * 100) + 0.5) >
+                     (mf.d1 - mf.d45) / (ABS((mf.c1 - mf.c45) / NULLIF(mf.c45, 0) * 100) + 0.5)
+                THEN 5
+                WHEN (mf.d1 - mf.d10) / (ABS((mf.c1 - mf.c10) / NULLIF(mf.c10, 0) * 100) + 0.5) >
+                     (mf.d1 - mf.d21) / (ABS((mf.c1 - mf.c21) / NULLIF(mf.c21, 0) * 100) + 0.5)
+                 AND (mf.d1 - mf.d10) / (ABS((mf.c1 - mf.c10) / NULLIF(mf.c10, 0) * 100) + 0.5) >
+                     (mf.d1 - mf.d45) / (ABS((mf.c1 - mf.c45) / NULLIF(mf.c45, 0) * 100) + 0.5)
+                THEN 10
+                WHEN (mf.d1 - mf.d21) / (ABS((mf.c1 - mf.c21) / NULLIF(mf.c21, 0) * 100) + 0.5)  >
+                     (mf.d1 - mf.d45) / (ABS((mf.c1 - mf.c45) / NULLIF(mf.c45, 0) * 100) + 0.5)
+                THEN 21
+                ELSE 45
+            END
+        , 0) AS detected_base_length
+    FROM windowed w
+    LEFT JOIN baseline b ON w.symbol = b.symbol
+    LEFT JOIN streaks s ON w.symbol = s.symbol
+    LEFT JOIN multiframe mf ON w.symbol = mf.symbol
+    LEFT JOIN atr_data a ON w.symbol = a.symbol
+    WHERE w.rn_desc <= 252
+    GROUP BY w.symbol
+`;
+            
+            const results = await lib.executeQuery('_tech_conn', query, [safeBars, safeBars, safeBars, safeBars, safeBars], 15000);
+
+            const niftyQuery = `
+                SELECT
+                    MAX(CASE WHEN rn_desc = 1 THEN close END) AS nifty_latest,
+                    MAX(CASE WHEN rn_desc = ? THEN close END) AS nifty_past
                 FROM (
-                    SELECT symbol, close, vwap, high, low, volume, delivery,
-                           ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) as rn_desc
+                    SELECT close,
+                           ROW_NUMBER() OVER (ORDER BY date DESC) AS rn_desc
                     FROM technical_data
+                    WHERE symbol = 'NIFTY_INDEX'
                 )
                 WHERE rn_desc <= ?
-                GROUP BY symbol
             `;
-            
-            const results = await lib.executeQuery('_tech_conn', query, [safeBars, safeBars, safeBars, safeBars, safeBars, safeBars], 15000);
+            const niftyResult = await lib.executeQuery(
+                '_tech_conn', niftyQuery, [safeBars, safeBars], 5000
+            ).catch(() => null);
+            const niftyChange = niftyResult?.[0]
+                ? ((niftyResult[0].nifty_latest - niftyResult[0].nifty_past)
+                   / niftyResult[0].nifty_past) * 100
+                : 0;
+            setNiftyChangePct(parseFloat(niftyChange.toFixed(2)));
             
             if (results && results.length > 0) {
                 setIsDemo(false);
@@ -181,7 +387,20 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                     latest_delivery_pct: Number(r.latest_delivery_pct) || 0,
                     past_delivery_pct: Number(r.past_delivery_pct) || 0,
                     avg_volume: Number(r.avg_volume) || 0,
-                    latest_volume: Number(r.latest_volume) || 0
+                    latest_volume: Number(r.latest_volume) || 0,
+                    base_high_5: Number(r.base_high_5) || 0,
+                    base_low_5: Number(r.base_low_5) || 0,
+                    base_high_10: Number(r.base_high_10) || 0,
+                    base_low_10: Number(r.base_low_10) || 0,
+                    base_high_21: Number(r.base_high_21) || 0,
+                    base_low_21: Number(r.base_low_21) || 0,
+                    base_high_45: Number(r.base_high_45_w) || 0,
+                    base_low_45: Number(r.base_low_45_w) || 0,
+                    atr_14: Number(r.atr_14) || 0,
+                    high_52w: Number(r.high_52w) || 0,
+                    low_52w: Number(r.low_52w) || 0,
+                    consecutiveHighDeliveryDays: Number(r.consecutive_high_delivery_days) || 0,
+                    detected_base_length: Number(r.detected_base_length) || 0
                 })));
             } else {
                 setRawData([]);
@@ -223,7 +442,20 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                 latest_delivery_pct: baseDel,
                 past_delivery_pct: pastDel,
                 avg_volume: 1000000,
-                latest_volume: 1000000 * (1 + (Math.random() * 3))
+                latest_volume: 1000000 * (1 + (Math.random() * 3)),
+                base_high_5: basePrice * 1.03,
+                base_low_5: basePrice * 0.97,
+                base_high_10: basePrice * 1.05,
+                base_low_10: basePrice * 0.95,
+                base_high_21: basePrice * 1.07,
+                base_low_21: basePrice * 0.93,
+                base_high_45: basePrice * 1.10,
+                base_low_45: basePrice * 0.88,
+                atr_14: basePrice * 0.015,
+                high_52w: basePrice * 1.25,
+                low_52w: basePrice * 0.75,
+                consecutiveHighDeliveryDays: Math.floor(Math.random() * 6),
+                detected_base_length: [5, 10, 21, 45][Math.floor(Math.random() * 4)]
             });
         });
         setRawData(mock);
@@ -263,6 +495,13 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
             }
 
             const rVol = d.avg_volume > 0 ? d.latest_volume / d.avg_volume : 0;
+            const relativeStrength = parseFloat((pChange - niftyChangePct).toFixed(2));
+            const high52w = d.high_52w || d.latest_close;
+            const low52w = d.low_52w || d.latest_close;
+            const position52W = high52w > low52w
+                ? parseFloat(((d.latest_close - low52w) / (high52w - low52w) * 100).toFixed(1))
+                : 50;
+            const nearEarnings = earningsProximitySet.has(d.ticker);
 
             // Apply basic direction requirement
             let dirMatch = false;
@@ -271,22 +510,17 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
 
             if (!dirMatch) return;
             if (dChange < minDeliveryChange) return;
+            if (d.latest_delivery_pct < minAbsDeliveryPct) return;
+            if (minConsecutiveDays > 0 && d.consecutiveHighDeliveryDays < minConsecutiveDays) return;
             if (rVol < minRelativeVolume) return;
 
             // Score logic
-            const score_p = Math.max(0, Math.min(100, Math.abs(pChange) / 10 * 100));
+            // FIX: use log scale so moves above 10% still differentiate (e.g. 15% vs 25%)
+            const score_p = Math.max(0, Math.min(100, Math.log1p(Math.abs(pChange)) / Math.log1p(15) * 100));
             const score_d = deliveryMetric === 'Pct'
               ? Math.max(0, Math.min(100, dChange / 30 * 100))
               : Math.max(0, Math.min(100, dChange / 200 * 100));
             const score_v = Math.max(0, Math.min(100, rVol / 2 * 100));
-
-            let wP = 0.4, wD = 0.4, wV = 0.2;
-            if (scoreWeighting === 'Price') { wP = 0.5; wD = 0.3; wV = 0.2; }
-            if (scoreWeighting === 'Delivery') { wP = 0.3; wD = 0.5; wV = 0.2; }
-
-            const score = Math.round(wP * score_p + wD * score_d + wV * score_v);
-
-            if (score < minScore) return;
 
             const meta = metadataMap.get(d.ticker) || { sector: 'Unknown', bucket: 'Deep Frontier' };
             
@@ -296,6 +530,61 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                 const mcap = mcapMapRef.current.get(d.ticker);
                 if (mcap === undefined || mcap < mcapRange.min || mcap > mcapRange.max) return;
             }
+            if (filterRSNegative && relativeStrength >= 0) return;
+            if (position52W > maxPosition52W) return;
+            if (showWatchlistOnly && !watchlist.has(d.ticker)) return;
+            if (hideNearEarnings && nearEarnings) return;
+
+            // Trigger / SL / Target / R:R — base window matched to detectedBaseLength
+            const latestClose = d.latest_close;
+            const baseLen = d.detected_base_length;
+            const baseHigh = baseLen === 5  ? d.base_high_5  :
+                             baseLen === 10 ? d.base_high_10 :
+                             baseLen === 21 ? d.base_high_21 :
+                                              d.base_high_45;
+            const baseLow  = baseLen === 5  ? d.base_low_5   :
+                             baseLen === 10 ? d.base_low_10  :
+                             baseLen === 21 ? d.base_low_21  :
+                                              d.base_low_45;
+
+            // Base tightness: 0–100, where 100 = perfectly flat base
+            const baseMidpoint = (baseHigh + baseLow) / 2;
+            const baseRangePct = baseMidpoint > 0
+                ? ((baseHigh - baseLow) / baseMidpoint) * 100
+                : 0;
+            const baseTightness = Math.round(Math.max(0, Math.min(100,
+                100 - (baseRangePct / 20 * 100)
+            )));
+
+            // ATR-based buffer: 1x ATR instead of fixed 0.5%
+            const atrBuffer = d.atr_14 > 0 ? d.atr_14 : latestClose * 0.005;
+
+            const triggerPrice  = parseFloat((baseHigh + atrBuffer).toFixed(2));
+            const stopLossPrice = parseFloat((baseLow  - atrBuffer).toFixed(2));
+            const risk  = triggerPrice - stopLossPrice;
+            let targetPrice: number, riskReward: number;
+            if (priceDirection === 'Falling') {
+                targetPrice = parseFloat((triggerPrice + risk * 2).toFixed(2));
+                riskReward = risk > 0 ? (targetPrice - triggerPrice) / risk : 0;
+            } else {
+                targetPrice = parseFloat((triggerPrice - risk * 2).toFixed(2));
+                riskReward = risk > 0 ? (triggerPrice - targetPrice) / risk : 0;
+            }
+
+            const alreadyTriggered = priceDirection === 'Falling'
+                ? latestClose >= triggerPrice
+                : latestClose <= triggerPrice;
+
+            if (riskReward < minRR) return;
+
+            // 4-component score with base tightness
+            let wP = 0.35, wD = 0.35, wV = 0.15, wT = 0.15;
+            if (scoreWeighting === 'Price')    { wP = 0.45; wD = 0.25; wV = 0.15; wT = 0.15; }
+            if (scoreWeighting === 'Delivery') { wP = 0.25; wD = 0.45; wV = 0.15; wT = 0.15; }
+
+            const score = Math.round(wP * score_p + wD * score_d + wV * score_v + wT * baseTightness);
+
+            if (score < minScore) return;
 
             results.push({
                 symbol: d.ticker,
@@ -304,23 +593,54 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                 priceChangePct: pChange,
                 deliveryChangePct: dChange,
                 relativeVolume: rVol,
-                score: score
+                relativeStrength,
+                position52W,
+                score,
+                consecutiveHighDeliveryDays: d.consecutiveHighDeliveryDays,
+                detectedBaseLength: d.detected_base_length,
+                triggerPrice,
+                stopLossPrice,
+                targetPrice,
+                riskReward,
+                latestClose,
+                baseTightness,
+                alreadyTriggered,
+                nearEarnings
             });
         });
 
         return results;
-    }, [rawData, priceMetric, deliveryMetric, priceDirection, minPriceChange, minDeliveryChange, minRelativeVolume, minScore, scoreWeighting, filterSector, filterMcap, metadataMap, mcapRange]);
+    }, [rawData, priceMetric, deliveryMetric, priceDirection, minPriceChange, minDeliveryChange, minRelativeVolume, minScore, scoreWeighting, filterSector, filterMcap, minAbsDeliveryPct, minConsecutiveDays, minRR, niftyChangePct, filterRSNegative, maxPosition52W, showWatchlistOnly, watchlist, hideNearEarnings, earningsProximitySet, metadataMap, mcapRange]);
+
+    useEffect(() => {
+        if (processedData.length === 0) return;
+        const currentSymbols = new Set(processedData.map(d => d.symbol));
+        const stored = sessionStorage.getItem('prev_divergence_scan');
+        const prevSymbols: Set<string> = stored
+            ? new Set(JSON.parse(stored))
+            : new Set();
+        const newOnes = new Set<string>();
+        currentSymbols.forEach(s => {
+            if (!prevSymbols.has(s)) newOnes.add(s);
+        });
+        setNewSymbols(newOnes);
+        setPreviousSymbols(prevSymbols);
+        sessionStorage.setItem('prev_divergence_scan', JSON.stringify(Array.from(currentSymbols)));
+    }, [processedData]);
 
     const sortedData = useMemo(() => {
-        if (!sortConfig) return processedData;
-        return [...processedData].sort((a, b) => {
+        let data = showNewOnly
+            ? processedData.filter(d => newSymbols.has(d.symbol))
+            : processedData;
+        if (!sortConfig) return data;
+        return [...data].sort((a, b) => {
             const aVal = a[sortConfig.key];
             const bVal = b[sortConfig.key];
             if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
             if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
             return 0;
         });
-    }, [processedData, sortConfig]);
+    }, [processedData, sortConfig, showNewOnly, newSymbols]);
 
     const handleSort = (key: keyof ScannerData) => {
         setSortConfig(prev => {
@@ -339,13 +659,45 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
             : <ChevronDown size={10} className="inline ml-1 text-orange-400" />;
     };
 
+    const exportCSV = useCallback(() => {
+        if (sortedData.length === 0) return;
+        const headers = ['Symbol', 'Sector', 'Bucket', 'Price Change%', 'RS vs N50', 'Del Change', 'Consec Days', 'Base', 'Tightness', '52W Pos', 'Rel Vol', 'Score', 'Trigger', 'SL', 'R:R'];
+        const rows = sortedData.map(d => [
+            d.symbol,
+            d.sector,
+            d.bucket,
+            d.priceChangePct.toFixed(2),
+            d.relativeStrength.toFixed(2),
+            d.deliveryChangePct.toFixed(1),
+            d.consecutiveHighDeliveryDays,
+            `${d.detectedBaseLength}d`,
+            d.baseTightness,
+            d.position52W.toFixed(1),
+            d.relativeVolume.toFixed(2),
+            d.score,
+            d.triggerPrice.toFixed(2),
+            d.stopLossPrice.toFixed(2),
+            d.riskReward.toFixed(2)
+        ]);
+        const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `divergence_scan_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }, [sortedData]);
+
     const summaries = useMemo(() => {
-        if (processedData.length === 0) return { avgScore: 0, avgDel: 0 };
+        if (processedData.length === 0) return { avgScore: 0, avgDel: 0, avgRR: 0 };
         const sumScore = processedData.reduce((acc, v) => acc + v.score, 0);
         const sumDel = processedData.reduce((acc, v) => acc + v.deliveryChangePct, 0);
+        const sumRR = processedData.reduce((acc, v) => acc + v.riskReward, 0);
         return {
             avgScore: Math.round(sumScore / processedData.length),
-            avgDel: sumDel / processedData.length
+            avgDel: sumDel / processedData.length,
+            avgRR: sumRR / processedData.length
         };
     }, [processedData]);
 
@@ -373,6 +725,13 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                 </div>
                 <div className="flex items-center gap-3">
                     <span className="text-[10px] text-[#666] font-mono">Dynamic Accumulation Logic</span>
+                    <button
+                        onClick={exportCSV}
+                        disabled={sortedData.length === 0}
+                        className="bg-[#2a2c34] hover:bg-[#3a3c44] text-[#aaa] hover:text-white px-2 py-1 rounded border border-[#ffffff1a] transition-all flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                        <span className="text-xs">↓ CSV</span>
+                    </button>
                     <button 
                         onClick={fetchData} 
                         className="bg-[#2a2c34] hover:bg-[#3a3c44] text-[#aaa] hover:text-white px-2 py-1 rounded border border-[#ffffff1a] transition-all flex items-center gap-1"
@@ -395,7 +754,8 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                         currentConfig={{
                             lookbackBars, priceMetric, deliveryMetric, priceDirection,
                             minPriceChange, minDeliveryChange, minRelativeVolume, minScore,
-                            scoreWeighting, filterSector, filterMcap
+                            scoreWeighting, filterSector, filterMcap, minAbsDeliveryPct,
+                            minConsecutiveDays, minRR
                         }}
                         onLoad={(config) => {
                             const c = config as DivergenceConfig;
@@ -410,6 +770,9 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                             setScoreWeighting(c.scoreWeighting);
                             setFilterSector(c.filterSector);
                             setFilterMcap(c.filterMcap);
+                            setMinAbsDeliveryPct(c.minAbsDeliveryPct ?? 0);
+                            setMinConsecutiveDays(c.minConsecutiveDays ?? 0);
+                            setMinRR(c.minRR ?? 0);
                         }}
                     />
                     <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-9 gap-4 items-end">
@@ -454,26 +817,123 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                         
                         <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
                            <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
-                               <label>Min Price {priceDirection === 'Rising' ? 'Increase' : 'Decline'} %</label>
-                               <span className="text-orange-400">{minPriceChange}%</span>
-                           </div>
-                           <input type="range" min="-30" max="30" value={minPriceChange} onChange={(e) => setMinPriceChange(Number(e.target.value))} className="w-full accent-orange-500" />
+                                <label>Min Price {priceDirection === 'Rising' ? 'Increase' : 'Decline'} %</label>
+                                <span className="text-orange-400">{minPriceChangeDisplay}%</span>
+                            </div>
+                             <input type="range" min={priceDirection === 'Rising' ? 0 : -30} max={priceDirection === 'Rising' ? 30 : 0} value={minPriceChangeDisplay} onChange={(e) => { const v = Number(e.target.value); setMinPriceChangeDisplay(v); setMinPriceChangeDebounced(v); }} className="w-full accent-orange-500" />
                         </div>
                         
                         <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
                            <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
-                               <label>Min Del Change {deliveryMetric === 'Pct' ? '%' : 'Pct'}</label>
-                               <span className="text-orange-400">{minDeliveryChange}%</span>
-                           </div>
-                           <input type="range" min="-10" max="50" value={minDeliveryChange} onChange={(e) => setMinDeliveryChange(Number(e.target.value))} className="w-full accent-orange-500" />
+                                <label>Min Del Change {deliveryMetric === 'Pct' ? 'pp' : '%'}</label>
+                                <span className="text-orange-400">{minDeliveryChangeDisplay}%</span>
+                            </div>
+                            <input type="range" min="-10" max="50" value={minDeliveryChangeDisplay} onChange={(e) => { const v = Number(e.target.value); setMinDeliveryChangeDisplay(v); setMinDeliveryChangeDebounced(v); }} className="w-full accent-orange-500" />
                         </div>
 
                         <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
-                           <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
-                               <label>Min Rel Volume</label>
-                               <span className="text-orange-400">{minRelativeVolume}x</span>
-                           </div>
-                           <input type="range" min="0" max="5" step="0.1" value={minRelativeVolume} onChange={(e) => setMinRelativeVolume(Number(e.target.value))} className="w-full accent-orange-500" />
+                            <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                                <label>Min Abs Delivery %</label>
+                                <span className="text-orange-400">{minAbsDeliveryPct}%</span>
+                            </div>
+                            <input type="range" min="0" max="80" step="1" value={minAbsDeliveryPct} onChange={(e) => setMinAbsDeliveryPct(Number(e.target.value))} className="w-full accent-orange-500" />
+                        </div>
+
+                        <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
+                            <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                                <label>Min Consec. Sessions ≥40% Del</label>
+                                <span className="text-orange-400">{minConsecutiveDays === 0 ? 'Off' : `${minConsecutiveDays}+`}</span>
+                            </div>
+                            <input type="range" min="0" max="5" step="1" value={minConsecutiveDays} onChange={(e) => setMinConsecutiveDays(Number(e.target.value))} className="w-full accent-orange-500" />
+                        </div>
+
+                        <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
+                            <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                                <label>Min R:R Ratio</label>
+                                <span className="text-orange-400">{minRR === 0 ? 'Off' : minRR.toFixed(1)}</span>
+                            </div>
+                            <input type="range" min="0" max="5" step="0.5" value={minRR} onChange={(e) => setMinRR(Number(e.target.value))} className="w-full accent-orange-500" />
+                        </div>
+
+                        <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
+                            <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                                <label>Max 52W Position %</label>
+                                <span className="text-orange-400">{maxPosition52W === 100 ? 'All' : `<${maxPosition52W}%`}</span>
+                            </div>
+                            <input type="range" min="10" max="100" step="5" value={maxPosition52W} onChange={(e) => setMaxPosition52W(Number(e.target.value))} className="w-full accent-orange-500" />
+                        </div>
+
+                        <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
+                            <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                                <label>RS vs N50</label>
+                            </div>
+                            <button
+                                onClick={() => setFilterRSNegative(prev => !prev)}
+                                className={`text-[11px] px-2 py-1 rounded border transition-colors font-mono ${
+                                    filterRSNegative
+                                        ? 'bg-orange-500/20 border-orange-500/50 text-orange-400'
+                                        : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888]'
+                                }`}
+                            >
+                                {filterRSNegative ? 'Negative Only' : 'All Stocks'}
+                            </button>
+                        </div>
+
+                        <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
+                            <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                                <label>Results Zone</label>
+                            </div>
+                            <button
+                                onClick={() => setHideNearEarnings(f => !f)}
+                                className={`text-[11px] px-2 py-1 rounded border transition-colors font-mono ${
+                                    hideNearEarnings
+                                        ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400'
+                                        : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888]'
+                                }`}
+                            >
+                                {hideNearEarnings ? 'Hide Results-Zone' : 'Show All'}
+                            </button>
+                        </div>
+
+                        <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
+                            <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                                <label>Watchlist</label>
+                            </div>
+                            <button
+                                onClick={() => setShowWatchlistOnly(f => !f)}
+                                className={`text-[11px] px-2 py-1 rounded border transition-colors font-mono ${
+                                    showWatchlistOnly
+                                        ? 'bg-orange-500/20 border-orange-500/50 text-orange-400'
+                                        : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888]'
+                                }`}
+                            >
+                                ★ {watchlist.size}
+                            </button>
+                        </div>
+
+                        <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
+                            <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                                <label>New Signals</label>
+                            </div>
+                            <button
+                                onClick={() => setShowNewOnly(f => !f)}
+                                className={`text-[11px] px-2 py-1 rounded border transition-colors font-mono flex items-center gap-1 ${
+                                    showNewOnly
+                                        ? 'bg-orange-500/20 border-orange-500/50 text-orange-400'
+                                        : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888]'
+                                }`}
+                            >
+                                <span className={showNewOnly ? 'animate-pulse' : ''}>●</span>
+                                New ({newSymbols.size})
+                            </button>
+                        </div>
+
+                        <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
+                            <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                                <label>Min Rel Volume</label>
+                                <span className="text-orange-400">{minRelativeVolumeDisplay}x</span>
+                            </div>
+                            <input type="range" min="0" max="5" step="0.1" value={minRelativeVolumeDisplay} onChange={(e) => { const v = Number(e.target.value); setMinRelativeVolumeDisplay(v); setMinRelativeVolumeDebounced(v); }} className="w-full accent-orange-500" />
                         </div>
 
                         <div className="flex flex-col">
@@ -486,10 +946,10 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                         </div>
                         <div className="flex flex-col">
                            <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
-                               <label>Min Score</label>
-                               <span className="text-orange-400">{minScore}</span>
-                           </div>
-                           <input type="range" min="0" max="100" value={minScore} onChange={(e) => setMinScore(Number(e.target.value))} className="w-full accent-orange-500" />
+                                <label>Min Score</label>
+                                <span className="text-orange-400">{minScoreDisplay}</span>
+                            </div>
+                            <input type="range" min="0" max="100" value={minScoreDisplay} onChange={(e) => { const v = Number(e.target.value); setMinScoreDisplay(v); setMinScoreDebounced(v); }} className="w-full accent-orange-500" />
                         </div>
                     </div>
                 </div>
@@ -497,10 +957,15 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
 
             {/* Summaries & Filters Row */}
             <div className="grid grid-cols-1 md:grid-cols-[1fr_min-content] gap-4 p-4 border-b border-[#ffffff1a] bg-[#1a1c24]">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                     <div className="bg-[#2a2c34] border border-[#ffffff1a] rounded p-3 flex flex-col justify-center">
                         <span className="text-xs text-[#888] font-mono mb-1">Divergence Signals</span>
-                        <span className="text-2xl text-orange-400 font-semibold">{processedData.length}</span>
+                        <div className="flex items-end gap-2">
+                            <span className="text-2xl text-orange-400 font-semibold">{processedData.length}</span>
+                            {newSymbols.size > 0 && (
+                                <span className="text-sm text-orange-400/70 font-mono mb-0.5">+{newSymbols.size} new</span>
+                            )}
+                        </div>
                     </div>
                     <div className="bg-[#2a2c34] border border-[#ffffff1a] rounded p-3 flex flex-col justify-center">
                         <span className="text-xs text-[#888] font-mono mb-1">Average Score</span>
@@ -509,6 +974,10 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                     <div className="bg-[#2a2c34] border border-[#ffffff1a] rounded p-3 flex flex-col justify-center">
                         <span className="text-xs text-[#888] font-mono mb-1">Avg Delivery Change</span>
                         <span className="text-2xl text-[#fafafa] font-semibold">{summaries.avgDel > 0 ? '+' : ''}{summaries.avgDel.toFixed(1)}%</span>
+                    </div>
+                    <div className="bg-[#2a2c34] border border-[#ffffff1a] rounded p-3 flex flex-col justify-center">
+                        <span className="text-xs text-[#888] font-mono mb-1">Avg R:R Ratio</span>
+                        <span className={`text-2xl font-semibold ${summaries.avgRR >= 2 ? 'text-green-400' : summaries.avgRR >= 1 ? 'text-yellow-400' : 'text-[#666]'}`}>{summaries.avgRR.toFixed(2)}</span>
                     </div>
                 </div>
                 <div className="flex flex-wrap gap-3 items-end">
@@ -546,6 +1015,14 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                 ) : (
                     <table className="w-full text-left border-collapse">
                         <thead className="sticky top-0 bg-[#1a1c24] z-10 shadow-sm border-b border-[#ffffff1a]">
+                            <tr className="bg-[#1a1c24] border-b border-[#ffffff1a]">
+                                <th colSpan={15} className="p-1 text-[10px] text-[#888] font-mono text-left">
+                                    <span className="text-[#555]">Nifty50</span>{' '}
+                                    <span className={niftyChangePct >= 0 ? 'text-green-400' : 'text-red-400'}>
+                                        {niftyChangePct >= 0 ? '+' : ''}{niftyChangePct.toFixed(2)}%
+                                    </span>
+                                </th>
+                            </tr>
                             <tr>
                                 <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap ${sortConfig?.key === 'symbol' ? 'text-white' : ''}`} onClick={() => handleSort('symbol')}>
                                     Symbol <SortIcon column="symbol" />
@@ -559,8 +1036,23 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                                 <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right ${sortConfig?.key === 'priceChangePct' ? 'text-white' : ''}`} onClick={() => handleSort('priceChangePct')}>
                                     Price Change % <SortIcon column="priceChangePct" />
                                 </th>
+                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right ${sortConfig?.key === 'relativeStrength' ? 'text-white' : ''}`} onClick={() => handleSort('relativeStrength')}>
+                                    RS vs N50 <SortIcon column="relativeStrength" />
+                                </th>
                                 <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right ${sortConfig?.key === 'deliveryChangePct' ? 'text-white' : ''}`} onClick={() => handleSort('deliveryChangePct')}>
                                     Del Change <SortIcon column="deliveryChangePct" />
+                                </th>
+                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right ${sortConfig?.key === 'consecutiveHighDeliveryDays' ? 'text-white' : ''}`} onClick={() => handleSort('consecutiveHighDeliveryDays')}>
+                                    Consec. Days <SortIcon column="consecutiveHighDeliveryDays" />
+                                </th>
+                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right ${sortConfig?.key === 'detectedBaseLength' ? 'text-white' : ''}`} onClick={() => handleSort('detectedBaseLength')}>
+                                    Base <SortIcon column="detectedBaseLength" />
+                                </th>
+                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right ${sortConfig?.key === 'baseTightness' ? 'text-white' : ''}`} onClick={() => handleSort('baseTightness')}>
+                                    Tightness <SortIcon column="baseTightness" />
+                                </th>
+                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right ${sortConfig?.key === 'position52W' ? 'text-white' : ''}`} onClick={() => handleSort('position52W')}>
+                                    52W Pos <SortIcon column="position52W" />
                                 </th>
                                 <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right ${sortConfig?.key === 'relativeVolume' ? 'text-white' : ''}`} onClick={() => handleSort('relativeVolume')}>
                                     Rel Volume <SortIcon column="relativeVolume" />
@@ -568,48 +1060,157 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                                 <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap ${sortConfig?.key === 'score' ? 'text-white' : ''}`} onClick={() => handleSort('score')}>
                                     Score <SortIcon column="score" />
                                 </th>
+                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right ${sortConfig?.key === 'triggerPrice' ? 'text-white' : ''}`} onClick={() => handleSort('triggerPrice')}>
+                                    Trigger <SortIcon column="triggerPrice" />
+                                </th>
+                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right ${sortConfig?.key === 'stopLossPrice' ? 'text-white' : ''}`} onClick={() => handleSort('stopLossPrice')}>
+                                    SL <SortIcon column="stopLossPrice" />
+                                </th>
+                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right ${sortConfig?.key === 'riskReward' ? 'text-white' : ''}`} onClick={() => handleSort('riskReward')}>
+                                    R:R <SortIcon column="riskReward" />
+                                </th>
                             </tr>
                         </thead>
                         <tbody>
                             {sortedData.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} className="p-8 text-center text-[#666] font-mono text-xs">
+                                        <td colSpan={15} className="p-8 text-center text-[#666] font-mono text-xs">
                                         No divergence signals match your strict criteria.
                                     </td>
                                 </tr>
                             ) : (
-                                sortedData.map(d => (
-                                    <tr key={d.symbol} className="border-b border-[#ffffff0a] hover:bg-[#ffffff05] transition-colors group">
-                                        <td className="p-3 whitespace-nowrap">
-                                            <span 
-                                                onClick={() => onNavigate?.('Technical Chart', d.symbol)}
-                                                className="font-bold text-[#fafafa] cursor-pointer hover:text-orange-400 hover:underline inline-flex items-center gap-1 transition-colors"
-                                            >
-                                                {d.symbol}
-                                            </span>
-                                        </td>
-                                        <td className="p-3 text-[#ccc] text-sm whitespace-nowrap">{d.sector}</td>
-                                        <td className="p-3 text-[#888] text-xs font-mono whitespace-nowrap">{d.bucket}</td>
-                                        <td className="p-3 text-sm font-mono whitespace-nowrap text-right"><span className={d.priceChangePct >= 0 ? "text-green-400" : "text-red-400"}>{d.priceChangePct > 0 ? "+" : ""}{d.priceChangePct.toFixed(2)}%</span></td>
-                                        <td className="p-3 text-sm font-mono whitespace-nowrap text-right"><span className={d.deliveryChangePct >= 0 ? "text-green-400" : "text-red-400"}>{d.deliveryChangePct > 0 ? "+" : ""}{d.deliveryChangePct.toFixed(1)}%</span></td>
-                                        <td className="p-3 text-sm font-mono whitespace-nowrap text-right"><span className={d.relativeVolume > 1.5 ? "text-orange-400" : "text-[#aaa]"}>{d.relativeVolume.toFixed(2)}x</span></td>
-                                        <td className="p-3 w-48">
-                                            <div className="flex items-center gap-2">
-                                                <span className={`text-sm font-mono w-8 text-right font-semibold ${d.score >= 80 ? 'text-orange-400' : d.score >= 50 ? 'text-[#fafafa]' : 'text-[#666]'}`}>
-                                                    {d.score}
-                                                </span>
-                                                <div className="flex-1 h-1.5 bg-[#ffffff1a] rounded overflow-hidden">
-                                                    <div className={`h-full bg-orange-500 rounded ${d.score >= 80 ? 'shadow-[0_0_8px_rgba(249,115,22,0.5)]' : ''}`} style={{ width: `${Math.max(0, Math.min(100, d.score))}%` }} />
-                                                </div>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))
+                                (() => {
+                                    const MAX_ROWS = 500;
+                                    const displayData = sortedData.slice(0, MAX_ROWS);
+                                    const overflow = sortedData.length > MAX_ROWS;
+                                    return (
+                                        <>
+                                            {overflow && (
+                                                <tr>
+                                                    <td colSpan={15} className="px-3 py-1.5 text-[10px] text-center text-yellow-500 font-mono bg-yellow-500/5 border-b border-yellow-500/20">
+                                                        Showing top {MAX_ROWS} of {sortedData.length} signals — tighten filters to see all
+                                                    </td>
+                                                </tr>
+                                            )}
+                                            {displayData.map(d => (
+                                                <tr key={d.symbol} className="border-b border-[#ffffff0a] hover:bg-[#ffffff05] transition-colors group">
+                                                    <td className="p-3 whitespace-nowrap">
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); toggleWatchlist(d.symbol); }}
+                                                            className={`transition-colors mr-1 ${
+                                                                watchlist.has(d.symbol)
+                                                                    ? 'text-orange-400' : 'text-[#333] hover:text-[#888]'
+                                                            }`}
+                                                        >
+                                                            ★
+                                                        </button>
+                                                        <span 
+                                                            onClick={() => onNavigate?.('Technical Chart', d.symbol)}
+                                                            className="font-bold text-[#fafafa] cursor-pointer hover:text-orange-400 hover:underline inline-flex items-center gap-1 transition-colors"
+                                                        >
+                                                            {d.symbol}
+                                                        </span>
+                                                        {d.alreadyTriggered && priceDirection === 'Falling' && (
+                                                            <span className="text-[9px] bg-green-500/20 text-green-400 px-1 rounded border border-green-500/30 font-mono ml-1">
+                                                                TRIGGERED
+                                                            </span>
+                                                        )}
+                                                        {d.alreadyTriggered && priceDirection === 'Rising' && (
+                                                            <span className="text-[9px] bg-yellow-500/20 text-yellow-400 px-1 rounded border border-yellow-500/30 font-mono ml-1">
+                                                                STILL RUNNING
+                                                            </span>
+                                                        )}
+                                                        {d.nearEarnings && (
+                                                            <span className="text-[9px] bg-yellow-500/20 text-yellow-400 px-1 rounded border border-yellow-500/30 font-mono ml-1" title="Quarterly results due within 10 days — delivery signal may be noise">
+                                                                ⚠ RESULTS
+                                                            </span>
+                                                        )}
+                                                        {newSymbols.has(d.symbol) && (
+                                                            <span className="text-[9px] bg-orange-500/20 text-orange-400 px-1 rounded border border-orange-500/30 font-mono ml-1 animate-pulse">
+                                                                NEW
+                                                            </span>
+                                                        )}
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); setBacktestSymbol(d.symbol); }}
+                                                            className="opacity-0 group-hover:opacity-100 transition-opacity text-[#666] hover:text-orange-400 ml-1"
+                                                        >
+                                                            <BarChart2 size={12} />
+                                                        </button>
+                                                    </td>
+                                                    <td className="p-3 text-[#ccc] text-sm whitespace-nowrap">{d.sector}</td>
+                                                    <td className="p-3 text-[#888] text-xs font-mono whitespace-nowrap">{d.bucket}</td>
+                                                    <td className="p-3 text-sm font-mono whitespace-nowrap text-right"><span className={d.priceChangePct >= 0 ? "text-green-400" : "text-red-400"}>{d.priceChangePct > 0 ? "+" : ""}{d.priceChangePct.toFixed(2)}%</span></td>
+                                                    <td className={`p-3 text-sm font-mono whitespace-nowrap text-right ${d.relativeStrength >= 0 ? 'text-[#22c55e]' : 'text-[#ef4444]'}`}>{d.relativeStrength >= 0 ? '+' : ''}{d.relativeStrength.toFixed(2)}%</td>
+                                                    <td className="p-3 text-sm font-mono whitespace-nowrap text-right"><span className={d.deliveryChangePct >= 0 ? "text-green-400" : "text-red-400"}>{d.deliveryChangePct > 0 ? "+" : ""}{d.deliveryChangePct.toFixed(1)}%</span></td>
+                                                    <td className="p-3 text-sm font-mono whitespace-nowrap text-right">
+                                                        <span className={
+                                                            d.consecutiveHighDeliveryDays >= 3 ? 'text-orange-400 font-bold' :
+                                                            d.consecutiveHighDeliveryDays >= 1 ? 'text-[#fafafa]' : 'text-[#555]'
+                                                        }>
+                                                            {d.consecutiveHighDeliveryDays > 0 ? `${d.consecutiveHighDeliveryDays}d` : '—'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="p-3 text-xs font-mono whitespace-nowrap text-right">
+                                                        <span className={`
+                                                            ${d.detectedBaseLength === 45 ? 'text-orange-400 font-bold' : 
+                                                              d.detectedBaseLength === 21 ? 'text-yellow-400' : 'text-[#888]'}
+                                                        `}>
+                                                            {d.detectedBaseLength}d
+                                                        </span>
+                                                    </td>
+                                                    <td className="p-3 text-xs font-mono whitespace-nowrap text-right">
+                                                        <span className={
+                                                            d.baseTightness >= 75 ? 'text-green-400 font-bold' :
+                                                            d.baseTightness >= 50 ? 'text-[#fafafa]' : 'text-[#555]'
+                                                        }>
+                                                            {d.baseTightness}
+                                                        </span>
+                                                    </td>
+                                                    <td className="p-3 text-xs font-mono whitespace-nowrap text-right text-[#888]">{d.position52W.toFixed(1)}%</td>
+                                                    <td className="p-3 text-sm font-mono whitespace-nowrap text-right"><span className={d.relativeVolume > 1.5 ? "text-orange-400" : "text-[#aaa]"}>{d.relativeVolume.toFixed(2)}x</span></td>
+                                                    <td className="p-3 w-48">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className={`text-sm font-mono w-8 text-right font-semibold ${d.score >= 80 ? 'text-orange-400' : d.score >= 50 ? 'text-[#fafafa]' : 'text-[#666]'}`}>
+                                                                {d.score}
+                                                            </span>
+                                                            <div className="flex-1 h-1.5 bg-[#ffffff1a] rounded overflow-hidden">
+                                                                <div className={`h-full bg-orange-500 rounded ${d.score >= 80 ? 'shadow-[0_0_8px_rgba(249,115,22,0.5)]' : ''}`} style={{ width: `${Math.max(0, Math.min(100, d.score))}%` }} />
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="p-3 text-sm font-mono whitespace-nowrap text-right text-[#fafafa]">{d.triggerPrice.toFixed(2)}</td>
+                                                    <td className="p-3 text-sm font-mono whitespace-nowrap text-right text-red-400">{d.stopLossPrice.toFixed(2)}</td>
+                                                    <td className="p-3 text-sm font-mono whitespace-nowrap text-right">
+                                                        <span className={d.riskReward >= 2 ? 'text-green-400 font-bold' : d.riskReward >= 1 ? 'text-yellow-400' : 'text-[#555]'}>
+                                                            {d.riskReward.toFixed(2)}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </>
+                                    );
+                                })()
                             )}
                         </tbody>
                     </table>
                 )}
             </div>
+            {backtestSymbol && (() => {
+                const row = sortedData.find(d => d.symbol === backtestSymbol);
+                if (!row) return null;
+                return (
+                    <BacktestPanel
+                        lib={lib}
+                        symbol={row.symbol}
+                        entryPrice={row.triggerPrice}
+                        stopLossPrice={row.stopLossPrice}
+                        detectedBaseLength={row.detectedBaseLength}
+                        minDeliveryChange={minDeliveryChange}
+                        deliveryMetric={deliveryMetric}
+                        onClose={() => setBacktestSymbol(null)}
+                    />
+                );
+            })()}
         </div>
     );
 }
