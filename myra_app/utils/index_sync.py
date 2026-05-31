@@ -4,6 +4,7 @@ MYRA Index Constituents Sync
 Auto-updates NIFTY 500 and other NSE indices every 15 days.
 """
 
+import logging
 import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -274,6 +275,40 @@ def heal_index_if_stale(index_name, expected_count=None):
             )
             print(f"[INDEX HEAL] Forcing re-sync of {index_name}...")
             sync_index_constituents(index_name, force=True)
+
+
+def sync_nifty_benchmarks():
+    """Fetch Nifty 50 daily closes from yfinance and store in benchmarks table."""
+    import yfinance as yf
+
+    logger = logging.getLogger(__name__)
+    metadata_db_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), "db", "myra_metadata.db"
+    )
+
+    try:
+        ticker = yf.Ticker("^NSEI")
+        df = ticker.history(period="1y")
+        if df.empty:
+            logger.warning("[Nifty Benchmarks] No data returned from yfinance")
+            return
+
+        records = [
+            ("^NSEI", str(row.Index.date()), float(row.Close))
+            for row in df.itertuples()
+        ]
+
+        os.makedirs(os.path.dirname(metadata_db_path), exist_ok=True)
+        with sqlite3.connect(metadata_db_path, timeout=30) as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO benchmarks (symbol, date, close) VALUES (?, ?, ?)",
+                records,
+            )
+            conn.commit()
+
+        logger.info(f"[Nifty Benchmarks] Synced {len(records)} rows for ^NSEI")
+    except Exception as e:
+        logger.error(f"[Nifty Benchmarks] Sync failed: {e}")
 
 
 def get_index_symbols(index_name):

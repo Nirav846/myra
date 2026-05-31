@@ -82,6 +82,7 @@ class FundamentalSync:
                 market_cap          REAL,
                 face_value          REAL,
                 issued_size         INTEGER,
+                shares_outstanding  INTEGER,
                 daily_volatility    REAL,
                 annual_volatility   REAL,
                 impact_cost         REAL,
@@ -112,6 +113,11 @@ class FundamentalSync:
                 PRIMARY KEY (symbol, date)
             )
             """)
+        # Add shares_outstanding if table pre-dates the column
+        try:
+            conn.execute("ALTER TABLE fundamentals ADD COLUMN shares_outstanding INTEGER")
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
 
     def _fetch_morningstar_bulk(self) -> dict:
@@ -148,6 +154,15 @@ class FundamentalSync:
                 )
                 response.raise_for_status()
                 data = response.json()
+
+                # Morningstar returns a list of {group, items} objects.
+                # Flatten into a single list of row dicts.
+                if isinstance(data, list):
+                    flat_rows = []
+                    for group_obj in data:
+                        items = group_obj.get("items", [])
+                        flat_rows.extend(items)
+                    data = {"rows": flat_rows}
 
                 rows = data.get("rows", [])
                 if not rows:
@@ -393,6 +408,7 @@ class FundamentalSync:
                 "market_cap": nse.get("market_cap"),
                 "face_value": nse.get("face_value"),
                 "issued_size": nse.get("issued_size"),
+                "shares_outstanding": nse.get("issued_size"),
                 "daily_volatility": nse.get("daily_volatility"),
                 "annual_volatility": nse.get("annual_volatility"),
                 "impact_cost": nse.get("impact_cost"),
@@ -442,6 +458,123 @@ class FundamentalSync:
         except Exception as e:
             logger.error(f"[FundamentalSync] Insert failed: {e}")
 
+    def _backfill_market_cap_from_yfinance(self):
+        """Fetch market cap for all symbols that are missing it."""
+        import yfinance as yf
+        import time
+
+        db_path = self._get_valuation_db_path()
+        conn = sqlite3.connect(db_path, timeout=30)
+        symbols = conn.execute(
+            "SELECT symbol FROM fundamentals WHERE marketCap IS NULL OR marketCap = 0"
+        ).fetchall()
+        conn.close()
+
+        total = len(symbols)
+        logger.info(f"[FundamentalSync] Backfilling marketCap for {total} symbols via yfinance...")
+
+        updated = 0
+        for i, (symbol,) in enumerate(symbols):
+            try:
+                ticker = yf.Ticker(f"{symbol}.NS")
+                info = ticker.info
+                market_cap = info.get('marketCap')
+                if market_cap:
+                    conn = sqlite3.connect(db_path, timeout=30)
+                    conn.execute(
+                        "UPDATE fundamentals SET marketCap = ? WHERE symbol = ?",
+                        (market_cap, symbol)
+                    )
+                    conn.commit()
+                    conn.close()
+                    updated += 1
+                if (i + 1) % 100 == 0:
+                    logger.info(f"[FundamentalSync] Market cap backfill: {i+1}/{total} ({updated} updated)")
+                time.sleep(0.3)
+            except Exception:
+                pass
+
+        logger.info(f"[FundamentalSync] Market cap backfill complete: {updated}/{total} updated")
+
+    def _backfill_shares_outstanding_from_yfinance(self):
+        """Fetch shares outstanding for all symbols that are missing it."""
+        import time
+
+        db_path = self._get_valuation_db_path()
+        conn = sqlite3.connect(db_path, timeout=30)
+        symbols = conn.execute(
+            "SELECT symbol FROM fundamentals WHERE (shares_outstanding IS NULL OR shares_outstanding = 0) AND source_ms IS NOT NULL"
+        ).fetchall()
+        conn.close()
+
+        total = len(symbols)
+        logger.info(f"[FundamentalSync] Backfilling shares_outstanding for {total} symbols via yfinance...")
+
+        updated = 0
+        for i, (symbol,) in enumerate(symbols):
+            try:
+                ticker = yf.Ticker(f"{symbol}.NS")
+                info = ticker.info
+                shares = info.get('sharesOutstanding')
+                if shares:
+                    conn = sqlite3.connect(db_path, timeout=30)
+                    conn.execute(
+                        "UPDATE fundamentals SET shares_outstanding = ? WHERE symbol = ?",
+                        (shares, symbol)
+                    )
+                    conn.commit()
+                    # Verify the UPDATE took effect
+                    row = conn.execute(
+                        "SELECT shares_outstanding FROM fundamentals WHERE symbol = ?",
+                        (symbol,)
+                    ).fetchone()
+                    if not row or not row[0]:
+                        logger.warning(f"[FundamentalSync] shares_outstanding NOT persisted for {symbol}")
+                    conn.close()
+                    updated += 1
+                if (i + 1) % 100 == 0:
+                    logger.info(f"[FundamentalSync] Shares outstanding backfill: {i+1}/{total} ({updated} updated)")
+                time.sleep(0.3)
+            except Exception:
+                pass
+
+        logger.info(f"[FundamentalSync] Shares outstanding backfill complete: {updated}/{total} updated")
+
+    def _compute_market_cap_from_prices(self):
+        """Compute marketCap = shares_outstanding × latest close for all symbols."""
+        tech_db = f"{DB_DIR}/myra_technical.db"
+        val_db = f"{DB_DIR}/myra_valuation.db"
+
+        tech_conn = sqlite3.connect(tech_db)
+        val_conn = sqlite3.connect(val_db)
+
+        shares = {}
+        for row in val_conn.execute(
+            "SELECT symbol, shares_outstanding FROM fundamentals WHERE shares_outstanding IS NOT NULL AND shares_outstanding > 0"
+        ):
+            shares[row[0]] = row[1]
+
+        logger.info(f"[FundamentalSync] Computing marketCap for {len(shares)} symbols")
+
+        updated = 0
+        for symbol, shares_out in shares.items():
+            row = tech_conn.execute(
+                "SELECT close FROM technical_data WHERE symbol = ? ORDER BY date DESC LIMIT 1",
+                (symbol,)
+            ).fetchone()
+            if row and row[0] and shares_out > 0:
+                market_cap = shares_out * row[0]
+                val_conn.execute(
+                    "UPDATE fundamentals SET marketCap = ? WHERE symbol = ?",
+                    (market_cap, symbol)
+                )
+                updated += 1
+
+        val_conn.commit()
+        tech_conn.close()
+        val_conn.close()
+        logger.info(f"[FundamentalSync] marketCap updated for {updated} symbols")
+
     def _log_summary(self):
         """Log the sync summary."""
         source = "NSE" if USE_NSE else "YFINANCE"
@@ -480,6 +613,12 @@ class FundamentalSync:
 
         # Step 3: Merge and insert
         self._merge_and_insert(ms_data, nse_data, today)
+
+        # Step 4: Backfill shares_outstanding from yfinance for all symbols
+        self._backfill_shares_outstanding_from_yfinance()
+
+        # Step 5: Compute marketCap from shares_outstanding × latest close
+        self._compute_market_cap_from_prices()
 
         self._log_summary()
         return {

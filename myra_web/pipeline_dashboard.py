@@ -115,6 +115,7 @@ class PipelineManager:
         }
         self._cancel_event = threading.Event()
         self._scheduler_shutdown = threading.Event()
+        self._server_shutdown = threading.Event()
         self._sse_queues: list[deque] = []
         self._sse_lock = threading.Lock()
         self._ensure_schema()
@@ -399,6 +400,9 @@ class PipelineManager:
                     dead.append(q)
             for q in dead:
                 self._sse_queues.remove(q)
+
+    def signal_shutdown(self):
+        self._server_shutdown.set()
 
     def register_sse_client(self) -> deque:
         q: deque = deque(maxlen=100)
@@ -717,7 +721,7 @@ async def sse_events():
     async def event_generator():
         try:
             yield f"data: {json.dumps({'type': 'connected', 'state': manager.get_status()})}\n\n"
-            while True:
+            while not manager._server_shutdown.is_set():
                 data = None
                 with manager._sse_lock:
                     if q:
@@ -726,6 +730,7 @@ async def sse_events():
                     yield f"data: {json.dumps(data)}\n\n"
                 else:
                     await asyncio.sleep(0.5)
+            yield f"data: {json.dumps({'type': 'shutdown'})}\n\n"
         except asyncio.CancelledError:
             pass
         finally:

@@ -214,6 +214,9 @@ export default function DataSyncView() {
                 },
               };
             });
+          } else if (data.type === 'shutdown') {
+            es.close();
+            setTimeout(connectSSE, 5000);
           }
         } catch { /* ignore */ }
       };

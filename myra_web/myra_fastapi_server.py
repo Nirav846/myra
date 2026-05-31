@@ -123,6 +123,12 @@ app.add_middleware(
 
 app.include_router(pipeline_router)
 
+from pipeline_dashboard import manager as pipeline_manager
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    pipeline_manager.signal_shutdown()
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
     return JSONResponse(status_code=500, content={"detail": f"Internal server error: {exc}"})
@@ -232,7 +238,14 @@ async def execute_query(req: QueryRequest):
     _inc_active_queries()
     try:
         conn = sqlite3.connect(db_path)
-        conn.execute("PRAGMA busy_timeout = 15000")  # 15 seconds
+        conn.execute("PRAGMA busy_timeout = 30000")
+        conn.execute("PRAGMA cache_size = -32000")
+        conn.execute("PRAGMA temp_store = MEMORY")
+        if req.db == '_tech_conn':
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_tech_symbol_date
+                ON technical_data(symbol, date DESC)
+            """)
         conn.row_factory = sqlite3.Row
         cursor = conn.execute(req.query, req.params)
 

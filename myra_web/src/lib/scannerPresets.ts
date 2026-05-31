@@ -30,6 +30,9 @@ export interface DivergenceConfig {
     filterMcap: string;
     minConsecutiveDays?: number;
     minRR?: number;
+    minDAR?: number;
+    maxPosition52W?: number;
+    filterRSNegative?: boolean;
 }
 
 export interface ValueRankerConfig {
@@ -116,7 +119,7 @@ export const DEFAULT_PRESETS: ScannerPreset[] = [
         config: {
             lookbackBars: 10, priceMetric: 'Close', deliveryMetric: 'Pct', priceDirection: 'Falling',
             minPriceChange: -2, minDeliveryChange: 5, minRelativeVolume: 1.2, minScore: 50, scoreWeighting: 'Balanced',
-            filterSector: 'All', filterMcap: 'All'
+            filterSector: 'All', filterMcap: 'All', minAbsDeliveryPct: 20, minRR: 0, minDAR: 0
         }
     },
     {
@@ -128,7 +131,7 @@ export const DEFAULT_PRESETS: ScannerPreset[] = [
         config: {
             lookbackBars: 5, priceMetric: 'VWAP', deliveryMetric: 'Qty', priceDirection: 'Falling',
             minPriceChange: -1, minDeliveryChange: 50, minRelativeVolume: 2.0, minScore: 60, scoreWeighting: 'Delivery',
-            filterSector: 'All', filterMcap: 'Broader Market (N500)'
+            filterSector: 'All', filterMcap: 'Broader Market (N500)', minAbsDeliveryPct: 25, minRR: 1.5, minDAR: 0
         }
     },
     {
@@ -138,9 +141,9 @@ export const DEFAULT_PRESETS: ScannerPreset[] = [
         description: 'Steady rising delivery inside a tight price range.',
         isDefault: true,
         config: {
-            lookbackBars: 21, priceMetric: 'Typical', deliveryMetric: 'Pct', priceDirection: 'Rising',
-            minPriceChange: 0, minDeliveryChange: 2, minRelativeVolume: 1.0, minScore: 40, scoreWeighting: 'Balanced',
-            filterSector: 'All', filterMcap: 'All'
+            lookbackBars: 21, priceMetric: 'Typical', deliveryMetric: 'Pct', priceDirection: 'Falling',
+            minPriceChange: -3, minDeliveryChange: 5, minRelativeVolume: 0, minScore: 40, scoreWeighting: 'Balanced',
+            filterSector: 'All', filterMcap: 'All', minRR: 2.0, minDAR: 0.05
         }
     },
     // --- Smart Money Presets ---
@@ -151,8 +154,9 @@ export const DEFAULT_PRESETS: ScannerPreset[] = [
         description: 'Falling price on VWAP with high delivery % — institutional accumulation.',
         config: {
             lookbackBars: 10, priceMetric: 'VWAP', deliveryMetric: 'Pct', priceDirection: 'Falling',
-            minPriceChange: -3, minDeliveryChange: 8, minAbsDeliveryPct: 45, minRelativeVolume: 1.2,
-            minScore: 65, scoreWeighting: 'Delivery', filterSector: 'All', filterMcap: 'Large Cap (N100)'
+            minPriceChange: -3, minDeliveryChange: 8, minAbsDeliveryPct: 35, minRelativeVolume: 1.2,
+            minScore: 65, scoreWeighting: 'Delivery', filterSector: 'All', filterMcap: 'Large Cap (N100)',
+            minDAR: 0.3, minRR: 1.5
         }
     },
     {
@@ -163,7 +167,8 @@ export const DEFAULT_PRESETS: ScannerPreset[] = [
         config: {
             lookbackBars: 5, priceMetric: 'Close', deliveryMetric: 'Pct', priceDirection: 'Rising',
             minPriceChange: 4, minDeliveryChange: 10, minAbsDeliveryPct: 30, minRelativeVolume: 1.5,
-            minScore: 60, scoreWeighting: 'Balanced', filterSector: 'All', filterMcap: 'All'
+            minScore: 60, scoreWeighting: 'Balanced', filterSector: 'All', filterMcap: 'All',
+            minRR: 1.0, minDAR: 0.1
         }
     },
     {
@@ -174,7 +179,60 @@ export const DEFAULT_PRESETS: ScannerPreset[] = [
         config: {
             lookbackBars: 10, priceMetric: 'VWAP', deliveryMetric: 'Pct', priceDirection: 'Rising',
             minPriceChange: 2, minDeliveryChange: -8, minAbsDeliveryPct: 0, minRelativeVolume: 1.3,
-            minScore: 50, scoreWeighting: 'Delivery', filterSector: 'All', filterMcap: 'All'
+            minScore: 50, scoreWeighting: 'Delivery', filterSector: 'All', filterMcap: 'All',
+            minRR: 0, minDAR: 0
+        }
+    },
+    {
+        id: 'pdd-sm-operator',
+        name: 'Operator Footprint',
+        module: 'PriceDeliveryDivergence',
+        description: 'Tight sideways base with quiet but rising delivery — classic operator accumulation.',
+        config: {
+            lookbackBars: 21, priceMetric: 'Typical', deliveryMetric: 'Pct', priceDirection: 'Falling',
+            minPriceChange: -5, minDeliveryChange: 6, minAbsDeliveryPct: 40, minRelativeVolume: 0,
+            minScore: 60, scoreWeighting: 'Delivery', minConsecutiveDays: 3,
+            maxPosition52W: 45, minDAR: 0.3, minRR: 1.5,
+            filterSector: 'All', filterMcap: 'Broader Market (N500)'
+        }
+    },
+    {
+        id: 'pdd-sm-fii-capitulation',
+        name: 'FII Capitulation Bottom',
+        module: 'PriceDeliveryDivergence',
+        description: 'FII selling exhaustion — DII absorption visible in delivery while price and RS collapse.',
+        config: {
+            lookbackBars: 21, priceMetric: 'VWAP', deliveryMetric: 'Pct', priceDirection: 'Falling',
+            minPriceChange: -8, minDeliveryChange: 10, minAbsDeliveryPct: 45, minRelativeVolume: 1.5,
+            minScore: 70, scoreWeighting: 'Delivery', minConsecutiveDays: 3,
+            maxPosition52W: 25, filterRSNegative: true, minDAR: 0.5, minRR: 2.0,
+            filterSector: 'All', filterMcap: 'Large Cap (N100)'
+        }
+    },
+    {
+        id: 'pdd-sm-informed-accumulation',
+        name: 'Informed Accumulation Alert',
+        module: 'PriceDeliveryDivergence',
+        description: '5 consecutive sessions of high delivery with quiet volume — pre-event positioning.',
+        config: {
+            lookbackBars: 10, priceMetric: 'VWAP', deliveryMetric: 'Pct', priceDirection: 'Falling',
+            minPriceChange: -3, minDeliveryChange: 12, minAbsDeliveryPct: 50, minRelativeVolume: 0,
+            minScore: 65, scoreWeighting: 'Delivery', minConsecutiveDays: 4,
+            maxPosition52W: 60, minDAR: 0.4, minRR: 1.5,
+            filterSector: 'All', filterMcap: 'All'
+        }
+    },
+    {
+        id: 'pdd-sm-silent-giant',
+        name: 'Silent Giant',
+        module: 'PriceDeliveryDivergence',
+        description: 'Large institutional investor quietly building position in a Nifty-grade stock.',
+        config: {
+            lookbackBars: 21, priceMetric: 'VWAP', deliveryMetric: 'Pct', priceDirection: 'Falling',
+            minPriceChange: -4, minDeliveryChange: 7, minAbsDeliveryPct: 45, minRelativeVolume: 1.0,
+            minScore: 70, scoreWeighting: 'Delivery', minConsecutiveDays: 4,
+            maxPosition52W: 35, minDAR: 0.4, minRR: 1.5,
+            filterSector: 'All', filterMcap: 'Large Cap (N50)'
         }
     },
     {

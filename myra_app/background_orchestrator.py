@@ -362,6 +362,8 @@ def _task_daily_ingest(force: bool = False):
             _mark_task_run("daily_ingest")
             if result.get("total_rows_inserted", 0) > 0:
                 logger.info("[MYRA BG] Daily ingest complete - metadata updated.")
+                from myra_app.fundamental_sync import FundamentalSync
+                FundamentalSync()._compute_market_cap_from_prices()
             else:
                 logger.info(
                     "[MYRA BG] Ingestion succeeded but no new rows - DB is already up to date."
@@ -511,11 +513,13 @@ def _task_index_sync():
             from myra_app.utils.index_sync import (
                 heal_index_if_stale,
                 sync_index_constituents,
+                sync_nifty_benchmarks,
             )
 
             for idx in ["NIFTY 50", "NIFTY 500", "NIFTY SMALLCAP 250"]:
                 sync_index_constituents(idx, task_id=tid)
             heal_index_if_stale("NIFTY 500", expected_count=500)
+            sync_nifty_benchmarks()
             _mark_task_run("index_sync")
             logger.info("[MYRA BG] Index sync complete (catch-up).")
         except Exception as e:
@@ -535,12 +539,14 @@ def _task_index_sync():
                     from myra_app.utils.index_sync import (
                         heal_index_if_stale,
                         sync_index_constituents,
+                        sync_nifty_benchmarks,
                     )
 
                     for idx in ["NIFTY 50", "NIFTY 500", "NIFTY SMALLCAP 250"]:
                         sync_index_constituents(idx, task_id=tid)
 
                     heal_index_if_stale("NIFTY 500", expected_count=500)
+                    sync_nifty_benchmarks()
                     _mark_task_run("index_sync")
             except Exception as e:
                 logger.error(f"[MYRA BG] Index sync/heal failed: {e}")
