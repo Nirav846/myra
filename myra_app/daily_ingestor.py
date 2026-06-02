@@ -192,7 +192,6 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
         elif data_csv == "holiday_skip":
             print("🛑 Market Holiday or Weekend. Skipping fetch.")
             try:
-                import sqlite3
                 calendar_db_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["calendar"])
                 if os.path.exists(calendar_db_path):
                     with sqlite3.connect(calendar_db_path) as cal_conn:
@@ -334,7 +333,6 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
             if result["rows_inserted"] == 0 and db_after == db_before:
                 print(f"⚠️ WARNING: No new rows inserted for {current_date.date().isoformat()}")
                 try:
-                    import sqlite3
                     calendar_db_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["calendar"])
                     if os.path.exists(calendar_db_path):
                         with sqlite3.connect(calendar_db_path) as cal_conn:
