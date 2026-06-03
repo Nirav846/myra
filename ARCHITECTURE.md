@@ -83,7 +83,16 @@ React Frontend (myra_web/src/)
 - **insider_trades** – Insider trading data
 - **fii_dii_daily** – FII/DII daily flows
 
-### myra_meta.db
+### myra_scoring.db
+- **fundamental_scores** – Pre-materialized fundamental scores (symbol, date, growth_score, quality_score, stability_score, risk_score, total_funda_score, grade)
+
+### myra_governance.db
+- Compliance and governance metadata for the symbol universe
+
+### myra_scoring.db, myra_cache_network.db, myra_calendar.db
+- Scoring cache, network request cache, and market calendar (trading days, muhurat sessions)
+
+### myra_metadata.db
 - **etf_blocklist** – ETF symbols to exclude
 - **index_constituents** – Index membership (Nifty 50, Nifty 500, etc.)
 - **symbols_master** – Symbol metadata (sector, industry, instrument_type, first_seen, last_seen, in_active_universe, in_nifty500)
@@ -161,7 +170,7 @@ React Frontend (myra_web/src/)
 ### SQLite + WAL Mode
 - **Rationale:** Single-user laptop reliability without database server overhead
 - WAL (Write-Ahead Logging) allows concurrent reads and writes
-- Sidecar architecture (technical, valuation, institutional, meta) prevents schema contention
+- Sidecar architecture — 8 dedicated DBs (technical, valuation, institutional, meta, governance, scoring, calendar, network_cache) in `myra_app/db/` — prevents schema contention. All paths resolved exclusively via `LibrarianCore.DB_MAP`.
 - Zero configuration, portable database files
 
 ### Daily Batch EOD vs Real-Time Streaming
@@ -187,3 +196,14 @@ React Frontend (myra_web/src/)
 - Fallback to cached data if API is down
 - Reduces API calls and rate limit issues
 - Provides better user experience during outages
+
+## DB Access Contract
+
+| Rule | Detail |
+|------|--------|
+| DB location | Always `myra_app/db/` via `DB_DIR` from `constants.py` |
+| DB filename | Always via `LibrarianCore.DB_MAP["key"]` — never hardcoded |
+| Connections | Opened once in `LibrarianCore.__init__()`, shared via `_tech_conn`, `_meta_conn`, `_val_conn`, `_inst_conn`, `_gov_conn` |
+| Thread safety | All writes use `with LibrarianCore._db_lock:` |
+| Frontend access | Read-only via FastAPI — never direct DB access from the React frontend |
+| Valuation DB | `myra_valuation.db` is backend-only — never exposed directly to the frontend |

@@ -21,7 +21,7 @@ Already cloned MYRA and made improvements? [Open a pull request](CONTRIBUTING.md
 - **Backend:** Python 3.12, FastAPI, SQLite (WAL mode), Polars, Pandas, yfinance
 - **Frontend:** React + Vite, TypeScript, Plotly, Zustand
 - **Data Processing:** Vectorized operations, multiprocessing worker pool
-- **Database:** SQLite sidecars (technical, valuation, institutional, meta)
+- **Database:** 8 SQLite sidecars in WAL mode — technical, valuation, institutional, meta, governance, scoring, calendar, network_cache. All paths resolved via `LibrarianCore.DB_MAP` in `myra_app/constants.py`. Never hardcoded.
 
 ## Prerequisites
 
@@ -72,6 +72,17 @@ Already cloned MYRA and made improvements? [Open a pull request](CONTRIBUTING.md
    - Install the `finstack` package to enable the Morning Brief feature
    - Without it, `/api/finstack/morning-brief` returns a graceful "unavailable" status
 
+## Coding Rules (enforced — PRs violating these will be rejected)
+
+1. No `os.getcwd()` — all paths via `constants.py` (`DB_DIR`, `DATA_DIR`, `CACHE_DIR`)
+2. No hardcoded DB filenames — always use `LibrarianCore.DB_MAP["key"]`
+3. No `df.append()` in loops — use list + `pd.concat()`
+4. No `.strftime()` on a Series — use `.dt.strftime()`
+5. No chained indexing `df[x][y]` — use `.loc[x, y]`
+6. No broad `except Exception: pass` — log the error
+7. No DB calls inside per-symbol loops — batch insert after all fetches
+8. Always verify syntax before submitting: `python -c "import ast; ast.parse(open('your_file.py').read()); print('OK')"`
+
 ## 🤝 Contributors Welcome
 
 MYRA is open‑source and actively maintained.  
@@ -106,7 +117,7 @@ Look for issues labeled **`good first issue`**—they're small, self‑contained
 - `myra_web/` – Frontend React application (FastAPI server, views, chart engine)
 - `myra_core/` – Core utilities and NSE data fetching
 - `tools/` – Maintenance scripts (db_doctor, rebuild_technical_index, performance_guard)
-- `data/` – SQLite databases (technical.db, valuation.db, institutional.db, meta.db)
+- `myra_app/db/` – SQLite sidecars (all 8 databases, never referenced by hardcoded name — always via LibrarianCore.DB_MAP)
 - `conductor/` – Workflow orchestration and background tasks
 - `config/` – Configuration files
 - `logs/` – Application logs

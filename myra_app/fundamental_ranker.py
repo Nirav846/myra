@@ -9,7 +9,7 @@ class FundamentalRanker:
     """
     MYRA Fundamental Ranking Engine (v1.1)
     Scores stocks based on Growth, Quality, Stability, and Risk.
-    Uses SQLite (scoring.db) for caching and DuckDB for raw data processing.
+    Uses SQLite (scoring.db) for score caching and myra_valuation.db for raw fundamental data.
     """
 
     def __init__(self, val_conn, scoring_db_path="scoring.db"):
@@ -165,7 +165,7 @@ class FundamentalRanker:
                 except Exception:
                     pass
 
-        # Fallback to DuckDB calculation
+        # Fallback: recalculate scores from myra_valuation.db
         return self._calculate_all_scores_from_duck(symbols).sort_values(
             "Funda_Score", ascending=False
         )
