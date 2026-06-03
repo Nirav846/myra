@@ -218,18 +218,6 @@ class IndexEngine:
             return {"advances": 0, "declines": 0, "unchanged": 0}
 
         try:
-            # Step 1: Get active symbols from meta connection
-            active_symbols = []
-            if hasattr(librarian, '_meta_conn') and librarian._meta_conn:
-                rows = librarian._meta_conn.execute(
-                    "SELECT symbol FROM symbols_master WHERE in_active_universe = 1"
-                ).fetchall()
-                active_symbols = [r[0] for r in rows]
-
-            if not active_symbols:
-                return {"advances": 0, "declines": 0, "unchanged": 0}
-
-            # Step 2: Get latest and previous close from technical_data
             sql = """
                 WITH latest_date AS (
                     SELECT MAX(date) as d FROM technical_data
@@ -252,10 +240,9 @@ class IndexEngine:
                     SUM(CASE WHEN l.close = p.prev_close THEN 1 ELSE 0 END) as unchanged
                 FROM latest l
                 LEFT JOIN prev p ON l.symbol = p.symbol
-                WHERE l.symbol IN ({placeholders})
-            """.format(placeholders=",".join("?" * len(active_symbols)))
+            """
 
-            res = librarian._tech_conn.execute(sql, active_symbols).fetchone()
+            res = librarian._tech_conn.execute(sql).fetchone()
             if res and res[0] is not None:
                 result = {
                     "advances": int(res[0] or 0),
