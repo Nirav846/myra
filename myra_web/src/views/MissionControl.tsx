@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { Activity, BarChart2, BrainCircuit, Target, Database, RotateCw } from 'lucide-react';
+import { Activity, BarChart2, BrainCircuit, Target, Database, RotateCw, Star } from 'lucide-react';
 import { Librarian } from '../lib/Librarian';
 import { useLazyWidgetData } from '../hooks/useLazyWidgetData';
 import { SymbolAutocomplete } from '../components/SymbolAutocomplete';
 import ErrorBoundary from '../components/ErrorBoundary';
-import { API_ROOT } from '../../config';
+import { API_ROOT } from '../config';
+import { useWatchlist } from '../lib/WatchlistContext';
 
 
 
@@ -64,6 +65,8 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
     if (!res.ok) throw new Error('Failed to load stock timeline');
     return res.json();
   });
+
+  const { watchlist, toggle } = useWatchlist();
 
   const fiiMount = useRef(true);
   useEffect(() => {
@@ -638,6 +641,39 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
             </div>
           </div>
           <Database size={32} className="text-[#444]" />
+        </div>
+        </ErrorBoundary>
+
+        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[10px] font-mono">Watchlist crashed</div>}>
+        <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider flex items-center gap-1.5">
+              <Star size={11} className="text-yellow-400" fill="currentColor" />
+              Watchlist
+            </div>
+            <span className="text-[10px] font-mono text-yellow-400">{watchlist.length} symbols</span>
+          </div>
+          {watchlist.length === 0 ? (
+            <div className="text-[10px] font-mono text-[#555] py-2 text-center">
+              No symbols starred yet.<br />
+              <span className="text-[9px]">Star symbols in any scanner to add them.</span>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
+              {watchlist.map(sym => (
+                <div key={sym} className="flex items-center gap-1 bg-yellow-500/10 border border-yellow-500/20 rounded px-1.5 py-0.5">
+                  <span className="text-[10px] font-mono font-bold text-yellow-300">{sym}</span>
+                  <button
+                    onClick={() => toggle(sym)}
+                    className="text-[#555] hover:text-red-400 transition-colors ml-0.5"
+                    title="Remove"
+                  >
+                    <span className="text-[10px] leading-none">×</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         </ErrorBoundary>
       </div>

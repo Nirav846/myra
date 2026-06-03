@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Search, Loader2 } from 'lucide-react';
-import { API_ROOT } from '../../config';
+import { API_ROOT } from '../config';
 
 
 

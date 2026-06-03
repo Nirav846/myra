@@ -1,11 +1,13 @@
 import { Librarian } from '../lib/Librarian';
 import { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, Target, Activity, BarChart2, ShieldAlert } from 'lucide-react';
+import { RefreshCw, Target, Activity, BarChart2, ShieldAlert, Star } from 'lucide-react';
 import { computeExhaustionSignal, computeDivergenceSignal, computeSpringCoilSignal, SignalData, SignalResult } from '../lib/reversionSignals';
 import { useSettings } from '../lib/SettingsContext';
 import { resolveBucket } from '../lib/bucketUtils';
 import PresetChip from '../components/PresetChip';
 import { ReversionConfig } from '../lib/scannerPresets';
+import { useWatchlist } from '../lib/WatchlistContext';
+import { StarButton } from '../components/StarButton';
 
 type SetupType = 'Exhaustion' | 'Divergence' | 'SpringCoil';
 
@@ -29,6 +31,8 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
   const [metadataMap, setMetadataMap] = useState<Map<string, { sector: string; indices: string[]; in_nifty500: number }>>(new Map());
   const [availableSectors, setAvailableSectors] = useState<string[]>([]);
   const [metadataLoaded, setMetadataLoaded] = useState(false);
+  const { isWatched, count: watchlistCount } = useWatchlist();
+  const [watchlistOnly, setWatchlistOnly] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -80,6 +84,7 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
 
   const applyFilters = useCallback((data: ProcessedSignal[]) => {
       return data.filter(item => {
+          if (watchlistOnly && !isWatched(item.ticker)) return false;
           if (filterSector !== 'All') {
               if (item.sector !== filterSector) return false;
           }
@@ -88,7 +93,7 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
           }
           return true;
       }).sort((a, b) => b.score - a.score).slice(0, 75);
-  }, [filterSector, filterMcap]);
+  }, [filterSector, filterMcap, watchlistOnly, isWatched]);
 
   const fetchData = useCallback(async (setup: SetupType) => {
     setIsRefreshing(true);
@@ -376,7 +381,19 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
                    </select>
                </div>
                
-               {errorMsg && <span className="text-xs text-red-500 font-mono px-2 py-1 bg-red-500/10 border border-red-500/20 rounded block">{errorMsg}</span>}
+                <button
+                  onClick={() => setWatchlistOnly(o => !o)}
+                  className={`flex items-center gap-1.5 px-2 h-[34px] rounded border text-[11px] font-mono transition-colors shrink-0 ${
+                    watchlistOnly
+                      ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
+                      : 'bg-[#0A0A0A] border-[#333] text-[#888] hover:text-yellow-400 hover:border-yellow-500/40'
+                  }`}
+                  title="Filter by watchlist"
+                >
+                  <Star size={12} fill={watchlistOnly ? 'currentColor' : 'none'} />
+                  <span>★ {watchlistCount > 0 ? watchlistCount : 'Watchlist'}</span>
+                </button>
+                {errorMsg && <span className="text-xs text-red-500 font-mono px-2 py-1 bg-red-500/10 border border-red-500/20 rounded block">{errorMsg}</span>}
                {isDemo && <span className="text-[10px] bg-yellow-500/20 text-yellow-500 px-2 py-1 rounded border border-yellow-500/20 font-mono block">⚠️ DEMO</span>}
                
                <label className="flex items-center gap-2 text-xs font-mono text-[#888] hover:text-[#fafafa] cursor-pointer bg-[#1a1c24] px-2 py-1 rounded border border-[#333]">
@@ -431,6 +448,7 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
                 <tr key={idx} className="border-b border-white/5 hover:bg-white/5 transition-all duration-200">
                   <td className="py-3 px-3">
                     <div className="flex items-center gap-1.5">
+                      <StarButton symbol={row.ticker} size={11} />
                       <button 
                         onClick={() => onNavigate?.('Technical Chart', row.ticker)}
                         className="text-[#fafafa] font-bold hover:text-indigo-400 transition-colors cursor-pointer text-sm"
