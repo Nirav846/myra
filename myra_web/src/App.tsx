@@ -17,7 +17,7 @@ import AdvancedChartView from './views/AdvancedChart';
 import ReversionEngineView from './views/ReversionEngine';
 import ValueRankerView from './views/ValueRanker';
 import { getLibrarian } from './lib/Librarian';
-import { API_ROOT, API_BASE } from '../config';
+import { API_ROOT } from './config';
 import { useSettings } from './lib/SettingsContext';
 import { useHealthStatus } from './hooks/useHealthStatus';
 import { AlertManager } from './lib/AlertManager';
@@ -82,7 +82,6 @@ export default function App() {
   const { settings } = useSettings();
   const { health, coverage, isConnected } = useHealthStatus();
   
-  const [pipelineStatus, setPipelineStatus] = useState<any>(null);
   const [toolsStatus, setToolsStatus] = useState<any>(null);
   const [dbSize, setDbSize] = useState<string>("N/A");
   const [logs, setLogs] = useState<string[]>(["[SYSTEM] Offline mode – no logs"]);
@@ -93,8 +92,7 @@ export default function App() {
       return;
     }
     try {
-      const [statusRes, pipelineRes, sizeRes, logsRes] = await Promise.all([
-        fetch(`${API_ROOT}/api/tools/status`),
+      const [statusRes, sizeRes, logsRes] = await Promise.all([
         fetch(`${API_ROOT}/api/tools/status`),
         fetch(`${API_ROOT}/api/db-size`),
         fetch(`${API_ROOT}/api/logs/recent`)
@@ -102,10 +100,6 @@ export default function App() {
 
       if (statusRes.ok) {
         const data = await statusRes.json();
-        setPipelineStatus(data);
-      }
-      if (pipelineRes.ok) {
-        const data = await pipelineRes.json();
         setToolsStatus(data);
       }
       if (sizeRes.ok) {
