@@ -21,6 +21,21 @@ interface TaskInfo {
   current_status?: string;
 }
 
+interface SseEvent {
+  type: string;
+  _ts: string;
+  task_id?: string;
+  task_key?: string;
+  task_name?: string;
+  status?: string;
+  error?: string;
+  progress_pct?: number;
+  message?: string;
+  reason?: string;
+  wait_seconds?: number;
+  attempt?: number;
+}
+
 interface OverallStatus {
   status: string;
   active_task_id: string | null;
@@ -53,6 +68,10 @@ const TASK_META: Record<string, { name: string; key: string; duration: string; i
   fundamentals_sync: { name: 'Fundamentals Sync', key: 'fundamentals_sync', duration: '10-20 min', icon: '📈', color: 'blue' },
   market_cap_sync: { name: 'Market Cap Sync', key: 'market_cap_sync', duration: '3-5 min', icon: '💰', color: 'purple' },
   institutional_sync: { name: 'Institutional Sync', key: 'institutional_sync', duration: '1-3 min', icon: '🏛️', color: 'amber' },
+};
+
+const TASK_DEPS: Record<string, string[]> = {
+  enrichment: ['daily_ingest'],
 };
 
 const ORDER = ['daily_ingest', 'enrichment', 'etf_sync', 'index_sync', 'fundamentals_sync', 'market_cap_sync', 'institutional_sync'];
@@ -113,17 +132,52 @@ function statusIcon(status: string) {
   }
 }
 
+function sseEventLabel(ev: SseEvent): { icon: string; text: string; colorClass: string } {
+  switch (ev.type) {
+    case 'connected':
+      return { icon: '◉', text: 'SSE connected', colorClass: 'text-green-400' };
+    case 'task_started':
+      return { icon: '▶', text: `${ev.task_name || ev.task_id || ev.task_key || ''}`, colorClass: 'text-cyan-400' };
+    case 'task_completed':
+      if (ev.status === 'completed') {
+        return { icon: '✓', text: `${(ev.task_id || ev.task_key || '').replace(/_/g, ' ')} — ok`, colorClass: 'text-green-400' };
+      }
+      return { icon: '✗', text: `${(ev.task_id || ev.task_key || '').replace(/_/g, ' ')} — ${ev.status}${ev.error ? ` (${ev.error.slice(0, 60)})` : ''}`, colorClass: 'text-red-400' };
+    case 'progress':
+      return { icon: '↑', text: `${(ev.task_id || '').replace(/_/g, ' ')} ${Math.round(ev.progress_pct || 0)}%`, colorClass: 'text-[#888]' };
+    case 'cancellation_requested':
+      return { icon: '■', text: 'Cancellation requested', colorClass: 'text-yellow-400' };
+    case 'all_stopped':
+      return { icon: '⛔', text: `Stopped at ${ev.task_id}: ${(ev.reason || '').slice(0, 60)}`, colorClass: 'text-red-400' };
+    case 'all_cancelled':
+      return { icon: '■', text: `Cancelled at ${ev.task_id}`, colorClass: 'text-yellow-400' };
+    case 'retry_scheduled':
+      return { icon: '↺', text: `Retry ${(ev.task_id || '').replace(/_/g, ' ')} in ${ev.wait_seconds}s (attempt ${ev.attempt})`, colorClass: 'text-orange-400' };
+    case 'schedule_updated':
+      return { icon: '⏱', text: 'Schedule config updated', colorClass: 'text-indigo-400' };
+    case 'shutdown':
+      return { icon: '○', text: 'Server shutting down', colorClass: 'text-red-400' };
+    default:
+      return { icon: '·', text: ev.type, colorClass: 'text-[#555]' };
+  }
+}
+
 export default function DataSyncView() {
   const { health, coverage } = useHealthStatus();
   const [status, setStatus] = useState<PipelineStatus | null>(null);
   const [checks, setChecks] = useState<PipelineChecks | null>(null);
   const [runRequested, setRunRequested] = useState(false);
+  const [checksCollapsed, setChecksCollapsed] = useState(() => localStorage.getItem('datasync_checks_collapsed') === 'true');
+  const [dbHealthCollapsed, setDbHealthCollapsed] = useState(() => localStorage.getItem('datasync_dbhealth_collapsed') === 'true');
   const [runStatus, setRunStatus] = useState<OverallStatus | null>(null);
   const [stopOnFail, setStopOnFail] = useState(true);
   const [runningTask, setRunningTask] = useState<string | null>(null);
   const [lastRunWasAll, setLastRunWasAll] = useState(false);
   const [scheduleConfig, setScheduleConfig] = useState<Record<string, any>>({});
+  const [schedulePaused, setSchedulePaused] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sseEvents, setSseEvents] = useState<SseEvent[]>([]);
+  const eventLogRef = useRef<HTMLDivElement>(null);
   const [sseFailed, setSseFailed] = useState(false);
   const requestingRef = useRef(false);
   const sseRef = useRef<EventSource | null>(null);
@@ -162,6 +216,28 @@ export default function DataSyncView() {
     } catch { /* ignore */ }
   }, []);
 
+  const fetchSchedulePaused = useCallback(async () => {
+    if (!mountedRef.current) return;
+    try {
+      const res = await fetch(`${API_BASE}/pipeline/schedule/paused`);
+      if (!mountedRef.current) return;
+      if (res.ok) {
+        const data = await res.json();
+        setSchedulePaused(data.paused);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  const toggleSchedulePause = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/pipeline/schedule/pause`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setSchedulePaused(data.paused);
+      }
+    } catch { /* ignore */ }
+  };
+
   // SSE connection – self-contained reconnect logic, stable ref
   useEffect(() => {
     mountedRef.current = true;
@@ -177,6 +253,7 @@ export default function DataSyncView() {
         if (!mountedRef.current) return;
         try {
           const data = JSON.parse(event.data);
+          setSseEvents(prev => [{ ...data, _ts: new Date().toISOString() }, ...prev.slice(0, 99)]);
           if (data.type === 'connected' && data.state) {
             setStatus(data.state);
             setSseFailed(false);
@@ -194,6 +271,8 @@ export default function DataSyncView() {
             }
           } else if (data.type === 'schedule_updated') {
             setScheduleConfig(data.config || {});
+          } else if (data.type === 'retry_scheduled') {
+            // no state change needed — already captured in sseEvents above
           } else if (data.type === 'progress') {
             setStatus((prev) => {
               if (!prev) return null;
@@ -257,7 +336,8 @@ export default function DataSyncView() {
     fetchStatus();
     fetchChecks();
     fetchScheduleConfig();
-  }, [fetchStatus, fetchChecks, fetchScheduleConfig]);
+    fetchSchedulePaused();
+  }, [fetchStatus, fetchChecks, fetchScheduleConfig, fetchSchedulePaused]);
 
   const triggerRun = async (task: string) => {
     if (requestingRef.current) return;
@@ -287,6 +367,13 @@ export default function DataSyncView() {
   const cancelRun = async () => {
     try {
       await fetch(`${API_BASE}/pipeline/cancel`, { method: 'POST' });
+    } catch { /* ignore */ }
+  };
+
+  const forceReset = async () => {
+    try {
+      await fetch(`${API_BASE}/pipeline/force-reset`, { method: 'POST' });
+      setTimeout(() => fetchStatus(), 500);
     } catch { /* ignore */ }
   };
 
@@ -349,6 +436,16 @@ export default function DataSyncView() {
             />
             Stop on fail
           </label>
+          <button
+            onClick={toggleSchedulePause}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-mono border transition-colors ${
+              schedulePaused
+                ? 'bg-red-500/20 border-red-500/30 text-red-400'
+                : 'bg-green-500/20 border-green-500/30 text-green-400'
+            }`}
+          >
+            Auto-Sync: {schedulePaused ? 'OFF' : 'ON'}
+          </button>
           {isRunning ? (
             <button
               onClick={cancelRun}
@@ -358,6 +455,14 @@ export default function DataSyncView() {
               Cancel
             </button>
           ) : null}
+          <button
+            onClick={forceReset}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#ffffff0a] border border-[#ffffff1a] rounded text-[11px] text-[#888] font-mono hover:bg-[#ffffff15] hover:text-white transition-colors"
+            title="Force-reset pipeline to idle (use if stuck)"
+          >
+            <RefreshCw size={14} />
+            Force Reset
+          </button>
           {!isRunning ? (
             <button
               onClick={() => triggerRun('all')}
@@ -422,8 +527,12 @@ export default function DataSyncView() {
         {ORDER.map((taskKey) => {
           const meta = TASK_META[taskKey];
           const info = status?.tasks[taskKey];
-          const displayStatus = info?.current_status || info?.last_status || 'never';
+          let displayStatus = info?.current_status || info?.last_status || 'never';
+          if (displayStatus === 'unknown' && info?.last_run) {
+            displayStatus = 'completed';
+          }
           const isThisRunning = isRunning && activeTaskId === taskKey;
+          const isFailedOrCrashed = ['failed', 'crashed', 'timeout'].includes(displayStatus);
 
           return (
             <div
@@ -444,6 +553,26 @@ export default function DataSyncView() {
                   </span>
                 </div>
               </div>
+              {TASK_DEPS[taskKey] && (
+                <div className="text-[9px] font-mono text-[#555] flex items-center gap-1 mt-0.5">
+                  <span>requires:</span>
+                  {TASK_DEPS[taskKey].map(dep => {
+                    const depInfo = status?.tasks[dep];
+                    const depRanToday = depInfo?.last_run
+                      ? new Date(depInfo.last_run).toDateString() === new Date().toDateString()
+                      : false;
+                    return (
+                      <span
+                        key={dep}
+                        className={depRanToday ? 'text-green-500' : 'text-yellow-600'}
+                        title={depRanToday ? `${dep} ran today` : `${dep} has not run today — enrichment may produce stale scores`}
+                      >
+                        {dep} {depRanToday ? '✓' : '⚠'}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
 
               <div className="flex items-center justify-between text-[10px] font-mono text-[#888]">
                 <div className="flex items-center gap-1">
@@ -480,14 +609,41 @@ export default function DataSyncView() {
                   <CalendarClock size={11} />
                   Daily 18:00
                 </label>
-                <button
-                  onClick={() => triggerRun(taskKey)}
-                  disabled={runRequested || isRunning}
-                  className="flex items-center gap-1 px-2.5 py-1 bg-[#ffffff0a] border border-[#ffffff1a] rounded text-[10px] font-mono text-[#ccc] hover:bg-[#ffffff15] hover:text-white transition-colors disabled:opacity-40"
-                >
-                  {isThisRunning ? 'Running...' : 'Sync Now'}
-                  <ChevronRight size={11} />
-                </button>
+                {isFailedOrCrashed && !isThisRunning ? (
+                  <button
+                    onClick={() => {
+                      setStatus(prev => {
+                        if (!prev) return prev;
+                        return {
+                          ...prev,
+                          tasks: {
+                            ...prev.tasks,
+                            [taskKey]: {
+                              ...prev.tasks[taskKey],
+                              error_message: null,
+                            },
+                          },
+                        };
+                      });
+                      triggerRun(taskKey);
+                    }}
+                    disabled={runRequested || isRunning}
+                    className="flex items-center gap-1 px-2.5 py-1 bg-orange-500/20 border border-orange-500/30 rounded text-[10px] font-mono text-orange-400 hover:bg-orange-500/30 transition-colors disabled:opacity-40"
+                  >
+                    <RefreshCw size={11} />
+                    Retry
+                    <ChevronRight size={11} />
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => triggerRun(taskKey)}
+                    disabled={runRequested || isRunning}
+                    className="flex items-center gap-1 px-2.5 py-1 bg-[#ffffff0a] border border-[#ffffff1a] rounded text-[10px] font-mono text-[#ccc] hover:bg-[#ffffff15] hover:text-white transition-colors disabled:opacity-40"
+                  >
+                    {isThisRunning ? 'Running...' : 'Sync Now'}
+                    <ChevronRight size={11} />
+                  </button>
+                )}
               </div>
             </div>
           );
@@ -496,17 +652,23 @@ export default function DataSyncView() {
 
       {/* Pre-flight Checks */}
       <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded-lg p-4">
-        <h3 className="text-xs font-semibold text-[#888] uppercase tracking-wider mb-3 flex items-center gap-2">
+        <div
+          className="flex items-center gap-2 mb-3 cursor-pointer select-none"
+          onClick={() => { const n = !checksCollapsed; setChecksCollapsed(n); localStorage.setItem('datasync_checks_collapsed', String(n)); }}
+        >
           <Server size={14} />
-          Pre-flight Checks
+          <h3 className="text-xs font-semibold text-[#888] uppercase tracking-wider flex-1">Pre-flight Checks</h3>
           <button
-            onClick={() => fetchChecks()}
-            className="ml-auto p-1 text-[#888] hover:text-white transition-colors"
+            onClick={(e) => { e.stopPropagation(); fetchChecks(); }}
+            className="p-1 text-[#888] hover:text-white transition-colors"
             title="Refresh checks"
           >
             <RefreshCw size={12} />
           </button>
-        </h3>
+          <ChevronRight size={12} className={`transition-transform ${checksCollapsed ? '' : 'rotate-90'}`} />
+        </div>
+        {!checksCollapsed && (
+        <>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {checks && typeof checks === 'object' && Object.entries(checks).map(([key, val]) => {
             if (key === 'databases') return null;
@@ -568,14 +730,22 @@ export default function DataSyncView() {
             </div>
           </>
         )}
+        </>
+        )}
       </div>
 
       {/* Database Health */}
       <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded-lg p-4">
-        <h3 className="text-xs font-semibold text-[#888] uppercase tracking-wider mb-3 flex items-center gap-2">
+        <div
+          className="flex items-center gap-2 mb-3 cursor-pointer select-none"
+          onClick={() => { const n = !dbHealthCollapsed; setDbHealthCollapsed(n); localStorage.setItem('datasync_dbhealth_collapsed', String(n)); }}
+        >
           <Database size={14} />
-          Database Health
-        </h3>
+          <h3 className="text-xs font-semibold text-[#888] uppercase tracking-wider flex-1">Database Health</h3>
+          <ChevronRight size={12} className={`transition-transform ${dbHealthCollapsed ? '' : 'rotate-90'}`} />
+        </div>
+        {!dbHealthCollapsed && (
+        <>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {Object.entries(health as Record<string, DBHealthStatus>).map(([dbName, status]) => (
             <div key={dbName} className="flex items-center justify-between text-[10px] font-mono px-2 py-1.5 bg-[#0e1117] rounded border border-[#ffffff0a]">
@@ -619,6 +789,53 @@ export default function DataSyncView() {
             </div>
           </>
         )}
+        </>
+        )}
+      </div>
+
+      {/* SSE Event Log */}
+      <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded-lg p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-xs font-semibold text-[#888] uppercase tracking-wider flex items-center gap-2">
+            <Server size={14} />
+            Live Event Stream
+            {sseEvents.length > 0 && (
+              <span className="text-[#555] font-normal normal-case tracking-normal">
+                ({sseEvents.length} events)
+              </span>
+            )}
+          </h3>
+          <button
+            onClick={() => setSseEvents([])}
+            className="text-[10px] font-mono text-[#555] hover:text-[#888] transition-colors"
+          >
+            clear
+          </button>
+        </div>
+        <div
+          ref={eventLogRef}
+          className="h-40 overflow-y-auto font-mono text-[10px] space-y-0.5"
+        >
+          {sseEvents.length === 0 ? (
+            <p className="text-[#444] py-4 text-center">
+              Waiting for events — run a task to see activity here
+            </p>
+          ) : (
+            sseEvents.map((ev, i) => {
+              const { icon, text, colorClass } = sseEventLabel(ev);
+              const time = new Date(ev._ts).toLocaleTimeString('en-IN', {
+                hour: '2-digit', minute: '2-digit', second: '2-digit',
+              });
+              return (
+                <div key={i} className="flex gap-2 py-0.5 border-b border-[#ffffff04] last:border-0">
+                  <span className="text-[#444] shrink-0 w-16">{time}</span>
+                  <span className="text-[#555] shrink-0">{icon}</span>
+                  <span className={colorClass}>{text}</span>
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
     </div>
   );

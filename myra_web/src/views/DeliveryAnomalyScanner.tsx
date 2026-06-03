@@ -46,6 +46,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
     const [mcapRange, setMcapRange] = useState<{ min: number; max: number } | null>(null);
     const [activePreset, setActivePreset] = useState<string | null>(null);
     const [columnsOpen, setColumnsOpen] = useState(false);
+    const [filtersVisible, setFiltersVisible] = useState(() => localStorage.getItem('das_filters_visible') !== 'false');
     const [viewMode, setViewMode] = useState<'detail' | 'summary'>('detail');
     const [summarySortCol, setSummarySortCol] = useState<keyof SummaryData>('persistence');
     const [summarySortAsc, setSummarySortAsc] = useState(false);
@@ -318,6 +319,17 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                         CSV Export
                     </button>
                     <button
+                        onClick={() => { const n = !filtersVisible; setFiltersVisible(n); localStorage.setItem('das_filters_visible', String(n)); }}
+                        className={`px-2.5 py-1 rounded text-[10px] font-mono border transition-all flex items-center gap-1 ${
+                            filtersVisible
+                                ? 'bg-[#2a2c34] border-[#ffffff3a] text-[#ccc]'
+                                : 'bg-[#2a2c34] border-[#ffffff1a] text-[#888]'
+                        }`}
+                        title="Toggle filter controls"
+                    >
+                        Filters <ChevronDown size={10} className={`transition-transform ${filtersVisible ? '' : '-rotate-90'}`} />
+                    </button>
+                    <button
                         onClick={fetchData}
                         disabled={isLoading}
                         className="flex items-center gap-2 px-4 h-[34px] bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 rounded text-xs text-indigo-300 font-bold transition-all disabled:opacity-50 font-mono shadow-[0_0_15px_rgba(99,102,241,0.1)]"
@@ -359,6 +371,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
             </div>
 
             {/* Filter Row */}
+            {filtersVisible && (
             <div className="bg-[#15171d] border-b border-[#ffffff1a] p-4">
                 <div className="flex flex-wrap gap-4 items-end">
                     <div className="flex flex-col flex-shrink-0 w-[100px]">
@@ -501,6 +514,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                     </div>
                 </div>
             </div>
+            )}
 
             {errorMsg && (
                 <div className="bg-red-950/40 border-b border-red-500/50 px-4 py-3 flex items-start gap-3">

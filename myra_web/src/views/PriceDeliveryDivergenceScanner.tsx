@@ -22,6 +22,8 @@ interface ScannerData {
     position52W: number;
     score: number;
     consecutiveHighDeliveryDays: number;
+    latestDeliveryPct: number;
+    signalBadge: string;
     detectedBaseLength: number;
     triggerPrice: number;
     stopLossPrice: number;
@@ -72,7 +74,6 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
     const [rawData, setRawData] = useState<RawData[]>([]);
-    const [data, setData] = useState<ScannerData[]>([]);
     const [metadataMap, setMetadataMap] = useState<Map<string, { sector: string, bucket: string }>>(new Map());
     const [metadataLoaded, setMetadataLoaded] = useState(false);
 
@@ -141,7 +142,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
     const [niftyChangePct, setNiftyChangePct] = useState(0);
     const [filterRSNegative, setFilterRSNegative] = useState(false);
     const [maxPosition52W, setMaxPosition52W] = useState(100);
-    const [settingsOpen, setSettingsOpen] = useState(true);
+    const [filtersVisible, setFiltersVisible] = useState(() => localStorage.getItem('pdd_filters_visible') !== 'false');
     const [backtestSymbol, setBacktestSymbol] = useState<string | null>(null);
     const [sortConfig, setSortConfig] = useState<{ key: keyof ScannerData, direction: 'asc' | 'desc' } | null>({ key: 'score', direction: 'desc' });
 
@@ -473,8 +474,8 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
         return Array.from(s).sort();
     }, [metadataMap]);
 
-    // Computing scores and filtering based on UI controls
-    const processedData = useMemo(() => {
+    // Enrich raw data with computed metrics (no filtering — expensive, depends only on metric choices)
+    const enrichedData = useMemo(() => {
         const results: ScannerData[] = [];
 
         rawData.forEach(d => {
@@ -498,7 +499,6 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
 
             const rVol = d.avg_volume > 0 ? d.latest_volume / d.avg_volume : 0;
 
-            // Delivery Absorption Ratio (DAR)
             const deliveryValueCr = (d.latest_delivery_qty * (d.latest_vwap || d.latest_close)) / 1e7;
             const ffMcapCr = (ffMcapMapRef.current.get(d.ticker) ?? mcapMapRef.current.get(d.ticker) ?? 0) / 1e7;
             const dar = ffMcapCr > 0 ? parseFloat(((deliveryValueCr / ffMcapCr) * 100).toFixed(4)) : 0;
@@ -511,53 +511,20 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                 : 50;
             const nearEarnings = earningsProximitySet.has(d.ticker);
 
-            // Apply basic direction requirement
-            let dirMatch = false;
-            if (priceDirection === 'Falling' && pChange <= minPriceChange) dirMatch = true;
-            if (priceDirection === 'Rising' && pChange >= minPriceChange) dirMatch = true;
-
-            if (!dirMatch) return;
-            if (priceDirection === 'Falling' && dChange < minDeliveryChange) return;
-            if (priceDirection === 'Rising'  && dChange > minDeliveryChange) return;
-            if (d.latest_delivery_pct < minAbsDeliveryPct) return;
-            if (minConsecutiveDays > 0 && d.consecutiveHighDeliveryDays < minConsecutiveDays) return;
-            if (rVol < minRelativeVolume) return;
-            if (minDAR > 0 && dar < minDAR) return;
-
-            // Score logic
-            // FIX: use log scale so moves above 10% still differentiate (e.g. 15% vs 25%)
-            const score_p = Math.max(0, Math.min(100, Math.log1p(Math.abs(pChange)) / Math.log1p(15) * 100));
-            const score_d = deliveryMetric === 'Pct'
-              ? Math.max(0, Math.min(100, dChange / 30 * 100))
-              : Math.max(0, Math.min(100, dChange / 200 * 100));
-            const score_v = Math.max(0, Math.min(100, rVol / 2 * 100));
-
             const meta = metadataMap.get(d.ticker) || { sector: 'Unknown', bucket: 'Deep Frontier' };
-            
-            if (filterSector !== 'All' && meta.sector !== filterSector) return;
-            if (filterMcap !== 'All' && meta.bucket !== filterMcap) return;
-            if (mcapRange) {
-                const mcap = mcapMapRef.current.get(d.ticker);
-                if (mcap === undefined || mcap < mcapRange.min || mcap > mcapRange.max) return;
-            }
-            if (filterRSNegative && relativeStrength >= 0) return;
-            if (position52W > maxPosition52W) return;
-            if (showWatchlistOnly && !watchlist.has(d.ticker)) return;
-            if (hideNearEarnings && nearEarnings) return;
 
-            // Trigger / SL / Target / R:R — base window matched to detectedBaseLength
+            // Trigger / SL / Target / R:R
             const latestClose = d.latest_close;
             const baseLen = d.detected_base_length;
             const baseHigh = baseLen === 5  ? d.base_high_5  :
                              baseLen === 10 ? d.base_high_10 :
                              baseLen === 21 ? d.base_high_21 :
-                                              d.base_high_45;
+                                               d.base_high_45;
             const baseLow  = baseLen === 5  ? d.base_low_5   :
                              baseLen === 10 ? d.base_low_10  :
                              baseLen === 21 ? d.base_low_21  :
-                                              d.base_low_45;
+                                               d.base_low_45;
 
-            // Base tightness: 0–100, where 100 = perfectly flat base
             const baseMidpoint = (baseHigh + baseLow) / 2;
             const baseRangePct = baseMidpoint > 0
                 ? ((baseHigh - baseLow) / baseMidpoint) * 100
@@ -566,7 +533,6 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                 100 - (baseRangePct / 20 * 100)
             )));
 
-            // ATR-based buffer: 1x ATR instead of fixed 0.5%
             const atrBuffer = d.atr_14 > 0 ? d.atr_14 : latestClose * 0.005;
 
             const triggerPrice  = parseFloat((baseHigh + atrBuffer).toFixed(2));
@@ -575,15 +541,11 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
             let targetPrice: number, riskReward: number;
             if (priceDirection === 'Falling') {
                 targetPrice = parseFloat((triggerPrice + risk * 2).toFixed(2));
-                // Reward: from current close up to target
-                // Risk:   from current close down to SL
                 riskReward = (latestClose > stopLossPrice && risk > 0)
                     ? parseFloat(((targetPrice - latestClose) / (latestClose - stopLossPrice)).toFixed(2))
                     : 0;
             } else {
                 targetPrice = parseFloat((triggerPrice - risk * 2).toFixed(2));
-                // Reward: from current close down to target (short/distribution)
-                // Risk:   from trigger up to current close
                 riskReward = (latestClose < triggerPrice && risk > 0)
                     ? parseFloat(((latestClose - targetPrice) / (triggerPrice - latestClose)).toFixed(2))
                     : 0;
@@ -593,9 +555,13 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                 ? latestClose >= triggerPrice
                 : latestClose <= triggerPrice;
 
-            if (riskReward < minRR) return;
+            // Score components
+            const score_p = Math.max(0, Math.min(100, Math.log1p(Math.abs(pChange)) / Math.log1p(15) * 100));
+            const score_d = deliveryMetric === 'Pct'
+              ? Math.max(0, Math.min(100, dChange / 30 * 100))
+              : Math.max(0, Math.min(100, dChange / 200 * 100));
+            const score_v = Math.max(0, Math.min(100, rVol / 2 * 100));
 
-            // 4-component score with base tightness
             let wP = 0.35, wD = 0.35, wV = 0.15, wT = 0.15;
             if (scoreWeighting === 'Price')    { wP = 0.45; wD = 0.25; wV = 0.15; wT = 0.15; }
             if (scoreWeighting === 'Delivery') { wP = 0.25; wD = 0.45; wV = 0.15; wT = 0.15; }
@@ -603,7 +569,11 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
             const score_dar_bonus = dar > 0 ? Math.round(Math.min(10, (dar / 2) * 10)) : 0;
             const score = Math.round(wP * score_p + wD * score_d + wV * score_v + wT * baseTightness) + score_dar_bonus;
 
-            if (score < minScore) return;
+            let signalBadge: string;
+            if (score >= 80 && dar >= 1) signalBadge = 'A';
+            else if (score >= 60) signalBadge = 'B';
+            else if (score >= 40) signalBadge = 'C';
+            else signalBadge = 'D';
 
             results.push({
                 symbol: d.ticker,
@@ -625,16 +595,45 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                 baseTightness,
                 dar,
                 alreadyTriggered,
-                nearEarnings
+                nearEarnings,
+                latestDeliveryPct: d.latest_delivery_pct,
+                signalBadge
             });
         });
 
         return results;
-    }, [rawData, priceMetric, deliveryMetric, priceDirection, minPriceChange, minDeliveryChange, minRelativeVolume, minScore, scoreWeighting, filterSector, filterMcap, minAbsDeliveryPct, minConsecutiveDays, minRR, minDAR, niftyChangePct, filterRSNegative, maxPosition52W, showWatchlistOnly, watchlist, hideNearEarnings, earningsProximitySet, metadataMap, mcapRange]);
+    }, [rawData, priceMetric, deliveryMetric, priceDirection, niftyChangePct, earningsProximitySet, metadataMap, scoreWeighting]);
+
+    // Filter enriched data by slider/button controls (cheap — runs on every slider change)
+    const filteredData = useMemo(() => {
+        return enrichedData.filter(d => {
+            if (priceDirection === 'Falling' && d.priceChangePct > minPriceChange) return false;
+            if (priceDirection === 'Rising' && d.priceChangePct < minPriceChange) return false;
+            if (priceDirection === 'Falling' && d.deliveryChangePct < minDeliveryChange) return false;
+            if (priceDirection === 'Rising' && d.deliveryChangePct > minDeliveryChange) return false;
+            if (d.latestDeliveryPct < minAbsDeliveryPct) return false;
+            if (minConsecutiveDays > 0 && d.consecutiveHighDeliveryDays < minConsecutiveDays) return false;
+            if (d.relativeVolume < minRelativeVolume) return false;
+            if (minDAR > 0 && d.dar < minDAR) return false;
+            if (d.score < minScore) return false;
+            if (d.riskReward < minRR) return false;
+            if (filterSector !== 'All' && d.sector !== filterSector) return false;
+            if (filterMcap !== 'All' && d.bucket !== filterMcap) return false;
+            if (mcapRange) {
+                const mcap = mcapMapRef.current.get(d.symbol);
+                if (mcap === undefined || mcap < mcapRange.min || mcap > mcapRange.max) return false;
+            }
+            if (filterRSNegative && d.relativeStrength >= 0) return false;
+            if (d.position52W > maxPosition52W) return false;
+            if (showWatchlistOnly && !watchlist.has(d.symbol)) return false;
+            if (hideNearEarnings && d.nearEarnings) return false;
+            return true;
+        });
+    }, [enrichedData, priceDirection, minPriceChange, minDeliveryChange, minAbsDeliveryPct, minConsecutiveDays, minRelativeVolume, minDAR, minScore, minRR, filterSector, filterMcap, mcapRange, filterRSNegative, maxPosition52W, showWatchlistOnly, watchlist, hideNearEarnings]);
 
     useEffect(() => {
-        if (processedData.length === 0) return;
-        const currentSymbols = new Set(processedData.map(d => d.symbol));
+        if (filteredData.length === 0) return;
+        const currentSymbols = new Set(filteredData.map(d => d.symbol));
         const stored = sessionStorage.getItem('prev_divergence_scan');
         const prevSymbols: Set<string> = stored
             ? new Set(JSON.parse(stored))
@@ -646,12 +645,12 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
         setNewSymbols(newOnes);
         setPreviousSymbols(prevSymbols);
         sessionStorage.setItem('prev_divergence_scan', JSON.stringify(Array.from(currentSymbols)));
-    }, [processedData]);
+    }, [filteredData]);
 
     const sortedData = useMemo(() => {
         let data = showNewOnly
-            ? processedData.filter(d => newSymbols.has(d.symbol))
-            : processedData;
+            ? filteredData.filter(d => newSymbols.has(d.symbol))
+            : filteredData;
         if (!sortConfig) return data;
         return [...data].sort((a, b) => {
             const aVal = a[sortConfig.key];
@@ -660,7 +659,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
             if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
             return 0;
         });
-    }, [processedData, sortConfig, showNewOnly, newSymbols]);
+    }, [filteredData, sortConfig, showNewOnly, newSymbols]);
 
     const handleSort = (key: keyof ScannerData) => {
         setSortConfig(prev => {
@@ -681,7 +680,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
 
     const exportCSV = useCallback(() => {
         if (sortedData.length === 0) return;
-        const headers = ['Symbol', 'Sector', 'Bucket', 'Price Change%', 'RS vs N50', 'Del Change', 'DAR %', 'Consec Days', 'Base', 'Tightness', '52W Pos', 'Rel Vol', 'Score', 'Trigger', 'SL', 'R:R'];
+        const headers = ['Symbol', 'Sector', 'Bucket', 'Price Change%', 'RS vs N50', 'Del Change', 'DAR %', 'Consec Days', 'Base', 'Tightness', '52W Pos', 'Rel Vol', 'Score', 'Signal', 'Trigger', 'SL', 'R:R'];
         const rows = sortedData.map(d => [
             d.symbol,
             d.sector,
@@ -696,6 +695,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
             d.position52W.toFixed(1),
             d.relativeVolume.toFixed(2),
             d.score,
+            d.signalBadge,
             d.triggerPrice.toFixed(2),
             d.stopLossPrice.toFixed(2),
             d.riskReward.toFixed(2)
@@ -711,21 +711,21 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
     }, [sortedData]);
 
     const summaries = useMemo(() => {
-        if (processedData.length === 0) return { avgScore: 0, avgDel: 0, avgRR: 0, avgDAR: 0 };
-        const sumScore = processedData.reduce((acc, v) => acc + v.score, 0);
-        const sumDel = processedData.reduce((acc, v) => acc + v.deliveryChangePct, 0);
-        const sumRR = processedData.reduce((acc, v) => acc + v.riskReward, 0);
-        const validDAR = processedData.filter(v => v.dar > 0);
+        if (filteredData.length === 0) return { avgScore: 0, avgDel: 0, avgRR: 0, avgDAR: 0 };
+        const sumScore = filteredData.reduce((acc, v) => acc + v.score, 0);
+        const sumDel = filteredData.reduce((acc, v) => acc + v.deliveryChangePct, 0);
+        const sumRR = filteredData.reduce((acc, v) => acc + v.riskReward, 0);
+        const validDAR = filteredData.filter(v => v.dar > 0);
         const avgDAR = validDAR.length > 0
             ? parseFloat((validDAR.reduce((a, v) => a + v.dar, 0) / validDAR.length).toFixed(3))
             : 0;
         return {
-            avgScore: Math.round(sumScore / processedData.length),
-            avgDel: sumDel / processedData.length,
-            avgRR: sumRR / processedData.length,
+            avgScore: Math.round(sumScore / filteredData.length),
+            avgDel: sumDel / filteredData.length,
+            avgRR: sumRR / filteredData.length,
             avgDAR
         };
-    }, [processedData]);
+    }, [filteredData]);
 
     return (
         <div className="bg-[#1e2028] border border-[#ffffff1a] rounded flex flex-col shadow-xl overflow-hidden min-h-[600px]">
@@ -766,14 +766,22 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                         <RefreshCw size={12} className={isLoading ? "animate-spin" : ""} />
                         <span className="text-xs">Sync DB</span>
                     </button>
-                    <button onClick={() => setSettingsOpen(!settingsOpen)} className="p-1 border border-[#ffffff1a] rounded hover:bg-[#ffffff1a] text-[#888]">
-                        {settingsOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    <button
+                        onClick={() => { const n = !filtersVisible; setFiltersVisible(n); localStorage.setItem('pdd_filters_visible', String(n)); }}
+                        className={`px-2.5 py-1 rounded text-[10px] font-mono border transition-all flex items-center gap-1 ${
+                            filtersVisible
+                                ? 'bg-[#2a2c34] border-[#ffffff3a] text-[#ccc]'
+                                : 'bg-[#2a2c34] border-[#ffffff1a] text-[#888]'
+                        }`}
+                        title="Toggle filter controls"
+                    >
+                        Filters <ChevronDown size={12} className={`transition-transform ${filtersVisible ? '' : '-rotate-90'}`} />
                     </button>
                 </div>
             </div>
 
             {/* Settings Panel */}
-            {settingsOpen && (
+            {filtersVisible && (
                 <div className="bg-[#15171d] border-b border-[#ffffff1a] p-4 flex flex-col gap-4">
                     <PresetChip
                         module="PriceDeliveryDivergence"
@@ -1005,7 +1013,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                     <div className="bg-[#2a2c34] border border-[#ffffff1a] rounded p-3 flex flex-col justify-center">
                         <span className="text-xs text-[#888] font-mono mb-1">Divergence Signals</span>
                         <div className="flex items-end gap-2">
-                            <span className="text-2xl text-orange-400 font-semibold">{processedData.length}</span>
+                            <span className="text-2xl text-orange-400 font-semibold">{filteredData.length}</span>
                             {newSymbols.size > 0 && (
                                 <span className="text-sm text-orange-400/70 font-mono mb-0.5">+{newSymbols.size} new</span>
                             )}
@@ -1069,7 +1077,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                     <table className="w-full text-left border-collapse">
                         <thead className="sticky top-0 bg-[#1a1c24] z-10 shadow-sm border-b border-[#ffffff1a]">
                             <tr className="bg-[#1a1c24] border-b border-[#ffffff1a]">
-                                <th colSpan={16} className="p-1 text-[10px] text-[#888] font-mono text-left">
+                                <th colSpan={17} className="p-1 text-[10px] text-[#888] font-mono text-left">
                                     <span className="text-[#555]">Nifty50</span>{' '}
                                     <span className={niftyChangePct >= 0 ? 'text-green-400' : 'text-red-400'}>
                                         {niftyChangePct >= 0 ? '+' : ''}{niftyChangePct.toFixed(2)}%
@@ -1116,6 +1124,9 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                                 <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap ${sortConfig?.key === 'score' ? 'text-white' : ''}`} onClick={() => handleSort('score')}>
                                     Score <SortIcon column="score" />
                                 </th>
+                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap ${sortConfig?.key === 'signalBadge' ? 'text-white' : ''}`} onClick={() => handleSort('signalBadge')}>
+                                    Signal <SortIcon column="signalBadge" />
+                                </th>
                                 <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right ${sortConfig?.key === 'triggerPrice' ? 'text-white' : ''}`} onClick={() => handleSort('triggerPrice')}>
                                     Trigger <SortIcon column="triggerPrice" />
                                 </th>
@@ -1130,7 +1141,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                         <tbody>
                             {sortedData.length === 0 ? (
                                 <tr>
-                                        <td colSpan={16} className="p-8 text-center text-[#666] font-mono text-xs">
+                                        <td colSpan={17} className="p-8 text-center text-[#666] font-mono text-xs">
                                         No divergence signals match your strict criteria.
                                     </td>
                                 </tr>
@@ -1143,7 +1154,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                                         <>
                                             {overflow && (
                                                 <tr>
-                                                    <td colSpan={16} className="px-3 py-1.5 text-[10px] text-center text-yellow-500 font-mono bg-yellow-500/5 border-b border-yellow-500/20">
+                                                    <td colSpan={17} className="px-3 py-1.5 text-[10px] text-center text-yellow-500 font-mono bg-yellow-500/5 border-b border-yellow-500/20">
                                                         Showing top {MAX_ROWS} of {sortedData.length} signals — tighten filters to see all
                                                     </td>
                                                 </tr>
@@ -1157,6 +1168,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                                                                 watchlist.has(d.symbol)
                                                                     ? 'text-orange-400' : 'text-[#333] hover:text-[#888]'
                                                             }`}
+                                                            title={watchlist.has(d.symbol) ? 'Remove from watchlist' : 'Add to watchlist'}
                                                         >
                                                             ★
                                                         </button>
@@ -1189,6 +1201,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); setBacktestSymbol(d.symbol); }}
                                                             className="opacity-0 group-hover:opacity-100 transition-opacity text-[#666] hover:text-orange-400 ml-1"
+                                                            title="Backtest this symbol"
                                                         >
                                                             <BarChart2 size={12} />
                                                         </button>
@@ -1243,6 +1256,16 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                                                                 <div className={`h-full bg-orange-500 rounded ${d.score >= 80 ? 'shadow-[0_0_8px_rgba(249,115,22,0.5)]' : ''}`} style={{ width: `${Math.max(0, Math.min(100, d.score))}%` }} />
                                                             </div>
                                                         </div>
+                                                    </td>
+                                                    <td className="p-3 whitespace-nowrap">
+                                                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded font-mono ${
+                                                            d.signalBadge === 'A' ? 'bg-green-500/20 text-green-400 border border-green-500/30' :
+                                                            d.signalBadge === 'B' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' :
+                                                            d.signalBadge === 'C' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' :
+                                                            'bg-red-500/20 text-red-400 border border-red-500/30'
+                                                        }`}>
+                                                            {d.signalBadge}
+                                                        </span>
                                                     </td>
                                                     <td className="p-3 text-sm font-mono whitespace-nowrap text-right text-[#fafafa]">{d.triggerPrice.toFixed(2)}</td>
                                                     <td className="p-3 text-sm font-mono whitespace-nowrap text-right text-red-400">{d.stopLossPrice.toFixed(2)}</td>

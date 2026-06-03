@@ -140,7 +140,7 @@ export default function BacktestPanel({ lib, symbol, entryPrice, stopLossPrice, 
                         del ≥{minDeliveryChange}{deliveryMetric === 'Pct' ? 'pp' : '%'} over {detectedBaseLength}b base
                     </span>
                 </div>
-                <button onClick={onClose} className="text-[#666] hover:text-white transition-colors">
+                <button onClick={onClose} className="text-[#666] hover:text-white transition-colors" title="Close panel">
                     <X size={14} />
                 </button>
             </div>

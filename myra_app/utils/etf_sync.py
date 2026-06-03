@@ -400,9 +400,9 @@ def _fetch_from_nse() -> set:
     """Fetches live ETF list from NSE API."""
     with requests.Session() as session:
         # NSE requires a cookie from the main page first
-        session.get("https://www.nseindia.com", headers=NSE_HEADERS, timeout=10)
+        session.get("https://www.nseindia.com", headers=NSE_HEADERS, timeout=30)
         time.sleep(1)
-        resp = session.get(NSE_ETF_API, headers=NSE_HEADERS, timeout=15)
+        resp = session.get(NSE_ETF_API, headers=NSE_HEADERS, timeout=30)
         resp.raise_for_status()
         data = resp.json()
         # NSE returns {"data": [{"symbol": "...", ...}, ...]}

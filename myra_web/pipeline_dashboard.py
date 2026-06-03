@@ -85,7 +85,7 @@ class PipelineManager:
     TASK_TIMEOUTS = {
         "ingest": 600,
         "enrichment": 600,
-        "etf_sync": 300,
+        "etf_sync": 120,
         "index_sync": 300,
         "fundamentals_sync": 1800,
         "market_cap_sync": 600,
@@ -116,11 +116,13 @@ class PipelineManager:
         self._cancel_event = threading.Event()
         self._scheduler_shutdown = threading.Event()
         self._server_shutdown = threading.Event()
+        self._schedule_paused = False
         self._sse_queues: list[deque] = []
         self._sse_lock = threading.Lock()
         self._ensure_schema()
         self._resolve_task_funcs()
         self._reset_stale_run()
+        self._load_schedule_pause()
         self._start_scheduler()
 
     def _resolve_task_funcs(self):
@@ -264,6 +266,8 @@ class PipelineManager:
 
     def _check_schedules(self):
         """Check if any scheduled tasks are due to run."""
+        if self._schedule_paused:
+            return
         config = self.get_schedule_config()
         if not config:
             return
@@ -634,6 +638,38 @@ class PipelineManager:
             logger.warning(f"Failed to save schedule config: {e}")
         self._push_event({"type": "schedule_updated", "config": config})
 
+    def _load_schedule_pause(self):
+        try:
+            lib = LibrarianCore(read_only=True)
+            row = lib._meta_conn.execute(
+                "SELECT value FROM metadata WHERE key='pipeline_schedule_paused'"
+            ).fetchone()
+            lib.close()
+            if row and row[0]:
+                self._schedule_paused = json.loads(row[0])
+        except Exception:
+            pass
+
+    def _persist_schedule_pause(self):
+        try:
+            lib = LibrarianCore(read_only=False)
+            lib._meta_conn.execute(
+                "INSERT OR REPLACE INTO metadata (key, value) VALUES ('pipeline_schedule_paused', ?)",
+                (json.dumps(self._schedule_paused),),
+            )
+            lib._meta_conn.commit()
+            lib.close()
+        except Exception as e:
+            logger.warning(f"Failed to persist schedule pause: {e}")
+
+    def get_schedule_paused(self) -> bool:
+        return self._schedule_paused
+
+    def toggle_schedule_pause(self) -> bool:
+        self._schedule_paused = not self._schedule_paused
+        self._persist_schedule_pause()
+        return self._schedule_paused
+
 
 manager = PipelineManager()
 
@@ -756,3 +792,14 @@ def get_schedule():
 def toggle_schedule(req: ScheduleToggleRequest):
     manager.set_schedule_config(req.task_key, req.enabled)
     return {"success": True, "config": manager.get_schedule_config()}
+
+
+@router.get("/schedule/paused")
+def get_schedule_paused():
+    return {"paused": manager.get_schedule_paused()}
+
+
+@router.post("/schedule/pause")
+def toggle_schedule_pause():
+    paused = manager.toggle_schedule_pause()
+    return {"paused": paused, "success": True}
