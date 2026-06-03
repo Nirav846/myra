@@ -1088,11 +1088,21 @@ async def factor_importance():
     return result
 
 
+_search_librarian: object = None
+_search_librarian_lock = threading.Lock()
+
+def _get_search_librarian():
+    global _search_librarian
+    if _search_librarian is None:
+        with _search_librarian_lock:
+            if _search_librarian is None:
+                from myra_app.librarian import Librarian
+                _search_librarian = Librarian(read_only=True)
+    return _search_librarian
+
 @app.get("/api/search/symbols")
 async def search_symbols(q: str = Query(..., min_length=1)):
-    from myra_app.librarian import Librarian
-    lib = Librarian(read_only=True)
-    return lib.search_symbols(q)
+    return _get_search_librarian().search_symbols(q)
 
 
 def _validate_finstack(result: dict) -> dict:

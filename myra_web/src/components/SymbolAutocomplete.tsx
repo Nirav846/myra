@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Search, Loader2 } from 'lucide-react';
+import { API_ROOT } from '../../config';
 
-const API_BASE = 'http://localhost:8000/api';
-const ROOT_BASE = API_BASE.replace(/\/api$/, '');
+
 
 interface SymbolOption {
   symbol: string;
@@ -49,7 +49,7 @@ export function SymbolAutocomplete({ value, onSelect, placeholder = 'Search symb
     }
     setLoading(true);
     try {
-      const res = await fetch(`${ROOT_BASE}/api/search/symbols?q=${encodeURIComponent(term)}`);
+      const res = await fetch(`${API_ROOT}/api/search/symbols?q=${encodeURIComponent(term)}`);
       if (!res.ok) throw new Error('Search failed');
       const data: SymbolOption[] = await res.json();
       setSuggestions(data);

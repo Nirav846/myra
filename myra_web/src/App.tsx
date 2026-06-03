@@ -17,6 +17,7 @@ import AdvancedChartView from './views/AdvancedChart';
 import ReversionEngineView from './views/ReversionEngine';
 import ValueRankerView from './views/ValueRanker';
 import { getLibrarian } from './lib/Librarian';
+import { API_ROOT, API_BASE } from '../config';
 import { useSettings } from './lib/SettingsContext';
 import { useHealthStatus } from './hooks/useHealthStatus';
 import { AlertManager } from './lib/AlertManager';
@@ -67,8 +68,7 @@ interface HealthStatus {
   count?: number;
 }
 
-const API_BASE = 'http://localhost:8000/api';
-const ROOT_BASE = API_BASE.replace(/\/api$/, '');
+
 
 export default function App() {
   const navigate = useNavigate();
@@ -83,7 +83,7 @@ export default function App() {
   const { health, coverage, isConnected } = useHealthStatus();
   
   const [pipelineStatus, setPipelineStatus] = useState<any>(null);
-  const [pipelineSyncStatus, setPipelineSyncStatus] = useState<any>(null);
+  const [toolsStatus, setToolsStatus] = useState<any>(null);
   const [dbSize, setDbSize] = useState<string>("N/A");
   const [logs, setLogs] = useState<string[]>(["[SYSTEM] Offline mode – no logs"]);
 
@@ -94,10 +94,10 @@ export default function App() {
     }
     try {
       const [statusRes, pipelineRes, sizeRes, logsRes] = await Promise.all([
-        fetch(`${ROOT_BASE}/api/tools/status`),
-        fetch(`${ROOT_BASE}/api/pipeline/status`),
-        fetch(`${ROOT_BASE}/api/db-size`),
-        fetch(`${ROOT_BASE}/api/logs/recent`)
+        fetch(`${API_ROOT}/api/tools/status`),
+        fetch(`${API_ROOT}/api/tools/status`),
+        fetch(`${API_ROOT}/api/db-size`),
+        fetch(`${API_ROOT}/api/logs/recent`)
       ]);
 
       if (statusRes.ok) {
@@ -106,7 +106,7 @@ export default function App() {
       }
       if (pipelineRes.ok) {
         const data = await pipelineRes.json();
-        setPipelineSyncStatus(data);
+        setToolsStatus(data);
       }
       if (sizeRes.ok) {
         const data = await sizeRes.json();
@@ -268,16 +268,16 @@ export default function App() {
             <div className="text-[#555]">|</div>
             <div className="flex items-center gap-2">
               <span className="text-white font-bold">Data last synced: </span>
-              <span className="text-cyan-400">{pipelineSyncStatus?.tasks ? (() => {
-                const dates = Object.values(pipelineSyncStatus.tasks as Record<string, any>)
-                  .filter((t: any) => t?.last_run && t.last_run !== 'Never')
-                  .map((t: any) => t.last_run);
+              <span className="text-cyan-400">{(() => {
+                if (!toolsStatus) return 'N/A';
+                const dates = Object.values(toolsStatus as Record<string, string>)
+                  .filter((v) => typeof v === 'string' && v !== 'Never' && v.length > 4);
                 if (dates.length === 0) return 'Never';
-                const newest = dates.sort((a: string, b: string) => new Date(b).getTime() - new Date(a).getTime())[0];
+                const newest = dates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
                 const diffMs = Date.now() - new Date(newest).getTime();
                 const hours = Math.floor(diffMs / 3600000);
                 return hours < 1 ? '<1h ago' : `${hours}h ago`;
-              })() : 'N/A'}</span>
+              })()}</span>
               <button onClick={fetchLiveData} className="p-1 text-[#888] hover:text-white transition-colors" title="Refresh">
                 <RotateCw size={12} />
               </button>

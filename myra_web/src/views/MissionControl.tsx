@@ -4,9 +4,9 @@ import { Librarian } from '../lib/Librarian';
 import { useLazyWidgetData } from '../hooks/useLazyWidgetData';
 import { SymbolAutocomplete } from '../components/SymbolAutocomplete';
 import ErrorBoundary from '../components/ErrorBoundary';
+import { API_ROOT } from '../../config';
 
-const API_BASE = 'http://localhost:8000/api';
-const ROOT_BASE = API_BASE.replace(/\/api$/, '');
+
 
 interface BreadthRes {
   advances: number;
@@ -21,46 +21,46 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
   const [timelineSymbol, setTimelineSymbol] = useState('RELIANCE');
 
   const breadthWidget = useLazyWidgetData<BreadthRes>('market_breadth', async () => {
-    const res = await fetch(`${ROOT_BASE}/api/market-breadth`);
+    const res = await fetch(`${API_ROOT}/api/market-breadth`);
     if (!res.ok) throw new Error('Failed to load market breadth');
     return res.json();
   });
 
   const pipelineWidget = useLazyWidgetData<any>('pipeline_status', async () => {
-    const res = await fetch(`${ROOT_BASE}/api/tools/status`);
+    const res = await fetch(`${API_ROOT}/api/tools/status`);
     if (!res.ok) throw new Error('Failed to load pipeline status');
     return res.json();
   });
 
   const briefWidget = useLazyWidgetData<any>('morning_brief', async () => {
-    const res = await fetch(`${ROOT_BASE}/api/finstack/morning-brief`);
+    const res = await fetch(`${API_ROOT}/api/finstack/morning-brief`);
     if (!res.ok) throw new Error('Failed to load morning brief');
     return res.json();
   });
 
   const niftyWidget = useLazyWidgetData<any>('nifty_outlook', async () => {
-    const res = await fetch(`${ROOT_BASE}/api/finstack/nifty-outlook`);
+    const res = await fetch(`${API_ROOT}/api/finstack/nifty-outlook`);
     if (!res.ok) throw new Error('Failed to load nifty outlook');
     return res.json();
   });
 
   const divergenceWidget = useLazyWidgetData<any>('fii_divergence', async () => {
     const sym = fiiSymbol || 'RELIANCE';
-    const res = await fetch(`${ROOT_BASE}/api/finstack/fii-retail-divergence?symbol=${sym}`);
+    const res = await fetch(`${API_ROOT}/api/finstack/fii-retail-divergence?symbol=${sym}`);
     if (!res.ok) throw new Error('Failed to load divergence data');
     return res.json();
   });
 
   const stockBrief = useLazyWidgetData<any>('stock_brief', async () => {
     const sym = briefSymbol || 'RELIANCE';
-    const res = await fetch(`${ROOT_BASE}/api/finstack/stock-brief?symbol=${sym}`);
+    const res = await fetch(`${API_ROOT}/api/finstack/stock-brief?symbol=${sym}`);
     if (!res.ok) throw new Error('Failed to load stock brief');
     return res.json();
   });
 
   const timelineWidget = useLazyWidgetData<any>('stock_timeline', async () => {
     const sym = timelineSymbol || 'RELIANCE';
-    const res = await fetch(`${ROOT_BASE}/api/finstack/stock-timeline?symbol=${sym}`);
+    const res = await fetch(`${API_ROOT}/api/finstack/stock-timeline?symbol=${sym}`);
     if (!res.ok) throw new Error('Failed to load stock timeline');
     return res.json();
   });
@@ -384,7 +384,7 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
         <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[10px] font-mono">Market Breadth crashed</div>}>
         <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col justify-center">
           <div className="flex items-center justify-between mb-1">
-            <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Market Breadth (NIFTY)</div>
+            <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Market Breadth (All NSE)</div>
             <div className="flex items-center gap-2">
               <button onClick={breadthWidget.fetchData} disabled={breadthWidget.loading} className="text-[#888] hover:text-[#fafafa] transition-colors disabled:opacity-40" title="Refresh">
                 <RotateCw size={14} className={breadthWidget.loading ? 'animate-spin' : ''} />
