@@ -1,121 +1,253 @@
-import { useState, useEffect, useRef } from 'react';
-import { NavLink } from 'react-router-dom';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 
 interface Tab {
   id: string;
   path: string;
   icon: string | React.ReactNode;
+  category?: string;
 }
 
 interface NavbarProps {
   tabs: Tab[];
 }
 
+const CATEGORY_LABELS: Record<string, string> = {
+  scanners: 'Scanners',
+  analysis: 'Analysis',
+  data: 'Data',
+  experimental: 'Experimental',
+};
+
+const CATEGORY_ORDER = ['dashboard', 'scanners', 'analysis', 'data', 'experimental'];
+
 export default function Navbar({ tabs }: NavbarProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [overflowTabs, setOverflowTabs] = useState<string[]>([]);
+  const location = useLocation();
+  const menuRef = useRef<HTMLDivElement>(null);
+  const buttonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const moreBtnRef = useRef<HTMLButtonElement>(null);
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [overflowCategoryKeys, setOverflowCategoryKeys] = useState<string[]>([]);
 
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    const ro = new ResizeObserver(() => {
-      const containerWidth = el.clientWidth;
-      const children = el.children;
-      let totalWidth = 0;
-      const visible: string[] = [];
-      const hidden: string[] = [];
-      let moreWidth = 0;
-
-      for (let i = 0; i < children.length; i++) {
-        const child = children[i] as HTMLElement;
-        if (child.dataset.more) {
-          moreWidth = child.offsetWidth + 8;
-          continue;
-        }
-        const w = child.getBoundingClientRect().width;
-        if (totalWidth + w + moreWidth <= containerWidth) {
-          totalWidth += w;
-          visible.push(tabs[i]?.id || '');
-        } else {
-          hidden.push(tabs[i]?.id || '');
-        }
-      }
-      setOverflowTabs(hidden);
-    });
-
-    ro.observe(el);
-    return () => ro.disconnect();
+  const grouped = useMemo(() => {
+    const map: Record<string, Tab[]> = {};
+    for (const tab of tabs) {
+      const cat = tab.category || 'other';
+      if (!map[cat]) map[cat] = [];
+      map[cat].push(tab);
+    }
+    return map;
   }, [tabs]);
 
+  const activeCategory = useMemo(() => {
+    for (const tab of tabs) {
+      if (tab.path && location.pathname.startsWith(tab.path)) {
+        return tab.category || 'other';
+      }
+    }
+    return null;
+  }, [tabs, location.pathname]);
+
   useEffect(() => {
-    if (!moreOpen) return;
+    if (!openDropdown && !moreOpen) return;
     const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      const inMenu = menuRef.current?.contains(target);
+      const inDropdown = document.querySelector('[data-nav-dropdown]')?.contains(target);
+      if (!inMenu && !inDropdown) {
+        setOpenDropdown(null);
         setMoreOpen(false);
       }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [moreOpen]);
+  }, [openDropdown, moreOpen]);
+
+  useEffect(() => {
+    if (!openDropdown && !moreOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpenDropdown(null);
+        setMoreOpen(false);
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [openDropdown, moreOpen]);
+
+  const categoryKeys = useMemo(
+    () => CATEGORY_ORDER.filter(k => k === 'dashboard' || (grouped[k]?.length || 0) > 0),
+    [grouped]
+  );
+
+  useEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+
+    const ro = new ResizeObserver(() => {
+      const containerWidth = el.clientWidth;
+      const children = Array.from(el.children);
+      let totalWidth = 0;
+      const hidden: string[] = [];
+      let moreBtnSpace = 0;
+
+      for (let i = 0; i < children.length; i++) {
+        const child = children[i] as HTMLElement;
+        if (child.dataset.moreBtn) {
+          moreBtnSpace = child.offsetWidth + 8;
+          continue;
+        }
+        if (child.dataset.cat) {
+          const w = child.getBoundingClientRect().width;
+          const remaining = children.slice(i + 1).filter(c => !(c as HTMLElement).dataset.moreBtn);
+          const needsMore = remaining.length > 0;
+          const needed = totalWidth + w + (needsMore ? moreBtnSpace : 0);
+          if (needed <= containerWidth) {
+            totalWidth += w;
+          } else {
+            hidden.push(child.dataset.cat);
+          }
+        }
+      }
+      setOverflowCategoryKeys(hidden);
+    });
+
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [categoryKeys]);
+
+  const visibleKeys = categoryKeys.filter(k => !overflowCategoryKeys.includes(k));
+  const hasOverflow = overflowCategoryKeys.length > 0;
+
+  const overflowTabs = useMemo(() => {
+    const result: Tab[] = [];
+    for (const key of overflowCategoryKeys) {
+      const catTabs = grouped[key] || [];
+      result.push(...catTabs);
+    }
+    return result;
+  }, [overflowCategoryKeys, grouped]);
+
+  const renderCategoryContent = (catKey: string) => {
+    if (catKey === 'dashboard') {
+      const tab = (grouped['dashboard'] || [])[0];
+      if (!tab) return null;
+      return (
+        <div key="dashboard" data-cat="dashboard">
+          <NavLink
+            to={tab.path}
+            className={({ isActive }) =>
+              `px-2 py-1 text-[11px] font-mono whitespace-nowrap transition-colors inline-flex items-center gap-1 ${
+                isActive ? 'text-cyan-400' : 'text-[#888] hover:text-white'
+              }`
+            }
+          >
+            <span className="nav-icon">{typeof tab.icon === 'string' ? tab.icon : tab.icon}</span>
+            <span className="nav-label">{tab.id}</span>
+          </NavLink>
+        </div>
+      );
+    }
+
+    const catTabs = grouped[catKey] || [];
+    if (catTabs.length === 0) return null;
+    const isActive = activeCategory === catKey;
+
+    return (
+      <div key={catKey} data-cat={catKey} className="relative">
+        <button
+          ref={el => { buttonRefs.current[catKey] = el; }}
+          onClick={() => setOpenDropdown(openDropdown === catKey ? null : catKey)}
+          aria-haspopup="true"
+          aria-expanded={openDropdown === catKey}
+          className={`px-2 py-1 text-[11px] font-mono whitespace-nowrap transition-colors flex items-center gap-1 ${
+            isActive ? 'text-cyan-400' : 'text-[#888] hover:text-white'
+          }`}
+        >
+          {CATEGORY_LABELS[catKey] || catKey} ▾
+        </button>
+        {openDropdown === catKey && createPortal(
+          <div
+            data-nav-dropdown={catKey}
+            className="bg-[#1a1c24] border border-[#ffffff1a] rounded shadow-xl py-1 min-w-[160px]"
+            style={{
+              position: 'fixed',
+              left: buttonRefs.current[catKey]?.getBoundingClientRect().left ?? 0,
+              top: (buttonRefs.current[catKey]?.getBoundingClientRect().bottom ?? 0) + 4,
+              zIndex: 9999,
+            }}
+          >
+            {catTabs.map(tab => (
+              <NavLink
+                key={tab.id}
+                to={tab.path}
+                onClick={() => setOpenDropdown(null)}
+                className={({ isActive }) =>
+                  `block px-3 py-1.5 text-[11px] font-mono transition-colors flex items-center gap-2 ${
+                    isActive
+                      ? 'text-cyan-400 bg-cyan-500/10'
+                      : 'text-[#888] hover:text-white hover:bg-[#ffffff0a]'
+                  }`
+                }
+              >
+                <span className="w-4 text-center">{typeof tab.icon === 'string' ? tab.icon : null}</span>
+                {tab.id}
+              </NavLink>
+            ))}
+          </div>,
+          document.body
+        )}
+      </div>
+    );
+  };
 
   return (
     <nav className="navbar" role="navigation" aria-label="Main navigation">
       <div className="menu-container" tabIndex={0}>
-        <div className="menu" ref={containerRef} style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-          {tabs.map((tab) => {
-            const hidden = overflowTabs.includes(tab.id);
-            return (
-              <div
-                key={tab.id}
-                style={{ display: hidden ? 'none' : 'flex' }}
-              >
-                <NavLink
-                  to={tab.path}
-                  className={({ isActive }) => isActive ? 'active' : ''}
-                >
-                  <span className="nav-icon">
-                    {typeof tab.icon === 'string' ? tab.icon : tab.icon}
-                  </span>
-                  <span className="nav-label">{tab.id}</span>
-                </NavLink>
-              </div>
-            );
-          })}
-          {overflowTabs.length > 0 && (
-            <div data-more className="relative" ref={dropdownRef}>
+        <div className="menu" ref={menuRef} style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+          {visibleKeys.map(renderCategoryContent)}
+
+          {hasOverflow && (
+            <div data-more-btn className="relative">
               <button
+                ref={moreBtnRef}
                 onClick={() => setMoreOpen(o => !o)}
                 className="px-2 py-1 text-[11px] font-mono text-[#888] hover:text-white transition-colors whitespace-nowrap"
                 title="More tabs"
               >
                 More ▾
               </button>
-              {moreOpen && (
-                <div className="absolute right-0 top-full mt-1 z-50 bg-[#1a1c24] border border-[#ffffff1a] rounded shadow-xl py-1 min-w-[140px]">
-                  {overflowTabs.map(id => {
-                    const tab = tabs.find(t => t.id === id);
-                    if (!tab) return null;
-                    return (
-                      <NavLink
-                        key={tab.id}
-                        to={tab.path}
-                        onClick={() => setMoreOpen(false)}
-                        className={({ isActive }) =>
-                          `block px-3 py-1.5 text-[11px] font-mono transition-colors ${
-                            isActive
-                              ? 'text-cyan-400 bg-cyan-500/10'
-                              : 'text-[#888] hover:text-white hover:bg-[#ffffff0a]'
-                          }`
-                        }
-                      >
-                        {typeof tab.icon === 'string' ? tab.icon : null} {tab.id}
-                      </NavLink>
-                    );
-                  })}
-                </div>
+              {moreOpen && createPortal(
+                <div
+                  data-nav-dropdown="more"
+                  className="bg-[#1a1c24] border border-[#ffffff1a] rounded shadow-xl py-1 min-w-[140px]"
+                  style={{
+                    position: 'fixed',
+                    left: (moreBtnRef.current?.getBoundingClientRect().right ?? 0) - 160,
+                    top: (moreBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                    zIndex: 9999,
+                  }}
+                >
+                  {overflowTabs.map(tab => (
+                    <NavLink
+                      key={tab.id}
+                      to={tab.path}
+                      onClick={() => setMoreOpen(false)}
+                      className={({ isActive }) =>
+                        `block px-3 py-1.5 text-[11px] font-mono transition-colors ${
+                          isActive
+                            ? 'text-cyan-400 bg-cyan-500/10'
+                            : 'text-[#888] hover:text-white hover:bg-[#ffffff0a]'
+                        }`
+                      }
+                    >
+                      {typeof tab.icon === 'string' ? tab.icon : null} {tab.id}
+                    </NavLink>
+                  ))}
+                </div>,
+                document.body
               )}
             </div>
           )}
