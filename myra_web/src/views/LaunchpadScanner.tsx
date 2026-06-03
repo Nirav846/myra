@@ -447,7 +447,7 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
                     filteredData.map((row, i) => {
                       const conf = getConfidence(row.predicted_return_pct);
                       return (
-                        <tr key={row.symbol} className="hover:bg-[#ffffff05] transition-colors">
+                        <tr key={row.symbol + '-' + row.trigger_date} className="hover:bg-[#ffffff05] transition-colors">
                           <td className="px-4 py-3 text-[#fafafa] font-bold">
                             <button
                               onClick={() => onNavigate('Technical Chart', row.symbol)}
@@ -459,7 +459,7 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
                           <td className="px-4 py-3 text-[#aaa] text-right">{row.trigger_date}</td>
                           <td className="px-4 py-3 text-[#ccc] text-right font-bold">{row.current_digestion_days}</td>
                           <td className="px-4 py-3 text-[#ccc] text-right">{formatMarketCap(row.market_cap)}</td>
-                          <td className="px-4 py-3 text-[#ccc] text-right">{row.predicted_days_to_breakout?.toFixed(1) || '-'}</td>
+                          <td className="px-4 py-3 text-[#ccc] text-right">{Number.isFinite(row.predicted_days_to_breakout) ? row.predicted_days_to_breakout.toFixed(1) : '-'}</td>
                           <td className="px-4 py-3 text-right">
                             <span className={row.predicted_return_pct > 0 ? 'text-cyan-400 font-bold' : 'text-red-400'}>
                               {row.predicted_return_pct.toFixed(2)}%

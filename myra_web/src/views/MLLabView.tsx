@@ -140,6 +140,8 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
     } catch (e: any) {
       if (e.name === 'AbortError' || !mountedRef.current) return null;
       throw e;
+    } finally {
+      abortRefs.current = abortRefs.current.filter(c => c !== ac);
     }
   }, []);
 
@@ -469,8 +471,9 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
                         onChange={e => {
                           const nHp = { ...hyperparams, [key]: key === 'learning_rate' ? parseFloat(e.target.value) : parseInt(e.target.value) };
                           setHyperparams(nHp);
-                          saveConfig({ features: selectedFeatures, hyperparameters: nHp });
-                        }} />
+                        }}
+                        onMouseUp={() => saveConfig({ features: selectedFeatures, hyperparameters: hyperparams })}
+                        onTouchEnd={() => saveConfig({ features: selectedFeatures, hyperparameters: hyperparams })} />
                     </div>
                   ))}
                 </div>
@@ -638,8 +641,9 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
                         onChange={e => {
                           const nv = { ...lpLabelConfig, [key]: key.includes('days') ? parseInt(e.target.value) : parseFloat(e.target.value) };
                           setLpLabelConfig(nv);
-                          saveConfig({ launchpad_label_config: nv });
-                        }} />
+                        }}
+                        onMouseUp={() => saveConfig({ launchpad_label_config: lpLabelConfig })}
+                        onTouchEnd={() => saveConfig({ launchpad_label_config: lpLabelConfig })} />
                     </div>
                   ))}
                   <button onClick={handleLpLabel} disabled={lpLabeling} className="w-full py-2 mt-2 bg-[#ffffff1a] hover:bg-[#ffffff2a] disabled:opacity-50 text-white rounded text-xs transition-colors flex justify-center items-center">
@@ -698,8 +702,9 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
                         onChange={e => {
                           const nHp = { ...lpHyperparams, [key]: key === 'n_estimators' || key === 'max_depth' ? parseInt(e.target.value) : parseFloat(e.target.value) };
                           setLpHyperparams(nHp);
-                          saveConfig({ launchpad_hyperparameters: nHp, launchpad_features: lpSelectedFeatures, launchpad_label_config: lpLabelConfig });
-                        }} />
+                        }}
+                        onMouseUp={() => saveConfig({ launchpad_hyperparameters: lpHyperparams, launchpad_features: lpSelectedFeatures, launchpad_label_config: lpLabelConfig })}
+                        onTouchEnd={() => saveConfig({ launchpad_hyperparameters: lpHyperparams, launchpad_features: lpSelectedFeatures, launchpad_label_config: lpLabelConfig })} />
                     </div>
                   ))}
                 </div>
@@ -762,7 +767,7 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
                 </div>
               ) : (
                 <div className="space-y-6">
-                  {Object.entries(factorData.by_category).map(([category, features]) => (
+                  {Object.entries(factorData.by_category ?? {}).map(([category, features]) => (
                     <div key={category}>
                       <h4 className="text-xs font-semibold uppercase tracking-wider text-[#fafafa] mb-2">{category}</h4>
                       <div className="h-48 w-full">
