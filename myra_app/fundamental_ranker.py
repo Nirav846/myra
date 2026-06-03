@@ -12,8 +12,8 @@ class FundamentalRanker:
     Uses SQLite (scoring.db) for caching and DuckDB for raw data processing.
     """
 
-    def __init__(self, duck_conn, scoring_db_path="scoring.db"):
-        self.duck_conn = duck_conn
+    def __init__(self, val_conn, scoring_db_path="scoring.db"):
+        self.val_conn = val_conn
         self.scoring_db_path = scoring_db_path
 
     def _get_scoring_conn(self):
@@ -43,21 +43,18 @@ class FundamentalRanker:
             def _to_record(row):
                 score = row.Funda_Score
                 grade = (
-                    "A"
-                    if score >= 70
-                    else "B"
-                    if score >= 50
-                    else "C"
-                    if score >= 30
+                    "A" if score >= 50
+                    else "B" if score >= 35
+                    else "C" if score >= 20
                     else "D"
                 )
                 return (
                     row.Stock,
                     today,
-                    float(getattr(row, "Rev_Growth_Per", 0)),
-                    float(getattr(row, "ROE", 0)),
-                    0.0,  # stability placeholder
-                    float(getattr(row, "Pledge_Pct", 0)),
+                    float(getattr(row, "margin_score", 0)),
+                    float(getattr(row, "roe_score", 0)),
+                    float(getattr(row, "div_score", 0)),
+                    0.0,
                     float(score),
                     grade,
                 )
@@ -79,122 +76,68 @@ class FundamentalRanker:
             print(f"[!] Materialization failed: {e}")
 
     def _calculate_all_scores_from_duck(self, symbols=None):
-        if not self.duck_conn:
+        """Score stocks using available fields in myra_valuation.db fundamentals table."""
+        if not self.val_conn:
             return pd.DataFrame()
-
-        sym_filter = ""
-        if symbols:
-            sym_list = "', '".join([s.split(".")[0].upper() for s in symbols])
-            sym_filter = f"WHERE symbol IN ('{sym_list}')"
-
-        isin_bridge_path = os.path.join(os.getcwd(), "data", "isin_bridge.parquet")
-        has_isin = os.path.exists(isin_bridge_path)
-
-        query = f"""
-        WITH base AS (
-            SELECT *,
-                CASE 
-                    WHEN report_date LIKE 'Jan %' THEN CAST(SUBSTR(report_date, 5) || '-01-01' AS DATE)
-                    WHEN report_date LIKE 'Feb %' THEN CAST(SUBSTR(report_date, 5) || '-02-01' AS DATE)
-                    WHEN report_date LIKE 'Mar %' THEN CAST(SUBSTR(report_date, 5) || '-03-01' AS DATE)
-                    WHEN report_date LIKE 'Apr %' THEN CAST(SUBSTR(report_date, 5) || '-04-01' AS DATE)
-                    WHEN report_date LIKE 'May %' THEN CAST(SUBSTR(report_date, 5) || '-05-01' AS DATE)
-                    WHEN report_date LIKE 'Jun %' THEN CAST(SUBSTR(report_date, 5) || '-06-01' AS DATE)
-                    WHEN report_date LIKE 'Jul %' THEN CAST(SUBSTR(report_date, 5) || '-07-01' AS DATE)
-                    WHEN report_date LIKE 'Aug %' THEN CAST(SUBSTR(report_date, 5) || '-08-01' AS DATE)
-                    WHEN report_date LIKE 'Sep %' THEN CAST(SUBSTR(report_date, 5) || '-09-01' AS DATE)
-                    WHEN report_date LIKE 'Oct %' THEN CAST(SUBSTR(report_date, 5) || '-10-01' AS DATE)
-                    WHEN report_date LIKE 'Nov %' THEN CAST(SUBSTR(report_date, 5) || '-11-01' AS DATE)
-                    WHEN report_date LIKE 'Dec %' THEN CAST(SUBSTR(report_date, 5) || '-12-01' AS DATE)
-                    ELSE TRY_CAST(report_date AS DATE)
-                END as sort_date
-            FROM fundamentals_quarterly {sym_filter}
-        ),
-        latest_snapshot AS (
-            SELECT 
-                symbol, roe, opm_pct, pledged_pct, industry_pe, stock_pe,
-                ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY sort_date DESC) as rn
-            FROM base
-        ),
-        growth_calc AS (
-            SELECT 
-                symbol, revenue, net_profit, roce, sales_per_share, sort_date,
-                LAG(revenue, 4) OVER (PARTITION BY symbol ORDER BY sort_date) as prev_revenue,
-                LAG(net_profit, 4) OVER (PARTITION BY symbol ORDER BY sort_date) as prev_profit,
-                LAG(sales_per_share, 4) OVER (PARTITION BY symbol ORDER BY sort_date) as prev_sps
-            FROM base
-        ),
-        agg_scores AS (
-            SELECT 
-                symbol,
-                AVG(CASE WHEN prev_revenue > 0 THEN (revenue - prev_revenue)/prev_revenue ELSE 0 END) * 100 as rev_growth,
-                AVG(
-                    CASE
-                        WHEN prev_profit <= 0 AND net_profit > 0 THEN 100.0
-                        WHEN prev_profit != 0 THEN ((net_profit - prev_profit) / ABS(prev_profit)) * 100.0
-                        ELSE 0.0
-                    END
-                ) AS profit_growth,
-                AVG(CASE WHEN prev_sps > 0 THEN (sales_per_share - prev_sps)/prev_sps ELSE 0 END) * 100 as sps_growth,
-                AVG(roce) as avg_roce
-            FROM growth_calc
-            GROUP BY symbol
-        )
-        """
-        if has_isin:
-            query += f"""
-            SELECT
-                a.symbol as Stock,
-                COALESCE(a.rev_growth, 0) as Rev_Growth_Per,
-                COALESCE(a.sps_growth, 0) as SPS_Growth_Per,
-                COALESCE(a.avg_roce, 0) as ROCE,
-                COALESCE(l.roe, 0) as ROE,
-                COALESCE(l.stock_pe, 0) as PE,
-                COALESCE(l.industry_pe, 0) as Ind_PE,
-                COALESCE(l.pledged_pct, 0) as Pledge_Pct,
-                (
-                    COALESCE((CASE WHEN a.sps_growth > 20 THEN 20 WHEN a.sps_growth > 10 THEN 10 ELSE 5 END), 5) +
-                    COALESCE((CASE WHEN a.avg_roce > 20 THEN 15 WHEN a.avg_roce > 15 THEN 10 ELSE 5 END), 5) +
-                    COALESCE((CASE WHEN l.roe > 15 THEN 15 WHEN l.roe > 10 THEN 10 ELSE 5 END), 5) +
-                    COALESCE((CASE WHEN l.stock_pe > 0 AND l.stock_pe < l.industry_pe THEN 20 WHEN l.stock_pe > 0 AND l.stock_pe < (l.industry_pe * 1.2) THEN 10 ELSE 0 END), 0) +
-                    COALESCE((CASE WHEN l.opm_pct > 20 THEN 10 WHEN l.opm_pct > 10 THEN 5 ELSE 0 END), 0) +
-                    COALESCE((CASE WHEN l.pledged_pct > 20 THEN -30 WHEN l.pledged_pct > 5 THEN -10 ELSE 0 END), 0)
-                ) as Funda_Score
-            FROM agg_scores a
-            LEFT JOIN read_parquet('{isin_bridge_path}') b_a ON a.symbol = b_a.SYMBOL
-            JOIN (
-                SELECT ls.*, COALESCE(b.ISIN, ls.symbol) as join_isin
-                FROM latest_snapshot ls
-                LEFT JOIN read_parquet('{isin_bridge_path}') b ON ls.symbol = b.SYMBOL
-                WHERE ls.rn = 1
-            ) l ON COALESCE(b_a.ISIN, a.symbol) = l.join_isin
-            """
-        else:
-            query += """
-            SELECT
-                a.symbol as Stock,
-                COALESCE(a.rev_growth, 0) as Rev_Growth_Per,
-                COALESCE(a.sps_growth, 0) as SPS_Growth_Per,
-                COALESCE(a.avg_roce, 0) as ROCE,
-                COALESCE(l.roe, 0) as ROE,
-                COALESCE(l.stock_pe, 0) as PE,
-                COALESCE(l.industry_pe, 0) as Ind_PE,
-                COALESCE(l.pledged_pct, 0) as Pledge_Pct,
-                (
-                    COALESCE((CASE WHEN a.sps_growth > 20 THEN 20 WHEN a.sps_growth > 10 THEN 10 ELSE 5 END), 5) +
-                    COALESCE((CASE WHEN a.avg_roce > 20 THEN 15 WHEN a.avg_roce > 15 THEN 10 ELSE 5 END), 5) +
-                    COALESCE((CASE WHEN l.roe > 15 THEN 15 WHEN l.roe > 10 THEN 10 ELSE 5 END), 5) +
-                    COALESCE((CASE WHEN l.stock_pe > 0 AND l.stock_pe < l.industry_pe THEN 20 WHEN l.stock_pe > 0 AND l.stock_pe < (l.industry_pe * 1.2) THEN 10 ELSE 0 END), 0) +
-                    COALESCE((CASE WHEN l.opm_pct > 20 THEN 10 WHEN l.opm_pct > 10 THEN 5 ELSE 0 END), 0) +
-                    COALESCE((CASE WHEN l.pledged_pct > 20 THEN -30 WHEN l.pledged_pct > 5 THEN -10 ELSE 0 END), 0)
-                ) as Funda_Score
-            FROM agg_scores a
-            JOIN latest_snapshot l ON a.symbol = l.symbol AND l.rn = 1
-            """
-
         try:
-            return self.duck_conn.execute(query).df()
-        except Exception:
+            where = ""
+            params = []
+            if symbols:
+                clean = [s.split(".")[0].upper() for s in symbols]
+                placeholders = ",".join("?" * len(clean))
+                where = f"WHERE symbol IN ({placeholders})"
+                params = clean
+
+            df = pd.read_sql(
+                f"""
+                SELECT symbol, pe, sector_pe, net_margin, roe_ttm, dividend_yield
+                FROM fundamentals
+                {where}
+                """,
+                self.val_conn,
+                params=params if params else None,
+            )
+
+            if df.empty:
+                return pd.DataFrame()
+
+            df = df.rename(columns={"symbol": "Stock"})
+
+            # Valuation score: pe vs sector_pe (lower is better)
+            df["val_score"] = df.apply(
+                lambda r: (
+                    20 if (r["pe"] > 0 and r["sector_pe"] > 0 and r["pe"] < r["sector_pe"])
+                    else 10 if (r["pe"] > 0 and r["sector_pe"] > 0 and r["pe"] < r["sector_pe"] * 1.2)
+                    else 0
+                ),
+                axis=1,
+            )
+
+            # Quality score: net_margin
+            df["margin_score"] = df["net_margin"].apply(
+                lambda x: 20 if x > 20 else 10 if x > 10 else 5 if x > 0 else 0
+            )
+
+            # Quality score: roe_ttm
+            df["roe_score"] = df["roe_ttm"].apply(
+                lambda x: 20 if x > 20 else 15 if x > 15 else 10 if x > 10 else 5 if x > 0 else 0
+            )
+
+            # Stability score: dividend_yield
+            df["div_score"] = df["dividend_yield"].apply(
+                lambda x: 10 if x > 3 else 5 if x > 1 else 0
+            )
+
+            df["Funda_Score"] = df["val_score"] + df["margin_score"] + df["roe_score"] + df["div_score"]
+
+            df["Grade"] = df["Funda_Score"].apply(
+                lambda s: "A" if s >= 50 else "B" if s >= 35 else "C" if s >= 20 else "D"
+            )
+
+            return df[["Stock", "Funda_Score", "Grade", "val_score", "margin_score", "roe_score", "div_score"]]
+
+        except Exception as e:
+            print(f"[FundamentalRanker] Score calculation failed: {e}")
             return pd.DataFrame()
 
     def rank(self, symbols=None, use_cache=True):

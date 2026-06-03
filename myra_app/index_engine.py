@@ -21,6 +21,11 @@ try:
 except ImportError:
     nse_get_index_quote = None
 
+import os
+import sqlite3
+from myra_app.constants import DB_DIR
+from myra_app.librarian_core import LibrarianCore
+
 
 class IndexEngine:
     def __init__(self):
@@ -46,12 +51,7 @@ class IndexEngine:
             return entry["data"]
 
         # Query Local SQLite DB instead of external APIs
-        import os
-        import sqlite3
-
-        from myra_app.librarian_core import LibrarianCore
-
-        db_path = os.path.join(os.getcwd(), "db", LibrarianCore.DB_MAP["technical"])
+        db_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["technical"])
         if os.path.exists(db_path):
             conn = sqlite3.connect(db_path)
             try:
@@ -90,12 +90,7 @@ class IndexEngine:
             return entry["data"]
 
         # Query Local SQLite DB instead of external APIs
-        import os
-        import sqlite3
-
-        from myra_app.librarian_core import LibrarianCore
-
-        db_path = os.path.join(os.getcwd(), "db", LibrarianCore.DB_MAP["technical"])
+        db_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["technical"])
         if os.path.exists(db_path):
             conn = sqlite3.connect(db_path)
             try:
@@ -223,55 +218,45 @@ class IndexEngine:
             return {"advances": 0, "declines": 0, "unchanged": 0}
 
         try:
-            # PKScreener Superpower: DB-driven Breadth
-            # Only count active universe stocks for accuracy
+            # Step 1: Get active symbols from meta connection
+            active_symbols = []
+            if hasattr(librarian, '_meta_conn') and librarian._meta_conn:
+                rows = librarian._meta_conn.execute(
+                    "SELECT symbol FROM symbols_master WHERE in_active_universe = 1"
+                ).fetchall()
+                active_symbols = [r[0] for r in rows]
+
+            if not active_symbols:
+                return {"advances": 0, "declines": 0, "unchanged": 0}
+
+            # Step 2: Get latest and previous close from technical_data
             sql = """
-                WITH latest_prices AS (
-                    SELECT p.symbol, p.close, 
-                           LAG(p.close) OVER (PARTITION BY p.symbol ORDER BY p.date) as prev_close
-                    FROM prices p
-                    WHERE p.date >= CURRENT_DATE - INTERVAL 5 DAY
-                    AND p.symbol IN (SELECT symbol FROM symbols_master WHERE in_active_universe = TRUE)
+                WITH latest_date AS (
+                    SELECT MAX(date) as d FROM technical_data
                 ),
-                current_state AS (
-                    SELECT symbol, close, prev_close,
-                           ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY symbol) as rn
-                    FROM latest_prices
+                prev_date AS (
+                    SELECT MAX(date) as d FROM technical_data
+                    WHERE date < (SELECT d FROM latest_date)
+                ),
+                latest AS (
+                    SELECT symbol, close FROM technical_data
+                    WHERE date = (SELECT d FROM latest_date)
+                ),
+                prev AS (
+                    SELECT symbol, close as prev_close FROM technical_data
+                    WHERE date = (SELECT d FROM prev_date)
                 )
-                SELECT 
-                    SUM(CASE WHEN close > prev_close THEN 1 ELSE 0 END) as advances,
-                    SUM(CASE WHEN close < prev_close THEN 1 ELSE 0 END) as declines,
-                    SUM(CASE WHEN close = prev_close THEN 1 ELSE 0 END) as unchanged
-                FROM (
-                    SELECT symbol, close, prev_close 
-                    FROM (
-                        SELECT *, ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY symbol) as r 
-                        FROM latest_prices
-                    ) -- This part needs careful DuckDB SQL for 'latest' date per symbol
-                )
-            """
+                SELECT
+                    SUM(CASE WHEN l.close > p.prev_close THEN 1 ELSE 0 END) as advances,
+                    SUM(CASE WHEN l.close < p.prev_close THEN 1 ELSE 0 END) as declines,
+                    SUM(CASE WHEN l.close = p.prev_close THEN 1 ELSE 0 END) as unchanged
+                FROM latest l
+                LEFT JOIN prev p ON l.symbol = p.symbol
+                WHERE l.symbol IN ({placeholders})
+            """.format(placeholders=",".join("?" * len(active_symbols)))
 
-            # Refined SQL for DuckDB to get breadth of the MOST RECENT day in DB
-            sql_refined = """
-                WITH latest_date AS (SELECT MAX(date) as d FROM prices),
-                data AS (
-                    SELECT p.symbol, p.close, p.open,
-                           (SELECT close FROM prices p2 WHERE p2.symbol = p.symbol AND p2.date < p.date ORDER BY date DESC LIMIT 1) as prev_close
-                    FROM prices p, latest_date ld
-                    WHERE p.date = ld.d
-                    AND p.symbol IN (SELECT symbol FROM symbols_master WHERE in_active_universe = TRUE)
-                )
-                SELECT 
-                    SUM(CASE WHEN close > prev_close THEN 1 ELSE 0 END) as advances,
-                    SUM(CASE WHEN close < prev_close THEN 1 ELSE 0 END) as declines,
-                    SUM(CASE WHEN close = prev_close THEN 1 ELSE 0 END) as unchanged
-                FROM data
-            """
-
-            res = librarian.safe_execute(
-                sql_refined, conn=librarian._tech_conn
-            ).fetchone()
-            if res:
+            res = librarian._tech_conn.execute(sql, active_symbols).fetchone()
+            if res and res[0] is not None:
                 result = {
                     "advances": int(res[0] or 0),
                     "declines": int(res[1] or 0),

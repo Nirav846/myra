@@ -37,13 +37,13 @@ class Librarian(
     Facade class routing queries to the Atomic Trilogy DB stack.
     """
 
-    def __init__(self, read_only=False, console=None, db_path=None):
+    def __init__(self, read_only=False, console=None):
         self.db_dir = DB_DIR
         self.data_dir = DATA_DIR
         if not os.path.exists(self.data_dir):
             os.makedirs(self.data_dir)
 
-        super().__init__(read_only=read_only, console=console, db_path=db_path)
+        super().__init__(read_only=read_only, console=console)
 
         self.fetcher = DataFetcher()
         self.loader = StockDataLoader()

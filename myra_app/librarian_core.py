@@ -60,11 +60,7 @@ class LibrarianCore:
         "calendar": "myra_calendar.db",
     }
 
-    def __init__(self, read_only=False, console=None, db_path=None):
-        # Legacy DuckDB path (for fallback/migration validation)
-        self.db_path = (
-            db_path if db_path else os.path.join(DB_DIR, "myra_market_data.db")
-        )
+    def __init__(self, read_only=False, console=None):
         self.read_only = read_only
         self.console = console if console else Console()
 
