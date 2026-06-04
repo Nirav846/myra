@@ -1,12 +1,14 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { Building2, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, ArrowUpDown } from 'lucide-react';
+import { Building2, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, ArrowUpDown, Star } from 'lucide-react';
 import { useSettings } from '../lib/SettingsContext';
 import { resolveBucket } from '../lib/bucketUtils';
 import { useHealthStatus } from '../hooks/useHealthStatus';
 import { useNavigate } from 'react-router-dom';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
+import { useWatchlist } from '../lib/WatchlistContext';
+import { StarButton } from '../components/StarButton';
 
 interface ScannerData {
     symbol: string;
@@ -30,6 +32,9 @@ export default function FiiDiiScannerView({ lib }: { lib: Librarian }) {
     const [data, setData] = useState<ScannerData[]>([]);
     const [metadataMap, setMetadataMap] = useState<Map<string, { sector: string, bucket: string }>>(new Map());
     const [metadataLoaded, setMetadataLoaded] = useState(false);
+
+    const { isWatched } = useWatchlist();
+    const [watchlistOnly, setWatchlistOnly] = useState(false);
 
     // Filter controls
     const [days, setDays] = useState(7);
@@ -253,8 +258,9 @@ export default function FiiDiiScannerView({ lib }: { lib: Librarian }) {
                 return mcap !== undefined && mcap >= mcapRange.min && mcap <= mcapRange.max;
             });
         }
+        if (watchlistOnly) filtered = filtered.filter(d => isWatched(d.symbol));
         return filtered;
-    }, [data, minScore, filterSector, filterMcap, mcapRange]);
+    }, [data, minScore, filterSector, filterMcap, mcapRange, watchlistOnly, isWatched]);
 
     const sortedData = useMemo(() => {
         if (!sortConfig) return filteredData;
@@ -362,6 +368,19 @@ export default function FiiDiiScannerView({ lib }: { lib: Librarian }) {
                 <div className="max-w-[280px] flex-shrink-0">
                     <MarketCapRangeFilter onChange={setMcapRange} />
                 </div>
+                <div className="flex flex-col self-end">
+                  <button
+                    onClick={() => setWatchlistOnly(o => !o)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors h-[32px] ${
+                      watchlistOnly
+                        ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
+                        : 'bg-[#1a1c24] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
+                    }`}
+                  >
+                    <Star size={11} fill={watchlistOnly ? 'currentColor' : 'none'} />
+                    Watchlist
+                  </button>
+                </div>
             </div>
 
             {/* Summaries */}
@@ -427,12 +446,15 @@ export default function FiiDiiScannerView({ lib }: { lib: Librarian }) {
                                 sortedData.map(d => (
                                     <tr key={d.symbol} className="border-b border-[#ffffff0a] hover:bg-[#ffffff05] transition-colors group">
                                         <td className="p-3 whitespace-nowrap">
-                                            <span 
-                                                onClick={() => navigate('/chart', { state: { symbol: d.symbol } })}
-                                                className="font-bold text-[#fafafa] cursor-pointer hover:text-blue-400 hover:underline inline-flex items-center gap-1 transition-colors"
-                                            >
-                                                {d.symbol}
-                                            </span>
+                                            <div className="flex items-center gap-1.5">
+                                              <StarButton symbol={d.symbol} size={11} />
+                                              <span 
+                                                  onClick={() => navigate('/chart', { state: { symbol: d.symbol } })}
+                                                  className="font-bold text-[#fafafa] cursor-pointer hover:text-blue-400 hover:underline inline-flex items-center gap-1 transition-colors"
+                                              >
+                                                  {d.symbol}
+                                              </span>
+                                            </div>
                                         </td>
                                         <td className="p-3 text-[#ccc] text-sm whitespace-nowrap">{d.sector}</td>
                                         <td className="p-3 text-[#888] text-xs font-mono whitespace-nowrap">{d.bucket}</td>

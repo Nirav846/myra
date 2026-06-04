@@ -1,11 +1,13 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { Rocket, ShieldAlert, Zap, ArrowUpDown, AlertTriangle, ChevronUp, ChevronDown } from 'lucide-react';
+import { Rocket, ShieldAlert, Zap, ArrowUpDown, AlertTriangle, ChevronUp, ChevronDown, Star } from 'lucide-react';
 import { ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, ZAxis, Tooltip, CartesianGrid, Cell, ReferenceLine } from 'recharts';
 import { useSettings } from '../lib/SettingsContext';
 import { resolveBucket } from '../lib/bucketUtils';
 import PresetChip from '../components/PresetChip';
 import { MultibaggerConfig } from '../lib/scannerPresets';
+import { useWatchlist } from '../lib/WatchlistContext';
+import { StarButton } from '../components/StarButton';
 
 export const calcMultibaggerIndex = (roe: number, earningsYieldPct: number, accumulation: number) => {
     const roeScore = Math.max(0, Math.min(100, (roe / 50) * 100));
@@ -40,6 +42,9 @@ export default function MultibaggerMatrixView({ lib }: { lib: Librarian }) {
 
   const [metadataMap, setMetadataMap] = useState<Map<string, { sector: string, bucket: string }>>(new Map());
   const [metadataLoaded, setMetadataLoaded] = useState(false);
+
+  const { isWatched } = useWatchlist();
+  const [watchlistOnly, setWatchlistOnly] = useState(false);
 
   // Dynamic States for Toggles
   const [excludeCyclical, setExcludeCyclical] = useState(true);
@@ -300,6 +305,7 @@ export default function MultibaggerMatrixView({ lib }: { lib: Librarian }) {
 
   const sortedData = useMemo(() => {
     let sortableItems = [...data];
+    if (watchlistOnly) sortableItems = sortableItems.filter(d => isWatched(d.ticker));
     if (sortConfig !== null) {
       const moatOrder: Record<string, number> = { 'Monopoly': 4, 'High': 3, 'Medium': 2, 'Low': 1 };
       
@@ -323,7 +329,7 @@ export default function MultibaggerMatrixView({ lib }: { lib: Librarian }) {
       });
     }
     return sortableItems;
-  }, [data, sortConfig]);
+  }, [data, sortConfig, watchlistOnly, isWatched]);
 
   const SortIcon = ({ column }: { column: keyof MultibaggerData }) => {
     if (sortConfig?.key !== column) return <ArrowUpDown size={10} className="inline ml-1 opacity-30" />;
@@ -423,10 +429,24 @@ export default function MultibaggerMatrixView({ lib }: { lib: Librarian }) {
                     <option className="bg-[#1a1c24] text-[#fafafa]" value="Broader Market (N500)">Broader Market (N500)</option>
                     <option className="bg-[#1a1c24] text-[#fafafa]" value="Nifty Small Cap 250">Nifty Small Cap 250</option>
                     <option className="bg-[#1a1c24] text-[#fafafa]" value="Deep Frontier">Deep Frontier</option>
-                  </select>
-               </div>
+                   </select>
+                </div>
 
-               {/* Dynamic Threshold Inputs */}
+                <div className="flex flex-col pt-2 border-t border-[#ffffff1a]">
+                  <button
+                    onClick={() => setWatchlistOnly(o => !o)}
+                    className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors w-full ${
+                      watchlistOnly
+                        ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
+                        : 'bg-[#1a1c24] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
+                    }`}
+                  >
+                    <Star size={11} fill={watchlistOnly ? 'currentColor' : 'none'} />
+                    Watchlist Only
+                  </button>
+                </div>
+
+                {/* Dynamic Threshold Inputs */}
                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#ffffff1a]">
                   <div className="flex flex-col">
                     <label className="text-[10px] text-[#888] font-mono mb-1">Min ROE (%)</label>
@@ -522,6 +542,7 @@ export default function MultibaggerMatrixView({ lib }: { lib: Librarian }) {
                   {sortedData.map((row, idx) => (
                     <tr key={idx} className="border-b border-[#ffffff0a] hover:bg-[#ffffff05] transition-colors">
                       <td className="py-2.5 px-4 font-bold text-white flex items-center gap-2">
+                        <StarButton symbol={row.ticker} size={11} />
                         {row.ticker}
                         {row.moat_score === 'Monopoly' && <ShieldAlert size={12} className="text-purple-400" />}
                       </td>

@@ -1,7 +1,9 @@
 import { Librarian } from '../lib/Librarian';
 import { useState, useEffect, useCallback } from 'react';
-import { Copy, Check, RefreshCw, AlertTriangle, ArrowUpDown, Filter } from 'lucide-react';
+import { Copy, Check, RefreshCw, AlertTriangle, ArrowUpDown, Filter, Star } from 'lucide-react';
 import { useSettings } from '../lib/SettingsContext';
+import { useWatchlist } from '../lib/WatchlistContext';
+import { StarButton } from '../components/StarButton';
 
 interface LeaderboardRow {
   ticker: string;
@@ -21,6 +23,8 @@ export default function LeaderboardView({ lib }: { lib: Librarian }) {
   const [isDemo, setIsDemo] = useState(false);
   
   const [excludeClient, setExcludeClient] = useState(false);
+  const { isWatched } = useWatchlist();
+  const [watchlistOnly, setWatchlistOnly] = useState(false);
   const [sortByImpact, setSortByImpact] = useState(false);
 
   const fetchData = useCallback(async () => {
@@ -183,7 +187,18 @@ export default function LeaderboardView({ lib }: { lib: Librarian }) {
 
         <div className="flex justify-between items-center text-[10px] text-[#666] font-mono mb-2 px-1">
            <span>{lastRefreshed ? `Last update: ${lastRefreshed.toLocaleTimeString()}` : ''}</span>
-           <button 
+           <button
+              onClick={() => setWatchlistOnly(o => !o)}
+              className={`flex items-center gap-1.5 px-2 py-1 rounded border text-[10px] font-mono transition-colors ${
+                watchlistOnly
+                  ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
+                  : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
+              }`}
+            >
+              <Star size={10} fill={watchlistOnly ? 'currentColor' : 'none'} />
+              Watchlist
+            </button>
+            <button 
               onClick={() => setSortByImpact(!sortByImpact)}
               className="flex items-center gap-1.5 px-2 py-1 bg-[#ffffff0a] hover:bg-[#ffffff10] border border-[#ffffff1a] rounded transition-colors text-[#ccc]"
            >
@@ -212,9 +227,14 @@ export default function LeaderboardView({ lib }: { lib: Librarian }) {
               </tr>
             </thead>
             <tbody className="text-[#ccc]">
-              {apiData && apiData.map((row, idx) => (
+              {apiData && apiData.filter(row => !watchlistOnly || isWatched(row.ticker)).map((row, idx) => (
                 <tr key={idx} className="border-b border-[#ffffff0a] hover:bg-[#ffffff05] transition-colors">
-                  <td className="py-2 px-2 text-[#fafafa]">{row.ticker}</td>
+                  <td className="py-2 px-2">
+                    <div className="flex items-center gap-1.5">
+                      <StarButton symbol={row.ticker} size={11} />
+                      <span className="text-[#fafafa] font-bold">{row.ticker}</span>
+                    </div>
+                  </td>
                   <td className="py-2 px-2">{row.volScore}</td>
                   <td className={`py-2 px-2 text-right ${row.instFlow.startsWith('-') ? 'text-red-400' : 'text-green-400'}`}>
                     {row.instFlow}

@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { Ghost, CheckCircle2, Play, Settings2, ShieldAlert, AlertTriangle } from 'lucide-react';
+import { useWatchlist } from '../lib/WatchlistContext';
+import { StarButton } from '../components/StarButton';
+import { Ghost, CheckCircle2, Play, Settings2, ShieldAlert, AlertTriangle, Star } from 'lucide-react';
 
 interface SimulationResults {
   totalTrades: number;
@@ -12,6 +14,8 @@ interface SimulationResults {
 }
 
 export default function GhostSimulatorView({ lib }: { lib: Librarian }) {
+  const { isWatched } = useWatchlist();
+  const [watchlistOnly, setWatchlistOnly] = useState(false);
   const [params, setParams] = useState({
     minDeliveryPct: 55,
     minVolumeSpike: 2.0,
@@ -56,6 +60,17 @@ export default function GhostSimulatorView({ lib }: { lib: Librarian }) {
                  <AlertTriangle size={10} /> {errorMsg}
               </span>
             )}
+            <button
+              onClick={() => setWatchlistOnly(o => !o)}
+              className={`flex items-center gap-1.5 px-2 py-1.5 rounded border text-[11px] font-mono transition-colors ${
+                watchlistOnly
+                  ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
+                  : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
+              }`}
+            >
+              <Star size={11} fill={watchlistOnly ? 'currentColor' : 'none'} />
+              Watchlist
+            </button>
             <span className="text-xs text-[#888] font-mono">Module: backtest.engine</span>
         </div>
       </div>

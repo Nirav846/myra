@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { Rocket, Filter, AlertCircle, ArrowUpRight, RefreshCw, CheckCircle, Clock, AlertTriangle, XCircle } from 'lucide-react';
+import { Rocket, Filter, AlertCircle, ArrowUpRight, RefreshCw, CheckCircle, Clock, AlertTriangle, XCircle, Star } from 'lucide-react';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
+import { useWatchlist } from '../lib/WatchlistContext';
+import { StarButton } from '../components/StarButton';
 
 interface ScanPrediction {
   symbol: string;
@@ -82,6 +84,9 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
   const [pipelineStatus, setPipelineStatus] = useState<PipelineStatus | null>(null);
   const [staleBannerOpen, setStaleBannerOpen] = useState(true);
 
+  const { isWatched } = useWatchlist();
+  const [watchlistOnly, setWatchlistOnly] = useState(false);
+
   const [minReturn, setMinReturn] = useState<number>(0);
   const [mcapRange, setMcapRange] = useState<{ min: number; max: number } | null>(null);
   const mcapMapRef = useRef<Map<string, number>>(new Map());
@@ -103,8 +108,9 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
         return mcap !== undefined && mcap >= mcapRange.min && mcap <= mcapRange.max;
       });
     }
+    if (watchlistOnly) result = result.filter(d => isWatched(d.symbol));
     return result.sort((a, b) => b.predicted_return_pct - a.predicted_return_pct);
-  }, [predictions, minReturn, mcapRange]);
+  }, [predictions, minReturn, mcapRange, watchlistOnly, isWatched]);
 
   const avgExpectedReturn = useMemo(() => {
     if (filteredData.length === 0) return 0;
@@ -422,6 +428,20 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
             <div className="max-w-[280px] flex-shrink-0">
               <MarketCapRangeFilter onChange={setMcapRange} />
             </div>
+            <div className="flex flex-col gap-1">
+              <div className="text-[10px] text-[#888] font-mono">Watchlist</div>
+              <button
+                onClick={() => setWatchlistOnly(o => !o)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors ${
+                  watchlistOnly
+                    ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
+                    : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
+                }`}
+              >
+                <Star size={11} fill={watchlistOnly ? 'currentColor' : 'none'} />
+                Only Starred
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden flex flex-col">
@@ -449,12 +469,15 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
                       return (
                         <tr key={row.symbol + '-' + row.trigger_date} className="hover:bg-[#ffffff05] transition-colors">
                           <td className="px-4 py-3 text-[#fafafa] font-bold">
-                            <button
-                              onClick={() => onNavigate('Technical Chart', row.symbol)}
-                              className="hover:text-cyan-400 inline-flex items-center gap-1 transition-colors group"
-                            >
-                              {row.symbol} <ArrowUpRight size={12} className="opacity-0 group-hover:opacity-100" />
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                              <StarButton symbol={row.symbol} size={11} />
+                              <button
+                                onClick={() => onNavigate('Technical Chart', row.symbol)}
+                                className="hover:text-cyan-400 inline-flex items-center gap-1 transition-colors group"
+                              >
+                                {row.symbol} <ArrowUpRight size={12} className="opacity-0 group-hover:opacity-100" />
+                              </button>
+                            </div>
                           </td>
                           <td className="px-4 py-3 text-[#aaa] text-right">{row.trigger_date}</td>
                           <td className="px-4 py-3 text-[#ccc] text-right font-bold">{row.current_digestion_days}</td>

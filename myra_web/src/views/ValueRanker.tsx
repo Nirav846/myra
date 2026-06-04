@@ -1,11 +1,13 @@
 import { Librarian } from '../lib/Librarian';
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Copy, Check, RefreshCw, Target } from 'lucide-react';
+import { Copy, Check, RefreshCw, Target, Star } from 'lucide-react';
 import PresetChip from '../components/PresetChip';
 import { ValueRankerConfig } from '../lib/scannerPresets';
 import { resolveBucket } from '../lib/bucketUtils';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
+import { useWatchlist } from '../lib/WatchlistContext';
+import { StarButton } from '../components/StarButton';
 
 interface RankerData {
   symbol: string;
@@ -41,6 +43,8 @@ export default function ValueRankerView({ lib, onNavigate }: { lib: Librarian, o
   
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isDemo, setIsDemo] = useState(false);
+  const { isWatched } = useWatchlist();
+  const [watchlistOnly, setWatchlistOnly] = useState(false);
   const [mcapRange, setMcapRange] = useState<{ min: number; max: number } | null>(null);
   const mcapMapRef = useRef<Map<string, number>>(new Map());
   useEffect(() => { fetchMarketCapMap().then(m => mcapMapRef.current = m); }, []);
@@ -307,13 +311,15 @@ export default function ValueRankerView({ lib, onNavigate }: { lib: Librarian, o
   const [isLoading, setIsLoading] = useState(false);
 
   const displayData = useMemo(() => {
-    if (!mcapRange) return apiData;
+    let data = apiData;
+    if (watchlistOnly) data = data.filter(d => isWatched(d.symbol));
+    if (!mcapRange) return data;
     const map = mcapMapRef.current;
-    return apiData.filter(d => {
+    return data.filter(d => {
       const mcap = map.get(d.symbol);
       return mcap !== undefined && mcap >= mcapRange.min && mcap <= mcapRange.max;
     });
-  }, [apiData, mcapRange]);
+  }, [apiData, mcapRange, watchlistOnly, isWatched]);
 
   return (
     <div className="bg-[#262730] rounded-lg flex flex-col h-full overflow-hidden">
@@ -428,6 +434,19 @@ export default function ValueRankerView({ lib, onNavigate }: { lib: Librarian, o
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
+                    <div className="flex flex-col self-end">
+                      <button
+                        onClick={() => setWatchlistOnly(o => !o)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors h-[32px] ${
+                          watchlistOnly
+                            ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
+                            : 'bg-[#1a1c24] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
+                        }`}
+                      >
+                        <Star size={11} fill={watchlistOnly ? 'currentColor' : 'none'} />
+                        Watchlist
+                      </button>
+                    </div>
                     {errorMsg && <span className="text-xs text-red-400 font-mono px-2 py-1 bg-red-400/10 rounded">{errorMsg}</span>}
                     {isDemo && <span className="text-[10px] bg-yellow-500/20 text-yellow-500 px-2 py-1 rounded font-mono">⚠️ DEMO MODE</span>}
                     {isRefreshing && <span className="text-xs text-green-400 font-mono animate-pulse">Scanning...</span>}
@@ -441,8 +460,9 @@ export default function ValueRankerView({ lib, onNavigate }: { lib: Librarian, o
               <div key={topDog.symbol} onClick={() => onNavigate?.('Technical Chart', topDog.symbol)} className="bg-[#12141a] border border-[#ffffff1a] p-3 rounded-lg flex items-center justify-between hover:border-green-500/50 cursor-pointer group transition-colors shadow-sm">
                  <div>
                    <h3 className="font-bold text-white text-sm group-hover:text-green-400 inline-flex items-center gap-2">
-                      <span className="text-green-500 opacity-50 px-1 py-0.5 bg-green-500/10 rounded text-[10px]">#{i+1}</span>
-                      {topDog.symbol}
+                       <span className="text-green-500 opacity-50 px-1 py-0.5 bg-green-500/10 rounded text-[10px]">#{i+1}</span>
+                       <StarButton symbol={topDog.symbol} size={11} />
+                       {topDog.symbol}
                    </h3>
                    <div className="text-[10px] text-[#888] mt-1 space-x-2 font-mono">
                      <span>Margin: {topDog.grahamMargin.toFixed(1)}%</span>
@@ -484,9 +504,12 @@ export default function ValueRankerView({ lib, onNavigate }: { lib: Librarian, o
                   {dataLoaded && displayData && displayData.map((row, idx) => (
                     <tr key={idx} className="hover:bg-[#ffffff05] transition-colors group">
                       <td className="py-2.5 px-3">
-                         <span onClick={() => onNavigate?.('Technical Chart', row.symbol)} className="text-[#fafafa] font-bold cursor-pointer hover:text-green-400">
-                           {row.symbol}
-                         </span>
+                         <div className="flex items-center gap-1.5">
+                           <StarButton symbol={row.symbol} size={11} />
+                           <span onClick={() => onNavigate?.('Technical Chart', row.symbol)} className="text-[#fafafa] font-bold cursor-pointer hover:text-green-400">
+                             {row.symbol}
+                           </span>
+                         </div>
                       </td>
                       <td className="py-2.5 px-3 text-[#888] truncate max-w-[100px]">{row.sector}</td>
                       <td className="py-2.5 px-3 truncate max-w-[80px]">{row.bucket.split(' ')[0]}</td>

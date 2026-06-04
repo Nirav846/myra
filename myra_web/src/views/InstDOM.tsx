@@ -1,10 +1,14 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { AlignRight, Activity, TrendingUp, Loader2 } from 'lucide-react';
+import { AlignRight, Activity, TrendingUp, Loader2, Star } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, Legend } from 'recharts';
 import { SymbolSearch } from '../components/SymbolSearch';
+import { useWatchlist } from '../lib/WatchlistContext';
+import { StarButton } from '../components/StarButton';
 
 export default function InstDOMView({ lib }: { lib: Librarian }) {
+  const { isWatched } = useWatchlist();
+  const [watchlistOnly, setWatchlistOnly] = useState(false);
   const [data, setData] = useState<any[]>([]);
   const [ticker, setTicker] = useState('RELIANCE');
   const [lookbackDays, setLookbackDays] = useState(30);
@@ -165,7 +169,18 @@ export default function InstDOMView({ lib }: { lib: Librarian }) {
               {errorMsg && <span className="text-[10px] text-red-400 font-mono px-2 py-1 bg-red-500/10 rounded border border-red-500/20">{errorMsg}</span>}
               {isDemo && <span className="text-[10px] text-yellow-500 font-mono px-2 py-1 bg-yellow-500/10 rounded border border-yellow-500/20">⚠️ DEMO DATA</span>}
              {isLoading && <span className="text-[10px] text-blue-400 font-mono animate-pulse">Calculating DOM...</span>}
-            <span className="text-[10px] text-fuchsia-400 font-mono hidden md:flex items-center gap-2" title="Shows price levels where institutional delivery volume is concentrated relative to total volume traded. High delivery % at a price level indicates strong-hand accumulation.">
+            <button
+              onClick={() => setWatchlistOnly(o => !o)}
+              className={`flex items-center gap-1.5 px-2 py-1.5 rounded border text-[11px] font-mono transition-colors ${
+                watchlistOnly
+                  ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
+                  : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
+              }`}
+            >
+              <Star size={11} fill={watchlistOnly ? 'currentColor' : 'none'} />
+              Watchlist
+            </button>
+             <span className="text-[10px] text-fuchsia-400 font-mono hidden md:flex items-center gap-2" title="Shows price levels where institutional delivery volume is concentrated relative to total volume traded. High delivery % at a price level indicates strong-hand accumulation.">
               <Activity size={12}/> Delivery Profile (?)
             </span>
           </div>

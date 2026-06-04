@@ -1,9 +1,11 @@
 import { Librarian } from '../lib/Librarian';
 import { useState, useEffect, useCallback } from 'react';
-import { Copy, Check, RefreshCw, AlertTriangle, ChartBar, Settings2 } from 'lucide-react';
+import { Copy, Check, RefreshCw, AlertTriangle, ChartBar, Settings2, Star } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceArea, ReferenceLine } from 'recharts';
 import { alertBus } from '../lib/AlertManager';
 import { useSettings } from '../lib/SettingsContext';
+import { useWatchlist } from '../lib/WatchlistContext';
+import { StarButton } from '../components/StarButton';
 
 interface FVGRow {
   ticker: string;
@@ -24,6 +26,8 @@ export default function FVGScannerView({ lib }: { lib: Librarian }) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isDemo, setIsDemo] = useState(false);
   const [exhaustionThreshold, setExhaustionThreshold] = useState(5.0);
+  const { isWatched } = useWatchlist();
+  const [watchlistOnly, setWatchlistOnly] = useState(false);
   const [apiData, setApiData] = useState<FVGRow[]>([]);
 
   const fetchData = useCallback(async () => {
@@ -153,6 +157,17 @@ export default function FVGScannerView({ lib }: { lib: Librarian }) {
                 <AlertTriangle size={10} /> {errorMsg}
               </span>
             )}
+            <button
+              onClick={() => setWatchlistOnly(o => !o)}
+              className={`flex items-center gap-1.5 px-2 py-1.5 rounded border text-[11px] font-mono transition-colors ${
+                watchlistOnly
+                  ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
+                  : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
+              }`}
+            >
+              <Star size={11} fill={watchlistOnly ? 'currentColor' : 'none'} />
+              Watchlist
+            </button>
             <button 
               onClick={fetchData}
               disabled={isRefreshing}
@@ -190,9 +205,14 @@ export default function FVGScannerView({ lib }: { lib: Librarian }) {
               </tr>
             </thead>
             <tbody className="text-[#ccc]">
-              {dataLoaded && apiData.map((row, idx) => (
+              {dataLoaded && apiData.filter(row => !watchlistOnly || isWatched(row.ticker)).map((row, idx) => (
                   <tr key={idx} className="border-b border-[#ffffff0a] hover:bg-[#ffffff10] transition-colors">
-                    <td className="py-2 px-2 text-[#fafafa] font-bold">{row.ticker}</td>
+                    <td className="py-2 px-2">
+                      <div className="flex items-center gap-1.5">
+                        <StarButton symbol={row.ticker} size={11} />
+                        <span className="text-[#fafafa] font-bold">{row.ticker}</span>
+                      </div>
+                    </td>
                     <td className={`py-2 px-2 ${row.fvg_type === 'Bullish' ? 'text-green-400' : 'text-red-400'}`}>
                       {row.fvg_type}
                     </td>

@@ -1,8 +1,10 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { Box, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, ArrowUpDown, Download, X, List, LayoutGrid } from 'lucide-react';
+import { Box, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, ArrowUpDown, Download, X, List, LayoutGrid, Star } from 'lucide-react';
 import { useDeliveryScanner, ScannerData, SummaryData } from '../hooks/useDeliveryScanner';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
+import { useWatchlist } from '../lib/WatchlistContext';
+import { StarButton } from '../components/StarButton';
 
 interface Preset { name: string; minDelivery: number; maxDelivery: number; minRelVol: number; lookbackDays?: number; isTrigger?: boolean }
 const PRESETS: Preset[] = [
@@ -47,6 +49,8 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
     const [activePreset, setActivePreset] = useState<string | null>(null);
     const [columnsOpen, setColumnsOpen] = useState(false);
     const [filtersVisible, setFiltersVisible] = useState(() => localStorage.getItem('das_filters_visible') !== 'false');
+    const { isWatched } = useWatchlist();
+    const [watchlistOnly, setWatchlistOnly] = useState(false);
     const [viewMode, setViewMode] = useState<'detail' | 'summary'>('detail');
     const [summarySortCol, setSummarySortCol] = useState<keyof SummaryData>('persistence');
     const [summarySortAsc, setSummarySortAsc] = useState(false);
@@ -441,7 +445,20 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                     <div className="max-w-[280px] flex-shrink-0">
                         <MarketCapRangeFilter onChange={setMcapRange} />
                     </div>
-                    <div className="flex items-end gap-2 ml-auto">
+                     <div className="flex flex-col self-end">
+                        <button
+                          onClick={() => setWatchlistOnly(o => !o)}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors h-[32px] ${
+                            watchlistOnly
+                              ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
+                              : 'bg-[#1a1c24] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
+                          }`}
+                        >
+                          <Star size={11} fill={watchlistOnly ? 'currentColor' : 'none'} />
+                          Watchlist
+                        </button>
+                      </div>
+                     <div className="flex items-end gap-2 ml-auto">
                         {latestDataDate && (
                             <button
                                 onClick={() => setTriggerMode(t => !t)}
@@ -627,15 +644,18 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                                         Click Scan to detect delivery anomalies.
                                     </td>
                                 </tr>
-                            ) : (triggerMode ? triggerSortedData : sortedData).map(d => (
+                            ) : (triggerMode ? triggerSortedData : sortedData).filter(d => !watchlistOnly || isWatched(d.symbol)).map(d => (
                                 <tr key={d.symbol + d.date} className="border-b border-[#ffffff0a] hover:bg-[#ffffff05] transition-colors group">
                                     <td className={`p-3 whitespace-nowrap${triggerMode ? ' border-l-2 border-l-green-500' : ''}`}>
-                                        <span
-                                            onClick={() => onNavigate?.('Technical Chart', d.symbol)}
-                                            className="font-bold text-[#fafafa] cursor-pointer hover:text-orange-400 hover:underline inline-flex items-center gap-1 transition-colors"
-                                        >
-                                            {d.symbol}
-                                        </span>
+                                        <div className="flex items-center gap-1.5">
+                                          <StarButton symbol={d.symbol} size={11} />
+                                          <span
+                                              onClick={() => onNavigate?.('Technical Chart', d.symbol)}
+                                              className="font-bold text-[#fafafa] cursor-pointer hover:text-orange-400 hover:underline inline-flex items-center gap-1 transition-colors"
+                                          >
+                                              {d.symbol}
+                                          </span>
+                                        </div>
                                     </td>
                                     <td className="p-3 text-[#ccc] text-sm font-mono whitespace-nowrap">{d.date}</td>
                                     <td className="p-3 text-sm font-mono whitespace-nowrap text-right text-[#fafafa]">{d.close > 0 ? formatPrice(d.close) : "\u2014"}</td>
@@ -746,15 +766,18 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                                     </td>
                                 </tr>
                             ) : (
-                                (triggerMode ? triggerSortedSummary : sortedSummary).map(d => (
+                                (triggerMode ? triggerSortedSummary : sortedSummary).filter(d => !watchlistOnly || isWatched(d.symbol)).map(d => (
                                     <tr key={d.symbol} className="border-b border-[#ffffff0a] hover:bg-[#ffffff05] transition-colors group">
                                         <td className={`p-3 whitespace-nowrap${triggerMode ? ' border-l-2 border-l-green-500' : ''}`}>
-                                            <span
-                                                onClick={() => onNavigate?.('Technical Chart', d.symbol)}
-                                                className="font-bold text-[#fafafa] cursor-pointer hover:text-orange-400 hover:underline inline-flex items-center gap-1 transition-colors"
-                                            >
-                                                {d.symbol}
-                                            </span>
+                                            <div className="flex items-center gap-1.5">
+                                              <StarButton symbol={d.symbol} size={11} />
+                                              <span
+                                                  onClick={() => onNavigate?.('Technical Chart', d.symbol)}
+                                                  className="font-bold text-[#fafafa] cursor-pointer hover:text-orange-400 hover:underline inline-flex items-center gap-1 transition-colors"
+                                              >
+                                                  {d.symbol}
+                                              </span>
+                                            </div>
                                         </td>
                                         <td className="p-3 text-[#ccc] text-sm whitespace-nowrap">{d.sector}</td>
                                         <td className="p-3 text-[#888] text-xs font-mono whitespace-nowrap">{d.bucket}</td>
