@@ -153,7 +153,7 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
         )
         ALLOWED_QUERIES = {
             "prices": "SELECT * FROM prices",
-            "technical_data": f"SELECT * FROM technical_data WHERE date >= date({date_ref}, '-200 days')",
+            "technical_data": f"SELECT * FROM technical_data WHERE date >= date({date_ref}, '-365 days')",
             "calculated_indicators": "SELECT * FROM calculated_indicators",
             "fundamentals": "SELECT * FROM fundamentals",
         }
@@ -374,6 +374,40 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
 
             # Check if enrichment should pause after processing all symbols
             wait_if_paused()
+
+            # --- 52-week high/low and SMA-50 computation ---
+            update(tid, "Computing SMA-50 and 52-week metrics…")
+            print("[MYRA Enrichment] Computing SMA-50 and 52-week high/low...")
+            for col in ['sma_50', 'high_52w', 'low_52w']:
+                try:
+                    conn.execute(f"ALTER TABLE technical_data ADD COLUMN {col} REAL")
+                except:
+                    pass
+
+            df_roll = df_enriched.sort(['symbol', 'date'])
+            df_roll = df_roll.with_columns([
+                pl.col("close").rolling_mean(50, min_periods=1).over("symbol").alias("sma_50"),
+                pl.col("high").rolling_max(252, min_periods=1).over("symbol").alias("high_52w"),
+                pl.col("low").rolling_min(252, min_periods=1).over("symbol").alias("low_52w"),
+            ])
+
+            df_latest = df_roll.filter(pl.col("date") == str(latest_date))
+
+            update_rows = []
+            for row in df_latest.iter_rows(named=True):
+                sma = float(row['sma_50']) if row['sma_50'] is not None else None
+                h52 = float(row['high_52w']) if row['high_52w'] is not None else None
+                l52 = float(row['low_52w']) if row['low_52w'] is not None else None
+                if sma is not None or h52 is not None or l52 is not None:
+                    update_rows.append((sma, h52, l52, row['symbol'], str(row['date'])))
+
+            if update_rows:
+                conn.executemany(
+                    "UPDATE technical_data SET sma_50 = ?, high_52w = ?, low_52w = ? WHERE symbol = ? AND date = ?",
+                    update_rows,
+                )
+                conn.commit()
+                print(f"[MYRA Enrichment] Updated {len(update_rows)} symbols with 52-week/SMA-50 metrics")
 
         update(tid, "Enrichment complete")
 

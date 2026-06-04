@@ -27,6 +27,7 @@ import ScannerPresetsPanel from './components/ScannerPresetsPanel';
 import Navbar from './components/Navbar';
 import MLLabView from './views/MLLabView';
 import LaunchpadScannerView from './views/LaunchpadScanner';
+import MultibaggerProScannerView from './views/MultibaggerProScanner';
 import DataSyncView from './views/DataSync';
 import DeliveryAnomalyScannerView from './views/DeliveryAnomalyScanner';
 import { AlertCircle, Settings as SettingsIcon, SlidersHorizontal, BrainCircuit, Rocket, Database, RotateCw } from 'lucide-react';
@@ -37,6 +38,7 @@ const TABS = [
   { id: 'Price-Delivery Divergence', path: '/price-delivery-divergence', icon: '📉', category: 'scanners' },
   { id: 'FVG Scanner', path: '/fvg-scanner', icon: '📡', category: 'scanners' },
   { id: 'Delivery Anomaly', path: '/delivery-anomaly', icon: '📦', category: 'scanners' },
+  { id: 'Multibagger Pro', path: '/multibagger-pro-scanner', icon: <Rocket size={18} />, category: 'scanners' },
   { id: 'Launchpad Scanner', path: '/launchpad-scanner', icon: <Rocket size={18} />, category: 'scanners' },
   { id: 'FII/DII Scanner', path: '/fii-dii-scanner', icon: '🏢', category: 'scanners' },
   { id: 'Leaderboard', path: '/leaderboard', icon: '📊', category: 'scanners' },
@@ -237,6 +239,11 @@ export default function App() {
                 <Route path="/settings" element={<SettingsView />} />
                 <Route path="/data-sync" element={<DataSyncView />} />
                 <Route path="/delivery-anomaly" element={<DeliveryAnomalyScannerView lib={librarian} onNavigate={(tab, symbol) => {
+                  const target = TABS.find(t => t.id === tab);
+                  if (target) navigate(target.path);
+                  if (symbol) setGlobalSelectedTicker(symbol);
+                }} />} />
+                <Route path="/multibagger-pro-scanner" element={<MultibaggerProScannerView lib={librarian} onNavigate={(tab, symbol) => {
                   const target = TABS.find(t => t.id === tab);
                   if (target) navigate(target.path);
                   if (symbol) setGlobalSelectedTicker(symbol);
