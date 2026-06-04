@@ -17,7 +17,7 @@ export interface ProcessedSignal extends SignalResult {
     isUncharted: boolean;
 }
 
-export default function ReversionEngineView({ lib, onNavigate }: { lib: Librarian, onNavigate?: (tab: string, symbol?: string) => void }) {
+export default function ReversionEngineView({ lib }: { lib: Librarian }) {
   const { settings } = useSettings();
   const [activeSetup, setActiveSetup] = useState<SetupType>('Exhaustion');
   const [useMcapThresholds, setUseMcapThresholds] = useState(true);
@@ -450,7 +450,7 @@ export default function ReversionEngineView({ lib, onNavigate }: { lib: Libraria
                     <div className="flex items-center gap-1.5">
                       <StarButton symbol={row.ticker} size={11} />
                       <button 
-                        onClick={() => onNavigate?.('Technical Chart', row.ticker)}
+                        onClick={() => window.open(`/#/chart?symbol=${encodeURIComponent(row.ticker)}`, '_blank')}
                         className="text-[#fafafa] font-bold hover:text-indigo-400 transition-colors cursor-pointer text-sm"
                       >
                         {row.ticker}

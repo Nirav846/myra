@@ -1,16 +1,21 @@
 import json
+import logging
 import os
 import sqlite3
 import threading
 import subprocess
 import time
-from fastapi import FastAPI, HTTPException, Query
+import math
+from datetime import datetime
+from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Optional
 from myra_app.constants import DB_DIR
 from myra_app.librarian_core import LibrarianCore
+
+logger = logging.getLogger(__name__)
 
 import sys as _sys, os as _os; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
 from pipeline_dashboard import router as pipeline_router
@@ -1080,147 +1085,93 @@ async def launchpad_feature_importance():
     return predictor.get_feature_importance()
 
 
-# ---------------------------------------------------------------------------
-# Multibagger Pro Scanner (background scan tracking)
-# ---------------------------------------------------------------------------
-_multibagger_scan_state = {
+# --- Multibagger Pro Scanner State ---
+_mb_scan_state: dict = {
     "scan_status": "idle",
     "last_scan": None,
     "progress": 0,
-    "message": "",
+    "message": "Idle — click Scan to start",
     "candidates": [],
     "bear_market": False,
 }
-_multibagger_scan_lock = threading.Lock()
-_MULTIBAGGER_SCAN_CACHE = "models/multibagger_scan_cache.json"
-
-
-def _save_multibagger_cache():
-    try:
-        import json as _json
-        os.makedirs("models", exist_ok=True)
-        with _multibagger_scan_lock:
-            data = {
-                "last_scan": _multibagger_scan_state["last_scan"],
-                "candidates": _multibagger_scan_state["candidates"],
-                "message": _multibagger_scan_state["message"],
-                "bear_market": _multibagger_scan_state["bear_market"],
-            }
-        with open(_MULTIBAGGER_SCAN_CACHE, "w") as f:
-            _json.dump(data, f)
-    except Exception:
-        pass
-
-
-def _load_multibagger_cache() -> dict | None:
-    try:
-        import json as _json
-        if os.path.exists(_MULTIBAGGER_SCAN_CACHE):
-            with open(_MULTIBAGGER_SCAN_CACHE) as f:
-                return _json.load(f)
-    except Exception:
-        pass
-    return None
-
-
-@app.post("/api/multibagger/scan")
-async def multibagger_scan(params: Optional[dict] = None):
-    """Run multibagger pro scan in background. Accepts optional JSON params."""
-    with _multibagger_scan_lock:
-        if _multibagger_scan_state["scan_status"] == "scanning":
-            return {"status": "already_scanning", "message": "Scan already in progress"}
-        _multibagger_scan_state["scan_status"] = "scanning"
-        _multibagger_scan_state["progress"] = 0
-        _multibagger_scan_state["message"] = "Initializing..."
-        _multibagger_scan_state["candidates"] = []
-
-    body = params or {}
-
-    def _run():
-        try:
-            import numpy as np
-            import logging
-            from myra_app.strategies.accumulation_base_scanner import AccumulationBaseScanner
-
-            with _multibagger_scan_lock:
-                _multibagger_scan_state["progress"] = 10
-                _multibagger_scan_state["message"] = "Loading universe..."
-
-            scanner = AccumulationBaseScanner(
-                base_days=body.get("base_days", 21),
-                min_dar=body.get("min_dar", 0.2),
-                min_mcap=body.get("min_mcap", 500),
-                max_mcap=body.get("max_mcap", 20000),
-                tightness_full_score_pct=body.get("tightness_full_score_pct", 5.0),
-                tightness_zero_score_pct=body.get("tightness_zero_score_pct", 15.0),
-                volume_ratio_strong=body.get("volume_ratio_strong", 1.5),
-                volume_ratio_weak=body.get("volume_ratio_weak", 0.8),
-                dar_weight=body.get("dar_weight", 0.35),
-                tightness_weight=body.get("tightness_weight", 0.25),
-                volume_weight=body.get("volume_weight", 0.20),
-                trend_weight=body.get("trend_weight", 0.20),
-                use_dynamic_bear_flag=body.get("use_dynamic_bear_flag", True),
-            )
-
-            with _multibagger_scan_lock:
-                _multibagger_scan_state["progress"] = 30
-                _multibagger_scan_state["message"] = "Scanning candidates..."
-
-            result = scanner.scan()
-
-            candidates = []
-            if not result.empty:
-                candidates = result.replace({np.nan: None}).to_dict(orient="records")
-
-            with _multibagger_scan_lock:
-                _multibagger_scan_state["scan_status"] = "completed"
-                _multibagger_scan_state["progress"] = 100
-                _multibagger_scan_state["last_scan"] = datetime.now().isoformat()
-                _multibagger_scan_state["message"] = f"Found {len(candidates)} candidates."
-                _multibagger_scan_state["candidates"] = candidates
-                _multibagger_scan_state["bear_market"] = getattr(scanner, 'bear_market', False)
-            _save_multibagger_cache()
-
-        except Exception as e:
-            logger = logging.getLogger(__name__)
-            logger.exception("Multibagger scan failed")
-            with _multibagger_scan_lock:
-                _multibagger_scan_state["scan_status"] = "error"
-                _multibagger_scan_state["message"] = str(e)
-                _multibagger_scan_state["progress"] = 0
-
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
-    return {"status": "started", "message": "Multibagger scan started in background"}
+_mb_scan_lock = threading.Lock()
 
 
 @app.get("/api/multibagger/status")
-async def multibagger_scan_status():
-    """Return current multibagger scan status with candidates when available."""
-    import copy
-    with _multibagger_scan_lock:
-        state = copy.deepcopy(_multibagger_scan_state)
+async def multibagger_status():
+    return _mb_scan_state
 
-    if state["scan_status"] == "idle":
-        cache = _load_multibagger_cache()
-        if cache and cache.get("candidates"):
-            return {
-                "scan_status": "idle",
-                "last_scan": cache.get("last_scan"),
+
+@app.post("/api/multibagger/scan")
+async def multibagger_scan(payload: dict = Body(default={})):
+    with _mb_scan_lock:
+        if _mb_scan_state["scan_status"] == "scanning":
+            return {"detail": "Scan already in progress"}, 409
+
+        _mb_scan_state.update({
+            "scan_status": "scanning",
+            "progress": 0,
+            "message": "Initialising scanner...",
+            "candidates": [],
+        })
+
+    base_days = int(payload.get("base_days", 21))
+    min_dar = float(payload.get("min_dar", 0.2))
+    target_dar = payload.get("target_dar")
+    if target_dar is not None:
+        target_dar = float(target_dar)
+
+    def _run():
+        try:
+            from myra_app.strategies.accumulation_base_scanner import AccumulationBaseScanner
+            scanner = AccumulationBaseScanner(
+                base_days=base_days,
+                min_dar=min_dar,
+                target_dar=target_dar,
+            )
+            _mb_scan_state["message"] = "Loading universe..."
+            _mb_scan_state["progress"] = 5
+
+            universe = scanner._get_universe()
+            total = max(len(universe), 1)
+            _mb_scan_state["message"] = f"Scanning {total} symbols..."
+
+            # Run the full scan
+            df = scanner.scan()
+
+            _mb_scan_state["progress"] = 95
+            _mb_scan_state["message"] = "Finalising results..."
+
+            candidates = []
+            if not df.empty:
+                for _, row in df.iterrows():
+                    rec = row.to_dict()
+                    # Convert NaN/None t3 to None for JSON
+                    if rec.get("t3") is not None:
+                        import math
+                        if math.isnan(float(rec["t3"])):
+                            rec["t3"] = None
+                    candidates.append(rec)
+
+            _mb_scan_state.update({
+                "scan_status": "completed",
+                "last_scan": datetime.now().isoformat(),
                 "progress": 100,
-                "message": cache.get("message", f"Found {len(cache['candidates'])} candidates."),
-                "candidates": cache["candidates"],
-                "bear_market": cache.get("bear_market", False),
-            }
+                "message": f"Found {len(candidates)} candidates",
+                "candidates": candidates,
+                "bear_market": scanner.bear_market,
+            })
 
-    return {
-        "scan_status": state["scan_status"],
-        "last_scan": state["last_scan"],
-        "progress": state["progress"],
-        "message": state["message"],
-        "candidates": list(state["candidates"]),
-        "bear_market": state["bear_market"],
-    }
+        except Exception as e:
+            logger.error("Multibagger scan failed: %s", e, exc_info=True)
+            _mb_scan_state.update({
+                "scan_status": "error",
+                "progress": 0,
+                "message": str(e),
+            })
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"status": "started"}
 
 
 @app.get("/api/ml/factor-importance")

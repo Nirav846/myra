@@ -212,42 +212,22 @@ export default function App() {
                   if (target) navigate(`${target.path}?symbol=${symbol}`);
                 }} />} />
                 <Route path="/leaderboard" element={<LeaderboardView lib={librarian} />} />
-                <Route path="/price-delivery-divergence" element={<PriceDeliveryDivergenceScannerView lib={librarian} onNavigate={(tab, symbol) => {
-                  const target = TABS.find(t => t.id === tab);
-                  if (target) navigate(target.path);
-                  if (symbol) setGlobalSelectedTicker(symbol);
-                }} />} />
+                <Route path="/price-delivery-divergence" element={<PriceDeliveryDivergenceScannerView lib={librarian} />} />
                 <Route path="/fvg-scanner" element={<FVGScannerView lib={librarian} />} />
                 <Route path="/historical-search" element={<HistoricalSearchView lib={librarian} />} />
                 <Route path="/chart" element={<AdvancedChartView lib={librarian} activeSymbol={globalSelectedTicker} />} />
                 <Route path="/sector-flow" element={<SectorFlowView lib={librarian} />} />
-                <Route path="/reversion-engine" element={<ReversionEngineView lib={librarian} onNavigate={(tab, symbol) => { 
-                  const target = TABS.find(t => t.id === tab);
-                  if (target) navigate(target.path);
-                  if (symbol) setGlobalSelectedTicker(symbol); 
-                }} />} />
+                <Route path="/reversion-engine" element={<ReversionEngineView lib={librarian} />} />
                 <Route path="/ghost-simulator" element={<GhostSimulatorView lib={librarian} />} />
                 <Route path="/multibagger-matrix" element={<MultibaggerMatrixView lib={librarian} />} />
-                <Route path="/value-ranker" element={<ValueRankerView lib={librarian} onNavigate={(tab, symbol) => { 
-                  const target = TABS.find(t => t.id === tab);
-                  if (target) navigate(target.path);
-                  if (symbol) setGlobalSelectedTicker(symbol); 
-                }} />} />
+                <Route path="/value-ranker" element={<ValueRankerView lib={librarian} />} />
                 <Route path="/inst-dom" element={<InstDOMView lib={librarian} />} />
                 <Route path="/fii-dii-scanner" element={<FiiDiiScannerView lib={librarian} />} />
                 <Route path="/parquet-lake" element={<DataLakeView lib={librarian} />} />
                 <Route path="/settings" element={<SettingsView />} />
                 <Route path="/data-sync" element={<DataSyncView />} />
-                <Route path="/delivery-anomaly" element={<DeliveryAnomalyScannerView lib={librarian} onNavigate={(tab, symbol) => {
-                  const target = TABS.find(t => t.id === tab);
-                  if (target) navigate(target.path);
-                  if (symbol) setGlobalSelectedTicker(symbol);
-                }} />} />
-                <Route path="/multibagger-pro-scanner" element={<MultibaggerProScannerView lib={librarian} onNavigate={(tab, symbol) => {
-                  const target = TABS.find(t => t.id === tab);
-                  if (target) navigate(target.path);
-                  if (symbol) setGlobalSelectedTicker(symbol);
-                }} />} />
+                <Route path="/delivery-anomaly" element={<DeliveryAnomalyScannerView lib={librarian} />} />
+                <Route path="/multibagger-pro-scanner" element={<MultibaggerProScannerView lib={librarian} />} />
 
                 {/* Fallback */}
                 <Route path="*" element={<Navigate to="/mission-control" replace />} />

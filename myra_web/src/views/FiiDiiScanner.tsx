@@ -4,7 +4,6 @@ import { Building2, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, ArrowUpDow
 import { useSettings } from '../lib/SettingsContext';
 import { resolveBucket } from '../lib/bucketUtils';
 import { useHealthStatus } from '../hooks/useHealthStatus';
-import { useNavigate } from 'react-router-dom';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
 import { useWatchlist } from '../lib/WatchlistContext';
@@ -23,8 +22,6 @@ interface ScannerData {
 export default function FiiDiiScannerView({ lib }: { lib: Librarian }) {
     const { settings } = useSettings();
     const { isConnected } = useHealthStatus();
-    const navigate = useNavigate();
-
     const [isLoading, setIsLoading] = useState(false);
     const [isDemo, setIsDemo] = useState(false);
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -449,7 +446,7 @@ export default function FiiDiiScannerView({ lib }: { lib: Librarian }) {
                                             <div className="flex items-center gap-1.5">
                                               <StarButton symbol={d.symbol} size={11} />
                                               <span 
-                                                  onClick={() => navigate('/chart', { state: { symbol: d.symbol } })}
+                                                  onClick={() => window.open(`/#/chart?symbol=${encodeURIComponent(d.symbol)}`, '_blank')}
                                                   className="font-bold text-[#fafafa] cursor-pointer hover:text-blue-400 hover:underline inline-flex items-center gap-1 transition-colors"
                                               >
                                                   {d.symbol}

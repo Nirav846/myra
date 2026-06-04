@@ -7,6 +7,7 @@ import CrosshairOverlay from '../components/chart/CrosshairOverlay';
 import type { CrosshairOverlayHandle } from '../components/chart/CrosshairOverlay';
 import { createPortal } from 'react-dom';
 import { Search, Plus, X, BarChart2, PanelLeftClose, Settings2, Info, Crosshair } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 import { SymbolSearch } from '../components/SymbolSearch';
 import { useSettings } from '../lib/SettingsContext';
 import { useCrosshair } from '../hooks/useCrosshair';
@@ -917,16 +918,20 @@ const dataIndex = hoveredIndex !== undefined && hoveredIndex >= 0 && hoveredInde
 
 export default function AdvancedChartView({ lib, activeSymbol }: { lib: Librarian, activeSymbol?: string }) {
   const { settings } = useSettings();
+  const location = useLocation();
+  const queryParams = new URLSearchParams(location.search);
+  const urlSymbol = queryParams.get('symbol') || undefined;
+  const initialSymbol = urlSymbol || activeSymbol || 'RELIANCE';
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [symbols, setSymbols] = useState<string[]>([activeSymbol || 'RELIANCE']);
+  const [symbols, setSymbols] = useState<string[]>([initialSymbol]);
   const [searchInput, setSearchInput] = useState('');
   const [range, setRange] = useState(settings.defaultChartRange);
 
   useEffect(() => {
-    if (activeSymbol) {
+    if (activeSymbol && !urlSymbol) {
        setSymbols([activeSymbol]);
     }
-  }, [activeSymbol]);
+  }, [activeSymbol, urlSymbol]);
   
   const [dataCache, setDataCache] = useState<Record<string, any[]>>({});
   

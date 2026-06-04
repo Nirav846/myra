@@ -650,7 +650,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                                         <div className="flex items-center gap-1.5">
                                           <StarButton symbol={d.symbol} size={11} />
                                           <span
-                                              onClick={() => onNavigate?.('Technical Chart', d.symbol)}
+                                              onClick={() => window.open(`/#/chart?symbol=${encodeURIComponent(d.symbol)}`, '_blank')}
                                               className="font-bold text-[#fafafa] cursor-pointer hover:text-orange-400 hover:underline inline-flex items-center gap-1 transition-colors"
                                           >
                                               {d.symbol}
@@ -772,7 +772,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                                             <div className="flex items-center gap-1.5">
                                               <StarButton symbol={d.symbol} size={11} />
                                               <span
-                                                  onClick={() => onNavigate?.('Technical Chart', d.symbol)}
+                                                  onClick={() => window.open(`/#/chart?symbol=${encodeURIComponent(d.symbol)}`, '_blank')}
                                                   className="font-bold text-[#fafafa] cursor-pointer hover:text-orange-400 hover:underline inline-flex items-center gap-1 transition-colors"
                                               >
                                                   {d.symbol}

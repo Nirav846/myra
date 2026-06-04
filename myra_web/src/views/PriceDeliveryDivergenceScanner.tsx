@@ -65,7 +65,7 @@ interface RawData {
     low_52w: number;
 }
 
-export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: { lib: Librarian, onNavigate?: (tab: string, symbol?: string) => void }) {
+export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Librarian }) {
     const { settings } = useSettings();
     const { isConnected } = useHealthStatus();
 
@@ -1173,7 +1173,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib, onNavigate }: 
                                                             ★
                                                         </button>
                                                         <span 
-                                                            onClick={() => onNavigate?.('Technical Chart', d.symbol)}
+                                                            onClick={() => window.open(`/#/chart?symbol=${encodeURIComponent(d.symbol)}`, '_blank')}
                                                             className="font-bold text-[#fafafa] cursor-pointer hover:text-orange-400 hover:underline inline-flex items-center gap-1 transition-colors"
                                                         >
                                                             {d.symbol}

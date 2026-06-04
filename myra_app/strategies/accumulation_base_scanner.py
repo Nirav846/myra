@@ -15,10 +15,11 @@ class AccumulationBaseScanner:
         self,
         base_days=21,
         min_dar=0.2,
+        target_dar=None,
         min_mcap=500,
         max_mcap=20000,
-        tightness_full_score_pct=5.0,
-        tightness_zero_score_pct=15.0,
+        tightness_full_score_pct=None,
+        tightness_zero_score_pct=None,
         volume_ratio_strong=1.5,
         volume_ratio_weak=0.8,
         dar_weight=0.35,
@@ -29,6 +30,7 @@ class AccumulationBaseScanner:
     ):
         self.base_days = base_days
         self.min_dar = min_dar
+        self.target_dar = target_dar
         self.min_mcap = min_mcap
         self.max_mcap = max_mcap
         self.tightness_full_score_pct = tightness_full_score_pct
@@ -129,14 +131,35 @@ class AccumulationBaseScanner:
             as_on_date = date.today().isoformat()
 
         ref_date = pd.Timestamp(as_on_date)
-        min_date = (ref_date - pd.Timedelta(days=self.base_days * 3)).strftime("%Y-%m-%d")
+        min_date = (ref_date - pd.Timedelta(days=max(self.base_days * 3, 90))).strftime("%Y-%m-%d")
 
         nifty_scores_all: list[float] = []
         candidates: list[dict] = []
 
+        # Auto-scale tightness thresholds with sqrt(base_days)
+        effective_full = self.tightness_full_score_pct
+        effective_zero = self.tightness_zero_score_pct
+        if effective_full is None:
+            effective_full = 3.0 * np.sqrt(self.base_days / 21)
+        if effective_zero is None:
+            effective_zero = 8.0 * np.sqrt(self.base_days / 21)
+
         for idx, (symbol, mcap, ff_pct) in enumerate(rows):
             symbol = symbol.strip()
             ff_mcap = mcap * ff_pct / 100.0
+
+            # Auto-bucket DAR target by free-float market cap
+            effective_target_dar = self.target_dar
+            if effective_target_dar is None:
+                free_float_mcap_cr = ff_mcap / 1e7
+                if free_float_mcap_cr < 1000:
+                    effective_target_dar = 1.0
+                elif free_float_mcap_cr < 5000:
+                    effective_target_dar = 0.6
+                elif free_float_mcap_cr < 20000:
+                    effective_target_dar = 0.35
+                else:
+                    effective_target_dar = 0.20
 
             tech = self._get_tech_data(symbol, min_date)
             if len(tech) < self.base_days:
@@ -192,27 +215,36 @@ class AccumulationBaseScanner:
             # 2. Base Tightness
             price_range_pct = ((highs.max() - lows.min()) / lows.min()) * 100
             tightness = price_range_pct / np.sqrt(self.base_days)
-            if tightness <= self.tightness_full_score_pct:
+            if tightness <= effective_full:
                 tightness_score = 100.0
-            elif tightness >= self.tightness_zero_score_pct:
+            elif tightness >= effective_zero:
                 tightness_score = 0.0
             else:
                 tightness_score = (
-                    (self.tightness_zero_score_pct - tightness)
-                    / (self.tightness_zero_score_pct - self.tightness_full_score_pct)
+                    (effective_zero - tightness)
+                    / (effective_zero - effective_full)
                     * 100
                 )
 
-            # 3. Delivery Trend (linear slope of delivery_pct)
-            delivery_slope = self._compute_linear_slope(del_pcts)
-            delivery_trend_score = max(0, min(100, delivery_slope * 200))
+            # 3. Delivery Trend (linear slope of delivery_pct over 60 days)
+            del_trend_window = min(60, len(df))
+            del_trend_data = df.iloc[-del_trend_window:]["delivery_pct"].values.astype(float)
+            delivery_slope = self._compute_linear_slope(del_trend_data)
+            if delivery_slope >= 0.10:
+                delivery_trend_score = 100.0
+            elif delivery_slope <= -0.10:
+                delivery_trend_score = 0.0
+            else:
+                delivery_trend_score = ((delivery_slope + 0.10) / 0.20) * 100.0
 
-            # 4. Volume Character: avg up-day volume / avg down-day volume
+            # 4. Volume Character: median up-day volume / median down-day volume
             up_days = base[base["close"] >= base["close"].shift(1).fillna(base["close"].iloc[0])]
             down_days = base[base["close"] < base["close"].shift(1).fillna(base["close"].iloc[0])]
-            avg_up_vol = up_days["volume"].mean() if len(up_days) > 0 else 0
-            avg_down_vol = down_days["volume"].mean() if len(down_days) > 0 else 1
-            volume_ratio = avg_up_vol / avg_down_vol if avg_down_vol > 0 else 1.0
+            up_vol = up_days["volume"].values.astype(float) if len(up_days) > 0 else np.array([])
+            down_vol = down_days["volume"].values.astype(float) if len(down_days) > 0 else np.array([])
+            up_vol_med = float(np.median(up_vol)) if len(up_vol) > 0 else 0
+            down_vol_med = float(np.median(down_vol)) if len(down_vol) > 0 else 1
+            volume_ratio = up_vol_med / down_vol_med if down_vol_med > 0 else 1.0
 
             if volume_ratio >= self.volume_ratio_strong:
                 volume_score = 100.0
@@ -244,11 +276,14 @@ class AccumulationBaseScanner:
                 position_penalty = 15
 
             # 6. Price vs 50-SMA
+            all_closes = df["close"].values.astype(float)
             sma50_pre = float(latest_row["sma_50"]) if pd.notna(latest_row.get("sma_50")) else None
             if sma50_pre is not None:
                 sma50 = sma50_pre
             else:
-                sma50 = self._compute_sma(closes, 50)
+                # Use full history (all_closes) for a valid 50-day SMA fallback,
+                # not the base window which is only base_days bars.
+                sma50 = self._compute_sma(all_closes, 50)
             if sma50 > 0 and latest_close < sma50 * 0.95:
                 continue
             sma_penalty = 0
@@ -256,8 +291,11 @@ class AccumulationBaseScanner:
                 sma_penalty = 15
 
             # Composite Score (0-100)
+            # DAR score: 100 at target_dar, capped at 100.
+            dar_score = min(1.0, dar_median / effective_target_dar) * 100
+
             raw_score = (
-                dar_median * 10 * self.dar_weight
+                dar_score * self.dar_weight
                 + tightness_score * self.tightness_weight
                 + volume_score * self.volume_weight
                 + delivery_trend_score * self.trend_weight

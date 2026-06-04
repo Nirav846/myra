@@ -391,7 +391,7 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
                   <>
                     <span
                       className="cursor-pointer hover:text-cyan-400 decoration-cyan-400/50 underline underline-offset-4"
-                      onClick={() => onNavigate('Technical Chart', highestConfidence.symbol)}
+                      onClick={() => window.open(`/#/chart?symbol=${encodeURIComponent(highestConfidence.symbol)}`, '_blank')}
                     >
                       {highestConfidence.symbol}
                     </span>
@@ -472,7 +472,7 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
                             <div className="flex items-center gap-1.5">
                               <StarButton symbol={row.symbol} size={11} />
                               <button
-                                onClick={() => onNavigate('Technical Chart', row.symbol)}
+                                onClick={() => window.open(`/#/chart?symbol=${encodeURIComponent(row.symbol)}`, '_blank')}
                                 className="hover:text-cyan-400 inline-flex items-center gap-1 transition-colors group"
                               >
                                 {row.symbol} <ArrowUpRight size={12} className="opacity-0 group-hover:opacity-100" />

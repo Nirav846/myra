@@ -5,6 +5,7 @@ import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
 import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
+import { API_BASE } from '../config';
 
 interface Candidate {
   symbol: string;
@@ -33,8 +34,6 @@ interface ScanStatus {
   candidates: Candidate[];
   bear_market?: boolean;
 }
-
-const API_BASE = 'http://localhost:8000/api';
 
 function relativeTime(dateStr: string | null | undefined): string {
   if (!dateStr) return 'Never';
@@ -69,7 +68,7 @@ const STATUS_COLORS: Record<string, string> = {
   'Invalidated': 'text-red-400',
 };
 
-export default function MultibaggerProScannerView({ lib, onNavigate }: { lib: Librarian; onNavigate?: (tab: string, symbol?: string) => void }) {
+export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
   const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -78,6 +77,9 @@ export default function MultibaggerProScannerView({ lib, onNavigate }: { lib: Li
 
   const [baseDays, setBaseDays] = useState(21);
   const [minDar, setMinDar] = useState(0.2);
+  const [targetDar, setTargetDar] = useState<number | null>(null);
+  const [tightnessFull, setTightnessFull] = useState<number | null>(null);
+  const [tightnessZero, setTightnessZero] = useState<number | null>(null);
   const [mcapRange, setMcapRange] = useState<{ min: number; max: number } | null>(null);
   const mcapMapRef = useRef<Map<string, number>>(new Map());
 
@@ -171,7 +173,7 @@ export default function MultibaggerProScannerView({ lib, onNavigate }: { lib: Li
       const res = await fetch(`${API_BASE}/multibagger/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ base_days: baseDays, min_dar: minDar }),
+        body: JSON.stringify({ base_days: baseDays, min_dar: minDar, target_dar: targetDar, tightness_full_score_pct: tightnessFull, tightness_zero_score_pct: tightnessZero }),
       });
       if (!mountedRef.current) return;
       if (res.ok) {
@@ -188,7 +190,7 @@ export default function MultibaggerProScannerView({ lib, onNavigate }: { lib: Li
         setIsScanning(false);
       }
     }
-  }, [fetchScanStatus, clearPolling, baseDays, minDar]);
+  }, [fetchScanStatus, clearPolling, baseDays, minDar, targetDar, tightnessFull, tightnessZero]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -336,6 +338,79 @@ export default function MultibaggerProScannerView({ lib, onNavigate }: { lib: Li
                 className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none w-full font-mono"
               />
             </div>
+            <div className="flex flex-col gap-1 w-24">
+              <label className="text-[10px] text-[#888] font-mono">Target DAR %</label>
+              {targetDar !== null ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min={0.1}
+                    max={2.0}
+                    step={0.1}
+                    value={targetDar}
+                    onChange={e => setTargetDar(Number(e.target.value))}
+                    className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none w-full font-mono"
+                  />
+                  <button
+                    onClick={() => setTargetDar(null)}
+                    className="text-[9px] text-purple-400 hover:text-purple-300 font-mono shrink-0"
+                  >
+                    Reset
+                  </button>
+                </div>
+              ) : (
+                <div
+                  onClick={() => setTargetDar(0.5)}
+                  className="bg-[#1a1c24] border border-purple-500/30 rounded px-2 py-1.5 text-xs text-purple-400 font-mono cursor-pointer text-center"
+                >
+                  Auto
+                </div>
+              )}
+            </div>
+            <div className="flex flex-col gap-1 w-28">
+              <label className="text-[10px] text-[#888] font-mono">Tightness Full %</label>
+              <input
+                type="range"
+                min={2}
+                max={20}
+                step={0.5}
+                value={tightnessFull ?? 2}
+                onChange={e => setTightnessFull(Number(e.target.value))}
+                className="w-full accent-purple-500"
+              />
+              <div className="flex items-center justify-between">
+                {tightnessFull !== null ? (
+                  <>
+                    <span className="text-[10px] text-[#ccc] font-mono">{tightnessFull.toFixed(1)}</span>
+                    <button onClick={() => setTightnessFull(null)} className="text-[9px] text-purple-400 hover:text-purple-300 font-mono">Reset</button>
+                  </>
+                ) : (
+                  <span className="text-[10px] text-purple-400 font-mono">Auto</span>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-col gap-1 w-28">
+              <label className="text-[10px] text-[#888] font-mono">Tightness Zero %</label>
+              <input
+                type="range"
+                min={10}
+                max={50}
+                step={0.5}
+                value={tightnessZero ?? 10}
+                onChange={e => setTightnessZero(Number(e.target.value))}
+                className="w-full accent-purple-500"
+              />
+              <div className="flex items-center justify-between">
+                {tightnessZero !== null ? (
+                  <>
+                    <span className="text-[10px] text-[#ccc] font-mono">{tightnessZero.toFixed(1)}</span>
+                    <button onClick={() => setTightnessZero(null)} className="text-[9px] text-purple-400 hover:text-purple-300 font-mono">Reset</button>
+                  </>
+                ) : (
+                  <span className="text-[10px] text-purple-400 font-mono">Auto</span>
+                )}
+              </div>
+            </div>
             <div className="max-w-[220px] flex-shrink-0">
               <MarketCapRangeFilter onChange={setMcapRange} />
             </div>
@@ -421,16 +496,12 @@ export default function MultibaggerProScannerView({ lib, onNavigate }: { lib: Li
                         <td className="px-4 py-3 text-[#fafafa] font-bold">
                           <div className="flex items-center gap-1.5">
                             <StarButton symbol={row.symbol} size={11} />
-                            {onNavigate ? (
-                              <button
-                                onClick={() => onNavigate('chart', row.symbol)}
-                                className="hover:text-purple-400 inline-flex items-center gap-1 transition-colors group"
-                              >
-                                {row.symbol} <ArrowUpRight size={12} className="opacity-0 group-hover:opacity-100" />
-                              </button>
-                            ) : (
-                              <span className="text-[#fafafa]">{row.symbol}</span>
-                            )}
+                            <button
+                              onClick={() => window.open(`/#/chart?symbol=${encodeURIComponent(row.symbol)}`, '_blank')}
+                              className="hover:text-purple-400 inline-flex items-center gap-1 transition-colors group"
+                            >
+                              {row.symbol} <ArrowUpRight size={12} className="opacity-0 group-hover:opacity-100" />
+                            </button>
                           </div>
                         </td>
                         <td className="px-4 py-3 text-right text-[#ccc]">{row.market_cap_cr.toFixed(1)}</td>

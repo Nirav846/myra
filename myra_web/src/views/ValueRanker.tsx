@@ -25,7 +25,7 @@ interface RankerData {
   score: number;
 }
 
-export default function ValueRankerView({ lib, onNavigate }: { lib: Librarian, onNavigate?: (tab: string, symbol?: string) => void }) {
+export default function ValueRankerView({ lib }: { lib: Librarian }) {
   const [copied, setCopied] = useState(false);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -457,7 +457,7 @@ export default function ValueRankerView({ lib, onNavigate }: { lib: Librarian, o
         {dataLoaded && displayData.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 shrink-0">
             {displayData.slice(0, 3).map((topDog, i) => (
-              <div key={topDog.symbol} onClick={() => onNavigate?.('Technical Chart', topDog.symbol)} className="bg-[#12141a] border border-[#ffffff1a] p-3 rounded-lg flex items-center justify-between hover:border-green-500/50 cursor-pointer group transition-colors shadow-sm">
+              <div key={topDog.symbol} onClick={() => window.open(`/#/chart?symbol=${encodeURIComponent(topDog.symbol)}`, '_blank')} className="bg-[#12141a] border border-[#ffffff1a] p-3 rounded-lg flex items-center justify-between hover:border-green-500/50 cursor-pointer group transition-colors shadow-sm">
                  <div>
                    <h3 className="font-bold text-white text-sm group-hover:text-green-400 inline-flex items-center gap-2">
                        <span className="text-green-500 opacity-50 px-1 py-0.5 bg-green-500/10 rounded text-[10px]">#{i+1}</span>
@@ -506,7 +506,7 @@ export default function ValueRankerView({ lib, onNavigate }: { lib: Librarian, o
                       <td className="py-2.5 px-3">
                          <div className="flex items-center gap-1.5">
                            <StarButton symbol={row.symbol} size={11} />
-                           <span onClick={() => onNavigate?.('Technical Chart', row.symbol)} className="text-[#fafafa] font-bold cursor-pointer hover:text-green-400">
+                           <span onClick={() => window.open(`/#/chart?symbol=${encodeURIComponent(row.symbol)}`, '_blank')} className="text-[#fafafa] font-bold cursor-pointer hover:text-green-400">
                              {row.symbol}
                            </span>
                          </div>
