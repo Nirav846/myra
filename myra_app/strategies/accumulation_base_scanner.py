@@ -126,6 +126,39 @@ class AccumulationBaseScanner:
         slope = np.polyfit(x, values, 1)[0]
         return slope
 
+    def _detect_liquidity_grab(
+        self, base_low: float, base: pd.DataFrame, atr14: float
+    ) -> dict:
+        sweep_threshold = base_low * 0.998
+        result = {"detected": False, "grab_low": None, "grab_close": None}
+        recent = base.tail(5)
+        for _, row in recent.iterrows():
+            if row["low"] < sweep_threshold and row["close"] > base_low:
+                if result["grab_low"] is None or row["low"] < result["grab_low"]:
+                    result["detected"] = True
+                    result["grab_low"] = float(row["low"])
+                    result["grab_close"] = float(row["close"])
+        return result
+
+    def _detect_equal_lows(
+        self, lows: np.ndarray, tolerance_pct: float = 0.5
+    ) -> bool:
+        if len(lows) < 5:
+            return False
+        base_low = lows.min()
+        threshold = base_low * (1 + tolerance_pct / 100)
+        touches = np.sum(lows <= threshold)
+        return bool(touches >= 2)
+
+    def _volume_dry_up_ratio(self, df: pd.DataFrame, base_days: int) -> float:
+        if len(df) < 6:
+            return 1.0
+        recent_vol = df["volume"].tail(5).values.astype(float)
+        base_vol = df["volume"].tail(base_days).values.astype(float)
+        recent_mean = float(np.nanmean(recent_vol))
+        base_mean = float(np.nanmean(base_vol))
+        return round(recent_mean / base_mean, 3) if base_mean > 0 else 1.0
+
     def scan(self, as_on_date: str | None = None) -> pd.DataFrame:
         rows = self._get_universe()
         if not rows:
@@ -263,6 +296,19 @@ class AccumulationBaseScanner:
                     * 100
                 )
 
+            # 5a. Liquidity grab detection
+            liq_grab = self._detect_liquidity_grab(base_low, base, atr14)
+
+            # 5b. Equal lows (liquidity pool trap)
+            has_equal_lows = self._detect_equal_lows(lows)
+
+            # 5c. Volume dry-up ratio
+            vol_dry_up = self._volume_dry_up_ratio(base, self.base_days)
+
+            # 5d. Relative strength during base (mean nifty_outperformance_score)
+            valid_nifty = nifty_scores[~np.isnan(nifty_scores)]
+            rs_score = float(np.mean(valid_nifty)) if len(valid_nifty) > 0 else 0.0
+
             # 5. 52-week position
             latest_row = df.iloc[-1]
             high_52w = float(latest_row["high_52w"]) if pd.notna(latest_row.get("high_52w")) else None
@@ -321,20 +367,42 @@ class AccumulationBaseScanner:
             # Entry / SL / Targets
             base_high = float(highs.max())
             base_low = float(lows.min())
-            risk = base_high - base_low
 
             all_closes = df["close"].values.astype(float)
             all_highs = df["high"].values.astype(float)
             all_lows = df["low"].values.astype(float)
             atr14 = self._compute_atr(all_highs, all_lows, all_closes, 14)
 
-            entry = base_high + 0.1 * atr14
-            sl = base_low
-            # Floor: risk must be at least 0.5× ATR14 to produce meaningful targets
-            risk = max(base_high - base_low, atr14 * 0.5) if atr14 > 0 else (base_high - base_low)
+            # --- Entry type selection ---
+            if liq_grab["detected"]:
+                entry_type = "LiqGrab"
+                entry = liq_grab["grab_close"]
+                sl = liq_grab["grab_low"] - 0.3 * atr14
+            elif (latest_close <= base_low + 0.382 * (base_high - base_low)
+                  and dar_median >= self.min_dar * 1.5):
+                entry_type = "Cheat"
+                entry = latest_close
+                sl = base_low - 0.75 * atr14
+            else:
+                entry_type = "Breakout"
+                entry = base_high + 0.1 * atr14
+                sl = base_low - 0.5 * atr14
+
+            # Ensure entry is always above sl
+            if entry <= sl:
+                entry = sl + atr14 * 0.5
+
+            # Risk floor
+            raw_risk = entry - sl
+            risk = max(raw_risk, atr14 * 0.5) if atr14 > 0 else max(raw_risk, entry * 0.02)
+
             t1 = entry + 1.0 * risk
             t2 = entry + 2.5 * risk
-            t3 = entry + 5.0 * risk if grade == "A" else None
+            t3 = entry + 5.0 * risk if grade in ("A", "B") else None
+
+            # Breakout retest entry (secondary entry for Breakout type only)
+            breakout_entry = base_high + 0.1 * atr14
+            retest_entry = base_high - 0.2 * atr14
 
             # Status
             if latest_close > base_high:
@@ -353,11 +421,17 @@ class AccumulationBaseScanner:
                 "dar_median": round(dar_median, 3),
                 "base_range_pct": round(price_range_pct, 2),
                 "volume_ratio": round(volume_ratio, 2),
+                "vol_dry_up": round(vol_dry_up, 2),
                 "delivery_slope": round(delivery_slope, 4),
+                "rs_score": round(rs_score, 3),
                 "composite_score": round(composite_score, 1),
                 "grade": grade,
+                "entry_type": entry_type,
                 "entry": round(entry, 2),
+                "cheat_entry": round(base_low + 0.382 * (base_high - base_low), 2),
+                "retest_entry": round(retest_entry, 2),
                 "sl": round(sl, 2),
+                "sl_pct": round((entry - sl) / entry * 100, 2) if entry > 0 else 0.0,
                 "t1": round(t1, 2),
                 "t2": round(t2, 2),
                 "t3": round(t3, 2) if t3 is not None else None,
@@ -365,6 +439,8 @@ class AccumulationBaseScanner:
                 "close": round(latest_close, 2),
                 "wk52_pos": round(wk52_pos, 1),
                 "risk_reward": round((t2 - entry) / (entry - sl), 2) if (entry - sl) > 0 else 0.0,
+                "liq_grab": liq_grab["detected"],
+                "equal_lows": has_equal_lows,
             })
 
         # Dynamic bear flag

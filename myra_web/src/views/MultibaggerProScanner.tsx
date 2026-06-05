@@ -14,11 +14,17 @@ interface Candidate {
   dar_median: number;
   base_range_pct: number;
   volume_ratio: number;
+  vol_dry_up: number;
   delivery_slope: number;
+  rs_score: number;
   composite_score: number;
   grade: string;
+  entry_type: string;
   entry: number;
+  cheat_entry: number;
+  retest_entry: number;
   sl: number;
+  sl_pct: number;
   t1: number;
   t2: number;
   t3: number | null;
@@ -26,6 +32,8 @@ interface Candidate {
   close: number;
   wk52_pos?: number;
   risk_reward?: number;
+  liq_grab: boolean;
+  equal_lows: boolean;
 }
 
 interface ScanStatus {
@@ -63,6 +71,18 @@ const GRADE_COLORS: Record<string, string> = {
   D: 'bg-red-500/20 text-red-400 border-red-500/30',
 };
 
+const ENTRY_TYPE_COLORS: Record<string, string> = {
+  'LiqGrab':  'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+  'Cheat':    'bg-purple-500/20 text-purple-400 border-purple-500/30',
+  'Breakout': 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+};
+
+const ENTRY_TYPE_LABELS: Record<string, string> = {
+  'LiqGrab':  '⚡ Liq Grab',
+  'Cheat':    '🎯 Cheat',
+  'Breakout': '🚀 Breakout',
+};
+
 const STATUS_COLORS: Record<string, string> = {
   'In Base': 'text-[#aaa]',
   'Breakout Pending': 'text-yellow-400',
@@ -88,6 +108,8 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
   const { isWatched } = useWatchlist();
   const [watchlistOnly, setWatchlistOnly] = useState(false);
 
+  const [entryTypeFilter, setEntryTypeFilter] = useState<string>('All');
+
   const [sortCol, setSortCol] = useState<string>('composite_score');
   const [sortAsc, setSortAsc] = useState(false);
 
@@ -108,6 +130,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
       });
     }
     if (watchlistOnly) data = data.filter(d => isWatched(d.symbol));
+    if (entryTypeFilter !== 'All') data = data.filter(d => d.entry_type === entryTypeFilter);
     data.sort((a, b) => {
       const av = (a as any)[sortCol] ?? 0;
       const bv = (b as any)[sortCol] ?? 0;
@@ -117,7 +140,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
       return String(av).localeCompare(String(bv)) * (sortAsc ? 1 : -1);
     });
     return data;
-  }, [candidates, mcapRange, watchlistOnly, isWatched, sortCol, sortAsc]);
+  }, [candidates, mcapRange, watchlistOnly, entryTypeFilter, isWatched, sortCol, sortAsc]);
 
   const clearPolling = useCallback(() => {
     if (pollTimerRef.current) {
@@ -432,6 +455,27 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                 Only Starred
               </button>
             </div>
+            <div className="flex flex-col gap-1">
+              <div className="text-[10px] text-[#888] font-mono">Entry Type</div>
+              <div className="flex gap-1">
+                {['All', 'LiqGrab', 'Cheat', 'Breakout'].map(t => (
+                  <button
+                    key={t}
+                    onClick={() => setEntryTypeFilter(t)}
+                    className={`px-2 py-1.5 rounded border text-[10px] font-mono transition-colors ${
+                      entryTypeFilter === t
+                        ? (t === 'LiqGrab' ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' :
+                           t === 'Cheat'   ? 'bg-purple-500/20 border-purple-500/40 text-purple-400' :
+                           t === 'Breakout'? 'bg-blue-500/20 border-blue-500/40 text-blue-400' :
+                                             'bg-white/10 border-white/20 text-white')
+                        : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-white'
+                    }`}
+                  >
+                    {t === 'All' ? 'All' : ENTRY_TYPE_LABELS[t]}
+                  </button>
+                ))}
+              </div>
+            </div>
             <button
               onClick={handleCSV}
               disabled={filteredData.length === 0}
@@ -443,7 +487,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
           </div>
 
           {/* Stats Summary */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
               <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Candidates</div>
               <div className="text-2xl font-bold text-[#fafafa]">{filteredData.length}</div>
@@ -451,6 +495,14 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
               <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Grade A</div>
               <div className="text-2xl font-bold text-green-400">{filteredData.filter(d => d.grade === 'A').length}</div>
+            </div>
+            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
+              <div className="text-[10px] text-emerald-400 font-mono uppercase tracking-wider">⚡ Liq Grabs</div>
+              <div className="text-2xl font-bold text-emerald-400">{filteredData.filter(d => d.liq_grab).length}</div>
+            </div>
+            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
+              <div className="text-[10px] text-purple-400 font-mono uppercase tracking-wider">🎯 Cheat</div>
+              <div className="text-2xl font-bold text-purple-400">{filteredData.filter(d => d.entry_type === 'Cheat').length}</div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
               <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg Score</div>
@@ -480,52 +532,51 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                 <thead className="bg-[#0e1117] text-[#888] sticky top-0">
                   <tr>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider cursor-pointer hover:text-white" onClick={() => handleSort('symbol')}>Symbol <SortIcon column="symbol" /></th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('market_cap_cr')}>Mkt Cap <SortIcon column="market_cap_cr" /></th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('base_days')}>Base Days <SortIcon column="base_days" /></th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('dar_median')}>DAR Med <SortIcon column="dar_median" /></th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('base_range_pct')}>Range % <SortIcon column="base_range_pct" /></th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('volume_ratio')}>Vol Ratio <SortIcon column="volume_ratio" /></th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('delivery_slope')}>Del Slope <SortIcon column="delivery_slope" /></th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center">Entry Type</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('composite_score')}>Score <SortIcon column="composite_score" /></th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('grade')}>Grade <SortIcon column="grade" /></th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('market_cap_cr')}>MCap Cr <SortIcon column="market_cap_cr" /></th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('dar_median')}>DAR% <SortIcon column="dar_median" /></th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('volume_ratio')}>VolR <SortIcon column="volume_ratio" /></th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('vol_dry_up')}>DryUp <SortIcon column="vol_dry_up" /></th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('rs_score')}>RS <SortIcon column="rs_score" /></th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Close</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Entry</th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Cheat</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">SL</th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('sl_pct')}>SL% <SortIcon column="sl_pct" /></th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">T1</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">T2</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">T3</th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Close</th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('wk52_pos')}>52W Pos <SortIcon column="wk52_pos" /></th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('risk_reward')}>R:R <SortIcon column="risk_reward" /></th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('wk52_pos')}>52W% <SortIcon column="wk52_pos" /></th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={18} className="px-4 py-8 text-center text-[#666]">No candidates match current filters.</td>
+                      <td colSpan={21} className="px-4 py-8 text-center text-[#666]">No candidates match current filters.</td>
                     </tr>
                   ) : (
-                    filteredData.map((row, i) => (
-                      <tr key={row.symbol} className="hover:bg-[#ffffff05] transition-colors">
-                        <td className="px-4 py-3 text-[#fafafa] font-bold">
+                    filteredData.map((row) => (
+                      <tr key={row.symbol} className={`hover:bg-[#ffffff05] transition-colors ${row.liq_grab ? 'border-l-2 border-emerald-500/50' : ''}`}>
+                        <td className="px-4 py-3 font-bold">
                           <div className="flex items-center gap-1.5">
                             <StarButton symbol={row.symbol} size={11} />
                             <button
                               onClick={() => window.open(`/#/chart?symbol=${encodeURIComponent(row.symbol)}`, '_blank')}
-                              className="hover:text-purple-400 inline-flex items-center gap-1 transition-colors group"
+                              className="text-[#fafafa] hover:text-purple-400 inline-flex items-center gap-1 transition-colors group"
                             >
-                              {row.symbol} <ArrowUpRight size={12} className="opacity-0 group-hover:opacity-100" />
+                              {row.symbol}
+                              {row.equal_lows && <span title="Equal lows — expect liquidity sweep" className="text-orange-400 text-[9px]">⚠</span>}
+                              <ArrowUpRight size={12} className="opacity-0 group-hover:opacity-100" />
                             </button>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-right text-[#ccc]">{row.market_cap_cr.toFixed(1)}</td>
-                        <td className="px-4 py-3 text-right text-[#ccc]">{row.base_days}</td>
-                        <td className="px-4 py-3 text-right text-[#ccc]">{row.dar_median.toFixed(3)}</td>
-                        <td className="px-4 py-3 text-right text-[#ccc]">{row.base_range_pct.toFixed(2)}%</td>
-                        <td className="px-4 py-3 text-right text-[#ccc]">{row.volume_ratio.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-right">
-                          <span className={row.delivery_slope > 0 ? 'text-green-400' : 'text-red-400'}>
-                            {row.delivery_slope.toFixed(4)}
+                        <td className="px-4 py-3 text-center">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${ENTRY_TYPE_COLORS[row.entry_type] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
+                            {ENTRY_TYPE_LABELS[row.entry_type] || row.entry_type}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right font-bold">
@@ -538,24 +589,43 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                             {row.grade}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-right text-green-400">{row.entry.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-right text-red-400">{row.sl.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-right text-[#ccc]">{row.t1.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-right text-[#ccc]">{row.t2.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-right text-[#ccc]">{row.t3 !== null ? row.t3.toFixed(2) : '—'}</td>
-                        <td className="px-4 py-3 text-right text-[#ccc]">{row.close.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-right text-[#ccc]">{row.market_cap_cr.toFixed(0)}</td>
+                        <td className="px-4 py-3 text-right text-[#ccc]">{row.dar_median.toFixed(3)}</td>
                         <td className="px-4 py-3 text-right">
-                          <span className={
-                            (row.wk52_pos ?? 50) > 75 ? 'text-orange-400' :
-                            (row.wk52_pos ?? 50) < 20 ? 'text-red-400' :
-                            'text-[#ccc]'
-                          }>
-                            {row.wk52_pos !== undefined ? `${row.wk52_pos.toFixed(0)}%` : '—'}
+                          <span className={row.volume_ratio >= 1.5 ? 'text-green-400' : row.volume_ratio <= 0.8 ? 'text-red-400' : 'text-[#ccc]'}>
+                            {row.volume_ratio.toFixed(2)}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <span className={(row.risk_reward ?? 0) >= 2 ? 'text-green-400' : 'text-[#888]'}>
+                          <span className={row.vol_dry_up <= 0.6 ? 'text-green-400' : row.vol_dry_up >= 1.2 ? 'text-orange-400' : 'text-[#ccc]'}>
+                            {row.vol_dry_up !== undefined ? row.vol_dry_up.toFixed(2) : '—'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <span className={row.rs_score > 0.3 ? 'text-green-400' : row.rs_score < -0.3 ? 'text-red-400' : 'text-[#ccc]'}>
+                            {row.rs_score !== undefined ? row.rs_score.toFixed(2) : '—'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right text-[#ccc]">{row.close.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-right text-green-400 font-semibold">{row.entry.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-right text-purple-400">{row.cheat_entry?.toFixed(2) ?? '—'}</td>
+                        <td className="px-4 py-3 text-right text-red-400">{row.sl.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-right">
+                          <span className={row.sl_pct <= 5 ? 'text-green-400' : row.sl_pct <= 10 ? 'text-yellow-400' : 'text-red-400'}>
+                            {row.sl_pct?.toFixed(1)}%
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right text-[#aaa]">{row.t1.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-right text-[#ccc]">{row.t2.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-right text-[#888]">{row.t3 !== null ? row.t3.toFixed(2) : '—'}</td>
+                        <td className="px-4 py-3 text-right">
+                          <span className={(row.risk_reward ?? 0) >= 3 ? 'text-green-400' : (row.risk_reward ?? 0) >= 2 ? 'text-cyan-400' : 'text-[#888]'}>
                             {row.risk_reward !== undefined ? `1:${row.risk_reward.toFixed(1)}` : '—'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <span className={(row.wk52_pos ?? 50) > 75 ? 'text-orange-400' : (row.wk52_pos ?? 50) < 20 ? 'text-red-400' : 'text-[#ccc]'}>
+                            {row.wk52_pos !== undefined ? `${row.wk52_pos.toFixed(0)}%` : '—'}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-center">
