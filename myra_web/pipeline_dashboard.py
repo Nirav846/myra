@@ -197,7 +197,7 @@ class PipelineManager:
             self._state["message"] = f"Fetching NSE data for {len(nifty_symbols) if nifty_symbols else 0} symbols..."
         self._push_event({"type": "progress", "task_id": "fundamentals_sync", "progress_pct": 60})
         if nifty_symbols:
-            nse_data = sync._fetch_nse_all(nifty_symbols)
+            nse_data = sync._fetch_nse_all(nifty_symbols, self._cancel_event)
         else:
             nse_data = {}
 
