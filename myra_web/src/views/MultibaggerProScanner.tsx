@@ -6,6 +6,7 @@ import { fetchMarketCapMap } from '../lib/marketCapCache';
 import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
 import { API_BASE } from '../config';
+import { Tooltip } from '../components/Tooltip';
 
 interface Candidate {
   symbol: string;
@@ -114,10 +115,12 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
 
   const [entryTypeFilter, setEntryTypeFilter] = useState<string>('All');
   const [sectorFilter, setSectorFilter] = useState<string>('All');
-  const [minScoreFilter, setMinScoreFilter] = useState(0);
+  const [minScoreFilter, setMinScoreFilter] = useState(55);
 
   const [sortCol, setSortCol] = useState<string>('composite_score');
   const [sortAsc, setSortAsc] = useState(false);
+  const [showSignals, setShowSignals] = useState(false);
+  const [showTrade, setShowTrade] = useState(true);
 
   useEffect(() => { fetchMarketCapMap().then(m => mcapMapRef.current = m); }, []);
 
@@ -487,8 +490,13 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
           </div>
         </div>
         <div className="flex flex-col gap-1">
-          <div className="flex justify-between text-[10px] text-[#888] font-mono">
-            <span>Min Score</span>
+          <div className="flex justify-between text-[10px] text-[#888] font-mono items-center">
+            <Tooltip
+              content="Minimum Accumulation Score to show. Recommended: 55+ for quality setups. Below 55 is noise for most users."
+              good="55–70: good quality filter. 70+: only high-conviction setups."
+            >
+              <span>Min Score</span>
+            </Tooltip>
             <span className="text-purple-400">{minScoreFilter}</span>
           </div>
           <input
@@ -598,44 +606,189 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
             </div>
           )}
 
+          {/* Column visibility toggles */}
+          <div className="flex items-center gap-2 px-1">
+            <span className="text-[10px] text-[#555] font-mono uppercase tracking-wider">Show columns:</span>
+            <button
+              onClick={() => setShowSignals(s => !s)}
+              className={`px-2 py-1 rounded border text-[10px] font-mono transition-colors ${
+                showSignals
+                  ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-400'
+                  : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#666] hover:text-[#aaa]'
+              }`}
+            >
+              {showSignals ? '▼' : '▶'} Signals (DAR, Volume, RS)
+            </button>
+            <button
+              onClick={() => setShowTrade(s => !s)}
+              className={`px-2 py-1 rounded border text-[10px] font-mono transition-colors ${
+                showTrade
+                  ? 'bg-purple-500/20 border-purple-500/40 text-purple-400'
+                  : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#666] hover:text-[#aaa]'
+              }`}
+            >
+              {showTrade ? '▼' : '▶'} Trade Levels (T1/T2/T3, Cheat)
+            </button>
+            <span className="ml-auto text-[10px] text-[#555] font-mono">
+              {filteredData.length} results · scroll right for all columns
+            </span>
+          </div>
+
           {/* Table */}
           <div className="flex-1 bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden flex flex-col">
             <div className="overflow-x-auto flex-1">
               <table className="w-full text-left text-xs font-mono whitespace-nowrap">
                 <thead className="bg-[#0e1117] text-[#888] sticky top-0">
                   <tr>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider cursor-pointer hover:text-white" onClick={() => handleSort('symbol')}>Symbol <SortIcon column="symbol" /></th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider">Sector</th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center">Entry Type</th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('composite_score')}>Score <SortIcon column="composite_score" /></th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('grade')}>Grade <SortIcon column="grade" /></th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('market_cap_cr')}>MCap Cr <SortIcon column="market_cap_cr" /></th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('dar_median')}>DAR% <SortIcon column="dar_median" /></th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('volume_ratio')}>VolR <SortIcon column="volume_ratio" /></th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('vol_dry_up')}>DryUp <SortIcon column="vol_dry_up" /></th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('rs_score')}>RS <SortIcon column="rs_score" /></th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Close</th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Entry</th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Cheat/Retest</th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">SL</th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('sl_pct')}>SL% <SortIcon column="sl_pct" /></th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">T1</th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">T2</th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">T3</th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('max_upside_pct')}>Upside% <SortIcon column="max_upside_pct" /></th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('dist_to_bo_pct')}>→BO% <SortIcon column="dist_to_bo_pct" /></th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('wk52_pos')}>52W% <SortIcon column="wk52_pos" /></th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center">Status</th>
+                    {/* ── CORE (always visible) ── */}
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider cursor-pointer hover:text-white" onClick={() => handleSort('symbol')}>
+                      <Tooltip content="Stock ticker symbol. ⚠ means equal lows detected — a liquidity trap likely exists below the base." showIcon={false}>
+                        Symbol <SortIcon column="symbol" />
+                      </Tooltip>
+                    </th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider">
+                      <Tooltip content="Business sector the company operates in. Useful for avoiding concentration — don't put all picks in one sector." showIcon={false}>Sector</Tooltip>
+                    </th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center">
+                      <Tooltip
+                        content="How to enter this stock. Each type has different risk-reward."
+                        good="⚡ Liq Grab = best entry, stock swept stops then recovered. 🎯 Cheat = enter inside the base at lower end. 🚀 Breakout = enter above resistance."
+                        bad="Breakout entries have worst R:R and highest fakeout risk."
+                      >Entry Type</Tooltip>
+                    </th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('composite_score')}>
+                      <Tooltip
+                        content="Accumulation Score (0–100). Combines delivery absorption, base tightness, volume character, and delivery trend into one number."
+                        good="Above 70: strong accumulation evidence. Above 85: exceptional setup."
+                        bad="Below 55: marginal setup, skip unless other signals are outstanding."
+                        example="Score 80 = stock scoring well on all 4 dimensions simultaneously."
+                      >Score <SortIcon column="composite_score" /></Tooltip>
+                    </th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('grade')}>
+                      <Tooltip
+                        content="Overall grade based on score. A=80+, B=60–79, C=40–59, D=below 40."
+                        good="Focus on A and B grade only. C grade requires strong conviction from fundamentals."
+                        bad="D grade: avoid."
+                      >Grade <SortIcon column="grade" /></Tooltip>
+                    </th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">
+                      <Tooltip
+                        content="Recommended buy price. For Breakout: just above the base ceiling. For Cheat: current price (enter now). For Liq Grab: close of the sweep candle."
+                        good="The earlier you enter (Cheat/LiqGrab), the better your risk-reward."
+                        example="Entry 150 with SL 140 means you risk ₹10 per share."
+                      >Entry</Tooltip>
+                    </th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">
+                      <Tooltip
+                        content="Stop Loss — the price where you exit if the setup fails. Placed below the base structure with buffer for minor stop hunts."
+                        bad="If price closes below SL on meaningful volume, the accumulation thesis is broken — exit without hesitation."
+                        example="SL 140 means if stock drops below ₹140, sell and protect capital."
+                      >SL</Tooltip>
+                    </th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('max_upside_pct')}>
+                      <Tooltip
+                        content="Maximum potential upside % from entry to the final target (T3 for Grade A/B, T2 otherwise)."
+                        good="Above 40%: meaningful multibagger potential. Above 100%: true multibagger territory."
+                        bad="Below 20%: risk-reward not worth it for a 1+ month holding."
+                      >Upside% <SortIcon column="max_upside_pct" /></Tooltip>
+                    </th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center">
+                      <Tooltip
+                        content="Current setup status. 'In Base' = still consolidating, wait. 'Breakout Pending' = near resistance. 'Triggered' = breakout confirmed with volume."
+                        good="'In Base' with Cheat/LiqGrab entry type = best time to enter."
+                        bad="'Triggered' with Breakout entry = you may be late, wait for a retest."
+                      >Status</Tooltip>
+                    </th>
+
+                    {/* ── SIGNALS (toggleable) ── */}
+                    {showSignals && <>
+                      <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5 border-l border-cyan-500/20" onClick={() => handleSort('dar_median')}>
+                        <Tooltip
+                          content="Delivery Absorption Rate — what % of the company's free-float market cap is being bought and held each day. Normalised so small companies and large companies are comparable."
+                          good="Above target threshold (auto-set by mcap): genuine accumulation happening."
+                          bad="Below 0.2%: not enough buying to signal institutional interest."
+                          example="DAR 0.5% means 0.5% of the tradeable float changes hands as delivery daily — unusually high."
+                        >DAR% (Absorption) <SortIcon column="dar_median" /></Tooltip>
+                      </th>
+                      <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5" onClick={() => handleSort('volume_ratio')}>
+                        <Tooltip
+                          content="Volume Character — median volume on up-days divided by median volume on down-days within the base. Above 1.0 means more shares traded on green days than red days."
+                          good="Above 1.5: strong accumulation signature. Buyers are more active than sellers."
+                          bad="Below 0.8: sellers are more active — potential distribution, not accumulation."
+                        >Vol Ratio (Character) <SortIcon column="volume_ratio" /></Tooltip>
+                      </th>
+                      <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5" onClick={() => handleSort('vol_dry_up')}>
+                        <Tooltip
+                          content="Volume Dry-Up — last 5 days volume vs full base average. Below 1.0 means volume is shrinking, which happens when supply is exhausted and the float is locked up."
+                          good="Below 0.7: volume compression (green). Float is locked — small buying pressure will move price."
+                          bad="Above 1.2: volume expanding inside base (orange) — could be distribution."
+                        >Dry-Up (Vol Compress) <SortIcon column="vol_dry_up" /></Tooltip>
+                      </th>
+                      <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5" onClick={() => handleSort('rs_score')}>
+                        <Tooltip
+                          content="Relative Strength — how the stock performed vs Nifty 50 during the base period. Positive = stock held up or outperformed while market consolidated."
+                          good="Above 0.3: stock is stronger than the market — institutional support likely."
+                          bad="Below -0.3: underperforming even when it should be recovering — weak setup."
+                        >RS (Vs Nifty) <SortIcon column="rs_score" /></Tooltip>
+                      </th>
+                      <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5" onClick={() => handleSort('wk52_pos')}>
+                        <Tooltip
+                          content="Where the stock sits within its 52-week high-low range. 0% = at 52W low, 100% = at 52W high."
+                          good="25–60%: corrected from highs but not broken — ideal accumulation zone."
+                          bad="Above 75%: near 52W high — limited room before facing resistance. Below 15%: may be a falling knife."
+                        >52W Position <SortIcon column="wk52_pos" /></Tooltip>
+                      </th>
+                    </>}
+
+                    {/* ── TRADE LEVELS (toggleable) ── */}
+                    {showTrade && <>
+                      <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right bg-purple-500/5 border-l border-purple-500/20">
+                        <Tooltip content="Current market price of the stock. Compare with Entry to see how far you are from the recommended entry point.">Close (CMP)</Tooltip>
+                      </th>
+                      <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right bg-purple-500/5">
+                        <Tooltip
+                          content="Alternative entry for Breakout-type setups. For Breakout stocks: enter at the 38.2% level inside the base for better risk-reward. For Cheat/LiqGrab: not applicable."
+                          good="Cheat/Retest entry gives 2-3x better risk-reward than waiting for the breakout."
+                        >Cheat/Retest <SortIcon column="cheat_entry" /></Tooltip>
+                      </th>
+                      <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-purple-500/5" onClick={() => handleSort('sl_pct')}>
+                        <Tooltip
+                          content="Stop Loss as a % of entry price. Lower is better — it means you risk less capital to participate in the setup."
+                          good="Below 5%: tight stop, excellent risk control."
+                          bad="Above 12%: wide stop — size your position smaller to keep total risk manageable."
+                        >SL% (Risk) <SortIcon column="sl_pct" /></Tooltip>
+                      </th>
+                      <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right bg-purple-500/5">
+                        <Tooltip content="Target 1 — conservative exit. Take partial profits here (suggest 30% of position). Equivalent to 1× your risk amount above entry.">T1 (Conservative)</Tooltip>
+                      </th>
+                      <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right bg-purple-500/5">
+                        <Tooltip content="Target 2 — primary exit. Take bulk of position here (suggest 50%). Equivalent to 2.5× your risk amount above entry.">T2 (Primary)</Tooltip>
+                      </th>
+                      <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right bg-purple-500/5">
+                        <Tooltip
+                          content="Target 3 — multibagger exit. Only for Grade A and B setups. Let 20% of position ride here. Equivalent to 5× your risk amount above entry."
+                          good="Only available for Grade A/B. This is the 'let it run' target for genuine multibaggers."
+                        >T3 (Multibagger)</Tooltip>
+                      </th>
+                      <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-purple-500/5" onClick={() => handleSort('dist_to_bo_pct')}>
+                        <Tooltip
+                          content="Distance to Breakout — how far the current price is from the base ceiling (breakout level). Lower = closer to triggering."
+                          good="Below 3%: breakout imminent — watch closely."
+                          bad="Above 15%: stock still deep in base — you have time to monitor."
+                        >→ Breakout <SortIcon column="dist_to_bo_pct" /></Tooltip>
+                      </th>
+                    </>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={22} className="px-4 py-8 text-center text-[#666]">No candidates match current filters.</td>
+                      <td colSpan={9 + (showSignals ? 5 : 0) + (showTrade ? 7 : 0)} className="px-4 py-8 text-center text-[#666]">No candidates match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((row) => (
                       <tr key={row.symbol} className={`hover:bg-[#ffffff05] transition-colors ${row.liq_grab ? 'border-l-2 border-emerald-500/50' : ''}`}>
+                        {/* ── CORE ── */}
                         <td className="px-4 py-3 font-bold">
                           <div className="flex items-center gap-1.5">
                             <StarButton symbol={row.symbol} size={11} />
@@ -674,53 +827,11 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                             {row.grade}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-right text-[#ccc]">{row.market_cap_cr.toFixed(0)}</td>
-                        <td className="px-4 py-3 text-right text-[#ccc]">{row.dar_median.toFixed(3)}</td>
-                        <td className="px-4 py-3 text-right">
-                          <span className={row.volume_ratio >= 1.5 ? 'text-green-400' : row.volume_ratio <= 0.8 ? 'text-red-400' : 'text-[#ccc]'}>
-                            {row.volume_ratio.toFixed(2)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <span className={row.vol_dry_up <= 0.6 ? 'text-green-400' : row.vol_dry_up >= 1.2 ? 'text-orange-400' : 'text-[#ccc]'}>
-                            {row.vol_dry_up !== undefined ? row.vol_dry_up.toFixed(2) : '—'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <span className={row.rs_score > 0.3 ? 'text-green-400' : row.rs_score < -0.3 ? 'text-red-400' : 'text-[#ccc]'}>
-                            {row.rs_score !== undefined ? row.rs_score.toFixed(2) : '—'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right text-[#ccc]">{row.close.toFixed(2)}</td>
                         <td className="px-4 py-3 text-right text-green-400 font-semibold">{row.entry.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-right">
-                          {row.entry_type === 'Breakout'
-                            ? <span className="text-purple-400">{row.cheat_entry?.toFixed(2) ?? '—'}</span>
-                            : <span className="text-[#444]">—</span>
-                          }
-                        </td>
                         <td className="px-4 py-3 text-right text-red-400">{row.sl.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-right">
-                          <span className={row.sl_pct <= 5 ? 'text-green-400' : row.sl_pct <= 10 ? 'text-yellow-400' : 'text-red-400'}>
-                            {row.sl_pct?.toFixed(1)}%
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right text-[#aaa]">{row.t1.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-right text-[#ccc]">{row.t2.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-right text-[#888]">{row.t3 !== null ? row.t3.toFixed(2) : '—'}</td>
                         <td className="px-4 py-3 text-right">
                           <span className={(row.max_upside_pct ?? 0) >= 40 ? 'text-green-400' : (row.max_upside_pct ?? 0) >= 20 ? 'text-cyan-400' : 'text-[#888]'}>
                             {row.max_upside_pct !== undefined ? `+${row.max_upside_pct.toFixed(1)}%` : '—'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <span className={(row.dist_to_bo_pct ?? 99) <= 3 ? 'text-yellow-400' : 'text-[#888]'}>
-                            {row.dist_to_bo_pct !== undefined ? `${row.dist_to_bo_pct.toFixed(1)}%` : '—'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <span className={(row.wk52_pos ?? 50) > 75 ? 'text-orange-400' : (row.wk52_pos ?? 50) < 20 ? 'text-red-400' : 'text-[#ccc]'}>
-                            {row.wk52_pos !== undefined ? `${row.wk52_pos.toFixed(0)}%` : '—'}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-center">
@@ -728,6 +839,50 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                             {row.status}
                           </span>
                         </td>
+
+                        {/* ── SIGNALS ── */}
+                        {showSignals && <td className="px-4 py-3 text-right text-[#ccc] bg-cyan-500/[0.02] border-l border-cyan-500/10">{row.dar_median.toFixed(3)}</td>}
+                        {showSignals && <td className="px-4 py-3 text-right bg-cyan-500/[0.02]">
+                          <span className={row.volume_ratio >= 1.5 ? 'text-green-400' : row.volume_ratio <= 0.8 ? 'text-red-400' : 'text-[#ccc]'}>
+                            {row.volume_ratio.toFixed(2)}
+                          </span>
+                        </td>}
+                        {showSignals && <td className="px-4 py-3 text-right bg-cyan-500/[0.02]">
+                          <span className={row.vol_dry_up <= 0.6 ? 'text-green-400' : row.vol_dry_up >= 1.2 ? 'text-orange-400' : 'text-[#ccc]'}>
+                            {row.vol_dry_up !== undefined ? row.vol_dry_up.toFixed(2) : '—'}
+                          </span>
+                        </td>}
+                        {showSignals && <td className="px-4 py-3 text-right bg-cyan-500/[0.02]">
+                          <span className={row.rs_score > 0.3 ? 'text-green-400' : row.rs_score < -0.3 ? 'text-red-400' : 'text-[#ccc]'}>
+                            {row.rs_score !== undefined ? row.rs_score.toFixed(2) : '—'}
+                          </span>
+                        </td>}
+                        {showSignals && <td className="px-4 py-3 text-right bg-cyan-500/[0.02]">
+                          <span className={(row.wk52_pos ?? 50) > 75 ? 'text-orange-400' : (row.wk52_pos ?? 50) < 20 ? 'text-red-400' : 'text-[#ccc]'}>
+                            {row.wk52_pos !== undefined ? `${row.wk52_pos.toFixed(0)}%` : '—'}
+                          </span>
+                        </td>}
+
+                        {/* ── TRADE LEVELS ── */}
+                        {showTrade && <td className="px-4 py-3 text-right text-[#ccc] bg-purple-500/[0.02] border-l border-purple-500/10">{row.close.toFixed(2)}</td>}
+                        {showTrade && <td className="px-4 py-3 text-right bg-purple-500/[0.02]">
+                          {row.entry_type === 'Breakout'
+                            ? <span className="text-purple-400">{row.cheat_entry?.toFixed(2) ?? '—'}</span>
+                            : <span className="text-[#333]">—</span>}
+                        </td>}
+                        {showTrade && <td className="px-4 py-3 text-right bg-purple-500/[0.02]">
+                          <span className={row.sl_pct <= 5 ? 'text-green-400' : row.sl_pct <= 10 ? 'text-yellow-400' : 'text-red-400'}>
+                            {row.sl_pct?.toFixed(1)}%
+                          </span>
+                        </td>}
+                        {showTrade && <td className="px-4 py-3 text-right text-[#777] bg-purple-500/[0.02]">{row.t1.toFixed(2)}</td>}
+                        {showTrade && <td className="px-4 py-3 text-right text-[#ccc] bg-purple-500/[0.02]">{row.t2.toFixed(2)}</td>}
+                        {showTrade && <td className="px-4 py-3 text-right text-[#888] bg-purple-500/[0.02]">{row.t3 !== null ? row.t3.toFixed(2) : '—'}</td>}
+                        {showTrade && <td className="px-4 py-3 text-right bg-purple-500/[0.02]">
+                          <span className={(row.dist_to_bo_pct ?? 99) <= 3 ? 'text-yellow-400' : 'text-[#888]'}>
+                            {row.dist_to_bo_pct !== undefined ? `${row.dist_to_bo_pct.toFixed(1)}%` : '—'}
+                          </span>
+                        </td>}
                       </tr>
                     ))
                   )}
