@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { Rocket, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown } from 'lucide-react';
+import { Rocket, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Star } from 'lucide-react';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
 import { useWatchlist } from '../lib/WatchlistContext';
@@ -24,6 +24,8 @@ interface Candidate {
   t3: number | null;
   status: string;
   close: number;
+  wk52_pos?: number;
+  risk_reward?: number;
 }
 
 interface ScanStatus {
@@ -376,7 +378,8 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                 step={0.5}
                 value={tightnessFull ?? 2}
                 onChange={e => setTightnessFull(Number(e.target.value))}
-                className="w-full accent-purple-500"
+                disabled={tightnessFull === null}
+                className="w-full accent-purple-500 disabled:opacity-30"
               />
               <div className="flex items-center justify-between">
                 {tightnessFull !== null ? (
@@ -398,7 +401,8 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                 step={0.5}
                 value={tightnessZero ?? 10}
                 onChange={e => setTightnessZero(Number(e.target.value))}
-                className="w-full accent-purple-500"
+                disabled={tightnessZero === null}
+                className="w-full accent-purple-500 disabled:opacity-30"
               />
               <div className="flex items-center justify-between">
                 {tightnessZero !== null ? (
@@ -424,7 +428,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                     : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
                 }`}
               >
-                <Rocket size={11} fill={watchlistOnly ? 'currentColor' : 'none'} />
+                <Star size={11} fill={watchlistOnly ? 'currentColor' : 'none'} />
                 Only Starred
               </button>
             </div>
@@ -457,8 +461,15 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
               </div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Triggered</div>
-              <div className="text-2xl font-bold text-yellow-400">{filteredData.filter(d => d.status === 'Triggered' || d.status === 'Breakout Pending').length}</div>
+              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Breakouts</div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-2xl font-bold text-green-400">
+                  {filteredData.filter(d => d.status === 'Triggered').length}
+                </span>
+                <span className="text-xs text-yellow-400 font-mono">
+                  +{filteredData.filter(d => d.status === 'Breakout Pending').length} pending
+                </span>
+              </div>
             </div>
           </div>
 
@@ -482,13 +493,16 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">T1</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">T2</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">T3</th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Close</th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('wk52_pos')}>52W Pos <SortIcon column="wk52_pos" /></th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('risk_reward')}>R:R <SortIcon column="risk_reward" /></th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={15} className="px-4 py-8 text-center text-[#666]">No candidates match current filters.</td>
+                      <td colSpan={18} className="px-4 py-8 text-center text-[#666]">No candidates match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((row, i) => (
@@ -529,6 +543,21 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                         <td className="px-4 py-3 text-right text-[#ccc]">{row.t1.toFixed(2)}</td>
                         <td className="px-4 py-3 text-right text-[#ccc]">{row.t2.toFixed(2)}</td>
                         <td className="px-4 py-3 text-right text-[#ccc]">{row.t3 !== null ? row.t3.toFixed(2) : '—'}</td>
+                        <td className="px-4 py-3 text-right text-[#ccc]">{row.close.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-right">
+                          <span className={
+                            (row.wk52_pos ?? 50) > 75 ? 'text-orange-400' :
+                            (row.wk52_pos ?? 50) < 20 ? 'text-red-400' :
+                            'text-[#ccc]'
+                          }>
+                            {row.wk52_pos !== undefined ? `${row.wk52_pos.toFixed(0)}%` : '—'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <span className={(row.risk_reward ?? 0) >= 2 ? 'text-green-400' : 'text-[#888]'}>
+                            {row.risk_reward !== undefined ? `1:${row.risk_reward.toFixed(1)}` : '—'}
+                          </span>
+                        </td>
                         <td className="px-4 py-3 text-center">
                           <span className={`text-[10px] font-semibold ${STATUS_COLORS[row.status] || 'text-[#aaa]'}`}>
                             {row.status}

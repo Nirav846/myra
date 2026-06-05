@@ -1120,23 +1120,48 @@ async def multibagger_scan(payload: dict = Body(default={})):
     target_dar = payload.get("target_dar")
     if target_dar is not None:
         target_dar = float(target_dar)
+    tightness_full = payload.get("tightness_full_score_pct")
+    if tightness_full is not None:
+        tightness_full = float(tightness_full)
+    tightness_zero = payload.get("tightness_zero_score_pct")
+    if tightness_zero is not None:
+        tightness_zero = float(tightness_zero)
 
     def _run():
         try:
             from myra_app.strategies.accumulation_base_scanner import AccumulationBaseScanner
+            import math as _math
+
             scanner = AccumulationBaseScanner(
                 base_days=base_days,
                 min_dar=min_dar,
                 target_dar=target_dar,
+                tightness_full_score_pct=tightness_full,
+                tightness_zero_score_pct=tightness_zero,
             )
+
             _mb_scan_state["message"] = "Loading universe..."
             _mb_scan_state["progress"] = 5
 
             universe = scanner._get_universe()
             total = max(len(universe), 1)
             _mb_scan_state["message"] = f"Scanning {total} symbols..."
+            _mb_scan_state["progress"] = 10
 
-            # Run the full scan
+            # Monkey-patch a progress hook into the scan loop
+            original_get_tech = scanner._get_tech_data
+            processed = [0]
+
+            def _tracked_get_tech(symbol, min_date):
+                processed[0] += 1
+                if processed[0] % 40 == 0:
+                    pct = 10 + int((processed[0] / total) * 82)
+                    _mb_scan_state["progress"] = min(pct, 92)
+                    _mb_scan_state["message"] = f"Scanning {processed[0]}/{total} symbols..."
+                return original_get_tech(symbol, min_date)
+
+            scanner._get_tech_data = _tracked_get_tech
+
             df = scanner.scan()
 
             _mb_scan_state["progress"] = 95
@@ -1146,10 +1171,11 @@ async def multibagger_scan(payload: dict = Body(default={})):
             if not df.empty:
                 for _, row in df.iterrows():
                     rec = row.to_dict()
-                    # Convert NaN/None t3 to None for JSON
                     if rec.get("t3") is not None:
-                        import math
-                        if math.isnan(float(rec["t3"])):
+                        try:
+                            if _math.isnan(float(rec["t3"])):
+                                rec["t3"] = None
+                        except (TypeError, ValueError):
                             rec["t3"] = None
                     candidates.append(rec)
 

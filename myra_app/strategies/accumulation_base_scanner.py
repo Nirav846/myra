@@ -55,10 +55,15 @@ class AccumulationBaseScanner:
         with sqlite3.connect(val_db) as conn:
             rows = conn.execute(
                 """
-                SELECT symbol, COALESCE(market_cap, 0) as mcap,
-                       COALESCE(free_float_pct, 40.0) as ff_pct
+                SELECT symbol,
+                       COALESCE(market_cap, 0)      AS mcap,
+                       COALESCE(free_float_pct, 40.0) AS ff_pct
                 FROM fundamentals
-                WHERE COALESCE(market_cap, 0) > 0
+                WHERE date = (
+                    SELECT MAX(f2.date) FROM fundamentals f2
+                    WHERE f2.symbol = fundamentals.symbol
+                )
+                  AND COALESCE(market_cap, 0) > 0
                   AND COALESCE(market_cap, 0) / 1e7 BETWEEN ? AND ?
                 """,
                 (self.min_mcap, self.max_mcap),
@@ -207,9 +212,9 @@ class AccumulationBaseScanner:
                 (deliveries * closes) / ff_mcap * 100,
                 0.0,
             )
-            dar_median = float(np.median(dar_values))
+            dar_median = float(np.nanmedian(dar_values))
 
-            if dar_median < self.min_dar:
+            if np.isnan(dar_median) or dar_median < self.min_dar:
                 continue
 
             # 2. Base Tightness
@@ -229,7 +234,8 @@ class AccumulationBaseScanner:
             # 3. Delivery Trend (linear slope of delivery_pct over 60 days)
             del_trend_window = min(60, len(df))
             del_trend_data = df.iloc[-del_trend_window:]["delivery_pct"].values.astype(float)
-            delivery_slope = self._compute_linear_slope(del_trend_data)
+            _del_trend_clean = del_trend_data[~np.isnan(del_trend_data)]
+            delivery_slope = self._compute_linear_slope(_del_trend_clean) if len(_del_trend_clean) >= 2 else 0.0
             if delivery_slope >= 0.10:
                 delivery_trend_score = 100.0
             elif delivery_slope <= -0.10:
@@ -324,6 +330,8 @@ class AccumulationBaseScanner:
 
             entry = base_high + 0.1 * atr14
             sl = base_low
+            # Floor: risk must be at least 0.5× ATR14 to produce meaningful targets
+            risk = max(base_high - base_low, atr14 * 0.5) if atr14 > 0 else (base_high - base_low)
             t1 = entry + 1.0 * risk
             t2 = entry + 2.5 * risk
             t3 = entry + 5.0 * risk if grade == "A" else None
@@ -355,6 +363,8 @@ class AccumulationBaseScanner:
                 "t3": round(t3, 2) if t3 is not None else None,
                 "status": status,
                 "close": round(latest_close, 2),
+                "wk52_pos": round(wk52_pos, 1),
+                "risk_reward": round((t2 - entry) / (entry - sl), 2) if (entry - sl) > 0 else 0.0,
             })
 
         # Dynamic bear flag
@@ -367,8 +377,7 @@ class AccumulationBaseScanner:
                 effective_base_days = max(self.base_days, 30)
                 effective_min_dar = max(self.min_dar, 0.4)
                 candidates = [c for c in candidates
-                              if c.get("base_days_override", self.base_days) >= effective_base_days
-                              and c["dar_median"] >= effective_min_dar]
+                              if c["dar_median"] >= effective_min_dar]
 
         candidates.sort(key=lambda x: x["composite_score"], reverse=True)
         logger.info("Scan complete: %d candidates found", len(candidates))
