@@ -1171,12 +1171,9 @@ async def multibagger_scan(payload: dict = Body(default={})):
             if not df.empty:
                 for _, row in df.iterrows():
                     rec = row.to_dict()
-                    if rec.get("t3") is not None:
-                        try:
-                            if _math.isnan(float(rec["t3"])):
-                                rec["t3"] = None
-                        except (TypeError, ValueError):
-                            rec["t3"] = None
+                    for key, val in list(rec.items()):
+                        if isinstance(val, float) and (_math.isnan(val) or _math.isinf(val)):
+                            rec[key] = None
                     candidates.append(rec)
 
             _mb_scan_state.update({

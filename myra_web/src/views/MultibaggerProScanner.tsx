@@ -32,8 +32,12 @@ interface Candidate {
   close: number;
   wk52_pos?: number;
   risk_reward?: number;
+  max_upside_pct?: number;
+  dist_to_bo_pct?: number;
+  sector?: string;
   liq_grab: boolean;
   equal_lows: boolean;
+  equal_lows_level?: number | null;
 }
 
 interface ScanStatus {
@@ -109,6 +113,8 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
   const [watchlistOnly, setWatchlistOnly] = useState(false);
 
   const [entryTypeFilter, setEntryTypeFilter] = useState<string>('All');
+  const [sectorFilter, setSectorFilter] = useState<string>('All');
+  const [minScoreFilter, setMinScoreFilter] = useState(0);
 
   const [sortCol, setSortCol] = useState<string>('composite_score');
   const [sortAsc, setSortAsc] = useState(false);
@@ -119,6 +125,11 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const candidates = scanStatus?.candidates ?? [];
+
+  const availableSectors = useMemo(() => {
+    const sectors = new Set(candidates.map(c => c.sector ?? 'Unknown'));
+    return ['All', ...Array.from(sectors).filter(s => s !== 'Unknown').sort(), 'Unknown'];
+  }, [candidates]);
 
   const filteredData = useMemo(() => {
     let data = [...candidates];
@@ -131,6 +142,8 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
     }
     if (watchlistOnly) data = data.filter(d => isWatched(d.symbol));
     if (entryTypeFilter !== 'All') data = data.filter(d => d.entry_type === entryTypeFilter);
+    if (sectorFilter !== 'All') data = data.filter(d => d.sector === sectorFilter);
+    if (minScoreFilter > 0) data = data.filter(d => d.composite_score >= minScoreFilter);
     data.sort((a, b) => {
       const av = (a as any)[sortCol] ?? 0;
       const bv = (b as any)[sortCol] ?? 0;
@@ -140,7 +153,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
       return String(av).localeCompare(String(bv)) * (sortAsc ? 1 : -1);
     });
     return data;
-  }, [candidates, mcapRange, watchlistOnly, entryTypeFilter, isWatched, sortCol, sortAsc]);
+  }, [candidates, mcapRange, watchlistOnly, entryTypeFilter, sectorFilter, minScoreFilter, isWatched, sortCol, sortAsc]);
 
   const clearPolling = useCallback(() => {
     if (pollTimerRef.current) {
@@ -332,160 +345,179 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
         </div>
       )}
 
+      {/* Filters (always visible) */}
+      <div className="bg-[#0e1117] border border-[#ffffff1a] rounded p-4 flex flex-wrap gap-4 items-end">
+        <div className="flex items-center gap-2 mb-1 text-xs text-[#888] w-full">
+          <Filter size={14} /> <span className="font-mono uppercase font-semibold">Filters</span>
+        </div>
+        <div className="flex flex-col gap-1 w-24">
+          <label className="text-[10px] text-[#888] font-mono">Lookback Days</label>
+          <input
+            type="number"
+            min={7}
+            max={90}
+            value={baseDays}
+            onChange={e => setBaseDays(Number(e.target.value))}
+            className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none w-full font-mono"
+          />
+        </div>
+        <div className="flex flex-col gap-1 w-24">
+          <label className="text-[10px] text-[#888] font-mono">Min DAR %</label>
+          <input
+            type="number"
+            min={0}
+            max={10}
+            step={0.1}
+            value={minDar}
+            onChange={e => setMinDar(Number(e.target.value))}
+            className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none w-full font-mono"
+          />
+        </div>
+        <div className="flex flex-col gap-1 w-24">
+          <label className="text-[10px] text-[#888] font-mono">Target DAR %</label>
+          {targetDar !== null ? (
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                min={0.1}
+                max={2.0}
+                step={0.1}
+                value={targetDar}
+                onChange={e => setTargetDar(Number(e.target.value))}
+                className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none w-full font-mono"
+              />
+              <button
+                onClick={() => setTargetDar(null)}
+                className="text-[9px] text-purple-400 hover:text-purple-300 font-mono shrink-0"
+              >
+                Reset
+              </button>
+            </div>
+          ) : (
+            <div
+              onClick={() => setTargetDar(0.5)}
+              className="bg-[#1a1c24] border border-purple-500/30 rounded px-2 py-1.5 text-xs text-purple-400 font-mono cursor-pointer text-center"
+            >
+              Auto
+            </div>
+          )}
+        </div>
+        <div className="flex flex-col gap-1 w-28">
+          <label className="text-[10px] text-[#888] font-mono">Tightness Full %</label>
+          <input
+            type="range"
+            min={2}
+            max={20}
+            step={0.5}
+            value={tightnessFull ?? 2}
+            onChange={e => setTightnessFull(Number(e.target.value))}
+            disabled={tightnessFull === null}
+            className="w-full accent-purple-500 disabled:opacity-30"
+          />
+          <div className="flex items-center justify-between">
+            {tightnessFull !== null ? (
+              <>
+                <span className="text-[10px] text-[#ccc] font-mono">{tightnessFull.toFixed(1)}</span>
+                <button onClick={() => setTightnessFull(null)} className="text-[9px] text-purple-400 hover:text-purple-300 font-mono">Reset</button>
+              </>
+            ) : (
+              <span className="text-[10px] text-purple-400 font-mono">Auto</span>
+            )}
+          </div>
+        </div>
+        <div className="flex flex-col gap-1 w-28">
+          <label className="text-[10px] text-[#888] font-mono">Tightness Zero %</label>
+          <input
+            type="range"
+            min={10}
+            max={50}
+            step={0.5}
+            value={tightnessZero ?? 10}
+            onChange={e => setTightnessZero(Number(e.target.value))}
+            disabled={tightnessZero === null}
+            className="w-full accent-purple-500 disabled:opacity-30"
+          />
+          <div className="flex items-center justify-between">
+            {tightnessZero !== null ? (
+              <>
+                <span className="text-[10px] text-[#ccc] font-mono">{tightnessZero.toFixed(1)}</span>
+                <button onClick={() => setTightnessZero(null)} className="text-[9px] text-purple-400 hover:text-purple-300 font-mono">Reset</button>
+              </>
+            ) : (
+              <span className="text-[10px] text-purple-400 font-mono">Auto</span>
+            )}
+          </div>
+        </div>
+        <div className="max-w-[220px] flex-shrink-0">
+          <MarketCapRangeFilter onChange={setMcapRange} />
+        </div>
+        <div className="flex flex-col gap-1">
+          <div className="text-[10px] text-[#888] font-mono">Watchlist</div>
+          <button
+            onClick={() => setWatchlistOnly(o => !o)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors ${
+              watchlistOnly
+                ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
+                : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
+            }`}
+          >
+            <Star size={11} fill={watchlistOnly ? 'currentColor' : 'none'} />
+            Only Starred
+          </button>
+        </div>
+        <div className="flex flex-col gap-1">
+          <div className="text-[10px] text-[#888] font-mono">Entry Type</div>
+          <div className="flex gap-1">
+            {['All', 'LiqGrab', 'Cheat', 'Breakout'].map(t => (
+              <button
+                key={t}
+                onClick={() => setEntryTypeFilter(t)}
+                className={`px-2 py-1.5 rounded border text-[10px] font-mono transition-colors ${
+                  entryTypeFilter === t
+                    ? (t === 'LiqGrab' ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' :
+                       t === 'Cheat'   ? 'bg-purple-500/20 border-purple-500/40 text-purple-400' :
+                       t === 'Breakout'? 'bg-blue-500/20 border-blue-500/40 text-blue-400' :
+                                         'bg-white/10 border-white/20 text-white')
+                    : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-white'
+                }`}
+              >
+                {t === 'All' ? 'All' : ENTRY_TYPE_LABELS[t]}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-col gap-1">
+          <div className="flex justify-between text-[10px] text-[#888] font-mono">
+            <span>Min Score</span>
+            <span className="text-purple-400">{minScoreFilter}</span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={5}
+            value={minScoreFilter}
+            onChange={e => setMinScoreFilter(Number(e.target.value))}
+            className="w-full accent-purple-500"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <div className="text-[10px] text-[#888] font-mono">Sector</div>
+          <select
+            value={sectorFilter}
+            onChange={e => setSectorFilter(e.target.value)}
+            className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none font-mono"
+          >
+            {availableSectors.map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       {/* Results */}
       {(scanStatus?.scan_status === 'completed' || (isIdle && candidates.length > 0)) && !isScanning && (
         <>
-          {/* Filters */}
-          <div className="bg-[#0e1117] border border-[#ffffff1a] rounded p-4 flex flex-wrap gap-4 items-end">
-            <div className="flex items-center gap-2 mb-1 text-xs text-[#888] w-full">
-              <Filter size={14} /> <span className="font-mono uppercase font-semibold">Filters</span>
-            </div>
-            <div className="flex flex-col gap-1 w-24">
-              <label className="text-[10px] text-[#888] font-mono">Lookback Days</label>
-              <input
-                type="number"
-                min={7}
-                max={90}
-                value={baseDays}
-                onChange={e => setBaseDays(Number(e.target.value))}
-                className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none w-full font-mono"
-              />
-            </div>
-            <div className="flex flex-col gap-1 w-24">
-              <label className="text-[10px] text-[#888] font-mono">Min DAR %</label>
-              <input
-                type="number"
-                min={0}
-                max={10}
-                step={0.1}
-                value={minDar}
-                onChange={e => setMinDar(Number(e.target.value))}
-                className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none w-full font-mono"
-              />
-            </div>
-            <div className="flex flex-col gap-1 w-24">
-              <label className="text-[10px] text-[#888] font-mono">Target DAR %</label>
-              {targetDar !== null ? (
-                <div className="flex items-center gap-1">
-                  <input
-                    type="number"
-                    min={0.1}
-                    max={2.0}
-                    step={0.1}
-                    value={targetDar}
-                    onChange={e => setTargetDar(Number(e.target.value))}
-                    className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none w-full font-mono"
-                  />
-                  <button
-                    onClick={() => setTargetDar(null)}
-                    className="text-[9px] text-purple-400 hover:text-purple-300 font-mono shrink-0"
-                  >
-                    Reset
-                  </button>
-                </div>
-              ) : (
-                <div
-                  onClick={() => setTargetDar(0.5)}
-                  className="bg-[#1a1c24] border border-purple-500/30 rounded px-2 py-1.5 text-xs text-purple-400 font-mono cursor-pointer text-center"
-                >
-                  Auto
-                </div>
-              )}
-            </div>
-            <div className="flex flex-col gap-1 w-28">
-              <label className="text-[10px] text-[#888] font-mono">Tightness Full %</label>
-              <input
-                type="range"
-                min={2}
-                max={20}
-                step={0.5}
-                value={tightnessFull ?? 2}
-                onChange={e => setTightnessFull(Number(e.target.value))}
-                disabled={tightnessFull === null}
-                className="w-full accent-purple-500 disabled:opacity-30"
-              />
-              <div className="flex items-center justify-between">
-                {tightnessFull !== null ? (
-                  <>
-                    <span className="text-[10px] text-[#ccc] font-mono">{tightnessFull.toFixed(1)}</span>
-                    <button onClick={() => setTightnessFull(null)} className="text-[9px] text-purple-400 hover:text-purple-300 font-mono">Reset</button>
-                  </>
-                ) : (
-                  <span className="text-[10px] text-purple-400 font-mono">Auto</span>
-                )}
-              </div>
-            </div>
-            <div className="flex flex-col gap-1 w-28">
-              <label className="text-[10px] text-[#888] font-mono">Tightness Zero %</label>
-              <input
-                type="range"
-                min={10}
-                max={50}
-                step={0.5}
-                value={tightnessZero ?? 10}
-                onChange={e => setTightnessZero(Number(e.target.value))}
-                disabled={tightnessZero === null}
-                className="w-full accent-purple-500 disabled:opacity-30"
-              />
-              <div className="flex items-center justify-between">
-                {tightnessZero !== null ? (
-                  <>
-                    <span className="text-[10px] text-[#ccc] font-mono">{tightnessZero.toFixed(1)}</span>
-                    <button onClick={() => setTightnessZero(null)} className="text-[9px] text-purple-400 hover:text-purple-300 font-mono">Reset</button>
-                  </>
-                ) : (
-                  <span className="text-[10px] text-purple-400 font-mono">Auto</span>
-                )}
-              </div>
-            </div>
-            <div className="max-w-[220px] flex-shrink-0">
-              <MarketCapRangeFilter onChange={setMcapRange} />
-            </div>
-            <div className="flex flex-col gap-1">
-              <div className="text-[10px] text-[#888] font-mono">Watchlist</div>
-              <button
-                onClick={() => setWatchlistOnly(o => !o)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors ${
-                  watchlistOnly
-                    ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
-                    : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
-                }`}
-              >
-                <Star size={11} fill={watchlistOnly ? 'currentColor' : 'none'} />
-                Only Starred
-              </button>
-            </div>
-            <div className="flex flex-col gap-1">
-              <div className="text-[10px] text-[#888] font-mono">Entry Type</div>
-              <div className="flex gap-1">
-                {['All', 'LiqGrab', 'Cheat', 'Breakout'].map(t => (
-                  <button
-                    key={t}
-                    onClick={() => setEntryTypeFilter(t)}
-                    className={`px-2 py-1.5 rounded border text-[10px] font-mono transition-colors ${
-                      entryTypeFilter === t
-                        ? (t === 'LiqGrab' ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' :
-                           t === 'Cheat'   ? 'bg-purple-500/20 border-purple-500/40 text-purple-400' :
-                           t === 'Breakout'? 'bg-blue-500/20 border-blue-500/40 text-blue-400' :
-                                             'bg-white/10 border-white/20 text-white')
-                        : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-white'
-                    }`}
-                  >
-                    {t === 'All' ? 'All' : ENTRY_TYPE_LABELS[t]}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <button
-              onClick={handleCSV}
-              disabled={filteredData.length === 0}
-              className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-[#ffffff0a] hover:bg-[#ffffff15] border border-[#ffffff1a] rounded text-xs text-[#ccc] transition-colors disabled:opacity-40"
-            >
-              <Download size={12} />
-              CSV
-            </button>
-          </div>
-
           {/* Stats Summary */}
           <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
@@ -525,6 +557,47 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
             </div>
           </div>
 
+          {/* Grade A Spotlight */}
+          {filteredData.filter(d => d.grade === 'A').length > 0 && (
+            <div className="bg-green-500/5 border border-green-500/20 rounded p-3">
+              <div className="text-[10px] text-green-400 font-mono uppercase tracking-wider mb-2 flex items-center gap-2">
+                <span>Grade A Candidates</span>
+                <span className="text-[#666]">— highest conviction setups</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {filteredData
+                  .filter(d => d.grade === 'A')
+                  .map(d => (
+                    <div key={d.symbol}
+                      className={`flex items-center gap-1.5 px-2 py-1 rounded border text-[11px] font-mono ${
+                        d.liq_grab ? 'border-emerald-500/40 bg-emerald-500/10' :
+                        d.entry_type === 'Cheat' ? 'border-purple-500/30 bg-purple-500/10' :
+                        'border-green-500/20 bg-[#1a1c24]'
+                      }`}
+                    >
+                      <StarButton symbol={d.symbol} size={10} />
+                      <span className="text-white font-bold">{d.symbol}</span>
+                      <span className="text-[#888]">{d.sector ?? ''}</span>
+                      <span className={`text-[10px] px-1 rounded ${ENTRY_TYPE_COLORS[d.entry_type]}`}>
+                        {ENTRY_TYPE_LABELS[d.entry_type]}
+                      </span>
+                      <span className="text-green-400">{d.entry.toFixed(2)}</span>
+                      <span className="text-red-400 text-[10px]">SL {d.sl.toFixed(2)}</span>
+                      {d.equal_lows && (
+                        <span
+                          className="text-orange-400"
+                          title={`Equal lows at ₹${d.equal_lows_level?.toFixed(2) ?? '?'} — expect liquidity sweep`}
+                        >
+                          ⚠ {d.equal_lows_level != null ? `₹${d.equal_lows_level.toFixed(0)}` : ''}
+                        </span>
+                      )}
+                    </div>
+                  ))
+                }
+              </div>
+            </div>
+          )}
+
           {/* Table */}
           <div className="flex-1 bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden flex flex-col">
             <div className="overflow-x-auto flex-1">
@@ -532,6 +605,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                 <thead className="bg-[#0e1117] text-[#888] sticky top-0">
                   <tr>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider cursor-pointer hover:text-white" onClick={() => handleSort('symbol')}>Symbol <SortIcon column="symbol" /></th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider">Sector</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center">Entry Type</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('composite_score')}>Score <SortIcon column="composite_score" /></th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('grade')}>Grade <SortIcon column="grade" /></th>
@@ -542,13 +616,14 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('rs_score')}>RS <SortIcon column="rs_score" /></th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Close</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Entry</th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Cheat</th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Cheat/Retest</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">SL</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('sl_pct')}>SL% <SortIcon column="sl_pct" /></th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">T1</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">T2</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">T3</th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('risk_reward')}>R:R <SortIcon column="risk_reward" /></th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('max_upside_pct')}>Upside% <SortIcon column="max_upside_pct" /></th>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('dist_to_bo_pct')}>→BO% <SortIcon column="dist_to_bo_pct" /></th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('wk52_pos')}>52W% <SortIcon column="wk52_pos" /></th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center">Status</th>
                   </tr>
@@ -556,7 +631,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={21} className="px-4 py-8 text-center text-[#666]">No candidates match current filters.</td>
+                      <td colSpan={22} className="px-4 py-8 text-center text-[#666]">No candidates match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((row) => (
@@ -569,10 +644,20 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                               className="text-[#fafafa] hover:text-purple-400 inline-flex items-center gap-1 transition-colors group"
                             >
                               {row.symbol}
-                              {row.equal_lows && <span title="Equal lows — expect liquidity sweep" className="text-orange-400 text-[9px]">⚠</span>}
+                              {row.equal_lows && (
+                                <span
+                                  title={`Equal lows at ₹${row.equal_lows_level?.toFixed(2) ?? '?'} — expect liquidity sweep`}
+                                  className="text-orange-400"
+                                >
+                                  ⚠
+                                </span>
+                              )}
                               <ArrowUpRight size={12} className="opacity-0 group-hover:opacity-100" />
                             </button>
                           </div>
+                        </td>
+                        <td className="px-4 py-3 text-[#888] text-[11px] max-w-[120px] truncate" title={row.sector}>
+                          {row.sector ?? '—'}
                         </td>
                         <td className="px-4 py-3 text-center">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${ENTRY_TYPE_COLORS[row.entry_type] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
@@ -608,7 +693,12 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                         </td>
                         <td className="px-4 py-3 text-right text-[#ccc]">{row.close.toFixed(2)}</td>
                         <td className="px-4 py-3 text-right text-green-400 font-semibold">{row.entry.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-right text-purple-400">{row.cheat_entry?.toFixed(2) ?? '—'}</td>
+                        <td className="px-4 py-3 text-right">
+                          {row.entry_type === 'Breakout'
+                            ? <span className="text-purple-400">{row.cheat_entry?.toFixed(2) ?? '—'}</span>
+                            : <span className="text-[#444]">—</span>
+                          }
+                        </td>
                         <td className="px-4 py-3 text-right text-red-400">{row.sl.toFixed(2)}</td>
                         <td className="px-4 py-3 text-right">
                           <span className={row.sl_pct <= 5 ? 'text-green-400' : row.sl_pct <= 10 ? 'text-yellow-400' : 'text-red-400'}>
@@ -619,8 +709,13 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                         <td className="px-4 py-3 text-right text-[#ccc]">{row.t2.toFixed(2)}</td>
                         <td className="px-4 py-3 text-right text-[#888]">{row.t3 !== null ? row.t3.toFixed(2) : '—'}</td>
                         <td className="px-4 py-3 text-right">
-                          <span className={(row.risk_reward ?? 0) >= 3 ? 'text-green-400' : (row.risk_reward ?? 0) >= 2 ? 'text-cyan-400' : 'text-[#888]'}>
-                            {row.risk_reward !== undefined ? `1:${row.risk_reward.toFixed(1)}` : '—'}
+                          <span className={(row.max_upside_pct ?? 0) >= 40 ? 'text-green-400' : (row.max_upside_pct ?? 0) >= 20 ? 'text-cyan-400' : 'text-[#888]'}>
+                            {row.max_upside_pct !== undefined ? `+${row.max_upside_pct.toFixed(1)}%` : '—'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <span className={(row.dist_to_bo_pct ?? 99) <= 3 ? 'text-yellow-400' : 'text-[#888]'}>
+                            {row.dist_to_bo_pct !== undefined ? `${row.dist_to_bo_pct.toFixed(1)}%` : '—'}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
@@ -639,6 +734,16 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                 </tbody>
               </table>
             </div>
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={handleCSV}
+              disabled={filteredData.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#ffffff0a] hover:bg-[#ffffff15] border border-[#ffffff1a] rounded text-xs text-[#ccc] transition-colors disabled:opacity-40"
+            >
+              <Download size={12} />
+              CSV
+            </button>
           </div>
         </>
       )}

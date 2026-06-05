@@ -1,4 +1,5 @@
 import logging
+import math
 import sqlite3
 import os
 import numpy as np
@@ -129,11 +130,13 @@ class AccumulationBaseScanner:
     def _detect_liquidity_grab(
         self, base_low: float, base: pd.DataFrame, atr14: float
     ) -> dict:
-        sweep_threshold = base_low * 0.998
+        min_pierce = base_low - 0.3 * atr14
         result = {"detected": False, "grab_low": None, "grab_close": None}
-        recent = base.tail(5)
+        if atr14 <= 0:
+            return result
+        recent = base.tail(7)
         for _, row in recent.iterrows():
-            if row["low"] < sweep_threshold and row["close"] > base_low:
+            if row["low"] < min_pierce and row["close"] > base_low:
                 if result["grab_low"] is None or row["low"] < result["grab_low"]:
                     result["detected"] = True
                     result["grab_low"] = float(row["low"])
@@ -142,13 +145,16 @@ class AccumulationBaseScanner:
 
     def _detect_equal_lows(
         self, lows: np.ndarray, tolerance_pct: float = 0.5
-    ) -> bool:
+    ) -> dict:
         if len(lows) < 5:
-            return False
-        base_low = lows.min()
+            return {"detected": False, "level": None}
+        base_low = float(lows.min())
         threshold = base_low * (1 + tolerance_pct / 100)
-        touches = np.sum(lows <= threshold)
-        return bool(touches >= 2)
+        touches = int(np.sum(lows <= threshold))
+        return {
+            "detected": touches >= 2,
+            "level": round(base_low, 2) if touches >= 2 else None,
+        }
 
     def _volume_dry_up_ratio(self, df: pd.DataFrame, base_days: int) -> float:
         if len(df) < 6:
@@ -159,11 +165,44 @@ class AccumulationBaseScanner:
         base_mean = float(np.nanmean(base_vol))
         return round(recent_mean / base_mean, 3) if base_mean > 0 else 1.0
 
+    @staticmethod
+    def _sanitize_float(value):
+        if value is None:
+            return None
+        try:
+            if math.isnan(value) or math.isinf(value):
+                return None
+        except TypeError:
+            pass
+        return value
+
     def scan(self, as_on_date: str | None = None) -> pd.DataFrame:
         rows = self._get_universe()
         if not rows:
             logger.warning("No symbols found in universe (mcap %.0f-%.0f Cr)", self.min_mcap, self.max_mcap)
             return pd.DataFrame()
+
+        # Build a sector map from valuation DB
+        _sector_map: dict[str, str] = {}
+        try:
+            val_db = self._db_path("valuation")
+            with sqlite3.connect(val_db) as _sc:
+                _sec_rows = _sc.execute(
+                    """
+                    SELECT f.symbol, f.sector
+                    FROM fundamentals f
+                    INNER JOIN (
+                        SELECT symbol, MAX(date) as max_date
+                        FROM fundamentals
+                        WHERE sector IS NOT NULL
+                        GROUP BY symbol
+                    ) latest ON f.symbol = latest.symbol AND f.date = latest.max_date
+                    WHERE f.sector IS NOT NULL
+                    """
+                ).fetchall()
+                _sector_map = {r[0].strip(): r[1] for r in _sec_rows}
+        except Exception:
+            pass
 
         if as_on_date is None:
             as_on_date = date.today().isoformat()
@@ -271,10 +310,10 @@ class AccumulationBaseScanner:
             delivery_slope = self._compute_linear_slope(_del_trend_clean) if len(_del_trend_clean) >= 2 else 0.0
             if delivery_slope >= 0.10:
                 delivery_trend_score = 100.0
-            elif delivery_slope <= -0.10:
+            elif delivery_slope <= -0.05:
                 delivery_trend_score = 0.0
             else:
-                delivery_trend_score = ((delivery_slope + 0.10) / 0.20) * 100.0
+                delivery_trend_score = ((delivery_slope + 0.05) / 0.15) * 100.0
 
             # 4. Volume Character: median up-day volume / median down-day volume
             up_days = base[base["close"] >= base["close"].shift(1).fillna(base["close"].iloc[0])]
@@ -296,11 +335,20 @@ class AccumulationBaseScanner:
                     * 100
                 )
 
+            base_high = float(highs.max())
+            base_low = float(lows.min())
+            all_closes = df["close"].values.astype(float)
+            all_highs = df["high"].values.astype(float)
+            all_lows = df["low"].values.astype(float)
+            atr14 = self._compute_atr(all_highs, all_lows, all_closes, 14)
+
             # 5a. Liquidity grab detection
             liq_grab = self._detect_liquidity_grab(base_low, base, atr14)
 
             # 5b. Equal lows (liquidity pool trap)
-            has_equal_lows = self._detect_equal_lows(lows)
+            eq_low_info = self._detect_equal_lows(lows)
+            has_equal_lows = eq_low_info["detected"]
+            equal_lows_level = eq_low_info["level"]
 
             # 5c. Volume dry-up ratio
             vol_dry_up = self._volume_dry_up_ratio(base, self.base_days)
@@ -321,8 +369,12 @@ class AccumulationBaseScanner:
                 all_high = float(all_tech["high"].max())
                 all_low = float(all_tech["low"].min())
                 wk52_pos = ((latest_close - all_low) / (all_high - all_low)) * 100 if (all_high - all_low) > 0 else 50
+            if wk52_pos >= 95:
+                continue
             position_penalty = 0
-            if wk52_pos > 75:
+            if wk52_pos > 85:
+                position_penalty = 35
+            elif wk52_pos > 75:
                 position_penalty = 20
             elif wk52_pos < 15:
                 position_penalty = 15
@@ -346,11 +398,20 @@ class AccumulationBaseScanner:
             # DAR score: 100 at target_dar, capped at 100.
             dar_score = min(1.0, dar_median / effective_target_dar) * 100
 
+            # Volume dry-up bonus/penalty: < 0.7 = +8 pts, > 1.2 = -10 pts
+            if vol_dry_up <= 0.7:
+                dry_up_adjustment = 8.0
+            elif vol_dry_up >= 1.2:
+                dry_up_adjustment = -10.0
+            else:
+                dry_up_adjustment = 0.0
+
             raw_score = (
                 dar_score * self.dar_weight
                 + tightness_score * self.tightness_weight
                 + volume_score * self.volume_weight
                 + delivery_trend_score * self.trend_weight
+                + dry_up_adjustment
             )
             composite_score = max(0, min(100, raw_score - position_penalty - sma_penalty))
 
@@ -363,15 +424,6 @@ class AccumulationBaseScanner:
                 grade = "C"
             else:
                 grade = "D"
-
-            # Entry / SL / Targets
-            base_high = float(highs.max())
-            base_low = float(lows.min())
-
-            all_closes = df["close"].values.astype(float)
-            all_highs = df["high"].values.astype(float)
-            all_lows = df["low"].values.astype(float)
-            atr14 = self._compute_atr(all_highs, all_lows, all_closes, 14)
 
             # --- Entry type selection ---
             if liq_grab["detected"]:
@@ -414,8 +466,10 @@ class AccumulationBaseScanner:
                 status = "In Base"
 
             mcap_cr = mcap / 1e7
+            _rr_target = t3 if (t3 is not None) else t2
             candidates.append({
                 "symbol": symbol,
+                "sector": _sector_map.get(symbol, "Unknown"),
                 "market_cap_cr": round(mcap_cr, 1),
                 "base_days": self.base_days,
                 "dar_median": round(dar_median, 3),
@@ -438,9 +492,12 @@ class AccumulationBaseScanner:
                 "status": status,
                 "close": round(latest_close, 2),
                 "wk52_pos": round(wk52_pos, 1),
-                "risk_reward": round((t2 - entry) / (entry - sl), 2) if (entry - sl) > 0 else 0.0,
+                "risk_reward": round((_rr_target - entry) / (entry - sl), 2) if (entry - sl) > 0 else 0.0,
+                "max_upside_pct": round((_rr_target / entry - 1) * 100, 1) if entry > 0 else 0.0,
+                "distance_to_breakout_pct": round((base_high - latest_close) / latest_close * 100, 2) if latest_close > 0 else 0.0,
                 "liq_grab": liq_grab["detected"],
                 "equal_lows": has_equal_lows,
+                "equal_lows_level": equal_lows_level,
             })
 
         # Dynamic bear flag
@@ -454,6 +511,27 @@ class AccumulationBaseScanner:
                 effective_min_dar = max(self.min_dar, 0.4)
                 candidates = [c for c in candidates
                               if c["dar_median"] >= effective_min_dar]
+
+        # Sanitize NaN/Inf for JSON compatibility
+        float_fields = [
+            "market_cap_cr", "dar_median", "base_range_pct", "volume_ratio",
+            "vol_dry_up", "delivery_slope", "rs_score", "composite_score",
+            "entry", "cheat_entry", "retest_entry", "sl", "sl_pct",
+            "t1", "t2", "t3", "close", "wk52_pos", "risk_reward",
+            "max_upside_pct", "distance_to_breakout_pct", "equal_lows_level",
+        ]
+        for c in candidates:
+            for f in float_fields:
+                if f in c:
+                    c[f] = AccumulationBaseScanner._sanitize_float(c[f])
+
+        # Debug: verify sectors
+        if candidates:
+            print(f"[DEBUG] First candidate sector: {candidates[0].get('sector', 'MISSING')}")
+            eq_count = sum(1 for c in candidates if c.get("equal_lows"))
+            if eq_count > 0:
+                sample = next(c for c in candidates if c.get("equal_lows"))
+                print(f"[DEBUG] Equal lows sample: {sample['symbol']} level={sample.get('equal_lows_level')}")
 
         candidates.sort(key=lambda x: x["composite_score"], reverse=True)
         logger.info("Scan complete: %d candidates found", len(candidates))
