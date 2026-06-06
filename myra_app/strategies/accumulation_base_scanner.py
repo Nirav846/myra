@@ -500,7 +500,7 @@ class AccumulationBaseScanner:
                 "wk52_pos": round(wk52_pos, 1),
                 "risk_reward": round((_rr_target - entry) / (entry - sl), 2) if (entry - sl) > 0 else 0.0,
                 "max_upside_pct": round((_rr_target / entry - 1) * 100, 1) if entry > 0 else 0.0,
-                "distance_to_breakout_pct": round((base_high - latest_close) / latest_close * 100, 2) if latest_close > 0 else 0.0,
+                "dist_to_bo_pct": round((base_high - latest_close) / latest_close * 100, 2) if latest_close > 0 else 0.0,
                 "liq_grab": liq_grab["detected"],
                 "equal_lows": has_equal_lows,
                 "equal_lows_level": equal_lows_level,
@@ -524,7 +524,7 @@ class AccumulationBaseScanner:
             "vol_dry_up", "delivery_slope", "rs_score", "composite_score",
             "entry", "cheat_entry", "retest_entry", "sl", "sl_pct",
             "t1", "t2", "t3", "close", "wk52_pos", "risk_reward",
-            "max_upside_pct", "distance_to_breakout_pct", "equal_lows_level",
+            "max_upside_pct", "dist_to_bo_pct", "buffer_to_sl_pct", "equal_lows_level",
         ]
         for c in candidates:
             for f in float_fields:
