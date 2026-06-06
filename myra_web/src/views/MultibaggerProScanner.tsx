@@ -327,22 +327,22 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
   const isIdle = scanStatus?.scan_status === 'idle' || !scanStatus;
 
   return (
-    <div className="flex flex-col h-full relative space-y-4 p-4">
+    <main className="flex flex-col h-full relative space-y-4 p-4" aria-label="Multibagger Pro Scanner">
       {/* Staleness Warning */}
       {isStale && staleBannerOpen && (
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded px-4 py-2 flex items-center gap-2 text-xs font-mono">
-          <AlertTriangle size={14} className="text-amber-400 shrink-0" />
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded px-4 py-2 flex items-center gap-2 text-xs font-mono" role="alert">
+          <AlertTriangle size={14} className="text-amber-400 shrink-0" aria-hidden="true" />
           <span className="text-amber-300/90">Data may be stale — re-scan recommended (last scan &gt; 30 min ago).</span>
-          <button onClick={() => setStaleBannerOpen(false)} className="ml-auto text-amber-500/50 hover:text-amber-300">
-            <XCircle size={14} />
+          <button onClick={() => setStaleBannerOpen(false)} className="ml-auto text-amber-500/50 hover:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 rounded" aria-label="Dismiss stale warning">
+            <XCircle size={14} aria-hidden="true" />
           </button>
         </div>
       )}
 
       {/* Header */}
-      <div className="flex justify-between items-center bg-[#1a1c24] border border-[#ffffff1a] rounded p-4">
+      <header className="flex justify-between items-center bg-[#1a1c24] border border-[#ffffff1a] rounded p-4">
         <div className="flex items-center gap-3">
-          <div className="bg-purple-500/20 p-2 rounded">
+          <div className="bg-purple-500/20 p-2 rounded" aria-hidden="true">
             <Rocket className="text-purple-400" size={24} />
           </div>
           <div>
@@ -350,7 +350,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
             <div className="flex items-center gap-2">
               <p className="text-xs font-mono text-[#888]">Accumulation Base Breakout Detection</p>
               {bearMarket && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border border-orange-500/40 bg-orange-500/15 text-orange-400" title="Minimum thresholds raised: base_days≥30, min_dar≥0.4%">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border border-orange-500/40 bg-orange-500/15 text-orange-400" title="Minimum thresholds raised: base_days≥30, min_dar≥0.4%" aria-label="Risk-off mode — thresholds raised">
                   ⚠ Risk-Off
                 </span>
               )}
@@ -359,8 +359,8 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
         </div>
         <div className="flex items-center gap-2 ml-auto mr-3">
           {/* Lookback presets */}
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] text-[#555] font-mono">Lookback:</span>
+          <div className="flex items-center gap-1" role="group" aria-label="Lookback presets">
+            <span className="text-[10px] text-[#555] font-mono" aria-hidden="true">Lookback:</span>
             {[
               { label: 'Quick 21d', days: 21 },
               { label: 'Quality 42d', days: 42 },
@@ -369,11 +369,13 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
               <button
                 key={p.days}
                 onClick={() => setBaseDays(p.days)}
-                className={`px-2 py-1 rounded border text-[10px] font-mono transition-colors ${
+                className={`px-2 py-1 rounded border text-[10px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 ${
                   baseDays === p.days
                     ? 'bg-purple-500/20 border-purple-500/40 text-purple-400'
                     : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#666] hover:text-[#aaa]'
                 }`}
+                aria-pressed={baseDays === p.days}
+                aria-label={`Set lookback to ${p.days} days`}
               >
                 {p.label}
               </button>
@@ -383,21 +385,22 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
         <button
           onClick={startScan}
           disabled={isScanning}
-          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded text-xs font-semibold flex items-center gap-2 transition-colors"
+          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded text-xs font-semibold flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/50"
+          aria-label={isScanning ? 'Scanning, please wait' : 'Start scan'}
         >
           {isScanning ? (
-            <><RefreshCw size={14} className="animate-spin" /> Scanning...</>
+            <><RefreshCw size={14} className="animate-spin" aria-hidden="true" /> Scanning...</>
           ) : (
-            <><Rocket size={14} fill="currentColor" /> Scan</>
+            <><Rocket size={14} fill="currentColor" aria-hidden="true" /> Scan</>
           )}
         </button>
-      </div>
+      </header>
 
       {/* Progress / Status Bar */}
       {isScanning && (
-        <div className="bg-cyan-500/10 border border-cyan-500/30 rounded p-3">
+        <div className="bg-cyan-500/10 border border-cyan-500/30 rounded p-3" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100} aria-label="Scan progress">
           <div className="flex items-center gap-2 text-xs font-mono text-cyan-300 mb-2">
-            <RefreshCw size={14} className="animate-spin" />
+            <RefreshCw size={14} className="animate-spin" aria-hidden="true" />
             <span>{scanStatus?.message || 'Scanning...'}</span>
             <span className="ml-auto">{progressPct}%</span>
           </div>
@@ -412,10 +415,10 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
           scanStatus.scan_status === 'completed' ? 'bg-green-500/10 border-green-500/30 text-green-300' :
           scanStatus.scan_status === 'error' ? 'bg-red-500/10 border-red-500/30 text-red-300' :
           'bg-[#ffffff0a] border-[#ffffff1a] text-[#888]'
-        }`}>
-          {scanStatus.scan_status === 'completed' ? <CheckCircle size={14} className="text-green-400" /> :
-           scanStatus.scan_status === 'error' ? <XCircle size={14} className="text-red-400" /> :
-           <Clock size={14} />}
+        }`} role="status" aria-live="polite">
+          {scanStatus.scan_status === 'completed' ? <CheckCircle size={14} className="text-green-400" aria-hidden="true" /> :
+           scanStatus.scan_status === 'error' ? <XCircle size={14} className="text-red-400" aria-hidden="true" /> :
+           <Clock size={14} aria-hidden="true" />}
           <span>
             {scanStatus.scan_status === 'completed' ? `Completed (${relativeTime(scanStatus.last_scan)})` :
              scanStatus.scan_status === 'error' ? 'Scan failed' :
@@ -426,30 +429,31 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
       )}
 
       {error && !isScanning && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded px-4 py-2 flex items-center gap-2 text-xs font-mono text-red-300">
-          <AlertTriangle size={14} className="shrink-0" />
+        <div className="bg-red-500/10 border border-red-500/30 rounded px-4 py-2 flex items-center gap-2 text-xs font-mono text-red-300" role="alert">
+          <AlertTriangle size={14} className="shrink-0" aria-hidden="true" />
           <span>Error: {error}</span>
         </div>
       )}
 
       {/* Filters (always visible) */}
-      <div className="bg-[#0e1117] border border-[#ffffff1a] rounded p-4 flex flex-wrap gap-4 items-end">
+      <section className="bg-[#0e1117] border border-[#ffffff1a] rounded p-4 flex flex-wrap gap-4 items-end" aria-label="Filters">
         <div className="flex items-center gap-2 mb-1 text-xs text-[#888] w-full">
-          <Filter size={14} /> <span className="font-mono uppercase font-semibold">Filters</span>
+          <Filter size={14} aria-hidden="true" /> <span className="font-mono uppercase font-semibold">Filters</span>
         </div>
         <div className="flex flex-col gap-1 w-24">
-          <label className="text-[10px] text-[#888] font-mono">Lookback Days</label>
+          <label className="text-[10px] text-[#888] font-mono" id="lookback-label">Lookback Days</label>
           <input
             type="number"
             min={7}
             max={90}
             value={baseDays}
             onChange={e => setBaseDays(Number(e.target.value))}
-            className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none w-full font-mono"
+            className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none w-full font-mono focus-visible:ring-2 focus-visible:ring-purple-500/50"
+            aria-labelledby="lookback-label"
           />
         </div>
         <div className="flex flex-col gap-1 w-24">
-          <label className="text-[10px] text-[#888] font-mono">Min DAR %</label>
+          <label className="text-[10px] text-[#888] font-mono" id="min-dar-label">Min DAR %</label>
           <input
             type="number"
             min={0}
@@ -457,11 +461,12 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
             step={0.1}
             value={minDar}
             onChange={e => setMinDar(Number(e.target.value))}
-            className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none w-full font-mono"
+            className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none w-full font-mono focus-visible:ring-2 focus-visible:ring-purple-500/50"
+            aria-labelledby="min-dar-label"
           />
         </div>
         <div className="flex flex-col gap-1 w-24">
-          <label className="text-[10px] text-[#888] font-mono">Target DAR %</label>
+          <label className="text-[10px] text-[#888] font-mono" id="target-dar-label">Target DAR %</label>
           {targetDar !== null ? (
             <div className="flex items-center gap-1">
               <input
@@ -471,11 +476,13 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                 step={0.1}
                 value={targetDar}
                 onChange={e => setTargetDar(Number(e.target.value))}
-                className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none w-full font-mono"
+                className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none w-full font-mono focus-visible:ring-2 focus-visible:ring-purple-500/50"
+                aria-labelledby="target-dar-label"
               />
               <button
                 onClick={() => setTargetDar(null)}
-                className="text-[9px] text-purple-400 hover:text-purple-300 font-mono shrink-0"
+                className="text-[9px] text-purple-400 hover:text-purple-300 font-mono shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 rounded"
+                aria-label="Reset target DAR to auto"
               >
                 Reset
               </button>
@@ -484,13 +491,15 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
             <div
               onClick={() => setTargetDar(0.5)}
               className="bg-[#1a1c24] border border-purple-500/30 rounded px-2 py-1.5 text-xs text-purple-400 font-mono cursor-pointer text-center"
+              role="button"
+              aria-label="Set target DAR to auto (0.5%)"
             >
               Auto
             </div>
           )}
         </div>
         <div className="flex flex-col gap-1 w-28">
-          <label className="text-[10px] text-[#888] font-mono">Tightness Full %</label>
+          <label className="text-[10px] text-[#888] font-mono" id="tightness-full-label">Tightness Full %</label>
           <input
             type="range"
             min={2}
@@ -499,13 +508,14 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
             value={tightnessFull ?? 2}
             onChange={e => setTightnessFull(Number(e.target.value))}
             disabled={tightnessFull === null}
-            className="w-full accent-purple-500 disabled:opacity-30"
+            className="w-full accent-purple-500 disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50"
+            aria-labelledby="tightness-full-label"
           />
           <div className="flex items-center justify-between">
             {tightnessFull !== null ? (
               <>
                 <span className="text-[10px] text-[#ccc] font-mono">{tightnessFull.toFixed(1)}</span>
-                <button onClick={() => setTightnessFull(null)} className="text-[9px] text-purple-400 hover:text-purple-300 font-mono">Reset</button>
+                <button onClick={() => setTightnessFull(null)} className="text-[9px] text-purple-400 hover:text-purple-300 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 rounded" aria-label="Reset tightness full to auto">Reset</button>
               </>
             ) : (
               <span className="text-[10px] text-purple-400 font-mono">Auto</span>
@@ -513,7 +523,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
           </div>
         </div>
         <div className="flex flex-col gap-1 w-28">
-          <label className="text-[10px] text-[#888] font-mono">Tightness Zero %</label>
+          <label className="text-[10px] text-[#888] font-mono" id="tightness-zero-label">Tightness Zero %</label>
           <input
             type="range"
             min={10}
@@ -522,13 +532,14 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
             value={tightnessZero ?? 10}
             onChange={e => setTightnessZero(Number(e.target.value))}
             disabled={tightnessZero === null}
-            className="w-full accent-purple-500 disabled:opacity-30"
+            className="w-full accent-purple-500 disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50"
+            aria-labelledby="tightness-zero-label"
           />
           <div className="flex items-center justify-between">
             {tightnessZero !== null ? (
               <>
                 <span className="text-[10px] text-[#ccc] font-mono">{tightnessZero.toFixed(1)}</span>
-                <button onClick={() => setTightnessZero(null)} className="text-[9px] text-purple-400 hover:text-purple-300 font-mono">Reset</button>
+                <button onClick={() => setTightnessZero(null)} className="text-[9px] text-purple-400 hover:text-purple-300 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 rounded" aria-label="Reset tightness zero to auto">Reset</button>
               </>
             ) : (
               <span className="text-[10px] text-purple-400 font-mono">Auto</span>
@@ -542,13 +553,15 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
           <div className="text-[10px] text-[#888] font-mono">Watchlist</div>
           <button
             onClick={() => setWatchlistOnly(o => !o)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 ${
               watchlistOnly
                 ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
                 : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
             }`}
+            aria-label={watchlistOnly ? 'Show all symbols' : 'Filter to starred watchlist only'}
+            aria-pressed={watchlistOnly}
           >
-            <Star size={11} fill={watchlistOnly ? 'currentColor' : 'none'} />
+            <Star size={11} fill={watchlistOnly ? 'currentColor' : 'none'} aria-hidden="true" />
             Only Starred
           </button>
         </div>
@@ -559,7 +572,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
               <button
                 key={t}
                 onClick={() => setEntryTypeFilter(t)}
-                className={`px-2 py-1.5 rounded border text-[10px] font-mono transition-colors ${
+                className={`px-2 py-1.5 rounded border text-[10px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 ${
                   entryTypeFilter === t
                     ? (t === 'LiqGrab' ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' :
                        t === 'Cheat'   ? 'bg-purple-500/20 border-purple-500/40 text-purple-400' :
@@ -567,6 +580,8 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                                          'bg-white/10 border-white/20 text-white')
                     : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-white'
                 }`}
+                aria-pressed={entryTypeFilter === t}
+                aria-label={`Filter by ${t === 'All' ? 'all entry types' : t}`}
               >
                 {t === 'All' ? 'All' : ENTRY_TYPE_LABELS[t]}
               </button>
@@ -590,22 +605,24 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
             step={5}
             value={minScoreFilter}
             onChange={e => setMinScoreFilter(Number(e.target.value))}
-            className="w-full accent-purple-500"
+            className="w-full accent-purple-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50"
+            aria-label="Minimum accumulation score"
           />
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono">Sector</div>
+          <div className="text-[10px] text-[#888] font-mono" id="sector-filter-label">Sector</div>
           <select
             value={sectorFilter}
             onChange={e => setSectorFilter(e.target.value)}
-            className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none font-mono"
+            className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none font-mono focus-visible:ring-2 focus-visible:ring-purple-500/50"
+            aria-labelledby="sector-filter-label"
           >
             {availableSectors.map(s => (
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
         </div>
-      </div>
+      </section>
 
       {/* Results */}
       {(scanStatus?.scan_status === 'completed' || (isIdle && candidates.length > 0)) && !isScanning && (
@@ -694,25 +711,27 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
           <div className="flex items-center gap-2 px-1 relative" ref={colPanelRef}>
             <button
               onClick={() => setColPanelOpen(o => !o)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 ${
                 colPanelOpen
                   ? 'bg-purple-500/20 border-purple-500/40 text-purple-400'
                   : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-[#ccc]'
               }`}
+              aria-expanded={colPanelOpen}
+              aria-label={`Toggle column visibility panel, ${visibleCols.size} columns visible`}
             >
-              <Filter size={11} />
+              <Filter size={11} aria-hidden="true" />
               Columns ({visibleCols.size})
             </button>
 
             {/* Sort indicator when sorting by hidden column */}
             {!isVisible(sortCol as ColKey) && (
-              <span className="text-[10px] text-yellow-400 font-mono flex items-center gap-1">
-                <ArrowUpDown size={10} />
+              <span className="text-[10px] text-yellow-400 font-mono flex items-center gap-1" role="status">
+                <ArrowUpDown size={10} aria-hidden="true" />
                 Sorted by hidden column: {ALL_COLUMNS.find(c => c.key === sortCol)?.label ?? sortCol}
               </span>
             )}
 
-            <span className="ml-auto text-[10px] text-[#555] font-mono">
+            <span className="ml-auto text-[10px] text-[#555] font-mono" role="status" aria-live="polite">
               {filteredData.length} results
             </span>
 
@@ -725,7 +744,8 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                       setVisibleCols(DEFAULT_VISIBLE);
                       localStorage.setItem('mb_visible_cols', JSON.stringify(Array.from(DEFAULT_VISIBLE)));
                     }}
-                    className="text-[10px] text-purple-400 hover:text-purple-300 font-mono"
+                    className="text-[10px] text-purple-400 hover:text-purple-300 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 rounded"
+                    aria-label="Reset columns to default"
                   >
                     Reset to default
                   </button>
@@ -745,7 +765,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                             type="checkbox"
                             checked={isVisible(col.key)}
                             onChange={() => toggleCol(col.key)}
-                            className="accent-purple-500 cursor-pointer"
+                            className="accent-purple-500 cursor-pointer focus-visible:ring-2 focus-visible:ring-purple-500/50"
                           />
                           <span className="text-[10px] text-[#aaa] group-hover:text-white transition-colors font-mono">
                             {col.label}
@@ -766,22 +786,22 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                 <thead className="bg-[#0e1117] text-[#888] sticky top-0">
                   <tr>
                     {/* ── CORE (always visible) ── */}
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider cursor-pointer hover:text-white" onClick={() => handleSort('symbol')}>
+                    <th className="px-4 py-3 font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('symbol')} scope="col" aria-sort={sortCol === 'symbol' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip content="Stock ticker symbol. ⚠ means equal lows detected — a liquidity trap likely exists below the base." showIcon={false}>
                         Symbol <SortIcon column="symbol" />
                       </Tooltip>
                     </th>
-                    {isVisible('sector') && <th className="px-4 py-3 font-semibold uppercase tracking-wider">
+                    {isVisible('sector') && <th className="px-4 py-3 font-semibold uppercase tracking-wider" scope="col">
                       <Tooltip content="Business sector the company operates in. Useful for avoiding concentration — don't put all picks in one sector." showIcon={false}>Sector</Tooltip>
                     </th>}
-                    {isVisible('entry_type') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center">
+                    {isVisible('entry_type') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center" scope="col">
                       <Tooltip
                         content="How to enter this stock. Each type has different risk-reward."
                         good="⚡ Liq Grab = best entry, stock swept stops then recovered. 🎯 Cheat = enter inside the base at lower end. 🚀 Breakout = enter above resistance."
                         bad="Breakout entries have worst R:R and highest fakeout risk."
                       >Entry Type</Tooltip>
                     </th>}
-                    {isVisible('composite_score') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('composite_score')}>
+                    {isVisible('composite_score') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('composite_score')} scope="col" aria-sort={sortCol === 'composite_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip
                         content="Accumulation Score (0–100). Combines delivery absorption, base tightness, volume character, and delivery trend into one number."
                         good="Above 70: strong accumulation evidence. Above 85: exceptional setup."
@@ -789,35 +809,35 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                         example="Score 80 = stock scoring well on all 4 dimensions simultaneously."
                       >Score <SortIcon column="composite_score" /></Tooltip>
                     </th>}
-                    {isVisible('grade') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('grade')}>
+                    {isVisible('grade') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('grade')} scope="col" aria-sort={sortCol === 'grade' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip
                         content="Overall grade based on score. A=80+, B=60–79, C=40–59, D=below 40."
                         good="Focus on A and B grade only. C grade requires strong conviction from fundamentals."
                         bad="D grade: avoid."
                       >Grade <SortIcon column="grade" /></Tooltip>
                     </th>}
-                    {isVisible('entry') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">
+                    {isVisible('entry') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right" scope="col">
                       <Tooltip
                         content="Recommended buy price. For Breakout: just above the base ceiling. For Cheat: current price (enter now). For Liq Grab: close of the sweep candle."
                         good="The earlier you enter (Cheat/LiqGrab), the better your risk-reward."
                         example="Entry 150 with SL 140 means you risk ₹10 per share."
                       >Entry</Tooltip>
                     </th>}
-                    {isVisible('sl') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">
+                    {isVisible('sl') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right" scope="col">
                       <Tooltip
                         content="Stop Loss — the price where you exit if the setup fails. Placed below the base structure with buffer for minor stop hunts."
                         bad="If price closes below SL on meaningful volume, the accumulation thesis is broken — exit without hesitation."
                         example="SL 140 means if stock drops below ₹140, sell and protect capital."
                       >SL</Tooltip>
                     </th>}
-                    {isVisible('max_upside_pct') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('max_upside_pct')}>
+                    {isVisible('max_upside_pct') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('max_upside_pct')} scope="col" aria-sort={sortCol === 'max_upside_pct' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip
                         content="Maximum potential upside % from entry to the final target (T3 for Grade A/B, T2 otherwise)."
                         good="Above 40%: meaningful multibagger potential. Above 100%: true multibagger territory."
                         bad="Below 20%: risk-reward not worth it for a 1+ month holding."
                       >Upside% <SortIcon column="max_upside_pct" /></Tooltip>
                     </th>}
-                    {isVisible('status') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center">
+                    {isVisible('status') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center" scope="col">
                       <Tooltip
                         content="Current setup status. 'In Base' = still consolidating, wait. 'Breakout Pending' = near resistance. 'Triggered' = breakout confirmed with volume."
                         good="'In Base' with Cheat/LiqGrab entry type = best time to enter."
@@ -826,7 +846,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                     </th>}
 
                     {/* ── SIGNALS (toggleable) ── */}
-                    {isVisible('dar_median') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5 border-l border-cyan-500/20" onClick={() => handleSort('dar_median')}>
+                    {isVisible('dar_median') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5 border-l border-cyan-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('dar_median')} scope="col" aria-sort={sortCol === 'dar_median' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip
                         content="Delivery Absorption Rate — what % of the company's free-float market cap is being bought and held each day. Normalised so small companies and large companies are comparable."
                         good="Above target threshold (auto-set by mcap): genuine accumulation happening."
@@ -834,75 +854,75 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                         example="DAR 0.5% means 0.5% of the tradeable float changes hands as delivery daily — unusually high."
                       >DAR% (Absorption) <SortIcon column="dar_median" /></Tooltip>
                     </th>}
-                    {isVisible('volume_ratio') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5" onClick={() => handleSort('volume_ratio')}>
+                    {isVisible('volume_ratio') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('volume_ratio')} scope="col" aria-sort={sortCol === 'volume_ratio' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip
                         content="Volume Character — median volume on up-days divided by median volume on down-days within the base. Above 1.0 means more shares traded on green days than red days."
                         good="Above 1.5: strong accumulation signature. Buyers are more active than sellers."
                         bad="Below 0.8: sellers are more active — potential distribution, not accumulation."
                       >Vol Ratio (Character) <SortIcon column="volume_ratio" /></Tooltip>
                     </th>}
-                    {isVisible('vol_dry_up') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5" onClick={() => handleSort('vol_dry_up')}>
+                    {isVisible('vol_dry_up') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('vol_dry_up')} scope="col" aria-sort={sortCol === 'vol_dry_up' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip
                         content="Volume Dry-Up — last 5 days volume vs full base average. Below 1.0 means volume is shrinking, which happens when supply is exhausted and the float is locked up."
                         good="Below 0.7: volume compression (green). Float is locked — small buying pressure will move price."
                         bad="Above 1.2: volume expanding inside base (orange) — could be distribution."
                       >Dry-Up (Vol Compress) <SortIcon column="vol_dry_up" /></Tooltip>
                     </th>}
-                    {isVisible('rs_score') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5" onClick={() => handleSort('rs_score')}>
+                    {isVisible('rs_score') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('rs_score')} scope="col" aria-sort={sortCol === 'rs_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip
                         content="Relative Strength — how the stock performed vs Nifty 50 during the base period. Positive = stock held up or outperformed while market consolidated."
                         good="Above 0.3: stock is stronger than the market — institutional support likely."
                         bad="Below -0.3: underperforming even when it should be recovering — weak setup."
                       >RS (Vs Nifty) <SortIcon column="rs_score" /></Tooltip>
                     </th>}
-                    {isVisible('wk52_pos') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5" onClick={() => handleSort('wk52_pos')}>
+                    {isVisible('wk52_pos') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('wk52_pos')} scope="col" aria-sort={sortCol === 'wk52_pos' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip
                         content="Where the stock sits within its 52-week high-low range. 0% = at 52W low, 100% = at 52W high."
                         good="25–60%: corrected from highs but not broken — ideal accumulation zone."
                         bad="Above 75%: near 52W high — limited room before facing resistance. Below 15%: may be a falling knife."
                       >52W Position <SortIcon column="wk52_pos" /></Tooltip>
                     </th>}
-                    {isVisible('market_cap_cr') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5" onClick={() => handleSort('market_cap_cr')}>
+                    {isVisible('market_cap_cr') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('market_cap_cr')} scope="col" aria-sort={sortCol === 'market_cap_cr' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       MCap Cr <SortIcon column="market_cap_cr" />
                     </th>}
 
                     {/* ── TRADE LEVELS (toggleable) ── */}
-                    {isVisible('close') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right bg-purple-500/5 border-l border-purple-500/20">
+                    {isVisible('close') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right bg-purple-500/5 border-l border-purple-500/20" scope="col">
                       <Tooltip content="Current market price of the stock. Compare with Entry to see how far you are from the recommended entry point.">Close (CMP)</Tooltip>
                     </th>}
-                    {isVisible('cheat_entry') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right bg-purple-500/5">
+                    {isVisible('cheat_entry') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right bg-purple-500/5" scope="col">
                       <Tooltip
                         content="Alternative entry for Breakout-type setups. For Breakout stocks: enter at the 38.2% level inside the base for better risk-reward. For Cheat/LiqGrab: not applicable."
                         good="Cheat/Retest entry gives 2-3x better risk-reward than waiting for the breakout."
                       >Cheat/Retest <SortIcon column="cheat_entry" /></Tooltip>
                     </th>}
-                    {isVisible('sl_pct') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-purple-500/5" onClick={() => handleSort('sl_pct')}>
+                    {isVisible('sl_pct') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-purple-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('sl_pct')} scope="col" aria-sort={sortCol === 'sl_pct' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip
                         content="Stop Loss as a % of entry price. Lower is better — it means you risk less capital to participate in the setup."
                         good="Below 5%: tight stop, excellent risk control."
                         bad="Above 12%: wide stop — size your position smaller to keep total risk manageable."
                       >SL% (Risk) <SortIcon column="sl_pct" /></Tooltip>
                     </th>}
-                    {isVisible('buffer_to_sl_pct') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-purple-500/5" onClick={() => handleSort('buffer_to_sl_pct')}>
+                    {isVisible('buffer_to_sl_pct') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-purple-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('buffer_to_sl_pct')} scope="col" aria-sort={sortCol === 'buffer_to_sl_pct' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip
                         content="Buffer to SL — how much space exists between current entry price and the stop loss. Higher = safer, less chance of being stopped on normal volatility."
                         good="Above 8%: enough room for normal price swings."
                         bad="Below 4% (red): dangerously close to SL — one bad day stops you out. Avoid entering. Wait for price to move up or for a confirmed liquidity grab."
                       >Buffer to SL <SortIcon column="buffer_to_sl_pct" /></Tooltip>
                     </th>}
-                    {isVisible('t1') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right bg-purple-500/5">
+                    {isVisible('t1') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right bg-purple-500/5" scope="col">
                       <Tooltip content="Target 1 — conservative exit. Take partial profits here (suggest 30% of position). Equivalent to 1× your risk amount above entry.">T1 (Conservative)</Tooltip>
                     </th>}
-                    {isVisible('t2') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right bg-purple-500/5">
+                    {isVisible('t2') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right bg-purple-500/5" scope="col">
                       <Tooltip content="Target 2 — primary exit. Take bulk of position here (suggest 50%). Equivalent to 2.5× your risk amount above entry.">T2 (Primary)</Tooltip>
                     </th>}
-                    {isVisible('t3') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right bg-purple-500/5">
+                    {isVisible('t3') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right bg-purple-500/5" scope="col">
                       <Tooltip
                         content="Target 3 — multibagger exit. Only for Grade A and B setups. Let 20% of position ride here. Equivalent to 5× your risk amount above entry."
                         good="Only available for Grade A/B. This is the 'let it run' target for genuine multibaggers."
                       >T3 (Multibagger)</Tooltip>
                     </th>}
-                    {isVisible('dist_to_bo_pct') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-purple-500/5" onClick={() => handleSort('dist_to_bo_pct')}>
+                    {isVisible('dist_to_bo_pct') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-purple-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('dist_to_bo_pct')} scope="col" aria-sort={sortCol === 'dist_to_bo_pct' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip
                         content="Distance to Breakout — how far the current price is from the base ceiling (breakout level). Lower = closer to triggering."
                         good="Below 3%: breakout imminent — watch closely."
@@ -920,12 +940,13 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                     filteredData.map((row) => (
                       <tr key={row.symbol} className={`hover:bg-[#ffffff05] transition-colors ${row.liq_grab ? 'border-l-2 border-emerald-500/50' : (row.buffer_to_sl_pct ?? 99) < 4 ? 'border-l-2 border-red-500/40 opacity-60' : ''}`}>
                         {/* ── CORE ── */}
-                        <td className="px-4 py-3 font-bold">
+                        <td className="px-4 py-3 font-bold" scope="row">
                           <div className="flex items-center gap-1.5">
                             <StarButton symbol={row.symbol} size={11} />
                             <button
                               onClick={() => window.open(`/#/chart?symbol=${encodeURIComponent(row.symbol)}`, '_blank')}
-                              className="text-[#fafafa] hover:text-purple-400 inline-flex items-center gap-1 transition-colors group"
+                              className="text-[#fafafa] hover:text-purple-400 inline-flex items-center gap-1 transition-colors group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50"
+                              aria-label={`Open chart for ${row.symbol}`}
                             >
                               {row.symbol}
                               {row.equal_lows && (
@@ -936,7 +957,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                                   ⚠
                                 </span>
                               )}
-                              <ArrowUpRight size={12} className="opacity-0 group-hover:opacity-100" />
+                              <ArrowUpRight size={12} className="opacity-0 group-hover:opacity-100" aria-hidden="true" />
                             </button>
                           </div>
                         </td>
@@ -1049,9 +1070,10 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
             <button
               onClick={handleCSV}
               disabled={filteredData.length === 0}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#ffffff0a] hover:bg-[#ffffff15] border border-[#ffffff1a] rounded text-xs text-[#ccc] transition-colors disabled:opacity-40"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#ffffff0a] hover:bg-[#ffffff15] border border-[#ffffff1a] rounded text-xs text-[#ccc] transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50"
+              aria-label="Export table as CSV"
             >
-              <Download size={12} />
+              <Download size={12} aria-hidden="true" />
               CSV
             </button>
           </div>
@@ -1062,12 +1084,12 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
       {isIdle && candidates.length === 0 && !isScanning && !error && (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center text-[#666] font-mono flex flex-col items-center gap-2">
-            <Rocket size={32} className="opacity-30" />
+            <Rocket size={32} className="opacity-30" aria-hidden="true" />
             <p>Click Scan to detect multibagger candidates.</p>
             <p className="text-[10px]">Scans for accumulation bases with delivery absorption, volume character, and tightness analysis.</p>
           </div>
         </div>
       )}
-    </div>
+    </main>
   );
 }
