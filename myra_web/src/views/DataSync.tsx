@@ -67,6 +67,7 @@ const TASK_META: Record<string, { name: string; key: string; duration: string; i
   index_sync: { name: 'Index Sync', key: 'index_sync', duration: '1-3 min', icon: '📊', color: 'yellow' },
   fundamentals_sync: { name: 'Fundamentals Sync', key: 'fundamentals_sync', duration: '10-20 min', icon: '📈', color: 'blue' },
   market_cap_sync: { name: 'Market Cap Sync', key: 'market_cap_sync', duration: '3-5 min', icon: '💰', color: 'purple' },
+  shares_outstanding_sync: { name: 'Shares Refresh', key: 'shares_outstanding_sync', duration: '1-3 min', icon: '📊', color: 'cyan' },
   institutional_sync: { name: 'Institutional Sync', key: 'institutional_sync', duration: '1-3 min', icon: '🏛️', color: 'amber' },
 };
 
@@ -74,7 +75,7 @@ const TASK_DEPS: Record<string, string[]> = {
   enrichment: ['daily_ingest'],
 };
 
-const ORDER = ['daily_ingest', 'enrichment', 'etf_sync', 'index_sync', 'fundamentals_sync', 'market_cap_sync', 'institutional_sync'];
+const ORDER = ['daily_ingest', 'enrichment', 'etf_sync', 'index_sync', 'fundamentals_sync', 'market_cap_sync', 'shares_outstanding_sync', 'institutional_sync'];
 
 function relativeTime(dateStr: string | null): string {
   if (!dateStr || dateStr === 'Never') return 'Never';
@@ -787,6 +788,11 @@ export default function DataSyncView() {
                 <span className={coverage.free_float_pct > 0 ? 'text-green-400' : 'text-yellow-400'}>{coverage.free_float_pct}/{coverage.total_symbols}</span>
               </div>
             </div>
+            {coverage.shares_stale && (
+              <div className="text-[10px] font-mono text-yellow-400 mt-1">
+                ⚠ Shares data is stale — run "Shares Refresh" from pipeline tasks
+              </div>
+            )}
           </>
         )}
         </>

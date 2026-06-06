@@ -267,6 +267,7 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
             conn.execute("PRAGMA busy_timeout = 30000")  # 30 seconds for pipeline writers
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
+            conn.isolation_level = None  # Manual transaction control
             cursor = conn.cursor()
 
             cursor.execute("""
@@ -275,7 +276,6 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            conn.commit()
 
             cursor = lib.safe_execute("PRAGMA table_info(technical_data)", conn=conn)
             valid_cols = [info[1] for info in cursor.fetchall()]
@@ -295,80 +295,89 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
                             reasons.append("delivery out of range [0, volume]")
                 return reasons
 
-            valid_rows = []
-            reject_rows = []
-            for _, row in df.iterrows():
-                reject_reasons = validate_row(row)
-                if reject_reasons:
-                    raw_values = {col: row[col] for col in ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume', 'delivery'] if col in row}
-                    cursor.execute(
-                        "INSERT INTO ingestion_rejects (symbol, date, reason, raw_values) VALUES (?, ?, ?, ?)",
-                        (row.get('symbol', ''), row.get('date', ''), '; '.join(reject_reasons), str(raw_values))
-                    )
-                    reject_rows.append(row)
-                else:
-                    valid_rows.append(row)
-
-            if reject_rows:
-                conn.commit()
-                print(f"  [REJECTED] {len(reject_rows)} invalid rows skipped and logged")
-
-            df_to_insert = pd.DataFrame(valid_rows)
-            df_to_insert = df_to_insert[[c for c in df_to_insert.columns if c in valid_cols]]
-
-            if not df_to_insert.empty:
-                cols = df_to_insert.columns.tolist()
-                placeholders = ", ".join(["?"] * len(cols))
-                col_names = ", ".join(cols)
-                sql = f"INSERT OR REPLACE INTO technical_data ({col_names}) VALUES ({placeholders})"
-                conn.executemany(sql, df_to_insert.values.tolist())
-                conn.commit()
-
-            print(f"✅ Successfully added {len(df_to_insert)} rows to Atomic Vault from {source}.")
-            result["rows_inserted"] = len(df_to_insert)
-
-            db_after = get_db_row_count(target_date=current_date.date().isoformat())
-            result["db_after"] = db_after
-
-            if result["rows_inserted"] == 0 and db_after == db_before:
-                print(f"⚠️ WARNING: No new rows inserted for {current_date.date().isoformat()}")
-                try:
-                    calendar_db_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["calendar"])
-                    if os.path.exists(calendar_db_path):
-                        with sqlite3.connect(calendar_db_path) as cal_conn:
-                            cal_conn.execute(
-                                "INSERT OR REPLACE INTO market_calendar (date, is_trading_day, holiday_name) VALUES (?, 0, 'Likely holiday (zero rows)')",
-                                (current_date.date().isoformat(),),
-                            )
-                except Exception:
-                    pass
-                result["success"] = False
-                result["error"] = "no_rows_inserted"
-                conn.close()
-                return result
-
-            if db_after <= db_before:
-                print(f"⚠️ WARNING: DB row count did not increase after insertion")
-                result["success"] = False
-                result["error"] = "db_not_advanced"
-                conn.close()
-                return result
-
+            # ── Begin atomic transaction ──────────────────────────────────
+            conn.execute("BEGIN IMMEDIATE")
             try:
+                valid_rows = []
+                reject_rows = []
+                for _, row in df.iterrows():
+                    reject_reasons = validate_row(row)
+                    if reject_reasons:
+                        raw_values = {col: row[col] for col in ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume', 'delivery'] if col in row}
+                        cursor.execute(
+                            "INSERT INTO ingestion_rejects (symbol, date, reason, raw_values) VALUES (?, ?, ?, ?)",
+                            (row.get('symbol', ''), row.get('date', ''), '; '.join(reject_reasons), str(raw_values))
+                        )
+                        reject_rows.append(row)
+                    else:
+                        valid_rows.append(row)
+
+                if reject_rows:
+                    print(f"  [REJECTED] {len(reject_rows)} invalid rows skipped and logged")
+
+                df_to_insert = pd.DataFrame(valid_rows)
+                df_to_insert = df_to_insert[[c for c in df_to_insert.columns if c in valid_cols]]
+
+                if not df_to_insert.empty:
+                    cols = df_to_insert.columns.tolist()
+                    placeholders = ", ".join(["?"] * len(cols))
+                    col_names = ", ".join(cols)
+                    sql = f"INSERT OR REPLACE INTO technical_data ({col_names}) VALUES ({placeholders})"
+                    conn.executemany(sql, df_to_insert.values.tolist())
+
+                print(f"✅ Successfully added {len(df_to_insert)} rows to Atomic Vault from {source}.")
+                result["rows_inserted"] = len(df_to_insert)
+
+                db_after = get_db_row_count(target_date=current_date.date().isoformat())
+                result["db_after"] = db_after
+
+                if result["rows_inserted"] == 0 and db_after == db_before:
+                    print(f"⚠️ WARNING: No new rows inserted for {current_date.date().isoformat()}")
+                    conn.execute("ROLLBACK")
+                    try:
+                        calendar_db_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["calendar"])
+                        if os.path.exists(calendar_db_path):
+                            with sqlite3.connect(calendar_db_path) as cal_conn:
+                                cal_conn.execute(
+                                    "INSERT OR REPLACE INTO market_calendar (date, is_trading_day, holiday_name) VALUES (?, 0, 'Likely holiday (zero rows)')",
+                                    (current_date.date().isoformat(),),
+                                )
+                    except Exception:
+                        pass
+                    result["success"] = False
+                    result["error"] = "no_rows_inserted"
+                    return result
+
+                if db_after <= db_before:
+                    print(f"⚠️ WARNING: DB row count did not increase after insertion")
+                    conn.execute("ROLLBACK")
+                    result["success"] = False
+                    result["error"] = "db_not_advanced"
+                    return result
+
                 from myra_app.feature_enrichment import process_enrichment_pipeline
                 from myra_app.librarian import Librarian
                 enrichment_lib = Librarian(read_only=False)
                 enrichment_lib.connect()
                 print("[MYRA] Running enrichment on new rows...")
                 process_enrichment_pipeline(enrichment_lib, conn)
-                conn.commit()
                 print("[MYRA] Enrichment complete.")
-            except Exception as e:
-                print(f"[!] Enrichment after ingestion failed: {e}")
+
+                if result["rows_inserted"] > 0:
+                    try:
+                        from myra_app.fundamental_sync import FundamentalSync
+                        FundamentalSync()._compute_market_cap_from_prices()
+                        print("[MYRA] Market-cap recompute complete.")
+                    except Exception as e:
+                        print(f"[!] Market-cap recompute failed: {e}")
+
+                conn.execute("COMMIT")
+                result["success"] = True
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
 
             conn.close()
-
-            result["success"] = True
 
         except Exception as e:
             print(f"❌ Critical Database Error: {e}")

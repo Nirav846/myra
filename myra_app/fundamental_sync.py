@@ -5,6 +5,7 @@ Stores data in myra_valuation.db fundamentals table.
 """
 
 import logging
+import os
 import sqlite3
 import threading
 import time
@@ -84,12 +85,18 @@ class FundamentalSync:
                 beta                REAL,
                 source_ms           TEXT,
                 source_nse          TEXT,
+                last_fundamental_update TEXT,
                 PRIMARY KEY (symbol, date)
             )
             """)
         # Add shares_outstanding if table pre-dates the column
         try:
             conn.execute("ALTER TABLE fundamentals ADD COLUMN shares_outstanding INTEGER")
+        except sqlite3.OperationalError:
+            pass
+        # Add last_fundamental_update if table pre-dates the column
+        try:
+            conn.execute("ALTER TABLE fundamentals ADD COLUMN last_fundamental_update TEXT")
         except sqlite3.OperationalError:
             pass
         conn.commit()
@@ -488,6 +495,79 @@ class FundamentalSync:
         tech_conn.close()
         val_conn.close()
         logger.info(f"[FundamentalSync] marketCap updated for {updated} symbols")
+
+    def _refresh_stale_shares_outstanding(self, cancel_event=None):
+        """
+        Fetch shares_outstanding from yfinance ONLY for symbols where it is
+        NULL or hasn't been updated in 90 days.  Typically <50 symbols.
+        Retries once with a 2-second delay on transient failures.
+        """
+        import yfinance as yf
+
+        val_db = os.path.join(DB_DIR, "myra_valuation.db")
+        conn = sqlite3.connect(val_db)
+        try:
+            stale = conn.execute(
+                """SELECT symbol FROM fundamentals
+                   WHERE shares_outstanding IS NULL
+                      OR shares_outstanding = 0
+                      OR last_fundamental_update IS NULL
+                      OR last_fundamental_update < date('now', '-90 days')"""
+            ).fetchall()
+        finally:
+            conn.close()
+
+        total = len(stale)
+        if total == 0:
+            logger.info("[shares_outstanding] No stale symbols found — nothing to update")
+            return {"updated": 0, "total": 0}
+
+        logger.info(f"[shares_outstanding] Found {total} stale/missing symbols to update")
+
+        updated = 0
+        for i, (symbol,) in enumerate(stale):
+            if cancel_event and cancel_event.is_set():
+                logger.info("[shares_outstanding] Cancelled by user")
+                break
+            shares = None
+            for attempt in range(2):
+                try:
+                    info = yf.Ticker(f"{symbol}.NS").info
+                    shares = info.get("sharesOutstanding")
+                    break
+                except Exception as e:
+                    if attempt == 0:
+                        logger.debug(f"[shares_outstanding] {symbol} fetch failed, retrying in 2s: {e}")
+                        time.sleep(2.0)
+                    else:
+                        logger.warning(f"[shares_outstanding] {symbol} fetch failed after retry: {e}")
+            if shares and shares > 0:
+                try:
+                    conn = sqlite3.connect(val_db)
+                    try:
+                        conn.execute(
+                            """UPDATE fundamentals
+                               SET shares_outstanding = ?, last_fundamental_update = date('now')
+                               WHERE symbol = ?""",
+                            (shares, symbol),
+                        )
+                        conn.commit()
+                    finally:
+                        conn.close()
+                    updated += 1
+                except Exception as e:
+                    logger.warning(f"[shares_outstanding] Failed to persist {symbol}: {e}")
+            if (i + 1) % 25 == 0:
+                logger.info(f"[shares_outstanding] Progress: {i+1}/{total} — updated {updated}")
+            time.sleep(0.3)
+
+        logger.info(f"[shares_outstanding] Complete — updated {updated}/{total}")
+        if total > 0 and updated == 0:
+            raise RuntimeError(
+                f"Shares refresh failed: {total} stale symbols found but yfinance returned no data. "
+                "Check network or retry later."
+            )
+        return {"updated": updated, "total": total}
 
     def _log_summary(self):
         """Log the sync summary."""

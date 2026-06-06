@@ -513,13 +513,18 @@ def _task_index_sync():
             from myra_app.utils.index_sync import (
                 heal_index_if_stale,
                 sync_index_constituents,
-                sync_nifty_benchmarks,
             )
 
             for idx in ["NIFTY 50", "NIFTY 500", "NIFTY SMALLCAP 250"]:
                 sync_index_constituents(idx, task_id=tid)
             heal_index_if_stale("NIFTY 500", expected_count=500)
-            sync_nifty_benchmarks()
+            # Refresh Nifty benchmark closes for RS calculations
+            try:
+                from myra_app.utils.index_sync import sync_nifty_benchmarks
+                sync_nifty_benchmarks()
+                logger.info("[MYRA BG] Nifty benchmark data refreshed")
+            except Exception as e:
+                logger.warning(f"[MYRA BG] Nifty benchmark refresh failed: {e}")
             _mark_task_run("index_sync")
             logger.info("[MYRA BG] Index sync complete (catch-up).")
         except Exception as e:
@@ -539,14 +544,19 @@ def _task_index_sync():
                     from myra_app.utils.index_sync import (
                         heal_index_if_stale,
                         sync_index_constituents,
-                        sync_nifty_benchmarks,
                     )
 
                     for idx in ["NIFTY 50", "NIFTY 500", "NIFTY SMALLCAP 250"]:
                         sync_index_constituents(idx, task_id=tid)
 
                     heal_index_if_stale("NIFTY 500", expected_count=500)
-                    sync_nifty_benchmarks()
+                    # Refresh Nifty benchmark closes for RS calculations
+                    try:
+                        from myra_app.utils.index_sync import sync_nifty_benchmarks
+                        sync_nifty_benchmarks()
+                        logger.info("[MYRA BG] Nifty benchmark data refreshed")
+                    except Exception as e:
+                        logger.warning(f"[MYRA BG] Nifty benchmark refresh failed: {e}")
                     _mark_task_run("index_sync")
             except Exception as e:
                 logger.error(f"[MYRA BG] Index sync/heal failed: {e}")
@@ -645,6 +655,17 @@ def _task_fundamentals_daily():
                         f"Errors: {result['errors']}"
                     )
                     _mark_task_run("fundamentals_daily")
+                    # Refresh stale shares_outstanding every 7 days
+                    if _is_task_overdue("shares_outstanding_sync", days=7):
+                        try:
+                            from myra_app.fundamental_sync import FundamentalSync
+
+                            fs = FundamentalSync()
+                            result = fs._refresh_stale_shares_outstanding()
+                            _mark_task_run("shares_outstanding_sync")
+                            logger.info(f"[MYRA BG] Stale shares refresh complete: {result}")
+                        except Exception as e:
+                            logger.warning(f"[MYRA BG] Stale shares refresh failed: {e}")
                     # Wait until next day to avoid multiple runs
                     for _ in range(360):  # 6 hours
                         if _shutdown_event.wait(60):
@@ -730,6 +751,20 @@ def _task_db_backup():
                     rotate_backups(task_id=tid, keep_last_days=7)
                     logger.info("[MYRA BG] Nightly DB backup complete.")
                     _mark_task_run("db_backup")
+
+                    # Optimize databases for query performance
+                    import sqlite3
+                    for db_name, db_file in LibrarianCore.DB_MAP.items():
+                        db_path = os.path.join(DB_DIR, db_file)
+                        if os.path.exists(db_path):
+                            try:
+                                conn = sqlite3.connect(db_path)
+                                conn.execute("PRAGMA optimize")
+                                conn.execute("ANALYZE")
+                                conn.close()
+                            except Exception:
+                                pass
+                    logger.info("[MYRA BG] Database optimization complete")
 
                 # Check again in 30 minutes
                 # PERFORMANCE IMPROVEMENT: Replace long wait with responsive loop

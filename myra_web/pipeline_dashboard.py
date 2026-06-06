@@ -72,6 +72,12 @@ class PipelineManager:
             "func": None,
             "estimated_duration": "3-5 min",
         },
+        "shares_outstanding_sync": {
+            "name": "Shares Refresh",
+            "task_key": "shares_outstanding_sync",
+            "func": None,
+            "estimated_duration": "1-3 min",
+        },
         "institutional_sync": {
             "name": "Institutional Sync",
             "task_key": "institutional_sync",
@@ -80,7 +86,7 @@ class PipelineManager:
         },
     }
 
-    ORDER = ["ingest", "enrichment", "etf_sync", "index_sync", "fundamentals_sync", "market_cap_sync", "institutional_sync"]
+    ORDER = ["ingest", "enrichment", "etf_sync", "index_sync", "fundamentals_sync", "market_cap_sync", "shares_outstanding_sync", "institutional_sync"]
 
     TASK_TIMEOUTS = {
         "ingest": 600,
@@ -89,6 +95,7 @@ class PipelineManager:
         "index_sync": 300,
         "fundamentals_sync": 1800,
         "market_cap_sync": 600,
+        "shares_outstanding_sync": 600,
         "institutional_sync": 600,
     }
 
@@ -134,6 +141,7 @@ class PipelineManager:
         self.TASKS["fundamentals_sync"]["func"] = self._run_fundamentals_sync
         self.TASKS["enrichment"]["func"] = self._run_enrichment
         self.TASKS["market_cap_sync"]["func"] = self._run_market_cap_sync
+        self.TASKS["shares_outstanding_sync"]["func"] = self._run_shares_outstanding_sync
         self.TASKS["institutional_sync"]["func"] = self._run_institutional_sync
 
     def _run_enrichment(self):
@@ -169,6 +177,41 @@ class PipelineManager:
         from myra_app.utils.fundamentals_sync import sync_fundamentals
 
         sync_fundamentals(force=True)
+
+    def _run_shares_outstanding_sync(self):
+        from myra_app.fundamental_sync import FundamentalSync
+        from myra_app.constants import DB_DIR
+        import sqlite3
+
+        with self._lock:
+            self._state["progress_pct"] = 10
+            self._state["message"] = "Scanning for stale shares_outstanding..."
+        self._push_event({"type": "progress", "task_id": "shares_outstanding_sync", "progress_pct": 10})
+
+        fs = FundamentalSync()
+
+        with self._lock:
+            self._state["progress_pct"] = 30
+            self._state["message"] = "Refreshing stale shares from yfinance..."
+        self._push_event({"type": "progress", "task_id": "shares_outstanding_sync", "progress_pct": 30})
+
+        result = fs._refresh_stale_shares_outstanding(cancel_event=self._cancel_event)
+
+        with self._lock:
+            self._state["progress_pct"] = 100
+            self._state["message"] = f"Shares refresh complete: {result.get('updated', 0)}/{result.get('total', 0)} updated"
+        self._push_event({"type": "progress", "task_id": "shares_outstanding_sync", "progress_pct": 100})
+
+        val_db = os.path.join(DB_DIR, "myra_valuation.db")
+        try:
+            conn = sqlite3.connect(val_db)
+            conn.execute(
+                "UPDATE fundamentals SET last_fundamental_update = date('now') WHERE shares_outstanding > 0"
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
 
     def _run_fundamentals_sync(self):
         from myra_app.fundamental_sync import FundamentalSync

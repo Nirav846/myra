@@ -203,6 +203,19 @@ def health_check():
                 "market_cap": conn.execute("SELECT COUNT(*) FROM fundamentals WHERE market_cap IS NOT NULL").fetchone()[0],
                 "pe": conn.execute("SELECT COUNT(*) FROM fundamentals WHERE pe IS NOT NULL").fetchone()[0],
             }
+            # Check if shares_outstanding data is stale
+            shares_stale = False
+            try:
+                import datetime as _dt
+                threshold = (_dt.date.today() - _dt.timedelta(days=90)).isoformat()
+                max_date = conn.execute(
+                    "SELECT MAX(last_fundamental_update) FROM fundamentals WHERE shares_outstanding > 0"
+                ).fetchone()[0]
+                if max_date and max_date < threshold:
+                    shares_stale = True
+            except Exception:
+                pass
+            coverage["shares_stale"] = shares_stale
             conn.close()
         except Exception:
             coverage = {"error": "query failed"}
