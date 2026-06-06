@@ -199,60 +199,63 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
   };
 
   return (
-    <div className="flex flex-col gap-6">
+    <main className="flex flex-col gap-6" aria-label="Mission Control Dashboard">
+      {/* Screen-reader-only heading for document structure */}
+      <h1 className="sr-only">Mission Control</h1>
+
       {/* Morning Brief Widget */}
-      <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded-xl p-4 text-red-400 text-xs font-mono">Morning Brief widget crashed</div>}>
-      <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded-xl p-4 flex flex-col gap-4">
+      <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded-xl p-4 text-red-400 text-xs font-mono" role="alert">Morning Brief widget crashed</div>}>
+      <section aria-label="Morning Brief" className="bg-[#1a1c24] border border-[#ffffff1a] rounded-xl p-4 flex flex-col gap-4">
         <div className="flex items-center justify-between border-b border-[#ffffff1a] pb-3">
           <h3 className="text-sm font-semibold uppercase tracking-wider text-[#888]">Morning Brief</h3>
           <div className="flex items-center gap-2">
-            <button onClick={briefWidget.fetchData} disabled={briefWidget.loading} className="text-[#888] hover:text-[#fafafa] transition-colors disabled:opacity-40" title="Refresh">
-              <RotateCw size={14} className={briefWidget.loading ? 'animate-spin' : ''} />
+            <button onClick={briefWidget.fetchData} disabled={briefWidget.loading} className="text-[#888] hover:text-[#fafafa] transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 rounded" title="Refresh Morning Brief" aria-label="Refresh Morning Brief">
+              <RotateCw size={14} className={briefWidget.loading ? 'animate-spin' : ''} aria-hidden="true" />
             </button>
-            <label className="flex items-center gap-1 text-[9px] text-[#666] font-mono cursor-pointer select-none">
+            <label className="flex items-center gap-1 text-[9px] text-[#666] font-mono cursor-pointer select-none hover:text-[#888] transition-colors" aria-label="Toggle auto-refresh for morning brief">
               <input id="morning-brief-autorefresh" name="auto-refresh" type="checkbox" checked={briefWidget.autoRefresh} onChange={e => briefWidget.setAutoRefresh(e.target.checked)} className="accent-yellow-500 w-2.5 h-2.5" />
               Auto-refresh
             </label>
           </div>
         </div>
         {briefWidget.loading && !briefWidget.data ? (
-          <div className="text-sm text-[#ccc] py-8 text-center">Loading morning brief...</div>
+          <div className="text-sm text-[#ccc] py-8 text-center" role="status" aria-live="polite">Loading morning brief...</div>
         ) : briefWidget.error ? (
-          <div className="text-[10px] text-red-400 font-mono text-center py-8">{briefWidget.error}</div>
+          <div className="text-[10px] text-red-400 font-mono text-center py-8" role="alert">{briefWidget.error}</div>
         ) : !briefWidget.data?.indices ? (
-          <div className="text-sm text-[#666] py-8 text-center font-mono">Click Refresh to load morning brief</div>
+          <div className="text-sm text-[#666] py-8 text-center font-mono" role="status">Click Refresh to load morning brief</div>
         ) : (
           <>
           {/* Top row: Index tiles */}
-          <div className="flex flex-row flex-wrap gap-2">
-            <div className="flex-1 min-w-[120px] bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg">
-              <div className="text-[9px] text-[#888] font-mono uppercase tracking-wider">NIFTY 50</div>
-              <div className="text-xs font-mono font-bold tabular-nums text-[#fafafa]">{briefWidget.data.indices.nifty50?.value ?? '—'}</div>
-              <div className={`text-[10px] font-mono tabular-nums ${getValueColor(briefWidget.data.indices.nifty50?.change_pct)}`}>
+          <div className="flex flex-row flex-wrap gap-2" role="group" aria-label="Index quotes">
+            <div className="flex-1 min-w-[120px] bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg transition-colors hover:border-[#ffffff30]">
+              <p className="text-[9px] text-[#888] font-mono uppercase tracking-wider">NIFTY 50</p>
+              <p className="text-xs font-mono font-bold tabular-nums text-[#fafafa]">{briefWidget.data.indices.nifty50?.value ?? '—'}</p>
+              <p className={`text-[10px] font-mono tabular-nums ${getValueColor(briefWidget.data.indices.nifty50?.change_pct)}`}>
                 {briefWidget.data.indices.nifty50?.change > 0 ? '+' : ''}{briefWidget.data.indices.nifty50?.change ?? '—'} ({briefWidget.data.indices.nifty50?.change_pct > 0 ? '+' : ''}{briefWidget.data.indices.nifty50?.change_pct ?? '—'}%)
-              </div>
+              </p>
             </div>
-            <div className="flex-1 min-w-[120px] bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg">
-              <div className="text-[9px] text-[#888] font-mono uppercase tracking-wider">SENSEX</div>
-              <div className="text-xs font-mono font-bold tabular-nums text-[#fafafa]">{briefWidget.data.indices.sensex?.value ?? '—'}</div>
-              <div className={`text-[10px] font-mono tabular-nums ${getValueColor(briefWidget.data.indices.sensex?.change_pct)}`}>
+            <div className="flex-1 min-w-[120px] bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg transition-colors hover:border-[#ffffff30]">
+              <p className="text-[9px] text-[#888] font-mono uppercase tracking-wider">SENSEX</p>
+              <p className="text-xs font-mono font-bold tabular-nums text-[#fafafa]">{briefWidget.data.indices.sensex?.value ?? '—'}</p>
+              <p className={`text-[10px] font-mono tabular-nums ${getValueColor(briefWidget.data.indices.sensex?.change_pct)}`}>
                 {briefWidget.data.indices.sensex?.change > 0 ? '+' : ''}{briefWidget.data.indices.sensex?.change ?? '—'} ({briefWidget.data.indices.sensex?.change_pct > 0 ? '+' : ''}{briefWidget.data.indices.sensex?.change_pct ?? '—'}%)
-              </div>
+              </p>
             </div>
-            <div className="flex-1 min-w-[120px] bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg">
-              <div className="text-[9px] text-[#888] font-mono uppercase tracking-wider">BANK NIFTY</div>
-              <div className="text-xs font-mono font-bold tabular-nums text-[#fafafa]">{briefWidget.data.indices.bank_nifty?.value ?? '—'}</div>
-              <div className={`text-[10px] font-mono tabular-nums ${getValueColor(briefWidget.data.indices.bank_nifty?.change_pct)}`}>
+            <div className="flex-1 min-w-[120px] bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg transition-colors hover:border-[#ffffff30]">
+              <p className="text-[9px] text-[#888] font-mono uppercase tracking-wider">BANK NIFTY</p>
+              <p className="text-xs font-mono font-bold tabular-nums text-[#fafafa]">{briefWidget.data.indices.bank_nifty?.value ?? '—'}</p>
+              <p className={`text-[10px] font-mono tabular-nums ${getValueColor(briefWidget.data.indices.bank_nifty?.change_pct)}`}>
                 {briefWidget.data.indices.bank_nifty?.change > 0 ? '+' : ''}{briefWidget.data.indices.bank_nifty?.change ?? '—'} ({briefWidget.data.indices.bank_nifty?.change_pct > 0 ? '+' : ''}{briefWidget.data.indices.bank_nifty?.change_pct ?? '—'}%)
-              </div>
+              </p>
             </div>
-            <div className="flex-1 min-w-[120px] bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg">
-              <div className="text-[9px] text-[#888] font-mono uppercase tracking-wider">INDIA VIX</div>
-              <div className="text-xs font-mono font-bold tabular-nums text-[#fafafa]">{briefWidget.data.pre_market?.india_vix?.current_vix ?? '—'}</div>
-              <div className="text-[9px] font-mono text-[#ccc] truncate" title={briefWidget.data.pre_market?.india_vix?.signal || ''}>{briefWidget.data.pre_market?.india_vix?.signal || '—'}</div>
-              <div className="text-[8px] font-mono text-[#666] truncate mt-0.5" title={getVixInterpretation(briefWidget.data.pre_market?.india_vix)}>
+            <div className="flex-1 min-w-[120px] bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg transition-colors hover:border-[#ffffff30]">
+              <p className="text-[9px] text-[#888] font-mono uppercase tracking-wider">INDIA VIX</p>
+              <p className="text-xs font-mono font-bold tabular-nums text-[#fafafa]">{briefWidget.data.pre_market?.india_vix?.current_vix ?? '—'}</p>
+              <p className="text-[9px] font-mono text-[#ccc] truncate" title={briefWidget.data.pre_market?.india_vix?.signal || ''}>{briefWidget.data.pre_market?.india_vix?.signal || '—'}</p>
+              <p className="text-[8px] font-mono text-[#666] truncate mt-0.5" title={getVixInterpretation(briefWidget.data.pre_market?.india_vix)}>
                 {getVixInterpretation(briefWidget.data.pre_market?.india_vix)}
-              </div>
+              </p>
             </div>
           </div>
 
@@ -263,30 +266,30 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
             {/* Left: Gainers + Losers */}
             <div className="grid grid-cols-2 gap-2">
               <div className="bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg">
-                <div className="text-[9px] text-green-400 font-mono uppercase tracking-wider mb-1">Gainers</div>
-                <div className="space-y-0.5">
+                <p className="text-[9px] text-green-400 font-mono uppercase tracking-wider mb-1">Gainers</p>
+                <div className="space-y-0.5" role="list" aria-label="Top gainers">
                   {briefWidget.data.market_movers?.gainers?.slice(0, 5).map((g: any, i: number) => (
-                    <div key={i} className="flex justify-between text-[10px] font-mono">
+                    <div key={i} className="flex justify-between text-[10px] font-mono" role="listitem">
                       <span className="text-[#fafafa]">{g.symbol}</span>
                       <span className="text-green-400">+{g.change_pct}%</span>
                     </div>
                   ))}
                   {(!briefWidget.data.market_movers?.gainers || briefWidget.data.market_movers.gainers.length === 0) && (
-                    <div className="text-[10px] font-mono text-[#666]">—</div>
+                    <div className="text-[10px] font-mono text-[#666]" role="status">—</div>
                   )}
                 </div>
               </div>
               <div className="bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg">
-                <div className="text-[9px] text-red-400 font-mono uppercase tracking-wider mb-1">Losers</div>
-                <div className="space-y-0.5">
+                <p className="text-[9px] text-red-400 font-mono uppercase tracking-wider mb-1">Losers</p>
+                <div className="space-y-0.5" role="list" aria-label="Top losers">
                   {briefWidget.data.market_movers?.losers?.slice(0, 5).map((l: any, i: number) => (
-                    <div key={i} className="flex justify-between text-[10px] font-mono">
+                    <div key={i} className="flex justify-between text-[10px] font-mono" role="listitem">
                       <span className="text-[#fafafa]">{l.symbol}</span>
                       <span className="text-red-400">{l.change_pct}%</span>
                     </div>
                   ))}
                   {(!briefWidget.data.market_movers?.losers || briefWidget.data.market_movers.losers.length === 0) && (
-                    <div className="text-[10px] font-mono text-[#666]">—</div>
+                    <div className="text-[10px] font-mono text-[#666]" role="status">—</div>
                   )}
                 </div>
               </div>
@@ -361,15 +364,15 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
 
           {/* Bottom row: collapsible Key Events & Briefing */}
           {(briefWidget.data.key_events?.length > 0 || briefWidget.data.morning_text) && (
-            <details className="bg-[#0e1117] border border-[#ffffff0a] rounded-lg">
-              <summary className="cursor-pointer p-2 text-[9px] font-mono uppercase tracking-wider text-[#888] hover:text-[#ccc] transition-colors flex justify-between items-center list-none outline-none">
+            <details className="bg-[#0e1117] border border-[#ffffff0a] rounded-lg" aria-label="Key events and briefing details">
+              <summary className="cursor-pointer p-2 text-[9px] font-mono uppercase tracking-wider text-[#888] hover:text-[#ccc] transition-colors flex justify-between items-center list-none outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 rounded">
                 <span>Key Events & Briefing</span>
-                <span className="text-[#555]">▼</span>
+                <span className="text-[#555]" aria-hidden="true">▼</span>
               </summary>
               <div className="px-2 pb-2 max-h-40 overflow-y-auto text-[9px] font-mono text-[#aaa] space-y-1">
                 {briefWidget.data.key_events && briefWidget.data.key_events.length > 0 ? (
                   briefWidget.data.key_events.map((ev: string, i: number) => (
-                    <div key={i} className="flex gap-2"><span className="text-[#666] shrink-0">•</span><span>{ev}</span></div>
+                    <div key={i} className="flex gap-2"><span className="text-[#666] shrink-0" aria-hidden="true">•</span><span>{ev}</span></div>
                   ))
                 ) : (
                   <div className="whitespace-pre-wrap">{briefWidget.data.morning_text}</div>
@@ -379,31 +382,31 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
           )}
           </>
         )}
-      </div>
+      </section>
       </ErrorBoundary>
 
       {/* System Metrics Strip */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[10px] font-mono">Market Breadth crashed</div>}>
+      <section aria-label="System Metrics" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[10px] font-mono" role="alert">Market Breadth crashed</div>}>
         <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col justify-center">
           <div className="flex items-center justify-between mb-1">
             <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Market Breadth (All NSE)</div>
             <div className="flex items-center gap-2">
-              <button onClick={breadthWidget.fetchData} disabled={breadthWidget.loading} className="text-[#888] hover:text-[#fafafa] transition-colors disabled:opacity-40" title="Refresh">
-                <RotateCw size={14} className={breadthWidget.loading ? 'animate-spin' : ''} />
+              <button onClick={breadthWidget.fetchData} disabled={breadthWidget.loading} className="text-[#888] hover:text-[#fafafa] transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 rounded" title="Refresh Market Breadth" aria-label="Refresh Market Breadth">
+                <RotateCw size={14} className={breadthWidget.loading ? 'animate-spin' : ''} aria-hidden="true" />
               </button>
-              <label className="flex items-center gap-1 text-[9px] text-[#666] font-mono cursor-pointer select-none">
+              <label className="flex items-center gap-1 text-[9px] text-[#666] font-mono cursor-pointer select-none hover:text-[#888] transition-colors" aria-label="Toggle auto-refresh for market breadth">
                 <input type="checkbox" checked={breadthWidget.autoRefresh} onChange={e => breadthWidget.setAutoRefresh(e.target.checked)} className="accent-yellow-500 w-2.5 h-2.5" />
                 Auto-refresh
               </label>
             </div>
           </div>
           {breadthWidget.loading && !breadthWidget.data ? (
-            <div className="text-sm text-[#ccc] py-1">Waiting for data...</div>
+            <div className="text-sm text-[#ccc] py-1" role="status" aria-live="polite">Waiting for data...</div>
           ) : breadthWidget.error ? (
-            <div className="text-[10px] text-red-400 font-mono mt-1">{breadthWidget.error}</div>
+            <div className="text-[10px] text-red-400 font-mono mt-1" role="alert">{breadthWidget.error}</div>
           ) : !breadthWidget.data ? (
-            <div className="text-sm text-[#666] py-1 font-mono">Click Refresh to load</div>
+            <div className="text-sm text-[#666] py-1 font-mono" role="status">Click Refresh to load</div>
           ) : (
             <>
               <div className="text-xl font-bold flex flex-col sm:flex-row sm:items-baseline gap-2">
@@ -421,26 +424,26 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
         </ErrorBoundary>
 
         {/* Nifty Outlook Widget */}
-        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[10px] font-mono">Nifty Outlook crashed</div>}>
+        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[10px] font-mono" role="alert">Nifty Outlook crashed</div>}>
         <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col justify-center">
           <div className="flex items-center justify-between mb-1">
             <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Nifty Outlook</div>
             <div className="flex items-center gap-2">
-              <button onClick={niftyWidget.fetchData} disabled={niftyWidget.loading} className="text-[#888] hover:text-[#fafafa] transition-colors disabled:opacity-40" title="Refresh">
-                <RotateCw size={14} className={niftyWidget.loading ? 'animate-spin' : ''} />
+              <button onClick={niftyWidget.fetchData} disabled={niftyWidget.loading} className="text-[#888] hover:text-[#fafafa] transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 rounded" title="Refresh Nifty Outlook" aria-label="Refresh Nifty Outlook">
+                <RotateCw size={14} className={niftyWidget.loading ? 'animate-spin' : ''} aria-hidden="true" />
               </button>
-              <label className="flex items-center gap-1 text-[9px] text-[#666] font-mono cursor-pointer select-none">
+              <label className="flex items-center gap-1 text-[9px] text-[#666] font-mono cursor-pointer select-none hover:text-[#888] transition-colors" aria-label="Toggle auto-refresh for Nifty outlook">
                 <input type="checkbox" checked={niftyWidget.autoRefresh} onChange={e => niftyWidget.setAutoRefresh(e.target.checked)} className="accent-yellow-500 w-2.5 h-2.5" />
                 Auto-refresh
               </label>
             </div>
           </div>
           {niftyWidget.loading && !niftyWidget.data ? (
-            <div className="text-sm text-[#ccc] py-1">Analyzing...</div>
+            <div className="text-sm text-[#ccc] py-1" role="status" aria-live="polite">Analyzing...</div>
           ) : niftyWidget.error ? (
-            <div className="text-[10px] text-red-400 font-mono mt-1">{niftyWidget.error}</div>
+            <div className="text-[10px] text-red-400 font-mono mt-1" role="alert">{niftyWidget.error}</div>
           ) : !niftyWidget.data ? (
-            <div className="text-sm text-[#666] py-1 font-mono">Click Refresh to load</div>
+            <div className="text-sm text-[#666] py-1 font-mono" role="status">Click Refresh to load</div>
           ) : (
             <>
               <div className="flex items-center justify-between mb-2">
@@ -457,20 +460,20 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
               <div className="grid grid-cols-2 gap-2 mt-1">
                 <div>
                   <div className="text-[9px] text-[#888] font-mono uppercase tracking-wider pb-1">Bull Factors</div>
-                  <ul className="space-y-0.5 max-h-16 overflow-y-auto pr-1">
+                  <ul className="space-y-0.5 max-h-16 overflow-y-auto pr-1" aria-label="Bull factors list" role="list">
                     {niftyWidget.data.bull_factors?.map((f: string, i: number) => (
-                      <li key={i} className="text-[9px] text-green-400 font-mono flex gap-1 leading-tight"><span className="shrink-0">•</span><span>{f}</span></li>
+                      <li key={i} className="text-[9px] text-green-400 font-mono flex gap-1 leading-tight"><span className="shrink-0" aria-hidden="true">•</span><span>{f}</span></li>
                     ))}
-                    {!niftyWidget.data.bull_factors?.length && <li className="text-[9px] text-[#666] font-mono">None</li>}
+                    {!niftyWidget.data.bull_factors?.length && <li className="text-[9px] text-[#666] font-mono" role="status">None</li>}
                   </ul>
                 </div>
                 <div>
                   <div className="text-[9px] text-[#888] font-mono uppercase tracking-wider pb-1">Bear Factors</div>
-                  <ul className="space-y-0.5 max-h-16 overflow-y-auto pr-1">
+                  <ul className="space-y-0.5 max-h-16 overflow-y-auto pr-1" aria-label="Bear factors list" role="list">
                     {niftyWidget.data.bear_factors?.map((f: string, i: number) => (
-                      <li key={i} className="text-[9px] text-red-400 font-mono flex gap-1 leading-tight"><span className="shrink-0">•</span><span>{f}</span></li>
+                      <li key={i} className="text-[9px] text-red-400 font-mono flex gap-1 leading-tight"><span className="shrink-0" aria-hidden="true">•</span><span>{f}</span></li>
                     ))}
-                    {!niftyWidget.data.bear_factors?.length && <li className="text-[9px] text-[#666] font-mono">None</li>}
+                    {!niftyWidget.data.bear_factors?.length && <li className="text-[9px] text-[#666] font-mono" role="status">None</li>}
                   </ul>
                 </div>
               </div>
@@ -480,15 +483,15 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
         </ErrorBoundary>
 
         {/* FII/Retail Divergence Widget */}
-        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[10px] font-mono">FII Divergence crashed</div>}>
+        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[10px] font-mono" role="alert">FII Divergence crashed</div>}>
         <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col justify-center">
           <div className="flex items-center justify-between mb-1">
             <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Smart Money vs Retail</div>
             <div className="flex items-center gap-2">
-              <button onClick={divergenceWidget.fetchData} disabled={divergenceWidget.loading} className="text-[#888] hover:text-[#fafafa] transition-colors disabled:opacity-40" title="Refresh">
-                <RotateCw size={14} className={divergenceWidget.loading ? 'animate-spin' : ''} />
+              <button onClick={divergenceWidget.fetchData} disabled={divergenceWidget.loading} className="text-[#888] hover:text-[#fafafa] transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 rounded" title="Refresh Smart Money vs Retail" aria-label="Refresh Smart Money vs Retail">
+                <RotateCw size={14} className={divergenceWidget.loading ? 'animate-spin' : ''} aria-hidden="true" />
               </button>
-              <label className="flex items-center gap-1 text-[9px] text-[#666] font-mono cursor-pointer select-none">
+              <label className="flex items-center gap-1 text-[9px] text-[#666] font-mono cursor-pointer select-none hover:text-[#888] transition-colors" aria-label="Toggle auto-refresh for divergence">
                 <input type="checkbox" checked={divergenceWidget.autoRefresh} onChange={e => divergenceWidget.setAutoRefresh(e.target.checked)} className="accent-yellow-500 w-2.5 h-2.5" />
                 Auto-refresh
               </label>
@@ -498,11 +501,11 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
             <SymbolAutocomplete value={fiiSymbol} onSelect={setFiiSymbol} placeholder="Symbol..." />
           </div>
           {divergenceWidget.loading && !divergenceWidget.data ? (
-            <div className="text-sm text-[#ccc] py-1">Scanning flows...</div>
+            <div className="text-sm text-[#ccc] py-1" role="status" aria-live="polite">Scanning flows...</div>
           ) : divergenceWidget.error ? (
-            <div className="text-[10px] text-red-400 font-mono mt-1">{divergenceWidget.error}</div>
+            <div className="text-[10px] text-red-400 font-mono mt-1" role="alert">{divergenceWidget.error}</div>
           ) : !divergenceWidget.data ? (
-            <div className="text-sm text-[#666] py-1 font-mono">Click Refresh to load</div>
+            <div className="text-sm text-[#666] py-1 font-mono" role="status">Click Refresh to load</div>
           ) : (
             <>
               <div className="text-sm font-bold text-[#fafafa] mb-1">{divergenceWidget.data.signal || 'Neutral'}</div>
@@ -521,15 +524,15 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
         </ErrorBoundary>
 
         {/* Stock Brief (AI Multi‑Agent Debate) Widget */}
-        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[10px] font-mono">Stock Brief crashed</div>}>
+        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[10px] font-mono" role="alert">Stock Brief crashed</div>}>
         <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col justify-center">
           <div className="flex items-center justify-between mb-1">
             <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Stock Brief (AI Debate)</div>
             <div className="flex items-center gap-2">
-              <button onClick={stockBrief.fetchData} disabled={stockBrief.loading} className="text-[#888] hover:text-[#fafafa] transition-colors disabled:opacity-40" title="Refresh">
-                <RotateCw size={14} className={stockBrief.loading ? 'animate-spin' : ''} />
+              <button onClick={stockBrief.fetchData} disabled={stockBrief.loading} className="text-[#888] hover:text-[#fafafa] transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 rounded" title="Refresh Stock Brief" aria-label="Refresh Stock Brief">
+                <RotateCw size={14} className={stockBrief.loading ? 'animate-spin' : ''} aria-hidden="true" />
               </button>
-              <label className="flex items-center gap-1 text-[9px] text-[#666] font-mono cursor-pointer select-none">
+              <label className="flex items-center gap-1 text-[9px] text-[#666] font-mono cursor-pointer select-none hover:text-[#888] transition-colors" aria-label="Toggle auto-refresh for stock brief">
                 <input type="checkbox" checked={stockBrief.autoRefresh} onChange={e => stockBrief.setAutoRefresh(e.target.checked)} className="accent-yellow-500 w-2.5 h-2.5" />
                 Auto-refresh
               </label>
@@ -539,11 +542,11 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
             <SymbolAutocomplete value={briefSymbol} onSelect={setBriefSymbol} placeholder="Symbol..." />
           </div>
           {stockBrief.loading && !stockBrief.data ? (
-            <div className="text-sm text-[#ccc] py-1">Running AI debate...</div>
+            <div className="text-sm text-[#ccc] py-1" role="status" aria-live="polite">Running AI debate...</div>
           ) : stockBrief.error ? (
-            <div className="text-[10px] text-red-400 font-mono mt-1">{stockBrief.error}</div>
+            <div className="text-[10px] text-red-400 font-mono mt-1" role="alert">{stockBrief.error}</div>
           ) : !stockBrief.data?.consensus ? (
-            <div className="text-sm text-[#666] py-1 font-mono">Click Refresh to load</div>
+            <div className="text-sm text-[#666] py-1 font-mono" role="status">Click Refresh to load</div>
           ) : (
             <>
               <div className="flex items-center justify-between mb-2">
@@ -572,15 +575,15 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
         </ErrorBoundary>
 
         {/* Stock Timeline Widget */}
-        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[10px] font-mono">Stock Timeline crashed</div>}>
+        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[10px] font-mono" role="alert">Stock Timeline crashed</div>}>
         <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col justify-center">
           <div className="flex items-center justify-between mb-1">
             <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Stock Timeline</div>
             <div className="flex items-center gap-2">
-              <button onClick={timelineWidget.fetchData} disabled={timelineWidget.loading} className="text-[#888] hover:text-[#fafafa] transition-colors disabled:opacity-40" title="Refresh">
-                <RotateCw size={14} className={timelineWidget.loading ? 'animate-spin' : ''} />
+              <button onClick={timelineWidget.fetchData} disabled={timelineWidget.loading} className="text-[#888] hover:text-[#fafafa] transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 rounded" title="Refresh Stock Timeline" aria-label="Refresh Stock Timeline">
+                <RotateCw size={14} className={timelineWidget.loading ? 'animate-spin' : ''} aria-hidden="true" />
               </button>
-              <label className="flex items-center gap-1 text-[9px] text-[#666] font-mono cursor-pointer select-none">
+              <label className="flex items-center gap-1 text-[9px] text-[#666] font-mono cursor-pointer select-none hover:text-[#888] transition-colors" aria-label="Toggle auto-refresh for stock timeline">
                 <input type="checkbox" checked={timelineWidget.autoRefresh} onChange={e => timelineWidget.setAutoRefresh(e.target.checked)} className="accent-yellow-500 w-2.5 h-2.5" />
                 Auto-refresh
               </label>
@@ -590,11 +593,11 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
             <SymbolAutocomplete value={timelineSymbol} onSelect={setTimelineSymbol} placeholder="Symbol..." />
           </div>
           {timelineWidget.loading && !timelineWidget.data ? (
-            <div className="text-sm text-[#ccc] py-1">Loading timeline...</div>
+            <div className="text-sm text-[#ccc] py-1" role="status" aria-live="polite">Loading timeline...</div>
           ) : timelineWidget.error ? (
-            <div className="text-[10px] text-red-400 font-mono mt-1">{timelineWidget.error}</div>
+            <div className="text-[10px] text-red-400 font-mono mt-1" role="alert">{timelineWidget.error}</div>
           ) : !timelineWidget.data ? (
-            <div className="text-sm text-[#666] py-1 font-mono">Click Refresh to load</div>
+            <div className="text-sm text-[#666] py-1 font-mono" role="status">Click Refresh to load</div>
           ) : (
             <>
               {Array.isArray(timelineWidget.data.events) && timelineWidget.data.events.length > 0 ? (
@@ -621,7 +624,7 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
         </div>
         </ErrorBoundary>
 
-        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[10px] font-mono">System Architecture crashed</div>}>
+        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[10px] font-mono" role="alert">System Architecture crashed</div>}>
         <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex items-center justify-between">
           <div>
             <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider mb-1">System Architecture</div>
@@ -640,11 +643,11 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
                )}
             </div>
           </div>
-          <Database size={32} className="text-[#444]" />
+          <Database size={32} className="text-[#444]" aria-hidden="true" />
         </div>
         </ErrorBoundary>
 
-        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[10px] font-mono">Watchlist crashed</div>}>
+        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[10px] font-mono" role="alert">Watchlist crashed</div>}>
         <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider flex items-center gap-1.5">
@@ -665,10 +668,11 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
                   <span className="text-[10px] font-mono font-bold text-yellow-300">{sym}</span>
                   <button
                     onClick={() => toggle(sym)}
-                    className="text-[#555] hover:text-red-400 transition-colors ml-0.5"
-                    title="Remove"
+                    className="text-[#555] hover:text-red-400 transition-colors ml-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/50 rounded"
+                    title={`Remove ${sym} from watchlist`}
+                    aria-label={`Remove ${sym} from watchlist`}
                   >
-                    <span className="text-[10px] leading-none">×</span>
+                    <span className="text-[10px] leading-none" aria-hidden="true">×</span>
                   </button>
                 </div>
               ))}
@@ -676,19 +680,21 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
           )}
         </div>
         </ErrorBoundary>
-      </div>
+      </section>
 
       {/* Tactical Command Grid */}
-      <h3 className="text-sm font-semibold uppercase tracking-wider text-[#888] mt-2 border-b border-[#ffffff1a] pb-2">
+      <section aria-label="Tactical Command Grid">
+      <h2 className="sr-only">Tactical Command Grid</h2>
+      <div className="text-sm font-semibold uppercase tracking-wider text-[#888] mt-2 border-b border-[#ffffff1a] pb-2" aria-hidden="true">
         Tactical Command Grid
-      </h3>
+      </div>
       
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" role="navigation" aria-label="Tool navigation">
         {categories.map((cat, idx) => (
-          <div key={idx} className={`bg-[#0e1117] border ${cat.borderColor} rounded-xl overflow-hidden flex flex-col transition-all hover:shadow-lg focus-within:ring-2 ${ringColorMap[cat.color]}`}>
+          <article key={idx} className={`bg-[#0e1117] border ${cat.borderColor} rounded-xl overflow-hidden flex flex-col transition-all hover:shadow-lg focus-within:ring-2 ${ringColorMap[cat.color]}`} aria-label={cat.title}>
             {/* Header Banner */}
             <div className={`${cat.bgColor} border-b ${cat.borderColor} p-4 flex items-center gap-3`}>
-              <div className={`${cat.textColor}`}>
+              <div className={`${cat.textColor}`} aria-hidden="true">
                 {cat.icon}
               </div>
               <h3 className={`font-bold ${cat.textColor} tracking-wide`}>{cat.title}</h3>
@@ -700,23 +706,25 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
                   key={i} 
                   onClick={() => item.action && item.action()}
                   disabled={!item.action}
-                  className={`text-left px-3 py-2 text-sm text-[#ccc] rounded transition-colors group flex items-center justify-between ${
+                  className={`text-left px-3 py-2 text-sm text-[#ccc] rounded transition-colors group flex items-center justify-between focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 ${
                     item.action 
                       ? 'hover:text-white hover:bg-[#ffffff1a]' 
                       : 'opacity-50 cursor-not-allowed'
                   }`}
-                  title={!item.action ? '(soon)' : undefined}
+                  title={!item.action ? 'Coming soon' : `Open ${item.label}`}
+                  aria-label={item.action ? `Navigate to ${item.label}` : `${item.label} – coming soon`}
                 >
                   <span>{item.label} {!item.action && <span className="text-[10px] ml-1">(soon)</span>}</span>
-                  <span className={`text-[10px] font-mono ${item.action ? 'text-[#555] group-hover:text-[#888]' : 'text-transparent'}`}>{'>'}</span>
+                  <span className={`text-[10px] font-mono ${item.action ? 'text-[#555] group-hover:text-[#888]' : 'text-transparent'}`} aria-hidden="true">{'>'}</span>
                 </button>
               ))}
             </div>
-          </div>
+          </article>
         ))}
       </div>
+      </section>
 
 
-    </div>
+    </main>
   );
 }
