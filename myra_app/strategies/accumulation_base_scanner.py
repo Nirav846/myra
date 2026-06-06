@@ -14,11 +14,11 @@ logger = logging.getLogger(__name__)
 class AccumulationBaseScanner:
     def __init__(
         self,
-        base_days=21,
+        base_days=42,
         min_dar=0.2,
         target_dar=None,
         min_mcap=500,
-        max_mcap=20000,
+        max_mcap=30000,
         tightness_full_score_pct=None,
         tightness_zero_score_pct=None,
         volume_ratio_strong=1.5,
@@ -213,7 +213,7 @@ class AccumulationBaseScanner:
         nifty_scores_all: list[float] = []
         candidates: list[dict] = []
 
-        # Auto-scale tightness thresholds with sqrt(base_days)
+        # Auto-scale tightness thresholds (sqrt formula normalizes against 21-day reference; default 42-day period widens thresholds ~41%)
         effective_full = self.tightness_full_score_pct
         effective_zero = self.tightness_zero_score_pct
         if effective_full is None:
@@ -287,6 +287,11 @@ class AccumulationBaseScanner:
             dar_median = float(np.nanmedian(dar_values))
 
             if np.isnan(dar_median) or dar_median < self.min_dar:
+                continue
+
+            # Require median delivery_pct > 25% to filter out settlement noise
+            del_pcts_clean = del_pcts[~np.isnan(del_pcts)]
+            if len(del_pcts_clean) > 0 and float(np.nanmedian(del_pcts_clean)) < 25.0:
                 continue
 
             # 2. Base Tightness
@@ -486,6 +491,7 @@ class AccumulationBaseScanner:
                 "retest_entry": round(retest_entry, 2),
                 "sl": round(sl, 2),
                 "sl_pct": round((entry - sl) / entry * 100, 2) if entry > 0 else 0.0,
+                "buffer_to_sl_pct": round((entry - sl) / entry * 100, 2) if entry > 0 else 0.0,
                 "t1": round(t1, 2),
                 "t2": round(t2, 2),
                 "t3": round(t3, 2) if t3 is not None else None,

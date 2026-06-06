@@ -26,6 +26,7 @@ interface Candidate {
   retest_entry: number;
   sl: number;
   sl_pct: number;
+  buffer_to_sl_pct?: number;
   t1: number;
   t2: number;
   t3: number | null;
@@ -119,8 +120,68 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
 
   const [sortCol, setSortCol] = useState<string>('composite_score');
   const [sortAsc, setSortAsc] = useState(false);
-  const [showSignals, setShowSignals] = useState(false);
-  const [showTrade, setShowTrade] = useState(true);
+  const ALL_COLUMNS = [
+    { key: 'sector',           label: 'Sector',           group: 'core' },
+    { key: 'entry_type',       label: 'Entry Type',       group: 'core' },
+    { key: 'composite_score',  label: 'Score',            group: 'core' },
+    { key: 'grade',            label: 'Grade',            group: 'core' },
+    { key: 'entry',            label: 'Entry',            group: 'core' },
+    { key: 'sl',               label: 'SL',               group: 'core' },
+    { key: 'max_upside_pct',   label: 'Upside %',         group: 'core' },
+    { key: 'status',           label: 'Status',           group: 'core' },
+    { key: 'dar_median',       label: 'DAR % (Absorption)', group: 'signals' },
+    { key: 'volume_ratio',     label: 'Vol Ratio',        group: 'signals' },
+    { key: 'vol_dry_up',       label: 'Dry-Up',           group: 'signals' },
+    { key: 'rs_score',         label: 'RS vs Nifty',      group: 'signals' },
+    { key: 'wk52_pos',         label: '52W Position',     group: 'signals' },
+    { key: 'market_cap_cr',    label: 'MCap Cr',          group: 'signals' },
+    { key: 'close',            label: 'Close (CMP)',      group: 'trade' },
+    { key: 'cheat_entry',      label: 'Cheat / Retest',   group: 'trade' },
+    { key: 'sl_pct',           label: 'SL %',             group: 'trade' },
+    { key: 'buffer_to_sl_pct', label: 'Buffer to SL',     group: 'trade' },
+    { key: 't1',               label: 'T1 (Conservative)', group: 'trade' },
+    { key: 't2',               label: 'T2 (Primary)',     group: 'trade' },
+    { key: 't3',               label: 'T3 (Multibagger)', group: 'trade' },
+    { key: 'dist_to_bo_pct',   label: '→ Breakout',       group: 'trade' },
+  ] as const;
+
+  type ColKey = typeof ALL_COLUMNS[number]['key'];
+
+  const DEFAULT_VISIBLE = new Set<ColKey>([
+    'sector', 'entry_type', 'composite_score', 'grade',
+    'entry', 'sl', 'max_upside_pct', 'status',
+    'dar_median', 'vol_dry_up', 'sl_pct', 'buffer_to_sl_pct',
+  ]);
+
+  const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(() => {
+    try {
+      const saved = localStorage.getItem('mb_visible_cols');
+      if (saved) return new Set(JSON.parse(saved)) as Set<ColKey>;
+    } catch {}
+    return DEFAULT_VISIBLE;
+  });
+  const [colPanelOpen, setColPanelOpen] = useState(false);
+  const colPanelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (colPanelRef.current && !colPanelRef.current.contains(e.target as Node)) {
+        setColPanelOpen(false);
+      }
+    };
+    if (colPanelOpen) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [colPanelOpen]);
+
+  const toggleCol = (key: ColKey) => {
+    setVisibleCols(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      localStorage.setItem('mb_visible_cols', JSON.stringify(Array.from(next)));
+      return next;
+    });
+  };
+
+  const isVisible = (key: ColKey) => visibleCols.has(key);
 
   useEffect(() => { fetchMarketCapMap().then(m => mcapMapRef.current = m); }, []);
 
@@ -294,6 +355,29 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                 </span>
               )}
             </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 ml-auto mr-3">
+          {/* Lookback presets */}
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-[#555] font-mono">Lookback:</span>
+            {[
+              { label: 'Quick 21d', days: 21 },
+              { label: 'Quality 42d', days: 42 },
+              { label: 'Strong 63d', days: 63 },
+            ].map(p => (
+              <button
+                key={p.days}
+                onClick={() => setBaseDays(p.days)}
+                className={`px-2 py-1 rounded border text-[10px] font-mono transition-colors ${
+                  baseDays === p.days
+                    ? 'bg-purple-500/20 border-purple-500/40 text-purple-400'
+                    : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#666] hover:text-[#aaa]'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
           </div>
         </div>
         <button
@@ -607,31 +691,72 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
           )}
 
           {/* Column visibility toggles */}
-          <div className="flex items-center gap-2 px-1">
-            <span className="text-[10px] text-[#555] font-mono uppercase tracking-wider">Show columns:</span>
+          <div className="flex items-center gap-2 px-1 relative" ref={colPanelRef}>
             <button
-              onClick={() => setShowSignals(s => !s)}
-              className={`px-2 py-1 rounded border text-[10px] font-mono transition-colors ${
-                showSignals
-                  ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-400'
-                  : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#666] hover:text-[#aaa]'
-              }`}
-            >
-              {showSignals ? '▼' : '▶'} Signals (DAR, Volume, RS)
-            </button>
-            <button
-              onClick={() => setShowTrade(s => !s)}
-              className={`px-2 py-1 rounded border text-[10px] font-mono transition-colors ${
-                showTrade
+              onClick={() => setColPanelOpen(o => !o)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors ${
+                colPanelOpen
                   ? 'bg-purple-500/20 border-purple-500/40 text-purple-400'
-                  : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#666] hover:text-[#aaa]'
+                  : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-[#ccc]'
               }`}
             >
-              {showTrade ? '▼' : '▶'} Trade Levels (T1/T2/T3, Cheat)
+              <Filter size={11} />
+              Columns ({visibleCols.size})
             </button>
+
+            {/* Sort indicator when sorting by hidden column */}
+            {!isVisible(sortCol as ColKey) && (
+              <span className="text-[10px] text-yellow-400 font-mono flex items-center gap-1">
+                <ArrowUpDown size={10} />
+                Sorted by hidden column: {ALL_COLUMNS.find(c => c.key === sortCol)?.label ?? sortCol}
+              </span>
+            )}
+
             <span className="ml-auto text-[10px] text-[#555] font-mono">
-              {filteredData.length} results · scroll right for all columns
+              {filteredData.length} results
             </span>
+
+            {colPanelOpen && (
+              <div className="absolute top-full left-0 mt-1 z-50 bg-[#0e1117] border border-[#ffffff20] rounded-lg shadow-2xl p-4 w-80">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[11px] text-[#ccc] font-mono font-bold uppercase tracking-wider">Visible Columns</span>
+                  <button
+                    onClick={() => {
+                      setVisibleCols(DEFAULT_VISIBLE);
+                      localStorage.setItem('mb_visible_cols', JSON.stringify(Array.from(DEFAULT_VISIBLE)));
+                    }}
+                    className="text-[10px] text-purple-400 hover:text-purple-300 font-mono"
+                  >
+                    Reset to default
+                  </button>
+                </div>
+                {(['core', 'signals', 'trade'] as const).map(group => (
+                  <div key={group} className="mb-3">
+                    <div className={`text-[9px] font-mono uppercase tracking-widest mb-1.5 ${
+                      group === 'core' ? 'text-[#666]' :
+                      group === 'signals' ? 'text-cyan-500/60' : 'text-purple-500/60'
+                    }`}>
+                      {group === 'core' ? 'Core' : group === 'signals' ? 'Signal Analysis' : 'Trade Levels'}
+                    </div>
+                    <div className="grid grid-cols-2 gap-1">
+                      {ALL_COLUMNS.filter(c => c.group === group).map(col => (
+                        <label key={col.key} className="flex items-center gap-1.5 cursor-pointer group">
+                          <input
+                            type="checkbox"
+                            checked={isVisible(col.key)}
+                            onChange={() => toggleCol(col.key)}
+                            className="accent-purple-500 cursor-pointer"
+                          />
+                          <span className="text-[10px] text-[#aaa] group-hover:text-white transition-colors font-mono">
+                            {col.label}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Table */}
@@ -646,148 +771,154 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                         Symbol <SortIcon column="symbol" />
                       </Tooltip>
                     </th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider">
+                    {isVisible('sector') && <th className="px-4 py-3 font-semibold uppercase tracking-wider">
                       <Tooltip content="Business sector the company operates in. Useful for avoiding concentration — don't put all picks in one sector." showIcon={false}>Sector</Tooltip>
-                    </th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center">
+                    </th>}
+                    {isVisible('entry_type') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center">
                       <Tooltip
                         content="How to enter this stock. Each type has different risk-reward."
                         good="⚡ Liq Grab = best entry, stock swept stops then recovered. 🎯 Cheat = enter inside the base at lower end. 🚀 Breakout = enter above resistance."
                         bad="Breakout entries have worst R:R and highest fakeout risk."
                       >Entry Type</Tooltip>
-                    </th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('composite_score')}>
+                    </th>}
+                    {isVisible('composite_score') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('composite_score')}>
                       <Tooltip
                         content="Accumulation Score (0–100). Combines delivery absorption, base tightness, volume character, and delivery trend into one number."
                         good="Above 70: strong accumulation evidence. Above 85: exceptional setup."
                         bad="Below 55: marginal setup, skip unless other signals are outstanding."
                         example="Score 80 = stock scoring well on all 4 dimensions simultaneously."
                       >Score <SortIcon column="composite_score" /></Tooltip>
-                    </th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('grade')}>
+                    </th>}
+                    {isVisible('grade') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('grade')}>
                       <Tooltip
                         content="Overall grade based on score. A=80+, B=60–79, C=40–59, D=below 40."
                         good="Focus on A and B grade only. C grade requires strong conviction from fundamentals."
                         bad="D grade: avoid."
                       >Grade <SortIcon column="grade" /></Tooltip>
-                    </th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">
+                    </th>}
+                    {isVisible('entry') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">
                       <Tooltip
                         content="Recommended buy price. For Breakout: just above the base ceiling. For Cheat: current price (enter now). For Liq Grab: close of the sweep candle."
                         good="The earlier you enter (Cheat/LiqGrab), the better your risk-reward."
                         example="Entry 150 with SL 140 means you risk ₹10 per share."
                       >Entry</Tooltip>
-                    </th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">
+                    </th>}
+                    {isVisible('sl') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">
                       <Tooltip
                         content="Stop Loss — the price where you exit if the setup fails. Placed below the base structure with buffer for minor stop hunts."
                         bad="If price closes below SL on meaningful volume, the accumulation thesis is broken — exit without hesitation."
                         example="SL 140 means if stock drops below ₹140, sell and protect capital."
                       >SL</Tooltip>
-                    </th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('max_upside_pct')}>
+                    </th>}
+                    {isVisible('max_upside_pct') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('max_upside_pct')}>
                       <Tooltip
                         content="Maximum potential upside % from entry to the final target (T3 for Grade A/B, T2 otherwise)."
                         good="Above 40%: meaningful multibagger potential. Above 100%: true multibagger territory."
                         bad="Below 20%: risk-reward not worth it for a 1+ month holding."
                       >Upside% <SortIcon column="max_upside_pct" /></Tooltip>
-                    </th>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center">
+                    </th>}
+                    {isVisible('status') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-center">
                       <Tooltip
                         content="Current setup status. 'In Base' = still consolidating, wait. 'Breakout Pending' = near resistance. 'Triggered' = breakout confirmed with volume."
                         good="'In Base' with Cheat/LiqGrab entry type = best time to enter."
                         bad="'Triggered' with Breakout entry = you may be late, wait for a retest."
                       >Status</Tooltip>
-                    </th>
+                    </th>}
 
                     {/* ── SIGNALS (toggleable) ── */}
-                    {showSignals && <>
-                      <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5 border-l border-cyan-500/20" onClick={() => handleSort('dar_median')}>
-                        <Tooltip
-                          content="Delivery Absorption Rate — what % of the company's free-float market cap is being bought and held each day. Normalised so small companies and large companies are comparable."
-                          good="Above target threshold (auto-set by mcap): genuine accumulation happening."
-                          bad="Below 0.2%: not enough buying to signal institutional interest."
-                          example="DAR 0.5% means 0.5% of the tradeable float changes hands as delivery daily — unusually high."
-                        >DAR% (Absorption) <SortIcon column="dar_median" /></Tooltip>
-                      </th>
-                      <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5" onClick={() => handleSort('volume_ratio')}>
-                        <Tooltip
-                          content="Volume Character — median volume on up-days divided by median volume on down-days within the base. Above 1.0 means more shares traded on green days than red days."
-                          good="Above 1.5: strong accumulation signature. Buyers are more active than sellers."
-                          bad="Below 0.8: sellers are more active — potential distribution, not accumulation."
-                        >Vol Ratio (Character) <SortIcon column="volume_ratio" /></Tooltip>
-                      </th>
-                      <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5" onClick={() => handleSort('vol_dry_up')}>
-                        <Tooltip
-                          content="Volume Dry-Up — last 5 days volume vs full base average. Below 1.0 means volume is shrinking, which happens when supply is exhausted and the float is locked up."
-                          good="Below 0.7: volume compression (green). Float is locked — small buying pressure will move price."
-                          bad="Above 1.2: volume expanding inside base (orange) — could be distribution."
-                        >Dry-Up (Vol Compress) <SortIcon column="vol_dry_up" /></Tooltip>
-                      </th>
-                      <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5" onClick={() => handleSort('rs_score')}>
-                        <Tooltip
-                          content="Relative Strength — how the stock performed vs Nifty 50 during the base period. Positive = stock held up or outperformed while market consolidated."
-                          good="Above 0.3: stock is stronger than the market — institutional support likely."
-                          bad="Below -0.3: underperforming even when it should be recovering — weak setup."
-                        >RS (Vs Nifty) <SortIcon column="rs_score" /></Tooltip>
-                      </th>
-                      <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5" onClick={() => handleSort('wk52_pos')}>
-                        <Tooltip
-                          content="Where the stock sits within its 52-week high-low range. 0% = at 52W low, 100% = at 52W high."
-                          good="25–60%: corrected from highs but not broken — ideal accumulation zone."
-                          bad="Above 75%: near 52W high — limited room before facing resistance. Below 15%: may be a falling knife."
-                        >52W Position <SortIcon column="wk52_pos" /></Tooltip>
-                      </th>
-                    </>}
+                    {isVisible('dar_median') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5 border-l border-cyan-500/20" onClick={() => handleSort('dar_median')}>
+                      <Tooltip
+                        content="Delivery Absorption Rate — what % of the company's free-float market cap is being bought and held each day. Normalised so small companies and large companies are comparable."
+                        good="Above target threshold (auto-set by mcap): genuine accumulation happening."
+                        bad="Below 0.2%: not enough buying to signal institutional interest."
+                        example="DAR 0.5% means 0.5% of the tradeable float changes hands as delivery daily — unusually high."
+                      >DAR% (Absorption) <SortIcon column="dar_median" /></Tooltip>
+                    </th>}
+                    {isVisible('volume_ratio') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5" onClick={() => handleSort('volume_ratio')}>
+                      <Tooltip
+                        content="Volume Character — median volume on up-days divided by median volume on down-days within the base. Above 1.0 means more shares traded on green days than red days."
+                        good="Above 1.5: strong accumulation signature. Buyers are more active than sellers."
+                        bad="Below 0.8: sellers are more active — potential distribution, not accumulation."
+                      >Vol Ratio (Character) <SortIcon column="volume_ratio" /></Tooltip>
+                    </th>}
+                    {isVisible('vol_dry_up') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5" onClick={() => handleSort('vol_dry_up')}>
+                      <Tooltip
+                        content="Volume Dry-Up — last 5 days volume vs full base average. Below 1.0 means volume is shrinking, which happens when supply is exhausted and the float is locked up."
+                        good="Below 0.7: volume compression (green). Float is locked — small buying pressure will move price."
+                        bad="Above 1.2: volume expanding inside base (orange) — could be distribution."
+                      >Dry-Up (Vol Compress) <SortIcon column="vol_dry_up" /></Tooltip>
+                    </th>}
+                    {isVisible('rs_score') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5" onClick={() => handleSort('rs_score')}>
+                      <Tooltip
+                        content="Relative Strength — how the stock performed vs Nifty 50 during the base period. Positive = stock held up or outperformed while market consolidated."
+                        good="Above 0.3: stock is stronger than the market — institutional support likely."
+                        bad="Below -0.3: underperforming even when it should be recovering — weak setup."
+                      >RS (Vs Nifty) <SortIcon column="rs_score" /></Tooltip>
+                    </th>}
+                    {isVisible('wk52_pos') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5" onClick={() => handleSort('wk52_pos')}>
+                      <Tooltip
+                        content="Where the stock sits within its 52-week high-low range. 0% = at 52W low, 100% = at 52W high."
+                        good="25–60%: corrected from highs but not broken — ideal accumulation zone."
+                        bad="Above 75%: near 52W high — limited room before facing resistance. Below 15%: may be a falling knife."
+                      >52W Position <SortIcon column="wk52_pos" /></Tooltip>
+                    </th>}
+                    {isVisible('market_cap_cr') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5" onClick={() => handleSort('market_cap_cr')}>
+                      MCap Cr <SortIcon column="market_cap_cr" />
+                    </th>}
 
                     {/* ── TRADE LEVELS (toggleable) ── */}
-                    {showTrade && <>
-                      <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right bg-purple-500/5 border-l border-purple-500/20">
-                        <Tooltip content="Current market price of the stock. Compare with Entry to see how far you are from the recommended entry point.">Close (CMP)</Tooltip>
-                      </th>
-                      <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right bg-purple-500/5">
-                        <Tooltip
-                          content="Alternative entry for Breakout-type setups. For Breakout stocks: enter at the 38.2% level inside the base for better risk-reward. For Cheat/LiqGrab: not applicable."
-                          good="Cheat/Retest entry gives 2-3x better risk-reward than waiting for the breakout."
-                        >Cheat/Retest <SortIcon column="cheat_entry" /></Tooltip>
-                      </th>
-                      <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-purple-500/5" onClick={() => handleSort('sl_pct')}>
-                        <Tooltip
-                          content="Stop Loss as a % of entry price. Lower is better — it means you risk less capital to participate in the setup."
-                          good="Below 5%: tight stop, excellent risk control."
-                          bad="Above 12%: wide stop — size your position smaller to keep total risk manageable."
-                        >SL% (Risk) <SortIcon column="sl_pct" /></Tooltip>
-                      </th>
-                      <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right bg-purple-500/5">
-                        <Tooltip content="Target 1 — conservative exit. Take partial profits here (suggest 30% of position). Equivalent to 1× your risk amount above entry.">T1 (Conservative)</Tooltip>
-                      </th>
-                      <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right bg-purple-500/5">
-                        <Tooltip content="Target 2 — primary exit. Take bulk of position here (suggest 50%). Equivalent to 2.5× your risk amount above entry.">T2 (Primary)</Tooltip>
-                      </th>
-                      <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right bg-purple-500/5">
-                        <Tooltip
-                          content="Target 3 — multibagger exit. Only for Grade A and B setups. Let 20% of position ride here. Equivalent to 5× your risk amount above entry."
-                          good="Only available for Grade A/B. This is the 'let it run' target for genuine multibaggers."
-                        >T3 (Multibagger)</Tooltip>
-                      </th>
-                      <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-purple-500/5" onClick={() => handleSort('dist_to_bo_pct')}>
-                        <Tooltip
-                          content="Distance to Breakout — how far the current price is from the base ceiling (breakout level). Lower = closer to triggering."
-                          good="Below 3%: breakout imminent — watch closely."
-                          bad="Above 15%: stock still deep in base — you have time to monitor."
-                        >→ Breakout <SortIcon column="dist_to_bo_pct" /></Tooltip>
-                      </th>
-                    </>}
+                    {isVisible('close') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right bg-purple-500/5 border-l border-purple-500/20">
+                      <Tooltip content="Current market price of the stock. Compare with Entry to see how far you are from the recommended entry point.">Close (CMP)</Tooltip>
+                    </th>}
+                    {isVisible('cheat_entry') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right bg-purple-500/5">
+                      <Tooltip
+                        content="Alternative entry for Breakout-type setups. For Breakout stocks: enter at the 38.2% level inside the base for better risk-reward. For Cheat/LiqGrab: not applicable."
+                        good="Cheat/Retest entry gives 2-3x better risk-reward than waiting for the breakout."
+                      >Cheat/Retest <SortIcon column="cheat_entry" /></Tooltip>
+                    </th>}
+                    {isVisible('sl_pct') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-purple-500/5" onClick={() => handleSort('sl_pct')}>
+                      <Tooltip
+                        content="Stop Loss as a % of entry price. Lower is better — it means you risk less capital to participate in the setup."
+                        good="Below 5%: tight stop, excellent risk control."
+                        bad="Above 12%: wide stop — size your position smaller to keep total risk manageable."
+                      >SL% (Risk) <SortIcon column="sl_pct" /></Tooltip>
+                    </th>}
+                    {isVisible('buffer_to_sl_pct') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-purple-500/5" onClick={() => handleSort('buffer_to_sl_pct')}>
+                      <Tooltip
+                        content="Buffer to SL — how much space exists between current entry price and the stop loss. Higher = safer, less chance of being stopped on normal volatility."
+                        good="Above 8%: enough room for normal price swings."
+                        bad="Below 4% (red): dangerously close to SL — one bad day stops you out. Avoid entering. Wait for price to move up or for a confirmed liquidity grab."
+                      >Buffer to SL <SortIcon column="buffer_to_sl_pct" /></Tooltip>
+                    </th>}
+                    {isVisible('t1') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right bg-purple-500/5">
+                      <Tooltip content="Target 1 — conservative exit. Take partial profits here (suggest 30% of position). Equivalent to 1× your risk amount above entry.">T1 (Conservative)</Tooltip>
+                    </th>}
+                    {isVisible('t2') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right bg-purple-500/5">
+                      <Tooltip content="Target 2 — primary exit. Take bulk of position here (suggest 50%). Equivalent to 2.5× your risk amount above entry.">T2 (Primary)</Tooltip>
+                    </th>}
+                    {isVisible('t3') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right bg-purple-500/5">
+                      <Tooltip
+                        content="Target 3 — multibagger exit. Only for Grade A and B setups. Let 20% of position ride here. Equivalent to 5× your risk amount above entry."
+                        good="Only available for Grade A/B. This is the 'let it run' target for genuine multibaggers."
+                      >T3 (Multibagger)</Tooltip>
+                    </th>}
+                    {isVisible('dist_to_bo_pct') && <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-purple-500/5" onClick={() => handleSort('dist_to_bo_pct')}>
+                      <Tooltip
+                        content="Distance to Breakout — how far the current price is from the base ceiling (breakout level). Lower = closer to triggering."
+                        good="Below 3%: breakout imminent — watch closely."
+                        bad="Above 15%: stock still deep in base — you have time to monitor."
+                      >→ Breakout <SortIcon column="dist_to_bo_pct" /></Tooltip>
+                    </th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={9 + (showSignals ? 5 : 0) + (showTrade ? 7 : 0)} className="px-4 py-8 text-center text-[#666]">No candidates match current filters.</td>
+                      <td colSpan={1 + ALL_COLUMNS.filter(c => isVisible(c.key)).length} className="px-4 py-8 text-center text-[#666]">No candidates match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((row) => (
-                      <tr key={row.symbol} className={`hover:bg-[#ffffff05] transition-colors ${row.liq_grab ? 'border-l-2 border-emerald-500/50' : ''}`}>
+                      <tr key={row.symbol} className={`hover:bg-[#ffffff05] transition-colors ${row.liq_grab ? 'border-l-2 border-emerald-500/50' : (row.buffer_to_sl_pct ?? 99) < 4 ? 'border-l-2 border-red-500/40 opacity-60' : ''}`}>
                         {/* ── CORE ── */}
                         <td className="px-4 py-3 font-bold">
                           <div className="flex items-center gap-1.5">
@@ -809,76 +940,100 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                             </button>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-[#888] text-[11px] max-w-[120px] truncate" title={row.sector}>
+                        {isVisible('sector') && <td className="px-4 py-3 text-[#888] text-[11px] max-w-[120px] truncate" title={row.sector}>
                           {row.sector ?? '—'}
-                        </td>
-                        <td className="px-4 py-3 text-center">
+                        </td>}
+                        {isVisible('entry_type') && <td className="px-4 py-3 text-center">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${ENTRY_TYPE_COLORS[row.entry_type] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
                             {ENTRY_TYPE_LABELS[row.entry_type] || row.entry_type}
                           </span>
-                        </td>
-                        <td className="px-4 py-3 text-right font-bold">
+                        </td>}
+                        {isVisible('composite_score') && <td className="px-4 py-3 text-right font-bold">
                           <span className={row.composite_score >= 80 ? 'text-green-400' : row.composite_score >= 60 ? 'text-blue-400' : row.composite_score >= 40 ? 'text-yellow-400' : 'text-red-400'}>
                             {row.composite_score.toFixed(1)}
                           </span>
-                        </td>
-                        <td className="px-4 py-3 text-center">
+                        </td>}
+                        {isVisible('grade') && <td className="px-4 py-3 text-center">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${GRADE_COLORS[row.grade] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
                             {row.grade}
                           </span>
-                        </td>
-                        <td className="px-4 py-3 text-right text-green-400 font-semibold">{row.entry.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-right text-red-400">{row.sl.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-right">
+                        </td>}
+                        {isVisible('entry') && <td className="px-4 py-3 text-right text-green-400 font-semibold">{row.entry.toFixed(2)}</td>}
+                        {isVisible('sl') && <td className="px-4 py-3 text-right text-red-400">{row.sl.toFixed(2)}</td>}
+                        {isVisible('max_upside_pct') && <td className="px-4 py-3 text-right">
                           <span className={(row.max_upside_pct ?? 0) >= 40 ? 'text-green-400' : (row.max_upside_pct ?? 0) >= 20 ? 'text-cyan-400' : 'text-[#888]'}>
                             {row.max_upside_pct !== undefined ? `+${row.max_upside_pct.toFixed(1)}%` : '—'}
                           </span>
-                        </td>
-                        <td className="px-4 py-3 text-center">
+                        </td>}
+                        {isVisible('status') && <td className="px-4 py-3 text-center">
                           <span className={`text-[10px] font-semibold ${STATUS_COLORS[row.status] || 'text-[#aaa]'}`}>
                             {row.status}
                           </span>
-                        </td>
+                        </td>}
 
                         {/* ── SIGNALS ── */}
-                        {showSignals && <td className="px-4 py-3 text-right text-[#ccc] bg-cyan-500/[0.02] border-l border-cyan-500/10">{row.dar_median.toFixed(3)}</td>}
-                        {showSignals && <td className="px-4 py-3 text-right bg-cyan-500/[0.02]">
+                        {isVisible('dar_median') && <td className="px-4 py-3 text-right text-[#ccc] bg-cyan-500/[0.02] border-l border-cyan-500/10">{row.dar_median.toFixed(3)}</td>}
+                        {isVisible('volume_ratio') && <td className="px-4 py-3 text-right bg-cyan-500/[0.02]">
                           <span className={row.volume_ratio >= 1.5 ? 'text-green-400' : row.volume_ratio <= 0.8 ? 'text-red-400' : 'text-[#ccc]'}>
                             {row.volume_ratio.toFixed(2)}
                           </span>
                         </td>}
-                        {showSignals && <td className="px-4 py-3 text-right bg-cyan-500/[0.02]">
+                        {isVisible('vol_dry_up') && <td className="px-4 py-3 text-right bg-cyan-500/[0.02]">
                           <span className={row.vol_dry_up <= 0.6 ? 'text-green-400' : row.vol_dry_up >= 1.2 ? 'text-orange-400' : 'text-[#ccc]'}>
                             {row.vol_dry_up !== undefined ? row.vol_dry_up.toFixed(2) : '—'}
                           </span>
                         </td>}
-                        {showSignals && <td className="px-4 py-3 text-right bg-cyan-500/[0.02]">
+                        {isVisible('rs_score') && <td className="px-4 py-3 text-right bg-cyan-500/[0.02]">
                           <span className={row.rs_score > 0.3 ? 'text-green-400' : row.rs_score < -0.3 ? 'text-red-400' : 'text-[#ccc]'}>
                             {row.rs_score !== undefined ? row.rs_score.toFixed(2) : '—'}
                           </span>
                         </td>}
-                        {showSignals && <td className="px-4 py-3 text-right bg-cyan-500/[0.02]">
+                        {isVisible('wk52_pos') && <td className="px-4 py-3 text-right bg-cyan-500/[0.02]">
                           <span className={(row.wk52_pos ?? 50) > 75 ? 'text-orange-400' : (row.wk52_pos ?? 50) < 20 ? 'text-red-400' : 'text-[#ccc]'}>
                             {row.wk52_pos !== undefined ? `${row.wk52_pos.toFixed(0)}%` : '—'}
                           </span>
                         </td>}
+                        {isVisible('market_cap_cr') && <td className="px-4 py-3 text-right text-[#ccc] bg-cyan-500/[0.02]">{row.market_cap_cr?.toFixed(1) ?? '—'}</td>}
 
                         {/* ── TRADE LEVELS ── */}
-                        {showTrade && <td className="px-4 py-3 text-right text-[#ccc] bg-purple-500/[0.02] border-l border-purple-500/10">{row.close.toFixed(2)}</td>}
-                        {showTrade && <td className="px-4 py-3 text-right bg-purple-500/[0.02]">
+                        {isVisible('close') && <td className="px-4 py-3 text-right text-[#ccc] bg-purple-500/[0.02] border-l border-purple-500/10">{row.close.toFixed(2)}</td>}
+                        {isVisible('cheat_entry') && <td className="px-4 py-3 text-right bg-purple-500/[0.02]">
                           {row.entry_type === 'Breakout'
                             ? <span className="text-purple-400">{row.cheat_entry?.toFixed(2) ?? '—'}</span>
                             : <span className="text-[#333]">—</span>}
                         </td>}
-                        {showTrade && <td className="px-4 py-3 text-right bg-purple-500/[0.02]">
+                        {isVisible('sl_pct') && <td className="px-4 py-3 text-right bg-purple-500/[0.02]">
                           <span className={row.sl_pct <= 5 ? 'text-green-400' : row.sl_pct <= 10 ? 'text-yellow-400' : 'text-red-400'}>
                             {row.sl_pct?.toFixed(1)}%
                           </span>
                         </td>}
-                        {showTrade && <td className="px-4 py-3 text-right text-[#777] bg-purple-500/[0.02]">{row.t1.toFixed(2)}</td>}
-                        {showTrade && <td className="px-4 py-3 text-right text-[#ccc] bg-purple-500/[0.02]">{row.t2.toFixed(2)}</td>}
-                        {showTrade && <td className="px-4 py-3 text-right text-[#888] bg-purple-500/[0.02]">{row.t3 !== null ? row.t3.toFixed(2) : '—'}</td>}
-                        {showTrade && <td className="px-4 py-3 text-right bg-purple-500/[0.02]">
+                        {isVisible('buffer_to_sl_pct') && (
+                          <td className="px-4 py-3 text-right bg-purple-500/[0.02]">
+                            <Tooltip
+                              content={
+                                (row.buffer_to_sl_pct ?? 99) < 4
+                                  ? "⚠ Dangerously close to SL. Do not enter. Wait for price to move up from this level or for a confirmed liquidity sweep and recovery."
+                                  : (row.buffer_to_sl_pct ?? 99) < 8
+                                  ? "Moderate buffer. Be cautious — size smaller than usual."
+                                  : "Healthy buffer. Normal entry sizing appropriate."
+                              }
+                              showIcon={false}
+                            >
+                              <span className={
+                                (row.buffer_to_sl_pct ?? 99) < 4 ? 'text-red-400 font-bold' :
+                                (row.buffer_to_sl_pct ?? 99) < 8 ? 'text-yellow-400' : 'text-green-400'
+                              }>
+                                {row.buffer_to_sl_pct !== undefined
+                                  ? `${row.buffer_to_sl_pct.toFixed(1)}%`
+                                  : '—'}
+                              </span>
+                            </Tooltip>
+                          </td>
+                        )}
+                        {isVisible('t1') && <td className="px-4 py-3 text-right text-[#777] bg-purple-500/[0.02]">{row.t1.toFixed(2)}</td>}
+                        {isVisible('t2') && <td className="px-4 py-3 text-right text-[#ccc] bg-purple-500/[0.02]">{row.t2.toFixed(2)}</td>}
+                        {isVisible('t3') && <td className="px-4 py-3 text-right text-[#888] bg-purple-500/[0.02]">{row.t3 !== null ? row.t3.toFixed(2) : '—'}</td>}
+                        {isVisible('dist_to_bo_pct') && <td className="px-4 py-3 text-right bg-purple-500/[0.02]">
                           <span className={(row.dist_to_bo_pct ?? 99) <= 3 ? 'text-yellow-400' : 'text-[#888]'}>
                             {row.dist_to_bo_pct !== undefined ? `${row.dist_to_bo_pct.toFixed(1)}%` : '—'}
                           </span>
