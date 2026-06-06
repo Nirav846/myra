@@ -56,16 +56,17 @@ class AccumulationBaseScanner:
         with sqlite3.connect(val_db) as conn:
             rows = conn.execute(
                 """
-                SELECT symbol,
-                       COALESCE(market_cap, 0)      AS mcap,
-                       COALESCE(free_float_pct, 40.0) AS ff_pct
-                FROM fundamentals
-                WHERE date = (
-                    SELECT MAX(f2.date) FROM fundamentals f2
-                    WHERE f2.symbol = fundamentals.symbol
-                )
-                  AND COALESCE(market_cap, 0) > 0
-                  AND COALESCE(market_cap, 0) / 1e7 BETWEEN ? AND ?
+                SELECT f.symbol,
+                       COALESCE(f.market_cap, f.marketCap, 0)      AS mcap,
+                       COALESCE(f.free_float_pct, 40.0) AS ff_pct
+                FROM fundamentals f
+                INNER JOIN (
+                    SELECT symbol, MAX(date) as max_date
+                    FROM fundamentals
+                    WHERE COALESCE(market_cap, marketCap, 0) > 0
+                    GROUP BY symbol
+                ) latest ON f.symbol = latest.symbol AND f.date = latest.max_date
+                WHERE COALESCE(f.market_cap, f.marketCap, 0) / 1e7 BETWEEN ? AND ?
                 """,
                 (self.min_mcap, self.max_mcap),
             ).fetchall()

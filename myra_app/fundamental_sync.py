@@ -227,14 +227,10 @@ class FundamentalSync:
             if not info:
                 return result
 
-            if info.get("marketCap") is not None:
-                result["market_cap"] = info["marketCap"]
             if info.get("trailingPE") is not None:
                 result["pe"] = info["trailingPE"]
             if info.get("faceValue") is not None:
                 result["face_value"] = info["faceValue"]
-            if info.get("sharesOutstanding") is not None:
-                result["issued_size"] = info["sharesOutstanding"]
 
         except Exception as e:
             logger.warning(
@@ -287,6 +283,17 @@ class FundamentalSync:
         db_path = self._get_valuation_db_path()
         records = []
 
+        # Fetch existing shares_outstanding and market_cap to preserve them
+        existing_values = {}
+        try:
+            with sqlite3.connect(db_path, timeout=10) as conn:
+                for row in conn.execute(
+                    "SELECT symbol, shares_outstanding, market_cap FROM fundamentals"
+                ):
+                    existing_values[row[0]] = (row[1], row[2])
+        except Exception:
+            pass
+
         for symbol in all_symbols:
             ms = ms_data.get(symbol, {})
             nse = nse_data.get(symbol, {})
@@ -331,6 +338,13 @@ class FundamentalSync:
                 "source_ms": "MORNINGSTAR" if ms else None,
                 "source_nse": "YFINANCE" if nse else None,
             }
+            # Do NOT overwrite shares_outstanding or market_cap — managed separately
+            existing = existing_values.get(symbol)
+            if existing:
+                if existing[0] is not None and existing[0] > 0:
+                    record["shares_outstanding"] = existing[0]
+                if existing[1] is not None and existing[1] > 0:
+                    record["market_cap"] = existing[1]
             records.append(record)
 
         if not records:
