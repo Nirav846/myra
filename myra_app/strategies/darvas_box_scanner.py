@@ -115,7 +115,7 @@ class DarvasBoxScanner(AccumulationBaseScanner):
         # Box floor: after the ceiling's first touch, find the lowest low
         # touched at least twice that has not been breached by a subsequent
         # close.
-        sub = df.iloc[ceiling_idx:].reset_index(drop=True)
+        sub = df.iloc[ceiling_idx + 1:].reset_index(drop=True)
         sub_lows = sub["low"].values.astype(float)
         sub_closes = sub["close"].values.astype(float)
         floor = None
@@ -176,7 +176,8 @@ class DarvasBoxScanner(AccumulationBaseScanner):
     # --- Intra-box analytics --------------------------------------------------
 
     def _compute_box_dar(
-        self, df: pd.DataFrame, box_start_idx: int, box_end_idx: int, ff_mcap: float
+        self, df: pd.DataFrame, box_start_idx: int, box_end_idx: int,
+        ff_mcap: float, ceiling: float
     ) -> dict:
         # DAR = (delivery * close) / free_float_mcap * 100
         # free_float_mcap is now populated via BSE shareholding backfill (2,295 symbols)
@@ -203,7 +204,6 @@ class DarvasBoxScanner(AccumulationBaseScanner):
         # Breakout day DAR: the day whose close is >= ceiling. Take the latest
         # such day inside the box window.
         box_df = box_df.assign(_close=box_df["close"].astype(float))
-        ceiling = float(box_df["high"].max())  # conservative upper bound
         # We rely on the caller passing a box that contains the ceiling; the
         # last row that touches the ceiling within 1% is the breakout day.
         tol = ceiling * 0.01
@@ -231,7 +231,7 @@ class DarvasBoxScanner(AccumulationBaseScanner):
         self, ceiling: float, floor: float, box_volumes: np.ndarray, breakout_volume: float
     ) -> dict:
         entry = float(ceiling * (1.0 + ENTRY_BUFFER_PCT))
-        sl = float(floor)
+        sl = float(floor) * 0.995  # 0.5% below floor, gives room for stop hunts
         height = entry - sl
         t1 = entry + height
         t2 = entry + 2 * height
@@ -312,15 +312,18 @@ class DarvasBoxScanner(AccumulationBaseScanner):
         th = TIER_THRESHOLDS[tier]
         if box_age_days < th["min_box_age"]:
             return False, f"Box age {box_age_days} below minimum {th['min_box_age']} for {tier}"
-        if th["min_am"] is not None and am < th["min_am"]:
-            return False, f"AM {am:.2f} below threshold {th['min_am']} for {tier}"
-        # Small cap: allow breakout_dar >= 1.5% as an alternative to AM.
-        if th["min_am"] is None:
-            dar_floor = th["breakout_dar_floor"] or 1.5
-            if am < th["min_am"] if th["min_am"] is not None else False:
-                return False, f"AM {am:.2f} below threshold for {tier}"
-            if am < 4.0 and breakout_dar < dar_floor:
-                return False, f"AM {am:.2f} < 4.0 and breakout DAR {breakout_dar:.2f}% < {dar_floor}% for {tier}"
+        dar_floor = th.get("breakout_dar_floor")
+        if dar_floor is not None:
+            # Small cap: AM >= min_am OR breakout_dar >= dar_floor (either passes)
+            if am < (th["min_am"] or 0) and breakout_dar < dar_floor:
+                return False, (
+                    f"AM {am:.2f} < {th['min_am']} and breakout DAR {breakout_dar:.2f}% "
+                    f"< {dar_floor}% — neither threshold met for {tier}"
+                )
+        else:
+            # Mid / large cap: AM must meet threshold
+            if th["min_am"] is not None and am < th["min_am"]:
+                return False, f"AM {am:.2f} below threshold {th['min_am']} for {tier}"
         if th["min_sar"] is not None and sar < th["min_sar"]:
             return False, f"SAR {sar:.2f} below threshold {th['min_sar']} for {tier}"
         return True, ""
@@ -402,7 +405,8 @@ class DarvasBoxScanner(AccumulationBaseScanner):
 
             ff_mcap = mcap * ff_pct / 100.0
             box_dar = self._compute_box_dar(
-                df, box["box_start_idx"], box["box_end_idx"], ff_mcap
+                df, box["box_start_idx"], box["box_end_idx"], ff_mcap,
+                ceiling=box["ceiling"]
             )
             dar_box_median = box_dar["dar_box_median"]
             sar = box_dar["sar"]
