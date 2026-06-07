@@ -113,6 +113,34 @@ body {
   scrollbar-color: rgba(255,255,255,0.2) transparent;
 }
 
+/* MYRA scanner table scrollbars — Webkit (Chrome, Edge, Safari) */
+.scanner-table-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scanner-table-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scanner-table-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+}
+.scanner-table-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+.scanner-table-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Firefox scrollbar + opaque header bg for sticky thead */
+.scanner-table-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.12) transparent;
+}
+.scanner-table-scroll thead th {
+  background-color: #0e1117;
+}
+
 /* Indeterminate progress bar animation for pipeline tasks */
 @keyframes indeterminate {
   0% { transform: translateX(-100%); }

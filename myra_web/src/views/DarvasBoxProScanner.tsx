@@ -117,8 +117,16 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
 
   const mountedRef = useRef(true);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const tableScrollRef = useRef<HTMLDivElement>(null);
 
   const candidates = scanStatus?.candidates ?? [];
+
+  useEffect(() => {
+    if (tableScrollRef.current) {
+      tableScrollRef.current.scrollTop = 0;
+      tableScrollRef.current.scrollLeft = 0;
+    }
+  }, [candidates.length]);
 
   const availableSectors = useMemo(() => {
     const sectors = new Set(candidates.map(c => c.sector ?? 'Unknown'));
@@ -563,59 +571,71 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
 
           {/* Table */}
           <div className="flex-1 min-h-0 bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden flex flex-col">
-            <div className="h-full overflow-y-auto">
-              <table className="w-full text-left text-xs font-mono whitespace-nowrap">
-                <thead className="sticky top-0 z-10 bg-[#1a1c24] text-[#888] shadow-sm">
-                  <tr>
-                    <th className="px-3 py-3 font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('symbol')} scope="col" aria-sort={sortCol === 'symbol' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+            <div
+              ref={tableScrollRef}
+              className="flex-1 min-h-0 overflow-auto scanner-table-scroll"
+              role="region"
+              aria-label="Scanner results table — scroll horizontally or vertically"
+              tabIndex={0}
+            >
+              <table
+                className="w-full min-w-max text-left text-xs font-mono whitespace-nowrap"
+                role="grid"
+                aria-label="Darvas Box Pro Scanner results"
+                aria-rowcount={filteredData.length}
+                aria-colcount={15}
+              >
+                <thead className="sticky top-0 z-20 text-[#888]">
+                  <tr style={{ boxShadow: '0 1px 0 0 rgba(255,255,255,0.08), 0 2px 4px 0 rgba(0,0,0,0.4)' }}>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('symbol')} scope="col" aria-sort={sortCol === 'symbol' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip content="NSE ticker. Click to open the chart in a new tab." showIcon={false}>Symbol <SortIcon column="symbol" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('sector')} scope="col" aria-sort={sortCol === 'sector' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('sector')} scope="col" aria-sort={sortCol === 'sector' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       Sector <SortIcon column="sector" />
                     </th>
-                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('market_cap_cr')} scope="col" aria-sort={sortCol === 'market_cap_cr' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('market_cap_cr')} scope="col" aria-sort={sortCol === 'market_cap_cr' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       MCap (₹ Cr) <SortIcon column="market_cap_cr" />
                     </th>
-                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('box_age_days')} scope="col" aria-sort={sortCol === 'box_age_days' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('box_age_days')} scope="col" aria-sort={sortCol === 'box_age_days' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       Box Days <SortIcon column="box_age_days" />
                     </th>
-                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('box_range_pct')} scope="col" aria-sort={sortCol === 'box_range_pct' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('box_range_pct')} scope="col" aria-sort={sortCol === 'box_range_pct' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       Box Range % <SortIcon column="box_range_pct" />
                     </th>
-                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('dar_box_median')} scope="col" aria-sort={sortCol === 'dar_box_median' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('dar_box_median')} scope="col" aria-sort={sortCol === 'dar_box_median' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip content="Median Delivery Absorption Ratio inside the box. Higher = more institutional accumulation." showIcon={false}>
                         DAR (Box) <SortIcon column="dar_box_median" />
                       </Tooltip>
                     </th>
-                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('sar')} scope="col" aria-sort={sortCol === 'sar' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('sar')} scope="col" aria-sort={sortCol === 'sar' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip content="Squeeze Acceleration Ratio: last-3-day mean DAR / box median DAR. >1.0 means DAR is accelerating into the breakout." showIcon={false}>
                         SAR <SortIcon column="sar" />
                       </Tooltip>
                     </th>
-                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('breakout_dar')} scope="col" aria-sort={sortCol === 'breakout_dar' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('breakout_dar')} scope="col" aria-sort={sortCol === 'breakout_dar' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       Breakout DAR <SortIcon column="breakout_dar" />
                     </th>
-                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('am')} scope="col" aria-sort={sortCol === 'am' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('am')} scope="col" aria-sort={sortCol === 'am' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip content="Absorption Multiple: breakout day DAR / box median DAR. ≥ tier threshold = institutional conviction." showIcon={false}>
                         AM <SortIcon column="am" />
                       </Tooltip>
                     </th>
-                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('entry')} scope="col" aria-sort={sortCol === 'entry' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('entry')} scope="col" aria-sort={sortCol === 'entry' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       Entry <SortIcon column="entry" />
                     </th>
-                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('sl')} scope="col" aria-sort={sortCol === 'sl' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('sl')} scope="col" aria-sort={sortCol === 'sl' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       SL <SortIcon column="sl" />
                     </th>
-                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('t1')} scope="col" aria-sort={sortCol === 't1' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('t1')} scope="col" aria-sort={sortCol === 't1' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       T1 <SortIcon column="t1" />
                     </th>
-                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('t2')} scope="col" aria-sort={sortCol === 't2' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('t2')} scope="col" aria-sort={sortCol === 't2' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       T2 <SortIcon column="t2" />
                     </th>
-                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('status')} scope="col" aria-sort={sortCol === 'status' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('status')} scope="col" aria-sort={sortCol === 'status' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       Status <SortIcon column="status" />
                     </th>
-                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('composite_score')} scope="col" aria-sort={sortCol === 'composite_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('composite_score')} scope="col" aria-sort={sortCol === 'composite_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       Score <SortIcon column="composite_score" />
                     </th>
                   </tr>
@@ -626,8 +646,8 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
                       <td colSpan={15} className="px-4 py-8 text-center text-[#666]">No Darvas boxes match current filters.</td>
                     </tr>
                   ) : (
-                    filteredData.map((row) => (
-                      <tr key={row.symbol} className="hover:bg-[#ffffff05] transition-colors">
+                    filteredData.map((row, index) => (
+                      <tr key={row.symbol} role="row" aria-rowindex={index + 1} className="hover:bg-[#ffffff05] transition-colors">
                         <td className="px-3 py-3 font-bold" scope="row">
                           <div className="flex items-center gap-1.5">
                             <StarButton symbol={row.symbol} size={11} />
