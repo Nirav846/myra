@@ -13,14 +13,15 @@ interface Candidate {
   sector?: string;
   market_cap_cr: number;
   tier: string;
-  ceiling: number;
-  floor: number;
+  ceiling_price: number;
+  floor_price: number;
   ceiling_date: string;
   floor_date: string;
   box_age_days: number;
   box_range_pct: number;
   touches_ceiling: number;
   touches_floor: number;
+  dist_to_ceiling_pct: number;
   dar_box_median: number;
   sar: number;
   breakout_dar: number;
@@ -87,7 +88,16 @@ const TIER_COLORS: Record<string, string> = {
   large: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
 };
 
-const STATUS_FILTERS = ['All', 'In Box', 'Breakout Pending', 'Triggered', 'Invalidated', 'Failed Validation', 'Low Volume'];
+const STATUS_FILTERS = [
+  'Active',   // In Box + Breakout Pending (default — actionable setups only)
+  'All',
+  'In Box',
+  'Breakout Pending',
+  'Triggered',
+  'Invalidated',
+  'Failed Validation',
+  'Low Volume',
+];
 
 export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
   const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
@@ -105,7 +115,7 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
   const [watchlistOnly, setWatchlistOnly] = useState(false);
 
   const [sectorFilter, setSectorFilter] = useState<string>('All');
-  const [statusFilter, setStatusFilter] = useState<string>('All');
+  const [statusFilter, setStatusFilter] = useState<string>('Active');
   const [minScoreFilter, setMinScoreFilter] = useState(0);
   const [minAmFilter, setMinAmFilter] = useState(0);
   const [minSarFilter, setMinSarFilter] = useState(0);
@@ -144,7 +154,11 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
     }
     if (watchlistOnly) data = data.filter(d => isWatched(d.symbol));
     if (sectorFilter !== 'All') data = data.filter(d => d.sector === sectorFilter);
-    if (statusFilter !== 'All') data = data.filter(d => d.status === statusFilter);
+    if (statusFilter === 'Active') {
+      data = data.filter(d => d.status === 'In Box' || d.status === 'Breakout Pending');
+    } else if (statusFilter !== 'All') {
+      data = data.filter(d => d.status === statusFilter);
+    }
     if (minScoreFilter > 0) data = data.filter(d => d.composite_score >= minScoreFilter);
     if (minAmFilter > 0) data = data.filter(d => d.am >= minAmFilter);
     if (minSarFilter > 0) data = data.filter(d => d.sar >= minSarFilter);
@@ -548,7 +562,7 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
               </div>
               <div className="flex flex-wrap gap-2">
                 {filteredData
-                  .filter(d => d.grade === 'A')
+                  .filter(d => d.grade === 'A' && d.status !== 'Invalidated')
                   .slice(0, 12)
                   .map(d => (
                     <div key={d.symbol}
@@ -561,6 +575,11 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
                         {d.tier.toUpperCase()}
                       </span>
                       <span className="text-green-400">AM {d.am.toFixed(2)}</span>
+                      {d.dist_to_ceiling_pct > 0 && (
+                        <span className="text-yellow-400 text-[10px]">
+                          {d.dist_to_ceiling_pct.toFixed(1)}% to BO
+                        </span>
+                      )}
                       <span className="text-red-400 text-[10px]">SL {d.sl?.toFixed(2) ?? '—'}</span>
                     </div>
                   ))
@@ -583,7 +602,7 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
                 role="grid"
                 aria-label="Darvas Box Pro Scanner results"
                 aria-rowcount={filteredData.length}
-                aria-colcount={15}
+                aria-colcount={19}
               >
                 <thead className="sticky top-0 z-20 text-[#888]">
                   <tr style={{ boxShadow: '0 1px 0 0 rgba(255,255,255,0.08), 0 2px 4px 0 rgba(0,0,0,0.4)' }}>
@@ -601,6 +620,18 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
                     </th>
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('box_range_pct')} scope="col" aria-sort={sortCol === 'box_range_pct' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       Box Range % <SortIcon column="box_range_pct" />
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('ceiling_price')} scope="col">
+                      <Tooltip content="Box ceiling price — the resistance level being tested. Entry is 0.5% above this on a confirmed breakout close.">Ceiling <SortIcon column="ceiling_price" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('floor_price')} scope="col">
+                      <Tooltip content="Box floor price — the support level. Stop loss is 0.5% below this.">Floor <SortIcon column="floor_price" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('dist_to_ceiling_pct')} scope="col">
+                      <Tooltip content="Distance from current price to the box ceiling. Below 2% = breakout imminent. 0% = already broken out." good="Below 2%: watch closely" bad="0%: check status — may already be triggered">→ Ceiling <SortIcon column="dist_to_ceiling_pct" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('touches_ceiling')} scope="col">
+                      <Tooltip content="Number of times price touched the ceiling within 1%. More touches = stronger resistance = more significant breakout when it comes." good="3+ touches: very strong box" bad="Exactly 2: minimum — treat with less conviction">Touches <SortIcon column="touches_ceiling" /></Tooltip>
                     </th>
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('dar_box_median')} scope="col" aria-sort={sortCol === 'dar_box_median' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip content="Median Delivery Absorption Ratio inside the box. Higher = more institutional accumulation." showIcon={false}>
@@ -643,7 +674,7 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={15} className="px-4 py-8 text-center text-[#666]">No Darvas boxes match current filters.</td>
+                      <td colSpan={19} className="px-4 py-8 text-center text-[#666]">No Darvas boxes match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((row, index) => (
@@ -671,6 +702,28 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
                           </span>
                         </td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.box_range_pct.toFixed(1)}%</td>
+                        <td className="px-3 py-3 text-right text-[#ccc]">
+                          {row.ceiling_price?.toFixed(2) ?? '—'}
+                        </td>
+                        <td className="px-3 py-3 text-right text-[#ccc]">
+                          {row.floor_price?.toFixed(2) ?? '—'}
+                        </td>
+                        <td className="px-3 py-3 text-right">
+                          <span className={
+                            row.dist_to_ceiling_pct <= 0 ? 'text-green-400' :
+                            row.dist_to_ceiling_pct <= 2 ? 'text-yellow-400' :
+                            'text-[#888]'
+                          }>
+                            {row.dist_to_ceiling_pct > 0 ? `${row.dist_to_ceiling_pct.toFixed(1)}%` : '—'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-right">
+                          <span className={
+                            row.touches_ceiling >= 3 ? 'text-green-400' : 'text-[#ccc]'
+                          }>
+                            {row.touches_ceiling}C / {row.touches_floor}F
+                          </span>
+                        </td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.dar_box_median.toFixed(2)}%</td>
                         <td className="px-3 py-3 text-right">
                           <span className={row.sar >= 1.15 ? 'text-green-400' : row.sar >= 1.0 ? 'text-yellow-400' : 'text-[#888]'}>
