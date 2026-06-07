@@ -247,7 +247,7 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
   };
 
   return (
-    <div className="flex flex-col h-full relative space-y-4 p-4">
+    <div className="flex flex-col flex-1 min-h-0 relative gap-4 p-4">
       {showStaleWarning && (
         <div className="bg-amber-500/10 border border-amber-500/30 rounded px-4 py-2 flex items-center gap-2 text-xs font-mono">
           <AlertTriangle size={14} className="text-amber-400 shrink-0" />
@@ -444,10 +444,10 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
             </div>
           </div>
 
-          <div className="flex-1 bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden flex flex-col">
-            <div className="overflow-x-auto flex-1">
+          <div className="flex-1 min-h-0 bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden flex flex-col">
+            <div className="h-full overflow-y-auto">
               <table className="w-full text-left text-xs font-mono whitespace-nowrap">
-                <thead className="bg-[#0e1117] text-[#888] sticky top-0">
+                <thead className="sticky top-0 z-10 bg-[#1a1c24] text-[#888] shadow-sm">
                   <tr>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider">Symbol</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Trigger Date</th>

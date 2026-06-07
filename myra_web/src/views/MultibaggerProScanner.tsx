@@ -327,7 +327,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
   const isIdle = scanStatus?.scan_status === 'idle' || !scanStatus;
 
   return (
-    <main className="flex flex-col h-full relative space-y-4 p-4" aria-label="Multibagger Pro Scanner">
+    <main className="flex flex-col flex-1 min-h-0 relative gap-4 p-4" aria-label="Multibagger Pro Scanner">
       {/* Staleness Warning */}
       {isStale && staleBannerOpen && (
         <div className="bg-amber-500/10 border border-amber-500/30 rounded px-4 py-2 flex items-center gap-2 text-xs font-mono" role="alert">
@@ -780,10 +780,10 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
           </div>
 
           {/* Table */}
-          <div className="flex-1 bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden flex flex-col">
-            <div className="overflow-x-auto flex-1">
+          <div className="flex-1 min-h-0 bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden flex flex-col">
+            <div className="h-full overflow-y-auto">
               <table className="w-full text-left text-xs font-mono whitespace-nowrap">
-                <thead className="bg-[#0e1117] text-[#888] sticky top-0">
+                <thead className="sticky top-0 z-10 bg-[#1a1c24] text-[#888] shadow-sm">
                   <tr>
                     {/* ── CORE (always visible) ── */}
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('symbol')} scope="col" aria-sort={sortCol === 'symbol' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>

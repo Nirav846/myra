@@ -67,6 +67,8 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
         minDeliveryPct, setMinDeliveryPct,
         maxDeliveryPct, setMaxDeliveryPct,
         minRelVolScore, setMinRelVolScore,
+        minDeliveryValueCr, setMinDeliveryValueCr,
+        minVolumeToMcap, setMinVolumeToMcap,
         filterSector, setFilterSector,
         lookbackDays, setLookbackDays,
         symbolSearch, setSymbolSearch,
@@ -157,14 +159,15 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
         } else {
             const data = triggerMode ? triggerSortedData : sortedData;
             if (data.length === 0) return;
-            const headers = ['Symbol', 'Date', 'Close', 'Return Since %', 'Delivery%', 'Divergence Score', 'Volatility Compression', 'Rel Volume Score', 'Nifty Outperformance', 'Composite Score', 'Volume', 'Sector'];
+            const headers = ['Symbol', 'Date', 'Close', 'Return Since %', 'Delivery%', 'Divergence Score', 'Volatility Compression', 'Rel Volume Score', 'Nifty Outperformance', 'Composite Score', 'Volume', 'Sector', 'Del Value (₹ Cr)', 'Vol/Mcap %'];
             const rows = data.map(r => [
                 r.symbol, r.date,
                 r.close.toFixed(2), r.return_since.toFixed(2),
                 r.delivery_pct.toFixed(2), r.delivery_divergence_score.toFixed(2),
                 r.volatility_compression_score.toFixed(2), r.relative_volume_score.toFixed(2),
                 r.nifty_outperformance_score.toFixed(2), r.composite_score.toFixed(2),
-                r.volume, r.sector
+                r.volume, r.sector,
+                r.delivery_value_cr.toFixed(2), r.volume_to_mcap_pct.toFixed(2)
             ].join(','));
             const csv = [headers.join(','), ...rows].join('\n');
             const blob = new Blob([csv], { type: 'text/csv' });
@@ -223,7 +226,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
         }
     };
 
-    const ALWAYS_VISIBLE = ['symbol','date','close','delivery_pct','delivery_divergence_score','relative_volume_score','volume'] as const;
+    const ALWAYS_VISIBLE = ['symbol','date','close','delivery_pct','delivery_divergence_score','relative_volume_score','volume','delivery_value_cr','volume_to_mcap_pct'] as const;
     const OPTIONAL = ['return_since','composite_score','volatility_compression_score','nifty_outperformance_score','strength'] as const;
     const visibleColCount = ALWAYS_VISIBLE.length + OPTIONAL.filter(k => columnVisibility[k]).length;
 
@@ -249,7 +252,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
     const isStale = lastScanned && (Date.now() - lastScanned.getTime() > 30 * 60 * 1000);
 
     return (
-        <section className="bg-[#1e2028] border border-[#ffffff1a] rounded flex flex-col shadow-xl overflow-hidden min-h-[600px]" aria-label="Delivery Anomaly Scanner">
+        <section className="bg-[#1e2028] border border-[#ffffff1a] rounded flex flex-col shadow-xl overflow-hidden flex-1 min-h-0 min-h-[600px]" aria-label="Delivery Anomaly Scanner">
             {/* Header */}
             <header className="px-6 py-4 border-b border-[#ffffff1a] flex justify-between items-center bg-[#1a1c24]">
                 <div className="flex items-center gap-3">
@@ -443,6 +446,24 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                         />
                     </div>
                     <div className="flex flex-col flex-shrink-0 w-[130px]">
+                        <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                            <label>Min Del Value (₹ Cr)</label>
+                            <span className="text-orange-400">{minDeliveryValueCr > 0 ? `≥${minDeliveryValueCr}` : 'Off'}</span>
+                        </div>
+                        <input type="range" min="0" max="100" step="1" value={minDeliveryValueCr}
+                            onChange={(e) => setMinDeliveryValueCr(Number(e.target.value))}
+                            className="w-full accent-orange-500" />
+                    </div>
+                    <div className="flex flex-col flex-shrink-0 w-[130px]">
+                        <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                            <label>Min Vol/Mcap %</label>
+                            <span className="text-orange-400">{minVolumeToMcap > 0 ? `≥${minVolumeToMcap}%` : 'Off'}</span>
+                        </div>
+                        <input type="range" min="0" max="20" step="0.5" value={minVolumeToMcap}
+                            onChange={(e) => setMinVolumeToMcap(Number(e.target.value))}
+                            className="w-full accent-orange-500" />
+                    </div>
+                    <div className="flex flex-col flex-shrink-0 w-[130px]">
                         <label className="text-[10px] text-[#888] font-mono mb-1" id="sector-filter-label">Sector Filter</label>
                         <select value={filterSector} onChange={(e) => setFilterSector(e.target.value)} className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] focus:border-orange-500 outline-none w-full focus-visible:ring-2 focus-visible:ring-orange-500/50" aria-labelledby="sector-filter-label">
                             <option value="All">All Sectors</option>
@@ -588,17 +609,19 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
             )}
 
             {/* Table */}
-            <div className="flex-1 overflow-auto overflow-x-auto" tabIndex={0} role="region" aria-label="Scanner results table" onKeyDown={(e) => {
-                const t = e.currentTarget;
-                if (e.key === 'ArrowRight') { t.scrollLeft += 80; e.preventDefault(); }
-                if (e.key === 'ArrowLeft') { t.scrollLeft -= 80; e.preventDefault(); }
-            }}>
+            <div className="flex-1 min-h-0 overflow-hidden rounded">
                 {isLoading ? (
                     <div className="p-8 text-center text-[#888] font-mono text-xs flex flex-col items-center justify-center h-64 gap-4" role="status" aria-live="polite">
                         <RefreshCw className="animate-spin text-orange-500/50" size={24} aria-hidden="true" />
                         Scanning for delivery anomalies...
                     </div>
-                ) : viewMode === 'detail' ? (
+                ) : (
+                <div className="h-full overflow-y-auto" tabIndex={0} role="region" aria-label="Scanner results table" onKeyDown={(e) => {
+                    const t = e.currentTarget;
+                    if (e.key === 'ArrowRight') { t.scrollLeft += 80; e.preventDefault(); }
+                    if (e.key === 'ArrowLeft') { t.scrollLeft -= 80; e.preventDefault(); }
+                }}>
+                    {viewMode === 'detail' ? (
                     <table className="w-full text-left border-collapse min-w-[800px]">
                         <thead className="sticky top-0 bg-[#1a1c24] z-10 shadow-sm border-b border-[#ffffff1a]">
                             <tr>
@@ -647,6 +670,12 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                                 )}
                                 <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'volume' ? 'text-white' : ''}`} onClick={() => handleSort('volume')} scope="col" aria-sort={sortConfig?.key === 'volume' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     Volume <ColTip text="Total traded volume (shares)." /> <SortIcon column="volume" sortConfig={sortConfig} />
+                                </th>
+                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'delivery_value_cr' ? 'text-white' : ''}`} onClick={() => handleSort('delivery_value_cr')} scope="col" aria-sort={sortConfig?.key === 'delivery_value_cr' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                    Del Value (₹ Cr) <ColTip text="Delivery quantity × close price, in Crores. Distinguishes genuine institutional flow from microcap noise." /> <SortIcon column="delivery_value_cr" sortConfig={sortConfig} />
+                                </th>
+                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'volume_to_mcap_pct' ? 'text-white' : ''}`} onClick={() => handleSort('volume_to_mcap_pct')} scope="col" aria-sort={sortConfig?.key === 'volume_to_mcap_pct' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                    Vol/Mcap % <ColTip text="Volume as a % of market cap. Above 5% flags extreme turnover events. Above 1% is meaningful." /> <SortIcon column="volume_to_mcap_pct" sortConfig={sortConfig} />
                                 </th>
                             </tr>
                         </thead>
@@ -733,6 +762,18 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                                     )}
                                     <td className="p-3 text-sm font-mono whitespace-nowrap text-right text-[#ccc]">
                                         {formatVolume(d.volume)}
+                                    </td>
+                                    <td className="p-3 text-sm font-mono whitespace-nowrap text-right text-[#ccc]">
+                                        {d.delivery_value_cr >= 10
+                                            ? `₹${d.delivery_value_cr.toFixed(1)} Cr`
+                                            : d.delivery_value_cr >= 0.01
+                                                ? `₹${d.delivery_value_cr.toFixed(2)} Cr`
+                                                : '—'}
+                                    </td>
+                                    <td className="p-3 text-sm font-mono whitespace-nowrap text-right">
+                                        <span className={d.volume_to_mcap_pct > 5 ? 'text-orange-400' : d.volume_to_mcap_pct > 1 ? 'text-[#fafafa]' : 'text-[#555]'}>
+                                            {d.volume_to_mcap_pct > 0 ? `${d.volume_to_mcap_pct.toFixed(2)}%` : '—'}
+                                        </span>
                                     </td>
                                 </tr>
                             ))}
@@ -840,6 +881,8 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                             )}
                         </tbody>
                     </table>
+                    )}
+                </div>
                 )}
             </div>
         </section>

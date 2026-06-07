@@ -1,0 +1,728 @@
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Librarian } from '../lib/Librarian';
+import { Box, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Star } from 'lucide-react';
+import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
+import { fetchMarketCapMap } from '../lib/marketCapCache';
+import { useWatchlist } from '../lib/WatchlistContext';
+import { StarButton } from '../components/StarButton';
+import { API_BASE } from '../config';
+import { Tooltip } from '../components/Tooltip';
+
+interface Candidate {
+  symbol: string;
+  sector?: string;
+  market_cap_cr: number;
+  tier: string;
+  ceiling: number;
+  floor: number;
+  ceiling_date: string;
+  floor_date: string;
+  box_age_days: number;
+  box_range_pct: number;
+  touches_ceiling: number;
+  touches_floor: number;
+  dar_box_median: number;
+  sar: number;
+  breakout_dar: number;
+  am: number;
+  entry: number | null;
+  sl: number | null;
+  t1: number | null;
+  t2: number | null;
+  volume_ok: boolean;
+  close: number;
+  status: string;
+  failure_reason: string;
+  composite_score: number;
+  grade: string;
+}
+
+interface ScanStatus {
+  scan_status: string;
+  last_scan: string | null;
+  progress: number;
+  message: string;
+  candidates: Candidate[];
+  bear_market?: boolean;
+}
+
+function relativeTime(dateStr: string | null | undefined): string {
+  if (!dateStr) return 'Never';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return 'Never';
+    const diffMs = Date.now() - d.getTime();
+    if (diffMs < 0) return 'Just now';
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return 'Just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  } catch {
+    return dateStr || 'Never';
+  }
+}
+
+const GRADE_COLORS: Record<string, string> = {
+  A: 'bg-green-500/20 text-green-400 border-green-500/30',
+  B: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  C: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+  D: 'bg-red-500/20 text-red-400 border-red-500/30',
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  'In Box': 'text-[#aaa]',
+  'Breakout Pending': 'text-yellow-400',
+  'Triggered': 'text-green-400',
+  'Invalidated': 'text-red-400',
+  'Failed Validation': 'text-orange-400',
+  'Low Volume': 'text-red-300',
+};
+
+const TIER_COLORS: Record<string, string> = {
+  small: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+  mid: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30',
+  large: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
+};
+
+const STATUS_FILTERS = ['All', 'In Box', 'Breakout Pending', 'Triggered', 'Invalidated', 'Failed Validation', 'Low Volume'];
+
+export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
+  const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [staleBannerOpen, setStaleBannerOpen] = useState(true);
+  const [bearMarket, setBearMarket] = useState(false);
+
+  const [baseDays, setBaseDays] = useState(120);
+  const [minDar, setMinDar] = useState(0.2);
+  const [mcapRange, setMcapRange] = useState<{ min: number; max: number } | null>(null);
+  const mcapMapRef = useRef<Map<string, number>>(new Map());
+
+  const { isWatched } = useWatchlist();
+  const [watchlistOnly, setWatchlistOnly] = useState(false);
+
+  const [sectorFilter, setSectorFilter] = useState<string>('All');
+  const [statusFilter, setStatusFilter] = useState<string>('All');
+  const [minScoreFilter, setMinScoreFilter] = useState(0);
+  const [minAmFilter, setMinAmFilter] = useState(0);
+  const [minSarFilter, setMinSarFilter] = useState(0);
+
+  const [sortCol, setSortCol] = useState<string>('composite_score');
+  const [sortAsc, setSortAsc] = useState(false);
+
+  useEffect(() => { fetchMarketCapMap().then(m => mcapMapRef.current = m); }, []);
+
+  const mountedRef = useRef(true);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const candidates = scanStatus?.candidates ?? [];
+
+  const availableSectors = useMemo(() => {
+    const sectors = new Set(candidates.map(c => c.sector ?? 'Unknown'));
+    return ['All', ...Array.from(sectors).filter(s => s !== 'Unknown').sort(), 'Unknown'];
+  }, [candidates]);
+
+  const filteredData = useMemo(() => {
+    let data = [...candidates];
+    if (mcapRange) {
+      const map = mcapMapRef.current;
+      data = data.filter(d => {
+        const mcap = map.get(d.symbol);
+        return mcap !== undefined && mcap >= mcapRange.min && mcap <= mcapRange.max;
+      });
+    }
+    if (watchlistOnly) data = data.filter(d => isWatched(d.symbol));
+    if (sectorFilter !== 'All') data = data.filter(d => d.sector === sectorFilter);
+    if (statusFilter !== 'All') data = data.filter(d => d.status === statusFilter);
+    if (minScoreFilter > 0) data = data.filter(d => d.composite_score >= minScoreFilter);
+    if (minAmFilter > 0) data = data.filter(d => d.am >= minAmFilter);
+    if (minSarFilter > 0) data = data.filter(d => d.sar >= minSarFilter);
+    data.sort((a, b) => {
+      const av = (a as any)[sortCol] ?? 0;
+      const bv = (b as any)[sortCol] ?? 0;
+      if (typeof av === 'number' && typeof bv === 'number') {
+        return sortAsc ? av - bv : bv - av;
+      }
+      return String(av).localeCompare(String(bv)) * (sortAsc ? 1 : -1);
+    });
+    return data;
+  }, [candidates, mcapRange, watchlistOnly, sectorFilter, statusFilter, minScoreFilter, minAmFilter, minSarFilter, isWatched, sortCol, sortAsc]);
+
+  const clearPolling = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }, []);
+
+  const handleSort = (col: string) => {
+    if (sortCol === col) setSortAsc(s => !s);
+    else { setSortCol(col); setSortAsc(false); }
+  };
+
+  const SortIcon = ({ column }: { column: string }) => {
+    if (sortCol !== column) return <ArrowUpDown size={10} className="inline ml-1 opacity-30" />;
+    return sortAsc
+      ? <ChevronUp size={10} className="inline ml-1 text-purple-400" />
+      : <ChevronDown size={10} className="inline ml-1 text-purple-400" />;
+  };
+
+  const fetchScanStatus = useCallback(async () => {
+    if (!mountedRef.current) return;
+    try {
+      const res = await fetch(`${API_BASE}/darvas/status`);
+      if (!mountedRef.current) return;
+      if (res.ok) {
+        const data: ScanStatus = await res.json();
+        if (!mountedRef.current) return;
+        setScanStatus(data);
+        setBearMarket(data.bear_market ?? false);
+        setError(null);
+
+        if (data.scan_status === 'completed' || data.scan_status === 'error') {
+          clearPolling();
+          setIsScanning(false);
+        } else if (data.scan_status === 'scanning' && !pollTimerRef.current) {
+          pollTimerRef.current = setInterval(fetchScanStatus, 2000);
+          setIsScanning(true);
+        }
+      }
+    } catch (e: any) {
+      if (mountedRef.current) {
+        setError(e.message || 'Error connecting to backend');
+      }
+    }
+  }, [clearPolling]);
+
+  const startScan = useCallback(async () => {
+    if (!mountedRef.current) return;
+    setIsScanning(true);
+    setError(null);
+    clearPolling();
+
+    try {
+      const res = await fetch(`${API_BASE}/darvas/scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          base_days: baseDays,
+          min_dar: minDar,
+          min_mcap: mcapRange?.min ?? 100,
+          max_mcap: mcapRange?.max ?? 50000,
+        }),
+      });
+      if (!mountedRef.current) return;
+      if (res.ok) {
+        await fetchScanStatus();
+        pollTimerRef.current = setInterval(fetchScanStatus, 2000);
+      } else {
+        const err = await res.json().catch(() => ({ detail: 'Failed to start scan' }));
+        setError(err.detail || 'Failed to start scan');
+        setIsScanning(false);
+      }
+    } catch (e: any) {
+      if (mountedRef.current) {
+        setError(e.message || 'Error connecting to backend');
+        setIsScanning(false);
+      }
+    }
+  }, [fetchScanStatus, clearPolling, baseDays, minDar, mcapRange]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    fetchScanStatus();
+    return () => {
+      mountedRef.current = false;
+      clearPolling();
+    };
+  }, [fetchScanStatus, clearPolling]);
+
+  const isStale = scanStatus?.last_scan && (Date.now() - new Date(scanStatus.last_scan).getTime() > 30 * 60 * 1000);
+
+  const handleCSV = () => {
+    if (filteredData.length === 0) return;
+    const headers = [
+      'Symbol', 'Sector', 'Market Cap Cr', 'Tier', 'Box Age', 'Box Range %', 'DAR (Box)',
+      'SAR', 'Breakout DAR', 'AM', 'Entry', 'SL', 'T1', 'T2', 'Status', 'Failure Reason',
+      'Composite Score', 'Grade',
+    ];
+    const rows = filteredData.map(r => [
+      r.symbol, r.sector ?? '', r.market_cap_cr, r.tier, r.box_age_days, r.box_range_pct,
+      r.dar_box_median, r.sar, r.breakout_dar, r.am,
+      r.entry ?? '', r.sl ?? '', r.t1 ?? '', r.t2 ?? '',
+      r.status, r.failure_reason ?? '',
+      r.composite_score, r.grade,
+    ].join(','));
+    const csv = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `darvas_box_pro_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const progressPct = scanStatus?.progress ?? 0;
+  const isIdle = scanStatus?.scan_status === 'idle' || !scanStatus;
+
+  return (
+    <main className="flex flex-col flex-1 min-h-0 relative gap-4 p-4" aria-label="Darvas Box Pro Scanner">
+      {/* Staleness Warning */}
+      {isStale && staleBannerOpen && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded px-4 py-2 flex items-center gap-2 text-xs font-mono" role="alert">
+          <AlertTriangle size={14} className="text-amber-400 shrink-0" aria-hidden="true" />
+          <span className="text-amber-300/90">Data may be stale — re-scan recommended (last scan &gt; 30 min ago).</span>
+          <button onClick={() => setStaleBannerOpen(false)} className="ml-auto text-amber-500/50 hover:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 rounded" aria-label="Dismiss stale warning">
+            <XCircle size={14} aria-hidden="true" />
+          </button>
+        </div>
+      )}
+
+      {/* Header */}
+      <header className="flex justify-between items-center bg-[#1a1c24] border border-[#ffffff1a] rounded p-4">
+        <div className="flex items-center gap-3">
+          <div className="bg-purple-500/20 p-2 rounded" aria-hidden="true">
+            <Box className="text-purple-400" size={24} />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold tracking-tight text-[#fafafa]">Darvas Box Pro</h1>
+            <p className="text-xs font-mono text-[#888]">Box Breakouts Validated by Delivery Absorption</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 ml-auto mr-3">
+          <span className="text-[10px] text-[#555] font-mono" aria-hidden="true">Lookback:</span>
+          {[
+            { label: 'Quick 60d', days: 60 },
+            { label: 'Standard 120d', days: 120 },
+            { label: 'Deep 180d', days: 180 },
+          ].map(p => (
+            <button
+              key={p.days}
+              onClick={() => setBaseDays(p.days)}
+              className={`px-2 py-1 rounded border text-[10px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 ${
+                baseDays === p.days
+                  ? 'bg-purple-500/20 border-purple-500/40 text-purple-400'
+                  : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#666] hover:text-[#aaa]'
+              }`}
+              aria-pressed={baseDays === p.days}
+              aria-label={`Set lookback to ${p.days} days`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={startScan}
+          disabled={isScanning}
+          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded text-xs font-semibold flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/50"
+          aria-label={isScanning ? 'Scanning, please wait' : 'Start scan'}
+        >
+          {isScanning ? (
+            <><RefreshCw size={14} className="animate-spin" aria-hidden="true" /> Scanning...</>
+          ) : (
+            <><Box size={14} fill="currentColor" aria-hidden="true" /> Scan</>
+          )}
+        </button>
+      </header>
+
+      {/* Progress / Status Bar */}
+      {isScanning && (
+        <div className="bg-cyan-500/10 border border-cyan-500/30 rounded p-3" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100} aria-label="Scan progress">
+          <div className="flex items-center gap-2 text-xs font-mono text-cyan-300 mb-2">
+            <RefreshCw size={14} className="animate-spin" aria-hidden="true" />
+            <span>{scanStatus?.message || 'Scanning...'}</span>
+            <span className="ml-auto">{progressPct}%</span>
+          </div>
+          <div className="w-full h-1.5 bg-[#ffffff1a] rounded-full overflow-hidden">
+            <div className="h-full bg-cyan-500 rounded-full transition-all duration-500" style={{ width: `${Math.max(progressPct, 5)}%` }} />
+          </div>
+        </div>
+      )}
+
+      {!isScanning && scanStatus && scanStatus.scan_status !== 'idle' && (
+        <div className={`flex items-center gap-2 px-3 py-2 rounded text-xs font-mono border ${
+          scanStatus.scan_status === 'completed' ? 'bg-green-500/10 border-green-500/30 text-green-300' :
+          scanStatus.scan_status === 'error' ? 'bg-red-500/10 border-red-500/30 text-red-300' :
+          'bg-[#ffffff0a] border-[#ffffff1a] text-[#888]'
+        }`} role="status" aria-live="polite">
+          {scanStatus.scan_status === 'completed' ? <CheckCircle size={14} className="text-green-400" aria-hidden="true" /> :
+           scanStatus.scan_status === 'error' ? <XCircle size={14} className="text-red-400" aria-hidden="true" /> :
+           <Clock size={14} aria-hidden="true" />}
+          <span>
+            {scanStatus.scan_status === 'completed' ? `Completed (${relativeTime(scanStatus.last_scan)})` :
+             scanStatus.scan_status === 'error' ? 'Scan failed' :
+             scanStatus.message}
+          </span>
+          <span className="ml-auto text-[#666]">{scanStatus.message}</span>
+        </div>
+      )}
+
+      {error && !isScanning && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded px-4 py-2 flex items-center gap-2 text-xs font-mono text-red-300" role="alert">
+          <AlertTriangle size={14} className="shrink-0" aria-hidden="true" />
+          <span>Error: {error}</span>
+        </div>
+      )}
+
+      {/* Filters */}
+      <section className="bg-[#0e1117] border border-[#ffffff1a] rounded p-4 flex flex-wrap gap-4 items-end" aria-label="Filters">
+        <div className="flex items-center gap-2 mb-1 text-xs text-[#888] w-full">
+          <Filter size={14} aria-hidden="true" /> <span className="font-mono uppercase font-semibold">Filters</span>
+        </div>
+        <div className="flex flex-col gap-1 w-24">
+          <label className="text-[10px] text-[#888] font-mono" id="lookback-label">Lookback Days</label>
+          <input
+            type="number"
+            min={30}
+            max={365}
+            value={baseDays}
+            onChange={e => setBaseDays(Number(e.target.value))}
+            className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none w-full font-mono focus-visible:ring-2 focus-visible:ring-purple-500/50"
+            aria-labelledby="lookback-label"
+          />
+        </div>
+        <div className="flex flex-col gap-1 w-24">
+          <label className="text-[10px] text-[#888] font-mono" id="min-dar-label">Min DAR %</label>
+          <input
+            type="number"
+            min={0}
+            max={10}
+            step={0.1}
+            value={minDar}
+            onChange={e => setMinDar(Number(e.target.value))}
+            className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none w-full font-mono focus-visible:ring-2 focus-visible:ring-purple-500/50"
+            aria-labelledby="min-dar-label"
+          />
+        </div>
+        <div className="max-w-[220px] flex-shrink-0">
+          <MarketCapRangeFilter onChange={setMcapRange} />
+        </div>
+        <div className="flex flex-col gap-1">
+          <div className="text-[10px] text-[#888] font-mono">Watchlist</div>
+          <button
+            onClick={() => setWatchlistOnly(o => !o)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 ${
+              watchlistOnly
+                ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
+                : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
+            }`}
+            aria-label={watchlistOnly ? 'Show all symbols' : 'Filter to starred watchlist only'}
+            aria-pressed={watchlistOnly}
+          >
+            <Star size={11} fill={watchlistOnly ? 'currentColor' : 'none'} aria-hidden="true" />
+            Only Starred
+          </button>
+        </div>
+        <div className="flex flex-col gap-1">
+          <div className="text-[10px] text-[#888] font-mono">Status</div>
+          <select
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value)}
+            className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none font-mono focus-visible:ring-2 focus-visible:ring-purple-500/50"
+          >
+            {STATUS_FILTERS.map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1 w-28">
+          <div className="flex justify-between text-[10px] text-[#888] font-mono items-center">
+            <Tooltip
+              content="Minimum composite score. Default 0 shows all candidates. 55+ = quality setups, 75+ = Grade A."
+            >
+              <span>Min Score</span>
+            </Tooltip>
+            <span className="text-purple-400">{minScoreFilter}</span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={5}
+            value={minScoreFilter}
+            onChange={e => setMinScoreFilter(Number(e.target.value))}
+            className="w-full accent-purple-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50"
+            aria-label="Minimum composite score"
+          />
+        </div>
+        <div className="flex flex-col gap-1 w-28">
+          <div className="flex justify-between text-[10px] text-[#888] font-mono items-center">
+            <Tooltip content="Minimum Absorption Multiple (breakout DAR / box median DAR). Mid-cap threshold = 2.2, Large-cap = 1.5.">
+              <span>Min AM</span>
+            </Tooltip>
+            <span className="text-purple-400">{minAmFilter.toFixed(1)}</span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={10}
+            step={0.1}
+            value={minAmFilter}
+            onChange={e => setMinAmFilter(Number(e.target.value))}
+            className="w-full accent-purple-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50"
+            aria-label="Minimum absorption multiple"
+          />
+        </div>
+        <div className="flex flex-col gap-1 w-28">
+          <div className="flex justify-between text-[10px] text-[#888] font-mono items-center">
+            <Tooltip content="Minimum Squeeze Acceleration Ratio (last-3-day DAR / box median DAR). Mid-cap threshold = 1.10, Large-cap = 1.15.">
+              <span>Min SAR</span>
+            </Tooltip>
+            <span className="text-purple-400">{minSarFilter.toFixed(2)}</span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={2}
+            step={0.05}
+            value={minSarFilter}
+            onChange={e => setMinSarFilter(Number(e.target.value))}
+            className="w-full accent-purple-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50"
+            aria-label="Minimum squeeze acceleration ratio"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <div className="text-[10px] text-[#888] font-mono" id="sector-filter-label">Sector</div>
+          <select
+            value={sectorFilter}
+            onChange={e => setSectorFilter(e.target.value)}
+            className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none font-mono focus-visible:ring-2 focus-visible:ring-purple-500/50"
+            aria-labelledby="sector-filter-label"
+          >
+            {availableSectors.map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+      </section>
+
+      {/* Results */}
+      {(scanStatus?.scan_status === 'completed' || (isIdle && candidates.length > 0)) && !isScanning && (
+        <>
+          {/* Stats Summary */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
+              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Candidates</div>
+              <div className="text-2xl font-bold text-[#fafafa]">{filteredData.length}</div>
+            </div>
+            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
+              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Triggered</div>
+              <div className="text-2xl font-bold text-green-400">{filteredData.filter(d => d.status === 'Triggered').length}</div>
+            </div>
+            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
+              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg AM</div>
+              <div className="text-2xl font-bold text-cyan-400">
+                {filteredData.length > 0
+                  ? (filteredData.reduce((s, d) => s + d.am, 0) / filteredData.length).toFixed(2)
+                  : '—'}
+              </div>
+            </div>
+            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
+              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg Box Range</div>
+              <div className="text-2xl font-bold text-purple-400">
+                {filteredData.length > 0
+                  ? (filteredData.reduce((s, d) => s + d.box_range_pct, 0) / filteredData.length).toFixed(1) + '%'
+                  : '—'}
+              </div>
+            </div>
+          </div>
+
+          {/* Grade A Spotlight */}
+          {filteredData.filter(d => d.grade === 'A').length > 0 && (
+            <div className="bg-green-500/5 border border-green-500/20 rounded p-3">
+              <div className="text-[10px] text-green-400 font-mono uppercase tracking-wider mb-2 flex items-center gap-2">
+                <span>Grade A Boxes</span>
+                <span className="text-[#666]">— institutional absorption confirmed</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {filteredData
+                  .filter(d => d.grade === 'A')
+                  .slice(0, 12)
+                  .map(d => (
+                    <div key={d.symbol}
+                      className="flex items-center gap-1.5 px-2 py-1 rounded border text-[11px] font-mono border-green-500/20 bg-[#1a1c24]"
+                    >
+                      <StarButton symbol={d.symbol} size={10} />
+                      <span className="text-white font-bold">{d.symbol}</span>
+                      <span className="text-[#888]">{d.sector ?? ''}</span>
+                      <span className={`px-1 rounded text-[10px] border ${TIER_COLORS[d.tier] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
+                        {d.tier.toUpperCase()}
+                      </span>
+                      <span className="text-green-400">AM {d.am.toFixed(2)}</span>
+                      <span className="text-red-400 text-[10px]">SL {d.sl?.toFixed(2) ?? '—'}</span>
+                    </div>
+                  ))
+                }
+              </div>
+            </div>
+          )}
+
+          {/* Table */}
+          <div className="flex-1 min-h-0 bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden flex flex-col">
+            <div className="h-full overflow-y-auto">
+              <table className="w-full text-left text-xs font-mono whitespace-nowrap">
+                <thead className="sticky top-0 z-10 bg-[#1a1c24] text-[#888] shadow-sm">
+                  <tr>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('symbol')} scope="col" aria-sort={sortCol === 'symbol' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                      <Tooltip content="NSE ticker. Click to open the chart in a new tab." showIcon={false}>Symbol <SortIcon column="symbol" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('sector')} scope="col" aria-sort={sortCol === 'sector' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                      Sector <SortIcon column="sector" />
+                    </th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('market_cap_cr')} scope="col" aria-sort={sortCol === 'market_cap_cr' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                      MCap (₹ Cr) <SortIcon column="market_cap_cr" />
+                    </th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('box_age_days')} scope="col" aria-sort={sortCol === 'box_age_days' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                      Box Days <SortIcon column="box_age_days" />
+                    </th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('box_range_pct')} scope="col" aria-sort={sortCol === 'box_range_pct' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                      Box Range % <SortIcon column="box_range_pct" />
+                    </th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('dar_box_median')} scope="col" aria-sort={sortCol === 'dar_box_median' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                      <Tooltip content="Median Delivery Absorption Ratio inside the box. Higher = more institutional accumulation." showIcon={false}>
+                        DAR (Box) <SortIcon column="dar_box_median" />
+                      </Tooltip>
+                    </th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('sar')} scope="col" aria-sort={sortCol === 'sar' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                      <Tooltip content="Squeeze Acceleration Ratio: last-3-day mean DAR / box median DAR. >1.0 means DAR is accelerating into the breakout." showIcon={false}>
+                        SAR <SortIcon column="sar" />
+                      </Tooltip>
+                    </th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('breakout_dar')} scope="col" aria-sort={sortCol === 'breakout_dar' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                      Breakout DAR <SortIcon column="breakout_dar" />
+                    </th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('am')} scope="col" aria-sort={sortCol === 'am' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                      <Tooltip content="Absorption Multiple: breakout day DAR / box median DAR. ≥ tier threshold = institutional conviction." showIcon={false}>
+                        AM <SortIcon column="am" />
+                      </Tooltip>
+                    </th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('entry')} scope="col" aria-sort={sortCol === 'entry' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                      Entry <SortIcon column="entry" />
+                    </th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('sl')} scope="col" aria-sort={sortCol === 'sl' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                      SL <SortIcon column="sl" />
+                    </th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('t1')} scope="col" aria-sort={sortCol === 't1' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                      T1 <SortIcon column="t1" />
+                    </th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('t2')} scope="col" aria-sort={sortCol === 't2' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                      T2 <SortIcon column="t2" />
+                    </th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('status')} scope="col" aria-sort={sortCol === 'status' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                      Status <SortIcon column="status" />
+                    </th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('composite_score')} scope="col" aria-sort={sortCol === 'composite_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                      Score <SortIcon column="composite_score" />
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#ffffff0a]">
+                  {filteredData.length === 0 ? (
+                    <tr>
+                      <td colSpan={15} className="px-4 py-8 text-center text-[#666]">No Darvas boxes match current filters.</td>
+                    </tr>
+                  ) : (
+                    filteredData.map((row) => (
+                      <tr key={row.symbol} className="hover:bg-[#ffffff05] transition-colors">
+                        <td className="px-3 py-3 font-bold" scope="row">
+                          <div className="flex items-center gap-1.5">
+                            <StarButton symbol={row.symbol} size={11} />
+                            <button
+                              onClick={() => window.open(`/#/chart?symbol=${encodeURIComponent(row.symbol)}`, '_blank')}
+                              className="text-[#fafafa] hover:text-purple-400 inline-flex items-center gap-1 transition-colors group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50"
+                              aria-label={`Open chart for ${row.symbol}`}
+                            >
+                              {row.symbol}
+                              <ArrowUpRight size={12} className="opacity-0 group-hover:opacity-100" aria-hidden="true" />
+                            </button>
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 text-[#888] text-[11px] max-w-[120px] truncate" title={row.sector ?? ''}>
+                          {row.sector ?? '—'}
+                        </td>
+                        <td className="px-3 py-3 text-right text-[#ccc]">{row.market_cap_cr.toFixed(0)}</td>
+                        <td className="px-3 py-3 text-right text-[#ccc]">
+                          <span className={row.box_age_days < 7 ? 'text-yellow-400' : 'text-[#ccc]'}>
+                            {row.box_age_days}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-right text-[#ccc]">{row.box_range_pct.toFixed(1)}%</td>
+                        <td className="px-3 py-3 text-right text-[#ccc]">{row.dar_box_median.toFixed(2)}%</td>
+                        <td className="px-3 py-3 text-right">
+                          <span className={row.sar >= 1.15 ? 'text-green-400' : row.sar >= 1.0 ? 'text-yellow-400' : 'text-[#888]'}>
+                            {row.sar.toFixed(2)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-right text-[#ccc]">{row.breakout_dar.toFixed(2)}%</td>
+                        <td className="px-3 py-3 text-right">
+                          <span className={row.am >= 4 ? 'text-green-400 font-bold' : row.am >= 2 ? 'text-cyan-400' : 'text-[#aaa]'}>
+                            {row.am.toFixed(2)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-right text-green-400 font-semibold">
+                          {row.entry !== null ? row.entry.toFixed(2) : '—'}
+                        </td>
+                        <td className="px-3 py-3 text-right text-red-400">
+                          {row.sl !== null ? row.sl.toFixed(2) : '—'}
+                        </td>
+                        <td className="px-3 py-3 text-right text-[#777]">
+                          {row.t1 !== null ? row.t1.toFixed(2) : '—'}
+                        </td>
+                        <td className="px-3 py-3 text-right text-[#ccc]">
+                          {row.t2 !== null ? row.t2.toFixed(2) : '—'}
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span className={`text-[10px] font-semibold ${STATUS_COLORS[row.status] || 'text-[#aaa]'}`}>
+                              {row.status}
+                            </span>
+                            {row.status === 'Failed Validation' && row.failure_reason && (
+                              <span className="text-[9px] text-[#777] font-mono" title={row.failure_reason}>
+                                {row.failure_reason.length > 30 ? row.failure_reason.slice(0, 30) + '…' : row.failure_reason}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${GRADE_COLORS[row.grade] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
+                            {row.composite_score.toFixed(0)} · {row.grade}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={handleCSV}
+              disabled={filteredData.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#ffffff0a] hover:bg-[#ffffff15] border border-[#ffffff1a] rounded text-xs text-[#ccc] transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50"
+              aria-label="Export table as CSV"
+            >
+              <Download size={12} aria-hidden="true" />
+              CSV
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Empty state */}
+      {isIdle && candidates.length === 0 && !isScanning && !error && (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center text-[#666] font-mono flex flex-col items-center gap-2">
+            <Box size={32} className="opacity-30" aria-hidden="true" />
+            <p>Click Scan to detect Darvas boxes with delivery absorption.</p>
+            <p className="text-[10px]">Box breakouts validated by DAR with tiered thresholds per market-cap bucket.</p>
+          </div>
+        </div>
+      )}
+    </main>
+  );
+}

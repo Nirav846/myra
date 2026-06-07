@@ -728,7 +728,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
     }, [filteredData]);
 
     return (
-        <main className="bg-[#1e2028] border border-[#ffffff1a] rounded flex flex-col shadow-xl overflow-hidden min-h-[600px]" aria-label="Price-Delivery Divergence Scanner">
+        <main className="bg-[#1e2028] border border-[#ffffff1a] rounded flex flex-col shadow-xl overflow-hidden flex-1 min-h-0 min-h-[600px]" aria-label="Price-Delivery Divergence Scanner">
             {/* Header */}
             <header className="px-6 py-4 border-b border-[#ffffff1a] flex justify-between items-center bg-[#1a1c24]">
                 <div className="flex items-center gap-3">
@@ -1080,15 +1080,16 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
              </section>
 
             {/* Table */}
-            <div className="flex-1 overflow-auto">
+            <div className="flex-1 min-h-0 overflow-hidden rounded">
                 {isLoading ? (
                     <div className="p-8 text-center text-[#888] font-mono text-xs flex flex-col items-center justify-center h-64 gap-4" role="status" aria-live="polite">
                         <RefreshCw className="animate-spin text-orange-500/50" size={24} aria-hidden="true" />
                         Syncing prices & delivery...
                     </div>
                 ) : (
-                    <table className="w-full text-left border-collapse">
-                        <thead className="sticky top-0 bg-[#1a1c24] z-10 shadow-sm border-b border-[#ffffff1a]">
+                    <div className="h-full overflow-y-auto">
+                        <table className="w-full text-left border-collapse">
+                            <thead className="sticky top-0 bg-[#1a1c24] z-10 shadow-sm border-b border-[#ffffff1a]">
                             <tr className="bg-[#1a1c24] border-b border-[#ffffff1a]">
                                 <th colSpan={17} className="p-1 text-[10px] text-[#888] font-mono text-left" scope="colgroup">
                                     <span className="text-[#555]">Nifty50</span>{' '}
@@ -1297,6 +1298,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                             )}
                         </tbody>
                     </table>
+                    </div>
                 )}
             </div>
             {backtestSymbol && (() => {

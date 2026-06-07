@@ -11,6 +11,8 @@ export interface ScannerData {
     anomaly_close: number;
     return_since: number;
     delivery_pct: number;
+    delivery_value_cr: number;
+    volume_to_mcap_pct: number;
     delivery_divergence_score: number;
     volatility_compression_score: number;
     relative_volume_score: number;
@@ -44,6 +46,7 @@ interface RawRow {
     anomaly_close: number;
     high: number;
     low: number;
+    delivery: number;
     delivery_pct: number;
     delivery_divergence_score: number;
     volatility_compression_score: number;
@@ -106,6 +109,8 @@ export function useDeliveryScanner(lib: Librarian, mcapRange?: { min: number; ma
     const [minDeliveryPct, setMinDeliveryPct] = useState(0);
     const [maxDeliveryPct, setMaxDeliveryPct] = useState(100);
     const [minRelVolScore, setMinRelVolScore] = useState(0);
+    const [minDeliveryValueCr, setMinDeliveryValueCr] = useState(0);
+    const [minVolumeToMcap, setMinVolumeToMcap] = useState(0);
     const [filterSector, setFilterSector] = useState('All');
     const [lookbackDays, setLookbackDays] = useState(30);
     const [symbolSearch, setSymbolSearch] = useState('');
@@ -192,7 +197,7 @@ export function useDeliveryScanner(lib: Librarian, mcapRange?: { min: number; ma
         const safeDays = Math.max(1, Math.min(90, Math.floor(Number(lookbackDays) || 30)));
 
         const anomalyQuery = `
-            SELECT symbol, date, close as anomaly_close, high, low, delivery_pct,
+            SELECT symbol, date, close as anomaly_close, high, low, delivery, delivery_pct,
                    delivery_divergence_score, volatility_compression_score,
                    relative_volume_score, nifty_outperformance_score, volume
             FROM technical_data
@@ -239,6 +244,7 @@ export function useDeliveryScanner(lib: Librarian, mcapRange?: { min: number; ma
                     anomaly_close: Number(r.anomaly_close) || 0,
                     high: Number(r.high) || 0,
                     low: Number(r.low) || 0,
+                    delivery: Number(r.delivery) || 0,
                     delivery_pct: Number(r.delivery_pct) || 0,
                     delivery_divergence_score: Number(r.delivery_divergence_score) || 0,
                     volatility_compression_score: Number(r.volatility_compression_score) || 0,
@@ -309,13 +315,31 @@ export function useDeliveryScanner(lib: Librarian, mcapRange?: { min: number; ma
                 ? ((close - anomalyClose) / anomalyClose) * 100
                 : 0;
 
+            const deliveryValueCr = (d.delivery * d.anomaly_close) / 1e7;
+            const mcap = mcapMapRef.current?.get(d.symbol);
+            const volumeToMcap = mcap && mcap > 0 ? (d.volume / mcap) * 100 : 0;
+
+            if (minDeliveryValueCr > 0 && deliveryValueCr < minDeliveryValueCr) return;
+            if (minVolumeToMcap > 0 && volumeToMcap < minVolumeToMcap) return;
+
             const compositeScore =
                 d.delivery_divergence_score * 0.40 +
                 d.volatility_compression_score * 0.20 +
                 d.relative_volume_score * 0.25 +
                 d.nifty_outperformance_score * 0.15;
 
-            const roundedScore = Math.round(compositeScore * 10) / 10;
+            // Size-aware modifier: boost large delivery values, penalise tiny ones
+            let sizeModifier = 0;
+            if (deliveryValueCr >= 100) sizeModifier = 10;       // ₹100 Cr+ delivery = strong institutional
+            else if (deliveryValueCr >= 10) sizeModifier = 5;     // ₹10 Cr+ = meaningful
+            else if (deliveryValueCr < 0.1 && deliveryValueCr > 0) sizeModifier = -5;  // <₹10 L = likely noise
+
+            // Volume/Mcap bonus: extreme turnover relative to size
+            if (volumeToMcap > 10) sizeModifier += 5;             // >10% of mcap traded = extraordinary
+            else if (volumeToMcap > 5) sizeModifier += 2;
+
+            const adjustedScore = compositeScore + sizeModifier;
+            const roundedScore = Math.round(adjustedScore * 10) / 10;
             const badge = roundedScore >= 15
                 ? { text: 'STRONG', className: 'bg-green-500/20 text-green-400' }
                 : roundedScore >= 8
@@ -333,6 +357,8 @@ export function useDeliveryScanner(lib: Librarian, mcapRange?: { min: number; ma
                 anomaly_close: anomalyClose,
                 return_since: returnSince,
                 delivery_pct: d.delivery_pct,
+                delivery_value_cr: deliveryValueCr,
+                volume_to_mcap_pct: volumeToMcap,
                 delivery_divergence_score: d.delivery_divergence_score,
                 volatility_compression_score: d.volatility_compression_score,
                 relative_volume_score: d.relative_volume_score,
@@ -347,7 +373,7 @@ export function useDeliveryScanner(lib: Librarian, mcapRange?: { min: number; ma
         });
 
         return results;
-    }, [rawData, minDeliveryPct, maxDeliveryPct, minRelVolScore, filterSector, filterBucket, symbolSearch, metadataMap, closeMap, mcapRange]);
+    }, [rawData, minDeliveryPct, maxDeliveryPct, minRelVolScore, minDeliveryValueCr, minVolumeToMcap, filterSector, filterBucket, symbolSearch, metadataMap, closeMap, mcapRange]);
 
     const maxRelVolObserved = useMemo(() => {
         let max = 0;
@@ -565,6 +591,8 @@ export function useDeliveryScanner(lib: Librarian, mcapRange?: { min: number; ma
         minDeliveryPct, setMinDeliveryPct,
         maxDeliveryPct, setMaxDeliveryPct,
         minRelVolScore, setMinRelVolScore,
+        minDeliveryValueCr, setMinDeliveryValueCr,
+        minVolumeToMcap, setMinVolumeToMcap,
         filterSector, setFilterSector,
         lookbackDays, setLookbackDays,
         symbolSearch, setSymbolSearch,

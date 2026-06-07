@@ -28,6 +28,7 @@ import Navbar from './components/Navbar';
 import MLLabView from './views/MLLabView';
 import LaunchpadScannerView from './views/LaunchpadScanner';
 import MultibaggerProScannerView from './views/MultibaggerProScanner';
+import DarvasBoxProScannerView from './views/DarvasBoxProScanner';
 import DataSyncView from './views/DataSync';
 import DeliveryAnomalyScannerView from './views/DeliveryAnomalyScanner';
 import { AlertCircle, Settings as SettingsIcon, SlidersHorizontal, BrainCircuit, Rocket, Database, RotateCw } from 'lucide-react';
@@ -46,6 +47,7 @@ const TABS = [
   { id: 'Delivery Volume Profile', path: '/inst-dom', icon: '🧱', category: 'analysis' },
   { id: 'Multibagger Matrix', path: '/multibagger-matrix', icon: '🚀', category: 'analysis' },
   { id: 'Value Ranker', path: '/value-ranker', icon: '🎯', category: 'analysis' },
+  { id: 'Darvas Box Pro', path: '/darvas-box-pro', icon: '📦', category: 'scanners' },
   { id: 'Historical Search', path: '/historical-search', icon: '🔍', category: 'analysis' },
   { id: 'Data Sync', path: '/data-sync', icon: <Database size={18} />, category: 'data' },
   { id: 'Parquet Lake', path: '/parquet-lake', icon: '🌊', category: 'data' },
@@ -200,7 +202,7 @@ export default function App() {
           ))}
 
           <Navbar tabs={TABS} />
-          <div className="flex-1">
+          <div className="flex-1 min-h-0">
             <Routes>
                 <Route path="/mission-control" element={<MissionControlView lib={librarian} navigateTo={(tab) => {
                   const target = TABS.find(t => t.id === tab);
@@ -221,6 +223,7 @@ export default function App() {
                 <Route path="/ghost-simulator" element={<GhostSimulatorView lib={librarian} />} />
                 <Route path="/multibagger-matrix" element={<MultibaggerMatrixView lib={librarian} />} />
                 <Route path="/value-ranker" element={<ValueRankerView lib={librarian} />} />
+                <Route path="/darvas-box-pro" element={<DarvasBoxProScannerView lib={librarian} />} />
                 <Route path="/inst-dom" element={<InstDOMView lib={librarian} />} />
                 <Route path="/fii-dii-scanner" element={<FiiDiiScannerView lib={librarian} />} />
                 <Route path="/parquet-lake" element={<DataLakeView lib={librarian} />} />
