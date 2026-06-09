@@ -29,6 +29,11 @@ import MLLabView from './views/MLLabView';
 import LaunchpadScannerView from './views/LaunchpadScanner';
 import MultibaggerProScannerView from './views/MultibaggerProScanner';
 import DarvasBoxProScannerView from './views/DarvasBoxProScanner';
+import LiquidityFlipDetectorView from './views/LiquidityFlipDetector';
+import OperatorFingerprintScannerView from './views/OperatorFingerprintScanner';
+import FloatExhaustionScannerView from './views/FloatExhaustionScanner';
+import SeasonalDeliveryHarvesterView from './views/SeasonalDeliveryHarvester';
+import WyckoffAutomatonView from './views/WyckoffAutomaton';
 import DataSyncView from './views/DataSync';
 import DeliveryAnomalyScannerView from './views/DeliveryAnomalyScanner';
 import { AlertCircle, Settings as SettingsIcon, SlidersHorizontal, BrainCircuit, Rocket, Database, RotateCw } from 'lucide-react';
@@ -48,6 +53,11 @@ const TABS = [
   { id: 'Multibagger Matrix', path: '/multibagger-matrix', icon: '🚀', category: 'analysis' },
   { id: 'Value Ranker', path: '/value-ranker', icon: '🎯', category: 'analysis' },
   { id: 'Darvas Box Pro', path: '/darvas-box-pro', icon: '📦', category: 'scanners' },
+  { id: 'Liquidity Flip', path: '/liquidity-flip', icon: '🔄', category: 'scanners' },
+  { id: 'Operator Fingerprint', path: '/operator-fingerprint', icon: '🔍', category: 'scanners' },
+  { id: 'Float Exhaustion', path: '/float-exhaustion', icon: '🪫', category: 'scanners' },
+  { id: 'Seasonal Delivery', path: '/seasonal-delivery', icon: '📅', category: 'scanners' },
+  { id: 'Wyckoff Auto', path: '/wyckoff', icon: '🤖', category: 'scanners' },
   { id: 'Historical Search', path: '/historical-search', icon: '🔍', category: 'analysis' },
   { id: 'Data Sync', path: '/data-sync', icon: <Database size={18} />, category: 'data' },
   { id: 'Parquet Lake', path: '/parquet-lake', icon: '🌊', category: 'data' },
@@ -224,6 +234,11 @@ export default function App() {
                 <Route path="/multibagger-matrix" element={<MultibaggerMatrixView lib={librarian} />} />
                 <Route path="/value-ranker" element={<ValueRankerView lib={librarian} />} />
                 <Route path="/darvas-box-pro" element={<DarvasBoxProScannerView lib={librarian} />} />
+                <Route path="/liquidity-flip" element={<LiquidityFlipDetectorView lib={librarian} />} />
+                <Route path="/operator-fingerprint" element={<OperatorFingerprintScannerView lib={librarian} />} />
+                <Route path="/float-exhaustion" element={<FloatExhaustionScannerView lib={librarian} />} />
+                <Route path="/seasonal-delivery" element={<SeasonalDeliveryHarvesterView lib={librarian} />} />
+                <Route path="/wyckoff" element={<WyckoffAutomatonView lib={librarian} />} />
                 <Route path="/inst-dom" element={<InstDOMView lib={librarian} />} />
                 <Route path="/fii-dii-scanner" element={<FiiDiiScannerView lib={librarian} />} />
                 <Route path="/parquet-lake" element={<DataLakeView lib={librarian} />} />
