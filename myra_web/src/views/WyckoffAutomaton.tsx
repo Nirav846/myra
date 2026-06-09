@@ -71,7 +71,7 @@ const PHASE_COLORS: Record<string, string> = {
 function gradeBadge(quality: number): { label: string; color: string } {
   if (quality >= 75) return { label: 'A', color: 'bg-green-500/20 text-green-400' };
   if (quality >= 55) return { label: 'B', color: 'bg-blue-500/20 text-blue-400' };
-  if (quality >= 35) return { label: 'C', color: 'bg-amber-500/20 text-amber-400' };
+  if (quality >= 40) return { label: 'C', color: 'bg-amber-500/20 text-amber-400' };
   return { label: 'D', color: 'bg-red-500/20 text-red-400' };
 }
 
@@ -107,7 +107,7 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/wyckoff/status`);
+      const res = await fetch(`${API_BASE}/wyckoff/status`);
       if (!res.ok) return;
       const data = await res.json();
       setScanStatus(data);
@@ -132,7 +132,7 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
         body.min_mcap = mcapRange.min;
         body.max_mcap = mcapRange.max;
       }
-      const res = await fetch(`${API_BASE}/api/wyckoff/scan`, {
+      const res = await fetch(`${API_BASE}/wyckoff/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

@@ -126,7 +126,7 @@ class WyckoffAutomaton:
             )
 
             if is_sc:
-                quality = min(vol_ratio * 40 + del_ratio * 30 + del_pct * 0.3, 100)
+                quality = min(vol_ratio * 10 + del_ratio * 20 + del_pct * 0.4, 100)
                 events.append({
                     "symbol": str(df["symbol"].iloc[0]),
                     "event": "SC",
@@ -151,7 +151,7 @@ class WyckoffAutomaton:
             )
 
             if is_spring:
-                quality = min(vol_ratio * 40 + del_ratio * 30 + del_pct * 0.3, 100)
+                quality = min(vol_ratio * 10 + del_ratio * 20 + del_pct * 0.4, 100)
                 events.append({
                     "symbol": str(df["symbol"].iloc[0]),
                     "event": "Spring",
@@ -177,7 +177,7 @@ class WyckoffAutomaton:
             )
 
             if is_sos:
-                quality = min(vol_ratio * 40 + del_ratio * 30 + del_pct * 0.3, 100)
+                quality = min(vol_ratio * 10 + del_ratio * 20 + del_pct * 0.4, 100)
                 events.append({
                     "symbol": str(df["symbol"].iloc[0]),
                     "event": "SOS",
@@ -214,7 +214,7 @@ class WyckoffAutomaton:
                 if nclose > sc_close * 1.03 and nvol <= post_sc["volume"].mean() * 0.9:
                     ar_vol_ratio = nvol / avg_vol if avg_vol > 0 else 0
                     ar_del_ratio = ndel / avg_del if avg_del > 0 else 0
-                    ar_quality = min(ar_vol_ratio * 40 + ar_del_ratio * 30 + ndel * 0.3, 100)
+                    ar_quality = min(ar_vol_ratio * 10 + ar_del_ratio * 20 + ndel * 0.4, 100)
                     # Only add if not already detected as other event
                     existing = [e for e in events if e["event_date"] == str(nrow["date"])]
                     if not existing:
@@ -244,7 +244,7 @@ class WyckoffAutomaton:
                     if not existing:
                         st_vol_ratio = nvol / avg_vol if avg_vol > 0 else 0
                         st_del_ratio = ndel / avg_del if avg_del > 0 else 0
-                        st_quality = min(st_vol_ratio * 40 + st_del_ratio * 30 + ndel * 0.3, 100)
+                        st_quality = min(st_vol_ratio * 10 + st_del_ratio * 20 + ndel * 0.4, 100)
                         events.append({
                             "symbol": str(df["symbol"].iloc[0]),
                             "event": "ST",
@@ -274,7 +274,7 @@ class WyckoffAutomaton:
             if os.path.exists(val_db):
                 with sqlite3.connect(val_db) as conn:
                     for row in conn.execute(
-                        "SELECT symbol, COALESCE(sector_name, 'Unknown') FROM fundamentals WHERE sector_name IS NOT NULL"
+                        "SELECT symbol, COALESCE(sector, 'Unknown') FROM fundamentals WHERE sector IS NOT NULL"
                     ):
                         _sector_map[row[0]] = row[1]
         except Exception:

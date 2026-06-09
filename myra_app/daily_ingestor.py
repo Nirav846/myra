@@ -328,10 +328,9 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
                 print(f"✅ Successfully added {len(df_to_insert)} rows to Atomic Vault from {source}.")
                 result["rows_inserted"] = len(df_to_insert)
 
-                db_after = get_db_row_count(target_date=current_date.date().isoformat())
-                result["db_after"] = db_after
-
-                if result["rows_inserted"] == 0 and db_after == db_before:
+                if result["rows_inserted"] > 0:
+                    pass
+                else:
                     print(f"⚠️ WARNING: No new rows inserted for {current_date.date().isoformat()}")
                     conn.execute("ROLLBACK")
                     try:
@@ -346,13 +345,6 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
                         pass
                     result["success"] = False
                     result["error"] = "no_rows_inserted"
-                    return result
-
-                if db_after <= db_before:
-                    print(f"⚠️ WARNING: DB row count did not increase after insertion")
-                    conn.execute("ROLLBACK")
-                    result["success"] = False
-                    result["error"] = "db_not_advanced"
                     return result
 
                 from myra_app.feature_enrichment import process_enrichment_pipeline
@@ -374,12 +366,20 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
                 conn.execute("COMMIT")
                 result["success"] = True
             except Exception:
-                conn.execute("ROLLBACK")
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception:
+                    pass
                 raise
 
             conn.close()
 
         except Exception as e:
+            # Only rollback if a transaction is active; COMMIT may have already fired
+            try:
+                conn.execute("ROLLBACK")
+            except Exception:
+                pass
             print(f"❌ Critical Database Error: {e}")
             result["error"] = str(e)
             result["success"] = False
