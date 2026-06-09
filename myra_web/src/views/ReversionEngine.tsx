@@ -8,6 +8,7 @@ import PresetChip from '../components/PresetChip';
 import { ReversionConfig } from '../lib/scannerPresets';
 import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
+import ScrollableTable from '../components/ScrollableTable';
 
 type SetupType = 'Exhaustion' | 'Divergence' | 'SpringCoil';
 
@@ -430,10 +431,11 @@ export default function ReversionEngineView({ lib }: { lib: Librarian }) {
             )}
         </div>
 
-        <div className={`overflow-x-auto relative group transition-opacity duration-300 ${isRefreshing ? 'opacity-50' : 'opacity-100'} min-h-[250px] bg-[#12141a] rounded-lg border border-white/5`}>
-          <table className="w-full text-left font-mono text-xs">
-            <thead>
-              <tr className="text-[#666] border-b border-white/5 bg-black/20">
+        <div className={`transition-opacity duration-300 ${isRefreshing ? 'opacity-50' : 'opacity-100'}`}>
+          <ScrollableTable className="min-h-[250px] bg-[#12141a] rounded-lg border border-white/5">
+            <table className="w-full min-w-max whitespace-nowrap text-left font-mono text-xs">
+              <thead>
+                <tr className="text-[#666] border-b border-white/5 bg-black/20">
                 <th className="py-3 px-3 font-semibold uppercase min-w-[100px] tracking-wider rounded-tl-lg">Ticker</th>
                 <th className="py-3 px-3 font-semibold uppercase tracking-wider">Sector</th>
                 <th className="py-3 px-3 font-semibold uppercase text-right tracking-wider">Close (₹)</th>
@@ -487,12 +489,13 @@ export default function ReversionEngineView({ lib }: { lib: Librarian }) {
               ))}
             </tbody>
           </table>
-          {apiData.length === 0 && !isRefreshing && (
-            <div className="w-full py-16 text-center text-[#555] text-xs font-mono flex flex-col items-center justify-center gap-2">
-                <Target size={24} className="opacity-20" />
-                <span>Run engine to scan opportunities.</span>
-            </div>
-          )}
+            {apiData.length === 0 && !isRefreshing && (
+              <div className="w-full py-16 text-center text-[#555] text-xs font-mono flex flex-col items-center justify-center gap-2">
+                  <Target size={24} className="opacity-20" />
+                  <span>Run engine to scan opportunities.</span>
+              </div>
+            )}
+          </ScrollableTable>
         </div>
       </div>
     </div>

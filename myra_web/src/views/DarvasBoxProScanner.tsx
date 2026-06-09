@@ -7,6 +7,7 @@ import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
 import { API_BASE } from '../config';
 import { Tooltip } from '../components/Tooltip';
+import ScrollableTable from '../components/ScrollableTable';
 
 interface Candidate {
   symbol: string;
@@ -24,8 +25,11 @@ interface Candidate {
   dist_to_ceiling_pct: number;
   dar_box_median: number;
   sar: number;
+  sar_z: number;
+  ftc: number;
   breakout_dar: number;
   am: number;
+  rs_mean: number;
   entry: number | null;
   sl: number | null;
   t1: number | null;
@@ -127,16 +131,8 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
 
   const mountedRef = useRef(true);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const tableScrollRef = useRef<HTMLDivElement>(null);
 
   const candidates = scanStatus?.candidates ?? [];
-
-  useEffect(() => {
-    if (tableScrollRef.current) {
-      tableScrollRef.current.scrollTop = 0;
-      tableScrollRef.current.scrollLeft = 0;
-    }
-  }, [candidates.length]);
 
   const availableSectors = useMemo(() => {
     const sectors = new Set(candidates.map(c => c.sector ?? 'Unknown'));
@@ -268,12 +264,13 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
     if (filteredData.length === 0) return;
     const headers = [
       'Symbol', 'Sector', 'Market Cap Cr', 'Tier', 'Box Age', 'Box Range %', 'DAR (Box)',
-      'SAR', 'Breakout DAR', 'AM', 'Entry', 'SL', 'T1', 'T2', 'Status', 'Failure Reason',
-      'Composite Score', 'Grade',
+      'SAR', 'SAR_z', 'FTC', 'RS', 'Breakout DAR', 'AM', 'Entry', 'SL', 'T1', 'T2',
+      'Status', 'Failure Reason', 'Composite Score', 'Grade',
     ];
     const rows = filteredData.map(r => [
       r.symbol, r.sector ?? '', r.market_cap_cr, r.tier, r.box_age_days, r.box_range_pct,
-      r.dar_box_median, r.sar, r.breakout_dar, r.am,
+      r.dar_box_median, r.sar, r.sar_z, r.ftc, r.rs_mean,
+      r.breakout_dar, r.am,
       r.entry ?? '', r.sl ?? '', r.t1 ?? '', r.t2 ?? '',
       r.status, r.failure_reason ?? '',
       r.composite_score, r.grade,
@@ -589,14 +586,8 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
           )}
 
           {/* Table */}
-          <div className="flex-1 min-h-0 bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden flex flex-col">
-            <div
-              ref={tableScrollRef}
-              className="flex-1 min-h-0 overflow-auto scanner-table-scroll"
-              role="region"
-              aria-label="Scanner results table — scroll horizontally or vertically"
-              tabIndex={0}
-            >
+          <div className="flex-1 bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden">
+            <ScrollableTable>
               <table
                 className="w-full min-w-max text-left text-xs font-mono whitespace-nowrap"
                 role="grid"
@@ -643,6 +634,21 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
                         SAR <SortIcon column="sar" />
                       </Tooltip>
                     </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('sar_z')} scope="col" aria-sort={sortCol === 'sar_z' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                      <Tooltip content="Statistical significance of recent delivery acceleration: (last-3 mean − box mean) / box stddev. |z| > 1.0 is significant." showIcon={false}>
+                        SAR_z <SortIcon column="sar_z" />
+                      </Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('ftc')} scope="col" aria-sort={sortCol === 'ftc' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                      <Tooltip content="Float Turnover Compression: median(volume, last 5) / median(volume, box). <0.7 = quiet accumulation (good). >1.2 = noise." showIcon={false}>
+                        FTC <SortIcon column="ftc" />
+                      </Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('rs_mean')} scope="col" aria-sort={sortCol === 'rs_mean' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                      <Tooltip content="Relative Strength: mean daily stock-outperformance vs Nifty over the box period. Positive = outperforming." showIcon={false}>
+                        RS <SortIcon column="rs_mean" />
+                      </Tooltip>
+                    </th>
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('breakout_dar')} scope="col" aria-sort={sortCol === 'breakout_dar' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       Breakout DAR <SortIcon column="breakout_dar" />
                     </th>
@@ -674,7 +680,7 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={19} className="px-4 py-8 text-center text-[#666]">No Darvas boxes match current filters.</td>
+                      <td colSpan={22} className="px-4 py-8 text-center text-[#666]">No Darvas boxes match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((row, index) => (
@@ -730,6 +736,21 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
                             {row.sar.toFixed(2)}
                           </span>
                         </td>
+                        <td className="px-3 py-3 text-right">
+                          <span className={row.sar_z != null && row.sar_z > 1.0 ? 'text-green-400' : row.sar_z != null && row.sar_z < -1.0 ? 'text-red-400' : 'text-[#888]'}>
+                            {row.sar_z != null ? row.sar_z.toFixed(2) : '—'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-right">
+                          <span className={row.ftc != null && row.ftc < 0.7 ? 'text-green-400' : row.ftc != null && row.ftc > 1.2 ? 'text-red-400' : 'text-[#888]'}>
+                            {row.ftc != null ? row.ftc.toFixed(2) : '—'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-right">
+                          <span className={row.rs_mean != null && row.rs_mean > 0 ? 'text-green-400' : row.rs_mean != null && row.rs_mean < 0 ? 'text-red-400' : 'text-[#888]'}>
+                            {row.rs_mean != null ? `${row.rs_mean.toFixed(2)}%` : '—'}
+                          </span>
+                        </td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.breakout_dar.toFixed(2)}%</td>
                         <td className="px-3 py-3 text-right">
                           <span className={row.am >= 4 ? 'text-green-400 font-bold' : row.am >= 2 ? 'text-cyan-400' : 'text-[#aaa]'}>
@@ -770,7 +791,7 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
                   )}
                 </tbody>
               </table>
-            </div>
+            </ScrollableTable>
           </div>
           <div className="flex justify-end">
             <button

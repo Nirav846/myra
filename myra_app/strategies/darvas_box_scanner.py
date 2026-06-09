@@ -182,24 +182,35 @@ class DarvasBoxScanner(AccumulationBaseScanner):
         # DAR = (delivery * close) / free_float_mcap * 100
         # free_float_mcap is now populated via BSE shareholding backfill (2,295 symbols)
         if ff_mcap is None or ff_mcap <= 0:
-            return {"dar_box_median": 0.0, "sar": 1.0, "breakout_dar": 0.0, "am": 0.0}
+            return {"dar_box_median": 0.0, "sar": 1.0, "breakout_dar": 0.0, "am": 0.0, "ftc": 1.0, "sar_z": 0.0}
 
         box_df = df.iloc[box_start_idx:box_end_idx + 1].copy()
         if box_df.empty:
-            return {"dar_box_median": 0.0, "sar": 1.0, "breakout_dar": 0.0, "am": 0.0}
+            return {"dar_box_median": 0.0, "sar": 1.0, "breakout_dar": 0.0, "am": 0.0, "ftc": 1.0, "sar_z": 0.0}
 
         deliveries = box_df["delivery"].values.astype(float)
         closes = box_df["close"].values.astype(float)
         dar_series = (deliveries * closes) / ff_mcap * 100
         dar_series = dar_series[~np.isnan(dar_series)]
         if len(dar_series) == 0:
-            return {"dar_box_median": 0.0, "sar": 1.0, "breakout_dar": 0.0, "am": 0.0}
+            return {"dar_box_median": 0.0, "sar": 1.0, "breakout_dar": 0.0, "am": 0.0, "ftc": 1.0, "sar_z": 0.0}
 
         dar_box_median = float(np.median(dar_series))
         last3 = dar_series[-3:] if len(dar_series) >= 3 else dar_series
         last3_mean = float(np.mean(last3))
 
         sar = (last3_mean / dar_box_median) if dar_box_median > 0 else 1.0
+
+        # SAR_z: statistical significance of recent delivery acceleration
+        dar_mean = float(np.mean(dar_series))
+        dar_std = float(np.std(dar_series))
+        sar_z = ((last3_mean - dar_mean) / dar_std) if dar_std > 0 else 0.0
+
+        # FTC (Float Turnover Compression): falling volume + rising DAR = accumulation
+        volumes = box_df["volume"].values.astype(float)
+        median_vol_box = float(np.median(volumes))
+        median_vol_last5 = float(np.median(volumes[-5:])) if len(volumes) >= 5 else median_vol_box
+        ftc = median_vol_last5 / median_vol_box if median_vol_box > 0 else 1.0
 
         # Breakout day = only a candle whose CLOSE exceeded the ceiling
         # (not merely a touch from below). Add the ceiling param.
@@ -218,6 +229,8 @@ class DarvasBoxScanner(AccumulationBaseScanner):
         return {
             "dar_box_median": float(dar_box_median),
             "sar": float(sar),
+            "sar_z": float(sar_z),
+            "ftc": float(ftc),
             "breakout_dar": float(breakout_dar),
             "am": float(am),
         }
@@ -254,72 +267,28 @@ class DarvasBoxScanner(AccumulationBaseScanner):
 
     @staticmethod
     def _composite_score(
-        am: float,
-        sar: float,
-        breakout_dar: float,
-        box_range_pct: float,
-        box_age_days: int,
-        tier: str,
-        is_pre_breakout: bool,
+        am: float, sar_z: float, ftc: float, rs_mean: float,
+        box_range_pct: float, tier: str, is_pre_breakout: bool,
     ) -> tuple[float, str]:
         th = TIER_THRESHOLDS[tier]
 
         if is_pre_breakout:
-            # Pre-breakout scoring: AM is 0 by definition, so weight
-            # the signals we CAN observe — SAR, tightness, age.
-            # SAR > 1.0 = delivery accelerating into the ceiling (strong signal)
-            if th["min_sar"] is not None and th["min_sar"] > 1.0:
-                sar_ref = th["min_sar"]
-            else:
-                sar_ref = 1.10
-            score_sar   = 100 * min(max((sar - 1.0) / (sar_ref - 1.0), 0.0), 1.5)
-            score_range = max(0.0, min(100.0, 100 * (1.0 - box_range_pct / MAX_BOX_RANGE_PCT)))
-            optimal_age = max(1, int(round(th["min_box_age"] * 1.5)))
-            score_age   = 100 * min(box_age_days, optimal_age) / optimal_age
-            # DAR level inside box as proxy for accumulation quality
-            dar_ref = th.get("breakout_dar_floor") or 0.5
-            dar_box_score = min(100.0, (breakout_dar / dar_ref) * 100) if dar_ref > 0 else 50.0
-            # Weights for pre-breakout: SAR 40%, box range 25%, DAR 20%, age 15%
-            total = (
-                score_sar   * 0.40
-                + score_range * 0.25
-                + dar_box_score * 0.20
-                + score_age * 0.15
-            )
+            # No AM yet — weight the observable signals
+            score_sar = max(0.0, min(100.0, 50.0 + sar_z * 20.0))
+            score_ftc = 100.0 if ftc < 0.7 else (0.0 if ftc > 1.2 else 50.0)
+            score_rs  = max(0.0, min(100.0, 50.0 + rs_mean * 20.0))
+            score_range = max(0.0, min(100.0, 100.0 * (1.0 - box_range_pct / 15.0)))
+            total = score_sar * 0.30 + score_ftc * 0.20 + score_rs * 0.30 + score_range * 0.20
         else:
-            # Post-breakout scoring: original AM-weighted formula
-            dar_floor = th.get("breakout_dar_floor")
-            if dar_floor is not None:
-                score_am = 100 * min(am / 4.0, 2.0) / 2.0
-            elif th["min_am"] is not None and th["min_am"] > 0:
-                score_am = 100 * min(am / th["min_am"], 2.0) / 2.0
-            else:
-                score_am = 50.0
+            # Full scoring with AM
+            score_am = 100.0 * min(am / (th["min_am"] or 4.0), 2.0) / 2.0
+            score_sar = max(0.0, min(100.0, 50.0 + sar_z * 20.0))
+            score_ftc = 100.0 if ftc < 0.7 else (0.0 if ftc > 1.2 else 50.0)
+            score_rs  = max(0.0, min(100.0, 50.0 + rs_mean * 20.0))
+            score_range = max(0.0, min(100.0, 100.0 * (1.0 - box_range_pct / 15.0)))
+            total = score_am * 0.30 + score_sar * 0.25 + score_rs * 0.20 + score_range * 0.15 + score_ftc * 0.10
 
-            if th["min_sar"] is None or th["min_sar"] <= 1.0:
-                score_sar = 50.0
-            else:
-                score_sar = 100 * min(max((sar - 1.0) / (th["min_sar"] - 1.0), 0.0), 1.0)
-
-            score_range = max(0.0, min(100.0, 100 * (1.0 - box_range_pct / MAX_BOX_RANGE_PCT)))
-            optimal_age = max(1, int(round(th["min_box_age"] * 1.5)))
-            score_age   = 100 * min(box_age_days, optimal_age) / optimal_age
-            total = (
-                score_am    * 0.40
-                + score_sar   * 0.30
-                + score_range * 0.20
-                + score_age   * 0.10
-            )
-
-        total = max(0.0, min(100.0, total))
-        if total >= 75:
-            grade = "A"
-        elif total >= 55:
-            grade = "B"
-        elif total >= 40:
-            grade = "C"
-        else:
-            grade = "D"
+        grade = "A" if total >= 75 else "B" if total >= 55 else "C" if total >= 40 else "D"
         return total, grade
 
     @staticmethod
@@ -433,6 +402,8 @@ class DarvasBoxScanner(AccumulationBaseScanner):
             sar = box_dar["sar"]
             breakout_dar = box_dar["breakout_dar"]
             am = box_dar["am"]
+            ftc = box_dar["ftc"]
+            sar_z = box_dar["sar_z"]
 
             # Skip candidates whose baseline DAR is too low.
             if dar_box_median < self.min_dar:
@@ -442,6 +413,11 @@ class DarvasBoxScanner(AccumulationBaseScanner):
             ceiling = box["ceiling"]
             floor = box["floor"]
             breakout_threshold = ceiling * (1.0 + ENTRY_BUFFER_PCT)
+
+            # Relative Strength: stock return vs Nifty return over the box period
+            box_df_rs = df.iloc[box["box_start_idx"]:box["box_end_idx"]]
+            nifty_scores = box_df_rs["nifty_outperformance_score"].values.astype(float)
+            rs_mean = float(np.mean(nifty_scores)) if len(nifty_scores) > 0 else 0.0
 
             # Status decision tree — price position MUST be checked before
             # tier validation, otherwise stocks still inside the box are
@@ -492,10 +468,10 @@ class DarvasBoxScanner(AccumulationBaseScanner):
             is_pre_breakout = status in ("In Box", "Breakout Pending")
             composite_score, grade = self._composite_score(
                 am=am,
-                sar=sar,
-                breakout_dar=breakout_dar,
+                sar_z=sar_z,
+                ftc=ftc,
+                rs_mean=rs_mean,
                 box_range_pct=box["box_range_pct"],
-                box_age_days=box["box_age_days"],
                 tier=tier,
                 is_pre_breakout=is_pre_breakout,
             )
@@ -518,8 +494,11 @@ class DarvasBoxScanner(AccumulationBaseScanner):
                 ) if latest_close > 0 and latest_close <= box["ceiling"] else 0.0,
                 "dar_box_median": round(dar_box_median, 3),
                 "sar": round(sar, 3),
+                "sar_z": round(sar_z, 3),
+                "ftc": round(ftc, 3),
                 "breakout_dar": round(breakout_dar, 3),
                 "am": round(am, 3),
+                "rs_mean": round(rs_mean, 2),
                 "entry": round(entry, 2) if entry is not None else None,
                 "sl": round(sl, 2) if sl is not None else None,
                 "t1": round(t1, 2) if t1 is not None else None,
@@ -534,8 +513,8 @@ class DarvasBoxScanner(AccumulationBaseScanner):
 
         # Sanitize NaN/Inf for JSON compatibility.
         float_fields = [
-            "market_cap_cr", "box_range_pct", "dar_box_median", "sar",
-            "breakout_dar", "am", "entry", "sl", "t1", "t2", "close",
+            "market_cap_cr", "box_range_pct", "dar_box_median", "sar", "sar_z", "ftc",
+            "breakout_dar", "am", "rs_mean", "entry", "sl", "t1", "t2", "close",
             "composite_score", "ceiling_price", "floor_price", "dist_to_ceiling_pct",
         ]
         for c in candidates:

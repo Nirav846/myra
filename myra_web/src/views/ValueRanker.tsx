@@ -8,6 +8,7 @@ import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
 import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
+import ScrollableTable from '../components/ScrollableTable';
 
 interface RankerData {
   symbol: string;
@@ -478,17 +479,17 @@ export default function ValueRankerView({ lib }: { lib: Librarian }) {
           </div>
         )}
 
-        <div className={`flex-1 border border-[#ffffff1a] rounded flex justify-start bg-black/40 overflow-hidden relative transition-opacity duration-300 ${isRefreshing || isLoading ? 'opacity-50' : 'opacity-100'}`}>
-          <button 
+        <div className={`flex-1 border border-[#ffffff1a] rounded bg-black/40 overflow-hidden relative transition-opacity duration-300 ${isRefreshing || isLoading ? 'opacity-50' : 'opacity-100'}`}>
+          <button
             onClick={handleCopy}
             className="absolute top-2 right-2 p-1.5 bg-[#1a1c24] border border-[#ffffff1a] rounded text-[#888] hover:text-[#fff] hover:bg-[#ffffff1a] transition-colors z-10"
             title="Copy Results"
           >
             {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
           </button>
-          
-          <div className="w-full h-full overflow-auto">
-              <table className="w-full text-left font-mono text-xs">
+
+          <ScrollableTable>
+            <table className="w-full min-w-max whitespace-nowrap text-left font-mono text-xs">
                 <thead className="sticky top-0 bg-[#1e2028] z-0 shadow-md">
                   <tr className="text-[#888] border-b border-[#ffffff1a]">
                     <th className="py-3 px-3 font-medium uppercase cursor-pointer hover:bg-[#ffffff0a] select-none text-nowrap" onClick={() => setSort('symbol')}>Symbol {sortCol==='symbol'&&(sortAsc?'↑':'↓')}</th>
@@ -530,13 +531,13 @@ export default function ValueRankerView({ lib }: { lib: Librarian }) {
                   ))}
                 </tbody>
               </table>
-              {dataLoaded && displayData.length === 0 && (
-                <div className="w-full py-12 text-center text-[#666] text-xs font-mono flex flex-col items-center">
-                    <Target size={24} className="mb-2 opacity-30" />
-                    No stocks pass the current filters
-                </div>
-              )}
-          </div>
+            {dataLoaded && displayData.length === 0 && (
+              <div className="w-full py-12 text-center text-[#666] text-xs font-mono flex flex-col items-center">
+                  <Target size={24} className="mb-2 opacity-30" />
+                  No stocks pass the current filters
+              </div>
+            )}
+          </ScrollableTable>
         </div>
       </div>
     </div>

@@ -5,6 +5,7 @@ import { useDeliveryScanner, ScannerData, SummaryData } from '../hooks/useDelive
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
+import ScrollableTable from '../components/ScrollableTable';
 
 interface Preset { name: string; minDelivery: number; maxDelivery: number; minRelVol: number; lookbackDays?: number; isTrigger?: boolean }
 const PRESETS: Preset[] = [
@@ -616,13 +617,9 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                         Scanning for delivery anomalies...
                     </div>
                 ) : (
-                <div className="h-full overflow-y-auto" tabIndex={0} role="region" aria-label="Scanner results table" onKeyDown={(e) => {
-                    const t = e.currentTarget;
-                    if (e.key === 'ArrowRight') { t.scrollLeft += 80; e.preventDefault(); }
-                    if (e.key === 'ArrowLeft') { t.scrollLeft -= 80; e.preventDefault(); }
-                }}>
+                <ScrollableTable>
                     {viewMode === 'detail' ? (
-                    <table className="w-full text-left border-collapse min-w-[800px]">
+                    <table className="w-full min-w-max whitespace-nowrap text-left border-collapse">
                         <thead className="sticky top-0 bg-[#1a1c24] z-10 shadow-sm border-b border-[#ffffff1a]">
                             <tr>
                                 <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'symbol' ? 'text-white' : ''}`} onClick={() => handleSort('symbol')} scope="col" aria-sort={sortConfig?.key === 'symbol' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
@@ -780,7 +777,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                         </tbody>
                     </table>
                 ) : (
-                    <table className="w-full text-left border-collapse min-w-[800px]">
+                    <table className="w-full min-w-max whitespace-nowrap text-left border-collapse">
                         <thead className="sticky top-0 bg-[#1a1c24] z-10 shadow-sm border-b border-[#ffffff1a]">
                             <tr>
                                 <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${summarySortCol === 'symbol' ? 'text-white' : ''}`} onClick={() => handleSummarySort('symbol')} scope="col" aria-sort={summarySortCol === 'symbol' ? (summarySortAsc ? 'ascending' : 'descending') : 'none'}>
@@ -882,7 +879,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                         </tbody>
                     </table>
                     )}
-                </div>
+                </ScrollableTable>
                 )}
             </div>
         </section>

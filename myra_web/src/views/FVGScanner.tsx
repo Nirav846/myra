@@ -6,6 +6,7 @@ import { alertBus } from '../lib/AlertManager';
 import { useSettings } from '../lib/SettingsContext';
 import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
+import ScrollableTable from '../components/ScrollableTable';
 
 interface FVGRow {
   ticker: string;
@@ -185,16 +186,17 @@ export default function FVGScannerView({ lib }: { lib: Librarian }) {
           </div>
         )}
 
-        <div className={`overflow-x-auto relative group transition-opacity duration-300 ${isRefreshing ? 'opacity-50' : 'opacity-100'}`}>
-          <button 
-            onClick={handleCopy}
-            disabled={!dataLoaded}
-            className="absolute top-0 right-0 p-1.5 bg-[#1a1c24] border border-[#ffffff1a] rounded text-[#888] hover:text-[#fff] hover:bg-[#ffffff1a] transition-colors z-10 disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
-          </button>
-          
-          <table className="w-full text-left font-mono text-xs cursor-default">
+        <div className={`relative transition-opacity duration-300 ${isRefreshing ? 'opacity-50' : 'opacity-100'}`}>
+          <ScrollableTable>
+            <button
+              onClick={handleCopy}
+              disabled={!dataLoaded}
+              className="absolute top-0 right-0 p-1.5 bg-[#1a1c24] border border-[#ffffff1a] rounded text-[#888] hover:text-[#fff] hover:bg-[#ffffff1a] transition-colors z-10 disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+            </button>
+
+            <table className="w-full min-w-max whitespace-nowrap text-left font-mono text-xs cursor-default">
             <thead>
               <tr className="text-[#888] border-b border-[#ffffff1a]">
                 <th className="pb-2 px-2 font-medium uppercase">Asset</th>
@@ -228,9 +230,10 @@ export default function FVGScannerView({ lib }: { lib: Librarian }) {
               ))}
             </tbody>
           </table>
-          {(!dataLoaded || apiData.length === 0) && !isRefreshing && (
-            <div className="w-full py-8 text-center text-[#666] text-xs font-mono">No Active FVGs Found.</div>
-          )}
+            {(!dataLoaded || apiData.length === 0) && !isRefreshing && (
+              <div className="w-full py-8 text-center text-[#666] text-xs font-mono">No Active FVGs Found.</div>
+            )}
+          </ScrollableTable>
         </div>
       </div>
     </div>

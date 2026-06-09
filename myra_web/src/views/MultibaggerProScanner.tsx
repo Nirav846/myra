@@ -7,6 +7,7 @@ import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
 import { API_BASE } from '../config';
 import { Tooltip } from '../components/Tooltip';
+import ScrollableTable from '../components/ScrollableTable';
 
 interface Candidate {
   symbol: string;
@@ -187,16 +188,8 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
 
   const mountedRef = useRef(true);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const tableScrollRef = useRef<HTMLDivElement>(null);
 
   const candidates = scanStatus?.candidates ?? [];
-
-  useEffect(() => {
-    if (tableScrollRef.current) {
-      tableScrollRef.current.scrollTop = 0;
-      tableScrollRef.current.scrollLeft = 0;
-    }
-  }, [candidates.length]);
 
   const availableSectors = useMemo(() => {
     const sectors = new Set(candidates.map(c => c.sector ?? 'Unknown'));
@@ -788,14 +781,8 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
           </div>
 
           {/* Table */}
-          <div className="flex-1 min-h-0 bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden flex flex-col">
-            <div
-              ref={tableScrollRef}
-              className="flex-1 min-h-0 overflow-auto scanner-table-scroll"
-              role="region"
-              aria-label="Scanner results table — scroll horizontally or vertically"
-              tabIndex={0}
-            >
+          <div className="flex-1 bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden">
+            <ScrollableTable>
               <table
                 className="w-full min-w-max text-left text-xs font-mono whitespace-nowrap"
                 role="grid"
@@ -1084,7 +1071,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                   )}
                 </tbody>
               </table>
-            </div>
+            </ScrollableTable>
           </div>
           <div className="flex justify-end">
             <button

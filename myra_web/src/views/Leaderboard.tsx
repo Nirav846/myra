@@ -4,6 +4,7 @@ import { Copy, Check, RefreshCw, AlertTriangle, ArrowUpDown, Filter, Star } from
 import { useSettings } from '../lib/SettingsContext';
 import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
+import ScrollableTable from '../components/ScrollableTable';
 
 interface LeaderboardRow {
   ticker: string;
@@ -207,17 +208,18 @@ export default function LeaderboardView({ lib }: { lib: Librarian }) {
            </button>
         </div>
 
-        <div className={`overflow-x-auto relative group transition-opacity duration-300 ${isRefreshing ? 'opacity-50' : 'opacity-100'}`}>
-          <button 
-            onClick={handleCopy}
-            disabled={!apiData || apiData.length === 0}
-            className="absolute top-0 right-0 p-1.5 bg-[#1a1c24] border border-[#ffffff1a] rounded text-[#888] hover:text-[#fff] hover:bg-[#ffffff1a] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-            title="Copy Table Data"
-          >
-            {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
-          </button>
-          
-          <table className="w-full text-left font-mono text-xs">
+        <div className={`relative transition-opacity duration-300 ${isRefreshing ? 'opacity-50' : 'opacity-100'}`}>
+          <ScrollableTable>
+            <button
+              onClick={handleCopy}
+              disabled={!apiData || apiData.length === 0}
+              className="absolute top-0 right-0 p-1.5 bg-[#1a1c24] border border-[#ffffff1a] rounded text-[#888] hover:text-[#fff] hover:bg-[#ffffff1a] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Copy Table Data"
+            >
+              {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+            </button>
+
+            <table className="w-full min-w-max whitespace-nowrap text-left font-mono text-xs">
             <thead>
               <tr className="text-[#888] border-b border-[#ffffff1a]">
                 <th className="pb-2 px-2 font-medium uppercase">Ticker</th>
@@ -246,9 +248,10 @@ export default function LeaderboardView({ lib }: { lib: Librarian }) {
               ))}
             </tbody>
           </table>
-          {(!apiData || apiData.length === 0) && !isRefreshing && (
-            <div className="w-full py-8 text-center text-[#666] text-xs font-mono">No data loaded.</div>
-          )}
+            {(!apiData || apiData.length === 0) && !isRefreshing && (
+              <div className="w-full py-8 text-center text-[#666] text-xs font-mono">No data loaded.</div>
+            )}
+          </ScrollableTable>
         </div>
       </div>
     </div>

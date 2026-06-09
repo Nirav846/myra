@@ -10,6 +10,7 @@ import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap, fetchFreeFloatMcapMap } from '../lib/marketCapCache';
 import { useDebouncedCallback } from 'use-debounce';
 import BacktestPanel from './BacktestPanel';
+import ScrollableTable from '../components/ScrollableTable';
 
 interface ScannerData {
     symbol: string;
@@ -1087,8 +1088,8 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                         Syncing prices & delivery...
                     </div>
                 ) : (
-                    <div className="h-full overflow-y-auto">
-                        <table className="w-full text-left border-collapse">
+                    <ScrollableTable>
+                        <table className="w-full min-w-max whitespace-nowrap text-left border-collapse">
                             <thead className="sticky top-0 bg-[#1a1c24] z-10 shadow-sm border-b border-[#ffffff1a]">
                             <tr className="bg-[#1a1c24] border-b border-[#ffffff1a]">
                                 <th colSpan={17} className="p-1 text-[10px] text-[#888] font-mono text-left" scope="colgroup">
@@ -1298,7 +1299,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                             )}
                         </tbody>
                     </table>
-                    </div>
+                    </ScrollableTable>
                 )}
             </div>
             {backtestSymbol && (() => {

@@ -5,6 +5,7 @@ import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
 import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
+import ScrollableTable from '../components/ScrollableTable';
 
 interface ScanPrediction {
   symbol: string;
@@ -444,9 +445,9 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
             </div>
           </div>
 
-          <div className="flex-1 min-h-0 bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden flex flex-col">
-            <div className="h-full overflow-y-auto">
-              <table className="w-full text-left text-xs font-mono whitespace-nowrap">
+          <div className="flex-1 bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden">
+            <ScrollableTable>
+              <table className="w-full min-w-max text-left text-xs font-mono whitespace-nowrap">
                 <thead className="sticky top-0 z-10 bg-[#1a1c24] text-[#888] shadow-sm">
                   <tr>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider">Symbol</th>
@@ -503,7 +504,7 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
                   )}
                 </tbody>
               </table>
-            </div>
+            </ScrollableTable>
           </div>
         </>
       )}
