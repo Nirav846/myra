@@ -146,7 +146,7 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
   const fetchScanStatus = useCallback(async () => {
     if (!mountedRef.current) return;
     try {
-      const res = await fetch(`${API_BASE}/api/invisible-hand/status`);
+      const res = await fetch(`${API_BASE}/invisible-hand/status`);
       if (!mountedRef.current) return;
       if (res.ok) {
         const data: ScanStatus = await res.json();
@@ -176,7 +176,7 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
     clearPolling();
 
     try {
-      const res = await fetch(`${API_BASE}/api/invisible-hand/scan`, {
+      const res = await fetch(`${API_BASE}/invisible-hand/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

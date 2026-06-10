@@ -149,7 +149,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
   const fetchScanStatus = useCallback(async () => {
     if (!mountedRef.current) return;
     try {
-      const res = await fetch(`${API_BASE}/api/trigger/status`);
+      const res = await fetch(`${API_BASE}/trigger/status`);
       if (!mountedRef.current) return;
       if (res.ok) {
         const data: ScanStatus = await res.json();
@@ -179,7 +179,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
     clearPolling();
 
     try {
-      const res = await fetch(`${API_BASE}/api/trigger/scan`, {
+      const res = await fetch(`${API_BASE}/trigger/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

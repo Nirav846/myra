@@ -32,8 +32,88 @@ try:
 except ImportError:
     pass
 
+_active_queries_file = os.path.join(DB_DIR, ".active_queries")
+_queries_lock = threading.Lock()
+
+
+def _inc_active_queries():
+    with _queries_lock:
+        try:
+            os.makedirs(os.path.dirname(_active_queries_file), exist_ok=True)
+            count = 0
+            if os.path.exists(_active_queries_file):
+                with open(_active_queries_file) as f:
+                    count = int(f.read().strip() or "0")
+            with open(_active_queries_file, 'w') as f:
+                f.write(str(count + 1))
+        except Exception:
+            pass
+
+
+def _dec_active_queries():
+    with _queries_lock:
+        try:
+            if not os.path.exists(_active_queries_file):
+                return
+            with open(_active_queries_file) as f:
+                count = int(f.read().strip() or "0")
+            count -= 1
+            if count <= 0:
+                os.remove(_active_queries_file)
+            else:
+                with open(_active_queries_file, 'w') as f:
+                    f.write(str(count))
+        except Exception:
+            pass
+
+
 _finstack_cache = {}
 CACHE_TTL = 300  # 5 minutes
+
+# ---------------------------------------------------------------------------
+# Launchpad scan state (background scan tracking)
+# ---------------------------------------------------------------------------
+import threading as _launchpad_threading
+from datetime import datetime as _launchpad_dt
+
+_launchpad_scan_state = {
+    "scan_status": "idle",
+    "last_scan": None,
+    "progress": 0,
+    "message": "",
+    "predictions": [],
+}
+_launchpad_scan_lock = _launchpad_threading.Lock()
+_LAUNCHPAD_SCAN_CACHE = "models/launchpad_scan_cache.json"
+
+
+def _save_scan_cache():
+    import json as _json
+    import os as _os
+    try:
+        _os.makedirs("models", exist_ok=True)
+        with _launchpad_scan_lock:
+            data = {
+                "last_scan": _launchpad_scan_state["last_scan"],
+                "predictions": _launchpad_scan_state["predictions"],
+                "message": _launchpad_scan_state["message"],
+            }
+        with open(_LAUNCHPAD_SCAN_CACHE, "w") as _f:
+            _json.dump(data, _f)
+    except Exception:
+        pass
+
+
+def _load_scan_cache() -> dict | None:
+    import json as _json
+    import os as _os
+    try:
+        if _os.path.exists(_LAUNCHPAD_SCAN_CACHE):
+            with open(_LAUNCHPAD_SCAN_CACHE) as _f:
+                return _json.load(_f)
+    except Exception:
+        pass
+    return None
 
 app = FastAPI(title="MYRA v3.2 API Bridge")
 
@@ -45,6 +125,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(pipeline_router)
+
+from pipeline_dashboard import manager as pipeline_manager
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    pipeline_manager.signal_shutdown()
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
@@ -115,6 +203,19 @@ def health_check():
                 "market_cap": conn.execute("SELECT COUNT(*) FROM fundamentals WHERE market_cap IS NOT NULL").fetchone()[0],
                 "pe": conn.execute("SELECT COUNT(*) FROM fundamentals WHERE pe IS NOT NULL").fetchone()[0],
             }
+            # Check if shares_outstanding data is stale
+            shares_stale = False
+            try:
+                import datetime as _dt
+                threshold = (_dt.date.today() - _dt.timedelta(days=90)).isoformat()
+                max_date = conn.execute(
+                    "SELECT MAX(last_fundamental_update) FROM fundamentals WHERE shares_outstanding > 0"
+                ).fetchone()[0]
+                if max_date and max_date < threshold:
+                    shares_stale = True
+            except Exception:
+                pass
+            coverage["shares_stale"] = shares_stale
             conn.close()
         except Exception:
             coverage = {"error": "query failed"}
@@ -152,8 +253,17 @@ async def execute_query(req: QueryRequest):
             status_code=400, detail=f"Database file not found: {db_file}"
         )
 
+    _inc_active_queries()
     try:
         conn = sqlite3.connect(db_path)
+        conn.execute("PRAGMA busy_timeout = 30000")
+        conn.execute("PRAGMA cache_size = -32000")
+        conn.execute("PRAGMA temp_store = MEMORY")
+        if req.db == '_tech_conn':
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_tech_symbol_date
+                ON technical_data(symbol, date DESC)
+            """)
         conn.row_factory = sqlite3.Row
         cursor = conn.execute(req.query, req.params)
 
@@ -173,8 +283,14 @@ async def execute_query(req: QueryRequest):
         conn.close()
 
         return {"data": rows, "rows_affected": rowcount}
+    except sqlite3.OperationalError as e:
+        if "locked" in str(e) or "busy" in str(e):
+            raise HTTPException(status_code=503, detail="Database busy – please retry in a moment")
+        raise HTTPException(status_code=400, detail=str(e))
     except sqlite3.Error as e:
         raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        _dec_active_queries()
 
 
 class ToolRequest(BaseModel):
@@ -525,6 +641,8 @@ async def ml_status():
                 "trained_at": meta.get("trained_at"),
                 "train_accuracy": meta.get("train_accuracy"),
                 "test_accuracy": meta.get("test_accuracy"),
+                "train_samples": meta.get("train_samples"),
+                "test_samples": meta.get("test_samples"),
             }
         return {"exists": True, "message": "Model exists but metadata not found."}
     except Exception as e:
@@ -771,6 +889,206 @@ async def launchpad_status():
     return {"exists": False}
 
 
+@app.post("/api/launchpad/scan")
+async def launchpad_scan():
+    """Run launchpad scan in the background and return immediately."""
+    with _launchpad_scan_lock:
+        if _launchpad_scan_state["scan_status"] == "scanning":
+            return {"status": "already_scanning", "message": "Scan already in progress"}
+        _launchpad_scan_state["scan_status"] = "scanning"
+        _launchpad_scan_state["progress"] = 0
+        _launchpad_scan_state["message"] = "Scanning..."
+        _launchpad_scan_state["predictions"] = []
+
+    def _run():
+        import sqlite3
+        import numpy as np
+        import pandas as pd
+        import joblib
+        import os as _os
+        from myra_app.librarian_core import LibrarianCore
+        from myra_app.constants import DB_DIR as _DB_DIR
+
+        try:
+            model_path = "models/launchpad_xgb.joblib"
+            if not _os.path.exists(model_path):
+                with _launchpad_scan_lock:
+                    _launchpad_scan_state["scan_status"] = "no_model"
+                    _launchpad_scan_state["message"] = "Launchpad model not trained yet."
+                    _launchpad_scan_state["progress"] = 0
+                return
+
+            with _launchpad_scan_lock:
+                _launchpad_scan_state["progress"] = 10
+                _launchpad_scan_state["message"] = "Loading data..."
+
+            tech_db = _os.path.join(_DB_DIR, LibrarianCore.DB_MAP["technical"])
+            val_db = _os.path.join(_DB_DIR, LibrarianCore.DB_MAP["valuation"])
+
+            with sqlite3.connect(tech_db) as conn:
+                events = conn.execute(
+                    "SELECT symbol, trigger_date FROM launchpad_events WHERE success = 0 AND trigger_date >= date('now', '-180 days') ORDER BY trigger_date DESC"
+                ).fetchall()
+
+            if not events:
+                with _launchpad_scan_lock:
+                    _launchpad_scan_state["scan_status"] = "no_events"
+                    _launchpad_scan_state["message"] = "No stocks in digestion phase."
+                    _launchpad_scan_state["progress"] = 100
+                    _launchpad_scan_state["predictions"] = []
+                    _launchpad_scan_state["last_scan"] = _launchpad_dt.now().isoformat()
+                _save_scan_cache()
+                return
+
+            with _launchpad_scan_lock:
+                _launchpad_scan_state["progress"] = 20
+                _launchpad_scan_state["message"] = f"Scanning {min(len(events), 20)} events..."
+
+            model = joblib.load(model_path)
+            results = []
+            total = min(len(events), 20)
+            for idx, (sym, trig) in enumerate(events[:20]):
+                try:
+                    with sqlite3.connect(tech_db) as conn:
+                        row = conn.execute(
+                            "SELECT date, close, volume, delivery, high, low FROM technical_data WHERE symbol = ? AND date >= ? ORDER BY date ASC LIMIT 30",
+                            (sym, trig),
+                        ).fetchall()
+
+                    if len(row) < 2:
+                        continue
+
+                    closes = [r[1] for r in row]
+                    volumes = [r[2] for r in row]
+                    deliveries = [r[3] for r in row]
+                    highs = [r[4] for r in row]
+                    lows = [r[5] for r in row]
+
+                    first_close = closes[0]
+                    max_dd = (
+                        (min(closes) - first_close) / first_close * 100
+                        if first_close > 0
+                        else 0
+                    )
+                    avg_vol = np.mean(volumes) if volumes else 1
+                    avg_del = np.mean(deliveries) if deliveries else 0
+                    avg_range = (
+                        np.mean([h - l for h, l in zip(highs, lows)]) if highs else 1
+                    )
+
+                    del_vals = deliveries
+                    if len(del_vals) > 1:
+                        del_mean = np.mean(del_vals)
+                        del_std = np.std(del_vals) if len(del_vals) > 1 else 1
+                        del_zscores = [(d - del_mean) / (del_std + 1e-9) for d in del_vals]
+                        del_z_min = min(del_zscores)
+                        del_z_mean = np.mean(del_zscores)
+                    else:
+                        del_z_min = 0.0
+                        del_z_mean = 0.0
+
+                    features = [
+                        del_z_min,
+                        del_z_mean,
+                        avg_range / (avg_range + 1e-9),
+                        volumes[-1] / (avg_vol + 1e-9),
+                        len(row),
+                        max_dd,
+                    ]
+                    X = pd.DataFrame(
+                        [features],
+                        columns=[
+                            "del_zscore_min",
+                            "del_zscore_mean",
+                            "range_atr_min",
+                            "vol_ratio_min",
+                            "digestion_days",
+                            "max_drawdown_pct",
+                        ],
+                    )
+                    preds = model.predict(X)
+                    predicted_return_pct = round(float(preds[0, 0]), 2)
+                    breakout_probability = round(
+                        1 / (1 + np.exp(-predicted_return_pct / 10)), 4
+                    )
+
+                    sector = None
+                    mcap = None
+                    if _os.path.exists(val_db):
+                        with sqlite3.connect(val_db) as vconn:
+                            vrow = vconn.execute(
+                                "SELECT COALESCE(marketCap, market_cap), sector FROM fundamentals WHERE symbol = ? LIMIT 1",
+                                (sym,),
+                            ).fetchone()
+                            if vrow:
+                                mcap = float(vrow[0]) if vrow[0] else None
+                                sector = vrow[1]
+
+                    results.append({
+                        "symbol": sym,
+                        "trigger_date": trig,
+                        "predicted_return_pct": predicted_return_pct,
+                        "predicted_days_to_breakout": round(float(preds[0, 1]), 1),
+                        "current_digestion_days": len(row),
+                        "sector": sector,
+                        "market_cap": mcap,
+                        "breakout_probability": breakout_probability,
+                    })
+                except Exception:
+                    continue
+                finally:
+                    with _launchpad_scan_lock:
+                        _launchpad_scan_state["progress"] = min(
+                            20 + int((idx + 1) / total * 75), 95
+                        )
+
+            with _launchpad_scan_lock:
+                _launchpad_scan_state["scan_status"] = "completed"
+                _launchpad_scan_state["progress"] = 100
+                _launchpad_scan_state["last_scan"] = _launchpad_dt.now().isoformat()
+                _launchpad_scan_state["message"] = f"Found {len(results)} setups."
+                _launchpad_scan_state["predictions"] = results
+            _save_scan_cache()
+
+        except Exception as e:
+            with _launchpad_scan_lock:
+                _launchpad_scan_state["scan_status"] = "error"
+                _launchpad_scan_state["message"] = str(e)
+                _launchpad_scan_state["progress"] = 0
+
+    t = _launchpad_threading.Thread(target=_run, daemon=True)
+    t.start()
+    return {"status": "started", "message": "Scan started in background"}
+
+
+@app.get("/api/launchpad/status")
+async def launchpad_scan_status():
+    """Return current scan status including predictions when available.
+    Falls back to cached results on disk when no scan is running in this session."""
+    import copy
+    with _launchpad_scan_lock:
+        state = copy.deepcopy(_launchpad_scan_state)
+
+    # If idle (no scan in this session), try loading cached results from disk
+    if state["scan_status"] == "idle":
+        cache = _load_scan_cache()
+        if cache and cache.get("predictions") is not None:
+            return {
+                "scan_status": "idle",
+                "last_scan": cache.get("last_scan"),
+                "progress": 100,
+                "message": cache.get("message", f"Found {len(cache['predictions'])} setups."),
+                "predictions": cache["predictions"],
+            }
+
+    state.pop("predictions", None)
+    result = {
+        **state,
+        "predictions": list(_launchpad_scan_state["predictions"]),
+    }
+    return result
+
+
 @app.get("/api/ml/launchpad/feature-importance")
 async def launchpad_feature_importance():
     """Get feature importance from the launchpad model."""
@@ -778,6 +1096,268 @@ async def launchpad_feature_importance():
 
     predictor = LaunchpadPredictor()
     return predictor.get_feature_importance()
+
+
+# --- Multibagger Pro Scanner State ---
+_mb_scan_state: dict = {
+    "scan_status": "idle",
+    "last_scan": None,
+    "progress": 0,
+    "message": "Idle — click Scan to start",
+    "candidates": [],
+    "bear_market": False,
+}
+_mb_scan_lock = threading.Lock()
+
+
+@app.get("/api/multibagger/status")
+async def multibagger_status():
+    return _mb_scan_state
+
+
+@app.post("/api/multibagger/scan")
+async def multibagger_scan(payload: dict = Body(default={})):
+    with _mb_scan_lock:
+        if _mb_scan_state["scan_status"] == "scanning":
+            return {"detail": "Scan already in progress"}, 409
+
+        _mb_scan_state.update({
+            "scan_status": "scanning",
+            "progress": 0,
+            "message": "Initialising scanner...",
+            "candidates": [],
+        })
+
+    base_days = int(payload.get("base_days", 21))
+    min_dar = float(payload.get("min_dar", 0.2))
+    target_dar = payload.get("target_dar")
+    if target_dar is not None:
+        target_dar = float(target_dar)
+    tightness_full = payload.get("tightness_full_score_pct")
+    if tightness_full is not None:
+        tightness_full = float(tightness_full)
+    tightness_zero = payload.get("tightness_zero_score_pct")
+    if tightness_zero is not None:
+        tightness_zero = float(tightness_zero)
+
+    def _run():
+        try:
+            from myra_app.strategies.accumulation_base_scanner import AccumulationBaseScanner
+            import math as _math
+
+            scanner = AccumulationBaseScanner(
+                base_days=base_days,
+                min_dar=min_dar,
+                target_dar=target_dar,
+                tightness_full_score_pct=tightness_full,
+                tightness_zero_score_pct=tightness_zero,
+            )
+
+            _mb_scan_state["message"] = "Loading universe..."
+            _mb_scan_state["progress"] = 5
+
+            universe = scanner._get_universe()
+            total = max(len(universe), 1)
+            _mb_scan_state["message"] = f"Scanning {total} symbols..."
+            _mb_scan_state["progress"] = 10
+
+            # Monkey-patch a progress hook into the scan loop
+            original_get_tech = scanner._get_tech_data
+            processed = [0]
+
+            def _tracked_get_tech(symbol, min_date):
+                processed[0] += 1
+                if processed[0] % 40 == 0:
+                    pct = 10 + int((processed[0] / total) * 82)
+                    _mb_scan_state["progress"] = min(pct, 92)
+                    _mb_scan_state["message"] = f"Scanning {processed[0]}/{total} symbols..."
+                return original_get_tech(symbol, min_date)
+
+            scanner._get_tech_data = _tracked_get_tech
+
+            df = scanner.scan()
+
+            _mb_scan_state["progress"] = 95
+            _mb_scan_state["message"] = "Finalising results..."
+
+            candidates = []
+            if not df.empty:
+                for _, row in df.iterrows():
+                    rec = row.to_dict()
+                    for key, val in list(rec.items()):
+                        if isinstance(val, float) and (_math.isnan(val) or _math.isinf(val)):
+                            rec[key] = None
+                    candidates.append(rec)
+
+            _mb_scan_state.update({
+                "scan_status": "completed",
+                "last_scan": datetime.now().isoformat(),
+                "progress": 100,
+                "message": f"Found {len(candidates)} candidates",
+                "candidates": candidates,
+                "bear_market": scanner.bear_market,
+            })
+
+        except Exception as e:
+            logger.error("Multibagger scan failed: %s", e, exc_info=True)
+            _mb_scan_state.update({
+                "scan_status": "error",
+                "progress": 0,
+                "message": str(e),
+            })
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"status": "started"}
+
+
+# --- Darvas Box Pro Scanner State ---
+_darvas_scan_state: dict = {
+    "scan_status": "idle",
+    "last_scan": None,
+    "progress": 0,
+    "message": "Idle — click Scan to start",
+    "candidates": [],
+    "bear_market": False,
+}
+_darvas_scan_lock = threading.Lock()
+_DARVAS_SCAN_CACHE = "models/darvas_scan_cache.json"
+
+
+def _save_darvas_cache():
+    import json as _json
+    import os as _os
+    try:
+        _os.makedirs("models", exist_ok=True)
+        with _darvas_scan_lock:
+            data = {
+                "last_scan": _darvas_scan_state["last_scan"],
+                "candidates": _darvas_scan_state["candidates"],
+                "message": _darvas_scan_state["message"],
+            }
+        with open(_DARVAS_SCAN_CACHE, "w") as _f:
+            _json.dump(data, _f)
+    except Exception:
+        pass
+
+
+def _load_darvas_cache() -> dict | None:
+    import json as _json
+    import os as _os
+    try:
+        if _os.path.exists(_DARVAS_SCAN_CACHE):
+            with open(_DARVAS_SCAN_CACHE) as _f:
+                return _json.load(_f)
+    except Exception:
+        pass
+    return None
+
+
+@app.get("/api/darvas/status")
+async def darvas_status():
+    import copy
+    with _darvas_scan_lock:
+        state = copy.deepcopy(_darvas_scan_state)
+
+    if state["scan_status"] == "idle":
+        cache = _load_darvas_cache()
+        if cache and cache.get("candidates") is not None:
+            return {
+                "scan_status": "idle",
+                "last_scan": cache.get("last_scan"),
+                "progress": 100,
+                "message": cache.get("message", f"Found {len(cache['candidates'])} candidates."),
+                "candidates": cache["candidates"],
+                "bear_market": state.get("bear_market", False),
+            }
+
+    return state
+
+
+@app.post("/api/darvas/scan")
+async def darvas_scan(payload: dict = Body(default={})):
+    with _darvas_scan_lock:
+        if _darvas_scan_state["scan_status"] == "scanning":
+            return {"detail": "Scan already in progress"}, 409
+
+        _darvas_scan_state.update({
+            "scan_status": "scanning",
+            "progress": 0,
+            "message": "Initialising scanner...",
+            "candidates": [],
+        })
+
+    base_days = int(payload.get("base_days", 120))
+    min_dar = float(payload.get("min_dar", 0.2))
+    min_mcap = int(payload.get("min_mcap", 100))
+    max_mcap = int(payload.get("max_mcap", 50000))
+
+    def _run():
+        try:
+            from myra_app.strategies.darvas_box_scanner import DarvasBoxScanner
+            import math as _math
+
+            scanner = DarvasBoxScanner(
+                base_days=base_days,
+                min_dar=min_dar,
+                min_mcap=min_mcap,
+                max_mcap=max_mcap,
+            )
+
+            _darvas_scan_state["message"] = "Loading universe..."
+            _darvas_scan_state["progress"] = 5
+
+            universe = scanner._get_universe()
+            total = max(len(universe), 1)
+            _darvas_scan_state["message"] = f"Scanning {total} symbols..."
+            _darvas_scan_state["progress"] = 10
+
+            original_get_tech = scanner._get_tech_data
+            processed = [0]
+
+            def _tracked_get_tech(symbol, min_date):
+                processed[0] += 1
+                if processed[0] % 25 == 0:
+                    pct = 10 + int((processed[0] / total) * 82)
+                    _darvas_scan_state["progress"] = min(pct, 92)
+                    _darvas_scan_state["message"] = f"Scanning {processed[0]}/{total} symbols..."
+                return original_get_tech(symbol, min_date)
+
+            scanner._get_tech_data = _tracked_get_tech
+
+            df = scanner.scan()
+
+            _darvas_scan_state["progress"] = 95
+            _darvas_scan_state["message"] = "Finalising results..."
+
+            candidates = []
+            if not df.empty:
+                for _, row in df.iterrows():
+                    rec = row.to_dict()
+                    for key, val in list(rec.items()):
+                        if isinstance(val, float) and (_math.isnan(val) or _math.isinf(val)):
+                            rec[key] = None
+                    candidates.append(rec)
+
+            _darvas_scan_state.update({
+                "scan_status": "completed",
+                "last_scan": datetime.now().isoformat(),
+                "progress": 100,
+                "message": f"Found {len(candidates)} candidates",
+                "candidates": candidates,
+                "bear_market": scanner.bear_market,
+            })
+            _save_darvas_cache()
+
+        except Exception as e:
+            logger.error("Darvas scan failed: %s", e, exc_info=True)
+            _darvas_scan_state.update({
+                "scan_status": "error",
+                "progress": 0,
+                "message": str(e),
+            })
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"status": "started"}
 
 
 @app.get("/api/ml/factor-importance")
@@ -788,11 +1368,21 @@ async def factor_importance():
     return result
 
 
+_search_librarian: object = None
+_search_librarian_lock = threading.Lock()
+
+def _get_search_librarian():
+    global _search_librarian
+    if _search_librarian is None:
+        with _search_librarian_lock:
+            if _search_librarian is None:
+                from myra_app.librarian import Librarian
+                _search_librarian = Librarian(read_only=True)
+    return _search_librarian
+
 @app.get("/api/search/symbols")
 async def search_symbols(q: str = Query(..., min_length=1)):
-    from myra_app.librarian import Librarian
-    lib = Librarian(read_only=True)
-    return lib.search_symbols(q)
+    return _get_search_librarian().search_symbols(q)
 
 
 def _validate_finstack(result: dict) -> dict:
@@ -840,376 +1430,7 @@ async def finstack_fii_retail_divergence(symbol: str = "RELIANCE"):
 #     return _validate_finstack(result)
 
 
-@app.get("/api/finstack/morning-brief")
-async def finstack_morning_brief():
-    cache_key = "morning_brief"
-    now = time.time()
-    if cache_key in _finstack_cache and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL:
-        return _finstack_cache[cache_key]["data"]
-    from myra_app.utils.finstack_bridge import get_morning_brief
-    try:
-        data = await get_morning_brief()
-        _finstack_cache[cache_key] = {"ts": now, "data": data}
-        return data
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# @app.get("/api/finstack/scan-pledge-risks")
-# async def finstack_scan_pledge_risks():
-#     from myra_app.utils.finstack_bridge import scan_pledge_risks
-#     result = await scan_pledge_risks()
-#     return _validate_finstack(result)
-
-
-# ── Missing routes wired up ─────────────────────────────────────────────
-
-@app.get("/api/finstack/stock-brief/{symbol}")
-async def finstack_stock_brief(symbol: str):
-    from myra_app.utils.finstack_bridge import get_stock_brief
-    result = await get_stock_brief(symbol)
-    return _validate_finstack(result)
-
-
-@app.get("/api/finstack/stock-brief")
-async def stock_brief(symbol: str = Query(..., description="Stock symbol, e.g., RELIANCE")):
-    cache_key = f"stock_brief:{symbol}"
-    now = time.time()
-    if cache_key in _finstack_cache and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL:
-        return _finstack_cache[cache_key]["data"]
-    from myra_app.utils.finstack_bridge import get_stock_brief
-    try:
-        data = await get_stock_brief(symbol=symbol.upper())
-        _finstack_cache[cache_key] = {"ts": now, "data": data}
-        return data
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/finstack/social-sentiment/{symbol}")
-async def finstack_social_sentiment(symbol: str):
-    from myra_app.utils.finstack_bridge import get_social_sentiment
-    result = await get_social_sentiment(symbol)
-    return _validate_finstack(result)
-
-
-@app.get("/api/finstack/pledge-alert/{symbol}")
-async def finstack_pledge_alert(symbol: str):
-    from myra_app.utils.finstack_bridge import get_pledge_alert
-    result = await get_pledge_alert(symbol)
-    return _validate_finstack(result)
-
-
-@app.get("/api/finstack/unusual-activity")
-async def unusual_activity(symbol: str = Query(..., description="Stock symbol, e.g., RELIANCE")):
-    cache_key = f"unusual_activity:{symbol}"
-    now = time.time()
-    if cache_key in _finstack_cache and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL:
-        return _finstack_cache[cache_key]["data"]
-    from myra_app.utils.finstack_bridge import detect_unusual_activity
-    try:
-        data = await detect_unusual_activity(symbol=symbol.upper())
-        _finstack_cache[cache_key] = {"ts": now, "data": data}
-        return data
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/finstack/stock-timeline")
-async def finstack_stock_timeline(symbol: str = ""):
-    if not symbol:
-        raise HTTPException(status_code=400, detail="query parameter 'symbol' is required")
-    cache_key = f"stock_timeline:{symbol}"
-    now = time.time()
-    if cache_key in _finstack_cache and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL:
-        return _finstack_cache[cache_key]["data"]
-    from myra_app.utils.finstack_bridge import get_stock_timeline
-    try:
-        data = await get_stock_timeline(symbol)
-        _finstack_cache[cache_key] = {"ts": now, "data": data}
-        return data
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# --- Invisible Hand Scanner State ---
-_ih_scan_state: dict = {
-    "scan_status": "idle",
-    "last_scan": None,
-    "progress": 0,
-    "message": "Idle — click Scan to start",
-    "candidates": [],
-    "bear_market": False,
-}
-_ih_scan_lock = threading.Lock()
-_IH_SCAN_CACHE = "models/invisible_hand_cache.json"
-
-
-def _save_ih_cache():
-    import json as _json, os as _os
-    try:
-        _os.makedirs("models", exist_ok=True)
-        with _ih_scan_lock:
-            data = {
-                "last_scan": _ih_scan_state["last_scan"],
-                "candidates": _ih_scan_state["candidates"],
-                "message": _ih_scan_state["message"],
-            }
-        with open(_IH_SCAN_CACHE, "w") as _f:
-            _json.dump(data, _f)
-    except Exception:
-        pass
-
-
-def _load_ih_cache() -> dict | None:
-    import json as _json, os as _os
-    try:
-        if _os.path.exists(_IH_SCAN_CACHE):
-            with open(_IH_SCAN_CACHE) as _f:
-                return _json.load(_f)
-    except Exception:
-        pass
-    return None
-
-
-@app.get("/api/invisible-hand/status")
-async def invisible_hand_status():
-    import copy
-    with _ih_scan_lock:
-        state = copy.deepcopy(_ih_scan_state)
-    if state["scan_status"] == "idle":
-        cache = _load_ih_cache()
-        if cache and cache.get("candidates") is not None:
-            return {
-                "scan_status": "idle",
-                "last_scan": cache.get("last_scan"),
-                "progress": 100,
-                "message": cache.get("message", f"Found {len(cache['candidates'])} candidates."),
-                "candidates": cache["candidates"],
-                "bear_market": state.get("bear_market", False),
-            }
-    return state
-
-
-@app.post("/api/invisible-hand/scan")
-async def invisible_hand_scan(payload: dict = Body(default={})):
-    with _ih_scan_lock:
-        if _ih_scan_state["scan_status"] == "scanning":
-            return {"detail": "Scan already in progress"}, 409
-        _ih_scan_state.update({
-            "scan_status": "scanning",
-            "progress": 0,
-            "message": "Initialising scanner...",
-            "candidates": [],
-        })
-
-    min_mcap = int(payload.get("min_mcap", 200))
-    max_mcap = int(payload.get("max_mcap", 50000))
-    window = int(payload.get("window", 20))
-    hist_window = int(payload.get("hist_window", 60))
-    min_ih_score = int(payload.get("min_ih_score", 35))
-
-    def _run():
-        try:
-            from myra_app.strategies.invisible_hand_scanner import InvisibleHandScanner
-            import math as _math
-            scanner = InvisibleHandScanner(
-                min_mcap=min_mcap, max_mcap=max_mcap,
-                window=window, hist_window=hist_window, min_ih_score=min_ih_score,
-            )
-            _ih_scan_state["message"] = "Loading universe..."
-            _ih_scan_state["progress"] = 5
-            universe = scanner._get_universe()
-            total = max(len(universe), 1)
-            _ih_scan_state["message"] = f"Scanning {total} symbols..."
-            _ih_scan_state["progress"] = 10
-
-            original_get_tech = scanner._get_tech_data
-            processed = [0]
-
-            def _tracked_get_tech(symbol, min_date):
-                processed[0] += 1
-                if processed[0] % 25 == 0:
-                    pct = 10 + int((processed[0] / total) * 82)
-                    _ih_scan_state["progress"] = min(pct, 92)
-                    _ih_scan_state["message"] = f"Scanning {processed[0]}/{total} symbols..."
-                return original_get_tech(symbol, min_date)
-            scanner._get_tech_data = _tracked_get_tech
-
-            df = scanner.scan()
-            _ih_scan_state["progress"] = 95
-            _ih_scan_state["message"] = "Finalising results..."
-
-            candidates = []
-            if not df.empty:
-                for _, row in df.iterrows():
-                    rec = row.to_dict()
-                    for key, val in list(rec.items()):
-                        if isinstance(val, float) and (_math.isnan(val) or _math.isinf(val)):
-                            rec[key] = None
-                    candidates.append(rec)
-
-            _ih_scan_state.update({
-                "scan_status": "completed",
-                "last_scan": datetime.now().isoformat(),
-                "progress": 100,
-                "message": f"Found {len(candidates)} candidates",
-                "candidates": candidates,
-                "bear_market": scanner.bear_market if hasattr(scanner, 'bear_market') else False,
-            })
-            _save_ih_cache()
-
-        except Exception as e:
-            logger.error("Invisible Hand scan failed: %s", e, exc_info=True)
-            _ih_scan_state.update({
-                "scan_status": "error",
-                "progress": 0,
-                "message": str(e),
-            })
-
-    threading.Thread(target=_run, daemon=True).start()
-    return {"status": "started"}
-
-
-# --- Trigger Scanner State ---
-_trigger_scan_state: dict = {
-    "scan_status": "idle",
-    "last_scan": None,
-    "progress": 0,
-    "message": "Idle — click Scan to start",
-    "candidates": [],
-    "bear_market": False,
-}
-_trigger_scan_lock = threading.Lock()
-_TRIGGER_SCAN_CACHE = "models/trigger_cache.json"
-
-
-def _save_trigger_cache():
-    import json as _json, os as _os
-    try:
-        _os.makedirs("models", exist_ok=True)
-        with _trigger_scan_lock:
-            data = {
-                "last_scan": _trigger_scan_state["last_scan"],
-                "candidates": _trigger_scan_state["candidates"],
-                "message": _trigger_scan_state["message"],
-            }
-        with open(_TRIGGER_SCAN_CACHE, "w") as _f:
-            _json.dump(data, _f)
-    except Exception:
-        pass
-
-
-def _load_trigger_cache() -> dict | None:
-    import json as _json, os as _os
-    try:
-        if _os.path.exists(_TRIGGER_SCAN_CACHE):
-            with open(_TRIGGER_SCAN_CACHE) as _f:
-                return _json.load(_f)
-    except Exception:
-        pass
-    return None
-
-
-@app.get("/api/trigger/status")
-async def trigger_status():
-    import copy
-    with _trigger_scan_lock:
-        state = copy.deepcopy(_trigger_scan_state)
-    if state["scan_status"] == "idle":
-        cache = _load_trigger_cache()
-        if cache and cache.get("candidates") is not None:
-            return {
-                "scan_status": "idle",
-                "last_scan": cache.get("last_scan"),
-                "progress": 100,
-                "message": cache.get("message", f"Found {len(cache['candidates'])} candidates."),
-                "candidates": cache["candidates"],
-                "bear_market": state.get("bear_market", False),
-            }
-    return state
-
-
-@app.post("/api/trigger/scan")
-async def trigger_scan(payload: dict = Body(default={})):
-    with _trigger_scan_lock:
-        if _trigger_scan_state["scan_status"] == "scanning":
-            return {"detail": "Scan already in progress"}, 409
-        _trigger_scan_state.update({
-            "scan_status": "scanning",
-            "progress": 0,
-            "message": "Initialising scanner...",
-            "candidates": [],
-        })
-
-    min_mcap = int(payload.get("min_mcap", 200))
-    max_mcap = int(payload.get("max_mcap", 50000))
-    min_float_util_pct = float(payload.get("min_float_util_pct", 12.0))
-    vol_pinch_ratio = float(payload.get("vol_pinch_ratio", 0.72))
-    price_range_max_pct = float(payload.get("price_range_max_pct", 2.8))
-
-    def _run():
-        try:
-            from myra_app.strategies.trigger_scanner import TriggerScanner
-            import math as _math
-            scanner = TriggerScanner(
-                min_mcap=min_mcap, max_mcap=max_mcap,
-                min_float_util_pct=min_float_util_pct,
-                vol_pinch_ratio=vol_pinch_ratio,
-                price_range_max_pct=price_range_max_pct,
-            )
-            _trigger_scan_state["message"] = "Loading universe..."
-            _trigger_scan_state["progress"] = 5
-            universe = scanner._get_universe()
-            total = max(len(universe), 1)
-            _trigger_scan_state["message"] = f"Scanning {total} symbols..."
-            _trigger_scan_state["progress"] = 10
-
-            original_get_tech = scanner._get_tech_data
-            processed = [0]
-
-            def _tracked_get_tech(symbol, min_date):
-                processed[0] += 1
-                if processed[0] % 25 == 0:
-                    pct = 10 + int((processed[0] / total) * 82)
-                    _trigger_scan_state["progress"] = min(pct, 92)
-                    _trigger_scan_state["message"] = f"Scanning {processed[0]}/{total} symbols..."
-                return original_get_tech(symbol, min_date)
-            scanner._get_tech_data = _tracked_get_tech
-
-            df = scanner.scan()
-            _trigger_scan_state["progress"] = 95
-            _trigger_scan_state["message"] = "Finalising results..."
-
-            candidates = []
-            if not df.empty:
-                for _, row in df.iterrows():
-                    rec = row.to_dict()
-                    for key, val in list(rec.items()):
-                        if isinstance(val, float) and (_math.isnan(val) or _math.isinf(val)):
-                            rec[key] = None
-                    candidates.append(rec)
-
-            _trigger_scan_state.update({
-                "scan_status": "completed",
-                "last_scan": datetime.now().isoformat(),
-                "progress": 100,
-                "message": f"Found {len(candidates)} candidates",
-                "candidates": candidates,
-                "bear_market": scanner.bear_market if hasattr(scanner, 'bear_market') else False,
-            })
-            _save_trigger_cache()
-
-        except Exception as e:
-            logger.error("Trigger scan failed: %s", e, exc_info=True)
-            _trigger_scan_state.update({
-                "scan_status": "error",
-                "progress": 0,
-                "message": str(e),
-            })
-
-    threading.Thread(target=_run, daemon=True).start()
-    return {"status": "started"}# --- Liquidity Flip Detector State ---
+# --- Liquidity Flip Detector State ---
 _lf_scan_state: dict = {
     "scan_status": "idle",
     "last_scan": None,
@@ -1353,6 +1574,7 @@ async def liquidity_flip_scan(payload: dict = Body(default={})):
 
     threading.Thread(target=_run, daemon=True).start()
     return {"status": "started"}
+
 
 # --- Operator Fingerprint Scanner State ---
 _of_scan_state: dict = {
@@ -1499,6 +1721,7 @@ async def operator_fingerprint_scan(payload: dict = Body(default={})):
     threading.Thread(target=_run, daemon=True).start()
     return {"status": "started"}
 
+
 # --- Float Exhaustion Scanner State ---
 _fe_scan_state: dict = {
     "scan_status": "idle",
@@ -1643,6 +1866,7 @@ async def float_exhaustion_scan(payload: dict = Body(default={})):
 
     threading.Thread(target=_run, daemon=True).start()
     return {"status": "started"}
+
 
 # --- Seasonal Delivery Harvester State ---
 _sd_scan_state: dict = {
@@ -1793,6 +2017,7 @@ async def seasonal_delivery_scan(payload: dict = Body(default={})):
     threading.Thread(target=_run, daemon=True).start()
     return {"status": "started"}
 
+
 # --- Wyckoff Automaton State ---
 _wy_scan_state: dict = {
     "scan_status": "idle",
@@ -1935,3 +2160,94 @@ async def wyckoff_scan(payload: dict = Body(default={})):
     threading.Thread(target=_run, daemon=True).start()
     return {"status": "started"}
 
+
+@app.get("/api/finstack/morning-brief")
+async def finstack_morning_brief():
+    cache_key = "morning_brief"
+    now = time.time()
+    if cache_key in _finstack_cache and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL:
+        return _finstack_cache[cache_key]["data"]
+    from myra_app.utils.finstack_bridge import get_morning_brief
+    try:
+        data = await get_morning_brief()
+        _finstack_cache[cache_key] = {"ts": now, "data": data}
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# @app.get("/api/finstack/scan-pledge-risks")
+# async def finstack_scan_pledge_risks():
+#     from myra_app.utils.finstack_bridge import scan_pledge_risks
+#     result = await scan_pledge_risks()
+#     return _validate_finstack(result)
+
+
+# ── Missing routes wired up ─────────────────────────────────────────────
+
+@app.get("/api/finstack/stock-brief/{symbol}")
+async def finstack_stock_brief(symbol: str):
+    from myra_app.utils.finstack_bridge import get_stock_brief
+    result = await get_stock_brief(symbol)
+    return _validate_finstack(result)
+
+
+@app.get("/api/finstack/stock-brief")
+async def stock_brief(symbol: str = Query(..., description="Stock symbol, e.g., RELIANCE")):
+    cache_key = f"stock_brief:{symbol}"
+    now = time.time()
+    if cache_key in _finstack_cache and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL:
+        return _finstack_cache[cache_key]["data"]
+    from myra_app.utils.finstack_bridge import get_stock_brief
+    try:
+        data = await get_stock_brief(symbol=symbol.upper())
+        _finstack_cache[cache_key] = {"ts": now, "data": data}
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/finstack/social-sentiment/{symbol}")
+async def finstack_social_sentiment(symbol: str):
+    from myra_app.utils.finstack_bridge import get_social_sentiment
+    result = await get_social_sentiment(symbol)
+    return _validate_finstack(result)
+
+
+@app.get("/api/finstack/pledge-alert/{symbol}")
+async def finstack_pledge_alert(symbol: str):
+    from myra_app.utils.finstack_bridge import get_pledge_alert
+    result = await get_pledge_alert(symbol)
+    return _validate_finstack(result)
+
+
+@app.get("/api/finstack/unusual-activity")
+async def unusual_activity(symbol: str = Query(..., description="Stock symbol, e.g., RELIANCE")):
+    cache_key = f"unusual_activity:{symbol}"
+    now = time.time()
+    if cache_key in _finstack_cache and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL:
+        return _finstack_cache[cache_key]["data"]
+    from myra_app.utils.finstack_bridge import detect_unusual_activity
+    try:
+        data = await detect_unusual_activity(symbol=symbol.upper())
+        _finstack_cache[cache_key] = {"ts": now, "data": data}
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/finstack/stock-timeline")
+async def finstack_stock_timeline(symbol: str = ""):
+    if not symbol:
+        raise HTTPException(status_code=400, detail="query parameter 'symbol' is required")
+    cache_key = f"stock_timeline:{symbol}"
+    now = time.time()
+    if cache_key in _finstack_cache and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL:
+        return _finstack_cache[cache_key]["data"]
+    from myra_app.utils.finstack_bridge import get_stock_timeline
+    try:
+        data = await get_stock_timeline(symbol)
+        _finstack_cache[cache_key] = {"ts": now, "data": data}
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

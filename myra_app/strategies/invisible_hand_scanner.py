@@ -31,7 +31,8 @@ class InvisibleHandScanner:
             rows = conn.execute(
                 """
                 SELECT f.symbol,
-                       COALESCE(f.market_cap, f.marketCap, 0) AS mcap
+                       COALESCE(f.market_cap, f.marketCap, 0) AS mcap,
+                       COALESCE(f.free_float_pct, 40.0) AS ff_pct
                 FROM fundamentals f
                 INNER JOIN (
                     SELECT symbol, MAX(date) as max_date
@@ -132,11 +133,12 @@ class InvisibleHandScanner:
             as_on_date = date.today().isoformat()
 
         ref_date = pd.Timestamp(as_on_date)
-        min_date = (ref_date - pd.Timedelta(days=self.window + self.hist_window + 10)).strftime("%Y-%m-%d")
+        lookback_calendar_days = int((self.window + self.hist_window) * 1.8) + 10
+        min_date = (ref_date - pd.Timedelta(days=lookback_calendar_days)).strftime("%Y-%m-%d")
 
         candidates: list[dict] = []
 
-        for idx, (symbol, mcap) in enumerate(rows):
+        for idx, (symbol, mcap, ff_pct) in enumerate(rows):
             symbol = symbol.strip()
 
             tech = self._get_tech_data(symbol, min_date)
