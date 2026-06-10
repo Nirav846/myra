@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { Box, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Star, Eye, Zap } from 'lucide-react';
+import { Box, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Star, Eye, Zap, BookOpen, ChevronRight, Info } from 'lucide-react';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
 import { useWatchlist } from '../lib/WatchlistContext';
@@ -71,6 +71,7 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [staleBannerOpen, setStaleBannerOpen] = useState(true);
+  const [guideOpen, setGuideOpen] = useState(false);
 
   const [mcapRange, setMcapRange] = useState<{ min: number; max: number } | null>(null);
   const mcapMapRef = useRef<Map<string, number>>(new Map());
@@ -273,6 +274,93 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
         </button>
       </header>
 
+      {/* ── INVISIBLE HAND 101 GUIDE ── */}
+      <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden">
+        <button
+          onClick={() => setGuideOpen(o => !o)}
+          className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-[#ffffff05] transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <BookOpen size={14} className="text-violet-400" />
+            <span className="text-sm font-semibold text-[#fafafa]">What is the Invisible Hand Scanner?</span>
+            <span className="text-[10px] text-violet-400 bg-violet-500/15 border border-violet-500/30 px-2 py-0.5 rounded font-mono">
+              NEW? START HERE
+            </span>
+          </div>
+          <ChevronRight
+            size={14}
+            className={`text-[#888] transition-transform duration-200 ${guideOpen ? 'rotate-90' : ''}`}
+          />
+        </button>
+
+        {guideOpen && (
+          <div className="px-4 pb-4 border-t border-[#ffffff0a]">
+            <p className="text-xs text-[#888] mt-3 mb-4 leading-relaxed max-w-3xl">
+              Big institutional buyers (FIIs, mutual funds, operators) can't buy in large quantities without
+              moving the price against themselves. So they buy quietly — small lots, spread over many days,
+              on days when the stock is flat and nobody is paying attention.
+              This scanner reads <strong className="text-[#fafafa]">delivery data</strong> to detect that
+              pattern: a stock where an enormous amount of money has changed hands, but price barely moved.
+              These are setups that "pop with no warning" because the accumulation was invisible.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              {[
+                {
+                  abbr: 'DER Ratio',
+                  full: 'Delivery Efficiency Ratio',
+                  color: 'text-violet-400',
+                  border: 'border-violet-500/30',
+                  bg: 'bg-violet-500/10',
+                  what: 'Total ₹Cr of stock absorbed ÷ how much price moved %.',
+                  good: 'Higher is better. >2× means institutions absorbed twice as efficiently as the stock\'s own history.',
+                },
+                {
+                  abbr: 'DDAS%',
+                  full: 'Down-Day Absorption Score',
+                  color: 'text-amber-400',
+                  border: 'border-amber-500/30',
+                  bg: 'bg-amber-500/10',
+                  what: 'Mean delivery% on sessions when THIS stock\'s price fell.',
+                  good: 'High score = someone was buying every single dip. >60% = strong institutional floor.',
+                },
+                {
+                  abbr: 'DCS',
+                  full: 'Delivery Consistency Score',
+                  color: 'text-cyan-400',
+                  border: 'border-cyan-500/30',
+                  bg: 'bg-cyan-500/10',
+                  what: 'Measures whether delivery is systematic (same level every day) vs episodic (one big spike).',
+                  good: 'High = regular accumulation. Low mean delivery with 1 big spike = block deal, not accumulation.',
+                },
+                {
+                  abbr: 'QCD',
+                  full: 'Quiet Conviction Days',
+                  color: 'text-green-400',
+                  border: 'border-green-500/30',
+                  bg: 'bg-green-500/10',
+                  what: 'Days where delivery >50%, price moved <1.5%, volume was average. Nobody noticed. But someone was loading.',
+                  good: '≥6 QCD days in 20 sessions = systematic operator. The most reliable single signal.',
+                },
+              ].map(item => (
+                <div key={item.abbr} className={`rounded border ${item.border} ${item.bg} p-3`}>
+                  <div className={`text-sm font-bold ${item.color} mb-1`}>{item.abbr}</div>
+                  <div className="text-[11px] text-[#fafafa] font-semibold mb-2">{item.full}</div>
+                  <p className="text-[10px] text-[#aaa] leading-relaxed mb-2">{item.what}</p>
+                  <p className="text-[10px] text-[#888]"><strong className="text-[#ccc]">What's good:</strong> {item.good}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-3 p-3 bg-[#0e1117] border border-violet-500/20 rounded text-[11px] text-[#888] leading-relaxed">
+              <strong className="text-violet-400">IH Score (0–100)</strong> is the composite of all four signals.
+              <strong className="text-[#fafafa]"> Grade A (75+) = all four signals firing simultaneously.</strong>
+              These are the setups worth investigating first. Typical time-to-move: 2–6 weeks after detection.
+            </div>
+          </div>
+        )}
+      </div>
+
       {isScanning && (
         <div className="bg-violet-500/10 border border-violet-500/30 rounded p-3" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100} aria-label="Scan progress">
           <div className="flex items-center gap-2 text-xs font-mono text-violet-300 mb-2">
@@ -403,30 +491,38 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
       {(scanStatus?.scan_status === 'completed' || (isIdle && candidates.length > 0)) && !isScanning && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Candidates</div>
-              <div className="text-2xl font-bold text-[#fafafa]">{filteredData.length}</div>
-            </div>
-            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Grade A</div>
-              <div className="text-2xl font-bold text-violet-400">{filteredData.filter(d => d.grade === 'A').length}</div>
-            </div>
-            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg DER Ratio</div>
-              <div className="text-2xl font-bold text-cyan-400">
-                {filteredData.length > 0
-                  ? (filteredData.reduce((s, d) => s + d.der_ratio, 0) / filteredData.length).toFixed(1) + ''
-                  : '—'}
+            <Tooltip content="Total stocks passing all IH filters right now">
+              <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3 cursor-help">
+                <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Candidates</div>
+                <div className="text-2xl font-bold text-[#fafafa]">{filteredData.length}</div>
               </div>
-            </div>
-            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg DDAS%</div>
-              <div className="text-2xl font-bold text-amber-400">
-                {filteredData.length > 0
-                  ? (filteredData.reduce((s, d) => s + d.ddas, 0) / filteredData.length).toFixed(1) + '%'
-                  : '—'}
+            </Tooltip>
+            <Tooltip content="Stocks where the IH Score is 75+. All four signals are firing together. Investigate these first.">
+              <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3 cursor-help">
+                <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Grade A</div>
+                <div className="text-2xl font-bold text-violet-400">{filteredData.filter(d => d.grade === 'A').length}</div>
               </div>
-            </div>
+            </Tooltip>
+            <Tooltip content="Average Delivery Efficiency Ratio in this scan. >1.5× means the cohort is absorbing 50% more capital per % price move than their own historical baseline.">
+              <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3 cursor-help">
+                <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg DER Ratio</div>
+                <div className="text-2xl font-bold text-cyan-400">
+                  {filteredData.length > 0
+                    ? (filteredData.reduce((s, d) => s + (d.der_ratio ?? 0), 0) / filteredData.length).toFixed(2) + '×'
+                    : '—'}
+                </div>
+              </div>
+            </Tooltip>
+            <Tooltip content="Average Down-Day Absorption Score. Shows how much of this universe was being bought on its own bad days. >55% is exceptional.">
+              <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3 cursor-help">
+                <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg DDAS%</div>
+                <div className="text-2xl font-bold text-amber-400">
+                  {filteredData.length > 0
+                    ? (filteredData.reduce((s, d) => s + (d.ddas ?? 0), 0) / filteredData.length).toFixed(1) + '%'
+                    : '—'}
+                </div>
+              </div>
+            </Tooltip>
           </div>
 
           {filteredData.filter(d => d.grade === 'A').length > 0 && (
@@ -465,42 +561,83 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
               >
                 <thead className="sticky top-0 z-20 text-[#888]">
                   <tr style={{ boxShadow: '0 1px 0 0 rgba(255,255,255,0.08), 0 2px 4px 0 rgba(0,0,0,0.4)' }}>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500/50" onClick={() => handleSort('symbol')} scope="col" aria-sort={sortCol === 'symbol' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('symbol')}>
                       Symbol <SortIcon column="symbol" />
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500/50" onClick={() => handleSort('sector')} scope="col" aria-sort={sortCol === 'sector' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('sector')}>
                       Sector <SortIcon column="sector" />
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500/50" onClick={() => handleSort('market_cap_cr')} scope="col" aria-sort={sortCol === 'market_cap_cr' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      MCap (₹ Cr) <SortIcon column="market_cap_cr" />
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('market_cap_cr')}>
+                      MCap (₹Cr) <SortIcon column="market_cap_cr" />
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500/50" onClick={() => handleSort('der_ratio')} scope="col" aria-sort={sortCol === 'der_ratio' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      DER Ratio <SortIcon column="der_ratio" />
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('der_ratio')}>
+                      <Tooltip content="Delivery Efficiency Ratio — ₹Cr absorbed ÷ price drift%. High = stock absorbed in size without price moving. Compared to this stock's own 60-day baseline.">
+                        DER Ratio <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="der_ratio" />
+                      </Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500/50" onClick={() => handleSort('ddas')} scope="col" aria-sort={sortCol === 'ddas' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      DDAS% <SortIcon column="ddas" />
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('ddas')}>
+                      <Tooltip content="Down-Day Absorption Score — mean delivery% on sessions when THIS stock's price fell. High = someone was absorbing every dip. Not Nifty RS — this is specific to this stock's own bad days.">
+                        DDAS% <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="ddas" />
+                      </Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500/50" onClick={() => handleSort('mean_del_pct')} scope="col" aria-sort={sortCol === 'mean_del_pct' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      Mean Del% <SortIcon column="mean_del_pct" />
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('mean_del_pct')}>
+                      <Tooltip content="Average delivery% over the last 20 sessions. >55% = sustained high delivery. The baseline that DCS uses.">
+                        Mean Del% <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="mean_del_pct" />
+                      </Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500/50" onClick={() => handleSort('dcs_score')} scope="col" aria-sort={sortCol === 'dcs_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      DCS <SortIcon column="dcs_score" />
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('dcs_score')}>
+                      <Tooltip content="Delivery Consistency Score — mean delivery ÷ (1 + std deviation/10). Distinguishes systematic daily loading from one-off block deals. High = delivery is regular, not spikey.">
+                        DCS <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="dcs_score" />
+                      </Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1c1] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500/50" onClick={() => handleSort('qcd')} scope="col" aria-sort={sortCol === 'qcd' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      QCD <SortIcon column="qcd" />
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('qcd')}>
+                      <Tooltip content="Quiet Conviction Days — sessions where delivery >50% AND price moved <1.5% AND volume was near average. The purest signal: someone loaded stock when nobody was watching.">
+                        QCD <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="qcd" />
+                      </Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500/50" onClick={() => handleSort('ih_score')} scope="col" aria-sort={sortCol === 'ih_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      IH Score <SortIcon column="ih_score" />
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('ih_score')}>
+                      <Tooltip content="Invisible Hand Score (0–100) — composite of DER(35%) + DDAS(30%) + DCS(20%) + QCD(15%). Grade A = 75+.">
+                        IH Score <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="ih_score" />
+                      </Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500/50" onClick={() => handleSort('base_duration')} scope="col" aria-sort={sortCol === 'base_duration' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      Base Days <SortIcon column="base_duration" />
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('base_duration')}>
+                      <Tooltip content="How many consecutive recent sessions the stock has been 'in the base' — daily high-low range < 3% of close. Longer base = more patient accumulation.">
+                        Base Days <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="base_duration" />
+                      </Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500/50" onClick={() => handleSort('close')} scope="col" aria-sort={sortCol === 'close' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      Close <SortIcon column="close" />
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('close')}>
+                      Price (₹) <SortIcon column="close" />
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500/50" onClick={() => handleSort('wk52_pos')} scope="col" aria-sort={sortCol === 'wk52_pos' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      52W Pos% <SortIcon column="wk52_pos" />
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('wk52_pos')}>
+                      <Tooltip content="Where the current price sits in the 52-week range. 0% = at the 52-week low, 100% = at the high. <75% = room to move up. >88% = already near highs (excluded by scanner).">
+                        52W Position <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="wk52_pos" />
+                      </Tooltip>
                     </th>
+
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#ffffff0a]">
@@ -527,7 +664,9 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
                         <td className="px-3 py-3 text-[#888] text-[11px] max-w-[120px] truncate" title={row.sector ?? ''}>{row.sector ?? '—'}</td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.market_cap_cr.toFixed(0)}</td>
                         <td className="px-3 py-3 text-right">
-                          <span className={row.der_ratio > 2.0 ? 'text-violet-400' : row.der_ratio > 1.5 ? 'text-cyan-400' : 'text-[#888]'}>${row.der_ratio.toFixed(2)}</span>
+                          <span className={row.der_ratio > 2.0 ? 'text-violet-400' : row.der_ratio > 1.5 ? 'text-cyan-400' : 'text-[#888]'}>
+                            {row.der_ratio?.toFixed(2) ?? '—'}×
+                          </span>
                         </td>
                         <td className="px-3 py-3 text-right">
                           <span className={row.ddas > 60 ? 'text-green-400' : row.ddas > 48 ? 'text-amber-400' : 'text-[#888]'}>{row.ddas.toFixed(1)}%</span>

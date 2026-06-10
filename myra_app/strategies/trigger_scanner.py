@@ -173,7 +173,7 @@ class TriggerScanner:
 
             gate1_pass = float_util_pct >= self.min_float_util_pct
 
-            gate1_score = min(100.0, float_util_pct / 0.40 * 100)
+            gate1_score = min(100.0, float_util_pct / 40.0 * 100)
 
             # Gate 2: Seller Extinction (Behavioural)
             w15 = df.tail(15).reset_index(drop=True)

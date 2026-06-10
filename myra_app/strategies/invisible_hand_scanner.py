@@ -87,6 +87,20 @@ class InvisibleHandScanner:
             pass
         return value
 
+    @staticmethod
+    def _compute_der(df: pd.DataFrame) -> float:
+        """
+        Delivery Efficiency Ratio = total delivery value (₹Cr) / max(|price drift %|, 0.5)
+        High value = large capital absorbed with minimal price movement.
+        """
+        if len(df) < 2:
+            return 0.0
+        delivery_vals = df["delivery"].values.astype(float)
+        closes        = df["close"].values.astype(float)
+        delivery_value_cr = float(np.nansum(delivery_vals * closes)) / 1e7
+        price_drift_abs   = abs(closes[-1] - closes[0]) / closes[0] * 100 if closes[0] > 0 else 0.5
+        return delivery_value_cr / max(price_drift_abs, 0.5)
+
     def scan(self, as_on_date: str | None = None) -> pd.DataFrame:
         rows = self._get_universe()
         if not rows:
@@ -157,18 +171,8 @@ class InvisibleHandScanner:
             curr_df = df.iloc[-self.window:]
 
             # Signal 1: Delivery Efficiency Ratio (DER)
-            def _compute_der(df: pd.DataFrame) -> float:
-                if len(df) < 2:
-                    return 0.0
-                delivery_vals = df["delivery"].values.astype(float)
-                closes = df["close"].values.astype(float)
-                delivery_value_cr = float(np.nansum(delivery_vals * closes)) / 1e7
-                price_drift_abs = abs(closes[-1] - closes[0]) / closes[0] * 100 if closes[0] > 0 else 0.5
-                price_drift_abs = max(price_drift_abs, 0.5)
-                return delivery_value_cr / price_drift_abs
-
-            hist_der = _compute_der(hist_df)
-            curr_der = _compute_der(curr_df)
+            hist_der = self._compute_der(hist_df)
+            curr_der = self._compute_der(curr_df)
 
             der_ratio = curr_der / hist_der if hist_der > 0.1 else 1.0
             der_score = min(100.0, max(0.0, (der_ratio - 1.0) / 2.0 * 100))

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { Box, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Star, Eye, Zap } from 'lucide-react';
+import { Box, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Star, Eye, Zap, BookOpen, ChevronRight, Info } from 'lucide-react';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
 import { useWatchlist } from '../lib/WatchlistContext';
@@ -72,6 +72,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [staleBannerOpen, setStaleBannerOpen] = useState(true);
+  const [guideOpen, setGuideOpen] = useState(false);
 
   const [mcapRange, setMcapRange] = useState<{ min: number; max: number } | null>(null);
   const mcapMapRef = useRef<Map<string, number>>(new Map());
@@ -278,6 +279,100 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
         </button>
       </header>
 
+      {/* ── TRIGGER 101 GUIDE ── */}
+      <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden">
+        <button
+          onClick={() => setGuideOpen(o => !o)}
+          className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-[#ffffff05] transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <BookOpen size={14} className="text-orange-400" />
+            <span className="text-sm font-semibold text-[#fafafa]">How does The Trigger work?</span>
+            <span className="text-[10px] text-orange-400 bg-orange-500/15 border border-orange-500/30 px-2 py-0.5 rounded font-mono">
+              NEW? START HERE
+            </span>
+          </div>
+          <ChevronRight
+            size={14}
+            className={`text-[#888] transition-transform duration-200 ${guideOpen ? 'rotate-90' : ''}`}
+          />
+        </button>
+
+        {guideOpen && (
+          <div className="px-4 pb-4 border-t border-[#ffffff0a]">
+            <p className="text-xs text-[#888] mt-3 mb-4 leading-relaxed max-w-3xl">
+              The Trigger finds stocks at the <strong className="text-[#fafafa]">exact moment before they break out</strong> —
+              not weeks away, but days. It uses a <strong className="text-orange-400">three-gate system</strong>:
+              all three gates must pass simultaneously. One gate passing is noise.
+              Two gates is interesting. All three together is a setup.
+              Every stock in this list has passed all three.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+              {[
+                {
+                  gate: 'Gate 1',
+                  title: 'Supply is Gone',
+                  subtitle: 'Float Absorption',
+                  color: 'text-orange-400',
+                  border: 'border-orange-500/30',
+                  bg: 'bg-orange-500/10',
+                  metric: 'Float Util%',
+                  what: '20-day cumulative delivery ÷ free float shares. Measures what fraction of available supply has physically changed hands.',
+                  good: '>12% = meaningful supply consumed. >25% = float critically short. Sellers are running out of shares to sell.',
+                },
+                {
+                  gate: 'Gate 2',
+                  title: 'Sellers Are Giving Up',
+                  subtitle: 'Seller Extinction',
+                  color: 'text-red-400',
+                  border: 'border-red-500/30',
+                  bg: 'bg-red-500/10',
+                  metric: 'Avg Down Del% + Slope',
+                  what: 'On days when the stock falls, how much is being delivered by sellers? Falling delivery on down-days = sellers exhausted.',
+                  good: 'Avg Down Del% < 38% means sellers barely showed up even on bad days. Negative slope = getting worse for sellers each time.',
+                },
+                {
+                  gate: 'Gate 3',
+                  title: 'Coil is Loaded',
+                  subtitle: 'Volume Pinch',
+                  color: 'text-blue-400',
+                  border: 'border-blue-500/30',
+                  bg: 'bg-blue-500/10',
+                  metric: 'Vol Ratio + Price Range',
+                  what: '5-day volume vs 20-day average (should be <72%) AND 5-day high-low range should be tight (<2.8%). The market is compressing.',
+                  good: 'Low volume + tight range = nobody is selling, nobody is chasing. The coil is wound. Something has to give.',
+                },
+              ].map(item => (
+                <div key={item.gate} className={`rounded border ${item.border} ${item.bg} p-3`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded border ${item.border} ${item.color} ${item.bg}`}>
+                      {item.gate}
+                    </span>
+                    <span className={`text-sm font-bold ${item.color}`}>{item.title}</span>
+                  </div>
+                  <div className="text-[11px] text-[#ccc] font-semibold mb-1">{item.subtitle} · {item.metric}</div>
+                  <p className="text-[10px] text-[#aaa] leading-relaxed mb-2">{item.what}</p>
+                  <p className="text-[10px] text-[#888]"><strong className="text-[#ccc]">Pass condition:</strong> {item.good}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="p-3 bg-[#0e1117] border border-orange-500/20 rounded text-[11px] text-[#888] leading-relaxed">
+                <strong className="text-orange-400">Defense Bars</strong> — days when the stock opened lower
+                but recovered strongly on high delivery. Someone defended the price. ≥3 bars = very strong floor.
+              </div>
+              <div className="p-3 bg-[#0e1117] border border-green-500/20 rounded text-[11px] text-[#888] leading-relaxed">
+                <strong className="text-green-400">Breakout Prox%</strong> — how close to the top of the
+                20-session base the price is right now. 80%+ = price is near the breakout point.
+                Combine with high score for best setups.
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {isScanning && (
         <div className="bg-orange-500/10 border border-orange-500/30 rounded p-3" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100} aria-label="Scan progress">
           <div className="flex items-center gap-2 text-xs font-mono text-orange-300 mb-2">
@@ -427,30 +522,38 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
       {(scanStatus?.scan_status === 'completed' || (isIdle && candidates.length > 0)) && !isScanning && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Triggers Ready</div>
-              <div className="text-2xl font-bold text-[#fafafa]">{filteredData.length}</div>
-            </div>
-            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Grade A</div>
-              <div className="text-2xl font-bold text-orange-400">{filteredData.filter(d => d.grade === 'A').length}</div>
-            </div>
-            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg Float Util%</div>
-              <div className="text-2xl font-bold text-red-400">
-                {filteredData.length > 0
-                  ? (filteredData.reduce((s, d) => s + d.float_util_pct, 0) / filteredData.length).toFixed(1) + '%'
-                  : '—'}
+            <Tooltip content="Total stocks where all 3 gates passed simultaneously right now">
+              <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3 cursor-help">
+                <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Triggers Ready</div>
+                <div className="text-2xl font-bold text-[#fafafa]">{filteredData.length}</div>
               </div>
-            </div>
-            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg Base Days</div>
-              <div className="text-2xl font-bold text-cyan-400">
-                {filteredData.length > 0
-                  ? (filteredData.reduce((s, d) => s + d.base_duration, 0) / filteredData.length).toFixed(0)
-                  : '—'}
+            </Tooltip>
+            <Tooltip content="Trigger Score ≥75 — all three gates strong, plus meaningful defense bars and breakout proximity. Act on these first.">
+              <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3 cursor-help">
+                <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Grade A</div>
+                <div className="text-2xl font-bold text-orange-400">{filteredData.filter(d => d.grade === 'A').length}</div>
               </div>
-            </div>
+            </Tooltip>
+            <Tooltip content="Average Float Utilisation% across current results. Higher = more supply consumed from the market.">
+              <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3 cursor-help">
+                <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg Float Util%</div>
+                <div className="text-2xl font-bold text-red-400">
+                  {filteredData.length > 0
+                    ? (filteredData.reduce((s, d) => s + (d.float_util_pct ?? 0), 0) / filteredData.length).toFixed(1) + '%'
+                    : '—'}
+                </div>
+              </div>
+            </Tooltip>
+            <Tooltip content="Average base duration in sessions. Longer base = more patient, deliberate accumulation. >10 sessions is strong.">
+              <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3 cursor-help">
+                <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg Base Days</div>
+                <div className="text-2xl font-bold text-cyan-400">
+                  {filteredData.length > 0
+                    ? (filteredData.reduce((s, d) => s + (d.base_duration ?? 0), 0) / filteredData.length).toFixed(0)
+                    : '—'}
+                </div>
+              </div>
+            </Tooltip>
           </div>
 
           {filteredData.filter(d => d.grade === 'A').length > 0 && (
@@ -472,7 +575,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
                       <span className="text-[#888]">{d.sector ?? ''}</span>
                       <span className="text-orange-400">Float {d.float_util_pct.toFixed(1)}%</span>
                       <span className="text-green-400">Base {d.base_duration}</span>
-                      <span className="text-amber-400">Prox {d.breakout_prox.toFixed(1)}</span>
+                      <span className="text-amber-400">Prox {((d.breakout_prox ?? 0) * 100).toFixed(0)}%</span>
                     </div>
                   ))}
               </div>
@@ -486,55 +589,107 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
                 role="grid"
                 aria-label="Trigger Scanner results"
                 aria-rowcount={filteredData.length}
-                aria-colcount={17}
+                aria-colcount={14}
               >
                 <thead className="sticky top-0 z-20 text-[#888]">
                   <tr style={{ boxShadow: '0 1px 0 0 rgba(255,255,255,0.08), 0 2px 4px 0 rgba(0,0,0,0.4)' }}>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50" onClick={() => handleSort('symbol')} scope="col" aria-sort={sortCol === 'symbol' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('symbol')}>
                       Symbol <SortIcon column="symbol" />
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50" onClick={() => handleSort('sector')} scope="col" aria-sort={sortCol === 'sector' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('sector')}>
                       Sector <SortIcon column="sector" />
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50" onClick={() => handleSort('market_cap_cr')} scope="col" aria-sort={sortCol === 'market_cap_cr' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      MCap (₹ Cr) <SortIcon column="market_cap_cr" />
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('market_cap_cr')}>
+                      MCap (₹Cr) <SortIcon column="market_cap_cr" />
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50" onClick={() => handleSort('float_util_pct')} scope="col" aria-sort={sortCol === 'float_util_pct' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      Float Util% <SortIcon column="float_util_pct" />
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('float_util_pct')}>
+                      <Tooltip content="Gate 1 — Float Utilisation. % of free float absorbed in last 20 days. >25% = critically short supply. Higher = more of the available stock has changed hands.">
+                        Float Util% <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="float_util_pct" />
+                      </Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50" onClick={() => handleSort('gate1_score')} scope="col" aria-sort={sortCol === 'gate1_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      Gate 1 <SortIcon column="gate1_score" />
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('gate1_score')}>
+                      <Tooltip content="Gate 1 Score (0–100). Scales with Float Util%: 30 at 12%, 62 at 25%, 100 at 40%.">
+                        G1 Score <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="gate1_score" />
+                      </Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50" onClick={() => handleSort('avg_down_del')} scope="col" aria-sort={sortCol === 'avg_down_del' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      Avg Down Del% <SortIcon column="avg_down_del" />
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('avg_down_del')}>
+                      <Tooltip content="Gate 2 — Average delivery% on sessions when the stock fell >0.15%. Low = sellers barely participated even on bad days. <35% is exceptional.">
+                        Down Del% <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="avg_down_del" />
+                      </Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50" onClick={() => handleSort('gate2_score')} scope="col" aria-sort={sortCol === 'gate2_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      Gate 2 <SortIcon column="gate2_score" />
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('gate2_score')}>
+                      <Tooltip content="Gate 2 Score — Seller Extinction strength. Combines how low down-day delivery is AND how fast it's declining. Higher = sellers more exhausted.">
+                        G2 Score <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="gate2_score" />
+                      </Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50" onClick={() => handleSort('gate3_score')} scope="col" aria-sort={sortCol === 'gate3_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      Gate 3 <SortIcon column="gate3_score" />
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('gate3_score')}>
+                      <Tooltip content="Gate 3 Score — Volume Pinch strength. Combines volume dry-up (5d vs 20d) and price range compression. Higher = coil more tightly wound.">
+                        G3 Score <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="gate3_score" />
+                      </Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50" onClick={() => handleSort('breakout_prox')} scope="col" aria-sort={sortCol === 'breakout_prox' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      Prox% <SortIcon column="breakout_prox" />
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('defense_bars')}>
+                      <Tooltip content="Defense Bars — sessions where the stock opened lower but recovered strongly on high delivery. Each bar = a buyer defending the price. ≥3 bars = strong institutional floor.">
+                        Defense <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="defense_bars" />
+                      </Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50" onClick={() => handleSort('trigger_score')} scope="col" aria-sort={sortCol === 'trigger_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      Score <SortIcon column="trigger_score" />
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('base_duration')}>
+                      <Tooltip content="How many consecutive recent sessions the stock has been in a tight base (daily H-L range < 3.5%). Longer = more patient accumulation underway.">
+                        Base Days <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="base_duration" />
+                      </Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50" onClick={() => handleSort('base_duration')} scope="col" aria-sort={sortCol === 'base_duration' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      Base Days <SortIcon column="base_duration" />
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('breakout_prox')}>
+                      <Tooltip content="Breakout Proximity — where price is within the 20-session base. 0% = at the base low. 100% = at the base high (breakout level). >70% = price approaching launch.">
+                        Prox% <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="breakout_prox" />
+                      </Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50" onClick={() => handleSort('close')} scope="col" aria-sort={sortCol === 'close' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      Close <SortIcon column="close" />
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('trigger_score')}>
+                      <Tooltip content="Trigger Score (0–100) = G1(30%) + G2(25%) + G3(25%) + defense bonus + proximity bonus + base bonus. Grade A = 75+.">
+                        Score <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="trigger_score" />
+                      </Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50" onClick={() => handleSort('wk52_pos')} scope="col" aria-sort={sortCol === 'wk52_pos' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      52W Pos% <SortIcon column="wk52_pos" />
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('close')}>
+                      Price (₹) <SortIcon column="close" />
                     </th>
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('wk52_pos')}>
+                      <Tooltip content="52-week position — 0% = at 52w low, 100% = at 52w high. Triggers ideally sit below 85% — still room to run.">
+                        52W Pos% <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="wk52_pos" />
+                      </Tooltip>
+                    </th>
+
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={17} className="px-4 py-8 text-center text-[#666]">No triggers ready — all three gates must pass simultaneously.</td>
+                      <td colSpan={14} className="px-4 py-8 text-center text-[#666]">No triggers ready — all three gates must pass simultaneously.</td>
                     </tr>
                   ) : (
                     filteredData.map((row, index) => (
@@ -570,7 +725,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
                           <span className={row.gate3_score >= 80 ? 'text-green-400' : row.gate3_score >= 60 ? 'text-blue-400' : 'text-[#888]'}>{row.gate3_score.toFixed(1)}</span>
                         </td>
                         <td className="px-3 py-3 text-right">
-                          <span className={row.breakout_prox > 70 ? 'text-green-400' : row.breakout_prox > 50 ? 'text-amber-400' : 'text-[#888]'}>{row.breakout_prox.toFixed(1)}%</span>
+                          <span className={(row.breakout_prox ?? 0) > 0.70 ? 'text-green-400' : (row.breakout_prox ?? 0) > 0.50 ? 'text-amber-400' : 'text-[#888]'}>{((row.breakout_prox ?? 0) * 100).toFixed(0)}%</span>
                         </td>
                         <td className="px-3 py-3 text-right font-mono">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${GRADE_COLORS[row.grade] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
