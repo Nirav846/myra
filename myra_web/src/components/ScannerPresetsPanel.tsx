@@ -49,6 +49,8 @@ export default function ScannerPresetsPanel({ onClose, onLoad }: ScannerPresetsP
                         <button onClick={() => setTab('MultibaggerMatrix')} className={`text-xs font-mono px-3 py-1.5 rounded transition-colors ${tab === 'MultibaggerMatrix' ? 'bg-[#ffffff1a] text-orange-400' : 'text-[#888] hover:text-orange-400'}`}>Multibagger Matrix</button>
                         <button onClick={() => setTab('PriceDeliveryDivergence')} className={`text-xs font-mono px-3 py-1.5 rounded transition-colors ${tab === 'PriceDeliveryDivergence' ? 'bg-[#ffffff1a] text-yellow-400' : 'text-[#888] hover:text-yellow-400'}`}>Divergence Scanner</button>
                         <button onClick={() => setTab('ValueRanker')} className={`text-xs font-mono px-3 py-1.5 rounded transition-colors ${tab === 'ValueRanker' ? 'bg-[#ffffff1a] text-green-400' : 'text-[#888] hover:text-green-400'}`}>Value Ranker</button>
+                        <button onClick={() => setTab('InvisibleHand')} className={`text-xs font-mono px-3 py-1.5 rounded transition-colors ${tab === 'InvisibleHand' ? 'bg-[#ffffff1a] text-violet-400' : 'text-[#888] hover:text-violet-400'}`}>Invisible Hand</button>
+                        <button onClick={() => setTab('Trigger')} className={`text-xs font-mono px-3 py-1.5 rounded transition-colors ${tab === 'Trigger' ? 'bg-[#ffffff1a] text-orange-400' : 'text-[#888] hover:text-orange-400'}`}>The Trigger</button>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

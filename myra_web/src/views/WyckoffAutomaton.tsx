@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { Box, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Star } from 'lucide-react';
+import { Box, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Star, BookOpen, ChevronRight } from 'lucide-react';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
 import { useWatchlist } from '../lib/WatchlistContext';
@@ -53,19 +53,55 @@ function relativeTime(dateStr: string | null | undefined): string {
   }
 }
 
-const EVENT_COLORS: Record<string, string> = {
-  'SC': 'bg-red-500/20 text-red-400 border-red-500/30',
-  'AR': 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-  'ST': 'bg-amber-500/20 text-amber-400 border-amber-500/30',
-  'Spring': 'bg-purple-500/20 text-purple-400 border-purple-500/30',
-  'SOS': 'bg-green-500/20 text-green-400 border-green-500/30',
+const EVENT_META: Record<string, { label: string; desc: string; color: string }> = {
+  SC: {
+    label: 'SC',
+    desc: 'Supply Climax — a massive down-bar on huge volume. The last wave of selling from weak hands. The smart money starts buying here.',
+    color: 'bg-red-500/20 text-red-400 border-red-500/30',
+  },
+  AR: {
+    label: 'AR',
+    desc: 'Automatic Rally — a bounce after SC as selling pressure briefly lifts. Low volume is good here (no real buying yet).',
+    color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+  },
+  ST: {
+    label: 'ST',
+    desc: 'Secondary Test — price revisits SC low to see if selling returns. LOW delivery confirms sellers are gone. The most important test.',
+    color: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+  },
+  Spring: {
+    label: 'Spring',
+    desc: 'Spring — price briefly breaks below SC low then snaps back. A false breakdown that traps late sellers. Often marks Phase C / the final low.',
+    color: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+  },
+  SOS: {
+    label: 'SOS',
+    desc: 'Sign of Strength — a strong up-bar on high volume above resistance. Confirms accumulation worked. Marks the start of Phase D / mark-up.',
+    color: 'bg-green-500/20 text-green-400 border-green-500/30',
+  },
 };
 
-const PHASE_COLORS: Record<string, string> = {
-  'Phase A': 'bg-[#ffffff1a] text-[#888] border-[#ffffff1a]',
-  'Phase B': 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  'Phase C': 'bg-amber-500/20 text-amber-400 border-amber-500/30',
-  'Phase D': 'bg-green-500/20 text-green-400 border-green-500/30 shadow-[0_0_8px_rgba(34,197,94,0.3)]',
+const PHASE_META: Record<string, { label: string; desc: string; color: string }> = {
+  'Phase A': {
+    label: 'Phase A',
+    desc: 'Supply — the prior downtrend ends with SC (selling climax). AR bounces, ST confirms supply is gone. Smart money begins accumulating.',
+    color: 'bg-[#ffffff1a] text-[#888] border-[#ffffff1a]',
+  },
+  'Phase B': {
+    label: 'Phase B',
+    desc: 'Accumulation — price moves sideways in a range. Smart money accumulates patiently. Weak hands get shaken out. This is the longest phase.',
+    color: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  },
+  'Phase C': {
+    label: 'Phase C',
+    desc: 'Spring / Final Low — a false breakdown below the range that immediately reverses. Traps the last sellers. The final shakeout before mark-up.',
+    color: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+  },
+  'Phase D': {
+    label: 'Phase D',
+    desc: 'Mark-up — price breaks out of the range on volume. SOS confirms accumulation. This is the explosive phase. The smart money now profits.',
+    color: 'bg-green-500/20 text-green-400 border-green-500/30 shadow-[0_0_8px_rgba(34,197,94,0.3)]',
+  },
 };
 
 function gradeBadge(quality: number): { label: string; color: string } {
@@ -89,6 +125,7 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [staleBannerOpen, setStaleBannerOpen] = useState(true);
+  const [guideOpen, setGuideOpen] = useState(false);
 
   const [mcapRange, setMcapRange] = useState<{ min: number; max: number } | null>(null);
   const mcapMapRef = useRef<Map<string, number>>(new Map());
@@ -105,27 +142,54 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
   const [sortCol, setSortCol] = useState<string>('phase_complete_pct');
   const [sortAsc, setSortAsc] = useState(false);
 
-  const fetchStatus = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_BASE}/wyckoff/status`);
-      if (!res.ok) return;
-      const data = await res.json();
-      setScanStatus(data);
-      setIsScanning(data.scan_status === 'scanning');
-    } catch {
-      // ignore
+  const mountedRef = useRef(true);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const clearPolling = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
     }
   }, []);
 
+  const fetchStatus = useCallback(async () => {
+    if (!mountedRef.current) return;
+    try {
+      const res = await fetch(`${API_BASE}/wyckoff/status`);
+      if (!mountedRef.current) return;
+      if (!res.ok) return;
+      const data: ScanStatus = await res.json();
+      if (!mountedRef.current) return;
+      setScanStatus(data);
+      setError(null);
+
+      if (data.scan_status === 'completed' || data.scan_status === 'error') {
+        clearPolling();
+        setIsScanning(false);
+      } else if (data.scan_status === 'scanning' && !pollTimerRef.current) {
+        pollTimerRef.current = setInterval(fetchStatus, 2000);
+        setIsScanning(true);
+      }
+    } catch {
+      // ignore
+    }
+  }, [clearPolling]);
+
   useEffect(() => {
+    mountedRef.current = true;
     fetchStatus();
-    const interval = setInterval(fetchStatus, 2000);
-    return () => clearInterval(interval);
-  }, [fetchStatus]);
+    return () => {
+      mountedRef.current = false;
+      clearPolling();
+    };
+  }, [fetchStatus, clearPolling]);
 
   const triggerScan = useCallback(async () => {
+    if (!mountedRef.current) return;
     setIsScanning(true);
     setError(null);
+    clearPolling();
+
     try {
       const body: Record<string, unknown> = {};
       if (mcapRange) {
@@ -137,16 +201,22 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
+      if (!mountedRef.current) return;
       if (!res.ok) {
-        const errData = await res.json();
+        const errData = await res.json().catch(() => ({ detail: 'Scan failed' }));
         setError(errData.detail || 'Scan failed');
         setIsScanning(false);
+      } else {
+        await fetchStatus();
+        pollTimerRef.current = setInterval(fetchStatus, 2000);
       }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Network error');
-      setIsScanning(false);
+      if (mountedRef.current) {
+        setError(e instanceof Error ? e.message : 'Network error');
+        setIsScanning(false);
+      }
     }
-  }, [mcapRange]);
+  }, [mcapRange, fetchStatus, clearPolling]);
 
   useEffect(() => {
     if (!mcapRange) {
@@ -170,16 +240,25 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
     return diffMs > 30 * 60 * 1000;
   }, [scanStatus?.last_scan]);
 
+  const candidates = scanStatus?.candidates ?? [];
+
   const sectors = useMemo(() => {
     const set = new Set<string>();
-    (scanStatus?.candidates ?? []).forEach((c) => {
+    candidates.forEach((c) => {
       if (c.sector) set.add(c.sector);
     });
     return ['All', ...Array.from(set).sort()];
-  }, [scanStatus?.candidates]);
+  }, [candidates]);
 
   const filteredData = useMemo(() => {
-    let data = scanStatus?.candidates ?? [];
+    let data = candidates;
+    if (mcapRange) {
+      const map = mcapMapRef.current;
+      data = data.filter(c => {
+        const mcap = map.get(c.symbol);
+        return mcap !== undefined && mcap >= mcapRange.min && mcap <= mcapRange.max;
+      });
+    }
     if (watchlistOnly) {
       data = data.filter((c) => isWatched(c.symbol));
     }
@@ -207,18 +286,17 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
       return sortAsc ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
     });
     return data;
-  }, [scanStatus?.candidates, watchlistOnly, isWatched, sectorFilter, eventFilter, phaseFilter, minQualityFilter, maxDaysFilter, sortCol, sortAsc]);
+  }, [candidates, mcapRange, watchlistOnly, isWatched, sectorFilter, eventFilter, phaseFilter, minQualityFilter, maxDaysFilter, sortCol, sortAsc]);
 
   const stats = useMemo(() => {
-    const data = scanStatus?.candidates ?? [];
     return {
-      total: data.length,
-      avgQuality: data.length ? (data.reduce((s, c) => s + c.event_quality, 0) / data.length) : 0,
-      phaseD: data.filter((c) => c.phase === 'Phase D').length,
-      springCount: data.filter((c) => c.wyckoff_event === 'Spring').length,
-      recent: data.filter((c) => c.days_since_event <= 5).length,
+      total: candidates.length,
+      avgQuality: candidates.length ? (candidates.reduce((s, c) => s + c.event_quality, 0) / candidates.length) : 0,
+      phaseD: candidates.filter((c) => c.phase === 'Phase D').length,
+      springCount: candidates.filter((c) => c.wyckoff_event === 'Spring').length,
+      recent: candidates.filter((c) => c.days_since_event <= 5).length,
     };
-  }, [scanStatus?.candidates]);
+  }, [candidates]);
 
   const handleSort = (col: string) => {
     if (sortCol === col) {
@@ -231,7 +309,7 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
 
   function SortIcon({ col }: { col: string }) {
     if (sortCol !== col) return <ArrowUpDown size={12} className="inline ml-1 opacity-40" />;
-    return sortAsc ? <ChevronUp size={12} className="inline ml-1" /> : <ChevronDown size={12} className="inline ml-1" />;
+    return sortAsc ? <ChevronUp size={12} className="inline ml-1 text-purple-400" /> : <ChevronDown size={12} className="inline ml-1 text-purple-400" />;
   }
 
   const exportCSV = () => {
@@ -254,67 +332,188 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
     URL.revokeObjectURL(url);
   };
 
+  const progressPct = scanStatus?.progress ?? 0;
+  const isIdle = scanStatus?.scan_status === 'idle' || !scanStatus;
+
+  const gradeA = useMemo(() => filteredData.filter(d => d.event_quality >= 75), [filteredData]);
+
   return (
-    <div className="flex flex-col gap-4 px-2 py-4 w-full max-w-[1400px] mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Box className="text-purple-400" size={24} />
-          <h1 className="text-xl font-semibold text-[#fafafa]">Wyckoff Automaton</h1>
+    <main className="flex flex-col flex-1 min-h-0 relative gap-4 p-4" aria-label="Wyckoff Automaton">
+      {/* Stale Banner */}
+      {isStale && staleBannerOpen && scanStatus?.last_scan && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded px-4 py-2 flex items-center gap-2 text-xs font-mono" role="alert">
+          <AlertTriangle size={14} className="text-amber-400 shrink-0" />
+          <span className="text-amber-300/90">Data may be stale — re-scan recommended (last scan &gt; 30 min ago).</span>
+          <button onClick={() => setStaleBannerOpen(false)} className="ml-auto text-amber-500/50 hover:text-amber-300" aria-label="Dismiss stale warning">
+            <XCircle size={14} />
+          </button>
         </div>
+      )}
+
+      {/* Header */}
+      <header className="flex justify-between items-center bg-[#1a1c24] border border-[#ffffff1a] rounded p-4">
         <div className="flex items-center gap-3">
+          <div className="bg-purple-500/20 p-2 rounded">
+            <Box className="text-purple-400" size={24} />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold tracking-tight text-[#fafafa]">Wyckoff Automaton</h1>
+            <p className="text-xs font-mono text-[#888]">Smart Money — Accumulation Phase Detection</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
           {isScanning && (
-            <span className="flex items-center gap-1 text-sm text-yellow-400">
+            <span className="flex items-center gap-1 text-xs text-yellow-400">
               <RefreshCw size={14} className="animate-spin" /> Scanning...
             </span>
           )}
           <button
             onClick={triggerScan}
             disabled={isScanning}
-            className="flex items-center gap-1.5 px-4 py-1.5 bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded-lg hover:bg-purple-500/30 disabled:opacity-50 text-sm transition-colors"
+            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded text-xs font-semibold flex items-center gap-2 transition-colors"
+            aria-label={isScanning ? 'Scanning, please wait' : 'Start scan'}
           >
-            <RefreshCw size={15} className={isScanning ? 'animate-spin' : ''} />
-            {isScanning ? 'Scanning...' : 'Run Scan'}
+            {isScanning ? (
+              <><RefreshCw size={14} className="animate-spin" /> Scanning...</>
+            ) : (
+              <><Box size={14} fill="currentColor" /> Scan</>
+            )}
           </button>
         </div>
+      </header>
+
+      {/* Wyckoff 101 Guide */}
+      <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden">
+        <button
+          onClick={() => setGuideOpen(o => !o)}
+          className="w-full flex items-center gap-2 px-4 py-2.5 text-xs font-mono text-[#888] hover:text-[#fafafa] transition-colors"
+        >
+          <BookOpen size={14} className="text-purple-400" />
+          <span className="font-semibold text-[#fafafa]">Wyckoff 101</span>
+          <span className="text-[10px] text-[#666]">— A beginner's guide to Wyckoff Accumulation</span>
+          <ChevronRight size={14} className={`ml-auto transition-transform ${guideOpen ? 'rotate-90' : ''}`} />
+        </button>
+        {guideOpen && (
+          <div className="px-4 pb-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div>
+              <h4 className="text-purple-400 font-semibold mb-1">The Wyckoff Method</h4>
+              <p className="text-[#aaa] leading-relaxed">
+                Wyckoff is a 100-year-old methodology that reads institutional accumulation through price, volume, and delivery.
+                The core idea: <span className="text-[#fafafa]">smart money accumulates while retail sells in panic</span>, then marks up when accumulation is complete.
+              </p>
+              <h4 className="text-purple-400 font-semibold mt-3 mb-1">The Four Phases</h4>
+              <ul className="space-y-1 text-[#aaa]">
+                <li><span className="text-[#888] font-bold">Phase A:</span> Downtrend stops. Selling climax (SC) on massive volume. Automatic rally (AR) bounces. Secondary test (ST) confirms sellers are gone.</li>
+                <li><span className="text-blue-400 font-bold">Phase B:</span> Accumulation range. Price moves sideways for weeks. Smart money buys patiently. Volume & delivery gradually increase at support.</li>
+                <li><span className="text-amber-400 font-bold">Phase C:</span> Spring — a fake breakdown below the range that reverses fast. Traps the last remaining sellers. This is often the final low before the breakout.</li>
+                <li><span className="text-green-400 font-bold">Phase D:</span> Mark-up! SOS (Sign of Strength) on volume confirms accumulation is done. Price breaks out of the range. The explosive move begins.</li>
+              </ul>
+            </div>
+            <div>
+              <h4 className="text-purple-400 font-semibold mb-1">Wyckoff Events (the building blocks)</h4>
+              <div className="space-y-1.5">
+                <p><span className="text-red-400 font-bold">SC</span> — <span className="text-[#aaa]">Supply Climax. Huge down-bar, massive volume. The last of the selling. Smart money starts buying.</span></p>
+                <p><span className="text-yellow-400 font-bold">AR</span> — <span className="text-[#aaa]">Automatic Rally. Bounces after SC. Low volume = good (no real demand yet, just short-covering).</span></p>
+                <p><span className="text-amber-400 font-bold">ST</span> — <span className="text-[#aaa]">Secondary Test. Revisits SC low. Low delivery on ST = sellers are truly gone. The most important confirmation.</span></p>
+                <p><span className="text-purple-400 font-bold">Spring</span> — <span className="text-[#aaa]">False breakdown below SC low. Snaps back fast. Traps sellers. Often ends Phase C.</span></p>
+                <p><span className="text-green-400 font-bold">SOS</span> — <span className="text-[#aaa]">Sign of Strength. Strong up-bar through resistance on high volume. Confirms accumulation worked. Begins Phase D.</span></p>
+              </div>
+              <h4 className="text-purple-400 font-semibold mt-3 mb-1">What the Quality Score means</h4>
+              <p className="text-[#aaa] leading-relaxed">
+                Each event gets a <span className="text-[#fafafa]">quality score (0–100)</span> based on delivery, volume, and price behavior.
+                <span className="text-green-400"> Grade A (75+)</span> = textbook event. <span className="text-blue-400">B (55–74)</span> = good. <span className="text-amber-400">C (40–54)</span> = weak. <span className="text-red-400">D (&lt;40)</span> = unreliable.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Error */}
-      {error && (
-        <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-sm text-red-400">
-          <XCircle size={16} /> {error}
+      {error && !isScanning && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded px-4 py-2 flex items-center gap-2 text-xs font-mono text-red-300" role="alert">
+          <AlertTriangle size={14} className="shrink-0" />
+          <span>Error: {error}</span>
         </div>
       )}
 
-      {/* Stale Banner */}
-      {isStale && staleBannerOpen && scanStatus?.last_scan && (
-        <div className="flex items-center justify-between p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-sm text-amber-400">
-          <span className="flex items-center gap-2"><Clock size={16} /> Scan data is over 30 minutes old ({relativeTime(scanStatus.last_scan)}).</span>
-          <button onClick={() => setStaleBannerOpen(false)} className="text-[#888] hover:text-[#fafafa]">✕</button>
+      {/* Progress Bar */}
+      {isScanning && (
+        <div className="bg-purple-500/10 border border-purple-500/30 rounded p-3" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100} aria-label="Scan progress">
+          <div className="flex items-center gap-2 text-xs font-mono text-purple-300 mb-2">
+            <RefreshCw size={14} className="animate-spin" />
+            <span>{scanStatus?.message || 'Scanning...'}</span>
+            <span className="ml-auto">{progressPct}%</span>
+          </div>
+          <div className="w-full h-1.5 bg-[#ffffff1a] rounded-full overflow-hidden">
+            <div className="h-full bg-purple-500 rounded-full transition-all duration-500" style={{ width: `${Math.max(progressPct, 5)}%` }} />
+          </div>
         </div>
       )}
 
-      {/* Filters + MCap */}
-      <div className="flex flex-wrap items-center gap-3">
-        <MarketCapRangeFilter
-          mcapMap={mcapMapRef.current}
-          min={mcapRange?.min ?? 0}
-          max={mcapRange?.max ?? 50000}
-          onChange={(min, max) => setMcapRange({ min, max })}
-        />
+      {/* Status Banner */}
+      {!isScanning && scanStatus && scanStatus.scan_status !== 'idle' && (
+        <div className={`flex items-center gap-2 px-3 py-2 rounded text-xs font-mono border ${
+          scanStatus.scan_status === 'completed' ? 'bg-green-500/10 border-green-500/30 text-green-300' :
+          scanStatus.scan_status === 'error' ? 'bg-red-500/10 border-red-500/30 text-red-300' :
+          'bg-[#ffffff0a] border-[#ffffff1a] text-[#888]'
+        }`} role="status" aria-live="polite">
+          {scanStatus.scan_status === 'completed' ? <CheckCircle size={14} className="text-green-400" /> :
+           scanStatus.scan_status === 'error' ? <XCircle size={14} className="text-red-400" /> :
+           <Clock size={14} />}
+          <span>
+            {scanStatus.scan_status === 'completed' ? `Completed (${relativeTime(scanStatus.last_scan)})` :
+             scanStatus.scan_status === 'error' ? 'Scan failed' :
+             scanStatus.message}
+          </span>
+          <span className="ml-auto text-[#666]">{scanStatus.message}</span>
+        </div>
+      )}
 
-        <div className="flex items-center gap-2 text-sm">
-          <Filter size={14} className="text-[#888]" />
-          <select className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-[#fafafa] text-xs" value={eventFilter} onChange={(e) => setEventFilter(e.target.value)}>
-            {EVENT_TYPES.map((t) => <option key={t} value={t}>{t === 'All' ? 'All Events' : t}</option>)}
+      {/* Filters */}
+      <section className="bg-[#0e1117] border border-[#ffffff1a] rounded p-4 flex flex-wrap gap-4 items-end" aria-label="Filters">
+        <div className="flex items-center gap-2 mb-1 text-xs text-[#888] w-full">
+          <Filter size={14} /> <span className="font-mono uppercase font-semibold">Filters</span>
+        </div>
+        <div className="max-w-[220px] flex-shrink-0">
+          <MarketCapRangeFilter onChange={setMcapRange} />
+        </div>
+        <div className="flex flex-col gap-1">
+          <div className="text-[10px] text-[#888] font-mono">Watchlist</div>
+          <button
+            onClick={() => setWatchlistOnly(o => !o)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors ${
+              watchlistOnly
+                ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
+                : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
+            }`}
+            aria-label={watchlistOnly ? 'Show all symbols' : 'Filter to starred watchlist only'}
+            aria-pressed={watchlistOnly}
+          >
+            <Star size={11} fill={watchlistOnly ? 'currentColor' : 'none'} />
+            Only Starred
+          </button>
+        </div>
+        <div className="flex flex-col gap-1">
+          <div className="text-[10px] text-[#888] font-mono">Event</div>
+          <select className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none font-mono" value={eventFilter} onChange={(e) => setEventFilter(e.target.value)}>
+            {EVENT_TYPES.map((t) => <option key={t} value={t}>{t === 'All' ? 'All Events' : t + ' — ' + (EVENT_META[t]?.desc ?? '').slice(0, 50) + '...'}</option>)}
           </select>
-          <select className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-[#fafafa] text-xs" value={phaseFilter} onChange={(e) => setPhaseFilter(e.target.value)}>
+        </div>
+        <div className="flex flex-col gap-1">
+          <div className="text-[10px] text-[#888] font-mono">Phase</div>
+          <select className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none font-mono" value={phaseFilter} onChange={(e) => setPhaseFilter(e.target.value)}>
             {PHASE_TYPES.map((t) => <option key={t} value={t}>{t === 'All' ? 'All Phases' : t}</option>)}
           </select>
-          <select className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-[#fafafa] text-xs" value={sectorFilter} onChange={(e) => setSectorFilter(e.target.value)}>
+        </div>
+        <div className="flex flex-col gap-1">
+          <div className="text-[10px] text-[#888] font-mono">Sector</div>
+          <select className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none font-mono" value={sectorFilter} onChange={(e) => setSectorFilter(e.target.value)}>
             {sectors.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
-          <select className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-[#fafafa] text-xs" value={maxDaysFilter} onChange={(e) => setMaxDaysFilter(Number(e.target.value))}>
+        </div>
+        <div className="flex flex-col gap-1 w-24">
+          <div className="text-[10px] text-[#888] font-mono">Max Days</div>
+          <select className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none font-mono" value={maxDaysFilter} onChange={(e) => setMaxDaysFilter(Number(e.target.value))}>
             <option value={999}>All Days</option>
             <option value={5}>≤ 5 Days</option>
             <option value={10}>≤ 10 Days</option>
@@ -322,14 +521,13 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
             <option value={30}>≤ 30 Days</option>
           </select>
         </div>
-
-        <label className="flex items-center gap-1.5 text-sm text-[#888] cursor-pointer">
-          <input type="checkbox" checked={watchlistOnly} onChange={(e) => setWatchlistOnly(e.target.checked)} className="accent-purple-500" />
-          Watchlist only
-        </label>
-
-        <div className="flex items-center gap-2 text-sm">
-          <span className="text-[#888]">Min Quality:</span>
+        <div className="flex flex-col gap-1 w-28">
+          <div className="flex justify-between text-[10px] text-[#888] font-mono items-center">
+            <Tooltip content="Minimum event quality score. Higher = more textbook Wyckoff event. Grade A (75+) = near-perfect delivery/volume setup.">
+              <span>Min Quality</span>
+            </Tooltip>
+            <span className="text-purple-400">{minQualityFilter}</span>
+          </div>
           <input
             type="range"
             min={0}
@@ -337,144 +535,212 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
             step={5}
             value={minQualityFilter}
             onChange={(e) => setMinQualityFilter(Number(e.target.value))}
-            className="w-24 accent-purple-500"
+            className="w-full accent-purple-500"
+            aria-label="Minimum quality score"
           />
-          <span className="text-[#fafafa] w-6 text-xs">{minQualityFilter}</span>
         </div>
-
-        <button onClick={exportCSV} className="flex items-center gap-1 px-3 py-1 bg-[#1a1a1a] border border-[#333] rounded text-xs text-[#888] hover:text-[#fafafa]">
+        <button onClick={exportCSV} disabled={filteredData.length === 0} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#ffffff0a] hover:bg-[#ffffff15] border border-[#ffffff1a] rounded text-xs text-[#ccc] transition-colors disabled:opacity-40">
           <Download size={12} /> CSV
         </button>
-      </div>
+      </section>
 
-      {/* Stats */}
-      <div className="grid grid-cols-5 gap-3 text-sm">
-        <StatCard label="Total Signals" value={stats.total} />
-        <StatCard label="Avg Quality" value={`${stats.avgQuality.toFixed(1)}`} />
-        <StatCard label="Phase D (Breakout)" value={stats.phaseD} color="text-green-400" />
-        <StatCard label="Spring Detected" value={stats.springCount} color="text-purple-400" />
-        <StatCard label="Recent (≤5d)" value={stats.recent} color="text-green-400" />
-      </div>
-
-      {/* Progress */}
-      {isScanning && scanStatus && (
-        <div className="flex flex-col gap-1">
-          <div className="flex justify-between text-xs text-[#888]">
-            <span>{scanStatus.message}</span>
-            <span>{scanStatus.progress}%</span>
+      {/* Results */}
+      {(scanStatus?.scan_status === 'completed' || (isIdle && candidates.length > 0)) && !isScanning && (
+        <>
+          {/* Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
+              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Total Signals</div>
+              <div className="text-2xl font-bold text-[#fafafa]">{filteredData.length}</div>
+            </div>
+            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
+              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg Quality</div>
+              <div className="text-2xl font-bold text-purple-400">
+                {filteredData.length > 0 ? filteredData.reduce((s, d) => s + d.event_quality, 0) / filteredData.length : 0}
+              </div>
+            </div>
+            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
+              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Phase D (Breakout)</div>
+              <div className="text-2xl font-bold text-green-400">{stats.phaseD}</div>
+            </div>
+            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
+              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Spring Detected</div>
+              <div className="text-2xl font-bold text-purple-400">{stats.springCount}</div>
+            </div>
+            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
+              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Recent (≤5d)</div>
+              <div className="text-2xl font-bold text-green-400">{stats.recent}</div>
+            </div>
           </div>
-          <div className="w-full h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden">
-            <div className="h-full bg-purple-500 rounded-full transition-all duration-300" style={{ width: `${scanStatus.progress}%` }} />
-          </div>
-        </div>
-      )}
 
-      {/* Table */}
-      {!isScanning && filteredData.length > 0 && (
-        <ScrollableTable>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-[#888] uppercase text-xs tracking-wider">
-                <Th sortable col="symbol" current={sortCol} asc={sortAsc} onClick={handleSort}><SortIcon col="symbol" /></Th>
-                <Th sortable col="sector" current={sortCol} asc={sortAsc} onClick={handleSort}><SortIcon col="sector" /></Th>
-                <Th sortable col="market_cap_cr" current={sortCol} asc={sortAsc} onClick={handleSort} right><SortIcon col="market_cap_cr" /></Th>
-                <Th sortable col="wyckoff_event" current={sortCol} asc={sortAsc} onClick={handleSort}><SortIcon col="wyckoff_event" /></Th>
-                <Th sortable col="phase" current={sortCol} asc={sortAsc} onClick={handleSort}><SortIcon col="phase" /></Th>
-                <Th sortable col="phase_complete_pct" current={sortCol} asc={sortAsc} onClick={handleSort}><SortIcon col="phase_complete_pct" /></Th>
-                <Th sortable col="event_date" current={sortCol} asc={sortAsc} onClick={handleSort}><SortIcon col="event_date" /></Th>
-                <Th sortable col="days_since_event" current={sortCol} asc={sortAsc} onClick={handleSort} right><SortIcon col="days_since_event" /></Th>
-                <Th sortable col="event_delivery_pct" current={sortCol} asc={sortAsc} onClick={handleSort} right><SortIcon col="event_delivery_pct" /></Th>
-                <Th sortable col="vol_ratio" current={sortCol} asc={sortAsc} onClick={handleSort} right><SortIcon col="vol_ratio" /></Th>
-                <Th right>Range</Th>
-                <Th sortable col="event_quality" current={sortCol} asc={sortAsc} onClick={handleSort} right><SortIcon col="event_quality" /></Th>
-                <Th sortable col="close" current={sortCol} asc={sortAsc} onClick={handleSort} right><SortIcon col="close" /></Th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredData.map((c) => {
-                const g = gradeBadge(c.event_quality);
-                return (
-                  <tr key={c.symbol} className="border-b border-[#ffffff08] hover:bg-[#ffffff04]">
-                    <td className="py-2 px-2">
-                      <div className="flex items-center gap-1.5">
-                        <StarButton symbol={c.symbol} isWatched={isWatched(c.symbol)} size={13} />
-                        <span className="text-[#fafafa] font-medium">{c.symbol}</span>
-                      </div>
-                    </td>
-                    <td className="py-2 px-2 text-[#888]">{c.sector ?? '—'}</td>
-                    <td className="py-2 px-2 text-right text-[#fafafa]">{c.market_cap_cr?.toFixed(1) ?? '—'}</td>
-                    <td className="py-2 px-2">
-                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium border ${EVENT_COLORS[c.wyckoff_event] ?? 'bg-[#ffffff1a] text-[#888]'}`}>
-                        {c.wyckoff_event}
-                      </span>
-                    </td>
-                    <td className="py-2 px-2">
-                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium border ${PHASE_COLORS[c.phase] ?? 'bg-[#ffffff1a] text-[#888]'}`}>
-                        {c.phase}
-                      </span>
-                    </td>
-                    <td className="py-2 px-2">
-                      <div className="flex items-center gap-2">
-                        <div className="w-16 h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden">
-                          <div className="h-full bg-green-500 rounded-full" style={{ width: `${c.phase_complete_pct}%` }} />
-                        </div>
-                        <span className="text-xs text-[#888]">{c.phase_complete_pct}%</span>
-                      </div>
-                    </td>
-                    <td className="py-2 px-2 text-[#888] whitespace-nowrap">{c.event_date}</td>
-                    <td className={`py-2 px-2 text-right ${daysColor(c.days_since_event)}`}>{c.days_since_event}d</td>
-                    <td className="py-2 px-2 text-right text-[#fafafa]">{c.event_delivery_pct?.toFixed(1) ?? '—'}%</td>
-                    <td className="py-2 px-2 text-right text-[#fafafa]">{c.vol_ratio?.toFixed(1) ?? '—'}x</td>
-                    <td className="py-2 px-2 text-right text-[#888] whitespace-nowrap">
-                      {c.range_low_90?.toFixed(1) ?? '—'} – {c.range_high_90?.toFixed(1) ?? '—'}
-                    </td>
-                    <td className="py-2 px-2 text-right">
-                      <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-bold ${g.color}`}>{g.label}</span>
-                    </td>
-                    <td className="py-2 px-2 text-right text-[#fafafa]">{c.close?.toFixed(2) ?? '—'}</td>
+          {/* Grade A Panel */}
+          {gradeA.length > 0 && (
+            <div className="bg-green-500/5 border border-green-500/20 rounded p-3">
+              <div className="text-[10px] text-green-400 font-mono uppercase tracking-wider mb-2 flex items-center gap-2">
+                <span>Grade A Signals</span>
+                <span className="text-[#666]">— textbook Wyckoff events with quality ≥ 75</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {gradeA.slice(0, 12).map(d => {
+                  const em = EVENT_META[d.wyckoff_event];
+                  return (
+                    <div key={d.symbol} className="flex items-center gap-1.5 px-2 py-1 rounded border text-[11px] font-mono border-green-500/20 bg-[#1a1c24]">
+                      <StarButton symbol={d.symbol} size={10} />
+                      <span className="text-white font-bold">{d.symbol}</span>
+                      <span className="text-[#888]">{d.sector ?? ''}</span>
+                      <span className={em?.color.split(' ')[1] ?? 'text-[#888]'}>{d.wyckoff_event}</span>
+                      <span className="text-green-400">{d.event_quality}Q</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Table */}
+          <div className="flex-1 bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden">
+            <ScrollableTable>
+              <table className="w-full min-w-max text-left text-xs font-mono whitespace-nowrap" role="grid" aria-label="Wyckoff Automaton results" aria-rowcount={filteredData.length} aria-colcount={13}>
+                <thead className="sticky top-0 z-20 text-[#888]">
+                  <tr style={{ boxShadow: '0 1px 0 0 rgba(255,255,255,0.08), 0 2px 4px 0 rgba(0,0,0,0.4)' }}>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white" onClick={() => handleSort('symbol')} scope="col">
+                      Symbol <SortIcon col="symbol" />
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white" onClick={() => handleSort('sector')} scope="col">
+                      Sector <SortIcon col="sector" />
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('market_cap_cr')} scope="col">
+                      MCap (₹Cr) <SortIcon col="market_cap_cr" />
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('wyckoff_event')} scope="col">
+                      <Tooltip content="Wyckoff event type: SC (Selling Climax), AR (Automatic Rally), ST (Secondary Test), Spring (false breakdown), SOS (Sign of Strength). Each marks a different step in the accumulation process.">Event <SortIcon col="wyckoff_event" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white" onClick={() => handleSort('phase')} scope="col">
+                      <Tooltip content="Wyckoff accumulation phase. Phase A (supply ending) → Phase B (accumulation) → Phase C (spring) → Phase D (mark-up / breakout).">Phase <SortIcon col="phase" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('phase_complete_pct')} scope="col">
+                      <Tooltip content="How far through the current phase the stock has progressed. Higher = closer to the next phase. 100% = phase complete.">Phase% <SortIcon col="phase_complete_pct" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white" onClick={() => handleSort('event_date')} scope="col">
+                      <Tooltip content="The date the Wyckoff event was detected. More recent = more actionable.">Event Date <SortIcon col="event_date" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('days_since_event')} scope="col">
+                      <Tooltip content="Days since this event occurred. ≤5 days = very fresh. ≤15 = still relevant. >30 = stale." good="≤5: fresh signal" bad=">30: stale">Days Ago <SortIcon col="days_since_event" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('event_delivery_pct')} scope="col">
+                      <Tooltip content="Delivery percentage on the event day. For SC/Spring: high delivery = strong absorption. For ST: LOW delivery = sellers are gone (good).">Del% <SortIcon col="event_delivery_pct" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('vol_ratio')} scope="col">
+                      <Tooltip content="Volume on event day relative to average. SC/Spring: >1.5x = climactic. SOS: >1.5x = conviction. ST: <1.0x = quiet test.">Vol Ratio <SortIcon col="vol_ratio" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right" scope="col">
+                      <Tooltip content="90-session price range. Lower bound = support. Upper bound = resistance. Breakout above = Phase D begins.">Range (90d)</Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('event_quality')} scope="col">
+                      <Tooltip content="Quality score (0–100) based on delivery, volume, and price action. A (75+) = textbook. B (55–74) = good. C (40–54) = marginal. D (<40) = unreliable." good="≥75: Grade A" bad="<40: Grade D">Quality <SortIcon col="event_quality" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('close')} scope="col">
+                      Close <SortIcon col="close" />
+                    </th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </ScrollableTable>
+                </thead>
+                <tbody className="divide-y divide-[#ffffff0a]">
+                  {filteredData.length === 0 ? (
+                    <tr>
+                      <td colSpan={13} className="px-4 py-8 text-center text-[#666]">No signals match current filters.</td>
+                    </tr>
+                  ) : (
+                    filteredData.map((c, index) => {
+                      const g = gradeBadge(c.event_quality);
+                      const em = EVENT_META[c.wyckoff_event];
+                      const pm = PHASE_META[c.phase];
+                      return (
+                        <tr key={c.symbol} role="row" aria-rowindex={index + 1} className="hover:bg-[#ffffff05] transition-colors">
+                          <td className="px-3 py-3 font-bold" scope="row">
+                            <div className="flex items-center gap-1.5">
+                              <StarButton symbol={c.symbol} size={11} />
+                              <button
+                                onClick={() => window.open(`/#/chart?symbol=${encodeURIComponent(c.symbol)}`, '_blank')}
+                                className="text-[#fafafa] hover:text-purple-400 inline-flex items-center gap-1 transition-colors group"
+                                aria-label={`Open chart for ${c.symbol}`}
+                              >
+                                {c.symbol}
+                                <ArrowUpRight size={12} className="opacity-0 group-hover:opacity-100" />
+                              </button>
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 text-[#888] text-[11px] max-w-[120px] truncate" title={c.sector ?? ''}>{c.sector ?? '—'}</td>
+                          <td className="px-3 py-3 text-right text-[#ccc]">{c.market_cap_cr?.toFixed(0) ?? '—'}</td>
+                          <td className="px-3 py-3 text-center">
+                            <Tooltip content={em?.desc ?? ''}>
+                              <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${em?.color ?? 'bg-[#ffffff1a] text-[#888]'}`}>
+                                {c.wyckoff_event}
+                              </span>
+                            </Tooltip>
+                          </td>
+                          <td className="px-3 py-3">
+                            <Tooltip content={pm?.desc ?? ''}>
+                              <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${pm?.color ?? 'bg-[#ffffff1a] text-[#888]'}`}>
+                                {c.phase}
+                              </span>
+                            </Tooltip>
+                          </td>
+                          <td className="px-3 py-3">
+                            <div className="flex items-center gap-2 justify-end">
+                              <div className="w-16 h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden">
+                                <div className="h-full bg-green-500 rounded-full" style={{ width: `${c.phase_complete_pct}%` }} />
+                              </div>
+                              <span className="text-xs text-[#888]">{c.phase_complete_pct}%</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 text-[#888] whitespace-nowrap">{c.event_date}</td>
+                          <td className={`px-3 py-3 text-right ${daysColor(c.days_since_event)}`}>{c.days_since_event}d</td>
+                          <td className="px-3 py-3 text-right text-[#ccc]">{c.event_delivery_pct?.toFixed(1) ?? '—'}%</td>
+                          <td className="px-3 py-3 text-right text-[#ccc]">{c.vol_ratio?.toFixed(1) ?? '—'}x</td>
+                          <td className="px-3 py-3 text-right text-[#888] whitespace-nowrap">
+                            {c.range_low_90?.toFixed(1) ?? '—'} – {c.range_high_90?.toFixed(1) ?? '—'}
+                          </td>
+                          <td className="px-3 py-3 text-center">
+                            <Tooltip content={`Quality score: ${c.event_quality}/100. ${g.label === 'A' ? 'Textbook event — high conviction.' : g.label === 'B' ? 'Good event — above average.' : g.label === 'C' ? 'Marginal — needs confirmation.' : 'Weak — unreliable event.'}`}>
+                              <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${g.color}`}>{g.label}</span>
+                            </Tooltip>
+                          </td>
+                          <td className="px-3 py-3 text-right text-[#ccc]">{c.close?.toFixed(2) ?? '—'}</td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </ScrollableTable>
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={exportCSV}
+              disabled={filteredData.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#ffffff0a] hover:bg-[#ffffff15] border border-[#ffffff1a] rounded text-xs text-[#ccc] transition-colors disabled:opacity-40"
+              aria-label="Export table as CSV"
+            >
+              <Download size={12} /> CSV
+            </button>
+          </div>
+        </>
       )}
 
-      {/* Empty State */}
-      {!isScanning && scanStatus && filteredData.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-16 text-[#888]">
-          <AlertTriangle size={32} className="mb-2 opacity-40" />
-          <p className="text-sm">No Wyckoff signals detected. Run a scan to check.</p>
+      {/* Idle / Empty State */}
+      {isIdle && candidates.length === 0 && !isScanning && !error && (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center text-[#666] font-mono flex flex-col items-center gap-2 max-w-md">
+            <Box size={40} className="opacity-20 mb-2" />
+            <p className="text-sm text-[#888]">Click <span className="text-purple-400 font-semibold">Scan</span> to find Wyckoff accumulation patterns.</p>
+            <p className="text-[10px] leading-relaxed">
+              The Automaton detects institutional accumulation by identifying Wyckoff events
+              (SC, AR, ST, Spring, SOS) and classifying them into four phases.
+              Stocks with multiple high-quality events in Phase C or D are closest to breakout.
+            </p>
+          </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function StatCard({ label, value, color }: { label: string; value: string | number; color?: string }) {
-  return (
-    <div className="bg-[#1a1a1a] border border-[#333] rounded-lg p-3">
-      <div className="text-[#888] text-xs mb-1">{label}</div>
-      <div className={`text-lg font-semibold ${color ?? 'text-[#fafafa]'}`}>{value}</div>
-    </div>
-  );
-}
-
-function Th({ children, sortable, col, current, asc, onClick, right }: {
-  children: React.ReactNode;
-  sortable?: boolean;
-  col?: string;
-  current?: string;
-  asc?: boolean;
-  onClick?: (col: string) => void;
-  right?: boolean;
-}) {
-  return (
-    <th
-      className={`py-2 px-2 ${right ? 'text-right' : 'text-left'} ${sortable ? 'cursor-pointer hover:text-[#fafafa] select-none' : ''}`}
-      onClick={() => sortable && col && onClick?.(col)}
-    >
-      {children}
-    </th>
+    </main>
   );
 }

@@ -16,6 +16,8 @@ import PriceDeliveryDivergenceScannerView from './views/PriceDeliveryDivergenceS
 import AdvancedChartView from './views/AdvancedChart';
 import ReversionEngineView from './views/ReversionEngine';
 import ValueRankerView from './views/ValueRanker';
+import InvisibleHandScannerView from './views/InvisibleHandScanner';
+import TriggerScannerView from './views/TriggerScanner';
 import { getLibrarian } from './lib/Librarian';
 import { API_ROOT } from './config';
 import { useSettings } from './lib/SettingsContext';
@@ -36,7 +38,7 @@ import SeasonalDeliveryHarvesterView from './views/SeasonalDeliveryHarvester';
 import WyckoffAutomatonView from './views/WyckoffAutomaton';
 import DataSyncView from './views/DataSync';
 import DeliveryAnomalyScannerView from './views/DeliveryAnomalyScanner';
-import { AlertCircle, Settings as SettingsIcon, SlidersHorizontal, BrainCircuit, Rocket, Database, RotateCw } from 'lucide-react';
+import { AlertCircle, Settings as SettingsIcon, SlidersHorizontal, BrainCircuit, Rocket, Database, RotateCw, Eye, Zap } from 'lucide-react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 
 const TABS = [
@@ -59,6 +61,8 @@ const TABS = [
   { id: 'Seasonal Delivery', path: '/seasonal-delivery', icon: '📅', category: 'scanners' },
   { id: 'Wyckoff Auto', path: '/wyckoff', icon: '🤖', category: 'scanners' },
   { id: 'Historical Search', path: '/historical-search', icon: '🔍', category: 'analysis' },
+  { id: 'Invisible Hand', path: '/invisible-hand', icon: <Eye size={16} />, category: 'scanners' },
+  { id: 'The Trigger', path: '/trigger', icon: <Zap size={16} />, category: 'scanners' },
   { id: 'Data Sync', path: '/data-sync', icon: <Database size={18} />, category: 'data' },
   { id: 'Parquet Lake', path: '/parquet-lake', icon: '🌊', category: 'data' },
   { id: 'Sector Flow', path: '/sector-flow', icon: '🚥', category: 'data' },
@@ -242,6 +246,8 @@ export default function App() {
                 <Route path="/inst-dom" element={<InstDOMView lib={librarian} />} />
                 <Route path="/fii-dii-scanner" element={<FiiDiiScannerView lib={librarian} />} />
                 <Route path="/parquet-lake" element={<DataLakeView lib={librarian} />} />
+                <Route path="/invisible-hand" element={<InvisibleHandScannerView lib={librarian} />} />
+                <Route path="/trigger" element={<TriggerScannerView lib={librarian} />} />
                 <Route path="/settings" element={<SettingsView />} />
                 <Route path="/data-sync" element={<DataSyncView />} />
                 <Route path="/delivery-anomaly" element={<DeliveryAnomalyScannerView lib={librarian} />} />

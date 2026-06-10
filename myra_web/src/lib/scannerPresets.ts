@@ -1,4 +1,4 @@
-export type ScannerModule = 'ReversionEngine' | 'MultibaggerMatrix' | 'PriceDeliveryDivergence' | 'ValueRanker';
+export type ScannerModule = 'ReversionEngine' | 'MultibaggerMatrix' | 'PriceDeliveryDivergence' | 'ValueRanker' | 'InvisibleHand' | 'Trigger';
 
 export interface ReversionConfig {
     setup: 'Exhaustion' | 'Divergence' | 'SpringCoil';
