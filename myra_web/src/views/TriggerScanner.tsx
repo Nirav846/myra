@@ -21,6 +21,7 @@ interface Candidate {
   vol_ratio_5_20: number;
   price_range_5d_pct: number;
   gate3_score: number;
+  smart_float_ratio: number;
   defense_bars: number;
   base_duration: number;
   breakout_prox: number;
@@ -84,6 +85,10 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
   const [minTriggerScoreFilter, setMinTriggerScoreFilter] = useState(0);
   const [minDefenseBarsFilter, setMinDefenseBarsFilter] = useState(0);
   const [minBaseDurationFilter, setMinBaseDurationFilter] = useState(0);
+  const [minFloatUtilPct, setMinFloatUtilPct] = useState(8.0);
+  const [volPinchRatio, setVolPinchRatio] = useState(0.72);
+  const [minSmartFloatRatio, setMinSmartFloatRatio] = useState(0.55);
+  const [priceRangeMax, setPriceRangeMax] = useState(10.0);
   const [gradeFilter, setGradeFilter] = useState<string>('All');
 
   const [sortCol, setSortCol] = useState<string>('trigger_score');
@@ -185,9 +190,10 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
         body: JSON.stringify({
           min_mcap: mcapRange?.min ?? 300,
           max_mcap: mcapRange?.max ?? 50000,
-          min_float_util_pct: 12.0,
-          vol_pinch_ratio: 0.72,
-          price_range_max_pct: 2.8,
+          min_float_util_pct: minFloatUtilPct,
+          vol_pinch_ratio: volPinchRatio,
+          price_range_max_pct: priceRangeMax,
+          min_smart_float_ratio: minSmartFloatRatio,
         }),
       });
       if (!mountedRef.current) return;
@@ -205,7 +211,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
         setIsScanning(false);
       }
     }
-  }, [fetchScanStatus, clearPolling, mcapRange]);
+  }, [fetchScanStatus, clearPolling, mcapRange, minFloatUtilPct, volPinchRatio, minSmartFloatRatio, priceRangeMax]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -517,7 +523,78 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
             ))}
           </div>
         </div>
+        <div className="flex flex-col gap-1">
+          <div className="flex justify-between text-[10px] text-[#888] font-mono">
+            <span>Min Float Util%</span>
+            <span className="text-orange-400">{minFloatUtilPct.toFixed(1)}%</span>
+          </div>
+          <input type="range" min={5.0} max={30.0} step={0.5} value={minFloatUtilPct}
+            onChange={e => setMinFloatUtilPct(Number(e.target.value))}
+            className="w-full accent-orange-500" />
+        </div>
+        <div className="flex flex-col gap-1">
+          <div className="flex justify-between text-[10px] text-[#888] font-mono">
+            <span>Vol Pinch Ratio</span>
+            <span className="text-orange-400">{volPinchRatio.toFixed(2)}</span>
+          </div>
+          <input type="range" min={0.50} max={1.00} step={0.01} value={volPinchRatio}
+            onChange={e => setVolPinchRatio(Number(e.target.value))}
+            className="w-full accent-orange-500" />
+        </div>
+        <div className="flex flex-col gap-1">
+          <div className="flex justify-between text-[10px] text-[#888] font-mono">
+            <span>Min Smart Float Ratio</span>
+            <span className="text-orange-400">{minSmartFloatRatio.toFixed(2)}</span>
+          </div>
+          <input type="range" min={0.40} max={0.70} step={0.01} value={minSmartFloatRatio}
+            onChange={e => setMinSmartFloatRatio(Number(e.target.value))}
+            className="w-full accent-orange-500" />
+        </div>
+        <div className="flex flex-col gap-1">
+          <div className="flex justify-between text-[10px] text-[#888] font-mono">
+            <span>Max Price Range%</span>
+            <span className="text-orange-400">{priceRangeMax.toFixed(1)}</span>
+          </div>
+          <input type="range" min={1.0} max={5.0} step={0.1} value={priceRangeMax}
+            onChange={e => setPriceRangeMax(Number(e.target.value))}
+            className="w-full accent-orange-500" />
+        </div>
       </section>
+
+      {/* ── PERFORMANCE STATS ── */}
+      <details className="bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden group">
+        <summary className="flex items-center gap-2 px-4 py-2.5 text-xs font-mono text-[#888] cursor-pointer hover:bg-[#ffffff05] transition-colors select-none list-none [&::-webkit-details-marker]:hidden">
+          <span className="text-[10px] text-cyan-400 bg-cyan-500/10 border border-cyan-500/30 px-2 py-0.5 rounded font-bold">BACKTEST</span>
+          <span className="font-semibold">Performance Stats</span>
+          <span className="ml-auto text-[10px] opacity-50 group-open:rotate-180 transition-transform">▼</span>
+        </summary>
+        <div className="px-4 pb-4 border-t border-[#ffffff0a]">
+          <p className="text-xs text-[#888] mt-3 mb-3 leading-relaxed font-mono">
+            Based on 1‑year backtest (2,674 symbols, 363 trades):
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+            <div className="bg-[#0e1117] border border-[#ffffff1a] rounded p-3 text-center">
+              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Win Rate</div>
+              <div className="text-xl font-bold text-green-400">34.7%</div>
+            </div>
+            <div className="bg-[#0e1117] border border-[#ffffff1a] rounded p-3 text-center">
+              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg +60d Return</div>
+              <div className="text-xl font-bold text-red-400">–7.25%</div>
+            </div>
+            <div className="bg-[#0e1117] border border-[#ffffff1a] rounded p-3 text-center">
+              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Median Return</div>
+              <div className="text-xl font-bold text-red-400">–6.07%</div>
+            </div>
+            <div className="bg-[#0e1117] border border-[#ffffff1a] rounded p-3 text-center">
+              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Best / Worst</div>
+              <div className="text-xl font-bold text-[#fafafa]">+45.2% / –89.8%</div>
+            </div>
+          </div>
+          <p className="text-[10px] text-[#666] font-mono italic">
+            This is a screening tool — combine with fundamental analysis.
+          </p>
+        </div>
+      </details>
 
       {(scanStatus?.scan_status === 'completed' || (isIdle && candidates.length > 0)) && !isScanning && (
         <>

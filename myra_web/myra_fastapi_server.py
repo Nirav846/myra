@@ -1144,9 +1144,10 @@ async def trigger_scan(payload: dict = Body(default={})):
 
     min_mcap = int(payload.get("min_mcap", 200))
     max_mcap = int(payload.get("max_mcap", 50000))
-    min_float_util_pct = float(payload.get("min_float_util_pct", 12.0))
+    min_float_util_pct = float(payload.get("min_float_util_pct", 8.0))
     vol_pinch_ratio = float(payload.get("vol_pinch_ratio", 0.72))
-    price_range_max_pct = float(payload.get("price_range_max_pct", 2.8))
+    price_range_max_pct = float(payload.get("price_range_max_pct", 10.0))
+    min_smart_float_ratio = float(payload.get("min_smart_float_ratio", 0.55))
 
     def _run():
         try:
@@ -1157,6 +1158,7 @@ async def trigger_scan(payload: dict = Body(default={})):
                 min_float_util_pct=min_float_util_pct,
                 vol_pinch_ratio=vol_pinch_ratio,
                 price_range_max_pct=price_range_max_pct,
+                min_smart_float_ratio=min_smart_float_ratio,
             )
             _trigger_scan_state["message"] = "Loading universe..."
             _trigger_scan_state["progress"] = 5

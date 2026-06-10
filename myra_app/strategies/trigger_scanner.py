@@ -13,14 +13,16 @@ logger = logging.getLogger(__name__)
 
 class TriggerScanner:
     def __init__(self, min_mcap=300, max_mcap=50000,
-                 min_float_util_pct=12.0,
+                 min_float_util_pct=8.0,
                  vol_pinch_ratio=0.72,
-                 price_range_max_pct=2.8):
+                 price_range_max_pct=10.0,
+                 min_smart_float_ratio=0.55):
         self.min_mcap = min_mcap
         self.max_mcap = max_mcap
         self.min_float_util_pct = min_float_util_pct
         self.vol_pinch_ratio = vol_pinch_ratio
         self.price_range_max_pct = price_range_max_pct
+        self.min_smart_float_ratio = min_smart_float_ratio
 
     def _db_path(self, key: str) -> str:
         return os.path.join(DB_DIR, LibrarianCore.DB_MAP[key])
@@ -231,6 +233,18 @@ class TriggerScanner:
             if not (gate1_pass and gate2_pass and gate3_pass):
                 continue
 
+            # Gate 4: Smart Float Ratio — delivery must be concentrated on up days
+            recent = df.tail(20)
+            cum_delivery = float(np.nansum(recent["delivery"].values.astype(float)))
+            up_day_delivery = 0
+            for j in range(len(recent)):
+                if recent.iloc[j]["close"] > recent.iloc[j]["open"]:
+                    up_day_delivery += recent.iloc[j]["delivery"]
+            smart_float_ratio = up_day_delivery / cum_delivery if cum_delivery > 0 else 0.0
+
+            if smart_float_ratio < self.min_smart_float_ratio:
+                continue
+
             # Bonus Signals
             w20_df = df.tail(20)
             opens20 = w20_df["open"].values.astype(float)
@@ -305,6 +319,7 @@ class TriggerScanner:
                 "vol_ratio_5_20": round(vol_ratio_5_20, 3),
                 "price_range_5d_pct": round(price_range_5d_pct, 2),
                 "gate3_score": round(gate3_score, 1),
+                "smart_float_ratio": round(smart_float_ratio, 3),
                 "defense_bars": defense_bars,
                 "base_duration": base_duration,
                 "breakout_prox": round(breakout_prox, 3),
@@ -317,7 +332,7 @@ class TriggerScanner:
         float_fields = [
             "market_cap_cr", "float_util_pct", "gate1_score", "avg_down_del",
             "seller_slope", "gate2_score", "vol_ratio_5_20", "price_range_5d_pct",
-            "gate3_score", "trigger_score", "close", "wk52_pos",
+            "gate3_score", "smart_float_ratio", "trigger_score", "close", "wk52_pos",
         ]
         for c in candidates:
             for f in float_fields:
