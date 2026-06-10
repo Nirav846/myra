@@ -363,7 +363,10 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
                     except Exception as e:
                         print(f"[!] Market-cap recompute failed: {e}")
 
-                conn.execute("COMMIT")
+                try:
+                    conn.execute("COMMIT")
+                except Exception:
+                    pass  # enrichment may have already committed
                 result["success"] = True
             except Exception:
                 try:
