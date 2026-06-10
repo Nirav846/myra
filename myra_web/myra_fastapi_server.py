@@ -9,6 +9,7 @@ _ih_scan_state: dict = {
     "candidates": [],
     "bear_market": False,
 }
+import threading
 _ih_scan_lock = threading.Lock()
 _IH_SCAN_CACHE = "models/invisible_hand_cache.json"
 
