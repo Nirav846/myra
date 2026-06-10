@@ -35,7 +35,7 @@ class TriggerScanner:
                 SELECT f.symbol,
                        COALESCE(f.market_cap, f.marketCap, 0) AS mcap,
                        COALESCE(f.free_float_pct, 40.0) AS ff_pct,
-                       COALESCE(f.promoter_holding_pct, f.promoterHoldingPct, 0.0) AS promoter_pct
+                       COALESCE(f.promoter_holding_pct, 0.0) AS promoter_pct
                 FROM fundamentals f
                 INNER JOIN (
                     SELECT symbol, MAX(date) as max_date
