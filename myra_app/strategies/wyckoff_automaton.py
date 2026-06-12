@@ -128,7 +128,7 @@ class WyckoffAutomaton:
     def _detect_events(self, df: pd.DataFrame) -> list[dict]:
         events = []
         n = len(df)
-        if n < 30:
+        if n < 60:
             return events
 
         avg_vol = float(df["volume"].mean())
@@ -138,9 +138,10 @@ class WyckoffAutomaton:
 
         if avg_vol == 0:
             return events
+        print(f"DEBUG: {df['symbol'].iloc[0]} - rows={n}, avg_vol={avg_vol:.0f}, avg_del={avg_del:.1f}")
 
         # Scan last 30 sessions
-        scan_df = df.tail(30).reset_index(drop=True)
+        scan_df = df.tail(90).reset_index(drop=True)
         for i in range(len(scan_df)):
             row = scan_df.iloc[i]
             row_date = str(row["date"])
@@ -159,10 +160,10 @@ class WyckoffAutomaton:
 
             # SC — Selling Climax
             is_sc = (
-                volume_p > avg_vol * 2.5
+                volume_p > avg_vol * 1.8
                 and close_p > (low_p + (high_p - low_p) * 0.35)
-                and del_pct > 60
-                and close_p <= range_low * 1.07
+                and del_pct > 40
+                and close_p <= range_low * 1.15
             )
 
             if is_sc:
@@ -185,9 +186,9 @@ class WyckoffAutomaton:
 
             # Spring — Undercut & Recovery
             is_spring = (
-                low_p < range_low * 0.985
+                low_p < range_low * 0.99
                 and close_p > range_low
-                and del_pct > 55
+                and del_pct > 35
             )
 
             if is_spring:
@@ -212,9 +213,9 @@ class WyckoffAutomaton:
 
             # SOS — Sign of Strength
             is_sos = (
-                close_p > (range_low + (range_high - range_low) * 0.55)
-                and volume_p > avg_vol * 1.5
-                and del_pct > avg_del * 1.3
+                close_p > (range_low + (range_high - range_low) * 0.45)
+                and volume_p > avg_vol * 1.2
+                and del_pct > avg_del * 1.0
                 and close_p > open_p
             )
 
@@ -255,7 +256,7 @@ class WyckoffAutomaton:
                 ndel = float(nrow["delivery_pct"])
 
                 # AR — Automatic Rally
-                if nclose > sc_close * 1.03 and nvol <= avg_vol * 0.85:
+                if nclose > sc_close * 1.03 and nvol <= avg_vol * 1.0:
                     ar_vol_ratio = nvol / avg_vol if avg_vol > 0 else 0
                     ar_del_ratio = ndel / avg_del if avg_del > 0 else 0
                     rally_pct = (nclose - sc_close) / sc_close * 100 if sc_close > 0 else 0.0
