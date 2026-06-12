@@ -31,7 +31,9 @@ class FloatExhaustionScanner:
                 SELECT f.symbol,
                        COALESCE(f.market_cap, f.marketCap, 0) AS mcap,
                        COALESCE(f.free_float_pct, 40.0) AS ff_pct,
-                       COALESCE(f.promoter_holding_pct, 50.0) AS promoter_pct
+                       COALESCE(f.promoter_holding_pct, 50.0) AS promoter_pct,
+                       f.promoter_holding_pct AS raw_promoter_pct,
+                       f.free_float_pct AS raw_ff_pct
                 FROM fundamentals f
                 INNER JOIN (
                     SELECT symbol, MAX(date) as max_date
@@ -87,11 +89,11 @@ class FloatExhaustionScanner:
             pass
         return value
 
-    def scan(self, as_on_date: str | None = None) -> pd.DataFrame:
+    def scan(self, as_on_date: str | None = None) -> list[dict]:
         rows = self._get_universe()
         if not rows:
             logger.warning("No symbols found in universe (mcap %.0f-%.0f Cr)", self.min_mcap, self.max_mcap)
-            return pd.DataFrame()
+            return []
 
         _sector_map: dict[str, str] = {}
         try:
@@ -122,7 +124,7 @@ class FloatExhaustionScanner:
 
         candidates: list[dict] = []
 
-        for idx, (symbol, mcap, ff_pct, promoter_pct) in enumerate(rows):
+        for idx, (symbol, mcap, ff_pct, promoter_pct, raw_promoter_pct, raw_ff_pct) in enumerate(rows):
             symbol = symbol.strip()
 
             tech = self._get_tech_data(symbol, min_date)
@@ -154,6 +156,12 @@ class FloatExhaustionScanner:
 
             latest_close = float(df["close"].iloc[-1])
             if latest_close <= 0:
+                continue
+
+            # Skip symbols where we lack both free-float and promoter data
+            raw_ff = raw_ff_pct
+            raw_prom = raw_promoter_pct
+            if (raw_ff is None or raw_ff <= 0) and (raw_prom is None or raw_prom <= 0):
                 continue
 
             # Shares calculation
@@ -227,4 +235,4 @@ class FloatExhaustionScanner:
 
         candidates.sort(key=lambda x: x["float_util_pct"], reverse=True)
         logger.info("Float Exhaustion scan complete: %d candidates found", len(candidates))
-        return pd.DataFrame(candidates)
+        return candidates

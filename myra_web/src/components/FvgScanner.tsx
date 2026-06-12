@@ -69,6 +69,7 @@ LIMIT 50;
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-Myra-Auth": "myra-local-dev-2026",
         },
         body: JSON.stringify({
           database: "_tech_conn",

@@ -45,61 +45,7 @@ class FundamentalSync:
         db_file = LibrarianCore.DB_MAP["valuation"]
         return f"{DB_DIR}/{db_file}"
 
-    def _ensure_table_exists(self, conn: sqlite3.Connection):
-        """Create fundamentals table if it doesn't exist."""
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS fundamentals (
-                symbol              TEXT NOT NULL,
-                date                TEXT NOT NULL,
-                sector              TEXT,
-                pe                  REAL,
-                sector_pe           REAL,
-                market_cap          REAL,
-                face_value          REAL,
-                issued_size         INTEGER,
-                shares_outstanding  INTEGER,
-                daily_volatility    REAL,
-                annual_volatility   REAL,
-                impact_cost         REAL,
-                net_margin          REAL,
-                roe_ttm             REAL,
-                dividend_yield      REAL,
-                peRatio             REAL,
-                priceToBook         REAL,
-                priceToSales        REAL,
-                earningsPerShare    REAL,
-                bookValuePerShare   REAL,
-                revenueGrowth       REAL,
-                earningsGrowth      REAL,
-                marketCap           REAL,
-                enterpriseValue     REAL,
-                debtToEquity        REAL,
-                returnOnEquity      REAL,
-                returnOnAssets      REAL,
-                operatingMargin     REAL,
-                grossMargin         REAL,
-                payoutRatio         REAL,
-                currentRatio        REAL,
-                quickRatio          REAL,
-                freeCashFlowYield   REAL,
-                beta                REAL,
-                source_ms           TEXT,
-                source_nse          TEXT,
-                last_fundamental_update TEXT,
-                PRIMARY KEY (symbol, date)
-            )
-            """)
-        # Add shares_outstanding if table pre-dates the column
-        try:
-            conn.execute("ALTER TABLE fundamentals ADD COLUMN shares_outstanding INTEGER")
-        except sqlite3.OperationalError:
-            pass
-        # Add last_fundamental_update if table pre-dates the column
-        try:
-            conn.execute("ALTER TABLE fundamentals ADD COLUMN last_fundamental_update TEXT")
-        except sqlite3.OperationalError:
-            pass
-        conn.commit()
+    # REMOVED – _ensure_table_exists() removed; librarian_schema.py is the sole authority
 
     def _fetch_morningstar_bulk(self) -> dict:
         """Fetch all symbols' fundamental data from Morningstar.
@@ -360,7 +306,7 @@ class FundamentalSync:
 
         try:
             with sqlite3.connect(db_path, timeout=30) as conn:
-                self._ensure_table_exists(conn)
+                # Schema managed by librarian_schema.py — no _ensure_table_exists call
                 # Build INSERT dynamically from record keys
                 columns = list(records[0].keys())
                 placeholders = [f":{c}" for c in columns]

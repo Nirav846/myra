@@ -190,7 +190,7 @@ export class Librarian {
       try {
         const res = await fetch(`${this.apiUrl}/query`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-Myra-Auth': 'myra-local-dev-2026' },
           body: JSON.stringify({ 
             db: targetDb, 
             query: query, 

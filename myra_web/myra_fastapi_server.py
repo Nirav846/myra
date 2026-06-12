@@ -7,13 +7,19 @@ import subprocess
 import time
 import math
 from datetime import datetime
-from fastapi import FastAPI, HTTPException, Query, Body
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Optional
-from myra_app.constants import DB_DIR
+from myra_app.constants import DB_DIR, MODELS_DIR
 from myra_app.librarian_core import LibrarianCore
+
+MYRA_API_SECRET = os.environ.get("MYRA_API_SECRET", "myra-local-dev-2026")
+
+async def verify_myra_auth(x_myra_auth: str = Header(None)):
+    if x_myra_auth != MYRA_API_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +134,7 @@ class QueryRequest(BaseModel):
 
 
 @app.post("/api/query")
-async def execute_query(req: QueryRequest):
+async def execute_query(req: QueryRequest, _=Depends(verify_myra_auth)):
     # Map frontend DB connection names to LibrarianCore canonical keys
     frontend_to_canonical = {
         "_tech_conn": "technical",
@@ -182,7 +188,7 @@ class ToolRequest(BaseModel):
 
 
 @app.post("/api/tools/execute")
-def execute_tool(req: ToolRequest):
+def execute_tool(req: ToolRequest, _=Depends(verify_myra_auth)):
     """
     Hooks the React UI 'Execute' buttons directly into your local Python scripts.
     """
@@ -387,7 +393,7 @@ async def get_pipeline_status():
 @app.get("/api/fundamentals/live/{symbol}")
 async def get_live_fundamentals(symbol: str):
     import json, subprocess, sqlite3, os
-    from myra_app.constants import DB_DIR
+    from myra_app.constants import DB_DIR, MODELS_DIR
     from myra_app.librarian_core import LibrarianCore
 
     result = {
@@ -942,7 +948,7 @@ _ih_scan_state: dict = {
     "bear_market": False,
 }
 _ih_scan_lock = threading.Lock()
-_IH_SCAN_CACHE = "models/invisible_hand_cache.json"
+_IH_SCAN_CACHE = os.path.join(MODELS_DIR, "invisible_hand_cache.json")
 
 
 def _save_ih_cache():
@@ -1081,7 +1087,7 @@ _trigger_scan_state: dict = {
     "bear_market": False,
 }
 _trigger_scan_lock = threading.Lock()
-_TRIGGER_SCAN_CACHE = "models/trigger_cache.json"
+_TRIGGER_SCAN_CACHE = os.path.join(MODELS_DIR, "trigger_cache.json")
 
 
 def _save_trigger_cache():
@@ -1145,7 +1151,7 @@ async def trigger_scan(payload: dict = Body(default={})):
     min_mcap = int(payload.get("min_mcap", 200))
     max_mcap = int(payload.get("max_mcap", 50000))
     min_float_util_pct = float(payload.get("min_float_util_pct", 8.0))
-    vol_pinch_ratio = float(payload.get("vol_pinch_ratio", 0.72))
+    vol_pinch_ratio = float(payload.get("vol_pinch_ratio", 0.75))
     price_range_max_pct = float(payload.get("price_range_max_pct", 10.0))
     min_smart_float_ratio = float(payload.get("min_smart_float_ratio", 0.55))
 
@@ -1179,18 +1185,14 @@ async def trigger_scan(payload: dict = Body(default={})):
                 return original_get_tech(symbol, min_date)
             scanner._get_tech_data = _tracked_get_tech
 
-            df = scanner.scan()
+            candidates = scanner.scan()
             _trigger_scan_state["progress"] = 95
             _trigger_scan_state["message"] = "Finalising results..."
 
-            candidates = []
-            if not df.empty:
-                for _, row in df.iterrows():
-                    rec = row.to_dict()
-                    for key, val in list(rec.items()):
-                        if isinstance(val, float) and (_math.isnan(val) or _math.isinf(val)):
-                            rec[key] = None
-                    candidates.append(rec)
+            for rec in candidates:
+                for key, val in list(rec.items()):
+                    if isinstance(val, float) and (_math.isnan(val) or _math.isinf(val)):
+                        rec[key] = None
 
             _trigger_scan_state.update({
                 "scan_status": "completed",
@@ -1221,7 +1223,7 @@ _lf_scan_state: dict = {
     "bear_market": False,
 }
 _lf_scan_lock = threading.Lock()
-_LF_SCAN_CACHE = "models/liquidity_flip_cache.json"
+_LF_SCAN_CACHE = os.path.join(MODELS_DIR, "liquidity_flip_cache.json")
 
 
 def _save_lf_cache():
@@ -1366,7 +1368,7 @@ _of_scan_state: dict = {
     "bear_market": False,
 }
 _of_scan_lock = threading.Lock()
-_OF_SCAN_CACHE = "models/operator_fingerprint_cache.json"
+_OF_SCAN_CACHE = os.path.join(MODELS_DIR, "operator_fingerprint_cache.json")
 
 
 def _save_of_cache():
@@ -1511,7 +1513,7 @@ _fe_scan_state: dict = {
     "bear_market": False,
 }
 _fe_scan_lock = threading.Lock()
-_FE_SCAN_CACHE = "models/float_exhaustion_cache.json"
+_FE_SCAN_CACHE = os.path.join(MODELS_DIR, "float_exhaustion_cache.json")
 
 
 def _save_fe_cache():
@@ -1611,19 +1613,15 @@ async def float_exhaustion_scan(payload: dict = Body(default={})):
 
             scanner._get_tech_data = _tracked_get_tech
 
-            df = scanner.scan()
+            candidates = scanner.scan()
 
             _fe_scan_state["progress"] = 95
             _fe_scan_state["message"] = "Finalising results..."
 
-            candidates = []
-            if not df.empty:
-                for _, row in df.iterrows():
-                    rec = row.to_dict()
-                    for key, val in list(rec.items()):
-                        if isinstance(val, float) and (_math.isnan(val) or _math.isinf(val)):
-                            rec[key] = None
-                    candidates.append(rec)
+            for rec in candidates:
+                for key, val in list(rec.items()):
+                    if isinstance(val, float) and (_math.isnan(val) or _math.isinf(val)):
+                        rec[key] = None
 
             _fe_scan_state.update({
                 "scan_status": "completed",
@@ -1656,7 +1654,7 @@ _sd_scan_state: dict = {
     "bear_market": False,
 }
 _sd_scan_lock = threading.Lock()
-_SD_SCAN_CACHE = "models/seasonal_delivery_cache.json"
+_SD_SCAN_CACHE = os.path.join(MODELS_DIR, "seasonal_delivery_cache.json")
 
 
 def _save_sd_cache():
@@ -1804,7 +1802,7 @@ _wy_scan_state: dict = {
     "candidates": [],
 }
 _wy_scan_lock = threading.Lock()
-_WY_SCAN_CACHE = "models/wyckoff_cache.json"
+_WY_SCAN_CACHE = os.path.join(MODELS_DIR, "wyckoff_cache.json")
 
 
 def _save_wy_cache():

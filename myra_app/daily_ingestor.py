@@ -347,26 +347,7 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
                     result["error"] = "no_rows_inserted"
                     return result
 
-                from myra_app.feature_enrichment import process_enrichment_pipeline
-                from myra_app.librarian import Librarian
-                enrichment_lib = Librarian(read_only=False)
-                enrichment_lib.connect()
-                print("[MYRA] Running enrichment on new rows...")
-                process_enrichment_pipeline(enrichment_lib, conn)
-                print("[MYRA] Enrichment complete.")
-
-                if result["rows_inserted"] > 0:
-                    try:
-                        from myra_app.fundamental_sync import FundamentalSync
-                        FundamentalSync()._compute_market_cap_from_prices()
-                        print("[MYRA] Market-cap recompute complete.")
-                    except Exception as e:
-                        print(f"[!] Market-cap recompute failed: {e}")
-
-                try:
-                    conn.execute("COMMIT")
-                except Exception:
-                    pass  # enrichment may have already committed
+                conn.execute("COMMIT")
                 result["success"] = True
             except Exception:
                 try:
@@ -376,6 +357,34 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
                 raise
 
             conn.close()
+
+            # Enrichment runs in its own transaction (best‑effort)
+            enrich_conn = None
+            try:
+                from myra_app.feature_enrichment import process_enrichment_pipeline
+                from myra_app.librarian import Librarian
+                enrichment_lib = Librarian(read_only=False)
+                enrichment_lib.connect()
+                enrich_conn = sqlite3.connect(DB_PATH)
+                enrich_conn.execute("PRAGMA busy_timeout = 30000")
+                print("[MYRA] Running enrichment on new rows...")
+                process_enrichment_pipeline(enrichment_lib, enrich_conn)
+                enrich_conn.commit()
+                print("[MYRA] Enrichment complete.")
+                if result["rows_inserted"] > 0:
+                    try:
+                        from myra_app.fundamental_sync import FundamentalSync
+                        FundamentalSync()._compute_market_cap_from_prices()
+                        print("[MYRA] Market-cap recompute complete.")
+                    except Exception as e:
+                        print(f"[!] Market-cap recompute failed: {e}")
+            except Exception as e:
+                logging.error(f"Enrichment failed for {current_date.date().isoformat()}: {e}")
+                if enrich_conn:
+                    enrich_conn.rollback()
+            finally:
+                if enrich_conn:
+                    enrich_conn.close()
 
         except Exception as e:
             # Only rollback if a transaction is active; COMMIT may have already fired

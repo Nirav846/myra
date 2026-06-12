@@ -19,7 +19,7 @@ export async function fetchMarketCapMap(): Promise<Map<string, number>> {
     const apiUrl = getApiUrl();
     const res = await fetch(`${apiUrl}/query`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Myra-Auth': 'myra-local-dev-2026' },
         body: JSON.stringify({
             db: '_val_conn',
             query: 'SELECT symbol, market_cap AS market_cap FROM fundamentals WHERE market_cap IS NOT NULL AND market_cap > 0',
@@ -50,7 +50,7 @@ export async function fetchFreeFloatMcapMap(): Promise<Map<string, number>> {
         const apiUrl = getApiUrl();
         const res = await fetch(`${apiUrl}/query`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-Myra-Auth': 'myra-local-dev-2026' },
             body: JSON.stringify({
                 db: '_val_conn',
                 query: `

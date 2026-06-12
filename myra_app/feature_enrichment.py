@@ -1,8 +1,11 @@
 import logging
+import os
 import threading
 import time
 
 import polars as pl
+
+from myra_app.constants import DB_DIR
 
 _enrichment_paused = threading.Event()
 _enrichment_paused.set()  # not paused initially
@@ -92,10 +95,8 @@ def enrich_features(df: pl.DataFrame, nifty_df: pl.DataFrame) -> pl.DataFrame:
         else:
             df = df.with_columns(pl.lit(0.0).alias("market_return"))
     else:
-        # Fallback: Dynamic Market Average of all stocks
-        df = df.with_columns(
-            pl.col("stock_return").mean().over("date").alias("market_return")
-        )
+        # No benchmark data available — skip outperformance
+        df = df.with_columns(pl.lit(0.0).alias("market_return"))
 
     # Core Institutional Metrics - Forced Calculation Block
     # We use min_periods=5 to allow calculations to start early in a stock's history
@@ -209,10 +210,31 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
         logger.info(
             f"Loaded {df_raw.shape[0]} rows for {df_raw['symbol'].n_unique()} symbols over {df_raw['date'].n_unique()} days"
         )
-        nifty_pd = pd.read_sql(
-            "SELECT date, close FROM technical_data WHERE symbol LIKE '%NIFTY 50%'",
-            conn,
-        )
+        # Read from dedicated benchmarks table in myra_metadata.db
+        import sqlite3 as _sqlite3
+        meta_path = os.path.join(DB_DIR, "myra_metadata.db")
+        nifty_pd = pd.DataFrame(columns=["date", "close"])
+        meta_conn = None
+        try:
+            meta_conn = _sqlite3.connect(meta_path)
+            nifty_pd = pd.read_sql(
+                "SELECT date, close FROM benchmarks WHERE symbol = '^NSEI' ORDER BY date",
+                meta_conn,
+            )
+        except Exception as e:
+            logger.warning(f"Could not read Nifty benchmark from meta.db: {e}")
+        finally:
+            if meta_conn:
+                meta_conn.close()
+
+        # If benchmark data ends before the dates we need (likely), forward-fill
+        if not nifty_pd.empty:
+            nifty_pd["date"] = pd.to_datetime(nifty_pd["date"])
+            all_dates = pd.to_datetime(df_raw["date"].unique())
+            nifty_pd = nifty_pd.set_index("date").reindex(all_dates, method="ffill").reset_index()
+            nifty_pd.columns = ["date", "close"]
+            nifty_pd["date"] = nifty_pd["date"].dt.strftime("%Y-%m-%d")
+
         nifty_df = pl.from_pandas(nifty_pd)
 
         df_enriched = enrich_features(df_raw, nifty_df)
