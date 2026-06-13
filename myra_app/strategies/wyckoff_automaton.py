@@ -130,10 +130,10 @@ class WyckoffAutomaton:
 
         return 0.0
 
-    def _detect_events(self, df: pd.DataFrame) -> list[dict]:
+    def _detect_events(self, df: pd.DataFrame, symbol: str = "") -> list[dict]:
         events = []
         n = len(df)
-        if n < 60:
+        if n < 55:
             return events
 
         avg_vol = float(df["volume"].mean())
@@ -143,9 +143,11 @@ class WyckoffAutomaton:
 
         if avg_vol == 0:
             return events
-        print(
-            f"DEBUG: {df['symbol'].iloc[0]} - rows={n}, avg_vol={avg_vol:.0f}, avg_del={avg_del:.1f}"
-        )
+        if n > 0:
+            logger.debug(
+                "rows=%d, avg_vol=%.0f, avg_del=%.1f",
+                n, avg_vol, avg_del,
+            )
 
         # Scan last 30 sessions
         scan_df = df.tail(90).reset_index(drop=True)
@@ -177,7 +179,7 @@ class WyckoffAutomaton:
                 quality = self._event_quality("SC", vol_ratio, del_pct, avg_del)
                 events.append(
                     {
-                        "symbol": str(df["symbol"].iloc[0]),
+                        "symbol": symbol,
                         "event": "SC",
                         "phase": "Phase A",
                         "phase_pct": 25,
@@ -213,7 +215,7 @@ class WyckoffAutomaton:
                 )
                 events.append(
                     {
-                        "symbol": str(df["symbol"].iloc[0]),
+                        "symbol": symbol,
                         "event": "Spring",
                         "phase": "Phase C",
                         "phase_pct": 75,
@@ -252,7 +254,7 @@ class WyckoffAutomaton:
                 )
                 events.append(
                     {
-                        "symbol": str(df["symbol"].iloc[0]),
+                        "symbol": symbol,
                         "event": "SOS",
                         "phase": "Phase D",
                         "phase_pct": 90,
@@ -304,7 +306,7 @@ class WyckoffAutomaton:
                     if not existing:
                         events.append(
                             {
-                                "symbol": str(df["symbol"].iloc[0]),
+                                "symbol": symbol,
                                 "event": "AR",
                                 "phase": "Phase A",
                                 "phase_pct": 30,
@@ -336,7 +338,7 @@ class WyckoffAutomaton:
                         )
                         events.append(
                             {
-                                "symbol": str(df["symbol"].iloc[0]),
+                                "symbol": symbol,
                                 "event": "ST",
                                 "phase": "Phase B",
                                 "phase_pct": 50,
@@ -398,7 +400,7 @@ class WyckoffAutomaton:
             symbol = symbol.strip()
 
             tech = self._get_tech_data(symbol, min_date)
-            if len(tech) < self.lookback_days + 10:
+            if len(tech) < max(55, int(self.lookback_days * 0.6) + 5):
                 continue
 
             col_count = len(tech[0]) if tech else 0
@@ -441,10 +443,10 @@ class WyckoffAutomaton:
             df["date"] = pd.to_datetime(df["date"])
             df = df.sort_values("date").reset_index(drop=True)
 
-            if len(df) < self.lookback_days + 10:
+            if len(df) < max(55, int(self.lookback_days * 0.6) + 5):
                 continue
 
-            events = self._detect_events(df)
+            events = self._detect_events(df, symbol=symbol)
             if not events:
                 continue
 

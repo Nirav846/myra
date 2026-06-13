@@ -130,7 +130,7 @@ class LiquidityFlipDetector:
             symbol = symbol.strip()
 
             tech = self._get_tech_data(symbol, min_date)
-            if len(tech) < self.lookback_days + 5:
+            if len(tech) < max(60, int(self.lookback_days * 0.6) + 5):
                 continue
 
             col_count = len(tech[0]) if tech else 0
@@ -173,7 +173,7 @@ class LiquidityFlipDetector:
             df["date"] = pd.to_datetime(df["date"])
             df = df.sort_values("date").reset_index(drop=True)
 
-            if len(df) < self.lookback_days + 5:
+            if len(df) < max(60, int(self.lookback_days * 0.6) + 5):
                 continue
 
             # Churn baseline (days -95 to -21)
