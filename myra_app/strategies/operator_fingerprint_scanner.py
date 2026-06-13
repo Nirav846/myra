@@ -130,7 +130,7 @@ class OperatorFingerprintScanner:
             symbol = symbol.strip()
 
             tech = self._get_tech_data(symbol, min_date)
-            if len(tech) < self.lookback_days + 5:
+            if len(tech) < max(35, int(self.lookback_days * 0.6) + 5):
                 continue
 
             col_count = len(tech[0]) if tech else 0
@@ -173,7 +173,7 @@ class OperatorFingerprintScanner:
             df["date"] = pd.to_datetime(df["date"])
             df = df.sort_values("date").reset_index(drop=True)
 
-            if len(df) < self.lookback_days + 5:
+            if len(df) < max(35, int(self.lookback_days * 0.6) + 5):
                 continue
 
             closes = df["close"].values.astype(float)
