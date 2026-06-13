@@ -24,6 +24,7 @@ import { useSettings } from './lib/SettingsContext';
 import { useHealthStatus } from './hooks/useHealthStatus';
 import { AlertManager } from './lib/AlertManager';
 import { DebugPanel } from './components/DebugPanel';
+import HealthStatusBar from './components/HealthStatusBar';
 import { SavedWorkspaces } from './components/SavedWorkspaces';
 import ScannerPresetsPanel from './components/ScannerPresetsPanel';
 import Navbar from './components/Navbar';
@@ -154,6 +155,7 @@ export default function App() {
 
   return (
     <div className={`flex h-screen w-full ${bgMain} text-[#fafafa] font-sans overflow-hidden transition-colors relative`}>
+      <HealthStatusBar />
       <AlertManager />
       <DebugPanel />
       {showPresetsPanel && (
@@ -170,7 +172,7 @@ export default function App() {
           }}
         />
       )}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden">
+      <main className="flex-1 flex flex-col h-screen overflow-hidden pt-9">
         <div className={`flex-1 overflow-x-hidden overflow-y-auto flex flex-col ${densityClass}`}>
           <header className="flex justify-between items-center w-full gap-2 shrink-0 h-8 mb-1">
             <div className="flex items-center gap-2 h-full">
