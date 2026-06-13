@@ -23,7 +23,8 @@ logger = logging.getLogger("myra.fundamental_sync")
 IST = timezone(timedelta(hours=5, minutes=30))
 
 # Morningstar API configuration
-MORNINGSTAR_URL = "https://lt.morningstar.com/api/rest.svc/g9vi2nsqjb/security/screener"
+MORNINGSTAR_TOKEN = os.environ.get("MORNINGSTAR_TOKEN", "g9vi2nsqjb")
+MORNINGSTAR_URL = f"https://lt.morningstar.com/api/rest.svc/{MORNINGSTAR_TOKEN}/security/screener"
 MORNINGSTAR_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Accept": "application/json",
