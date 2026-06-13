@@ -57,16 +57,16 @@ class AccumulationBaseScanner:
             rows = conn.execute(
                 """
                 SELECT f.symbol,
-                       COALESCE(f.market_cap, f.marketCap, 0)      AS mcap,
+                       COALESCE(f.market_cap, 0)      AS mcap,
                        COALESCE(f.free_float_pct, 40.0) AS ff_pct
                 FROM fundamentals f
                 INNER JOIN (
                     SELECT symbol, MAX(date) as max_date
                     FROM fundamentals
-                    WHERE COALESCE(market_cap, marketCap, 0) > 0
+                    WHERE COALESCE(market_cap, 0) > 0
                     GROUP BY symbol
                 ) latest ON f.symbol = latest.symbol AND f.date = latest.max_date
-                WHERE COALESCE(f.market_cap, f.marketCap, 0) / 1e7 BETWEEN ? AND ?
+                WHERE COALESCE(f.market_cap, 0) / 1e7 BETWEEN ? AND ?
                 """,
                 (self.min_mcap, self.max_mcap),
             ).fetchall()
@@ -103,12 +103,15 @@ class AccumulationBaseScanner:
                 ).fetchall()
         return rows
 
-    def _compute_atr(self, highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 14) -> float:
+    def _compute_atr(
+        self, highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 14
+    ) -> float:
         if len(highs) < 2:
             return 0.0
-        tr = np.maximum(highs[1:] - lows[1:],
-                        np.maximum(np.abs(highs[1:] - closes[:-1]),
-                                   np.abs(lows[1:] - closes[:-1])))
+        tr = np.maximum(
+            highs[1:] - lows[1:],
+            np.maximum(np.abs(highs[1:] - closes[:-1]), np.abs(lows[1:] - closes[:-1])),
+        )
         if len(tr) < period:
             return float(np.mean(tr)) if len(tr) > 0 else 0.0
         return float(np.mean(tr[-period:]))
@@ -144,9 +147,7 @@ class AccumulationBaseScanner:
                     result["grab_close"] = float(row["close"])
         return result
 
-    def _detect_equal_lows(
-        self, lows: np.ndarray, tolerance_pct: float = 0.5
-    ) -> dict:
+    def _detect_equal_lows(self, lows: np.ndarray, tolerance_pct: float = 0.5) -> dict:
         if len(lows) < 5:
             return {"detected": False, "level": None}
         base_low = float(lows.min())
@@ -180,7 +181,11 @@ class AccumulationBaseScanner:
     def scan(self, as_on_date: str | None = None) -> pd.DataFrame:
         rows = self._get_universe()
         if not rows:
-            logger.warning("No symbols found in universe (mcap %.0f-%.0f Cr)", self.min_mcap, self.max_mcap)
+            logger.warning(
+                "No symbols found in universe (mcap %.0f-%.0f Cr)",
+                self.min_mcap,
+                self.max_mcap,
+            )
             return pd.DataFrame()
 
         # Build a sector map from valuation DB
@@ -209,7 +214,9 @@ class AccumulationBaseScanner:
             as_on_date = date.today().isoformat()
 
         ref_date = pd.Timestamp(as_on_date)
-        min_date = (ref_date - pd.Timedelta(days=max(self.base_days * 3, 90))).strftime("%Y-%m-%d")
+        min_date = (ref_date - pd.Timedelta(days=max(self.base_days * 3, 90))).strftime(
+            "%Y-%m-%d"
+        )
 
         nifty_scores_all: list[float] = []
         candidates: list[dict] = []
@@ -247,15 +254,35 @@ class AccumulationBaseScanner:
             if col_count >= 12:
                 df = pd.DataFrame(
                     tech,
-                    columns=["date", "open", "high", "low", "close", "volume",
-                             "delivery", "delivery_pct", "nifty_outperformance_score",
-                             "sma_50", "high_52w", "low_52w"],
+                    columns=[
+                        "date",
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "volume",
+                        "delivery",
+                        "delivery_pct",
+                        "nifty_outperformance_score",
+                        "sma_50",
+                        "high_52w",
+                        "low_52w",
+                    ],
                 )
             else:
                 df = pd.DataFrame(
                     tech,
-                    columns=["date", "open", "high", "low", "close", "volume",
-                             "delivery", "delivery_pct", "nifty_outperformance_score"],
+                    columns=[
+                        "date",
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "volume",
+                        "delivery",
+                        "delivery_pct",
+                        "nifty_outperformance_score",
+                    ],
                 )
                 df["sma_50"] = None
                 df["high_52w"] = None
@@ -263,7 +290,7 @@ class AccumulationBaseScanner:
             df["date"] = pd.to_datetime(df["date"])
             df = df.sort_values("date").reset_index(drop=True)
 
-            base = df.iloc[-self.base_days:].copy()
+            base = df.iloc[-self.base_days :].copy()
             if len(base) < self.base_days:
                 continue
 
@@ -311,9 +338,15 @@ class AccumulationBaseScanner:
 
             # 3. Delivery Trend (linear slope of delivery_pct over 60 days)
             del_trend_window = min(60, len(df))
-            del_trend_data = df.iloc[-del_trend_window:]["delivery_pct"].values.astype(float)
+            del_trend_data = df.iloc[-del_trend_window:]["delivery_pct"].values.astype(
+                float
+            )
             _del_trend_clean = del_trend_data[~np.isnan(del_trend_data)]
-            delivery_slope = self._compute_linear_slope(_del_trend_clean) if len(_del_trend_clean) >= 2 else 0.0
+            delivery_slope = (
+                self._compute_linear_slope(_del_trend_clean)
+                if len(_del_trend_clean) >= 2
+                else 0.0
+            )
             if delivery_slope >= 0.10:
                 delivery_trend_score = 100.0
             elif delivery_slope <= -0.05:
@@ -322,10 +355,22 @@ class AccumulationBaseScanner:
                 delivery_trend_score = ((delivery_slope + 0.05) / 0.15) * 100.0
 
             # 4. Volume Character: median up-day volume / median down-day volume
-            up_days = base[base["close"] >= base["close"].shift(1).fillna(base["close"].iloc[0])]
-            down_days = base[base["close"] < base["close"].shift(1).fillna(base["close"].iloc[0])]
-            up_vol = up_days["volume"].values.astype(float) if len(up_days) > 0 else np.array([])
-            down_vol = down_days["volume"].values.astype(float) if len(down_days) > 0 else np.array([])
+            up_days = base[
+                base["close"] >= base["close"].shift(1).fillna(base["close"].iloc[0])
+            ]
+            down_days = base[
+                base["close"] < base["close"].shift(1).fillna(base["close"].iloc[0])
+            ]
+            up_vol = (
+                up_days["volume"].values.astype(float)
+                if len(up_days) > 0
+                else np.array([])
+            )
+            down_vol = (
+                down_days["volume"].values.astype(float)
+                if len(down_days) > 0
+                else np.array([])
+            )
             up_vol_med = float(np.median(up_vol)) if len(up_vol) > 0 else 0
             down_vol_med = float(np.median(down_vol)) if len(down_vol) > 0 else 1
             volume_ratio = up_vol_med / down_vol_med if down_vol_med > 0 else 1.0
@@ -365,16 +410,32 @@ class AccumulationBaseScanner:
 
             # 5. 52-week position
             latest_row = df.iloc[-1]
-            high_52w = float(latest_row["high_52w"]) if pd.notna(latest_row.get("high_52w")) else None
-            low_52w = float(latest_row["low_52w"]) if pd.notna(latest_row.get("low_52w")) else None
+            high_52w = (
+                float(latest_row["high_52w"])
+                if pd.notna(latest_row.get("high_52w"))
+                else None
+            )
+            low_52w = (
+                float(latest_row["low_52w"])
+                if pd.notna(latest_row.get("low_52w"))
+                else None
+            )
             latest_close = float(closes[-1])
             if high_52w is not None and low_52w is not None:
-                wk52_pos = ((latest_close - low_52w) / (high_52w - low_52w)) * 100 if (high_52w - low_52w) > 0 else 50
+                wk52_pos = (
+                    ((latest_close - low_52w) / (high_52w - low_52w)) * 100
+                    if (high_52w - low_52w) > 0
+                    else 50
+                )
             else:
                 all_tech = df.copy()
                 all_high = float(all_tech["high"].max())
                 all_low = float(all_tech["low"].min())
-                wk52_pos = ((latest_close - all_low) / (all_high - all_low)) * 100 if (all_high - all_low) > 0 else 50
+                wk52_pos = (
+                    ((latest_close - all_low) / (all_high - all_low)) * 100
+                    if (all_high - all_low) > 0
+                    else 50
+                )
             if wk52_pos >= 95:
                 continue
             position_penalty = 0
@@ -387,7 +448,11 @@ class AccumulationBaseScanner:
 
             # 6. Price vs 50-SMA
             all_closes = df["close"].values.astype(float)
-            sma50_pre = float(latest_row["sma_50"]) if pd.notna(latest_row.get("sma_50")) else None
+            sma50_pre = (
+                float(latest_row["sma_50"])
+                if pd.notna(latest_row.get("sma_50"))
+                else None
+            )
             if sma50_pre is not None:
                 sma50 = sma50_pre
             else:
@@ -419,7 +484,9 @@ class AccumulationBaseScanner:
                 + delivery_trend_score * self.trend_weight
                 + dry_up_adjustment
             )
-            composite_score = max(0, min(100, raw_score - position_penalty - sma_penalty))
+            composite_score = max(
+                0, min(100, raw_score - position_penalty - sma_penalty)
+            )
 
             # Grade
             if composite_score >= 80:
@@ -436,8 +503,10 @@ class AccumulationBaseScanner:
                 entry_type = "LiqGrab"
                 entry = liq_grab["grab_close"]
                 sl = liq_grab["grab_low"] - 0.3 * atr14
-            elif (latest_close <= base_low + 0.382 * (base_high - base_low)
-                  and dar_median >= self.min_dar * 1.5):
+            elif (
+                latest_close <= base_low + 0.382 * (base_high - base_low)
+                and dar_median >= self.min_dar * 1.5
+            ):
                 entry_type = "Cheat"
                 entry = latest_close
                 sl = base_low - 0.75 * atr14
@@ -452,7 +521,9 @@ class AccumulationBaseScanner:
 
             # Risk floor
             raw_risk = entry - sl
-            risk = max(raw_risk, atr14 * 0.5) if atr14 > 0 else max(raw_risk, entry * 0.02)
+            risk = (
+                max(raw_risk, atr14 * 0.5) if atr14 > 0 else max(raw_risk, entry * 0.02)
+            )
 
             t1 = entry + 1.0 * risk
             t2 = entry + 2.5 * risk
@@ -473,39 +544,53 @@ class AccumulationBaseScanner:
 
             mcap_cr = mcap / 1e7
             _rr_target = t3 if (t3 is not None) else t2
-            candidates.append({
-                "symbol": symbol,
-                "sector": _sector_map.get(symbol, "Unknown"),
-                "market_cap_cr": round(mcap_cr, 1),
-                "base_days": self.base_days,
-                "dar_median": round(dar_median, 3),
-                "base_range_pct": round(price_range_pct, 2),
-                "volume_ratio": round(volume_ratio, 2),
-                "vol_dry_up": round(vol_dry_up, 2),
-                "delivery_slope": round(delivery_slope, 4),
-                "rs_score": round(rs_score, 3),
-                "composite_score": round(composite_score, 1),
-                "grade": grade,
-                "entry_type": entry_type,
-                "entry": round(entry, 2),
-                "cheat_entry": round(base_low + 0.382 * (base_high - base_low), 2),
-                "retest_entry": round(retest_entry, 2),
-                "sl": round(sl, 2),
-                "sl_pct": round((entry - sl) / entry * 100, 2) if entry > 0 else 0.0,
-                "buffer_to_sl_pct": round((entry - sl) / entry * 100, 2) if entry > 0 else 0.0,
-                "t1": round(t1, 2),
-                "t2": round(t2, 2),
-                "t3": round(t3, 2) if t3 is not None else None,
-                "status": status,
-                "close": round(latest_close, 2),
-                "wk52_pos": round(wk52_pos, 1),
-                "risk_reward": round((_rr_target - entry) / (entry - sl), 2) if (entry - sl) > 0 else 0.0,
-                "max_upside_pct": round((_rr_target / entry - 1) * 100, 1) if entry > 0 else 0.0,
-                "dist_to_bo_pct": round((base_high - latest_close) / latest_close * 100, 2) if latest_close > 0 else 0.0,
-                "liq_grab": liq_grab["detected"],
-                "equal_lows": has_equal_lows,
-                "equal_lows_level": equal_lows_level,
-            })
+            candidates.append(
+                {
+                    "symbol": symbol,
+                    "sector": _sector_map.get(symbol, "Unknown"),
+                    "market_cap_cr": round(mcap_cr, 1),
+                    "base_days": self.base_days,
+                    "dar_median": round(dar_median, 3),
+                    "base_range_pct": round(price_range_pct, 2),
+                    "volume_ratio": round(volume_ratio, 2),
+                    "vol_dry_up": round(vol_dry_up, 2),
+                    "delivery_slope": round(delivery_slope, 4),
+                    "rs_score": round(rs_score, 3),
+                    "composite_score": round(composite_score, 1),
+                    "grade": grade,
+                    "entry_type": entry_type,
+                    "entry": round(entry, 2),
+                    "cheat_entry": round(base_low + 0.382 * (base_high - base_low), 2),
+                    "retest_entry": round(retest_entry, 2),
+                    "sl": round(sl, 2),
+                    "sl_pct": round((entry - sl) / entry * 100, 2)
+                    if entry > 0
+                    else 0.0,
+                    "buffer_to_sl_pct": round((entry - sl) / entry * 100, 2)
+                    if entry > 0
+                    else 0.0,
+                    "t1": round(t1, 2),
+                    "t2": round(t2, 2),
+                    "t3": round(t3, 2) if t3 is not None else None,
+                    "status": status,
+                    "close": round(latest_close, 2),
+                    "wk52_pos": round(wk52_pos, 1),
+                    "risk_reward": round((_rr_target - entry) / (entry - sl), 2)
+                    if (entry - sl) > 0
+                    else 0.0,
+                    "max_upside_pct": round((_rr_target / entry - 1) * 100, 1)
+                    if entry > 0
+                    else 0.0,
+                    "dist_to_bo_pct": round(
+                        (base_high - latest_close) / latest_close * 100, 2
+                    )
+                    if latest_close > 0
+                    else 0.0,
+                    "liq_grab": liq_grab["detected"],
+                    "equal_lows": has_equal_lows,
+                    "equal_lows_level": equal_lows_level,
+                }
+            )
 
         # Dynamic bear flag
         self.bear_market = False
@@ -513,19 +598,41 @@ class AccumulationBaseScanner:
             median_nifty = float(np.median(nifty_scores_all))
             if median_nifty < -0.5:
                 self.bear_market = True
-                logger.info("Bear market detected (median nifty_outperformance=%.2f) — tightening criteria", median_nifty)
+                logger.info(
+                    "Bear market detected (median nifty_outperformance=%.2f) — tightening criteria",
+                    median_nifty,
+                )
                 effective_base_days = max(self.base_days, 30)
                 effective_min_dar = max(self.min_dar, 0.4)
-                candidates = [c for c in candidates
-                              if c["dar_median"] >= effective_min_dar]
+                candidates = [
+                    c for c in candidates if c["dar_median"] >= effective_min_dar
+                ]
 
         # Sanitize NaN/Inf for JSON compatibility
         float_fields = [
-            "market_cap_cr", "dar_median", "base_range_pct", "volume_ratio",
-            "vol_dry_up", "delivery_slope", "rs_score", "composite_score",
-            "entry", "cheat_entry", "retest_entry", "sl", "sl_pct",
-            "t1", "t2", "t3", "close", "wk52_pos", "risk_reward",
-            "max_upside_pct", "dist_to_bo_pct", "buffer_to_sl_pct", "equal_lows_level",
+            "market_cap_cr",
+            "dar_median",
+            "base_range_pct",
+            "volume_ratio",
+            "vol_dry_up",
+            "delivery_slope",
+            "rs_score",
+            "composite_score",
+            "entry",
+            "cheat_entry",
+            "retest_entry",
+            "sl",
+            "sl_pct",
+            "t1",
+            "t2",
+            "t3",
+            "close",
+            "wk52_pos",
+            "risk_reward",
+            "max_upside_pct",
+            "dist_to_bo_pct",
+            "buffer_to_sl_pct",
+            "equal_lows_level",
         ]
         for c in candidates:
             for f in float_fields:
@@ -534,11 +641,15 @@ class AccumulationBaseScanner:
 
         # Debug: verify sectors
         if candidates:
-            print(f"[DEBUG] First candidate sector: {candidates[0].get('sector', 'MISSING')}")
+            print(
+                f"[DEBUG] First candidate sector: {candidates[0].get('sector', 'MISSING')}"
+            )
             eq_count = sum(1 for c in candidates if c.get("equal_lows"))
             if eq_count > 0:
                 sample = next(c for c in candidates if c.get("equal_lows"))
-                print(f"[DEBUG] Equal lows sample: {sample['symbol']} level={sample.get('equal_lows_level')}")
+                print(
+                    f"[DEBUG] Equal lows sample: {sample['symbol']} level={sample.get('equal_lows_level')}"
+                )
 
         candidates.sort(key=lambda x: x["composite_score"], reverse=True)
         logger.info("Scan complete: %d candidates found", len(candidates))

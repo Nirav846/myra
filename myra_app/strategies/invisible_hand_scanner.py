@@ -12,12 +12,13 @@ logger = logging.getLogger(__name__)
 
 
 class InvisibleHandScanner:
-    def __init__(self, min_mcap=200, max_mcap=50000,
-                 window=20, hist_window=60, min_ih_score=35):
+    def __init__(
+        self, min_mcap=200, max_mcap=50000, window=20, hist_window=60, min_ih_score=35
+    ):
         self.min_mcap = min_mcap
         self.max_mcap = max_mcap
-        self.window = window           # recent window for all current metrics
-        self.hist_window = hist_window # historical window for DER baseline
+        self.window = window  # recent window for all current metrics
+        self.hist_window = hist_window  # historical window for DER baseline
         self.min_ih_score = min_ih_score
 
     def _db_path(self, key: str) -> str:
@@ -31,16 +32,16 @@ class InvisibleHandScanner:
             rows = conn.execute(
                 """
                 SELECT f.symbol,
-                       COALESCE(f.market_cap, f.marketCap, 0) AS mcap,
+                       COALESCE(f.market_cap, 0) AS mcap,
                        COALESCE(f.free_float_pct, 40.0) AS ff_pct
                 FROM fundamentals f
                 INNER JOIN (
                     SELECT symbol, MAX(date) as max_date
                     FROM fundamentals
-                    WHERE COALESCE(market_cap, marketCap, 0) > 0
+                    WHERE COALESCE(market_cap, 0) > 0
                     GROUP BY symbol
                 ) latest ON f.symbol = latest.symbol AND f.date = latest.max_date
-                WHERE COALESCE(f.market_cap, f.marketCap, 0) / 1e7 BETWEEN ? AND ?
+                WHERE COALESCE(f.market_cap, 0) / 1e7 BETWEEN ? AND ?
                 """,
                 (self.min_mcap, self.max_mcap),
             ).fetchall()
@@ -97,15 +98,21 @@ class InvisibleHandScanner:
         if len(df) < 2:
             return 0.0
         delivery_vals = df["delivery"].values.astype(float)
-        closes        = df["close"].values.astype(float)
+        closes = df["close"].values.astype(float)
         delivery_value_cr = float(np.nansum(delivery_vals * closes)) / 1e7
-        price_drift_abs   = abs(closes[-1] - closes[0]) / closes[0] * 100 if closes[0] > 0 else 0.5
+        price_drift_abs = (
+            abs(closes[-1] - closes[0]) / closes[0] * 100 if closes[0] > 0 else 0.5
+        )
         return delivery_value_cr / max(price_drift_abs, 0.5)
 
     def scan(self, as_on_date: str | None = None) -> pd.DataFrame:
         rows = self._get_universe()
         if not rows:
-            logger.warning("No symbols found in universe (mcap %.0f-%.0f Cr)", self.min_mcap, self.max_mcap)
+            logger.warning(
+                "No symbols found in universe (mcap %.0f-%.0f Cr)",
+                self.min_mcap,
+                self.max_mcap,
+            )
             return pd.DataFrame()
 
         _sector_map: dict[str, str] = {}
@@ -134,7 +141,9 @@ class InvisibleHandScanner:
 
         ref_date = pd.Timestamp(as_on_date)
         lookback_calendar_days = int((self.window + self.hist_window) * 1.8) + 10
-        min_date = (ref_date - pd.Timedelta(days=lookback_calendar_days)).strftime("%Y-%m-%d")
+        min_date = (ref_date - pd.Timedelta(days=lookback_calendar_days)).strftime(
+            "%Y-%m-%d"
+        )
 
         candidates: list[dict] = []
 
@@ -149,15 +158,35 @@ class InvisibleHandScanner:
             if col_count >= 12:
                 df = pd.DataFrame(
                     tech,
-                    columns=["date", "open", "high", "low", "close", "volume",
-                             "delivery", "delivery_pct", "nifty_outperformance_score",
-                             "sma_50", "high_52w", "low_52w"],
+                    columns=[
+                        "date",
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "volume",
+                        "delivery",
+                        "delivery_pct",
+                        "nifty_outperformance_score",
+                        "sma_50",
+                        "high_52w",
+                        "low_52w",
+                    ],
                 )
             else:
                 df = pd.DataFrame(
                     tech,
-                    columns=["date", "open", "high", "low", "close", "volume",
-                             "delivery", "delivery_pct", "nifty_outperformance_score"],
+                    columns=[
+                        "date",
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "volume",
+                        "delivery",
+                        "delivery_pct",
+                        "nifty_outperformance_score",
+                    ],
                 )
                 df["sma_50"] = None
                 df["high_52w"] = None
@@ -169,8 +198,8 @@ class InvisibleHandScanner:
                 continue
 
             # Split into historical and current windows
-            hist_df = df.iloc[:-self.window]
-            curr_df = df.iloc[-self.window:]
+            hist_df = df.iloc[: -self.window]
+            curr_df = df.iloc[-self.window :]
 
             # Signal 1: Delivery Efficiency Ratio (DER)
             hist_der = self._compute_der(hist_df)
@@ -238,19 +267,31 @@ class InvisibleHandScanner:
 
             # 52-week position
             latest_close = float(closes[-1])
-            high_52w = float(curr_df["high_52w"].iloc[-1]) if pd.notna(curr_df["high_52w"].iloc[-1]) \
-                       else float(curr_df["high"].max())
-            low_52w = float(curr_df["low_52w"].iloc[-1]) if pd.notna(curr_df["low_52w"].iloc[-1]) \
-                     else float(curr_df["low"].min())
-            wk52_pos = (latest_close - low_52w) / (high_52w - low_52w) * 100 \
-                      if (high_52w - low_52w) > 0 else 50.0
+            high_52w = (
+                float(curr_df["high_52w"].iloc[-1])
+                if pd.notna(curr_df["high_52w"].iloc[-1])
+                else float(curr_df["high"].max())
+            )
+            low_52w = (
+                float(curr_df["low_52w"].iloc[-1])
+                if pd.notna(curr_df["low_52w"].iloc[-1])
+                else float(curr_df["low"].min())
+            )
+            wk52_pos = (
+                (latest_close - low_52w) / (high_52w - low_52w) * 100
+                if (high_52w - low_52w) > 0
+                else 50.0
+            )
 
             # Base duration: consecutive sessions where daily range < 3% of close
             base_duration = 0
             for i in range(len(curr_df) - 1, -1, -1):
                 row = curr_df.iloc[i]
-                daily_range_pct = (float(row["high"]) - float(row["low"])) / float(row["close"]) * 100 \
-                                 if float(row["close"]) > 0 else 99
+                daily_range_pct = (
+                    (float(row["high"]) - float(row["low"])) / float(row["close"]) * 100
+                    if float(row["close"]) > 0
+                    else 99
+                )
                 if daily_range_pct < 3.0:
                     base_duration += 1
                 else:
@@ -268,29 +309,40 @@ class InvisibleHandScanner:
             if wk52_pos >= 88:
                 continue
 
-            candidates.append({
-                "symbol": symbol,
-                "sector": _sector_map.get(symbol, "Unknown"),
-                "market_cap_cr": round(mcap / 1e7, 1),
-                "der_ratio": round(der_ratio, 2),
-                "der_score": round(der_score, 1),
-                "ddas": round(ddas, 1),
-                "ddas_score": round(ddas_score, 1),
-                "mean_del_pct": round(mean_del, 1),
-                "dcs_score": round(dcs_score, 1),
-                "qcd": qcd,
-                "qcd_score": round(qcd_score, 1),
-                "ih_score": round(ih_score, 1),
-                "grade": grade,
-                "down_day_count": down_day_count,
-                "base_duration": base_duration,
-                "close": round(latest_close, 2),
-                "wk52_pos": round(wk52_pos, 1),
-            })
+            candidates.append(
+                {
+                    "symbol": symbol,
+                    "sector": _sector_map.get(symbol, "Unknown"),
+                    "market_cap_cr": round(mcap / 1e7, 1),
+                    "der_ratio": round(der_ratio, 2),
+                    "der_score": round(der_score, 1),
+                    "ddas": round(ddas, 1),
+                    "ddas_score": round(ddas_score, 1),
+                    "mean_del_pct": round(mean_del, 1),
+                    "dcs_score": round(dcs_score, 1),
+                    "qcd": qcd,
+                    "qcd_score": round(qcd_score, 1),
+                    "ih_score": round(ih_score, 1),
+                    "grade": grade,
+                    "down_day_count": down_day_count,
+                    "base_duration": base_duration,
+                    "close": round(latest_close, 2),
+                    "wk52_pos": round(wk52_pos, 1),
+                }
+            )
 
         float_fields = [
-            "der_ratio", "der_score", "ddas", "ddas_score", "mean_del_pct",
-            "dcs_score", "qcd_score", "ih_score", "close", "wk52_pos", "market_cap_cr",
+            "der_ratio",
+            "der_score",
+            "ddas",
+            "ddas_score",
+            "mean_del_pct",
+            "dcs_score",
+            "qcd_score",
+            "ih_score",
+            "close",
+            "wk52_pos",
+            "market_cap_cr",
         ]
         for c in candidates:
             for f in float_fields:
@@ -298,5 +350,7 @@ class InvisibleHandScanner:
                     c[f] = self._sanitize_float(c[f])
 
         candidates.sort(key=lambda x: x["ih_score"], reverse=True)
-        logger.info("Invisible Hand scan complete: %d candidates found", len(candidates))
+        logger.info(
+            "Invisible Hand scan complete: %d candidates found", len(candidates)
+        )
         return pd.DataFrame(candidates)

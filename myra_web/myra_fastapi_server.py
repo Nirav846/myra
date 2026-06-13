@@ -572,21 +572,21 @@ async def get_live_fundamentals(symbol: str):
             merged = {
                 "symbol": funda.get("symbol"),
                 "sector": funda.get("sector"),
-                "pe": funda.get("peRatio") or funda.get("pe"),
+                "pe": funda.get("pe") or funda.get("peRatio"),
                 "pb": funda.get("priceToBook"),
                 "ps": funda.get("priceToSales"),
-                "roe": funda.get("returnOnEquity") or funda.get("roe"),
-                "eps": funda.get("earningsPerShare") or funda.get("eps"),
-                "book_value": funda.get("bookValuePerShare") or funda.get("book_value"),
-                "market_cap": funda.get("marketCap") or funda.get("market_cap"),
-                "net_margin": funda.get("netMargin") or funda.get("net_margin"),
+                "roe": funda.get("roe") or funda.get("returnOnEquity"),
+                "eps": funda.get("eps") or funda.get("earningsPerShare"),
+                "book_value": funda.get("book_value") or funda.get("bookValuePerShare"),
+                "market_cap": funda.get("market_cap") or funda.get("marketCap"),
+                "net_margin": funda.get("net_margin") or funda.get("netMargin"),
                 "operating_margin": funda.get("operatingMargin"),
                 "gross_margin": funda.get("grossMargin"),
-                "debt_equity": funda.get("debtToEquity") or funda.get("debt_to_equity"),
+                "debt_equity": funda.get("debt_to_equity") or funda.get("debtToEquity"),
                 "current_ratio": funda.get("currentRatio"),
                 "quick_ratio": funda.get("quickRatio"),
-                "dividend_yield": funda.get("dividendYield")
-                or funda.get("dividend_yield"),
+                "dividend_yield": funda.get("dividend_yield")
+                or funda.get("dividendYield"),
                 "free_cash_flow_yield": funda.get("freeCashFlowYield"),
                 "revenue_growth": funda.get("revenueGrowth"),
                 "earnings_growth": funda.get("earningsGrowth"),
@@ -892,7 +892,7 @@ async def predict_launchpad():
                 if os.path.exists(val_db):
                     with sqlite3.connect(val_db) as vconn:
                         vrow = vconn.execute(
-                            "SELECT COALESCE(marketCap, market_cap), sector FROM fundamentals WHERE symbol = ? LIMIT 1",
+                            "SELECT COALESCE(market_cap, 0), sector FROM fundamentals WHERE symbol = ? LIMIT 1",
                             (sym,),
                         ).fetchone()
                         if vrow:

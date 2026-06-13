@@ -120,17 +120,17 @@ export default function ValueRankerView({ lib }: { lib: Librarian }) {
           COALESCE(returnOnEquity, roe) as roe,
           COALESCE(earningsPerShare, eps) as eps,
           COALESCE(priceToBook, NULL) as pb_ratio,
-          COALESCE(debtToEquity, debt_to_equity) as debt_equity,
-          COALESCE(dividendYield, dividend_yield) as dividend_yield,
-          COALESCE(peRatio, pe) as pe_ratio,
+          COALESCE(debt_to_equity, 0) as debt_equity,
+          COALESCE(dividend_yield, 0) as dividend_yield,
+          COALESCE(pe, 0) as pe_ratio,
           book_value,
           market_cap,
           net_margin
         FROM fundamentals
-        WHERE COALESCE(returnOnEquity, roe) > 0
-          AND COALESCE(earningsPerShare, eps) > 0
+        WHERE COALESCE(roe, 0) > 0
+          AND COALESCE(eps, 0) > 0
           AND book_value > 0
-          AND COALESCE(peRatio, pe) <= ?
+          AND COALESCE(pe, 0) <= ?
       `;
 
       const result = await lib.executeQuery('_val_conn', query, [maxPE], 15000);

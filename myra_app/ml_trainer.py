@@ -481,7 +481,7 @@ class LaunchpadPredictor:
             placeholders = ",".join(["?"] * len(symbols))
             with sqlite3.connect(val_path) as conn:
                 rows = conn.execute(
-                    f"SELECT symbol, COALESCE(marketCap, market_cap), sector "
+                    f"SELECT symbol, COALESCE(market_cap, 0), sector "
                     f"FROM fundamentals WHERE symbol IN ({placeholders})",
                     symbols,
                 ).fetchall()

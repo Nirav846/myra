@@ -28,16 +28,16 @@ class WyckoffAutomaton:
             rows = conn.execute(
                 """
                 SELECT f.symbol,
-                       COALESCE(f.market_cap, f.marketCap, 0) AS mcap,
+                       COALESCE(f.market_cap, 0) AS mcap,
                        COALESCE(f.free_float_pct, 40.0) AS ff_pct
                 FROM fundamentals f
                 INNER JOIN (
                     SELECT symbol, MAX(date) as max_date
                     FROM fundamentals
-                    WHERE COALESCE(market_cap, marketCap, 0) > 0
+                    WHERE COALESCE(market_cap, 0) > 0
                     GROUP BY symbol
                 ) latest ON f.symbol = latest.symbol AND f.date = latest.max_date
-                WHERE COALESCE(f.market_cap, f.marketCap, 0) / 1e7 BETWEEN ? AND ?
+                WHERE COALESCE(f.market_cap, 0) / 1e7 BETWEEN ? AND ?
                 """,
                 (self.min_mcap, self.max_mcap),
             ).fetchall()
@@ -86,8 +86,13 @@ class WyckoffAutomaton:
         return value
 
     @staticmethod
-    def _event_quality(event_type: str, vol_ratio: float, del_pct: float,
-                      avg_del: float, extra: dict | None = None) -> float:
+    def _event_quality(
+        event_type: str,
+        vol_ratio: float,
+        del_pct: float,
+        avg_del: float,
+        extra: dict | None = None,
+    ) -> float:
         """
         Event-specific quality score (0–100).
         Each event type has a different definition of 'quality'.
@@ -138,7 +143,9 @@ class WyckoffAutomaton:
 
         if avg_vol == 0:
             return events
-        print(f"DEBUG: {df['symbol'].iloc[0]} - rows={n}, avg_vol={avg_vol:.0f}, avg_del={avg_del:.1f}")
+        print(
+            f"DEBUG: {df['symbol'].iloc[0]} - rows={n}, avg_vol={avg_vol:.0f}, avg_del={avg_del:.1f}"
+        )
 
         # Scan last 30 sessions
         scan_df = df.tail(90).reset_index(drop=True)
@@ -168,47 +175,58 @@ class WyckoffAutomaton:
 
             if is_sc:
                 quality = self._event_quality("SC", vol_ratio, del_pct, avg_del)
-                events.append({
-                    "symbol": str(df["symbol"].iloc[0]),
-                    "event": "SC",
-                    "phase": "Phase A",
-                    "phase_pct": 25,
-                    "event_date": row_date,
-                    "del_pct": del_pct,
-                    "vol_ratio": vol_ratio,
-                    "quality": quality,
-                    "close": close_p,
-                    "range_low_90": range_low,
-                    "range_high_90": range_high,
-                    "sc_reference_close": close_p,
-                })
+                events.append(
+                    {
+                        "symbol": str(df["symbol"].iloc[0]),
+                        "event": "SC",
+                        "phase": "Phase A",
+                        "phase_pct": 25,
+                        "event_date": row_date,
+                        "del_pct": del_pct,
+                        "vol_ratio": vol_ratio,
+                        "quality": quality,
+                        "close": close_p,
+                        "range_low_90": range_low,
+                        "range_high_90": range_high,
+                        "sc_reference_close": close_p,
+                    }
+                )
                 continue
 
             # Spring — Undercut & Recovery
             is_spring = (
-                low_p < range_low * 0.99
-                and close_p > range_low
-                and del_pct > 35
+                low_p < range_low * 0.99 and close_p > range_low and del_pct > 35
             )
 
             if is_spring:
-                recovery_pct = (close_p - low_p) / (high_p - low_p) * 100 if (high_p - low_p) > 0 else 0.0
-                quality = self._event_quality("Spring", vol_ratio, del_pct, avg_del,
-                                              extra={"recovery_pct": recovery_pct})
-                events.append({
-                    "symbol": str(df["symbol"].iloc[0]),
-                    "event": "Spring",
-                    "phase": "Phase C",
-                    "phase_pct": 75,
-                    "event_date": row_date,
-                    "del_pct": del_pct,
-                    "vol_ratio": vol_ratio,
-                    "quality": quality,
-                    "close": close_p,
-                    "range_low_90": range_low,
-                    "range_high_90": range_high,
-                    "sc_reference_close": close_p,
-                })
+                recovery_pct = (
+                    (close_p - low_p) / (high_p - low_p) * 100
+                    if (high_p - low_p) > 0
+                    else 0.0
+                )
+                quality = self._event_quality(
+                    "Spring",
+                    vol_ratio,
+                    del_pct,
+                    avg_del,
+                    extra={"recovery_pct": recovery_pct},
+                )
+                events.append(
+                    {
+                        "symbol": str(df["symbol"].iloc[0]),
+                        "event": "Spring",
+                        "phase": "Phase C",
+                        "phase_pct": 75,
+                        "event_date": row_date,
+                        "del_pct": del_pct,
+                        "vol_ratio": vol_ratio,
+                        "quality": quality,
+                        "close": close_p,
+                        "range_low_90": range_low,
+                        "range_high_90": range_high,
+                        "sc_reference_close": close_p,
+                    }
+                )
                 continue
 
             # SOS — Sign of Strength
@@ -220,23 +238,34 @@ class WyckoffAutomaton:
             )
 
             if is_sos:
-                close_position = (close_p - low_p) / (high_p - low_p) if (high_p - low_p) > 0 else 0.5
-                quality = self._event_quality("SOS", vol_ratio, del_pct, avg_del,
-                                              extra={"close_position": close_position})
-                events.append({
-                    "symbol": str(df["symbol"].iloc[0]),
-                    "event": "SOS",
-                    "phase": "Phase D",
-                    "phase_pct": 90,
-                    "event_date": row_date,
-                    "del_pct": del_pct,
-                    "vol_ratio": vol_ratio,
-                    "quality": quality,
-                    "close": close_p,
-                    "range_low_90": range_low,
-                    "range_high_90": range_high,
-                    "sc_reference_close": close_p,
-                })
+                close_position = (
+                    (close_p - low_p) / (high_p - low_p)
+                    if (high_p - low_p) > 0
+                    else 0.5
+                )
+                quality = self._event_quality(
+                    "SOS",
+                    vol_ratio,
+                    del_pct,
+                    avg_del,
+                    extra={"close_position": close_position},
+                )
+                events.append(
+                    {
+                        "symbol": str(df["symbol"].iloc[0]),
+                        "event": "SOS",
+                        "phase": "Phase D",
+                        "phase_pct": 90,
+                        "event_date": row_date,
+                        "del_pct": del_pct,
+                        "vol_ratio": vol_ratio,
+                        "quality": quality,
+                        "close": close_p,
+                        "range_low_90": range_low,
+                        "range_high_90": range_high,
+                        "sc_reference_close": close_p,
+                    }
+                )
                 continue
 
         # AR — Automatic Rally (post-SC) and ST — Secondary Test
@@ -259,56 +288,79 @@ class WyckoffAutomaton:
                 if nclose > sc_close * 1.03 and nvol <= avg_vol * 1.0:
                     ar_vol_ratio = nvol / avg_vol if avg_vol > 0 else 0
                     ar_del_ratio = ndel / avg_del if avg_del > 0 else 0
-                    rally_pct = (nclose - sc_close) / sc_close * 100 if sc_close > 0 else 0.0
-                    ar_quality = self._event_quality("AR", ar_vol_ratio, ndel, avg_del,
-                                                     extra={"rally_pct": rally_pct})
-                    existing = [e for e in events if e["event_date"] == str(nrow["date"])]
+                    rally_pct = (
+                        (nclose - sc_close) / sc_close * 100 if sc_close > 0 else 0.0
+                    )
+                    ar_quality = self._event_quality(
+                        "AR",
+                        ar_vol_ratio,
+                        ndel,
+                        avg_del,
+                        extra={"rally_pct": rally_pct},
+                    )
+                    existing = [
+                        e for e in events if e["event_date"] == str(nrow["date"])
+                    ]
                     if not existing:
-                        events.append({
-                            "symbol": str(df["symbol"].iloc[0]),
-                            "event": "AR",
-                            "phase": "Phase A",
-                            "phase_pct": 30,
-                            "event_date": str(nrow["date"]),
-                            "del_pct": ndel,
-                            "vol_ratio": round(ar_vol_ratio, 1),
-                            "quality": ar_quality,
-                            "close": nclose,
-                            "range_low_90": range_low,
-                            "range_high_90": range_high,
-                            "sc_reference_close": sc_close,
-                        })
+                        events.append(
+                            {
+                                "symbol": str(df["symbol"].iloc[0]),
+                                "event": "AR",
+                                "phase": "Phase A",
+                                "phase_pct": 30,
+                                "event_date": str(nrow["date"]),
+                                "del_pct": ndel,
+                                "vol_ratio": round(ar_vol_ratio, 1),
+                                "quality": ar_quality,
+                                "close": nclose,
+                                "range_low_90": range_low,
+                                "range_high_90": range_high,
+                                "sc_reference_close": sc_close,
+                            }
+                        )
 
                 # ST — Secondary Test
-                if abs(nclose - sc_close) / sc_close <= 0.05 \
-                   and nvol < avg_vol * 0.7 \
-                   and ndel < avg_del:
-                    existing = [e for e in events if e["event_date"] == str(nrow["date"])]
+                if (
+                    abs(nclose - sc_close) / sc_close <= 0.05
+                    and nvol < avg_vol * 0.7
+                    and ndel < avg_del
+                ):
+                    existing = [
+                        e for e in events if e["event_date"] == str(nrow["date"])
+                    ]
                     if not existing:
                         st_vol_ratio = nvol / avg_vol if avg_vol > 0 else 0
                         st_del_ratio = ndel / avg_del if avg_del > 0 else 0
-                        st_quality = self._event_quality("ST", st_vol_ratio, ndel, avg_del)
-                        events.append({
-                            "symbol": str(df["symbol"].iloc[0]),
-                            "event": "ST",
-                            "phase": "Phase B",
-                            "phase_pct": 50,
-                            "event_date": str(nrow["date"]),
-                            "del_pct": ndel,
-                            "vol_ratio": round(st_vol_ratio, 1),
-                            "quality": st_quality,
-                            "close": nclose,
-                            "range_low_90": range_low,
-                            "range_high_90": range_high,
-                            "sc_reference_close": sc_close,
-                        })
+                        st_quality = self._event_quality(
+                            "ST", st_vol_ratio, ndel, avg_del
+                        )
+                        events.append(
+                            {
+                                "symbol": str(df["symbol"].iloc[0]),
+                                "event": "ST",
+                                "phase": "Phase B",
+                                "phase_pct": 50,
+                                "event_date": str(nrow["date"]),
+                                "del_pct": ndel,
+                                "vol_ratio": round(st_vol_ratio, 1),
+                                "quality": st_quality,
+                                "close": nclose,
+                                "range_low_90": range_low,
+                                "range_high_90": range_high,
+                                "sc_reference_close": sc_close,
+                            }
+                        )
 
         return events
 
     def scan(self, as_on_date: str | None = None) -> pd.DataFrame:
         rows = self._get_universe()
         if not rows:
-            logger.warning("No symbols found in universe (mcap %.0f-%.0f Cr)", self.min_mcap, self.max_mcap)
+            logger.warning(
+                "No symbols found in universe (mcap %.0f-%.0f Cr)",
+                self.min_mcap,
+                self.max_mcap,
+            )
             return pd.DataFrame()
 
         _sector_map: dict[str, str] = {}
@@ -336,7 +388,9 @@ class WyckoffAutomaton:
             as_on_date = date.today().isoformat()
 
         ref_date = pd.Timestamp(as_on_date)
-        min_date = (ref_date - pd.Timedelta(days=self.lookback_days)).strftime("%Y-%m-%d")
+        min_date = (ref_date - pd.Timedelta(days=self.lookback_days)).strftime(
+            "%Y-%m-%d"
+        )
 
         candidates: list[dict] = []
 
@@ -351,15 +405,35 @@ class WyckoffAutomaton:
             if col_count >= 12:
                 df = pd.DataFrame(
                     tech,
-                    columns=["date", "open", "high", "low", "close", "volume",
-                             "delivery", "delivery_pct", "nifty_outperformance_score",
-                             "sma_50", "high_52w", "low_52w"],
+                    columns=[
+                        "date",
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "volume",
+                        "delivery",
+                        "delivery_pct",
+                        "nifty_outperformance_score",
+                        "sma_50",
+                        "high_52w",
+                        "low_52w",
+                    ],
                 )
             else:
                 df = pd.DataFrame(
                     tech,
-                    columns=["date", "open", "high", "low", "close", "volume",
-                             "delivery", "delivery_pct", "nifty_outperformance_score"],
+                    columns=[
+                        "date",
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "volume",
+                        "delivery",
+                        "delivery_pct",
+                        "nifty_outperformance_score",
+                    ],
                 )
                 df["sma_50"] = None
                 df["high_52w"] = None
@@ -379,37 +453,52 @@ class WyckoffAutomaton:
                 return e["phase_pct"] - recency_penalty + e["quality"] * 0.1
 
             for e in events:
-                e["days_since"] = (date.today() - pd.Timestamp(e["event_date"]).date()).days
+                e["days_since"] = (
+                    date.today() - pd.Timestamp(e["event_date"]).date()
+                ).days
 
             best = max(events, key=_event_score)
             days_since = best.get("days_since", 0)
 
-            candidates.append({
-                "symbol": symbol,
-                "sector": _sector_map.get(symbol, "Unknown"),
-                "market_cap_cr": round(mcap / 1e7, 1),
-                "wyckoff_event": best["event"],
-                "phase": best["phase"],
-                "phase_complete_pct": best["phase_pct"],
-                "event_date": best["event_date"],
-                "event_delivery_pct": round(best["del_pct"], 1),
-                "vol_ratio": round(best["vol_ratio"], 1),
-                "event_quality": best["quality"],
-                "range_low_90": round(best["range_low_90"], 2),
-                "range_high_90": round(best["range_high_90"], 2),
-                "close": round(best["close"], 2),
-                "days_since_event": days_since,
-            })
+            candidates.append(
+                {
+                    "symbol": symbol,
+                    "sector": _sector_map.get(symbol, "Unknown"),
+                    "market_cap_cr": round(mcap / 1e7, 1),
+                    "wyckoff_event": best["event"],
+                    "phase": best["phase"],
+                    "phase_complete_pct": best["phase_pct"],
+                    "event_date": best["event_date"],
+                    "event_delivery_pct": round(best["del_pct"], 1),
+                    "vol_ratio": round(best["vol_ratio"], 1),
+                    "event_quality": best["quality"],
+                    "range_low_90": round(best["range_low_90"], 2),
+                    "range_high_90": round(best["range_high_90"], 2),
+                    "close": round(best["close"], 2),
+                    "days_since_event": days_since,
+                }
+            )
 
         float_fields = [
-            "market_cap_cr", "event_delivery_pct", "vol_ratio",
-            "event_quality", "range_low_90", "range_high_90", "close",
+            "market_cap_cr",
+            "event_delivery_pct",
+            "vol_ratio",
+            "event_quality",
+            "range_low_90",
+            "range_high_90",
+            "close",
         ]
         for c in candidates:
             for f in float_fields:
                 if f in c:
                     c[f] = self._sanitize_float(c[f])
 
-        candidates.sort(key=lambda x: (x.get("phase_complete_pct") or 0, x.get("event_quality") or 0), reverse=True)
+        candidates.sort(
+            key=lambda x: (
+                x.get("phase_complete_pct") or 0,
+                x.get("event_quality") or 0,
+            ),
+            reverse=True,
+        )
         logger.info("Wyckoff scan complete: %d candidates found", len(candidates))
         return pd.DataFrame(candidates)

@@ -196,9 +196,9 @@ export default function MultibaggerMatrixView({ lib }: { lib: Librarian }) {
         fundResult = fundCached.data;
       } else {
         let fundQuery = `
-          SELECT symbol as ticker, sector, COALESCE(returnOnEquity, roe) as returnOnEquity, COALESCE(earningsPerShare, eps) as earningsPerShare, peRatio
+          SELECT symbol as ticker, sector, COALESCE(roe, 0) as returnOnEquity, COALESCE(eps, 0) as earningsPerShare, COALESCE(pe, 0) as peRatio
           FROM fundamentals
-          WHERE COALESCE(returnOnEquity, roe) > ? AND COALESCE(earningsPerShare, eps) > ?
+          WHERE COALESCE(roe, 0) > ? AND COALESCE(eps, 0) > ?
         `;
         if (excludeCyclical) {
           fundQuery += ` AND sector NOT IN ('Metals', 'Chemicals', 'Energy', 'Mining', 'Materials')`;

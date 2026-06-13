@@ -12,7 +12,9 @@ logger = logging.getLogger(__name__)
 
 
 class FloatExhaustionScanner:
-    def __init__(self, min_mcap=200, max_mcap=50000, window_days=20, min_float_util_pct=10.0):
+    def __init__(
+        self, min_mcap=200, max_mcap=50000, window_days=20, min_float_util_pct=10.0
+    ):
         self.min_mcap = min_mcap
         self.max_mcap = max_mcap
         self.window_days = window_days
@@ -29,7 +31,7 @@ class FloatExhaustionScanner:
             rows = conn.execute(
                 """
                 SELECT f.symbol,
-                       COALESCE(f.market_cap, f.marketCap, 0) AS mcap,
+                       COALESCE(f.market_cap, 0) AS mcap,
                        COALESCE(f.free_float_pct, 40.0) AS ff_pct,
                        COALESCE(f.promoter_holding_pct, 50.0) AS promoter_pct,
                        f.promoter_holding_pct AS raw_promoter_pct,
@@ -38,10 +40,10 @@ class FloatExhaustionScanner:
                 INNER JOIN (
                     SELECT symbol, MAX(date) as max_date
                     FROM fundamentals
-                    WHERE COALESCE(market_cap, marketCap, 0) > 0
+                    WHERE COALESCE(market_cap, 0) > 0
                     GROUP BY symbol
                 ) latest ON f.symbol = latest.symbol AND f.date = latest.max_date
-                WHERE COALESCE(f.market_cap, f.marketCap, 0) / 1e7 BETWEEN ? AND ?
+                WHERE COALESCE(f.market_cap, 0) / 1e7 BETWEEN ? AND ?
                 """,
                 (self.min_mcap, self.max_mcap),
             ).fetchall()
@@ -92,7 +94,11 @@ class FloatExhaustionScanner:
     def scan(self, as_on_date: str | None = None) -> list[dict]:
         rows = self._get_universe()
         if not rows:
-            logger.warning("No symbols found in universe (mcap %.0f-%.0f Cr)", self.min_mcap, self.max_mcap)
+            logger.warning(
+                "No symbols found in universe (mcap %.0f-%.0f Cr)",
+                self.min_mcap,
+                self.max_mcap,
+            )
             return []
 
         _sector_map: dict[str, str] = {}
@@ -120,11 +126,20 @@ class FloatExhaustionScanner:
             as_on_date = date.today().isoformat()
 
         ref_date = pd.Timestamp(as_on_date)
-        min_date = (ref_date - pd.Timedelta(days=self.window_days + 10)).strftime("%Y-%m-%d")
+        min_date = (ref_date - pd.Timedelta(days=self.window_days + 10)).strftime(
+            "%Y-%m-%d"
+        )
 
         candidates: list[dict] = []
 
-        for idx, (symbol, mcap, ff_pct, promoter_pct, raw_promoter_pct, raw_ff_pct) in enumerate(rows):
+        for idx, (
+            symbol,
+            mcap,
+            ff_pct,
+            promoter_pct,
+            raw_promoter_pct,
+            raw_ff_pct,
+        ) in enumerate(rows):
             symbol = symbol.strip()
 
             tech = self._get_tech_data(symbol, min_date)
@@ -135,15 +150,35 @@ class FloatExhaustionScanner:
             if col_count >= 12:
                 df = pd.DataFrame(
                     tech,
-                    columns=["date", "open", "high", "low", "close", "volume",
-                             "delivery", "delivery_pct", "nifty_outperformance_score",
-                             "sma_50", "high_52w", "low_52w"],
+                    columns=[
+                        "date",
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "volume",
+                        "delivery",
+                        "delivery_pct",
+                        "nifty_outperformance_score",
+                        "sma_50",
+                        "high_52w",
+                        "low_52w",
+                    ],
                 )
             else:
                 df = pd.DataFrame(
                     tech,
-                    columns=["date", "open", "high", "low", "close", "volume",
-                             "delivery", "delivery_pct", "nifty_outperformance_score"],
+                    columns=[
+                        "date",
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "volume",
+                        "delivery",
+                        "delivery_pct",
+                        "nifty_outperformance_score",
+                    ],
                 )
                 df["sma_50"] = None
                 df["high_52w"] = None
@@ -186,7 +221,9 @@ class FloatExhaustionScanner:
             smart_float_ratio = up_day_delivery / free_float_shares * 100
 
             # Absorption rate: recent vs overall pace
-            recent5_del = float(np.nanmean(deliveries[-5:])) if len(deliveries) >= 5 else 0
+            recent5_del = (
+                float(np.nanmean(deliveries[-5:])) if len(deliveries) >= 5 else 0
+            )
             overall_del = float(np.nanmean(deliveries))
             absorption_rate = recent5_del / overall_del if overall_del > 0 else 1.0
 
@@ -204,29 +241,47 @@ class FloatExhaustionScanner:
                 exhaustion_tier = "WATCH"
 
             # 52-week position
-            high_52w = float(df["high_52w"].iloc[-1]) if pd.notna(df["high_52w"].iloc[-1]) else float(df["high"].max())
-            low_52w = float(df["low_52w"].iloc[-1]) if pd.notna(df["low_52w"].iloc[-1]) else float(df["low"].min())
-            wk52_pos = ((latest_close - low_52w) / (high_52w - low_52w)) * 100 if (high_52w - low_52w) > 0 else 50.0
+            high_52w = (
+                float(df["high_52w"].iloc[-1])
+                if pd.notna(df["high_52w"].iloc[-1])
+                else float(df["high"].max())
+            )
+            low_52w = (
+                float(df["low_52w"].iloc[-1])
+                if pd.notna(df["low_52w"].iloc[-1])
+                else float(df["low"].min())
+            )
+            wk52_pos = (
+                ((latest_close - low_52w) / (high_52w - low_52w)) * 100
+                if (high_52w - low_52w) > 0
+                else 50.0
+            )
 
             mcap_cr = mcap / 1e7
 
-            candidates.append({
-                "symbol": symbol,
-                "sector": _sector_map.get(symbol, "Unknown"),
-                "market_cap_cr": round(mcap_cr, 1),
-                "free_float_shares": int(free_float_shares),
-                "cum_delivery_20d": int(cum_delivery),
-                "float_util_pct": round(float_util_pct, 1),
-                "smart_float_ratio": round(smart_float_ratio, 1),
-                "absorption_rate": round(absorption_rate, 3),
-                "exhaustion_tier": exhaustion_tier,
-                "close": round(latest_close, 2),
-                "wk52_pos": round(wk52_pos, 1),
-            })
+            candidates.append(
+                {
+                    "symbol": symbol,
+                    "sector": _sector_map.get(symbol, "Unknown"),
+                    "market_cap_cr": round(mcap_cr, 1),
+                    "free_float_shares": int(free_float_shares),
+                    "cum_delivery_20d": int(cum_delivery),
+                    "float_util_pct": round(float_util_pct, 1),
+                    "smart_float_ratio": round(smart_float_ratio, 1),
+                    "absorption_rate": round(absorption_rate, 3),
+                    "exhaustion_tier": exhaustion_tier,
+                    "close": round(latest_close, 2),
+                    "wk52_pos": round(wk52_pos, 1),
+                }
+            )
 
         float_fields = [
-            "market_cap_cr", "float_util_pct", "smart_float_ratio",
-            "absorption_rate", "close", "wk52_pos",
+            "market_cap_cr",
+            "float_util_pct",
+            "smart_float_ratio",
+            "absorption_rate",
+            "close",
+            "wk52_pos",
         ]
         for c in candidates:
             for f in float_fields:
@@ -234,5 +289,7 @@ class FloatExhaustionScanner:
                     c[f] = self._sanitize_float(c[f])
 
         candidates.sort(key=lambda x: x["float_util_pct"], reverse=True)
-        logger.info("Float Exhaustion scan complete: %d candidates found", len(candidates))
+        logger.info(
+            "Float Exhaustion scan complete: %d candidates found", len(candidates)
+        )
         return candidates

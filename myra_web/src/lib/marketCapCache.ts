@@ -55,10 +55,10 @@ export async function fetchFreeFloatMcapMap(): Promise<Map<string, number>> {
                 db: '_val_conn',
                 query: `
                     SELECT symbol,
-                           COALESCE(marketCap, market_cap, 0)   AS mcap,
+                           COALESCE(market_cap, 0)           AS mcap,
                            COALESCE(free_float_pct, 100.0)      AS ff_pct
                     FROM fundamentals
-                    WHERE COALESCE(marketCap, market_cap, 0) > 0
+                    WHERE COALESCE(market_cap, 0) > 0
                     LIMIT 10000
                 `,
                 params: []

@@ -28,16 +28,16 @@ class OperatorFingerprintScanner:
             rows = conn.execute(
                 """
                 SELECT f.symbol,
-                       COALESCE(f.market_cap, f.marketCap, 0) AS mcap,
+                       COALESCE(f.market_cap, 0) AS mcap,
                        COALESCE(f.free_float_pct, 40.0) AS ff_pct
                 FROM fundamentals f
                 INNER JOIN (
                     SELECT symbol, MAX(date) as max_date
                     FROM fundamentals
-                    WHERE COALESCE(market_cap, marketCap, 0) > 0
+                    WHERE COALESCE(market_cap, 0) > 0
                     GROUP BY symbol
                 ) latest ON f.symbol = latest.symbol AND f.date = latest.max_date
-                WHERE COALESCE(f.market_cap, f.marketCap, 0) / 1e7 BETWEEN ? AND ?
+                WHERE COALESCE(f.market_cap, 0) / 1e7 BETWEEN ? AND ?
                 """,
                 (self.min_mcap, self.max_mcap),
             ).fetchall()
@@ -88,7 +88,11 @@ class OperatorFingerprintScanner:
     def scan(self, as_on_date: str | None = None) -> pd.DataFrame:
         rows = self._get_universe()
         if not rows:
-            logger.warning("No symbols found in universe (mcap %.0f-%.0f Cr)", self.min_mcap, self.max_mcap)
+            logger.warning(
+                "No symbols found in universe (mcap %.0f-%.0f Cr)",
+                self.min_mcap,
+                self.max_mcap,
+            )
             return pd.DataFrame()
 
         _sector_map: dict[str, str] = {}
@@ -116,7 +120,9 @@ class OperatorFingerprintScanner:
             as_on_date = date.today().isoformat()
 
         ref_date = pd.Timestamp(as_on_date)
-        min_date = (ref_date - pd.Timedelta(days=self.lookback_days + 30)).strftime("%Y-%m-%d")
+        min_date = (ref_date - pd.Timedelta(days=self.lookback_days + 30)).strftime(
+            "%Y-%m-%d"
+        )
 
         candidates: list[dict] = []
 
@@ -131,15 +137,35 @@ class OperatorFingerprintScanner:
             if col_count >= 12:
                 df = pd.DataFrame(
                     tech,
-                    columns=["date", "open", "high", "low", "close", "volume",
-                             "delivery", "delivery_pct", "nifty_outperformance_score",
-                             "sma_50", "high_52w", "low_52w"],
+                    columns=[
+                        "date",
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "volume",
+                        "delivery",
+                        "delivery_pct",
+                        "nifty_outperformance_score",
+                        "sma_50",
+                        "high_52w",
+                        "low_52w",
+                    ],
                 )
             else:
                 df = pd.DataFrame(
                     tech,
-                    columns=["date", "open", "high", "low", "close", "volume",
-                             "delivery", "delivery_pct", "nifty_outperformance_score"],
+                    columns=[
+                        "date",
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "volume",
+                        "delivery",
+                        "delivery_pct",
+                        "nifty_outperformance_score",
+                    ],
                 )
                 df["sma_50"] = None
                 df["high_52w"] = None
@@ -190,23 +216,39 @@ class OperatorFingerprintScanner:
             quiet_accum_days = 0
             avg_del_session = float(np.nanmean(del_pcts))
             for _, row in last20_df.iterrows():
-                del_pct = float(row["delivery_pct"]) if pd.notna(row["delivery_pct"]) else 0
-                prev_close = float(df[df["date"] < row["date"]]["close"].iloc[-1]) if len(df[df["date"] < row["date"]]) > 0 else float(row["close"])
-                price_change_pct = abs(float(row["close"]) - prev_close) / prev_close * 100 if prev_close > 0 else 0
+                del_pct = (
+                    float(row["delivery_pct"]) if pd.notna(row["delivery_pct"]) else 0
+                )
+                prev_close = (
+                    float(df[df["date"] < row["date"]]["close"].iloc[-1])
+                    if len(df[df["date"] < row["date"]]) > 0
+                    else float(row["close"])
+                )
+                price_change_pct = (
+                    abs(float(row["close"]) - prev_close) / prev_close * 100
+                    if prev_close > 0
+                    else 0
+                )
                 if del_pct > avg_del_session and price_change_pct < 1.5:
                     quiet_accum_days += 1
 
             # Volume staircase: 3 blocks of 5 sessions each
             vol_block_1 = float(np.nanmean(volumes[-5:])) if len(volumes) >= 5 else 0
-            vol_block_2 = float(np.nanmean(volumes[-10:-5])) if len(volumes) >= 10 else 0
-            vol_block_3 = float(np.nanmean(volumes[-15:-10])) if len(volumes) >= 15 else 0
-            volume_staircase = vol_block_1 > vol_block_2 > vol_block_3 and vol_block_3 > 0
+            vol_block_2 = (
+                float(np.nanmean(volumes[-10:-5])) if len(volumes) >= 10 else 0
+            )
+            vol_block_3 = (
+                float(np.nanmean(volumes[-15:-10])) if len(volumes) >= 15 else 0
+            )
+            volume_staircase = (
+                vol_block_1 > vol_block_2 > vol_block_3 and vol_block_3 > 0
+            )
 
             # Base duration: count sessions where ATR < atr_old_pct
             base_duration_days = 0
             if atr_old_pct > 0:
                 for i in range(len(df)):
-                    sub = df.iloc[max(0, i - 14):i + 1]
+                    sub = df.iloc[max(0, i - 14) : i + 1]
                     if len(sub) >= 5:
                         sub_range = _mean_daily_range(sub)
                         if sub_range < atr_old_pct:
@@ -217,7 +259,13 @@ class OperatorFingerprintScanner:
             drift_component = max(0, delivery_drift) * 20
             quiet_component = quiet_accum_days * 2
             staircase_bonus = 8 if volume_staircase else 0
-            coil_tension_score = min(100, compression_component + drift_component + quiet_component + staircase_bonus)
+            coil_tension_score = min(
+                100,
+                compression_component
+                + drift_component
+                + quiet_component
+                + staircase_bonus,
+            )
 
             # Filters
             if compression_ratio >= 0.80:
@@ -238,25 +286,32 @@ class OperatorFingerprintScanner:
 
             mcap_cr = mcap / 1e7
 
-            candidates.append({
-                "symbol": symbol,
-                "sector": _sector_map.get(symbol, "Unknown"),
-                "market_cap_cr": round(mcap_cr, 1),
-                "compression_ratio": round(compression_ratio, 3),
-                "delivery_drift": round(delivery_drift, 4),
-                "quiet_accum_days": quiet_accum_days,
-                "volume_staircase": volume_staircase,
-                "coil_tension_score": round(coil_tension_score, 1),
-                "grade": grade,
-                "close": round(latest_close, 2),
-                "atr_old_pct": round(atr_old_pct, 2),
-                "atr_new_pct": round(atr_new_pct, 2),
-                "base_duration_days": base_duration_days,
-            })
+            candidates.append(
+                {
+                    "symbol": symbol,
+                    "sector": _sector_map.get(symbol, "Unknown"),
+                    "market_cap_cr": round(mcap_cr, 1),
+                    "compression_ratio": round(compression_ratio, 3),
+                    "delivery_drift": round(delivery_drift, 4),
+                    "quiet_accum_days": quiet_accum_days,
+                    "volume_staircase": volume_staircase,
+                    "coil_tension_score": round(coil_tension_score, 1),
+                    "grade": grade,
+                    "close": round(latest_close, 2),
+                    "atr_old_pct": round(atr_old_pct, 2),
+                    "atr_new_pct": round(atr_new_pct, 2),
+                    "base_duration_days": base_duration_days,
+                }
+            )
 
         float_fields = [
-            "market_cap_cr", "compression_ratio", "delivery_drift",
-            "coil_tension_score", "close", "atr_old_pct", "atr_new_pct",
+            "market_cap_cr",
+            "compression_ratio",
+            "delivery_drift",
+            "coil_tension_score",
+            "close",
+            "atr_old_pct",
+            "atr_new_pct",
         ]
         for c in candidates:
             for f in float_fields:
@@ -264,5 +319,7 @@ class OperatorFingerprintScanner:
                     c[f] = self._sanitize_float(c[f])
 
         candidates.sort(key=lambda x: x["coil_tension_score"], reverse=True)
-        logger.info("Operator Fingerprint scan complete: %d candidates found", len(candidates))
+        logger.info(
+            "Operator Fingerprint scan complete: %d candidates found", len(candidates)
+        )
         return pd.DataFrame(candidates)

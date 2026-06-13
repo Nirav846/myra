@@ -10,14 +10,33 @@ from myra_app.librarian_core import LibrarianCore
 
 logger = logging.getLogger(__name__)
 
-MONTH_NAMES = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+MONTH_NAMES = [
+    "",
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+]
 
 
 class SeasonalDeliveryHarvester:
-    def __init__(self, min_mcap=200, max_mcap=50000,
-                 min_hist_del=40.0, min_consistency_pct=55.0, min_years=2,
-                 target_month=None):
+    def __init__(
+        self,
+        min_mcap=200,
+        max_mcap=50000,
+        min_hist_del=40.0,
+        min_consistency_pct=55.0,
+        min_years=2,
+        target_month=None,
+    ):
         self.min_mcap = min_mcap
         self.max_mcap = max_mcap
         self.min_hist_del = min_hist_del
@@ -36,16 +55,16 @@ class SeasonalDeliveryHarvester:
             rows = conn.execute(
                 """
                 SELECT f.symbol,
-                       COALESCE(f.market_cap, f.marketCap, 0) AS mcap,
+                       COALESCE(f.market_cap, 0) AS mcap,
                        COALESCE(f.free_float_pct, 40.0) AS ff_pct
                 FROM fundamentals f
                 INNER JOIN (
                     SELECT symbol, MAX(date) as max_date
                     FROM fundamentals
-                    WHERE COALESCE(market_cap, marketCap, 0) > 0
+                    WHERE COALESCE(market_cap, 0) > 0
                     GROUP BY symbol
                 ) latest ON f.symbol = latest.symbol AND f.date = latest.max_date
-                WHERE COALESCE(f.market_cap, f.marketCap, 0) / 1e7 BETWEEN ? AND ?
+                WHERE COALESCE(f.market_cap, 0) / 1e7 BETWEEN ? AND ?
                 """,
                 (self.min_mcap, self.max_mcap),
             ).fetchall()
@@ -94,7 +113,11 @@ class SeasonalDeliveryHarvester:
     def scan(self, as_on_date: str | None = None) -> pd.DataFrame:
         rows = self._get_universe()
         if not rows:
-            logger.warning("No symbols found in universe (mcap %.0f-%.0f Cr)", self.min_mcap, self.max_mcap)
+            logger.warning(
+                "No symbols found in universe (mcap %.0f-%.0f Cr)",
+                self.min_mcap,
+                self.max_mcap,
+            )
             return pd.DataFrame()
 
         _sector_map: dict[str, str] = {}
@@ -119,9 +142,13 @@ class SeasonalDeliveryHarvester:
             pass
 
         today = date.today()
-        current_month = self.target_month if self.target_month is not None else today.month
+        current_month = (
+            self.target_month if self.target_month is not None else today.month
+        )
         current_year = today.year
-        is_current_or_past = current_month < today.month or (current_month == today.month and today.year >= current_year)
+        is_current_or_past = current_month < today.month or (
+            current_month == today.month and today.year >= current_year
+        )
 
         candidates: list[dict] = []
 
@@ -151,7 +178,9 @@ class SeasonalDeliveryHarvester:
                 continue
 
             # Build seasonal profile: monthly averages per year
-            monthly_stats = df.groupby(["year", "month"])["delivery_pct"].mean().reset_index()
+            monthly_stats = (
+                df.groupby(["year", "month"])["delivery_pct"].mean().reset_index()
+            )
             monthly_stats.columns = ["year", "month", "avg_del_month"]
 
             grand_avg = float(df["delivery_pct"].mean()) if len(df) > 0 else 0
@@ -183,7 +212,9 @@ class SeasonalDeliveryHarvester:
                 continue
 
             # Current month data
-            current_month_df = df[(df["year"] == current_year) & (df["month"] == current_month)]
+            current_month_df = df[
+                (df["year"] == current_year) & (df["month"] == current_month)
+            ]
             trading_days_so_far = len(current_month_df)
 
             current_del = None
@@ -199,11 +230,15 @@ class SeasonalDeliveryHarvester:
                     continue
 
                 early_signal = trading_days_so_far <= 5 and seasonal_edge > 5
-                seasonal_score = seasonal_edge * 2 + consistency_pct * 0.4 + years_of_data * 3
+                seasonal_score = (
+                    seasonal_edge * 2 + consistency_pct * 0.4 + years_of_data * 3
+                )
 
             elif not is_current_or_past:
                 # Preview mode: show historical stats only
-                seasonal_score = hist_avg_del * 0.3 + consistency_pct * 0.4 + years_of_data * 3
+                seasonal_score = (
+                    hist_avg_del * 0.3 + consistency_pct * 0.4 + years_of_data * 3
+                )
 
             if seasonal_score is None:
                 continue
@@ -219,33 +254,57 @@ class SeasonalDeliveryHarvester:
 
             # 52-week position
             latest_close = float(df["close"].iloc[-1])
-            high_52w = float(df["high_52w"].iloc[-1]) if "high_52w" in df.columns and pd.notna(df["high_52w"].iloc[-1]) else float(df["close"].max())
-            low_52w = float(df["low_52w"].iloc[-1]) if "low_52w" in df.columns and pd.notna(df["low_52w"].iloc[-1]) else float(df["close"].min())
-            wk52_pos = ((latest_close - low_52w) / (high_52w - low_52w)) * 100 if (high_52w - low_52w) > 0 else 50.0
+            high_52w = (
+                float(df["high_52w"].iloc[-1])
+                if "high_52w" in df.columns and pd.notna(df["high_52w"].iloc[-1])
+                else float(df["close"].max())
+            )
+            low_52w = (
+                float(df["low_52w"].iloc[-1])
+                if "low_52w" in df.columns and pd.notna(df["low_52w"].iloc[-1])
+                else float(df["close"].min())
+            )
+            wk52_pos = (
+                ((latest_close - low_52w) / (high_52w - low_52w)) * 100
+                if (high_52w - low_52w) > 0
+                else 50.0
+            )
 
             mcap_cr = mcap / 1e7
 
-            candidates.append({
-                "symbol": symbol,
-                "sector": _sector_map.get(symbol, "Unknown"),
-                "market_cap_cr": round(mcap_cr, 1),
-                "current_month": MONTH_NAMES[current_month],
-                "hist_avg_del": round(hist_avg_del, 1),
-                "current_del": round(current_del, 1) if current_del is not None else None,
-                "seasonal_edge": round(seasonal_edge, 1) if seasonal_edge is not None else None,
-                "consistency_pct": round(consistency_pct, 1),
-                "years_of_data": years_of_data,
-                "early_signal": early_signal,
-                "seasonal_score": round(seasonal_score, 1),
-                "grade": grade,
-                "close": round(latest_close, 2),
-                "wk52_pos": round(wk52_pos, 1),
-                "trading_days_so_far": trading_days_so_far,
-            })
+            candidates.append(
+                {
+                    "symbol": symbol,
+                    "sector": _sector_map.get(symbol, "Unknown"),
+                    "market_cap_cr": round(mcap_cr, 1),
+                    "current_month": MONTH_NAMES[current_month],
+                    "hist_avg_del": round(hist_avg_del, 1),
+                    "current_del": round(current_del, 1)
+                    if current_del is not None
+                    else None,
+                    "seasonal_edge": round(seasonal_edge, 1)
+                    if seasonal_edge is not None
+                    else None,
+                    "consistency_pct": round(consistency_pct, 1),
+                    "years_of_data": years_of_data,
+                    "early_signal": early_signal,
+                    "seasonal_score": round(seasonal_score, 1),
+                    "grade": grade,
+                    "close": round(latest_close, 2),
+                    "wk52_pos": round(wk52_pos, 1),
+                    "trading_days_so_far": trading_days_so_far,
+                }
+            )
 
         float_fields = [
-            "market_cap_cr", "hist_avg_del", "current_del", "seasonal_edge",
-            "consistency_pct", "seasonal_score", "close", "wk52_pos",
+            "market_cap_cr",
+            "hist_avg_del",
+            "current_del",
+            "seasonal_edge",
+            "consistency_pct",
+            "seasonal_score",
+            "close",
+            "wk52_pos",
         ]
         for c in candidates:
             for f in float_fields:
@@ -253,5 +312,7 @@ class SeasonalDeliveryHarvester:
                     c[f] = self._sanitize_float(c[f])
 
         candidates.sort(key=lambda x: x.get("seasonal_score") or 0, reverse=True)
-        logger.info("Seasonal Delivery scan complete: %d candidates found", len(candidates))
+        logger.info(
+            "Seasonal Delivery scan complete: %d candidates found", len(candidates)
+        )
         return pd.DataFrame(candidates)

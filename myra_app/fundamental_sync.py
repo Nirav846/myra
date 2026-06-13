@@ -24,7 +24,9 @@ IST = timezone(timedelta(hours=5, minutes=30))
 
 # Morningstar API configuration
 MORNINGSTAR_TOKEN = os.environ.get("MORNINGSTAR_TOKEN", "g9vi2nsqjb")
-MORNINGSTAR_URL = f"https://lt.morningstar.com/api/rest.svc/{MORNINGSTAR_TOKEN}/security/screener"
+MORNINGSTAR_URL = (
+    f"https://lt.morningstar.com/api/rest.svc/{MORNINGSTAR_TOKEN}/security/screener"
+)
 MORNINGSTAR_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Accept": "application/json",
@@ -121,8 +123,6 @@ class FundamentalSync:
                         "returnOnAssets": row.get("returnOnAssets"),
                         "operatingMargin": row.get("operatingMargin"),
                         "grossMargin": row.get("grossMargin"),
-                        "netMargin": row.get("netMargin"),
-                        "dividendYield": row.get("dividendYield"),
                         "payoutRatio": row.get("payoutRatio"),
                         "currentRatio": row.get("currentRatio"),
                         "quickRatio": row.get("quickRatio"),
@@ -187,14 +187,14 @@ class FundamentalSync:
                 result["face_value"] = info["faceValue"]
 
         except Exception as e:
-            logger.warning(
-                f"[FundamentalSync] yfinance fetch failed for {symbol}: {e}"
-            )
+            logger.warning(f"[FundamentalSync] yfinance fetch failed for {symbol}: {e}")
             self.errors += 1
 
         return result
 
-    def _fetch_nse_all(self, symbols: list, cancel_event: threading.Event | None = None) -> dict:
+    def _fetch_nse_all(
+        self, symbols: list, cancel_event: threading.Event | None = None
+    ) -> dict:
         """Fetch fundamental data for all symbols via yfinance.
 
         Args:
@@ -228,7 +228,9 @@ class FundamentalSync:
             if (i + 1) % 100 == 0:
                 logger.info(f"[FundamentalSync] yfinance progress: {i + 1}/{total}")
 
-        logger.info(f"[FundamentalSync] yfinance fetch complete: {self.nse_fetched} symbols")
+        logger.info(
+            f"[FundamentalSync] yfinance fetch complete: {self.nse_fetched} symbols"
+        )
         return result
 
     def _merge_and_insert(self, ms_data: dict, nse_data: dict, date_str: str):
@@ -248,14 +250,41 @@ class FundamentalSync:
         except Exception:
             pass
 
+        # Canonical mapping: Morningstar camelCase keys → snake_case column names
+        # Columns with a canonical equivalent are consolidated here.
+        # Columns without a canonical equivalent are dropped to prevent schema drift.
+        MS_CANONICAL_MAP = {
+            "peRatio": "pe",
+            "earningsPerShare": "eps",
+            "bookValuePerShare": "book_value",
+            "revenueGrowth": "sales_growth",
+            "earningsGrowth": "profit_growth",
+            "marketCap": "market_cap",
+            "debtToEquity": "debt_to_equity",
+            "returnOnEquity": "roe",
+            "netMargin": "net_margin",
+            "dividendYield": "dividend_yield",
+        }
+
         for symbol in all_symbols:
             ms = ms_data.get(symbol, {})
             nse = nse_data.get(symbol, {})
 
+            # Build MS fields using canonical snake_case names only
+            ms_fields: dict[str, object] = {
+                "sector": ms.get("sector"),
+                "roe_ttm": ms.get("roeTTM"),
+            }
+            # Apply canonical mapping — camelCase values go into canonical columns
+            for camel_key, canonical_key in MS_CANONICAL_MAP.items():
+                val = ms.get(camel_key)
+                if val is not None:
+                    ms_fields[canonical_key] = val
+
             record = {
                 "symbol": symbol,
                 "date": date_str,
-                # NSE fields (already use DB column names)
+                # NSE fields
                 "pe": nse.get("pe"),
                 "sector_pe": nse.get("sector_pe"),
                 "market_cap": nse.get("market_cap"),
@@ -265,32 +294,10 @@ class FundamentalSync:
                 "daily_volatility": nse.get("daily_volatility"),
                 "annual_volatility": nse.get("annual_volatility"),
                 "impact_cost": nse.get("impact_cost"),
-                # Morningstar fields – map camelCase API keys to DB columns
-                "sector": ms.get("sector"),
-                "net_margin": ms.get("netMargin"),
-                "roe_ttm": ms.get("roeTTM"),
-                "dividend_yield": ms.get("dividendYield"),
-                "peRatio": ms.get("peRatio"),
-                "priceToBook": ms.get("priceToBook"),
-                "priceToSales": ms.get("priceToSales"),
-                "earningsPerShare": ms.get("earningsPerShare"),
-                "bookValuePerShare": ms.get("bookValuePerShare"),
-                "revenueGrowth": ms.get("revenueGrowth"),
-                "earningsGrowth": ms.get("earningsGrowth"),
-                "marketCap": ms.get("marketCap"),
-                "enterpriseValue": ms.get("enterpriseValue"),
-                "debtToEquity": ms.get("debtToEquity"),
-                "returnOnEquity": ms.get("returnOnEquity"),
-                "returnOnAssets": ms.get("returnOnAssets"),
-                "operatingMargin": ms.get("operatingMargin"),
-                "grossMargin": ms.get("grossMargin"),
-                "payoutRatio": ms.get("payoutRatio"),
-                "currentRatio": ms.get("currentRatio"),
-                "quickRatio": ms.get("quickRatio"),
-                "freeCashFlowYield": ms.get("freeCashFlowYield"),
-                "beta": ms.get("beta"),
                 "source_ms": "MORNINGSTAR" if ms else None,
                 "source_nse": "YFINANCE" if nse else None,
+                # MS fields (canonical snake_case)
+                **ms_fields,
             }
             # Do NOT overwrite columns managed by separate backfills
             existing = existing_values.get(symbol)
@@ -324,7 +331,9 @@ class FundamentalSync:
         except Exception as e:
             logger.error(f"[FundamentalSync] Insert failed: {e}")
 
-    def _backfill_market_cap_from_yfinance(self, cancel_event: threading.Event | None = None):
+    def _backfill_market_cap_from_yfinance(
+        self, cancel_event: threading.Event | None = None
+    ):
         """Fetch market cap for all symbols that are missing it."""
         import yfinance as yf
         import time
@@ -332,12 +341,14 @@ class FundamentalSync:
         db_path = self._get_valuation_db_path()
         conn = sqlite3.connect(db_path, timeout=30)
         symbols = conn.execute(
-            "SELECT symbol FROM fundamentals WHERE marketCap IS NULL OR marketCap = 0"
+            "SELECT symbol FROM fundamentals WHERE market_cap IS NULL OR market_cap = 0"
         ).fetchall()
         conn.close()
 
         total = len(symbols)
-        logger.info(f"[FundamentalSync] Backfilling marketCap for {total} symbols via yfinance...")
+        logger.info(
+            f"[FundamentalSync] Backfilling market_cap for {total} symbols via yfinance..."
+        )
 
         updated = 0
         for i, (symbol,) in enumerate(symbols):
@@ -348,25 +359,31 @@ class FundamentalSync:
             try:
                 ticker = yf.Ticker(f"{symbol}.NS")
                 info = ticker.info
-                market_cap = info.get('marketCap')
+                market_cap = info.get("marketCap")
                 if market_cap:
                     conn = sqlite3.connect(db_path, timeout=30)
                     conn.execute(
-                        "UPDATE fundamentals SET marketCap = ? WHERE symbol = ?",
-                        (market_cap, symbol)
+                        "UPDATE fundamentals SET market_cap = ? WHERE symbol = ?",
+                        (market_cap, symbol),
                     )
                     conn.commit()
                     conn.close()
                     updated += 1
                 if (i + 1) % 100 == 0:
-                    logger.info(f"[FundamentalSync] Market cap backfill: {i+1}/{total} ({updated} updated)")
+                    logger.info(
+                        f"[FundamentalSync] Market cap backfill: {i+1}/{total} ({updated} updated)"
+                    )
                 time.sleep(0.3)
             except Exception:
                 pass
 
-        logger.info(f"[FundamentalSync] Market cap backfill complete: {updated}/{total} updated")
+        logger.info(
+            f"[FundamentalSync] Market cap backfill complete: {updated}/{total} updated"
+        )
 
-    def _backfill_shares_outstanding_from_yfinance(self, cancel_event: threading.Event | None = None):
+    def _backfill_shares_outstanding_from_yfinance(
+        self, cancel_event: threading.Event | None = None
+    ):
         """Fetch shares outstanding for all symbols that are missing it."""
         import time
 
@@ -378,44 +395,54 @@ class FundamentalSync:
         conn.close()
 
         total = len(symbols)
-        logger.info(f"[FundamentalSync] Backfilling shares_outstanding for {total} symbols via yfinance...")
+        logger.info(
+            f"[FundamentalSync] Backfilling shares_outstanding for {total} symbols via yfinance..."
+        )
 
         updated = 0
         for i, (symbol,) in enumerate(symbols):
             if _shutdown_event.is_set() or (cancel_event and cancel_event.is_set()):
-                logger.info("[FundamentalSync] Shares outstanding backfill cancelled by user.")
+                logger.info(
+                    "[FundamentalSync] Shares outstanding backfill cancelled by user."
+                )
                 break
 
             try:
                 ticker = yf.Ticker(f"{symbol}.NS")
                 info = ticker.info
-                shares = info.get('sharesOutstanding')
+                shares = info.get("sharesOutstanding")
                 if shares:
                     conn = sqlite3.connect(db_path, timeout=30)
                     conn.execute(
                         "UPDATE fundamentals SET shares_outstanding = ? WHERE symbol = ?",
-                        (shares, symbol)
+                        (shares, symbol),
                     )
                     conn.commit()
                     # Verify the UPDATE took effect
                     row = conn.execute(
                         "SELECT shares_outstanding FROM fundamentals WHERE symbol = ?",
-                        (symbol,)
+                        (symbol,),
                     ).fetchone()
                     if not row or not row[0]:
-                        logger.warning(f"[FundamentalSync] shares_outstanding NOT persisted for {symbol}")
+                        logger.warning(
+                            f"[FundamentalSync] shares_outstanding NOT persisted for {symbol}"
+                        )
                     conn.close()
                     updated += 1
                 if (i + 1) % 100 == 0:
-                    logger.info(f"[FundamentalSync] Shares outstanding backfill: {i+1}/{total} ({updated} updated)")
+                    logger.info(
+                        f"[FundamentalSync] Shares outstanding backfill: {i+1}/{total} ({updated} updated)"
+                    )
                 time.sleep(0.3)
             except Exception:
                 pass
 
-        logger.info(f"[FundamentalSync] Shares outstanding backfill complete: {updated}/{total} updated")
+        logger.info(
+            f"[FundamentalSync] Shares outstanding backfill complete: {updated}/{total} updated"
+        )
 
     def _compute_market_cap_from_prices(self):
-        """Compute marketCap = shares_outstanding × latest close for all symbols."""
+        """Compute market_cap = shares_outstanding × latest close for all symbols."""
         tech_db = f"{DB_DIR}/myra_technical.db"
         val_db = f"{DB_DIR}/myra_valuation.db"
 
@@ -428,26 +455,26 @@ class FundamentalSync:
         ):
             shares[row[0]] = row[1]
 
-        logger.info(f"[FundamentalSync] Computing marketCap for {len(shares)} symbols")
+        logger.info(f"[FundamentalSync] Computing market_cap for {len(shares)} symbols")
 
         updated = 0
         for symbol, shares_out in shares.items():
             row = tech_conn.execute(
                 "SELECT close FROM technical_data WHERE symbol = ? ORDER BY date DESC LIMIT 1",
-                (symbol,)
+                (symbol,),
             ).fetchone()
             if row and row[0] and shares_out > 0:
                 market_cap = shares_out * row[0]
                 val_conn.execute(
-                    "UPDATE fundamentals SET marketCap = ? WHERE symbol = ?",
-                    (market_cap, symbol)
+                    "UPDATE fundamentals SET market_cap = ? WHERE symbol = ?",
+                    (market_cap, symbol),
                 )
                 updated += 1
 
         val_conn.commit()
         tech_conn.close()
         val_conn.close()
-        logger.info(f"[FundamentalSync] marketCap updated for {updated} symbols")
+        logger.info(f"[FundamentalSync] market_cap updated for {updated} symbols")
 
     def _refresh_stale_shares_outstanding(self, cancel_event=None):
         """
@@ -472,10 +499,14 @@ class FundamentalSync:
 
         total = len(stale)
         if total == 0:
-            logger.info("[shares_outstanding] No stale symbols found — nothing to update")
+            logger.info(
+                "[shares_outstanding] No stale symbols found — nothing to update"
+            )
             return {"updated": 0, "total": 0}
 
-        logger.info(f"[shares_outstanding] Found {total} stale/missing symbols to update")
+        logger.info(
+            f"[shares_outstanding] Found {total} stale/missing symbols to update"
+        )
 
         updated = 0
         for i, (symbol,) in enumerate(stale):
@@ -490,10 +521,14 @@ class FundamentalSync:
                     break
                 except Exception as e:
                     if attempt == 0:
-                        logger.debug(f"[shares_outstanding] {symbol} fetch failed, retrying in 2s: {e}")
+                        logger.debug(
+                            f"[shares_outstanding] {symbol} fetch failed, retrying in 2s: {e}"
+                        )
                         time.sleep(2.0)
                     else:
-                        logger.warning(f"[shares_outstanding] {symbol} fetch failed after retry: {e}")
+                        logger.warning(
+                            f"[shares_outstanding] {symbol} fetch failed after retry: {e}"
+                        )
             if shares and shares > 0:
                 try:
                     conn = sqlite3.connect(val_db)
@@ -509,9 +544,13 @@ class FundamentalSync:
                         conn.close()
                     updated += 1
                 except Exception as e:
-                    logger.warning(f"[shares_outstanding] Failed to persist {symbol}: {e}")
+                    logger.warning(
+                        f"[shares_outstanding] Failed to persist {symbol}: {e}"
+                    )
             if (i + 1) % 25 == 0:
-                logger.info(f"[shares_outstanding] Progress: {i+1}/{total} — updated {updated}")
+                logger.info(
+                    f"[shares_outstanding] Progress: {i+1}/{total} — updated {updated}"
+                )
             time.sleep(0.3)
 
         logger.info(f"[shares_outstanding] Complete — updated {updated}/{total}")
@@ -563,7 +602,7 @@ class FundamentalSync:
         # Step 4: Backfill shares_outstanding from yfinance for all symbols
         self._backfill_shares_outstanding_from_yfinance(cancel_event)
 
-        # Step 5: Compute marketCap from shares_outstanding × latest close
+        # Step 5: Compute market_cap from shares_outstanding × latest close
         self._compute_market_cap_from_prices()
 
         self._log_summary()
