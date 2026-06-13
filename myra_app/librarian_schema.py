@@ -86,6 +86,25 @@ class LibrarianSchemaMixin:
                 """,
                 conn=self._meta_conn,
             )
+            self.safe_execute(
+                """
+                CREATE TABLE IF NOT EXISTS task_registry (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    status TEXT DEFAULT 'running',
+                    message TEXT DEFAULT '',
+                    progress REAL,
+                    eta TEXT,
+                    task_type TEXT DEFAULT 'indefinite',
+                    safe_to_exit INTEGER DEFAULT 1,
+                    started_at TEXT NOT NULL,
+                    updated_at TEXT,
+                    expiry TEXT,
+                    data TEXT DEFAULT '{}'
+                )
+                """,
+                conn=self._meta_conn,
+            )
 
         # --- 2. TECHNICAL.DB (Price History) ---
         if self._tech_conn:

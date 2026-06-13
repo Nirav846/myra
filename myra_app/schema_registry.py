@@ -68,23 +68,6 @@ class SchemaRegistry:
             "primary_key": "(symbol, date)",
             "required_for_ingestion": ["symbol", "date", "close", "volume"],
         },
-        "prices": {
-            "status": "DEPRECATED",
-            "migration_note": "Legacy High-Speed Cache. Do not query directly. Target migration in v4.0.",
-            "columns": {
-                "symbol": "VARCHAR",
-                "date": "DATE",
-                "open": "DOUBLE",
-                "high": "DOUBLE",
-                "low": "DOUBLE",
-                "close": "DOUBLE",
-                "volume": "BIGINT",
-                "delivery_qty": "BIGINT",
-                "delivery_percent": "DOUBLE",
-                "exchange": "VARCHAR",
-            },
-            "primary_key": "(symbol, date, exchange)",
-        },
     }
 
     @classmethod

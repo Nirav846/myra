@@ -108,12 +108,6 @@ class LibrarianCore:
 
         # Standardized Connections via DB_MAP
         self._tech_conn = _get_conn(self.DB_MAP["technical"])
-        if self._tech_conn and not self.read_only:
-            try:
-                self._tech_conn.execute("DROP TABLE IF EXISTS prices")
-                self._tech_conn.commit()
-            except Exception:
-                pass
         self._inst_conn = _get_conn(self.DB_MAP["institutional"])
         self._meta_conn = _get_conn(self.DB_MAP["meta"])
         self._val_conn = _get_conn(self.DB_MAP["valuation"])
@@ -182,9 +176,12 @@ class LibrarianCore:
         try:
             rows = self._meta_conn.execute(
                 "SELECT symbol, sector, industry FROM symbols_master WHERE (symbol LIKE ? OR sector LIKE ?) AND is_active = 1 LIMIT 15",
-                (q, q)
+                (q, q),
             ).fetchall()
-            return [{"symbol": r[0], "sector": r[1] or "", "industry": r[2] or ""} for r in rows]
+            return [
+                {"symbol": r[0], "sector": r[1] or "", "industry": r[2] or ""}
+                for r in rows
+            ]
         except Exception:
             return []
 

@@ -17,13 +17,17 @@ from myra_app.librarian_core import LibrarianCore
 
 MYRA_API_SECRET = os.environ.get("MYRA_API_SECRET", "myra-local-dev-2026")
 
+
 async def verify_myra_auth(x_myra_auth: str = Header(None)):
     if x_myra_auth != MYRA_API_SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
+
 logger = logging.getLogger(__name__)
 
-import sys as _sys, os as _os; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import sys as _sys, os as _os
+
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
 from pipeline_dashboard import router as pipeline_router
 
 try:
@@ -52,9 +56,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    return JSONResponse(status_code=500, content={"detail": f"Internal server error: {exc}"})
+    return JSONResponse(
+        status_code=500, content={"detail": f"Internal server error: {exc}"}
+    )
 
 
 # Use the expected folder structure: Myra\myra_web (this project) side-by-side with Myra\myra_app
@@ -113,18 +120,163 @@ def health_check():
             total = conn.execute("SELECT COUNT(*) FROM fundamentals").fetchone()[0]
             coverage = {
                 "total_symbols": total,
-                "shares_outstanding": conn.execute("SELECT COUNT(*) FROM fundamentals WHERE shares_outstanding IS NOT NULL").fetchone()[0],
-                "insider_holding_pct": conn.execute("SELECT COUNT(*) FROM fundamentals WHERE insider_holding_pct IS NOT NULL").fetchone()[0],
-                "promoter_holding_pct": conn.execute("SELECT COUNT(*) FROM fundamentals WHERE promoter_holding_pct IS NOT NULL").fetchone()[0],
-                "industry": conn.execute("SELECT COUNT(*) FROM fundamentals WHERE industry IS NOT NULL").fetchone()[0],
-                "free_float_pct": conn.execute("SELECT COUNT(*) FROM fundamentals WHERE free_float_pct IS NOT NULL").fetchone()[0],
-                "market_cap": conn.execute("SELECT COUNT(*) FROM fundamentals WHERE market_cap IS NOT NULL").fetchone()[0],
-                "pe": conn.execute("SELECT COUNT(*) FROM fundamentals WHERE pe IS NOT NULL").fetchone()[0],
+                "shares_outstanding": conn.execute(
+                    "SELECT COUNT(*) FROM fundamentals WHERE shares_outstanding IS NOT NULL"
+                ).fetchone()[0],
+                "insider_holding_pct": conn.execute(
+                    "SELECT COUNT(*) FROM fundamentals WHERE insider_holding_pct IS NOT NULL"
+                ).fetchone()[0],
+                "promoter_holding_pct": conn.execute(
+                    "SELECT COUNT(*) FROM fundamentals WHERE promoter_holding_pct IS NOT NULL"
+                ).fetchone()[0],
+                "industry": conn.execute(
+                    "SELECT COUNT(*) FROM fundamentals WHERE industry IS NOT NULL"
+                ).fetchone()[0],
+                "free_float_pct": conn.execute(
+                    "SELECT COUNT(*) FROM fundamentals WHERE free_float_pct IS NOT NULL"
+                ).fetchone()[0],
+                "market_cap": conn.execute(
+                    "SELECT COUNT(*) FROM fundamentals WHERE market_cap IS NOT NULL"
+                ).fetchone()[0],
+                "pe": conn.execute(
+                    "SELECT COUNT(*) FROM fundamentals WHERE pe IS NOT NULL"
+                ).fetchone()[0],
             }
             conn.close()
         except Exception:
             coverage = {"error": "query failed"}
     return {"health": health, "coverage": coverage}
+
+
+@app.get("/api/data-health")
+async def data_health():
+    import glob
+    from datetime import timezone, timedelta
+
+    IST = timezone(timedelta(hours=5, minutes=30))
+    result = {
+        "latest_ohlcv_date": None,
+        "days_behind": None,
+        "ohlcv_symbols_today": None,
+        "enrichment_complete": None,
+        "fundamentals_total": None,
+        "fundamentals_with_promoter": None,
+        "fundamentals_with_free_float": None,
+        "nifty_benchmark_latest": None,
+        "last_backup_date": "unknown",
+        "scanner_cache_counts": {},
+    }
+
+    try:
+        tech_db = os.path.join(DB_DIR, LibrarianCore.DB_MAP["technical"])
+        if os.path.exists(tech_db):
+            conn = sqlite3.connect(tech_db)
+            try:
+                row = conn.execute("SELECT MAX(date) FROM technical_data").fetchone()
+                result["latest_ohlcv_date"] = row[0] if row else None
+                if result["latest_ohlcv_date"]:
+                    latest = result["latest_ohlcv_date"]
+                    ist_now = datetime.now(IST).date()
+                    try:
+                        latest_date = datetime.strptime(latest, "%Y-%m-%d").date()
+                        result["days_behind"] = (ist_now - latest_date).days
+                    except ValueError:
+                        result["days_behind"] = None
+                    cnt = conn.execute(
+                        "SELECT COUNT(*) FROM technical_data WHERE date = ?",
+                        (latest,),
+                    ).fetchone()
+                    result["ohlcv_symbols_today"] = cnt[0] if cnt else 0
+                    enriched = conn.execute(
+                        """SELECT COUNT(*) FROM technical_data
+                           WHERE date = ?
+                             AND delivery_divergence_score IS NOT NULL""",
+                        (latest,),
+                    ).fetchone()
+                    total = result["ohlcv_symbols_today"] or 1
+                    result["enrichment_complete"] = (
+                        enriched[0] == total if enriched else False
+                    )
+                else:
+                    result["ohlcv_symbols_today"] = 0
+                    result["enrichment_complete"] = False
+            except Exception:
+                pass
+            finally:
+                conn.close()
+
+        val_db = os.path.join(DB_DIR, LibrarianCore.DB_MAP["valuation"])
+        if os.path.exists(val_db):
+            conn = sqlite3.connect(val_db)
+            try:
+                total = conn.execute("SELECT COUNT(*) FROM fundamentals").fetchone()
+                result["fundamentals_total"] = total[0] if total else 0
+                prom = conn.execute(
+                    "SELECT COUNT(*) FROM fundamentals WHERE promoter_holding_pct > 0"
+                ).fetchone()
+                result["fundamentals_with_promoter"] = prom[0] if prom else 0
+                ff = conn.execute(
+                    "SELECT COUNT(*) FROM fundamentals WHERE free_float_pct > 0"
+                ).fetchone()
+                result["fundamentals_with_free_float"] = ff[0] if ff else 0
+            except Exception:
+                pass
+            finally:
+                conn.close()
+
+        meta_db = os.path.join(DB_DIR, LibrarianCore.DB_MAP["meta"])
+        if os.path.exists(meta_db):
+            conn = sqlite3.connect(meta_db)
+            try:
+                bm = conn.execute("SELECT MAX(date) FROM benchmarks").fetchone()
+                result["nifty_benchmark_latest"] = bm[0] if bm else None
+            except Exception:
+                pass
+            finally:
+                conn.close()
+
+        backup_dir = os.path.join(DB_DIR, "backups")
+        if os.path.exists(backup_dir):
+            try:
+                files = [
+                    f
+                    for f in os.listdir(backup_dir)
+                    if f.startswith("technical_") and f.endswith(".db")
+                ]
+                if files:
+                    files.sort(reverse=True)
+                    date_part = files[0].replace("technical_", "").replace(".db", "")
+                    result["last_backup_date"] = date_part
+            except Exception:
+                pass
+
+        scanner_names = [
+            "invisible_hand",
+            "trigger",
+            "liquidity_flip",
+            "operator_fingerprint",
+            "float_exhaustion",
+            "seasonal_delivery",
+            "wyckoff",
+        ]
+        models_dir = MODELS_DIR
+        for name in scanner_names:
+            try:
+                cache_path = os.path.join(models_dir, f"{name}_cache.json")
+                if os.path.exists(cache_path):
+                    with open(cache_path, encoding="utf-8") as f:
+                        data = json.load(f)
+                    candidates = data.get("candidates", [])
+                    result["scanner_cache_counts"][name] = len(candidates)
+                else:
+                    result["scanner_cache_counts"][name] = 0
+            except Exception:
+                result["scanner_cache_counts"][name] = 0
+
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+    return result
 
 
 class QueryRequest(BaseModel):
@@ -789,6 +941,7 @@ async def launchpad_feature_importance():
 @app.get("/api/ml/factor-importance")
 async def factor_importance():
     from myra_app.ml_trainer import FactorDiscovery
+
     fd = FactorDiscovery()
     result = fd.discover_factors()
     return result
@@ -797,6 +950,7 @@ async def factor_importance():
 @app.get("/api/search/symbols")
 async def search_symbols(q: str = Query(..., min_length=1)):
     from myra_app.librarian import Librarian
+
     lib = Librarian(read_only=True)
     return lib.search_symbols(q)
 
@@ -805,7 +959,9 @@ def _validate_finstack(result: dict) -> dict:
     if "error" in result:
         raise HTTPException(status_code=500, detail=result["error"])
     if "_raw" in result:
-        raise HTTPException(status_code=502, detail="FinStack MCP returned non-JSON response")
+        raise HTTPException(
+            status_code=502, detail="FinStack MCP returned non-JSON response"
+        )
     return result
 
 
@@ -813,9 +969,13 @@ def _validate_finstack(result: dict) -> dict:
 async def finstack_nifty_outlook():
     cache_key = "nifty_outlook"
     now = time.time()
-    if cache_key in _finstack_cache and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL:
+    if (
+        cache_key in _finstack_cache
+        and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL
+    ):
         return _finstack_cache[cache_key]["data"]
     from myra_app.utils.finstack_bridge import get_nifty_outlook
+
     try:
         data = await get_nifty_outlook()
         _finstack_cache[cache_key] = {"ts": now, "data": data}
@@ -828,9 +988,13 @@ async def finstack_nifty_outlook():
 async def finstack_fii_retail_divergence(symbol: str = "RELIANCE"):
     cache_key = f"fii_divergence:{symbol}"
     now = time.time()
-    if cache_key in _finstack_cache and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL:
+    if (
+        cache_key in _finstack_cache
+        and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL
+    ):
         return _finstack_cache[cache_key]["data"]
     from myra_app.utils.finstack_bridge import get_fii_retail_divergence
+
     try:
         data = await get_fii_retail_divergence(symbol)
         _finstack_cache[cache_key] = {"ts": now, "data": data}
@@ -850,9 +1014,13 @@ async def finstack_fii_retail_divergence(symbol: str = "RELIANCE"):
 async def finstack_morning_brief():
     cache_key = "morning_brief"
     now = time.time()
-    if cache_key in _finstack_cache and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL:
+    if (
+        cache_key in _finstack_cache
+        and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL
+    ):
         return _finstack_cache[cache_key]["data"]
     from myra_app.utils.finstack_bridge import get_morning_brief
+
     try:
         data = await get_morning_brief()
         _finstack_cache[cache_key] = {"ts": now, "data": data}
@@ -870,20 +1038,28 @@ async def finstack_morning_brief():
 
 # ── Missing routes wired up ─────────────────────────────────────────────
 
+
 @app.get("/api/finstack/stock-brief/{symbol}")
 async def finstack_stock_brief(symbol: str):
     from myra_app.utils.finstack_bridge import get_stock_brief
+
     result = await get_stock_brief(symbol)
     return _validate_finstack(result)
 
 
 @app.get("/api/finstack/stock-brief")
-async def stock_brief(symbol: str = Query(..., description="Stock symbol, e.g., RELIANCE")):
+async def stock_brief(
+    symbol: str = Query(..., description="Stock symbol, e.g., RELIANCE")
+):
     cache_key = f"stock_brief:{symbol}"
     now = time.time()
-    if cache_key in _finstack_cache and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL:
+    if (
+        cache_key in _finstack_cache
+        and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL
+    ):
         return _finstack_cache[cache_key]["data"]
     from myra_app.utils.finstack_bridge import get_stock_brief
+
     try:
         data = await get_stock_brief(symbol=symbol.upper())
         _finstack_cache[cache_key] = {"ts": now, "data": data}
@@ -895,6 +1071,7 @@ async def stock_brief(symbol: str = Query(..., description="Stock symbol, e.g., 
 @app.get("/api/finstack/social-sentiment/{symbol}")
 async def finstack_social_sentiment(symbol: str):
     from myra_app.utils.finstack_bridge import get_social_sentiment
+
     result = await get_social_sentiment(symbol)
     return _validate_finstack(result)
 
@@ -902,17 +1079,24 @@ async def finstack_social_sentiment(symbol: str):
 @app.get("/api/finstack/pledge-alert/{symbol}")
 async def finstack_pledge_alert(symbol: str):
     from myra_app.utils.finstack_bridge import get_pledge_alert
+
     result = await get_pledge_alert(symbol)
     return _validate_finstack(result)
 
 
 @app.get("/api/finstack/unusual-activity")
-async def unusual_activity(symbol: str = Query(..., description="Stock symbol, e.g., RELIANCE")):
+async def unusual_activity(
+    symbol: str = Query(..., description="Stock symbol, e.g., RELIANCE")
+):
     cache_key = f"unusual_activity:{symbol}"
     now = time.time()
-    if cache_key in _finstack_cache and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL:
+    if (
+        cache_key in _finstack_cache
+        and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL
+    ):
         return _finstack_cache[cache_key]["data"]
     from myra_app.utils.finstack_bridge import detect_unusual_activity
+
     try:
         data = await detect_unusual_activity(symbol=symbol.upper())
         _finstack_cache[cache_key] = {"ts": now, "data": data}
@@ -924,12 +1108,18 @@ async def unusual_activity(symbol: str = Query(..., description="Stock symbol, e
 @app.get("/api/finstack/stock-timeline")
 async def finstack_stock_timeline(symbol: str = ""):
     if not symbol:
-        raise HTTPException(status_code=400, detail="query parameter 'symbol' is required")
+        raise HTTPException(
+            status_code=400, detail="query parameter 'symbol' is required"
+        )
     cache_key = f"stock_timeline:{symbol}"
     now = time.time()
-    if cache_key in _finstack_cache and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL:
+    if (
+        cache_key in _finstack_cache
+        and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL
+    ):
         return _finstack_cache[cache_key]["data"]
     from myra_app.utils.finstack_bridge import get_stock_timeline
+
     try:
         data = await get_stock_timeline(symbol)
         _finstack_cache[cache_key] = {"ts": now, "data": data}
@@ -953,6 +1143,7 @@ _IH_SCAN_CACHE = os.path.join(MODELS_DIR, "invisible_hand_cache.json")
 
 def _save_ih_cache():
     import json as _json, os as _os
+
     try:
         _os.makedirs("models", exist_ok=True)
         with _ih_scan_lock:
@@ -963,24 +1154,26 @@ def _save_ih_cache():
             }
         with open(_IH_SCAN_CACHE, "w") as _f:
             _json.dump(data, _f)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Cache operation failed: {e}")
 
 
 def _load_ih_cache() -> dict | None:
     import json as _json, os as _os
+
     try:
         if _os.path.exists(_IH_SCAN_CACHE):
             with open(_IH_SCAN_CACHE) as _f:
                 return _json.load(_f)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Cache operation failed: {e}")
     return None
 
 
 @app.get("/api/invisible-hand/status")
 async def invisible_hand_status():
     import copy
+
     with _ih_scan_lock:
         state = copy.deepcopy(_ih_scan_state)
     if state["scan_status"] == "idle":
@@ -990,7 +1183,9 @@ async def invisible_hand_status():
                 "scan_status": "idle",
                 "last_scan": cache.get("last_scan"),
                 "progress": 100,
-                "message": cache.get("message", f"Found {len(cache['candidates'])} candidates."),
+                "message": cache.get(
+                    "message", f"Found {len(cache['candidates'])} candidates."
+                ),
                 "candidates": cache["candidates"],
                 "bear_market": state.get("bear_market", False),
             }
@@ -1002,12 +1197,14 @@ async def invisible_hand_scan(payload: dict = Body(default={})):
     with _ih_scan_lock:
         if _ih_scan_state["scan_status"] == "scanning":
             return {"detail": "Scan already in progress"}, 409
-        _ih_scan_state.update({
-            "scan_status": "scanning",
-            "progress": 0,
-            "message": "Initialising scanner...",
-            "candidates": [],
-        })
+        _ih_scan_state.update(
+            {
+                "scan_status": "scanning",
+                "progress": 0,
+                "message": "Initialising scanner...",
+                "candidates": [],
+            }
+        )
 
     min_mcap = int(payload.get("min_mcap", 200))
     max_mcap = int(payload.get("max_mcap", 50000))
@@ -1019,9 +1216,13 @@ async def invisible_hand_scan(payload: dict = Body(default={})):
         try:
             from myra_app.strategies.invisible_hand_scanner import InvisibleHandScanner
             import math as _math
+
             scanner = InvisibleHandScanner(
-                min_mcap=min_mcap, max_mcap=max_mcap,
-                window=window, hist_window=hist_window, min_ih_score=min_ih_score,
+                min_mcap=min_mcap,
+                max_mcap=max_mcap,
+                window=window,
+                hist_window=hist_window,
+                min_ih_score=min_ih_score,
             )
             _ih_scan_state["message"] = "Loading universe..."
             _ih_scan_state["progress"] = 5
@@ -1038,8 +1239,11 @@ async def invisible_hand_scan(payload: dict = Body(default={})):
                 if processed[0] % 25 == 0:
                     pct = 10 + int((processed[0] / total) * 82)
                     _ih_scan_state["progress"] = min(pct, 92)
-                    _ih_scan_state["message"] = f"Scanning {processed[0]}/{total} symbols..."
+                    _ih_scan_state[
+                        "message"
+                    ] = f"Scanning {processed[0]}/{total} symbols..."
                 return original_get_tech(symbol, min_date)
+
             scanner._get_tech_data = _tracked_get_tech
 
             df = scanner.scan()
@@ -1051,27 +1255,35 @@ async def invisible_hand_scan(payload: dict = Body(default={})):
                 for _, row in df.iterrows():
                     rec = row.to_dict()
                     for key, val in list(rec.items()):
-                        if isinstance(val, float) and (_math.isnan(val) or _math.isinf(val)):
+                        if isinstance(val, float) and (
+                            _math.isnan(val) or _math.isinf(val)
+                        ):
                             rec[key] = None
                     candidates.append(rec)
 
-            _ih_scan_state.update({
-                "scan_status": "completed",
-                "last_scan": datetime.now().isoformat(),
-                "progress": 100,
-                "message": f"Found {len(candidates)} candidates",
-                "candidates": candidates,
-                "bear_market": scanner.bear_market if hasattr(scanner, 'bear_market') else False,
-            })
+            _ih_scan_state.update(
+                {
+                    "scan_status": "completed",
+                    "last_scan": datetime.now().isoformat(),
+                    "progress": 100,
+                    "message": f"Found {len(candidates)} candidates",
+                    "candidates": candidates,
+                    "bear_market": scanner.bear_market
+                    if hasattr(scanner, "bear_market")
+                    else False,
+                }
+            )
             _save_ih_cache()
 
         except Exception as e:
             logger.error("Invisible Hand scan failed: %s", e, exc_info=True)
-            _ih_scan_state.update({
-                "scan_status": "error",
-                "progress": 0,
-                "message": str(e),
-            })
+            _ih_scan_state.update(
+                {
+                    "scan_status": "error",
+                    "progress": 0,
+                    "message": str(e),
+                }
+            )
 
     threading.Thread(target=_run, daemon=True).start()
     return {"status": "started"}
@@ -1092,6 +1304,7 @@ _TRIGGER_SCAN_CACHE = os.path.join(MODELS_DIR, "trigger_cache.json")
 
 def _save_trigger_cache():
     import json as _json, os as _os
+
     try:
         _os.makedirs("models", exist_ok=True)
         with _trigger_scan_lock:
@@ -1102,24 +1315,26 @@ def _save_trigger_cache():
             }
         with open(_TRIGGER_SCAN_CACHE, "w") as _f:
             _json.dump(data, _f)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Cache operation failed: {e}")
 
 
 def _load_trigger_cache() -> dict | None:
     import json as _json, os as _os
+
     try:
         if _os.path.exists(_TRIGGER_SCAN_CACHE):
             with open(_TRIGGER_SCAN_CACHE) as _f:
                 return _json.load(_f)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Cache operation failed: {e}")
     return None
 
 
 @app.get("/api/trigger/status")
 async def trigger_status():
     import copy
+
     with _trigger_scan_lock:
         state = copy.deepcopy(_trigger_scan_state)
     if state["scan_status"] == "idle":
@@ -1129,7 +1344,9 @@ async def trigger_status():
                 "scan_status": "idle",
                 "last_scan": cache.get("last_scan"),
                 "progress": 100,
-                "message": cache.get("message", f"Found {len(cache['candidates'])} candidates."),
+                "message": cache.get(
+                    "message", f"Found {len(cache['candidates'])} candidates."
+                ),
                 "candidates": cache["candidates"],
                 "bear_market": state.get("bear_market", False),
             }
@@ -1141,12 +1358,14 @@ async def trigger_scan(payload: dict = Body(default={})):
     with _trigger_scan_lock:
         if _trigger_scan_state["scan_status"] == "scanning":
             return {"detail": "Scan already in progress"}, 409
-        _trigger_scan_state.update({
-            "scan_status": "scanning",
-            "progress": 0,
-            "message": "Initialising scanner...",
-            "candidates": [],
-        })
+        _trigger_scan_state.update(
+            {
+                "scan_status": "scanning",
+                "progress": 0,
+                "message": "Initialising scanner...",
+                "candidates": [],
+            }
+        )
 
     min_mcap = int(payload.get("min_mcap", 200))
     max_mcap = int(payload.get("max_mcap", 50000))
@@ -1159,8 +1378,10 @@ async def trigger_scan(payload: dict = Body(default={})):
         try:
             from myra_app.strategies.trigger_scanner import TriggerScanner
             import math as _math
+
             scanner = TriggerScanner(
-                min_mcap=min_mcap, max_mcap=max_mcap,
+                min_mcap=min_mcap,
+                max_mcap=max_mcap,
                 min_float_util_pct=min_float_util_pct,
                 vol_pinch_ratio=vol_pinch_ratio,
                 price_range_max_pct=price_range_max_pct,
@@ -1181,8 +1402,11 @@ async def trigger_scan(payload: dict = Body(default={})):
                 if processed[0] % 25 == 0:
                     pct = 10 + int((processed[0] / total) * 82)
                     _trigger_scan_state["progress"] = min(pct, 92)
-                    _trigger_scan_state["message"] = f"Scanning {processed[0]}/{total} symbols..."
+                    _trigger_scan_state[
+                        "message"
+                    ] = f"Scanning {processed[0]}/{total} symbols..."
                 return original_get_tech(symbol, min_date)
+
             scanner._get_tech_data = _tracked_get_tech
 
             candidates = scanner.scan()
@@ -1191,29 +1415,39 @@ async def trigger_scan(payload: dict = Body(default={})):
 
             for rec in candidates:
                 for key, val in list(rec.items()):
-                    if isinstance(val, float) and (_math.isnan(val) or _math.isinf(val)):
+                    if isinstance(val, float) and (
+                        _math.isnan(val) or _math.isinf(val)
+                    ):
                         rec[key] = None
 
-            _trigger_scan_state.update({
-                "scan_status": "completed",
-                "last_scan": datetime.now().isoformat(),
-                "progress": 100,
-                "message": f"Found {len(candidates)} candidates",
-                "candidates": candidates,
-                "bear_market": scanner.bear_market if hasattr(scanner, 'bear_market') else False,
-            })
+            _trigger_scan_state.update(
+                {
+                    "scan_status": "completed",
+                    "last_scan": datetime.now().isoformat(),
+                    "progress": 100,
+                    "message": f"Found {len(candidates)} candidates",
+                    "candidates": candidates,
+                    "bear_market": scanner.bear_market
+                    if hasattr(scanner, "bear_market")
+                    else False,
+                }
+            )
             _save_trigger_cache()
 
         except Exception as e:
             logger.error("Trigger scan failed: %s", e, exc_info=True)
-            _trigger_scan_state.update({
-                "scan_status": "error",
-                "progress": 0,
-                "message": str(e),
-            })
+            _trigger_scan_state.update(
+                {
+                    "scan_status": "error",
+                    "progress": 0,
+                    "message": str(e),
+                }
+            )
 
     threading.Thread(target=_run, daemon=True).start()
-    return {"status": "started"}# --- Liquidity Flip Detector State ---
+    return {"status": "started"}  # --- Liquidity Flip Detector State ---
+
+
 _lf_scan_state: dict = {
     "scan_status": "idle",
     "last_scan": None,
@@ -1229,6 +1463,7 @@ _LF_SCAN_CACHE = os.path.join(MODELS_DIR, "liquidity_flip_cache.json")
 def _save_lf_cache():
     import json as _json
     import os as _os
+
     try:
         _os.makedirs("models", exist_ok=True)
         with _lf_scan_lock:
@@ -1239,25 +1474,27 @@ def _save_lf_cache():
             }
         with open(_LF_SCAN_CACHE, "w") as _f:
             _json.dump(data, _f)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Cache operation failed: {e}")
 
 
 def _load_lf_cache() -> dict | None:
     import json as _json
     import os as _os
+
     try:
         if _os.path.exists(_LF_SCAN_CACHE):
             with open(_LF_SCAN_CACHE) as _f:
                 return _json.load(_f)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Cache operation failed: {e}")
     return None
 
 
 @app.get("/api/liquidity-flip/status")
 async def liquidity_flip_status():
     import copy
+
     with _lf_scan_lock:
         state = copy.deepcopy(_lf_scan_state)
 
@@ -1268,7 +1505,9 @@ async def liquidity_flip_status():
                 "scan_status": "idle",
                 "last_scan": cache.get("last_scan"),
                 "progress": 100,
-                "message": cache.get("message", f"Found {len(cache['candidates'])} candidates."),
+                "message": cache.get(
+                    "message", f"Found {len(cache['candidates'])} candidates."
+                ),
                 "candidates": cache["candidates"],
                 "bear_market": state.get("bear_market", False),
             }
@@ -1282,19 +1521,23 @@ async def liquidity_flip_scan(payload: dict = Body(default={})):
         if _lf_scan_state["scan_status"] == "scanning":
             return {"detail": "Scan already in progress"}, 409
 
-        _lf_scan_state.update({
-            "scan_status": "scanning",
-            "progress": 0,
-            "message": "Initialising scanner...",
-            "candidates": [],
-        })
+        _lf_scan_state.update(
+            {
+                "scan_status": "scanning",
+                "progress": 0,
+                "message": "Initialising scanner...",
+                "candidates": [],
+            }
+        )
 
     min_mcap = int(payload.get("min_mcap", 200))
     max_mcap = int(payload.get("max_mcap", 50000))
 
     def _run():
         try:
-            from myra_app.strategies.liquidity_flip_detector import LiquidityFlipDetector
+            from myra_app.strategies.liquidity_flip_detector import (
+                LiquidityFlipDetector,
+            )
             import math as _math
 
             scanner = LiquidityFlipDetector(
@@ -1318,7 +1561,9 @@ async def liquidity_flip_scan(payload: dict = Body(default={})):
                 if processed[0] % 25 == 0:
                     pct = 10 + int((processed[0] / total) * 82)
                     _lf_scan_state["progress"] = min(pct, 92)
-                    _lf_scan_state["message"] = f"Scanning {processed[0]}/{total} symbols..."
+                    _lf_scan_state[
+                        "message"
+                    ] = f"Scanning {processed[0]}/{total} symbols..."
                 return original_get_tech(symbol, min_date)
 
             scanner._get_tech_data = _tracked_get_tech
@@ -1333,30 +1578,39 @@ async def liquidity_flip_scan(payload: dict = Body(default={})):
                 for _, row in df.iterrows():
                     rec = row.to_dict()
                     for key, val in list(rec.items()):
-                        if isinstance(val, float) and (_math.isnan(val) or _math.isinf(val)):
+                        if isinstance(val, float) and (
+                            _math.isnan(val) or _math.isinf(val)
+                        ):
                             rec[key] = None
                     candidates.append(rec)
 
-            _lf_scan_state.update({
-                "scan_status": "completed",
-                "last_scan": datetime.now().isoformat(),
-                "progress": 100,
-                "message": f"Found {len(candidates)} candidates",
-                "candidates": candidates,
-                "bear_market": scanner.bear_market if hasattr(scanner, 'bear_market') else False,
-            })
+            _lf_scan_state.update(
+                {
+                    "scan_status": "completed",
+                    "last_scan": datetime.now().isoformat(),
+                    "progress": 100,
+                    "message": f"Found {len(candidates)} candidates",
+                    "candidates": candidates,
+                    "bear_market": scanner.bear_market
+                    if hasattr(scanner, "bear_market")
+                    else False,
+                }
+            )
             _save_lf_cache()
 
         except Exception as e:
             logger.error("Liquidity Flip scan failed: %s", e, exc_info=True)
-            _lf_scan_state.update({
-                "scan_status": "error",
-                "progress": 0,
-                "message": str(e),
-            })
+            _lf_scan_state.update(
+                {
+                    "scan_status": "error",
+                    "progress": 0,
+                    "message": str(e),
+                }
+            )
 
     threading.Thread(target=_run, daemon=True).start()
     return {"status": "started"}
+
 
 # --- Operator Fingerprint Scanner State ---
 _of_scan_state: dict = {
@@ -1374,6 +1628,7 @@ _OF_SCAN_CACHE = os.path.join(MODELS_DIR, "operator_fingerprint_cache.json")
 def _save_of_cache():
     import json as _json
     import os as _os
+
     try:
         _os.makedirs("models", exist_ok=True)
         with _of_scan_lock:
@@ -1384,25 +1639,27 @@ def _save_of_cache():
             }
         with open(_OF_SCAN_CACHE, "w") as _f:
             _json.dump(data, _f)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Cache operation failed: {e}")
 
 
 def _load_of_cache() -> dict | None:
     import json as _json
     import os as _os
+
     try:
         if _os.path.exists(_OF_SCAN_CACHE):
             with open(_OF_SCAN_CACHE) as _f:
                 return _json.load(_f)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Cache operation failed: {e}")
     return None
 
 
 @app.get("/api/operator-fingerprint/status")
 async def operator_fingerprint_status():
     import copy
+
     with _of_scan_lock:
         state = copy.deepcopy(_of_scan_state)
 
@@ -1413,7 +1670,9 @@ async def operator_fingerprint_status():
                 "scan_status": "idle",
                 "last_scan": cache.get("last_scan"),
                 "progress": 100,
-                "message": cache.get("message", f"Found {len(cache['candidates'])} candidates."),
+                "message": cache.get(
+                    "message", f"Found {len(cache['candidates'])} candidates."
+                ),
                 "candidates": cache["candidates"],
                 "bear_market": state.get("bear_market", False),
             }
@@ -1427,19 +1686,23 @@ async def operator_fingerprint_scan(payload: dict = Body(default={})):
         if _of_scan_state["scan_status"] == "scanning":
             return {"detail": "Scan already in progress"}, 409
 
-        _of_scan_state.update({
-            "scan_status": "scanning",
-            "progress": 0,
-            "message": "Initialising scanner...",
-            "candidates": [],
-        })
+        _of_scan_state.update(
+            {
+                "scan_status": "scanning",
+                "progress": 0,
+                "message": "Initialising scanner...",
+                "candidates": [],
+            }
+        )
 
     min_mcap = int(payload.get("min_mcap", 200))
     max_mcap = int(payload.get("max_mcap", 50000))
 
     def _run():
         try:
-            from myra_app.strategies.operator_fingerprint_scanner import OperatorFingerprintScanner
+            from myra_app.strategies.operator_fingerprint_scanner import (
+                OperatorFingerprintScanner,
+            )
             import math as _math
 
             scanner = OperatorFingerprintScanner(
@@ -1463,7 +1726,9 @@ async def operator_fingerprint_scan(payload: dict = Body(default={})):
                 if processed[0] % 25 == 0:
                     pct = 10 + int((processed[0] / total) * 82)
                     _of_scan_state["progress"] = min(pct, 92)
-                    _of_scan_state["message"] = f"Scanning {processed[0]}/{total} symbols..."
+                    _of_scan_state[
+                        "message"
+                    ] = f"Scanning {processed[0]}/{total} symbols..."
                 return original_get_tech(symbol, min_date)
 
             scanner._get_tech_data = _tracked_get_tech
@@ -1478,30 +1743,39 @@ async def operator_fingerprint_scan(payload: dict = Body(default={})):
                 for _, row in df.iterrows():
                     rec = row.to_dict()
                     for key, val in list(rec.items()):
-                        if isinstance(val, float) and (_math.isnan(val) or _math.isinf(val)):
+                        if isinstance(val, float) and (
+                            _math.isnan(val) or _math.isinf(val)
+                        ):
                             rec[key] = None
                     candidates.append(rec)
 
-            _of_scan_state.update({
-                "scan_status": "completed",
-                "last_scan": datetime.now().isoformat(),
-                "progress": 100,
-                "message": f"Found {len(candidates)} candidates",
-                "candidates": candidates,
-                "bear_market": scanner.bear_market if hasattr(scanner, 'bear_market') else False,
-            })
+            _of_scan_state.update(
+                {
+                    "scan_status": "completed",
+                    "last_scan": datetime.now().isoformat(),
+                    "progress": 100,
+                    "message": f"Found {len(candidates)} candidates",
+                    "candidates": candidates,
+                    "bear_market": scanner.bear_market
+                    if hasattr(scanner, "bear_market")
+                    else False,
+                }
+            )
             _save_of_cache()
 
         except Exception as e:
             logger.error("Operator Fingerprint scan failed: %s", e, exc_info=True)
-            _of_scan_state.update({
-                "scan_status": "error",
-                "progress": 0,
-                "message": str(e),
-            })
+            _of_scan_state.update(
+                {
+                    "scan_status": "error",
+                    "progress": 0,
+                    "message": str(e),
+                }
+            )
 
     threading.Thread(target=_run, daemon=True).start()
     return {"status": "started"}
+
 
 # --- Float Exhaustion Scanner State ---
 _fe_scan_state: dict = {
@@ -1519,6 +1793,7 @@ _FE_SCAN_CACHE = os.path.join(MODELS_DIR, "float_exhaustion_cache.json")
 def _save_fe_cache():
     import json as _json
     import os as _os
+
     try:
         _os.makedirs("models", exist_ok=True)
         with _fe_scan_lock:
@@ -1529,25 +1804,27 @@ def _save_fe_cache():
             }
         with open(_FE_SCAN_CACHE, "w") as _f:
             _json.dump(data, _f)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Cache operation failed: {e}")
 
 
 def _load_fe_cache() -> dict | None:
     import json as _json
     import os as _os
+
     try:
         if _os.path.exists(_FE_SCAN_CACHE):
             with open(_FE_SCAN_CACHE) as _f:
                 return _json.load(_f)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Cache operation failed: {e}")
     return None
 
 
 @app.get("/api/float-exhaustion/status")
 async def float_exhaustion_status():
     import copy
+
     with _fe_scan_lock:
         state = copy.deepcopy(_fe_scan_state)
 
@@ -1558,7 +1835,9 @@ async def float_exhaustion_status():
                 "scan_status": "idle",
                 "last_scan": cache.get("last_scan"),
                 "progress": 100,
-                "message": cache.get("message", f"Found {len(cache['candidates'])} candidates."),
+                "message": cache.get(
+                    "message", f"Found {len(cache['candidates'])} candidates."
+                ),
                 "candidates": cache["candidates"],
                 "bear_market": state.get("bear_market", False),
             }
@@ -1572,19 +1851,23 @@ async def float_exhaustion_scan(payload: dict = Body(default={})):
         if _fe_scan_state["scan_status"] == "scanning":
             return {"detail": "Scan already in progress"}, 409
 
-        _fe_scan_state.update({
-            "scan_status": "scanning",
-            "progress": 0,
-            "message": "Initialising scanner...",
-            "candidates": [],
-        })
+        _fe_scan_state.update(
+            {
+                "scan_status": "scanning",
+                "progress": 0,
+                "message": "Initialising scanner...",
+                "candidates": [],
+            }
+        )
 
     min_mcap = int(payload.get("min_mcap", 200))
     max_mcap = int(payload.get("max_mcap", 50000))
 
     def _run():
         try:
-            from myra_app.strategies.float_exhaustion_scanner import FloatExhaustionScanner
+            from myra_app.strategies.float_exhaustion_scanner import (
+                FloatExhaustionScanner,
+            )
             import math as _math
 
             scanner = FloatExhaustionScanner(
@@ -1608,7 +1891,9 @@ async def float_exhaustion_scan(payload: dict = Body(default={})):
                 if processed[0] % 25 == 0:
                     pct = 10 + int((processed[0] / total) * 82)
                     _fe_scan_state["progress"] = min(pct, 92)
-                    _fe_scan_state["message"] = f"Scanning {processed[0]}/{total} symbols..."
+                    _fe_scan_state[
+                        "message"
+                    ] = f"Scanning {processed[0]}/{total} symbols..."
                 return original_get_tech(symbol, min_date)
 
             scanner._get_tech_data = _tracked_get_tech
@@ -1620,29 +1905,38 @@ async def float_exhaustion_scan(payload: dict = Body(default={})):
 
             for rec in candidates:
                 for key, val in list(rec.items()):
-                    if isinstance(val, float) and (_math.isnan(val) or _math.isinf(val)):
+                    if isinstance(val, float) and (
+                        _math.isnan(val) or _math.isinf(val)
+                    ):
                         rec[key] = None
 
-            _fe_scan_state.update({
-                "scan_status": "completed",
-                "last_scan": datetime.now().isoformat(),
-                "progress": 100,
-                "message": f"Found {len(candidates)} candidates",
-                "candidates": candidates,
-                "bear_market": scanner.bear_market if hasattr(scanner, 'bear_market') else False,
-            })
+            _fe_scan_state.update(
+                {
+                    "scan_status": "completed",
+                    "last_scan": datetime.now().isoformat(),
+                    "progress": 100,
+                    "message": f"Found {len(candidates)} candidates",
+                    "candidates": candidates,
+                    "bear_market": scanner.bear_market
+                    if hasattr(scanner, "bear_market")
+                    else False,
+                }
+            )
             _save_fe_cache()
 
         except Exception as e:
             logger.error("Float Exhaustion scan failed: %s", e, exc_info=True)
-            _fe_scan_state.update({
-                "scan_status": "error",
-                "progress": 0,
-                "message": str(e),
-            })
+            _fe_scan_state.update(
+                {
+                    "scan_status": "error",
+                    "progress": 0,
+                    "message": str(e),
+                }
+            )
 
     threading.Thread(target=_run, daemon=True).start()
     return {"status": "started"}
+
 
 # --- Seasonal Delivery Harvester State ---
 _sd_scan_state: dict = {
@@ -1660,6 +1954,7 @@ _SD_SCAN_CACHE = os.path.join(MODELS_DIR, "seasonal_delivery_cache.json")
 def _save_sd_cache():
     import json as _json
     import os as _os
+
     try:
         _os.makedirs("models", exist_ok=True)
         with _sd_scan_lock:
@@ -1670,25 +1965,27 @@ def _save_sd_cache():
             }
         with open(_SD_SCAN_CACHE, "w") as _f:
             _json.dump(data, _f)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Cache operation failed: {e}")
 
 
 def _load_sd_cache() -> dict | None:
     import json as _json
     import os as _os
+
     try:
         if _os.path.exists(_SD_SCAN_CACHE):
             with open(_SD_SCAN_CACHE) as _f:
                 return _json.load(_f)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Cache operation failed: {e}")
     return None
 
 
 @app.get("/api/seasonal-delivery/status")
 async def seasonal_delivery_status():
     import copy
+
     with _sd_scan_lock:
         state = copy.deepcopy(_sd_scan_state)
 
@@ -1699,7 +1996,9 @@ async def seasonal_delivery_status():
                 "scan_status": "idle",
                 "last_scan": cache.get("last_scan"),
                 "progress": 100,
-                "message": cache.get("message", f"Found {len(cache['candidates'])} candidates."),
+                "message": cache.get(
+                    "message", f"Found {len(cache['candidates'])} candidates."
+                ),
                 "candidates": cache["candidates"],
                 "bear_market": state.get("bear_market", False),
             }
@@ -1713,12 +2012,14 @@ async def seasonal_delivery_scan(payload: dict = Body(default={})):
         if _sd_scan_state["scan_status"] == "scanning":
             return {"detail": "Scan already in progress"}, 409
 
-        _sd_scan_state.update({
-            "scan_status": "scanning",
-            "progress": 0,
-            "message": "Initialising scanner...",
-            "candidates": [],
-        })
+        _sd_scan_state.update(
+            {
+                "scan_status": "scanning",
+                "progress": 0,
+                "message": "Initialising scanner...",
+                "candidates": [],
+            }
+        )
 
     min_mcap = int(payload.get("min_mcap", 200))
     max_mcap = int(payload.get("max_mcap", 50000))
@@ -1728,7 +2029,9 @@ async def seasonal_delivery_scan(payload: dict = Body(default={})):
 
     def _run():
         try:
-            from myra_app.strategies.seasonal_delivery_harvester import SeasonalDeliveryHarvester
+            from myra_app.strategies.seasonal_delivery_harvester import (
+                SeasonalDeliveryHarvester,
+            )
             import math as _math
 
             scanner = SeasonalDeliveryHarvester(
@@ -1753,7 +2056,9 @@ async def seasonal_delivery_scan(payload: dict = Body(default={})):
                 if processed[0] % 25 == 0:
                     pct = 10 + int((processed[0] / total) * 82)
                     _sd_scan_state["progress"] = min(pct, 92)
-                    _sd_scan_state["message"] = f"Scanning {processed[0]}/{total} symbols..."
+                    _sd_scan_state[
+                        "message"
+                    ] = f"Scanning {processed[0]}/{total} symbols..."
                 return original_get_tech(symbol)
 
             scanner._get_all_tech_data = _tracked_get_tech
@@ -1768,30 +2073,39 @@ async def seasonal_delivery_scan(payload: dict = Body(default={})):
                 for _, row in df.iterrows():
                     rec = row.to_dict()
                     for key, val in list(rec.items()):
-                        if isinstance(val, float) and (_math.isnan(val) or _math.isinf(val)):
+                        if isinstance(val, float) and (
+                            _math.isnan(val) or _math.isinf(val)
+                        ):
                             rec[key] = None
                     candidates.append(rec)
 
-            _sd_scan_state.update({
-                "scan_status": "completed",
-                "last_scan": datetime.now().isoformat(),
-                "progress": 100,
-                "message": f"Found {len(candidates)} candidates",
-                "candidates": candidates,
-                "bear_market": scanner.bear_market if hasattr(scanner, 'bear_market') else False,
-            })
+            _sd_scan_state.update(
+                {
+                    "scan_status": "completed",
+                    "last_scan": datetime.now().isoformat(),
+                    "progress": 100,
+                    "message": f"Found {len(candidates)} candidates",
+                    "candidates": candidates,
+                    "bear_market": scanner.bear_market
+                    if hasattr(scanner, "bear_market")
+                    else False,
+                }
+            )
             _save_sd_cache()
 
         except Exception as e:
             logger.error("Seasonal Delivery scan failed: %s", e, exc_info=True)
-            _sd_scan_state.update({
-                "scan_status": "error",
-                "progress": 0,
-                "message": str(e),
-            })
+            _sd_scan_state.update(
+                {
+                    "scan_status": "error",
+                    "progress": 0,
+                    "message": str(e),
+                }
+            )
 
     threading.Thread(target=_run, daemon=True).start()
     return {"status": "started"}
+
 
 # --- Wyckoff Automaton State ---
 _wy_scan_state: dict = {
@@ -1808,6 +2122,7 @@ _WY_SCAN_CACHE = os.path.join(MODELS_DIR, "wyckoff_cache.json")
 def _save_wy_cache():
     import json as _json
     import os as _os
+
     try:
         _os.makedirs("models", exist_ok=True)
         with _wy_scan_lock:
@@ -1818,25 +2133,27 @@ def _save_wy_cache():
             }
         with open(_WY_SCAN_CACHE, "w") as _f:
             _json.dump(data, _f)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Cache operation failed: {e}")
 
 
 def _load_wy_cache() -> dict | None:
     import json as _json
     import os as _os
+
     try:
         if _os.path.exists(_WY_SCAN_CACHE):
             with open(_WY_SCAN_CACHE) as _f:
                 return _json.load(_f)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Cache operation failed: {e}")
     return None
 
 
 @app.get("/api/wyckoff/status")
 async def wyckoff_status():
     import copy
+
     with _wy_scan_lock:
         state = copy.deepcopy(_wy_scan_state)
 
@@ -1847,7 +2164,9 @@ async def wyckoff_status():
                 "scan_status": "idle",
                 "last_scan": cache.get("last_scan"),
                 "progress": 100,
-                "message": cache.get("message", f"Found {len(cache['candidates'])} candidates."),
+                "message": cache.get(
+                    "message", f"Found {len(cache['candidates'])} candidates."
+                ),
                 "candidates": cache["candidates"],
             }
 
@@ -1860,12 +2179,14 @@ async def wyckoff_scan(payload: dict = Body(default={})):
         if _wy_scan_state["scan_status"] == "scanning":
             return {"detail": "Scan already in progress"}, 409
 
-        _wy_scan_state.update({
-            "scan_status": "scanning",
-            "progress": 0,
-            "message": "Initialising scanner...",
-            "candidates": [],
-        })
+        _wy_scan_state.update(
+            {
+                "scan_status": "scanning",
+                "progress": 0,
+                "message": "Initialising scanner...",
+                "candidates": [],
+            }
+        )
 
     min_mcap = int(payload.get("min_mcap", 200))
     max_mcap = int(payload.get("max_mcap", 50000))
@@ -1896,7 +2217,9 @@ async def wyckoff_scan(payload: dict = Body(default={})):
                 if processed[0] % 25 == 0:
                     pct = 10 + int((processed[0] / total) * 82)
                     _wy_scan_state["progress"] = min(pct, 92)
-                    _wy_scan_state["message"] = f"Scanning {processed[0]}/{total} symbols..."
+                    _wy_scan_state[
+                        "message"
+                    ] = f"Scanning {processed[0]}/{total} symbols..."
                 return original_get_tech(symbol, min_date)
 
             scanner._get_tech_data = _tracked_get_tech
@@ -1911,27 +2234,32 @@ async def wyckoff_scan(payload: dict = Body(default={})):
                 for _, row in df.iterrows():
                     rec = row.to_dict()
                     for key, val in list(rec.items()):
-                        if isinstance(val, float) and (_math.isnan(val) or _math.isinf(val)):
+                        if isinstance(val, float) and (
+                            _math.isnan(val) or _math.isinf(val)
+                        ):
                             rec[key] = None
                     candidates.append(rec)
 
-            _wy_scan_state.update({
-                "scan_status": "completed",
-                "last_scan": datetime.now().isoformat(),
-                "progress": 100,
-                "message": f"Found {len(candidates)} candidates",
-                "candidates": candidates,
-            })
+            _wy_scan_state.update(
+                {
+                    "scan_status": "completed",
+                    "last_scan": datetime.now().isoformat(),
+                    "progress": 100,
+                    "message": f"Found {len(candidates)} candidates",
+                    "candidates": candidates,
+                }
+            )
             _save_wy_cache()
 
         except Exception as e:
             logger.error("Wyckoff scan failed: %s", e, exc_info=True)
-            _wy_scan_state.update({
-                "scan_status": "error",
-                "progress": 0,
-                "message": str(e),
-            })
+            _wy_scan_state.update(
+                {
+                    "scan_status": "error",
+                    "progress": 0,
+                    "message": str(e),
+                }
+            )
 
     threading.Thread(target=_run, daemon=True).start()
     return {"status": "started"}
-

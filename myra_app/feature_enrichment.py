@@ -1,5 +1,6 @@
 import logging
 import os
+import sqlite3
 import threading
 import time
 
@@ -153,7 +154,6 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
             else "(SELECT MAX(date) FROM technical_data)"
         )
         ALLOWED_QUERIES = {
-            "prices": "SELECT * FROM prices",
             "technical_data": f"SELECT * FROM technical_data WHERE date >= date({date_ref}, '-365 days')",
             "calculated_indicators": "SELECT * FROM calculated_indicators",
             "fundamentals": "SELECT * FROM fundamentals",
@@ -172,7 +172,6 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
         table_name = None
         for tbl in [
             "technical_data",
-            "prices",
             "calculated_indicators",
             "fundamentals",
         ]:
@@ -211,12 +210,12 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
             f"Loaded {df_raw.shape[0]} rows for {df_raw['symbol'].n_unique()} symbols over {df_raw['date'].n_unique()} days"
         )
         # Read from dedicated benchmarks table in myra_metadata.db
-        import sqlite3 as _sqlite3
+
         meta_path = os.path.join(DB_DIR, "myra_metadata.db")
         nifty_pd = pd.DataFrame(columns=["date", "close"])
         meta_conn = None
         try:
-            meta_conn = _sqlite3.connect(meta_path)
+            meta_conn = sqlite3.connect(meta_path)
             nifty_pd = pd.read_sql(
                 "SELECT date, close FROM benchmarks WHERE symbol = '^NSEI' ORDER BY date",
                 meta_conn,
@@ -231,7 +230,11 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
         if not nifty_pd.empty:
             nifty_pd["date"] = pd.to_datetime(nifty_pd["date"])
             all_dates = pd.to_datetime(df_raw["date"].unique())
-            nifty_pd = nifty_pd.set_index("date").reindex(all_dates, method="ffill").reset_index()
+            nifty_pd = (
+                nifty_pd.set_index("date")
+                .reindex(all_dates, method="ffill")
+                .reset_index()
+            )
             nifty_pd.columns = ["date", "close"]
             nifty_pd["date"] = nifty_pd["date"].dt.strftime("%Y-%m-%d")
 
@@ -316,7 +319,7 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
                         conn.execute(  # noqa: PG-NPLUS1
                             f"ALTER TABLE technical_data ADD COLUMN {col} REAL"
                         )
-                    except:
+                    except sqlite3.OperationalError:
                         pass  # Column already exists
 
                 # Update progress
@@ -332,10 +335,8 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
             # Add missing score columns to technical_data table
             for col in score_columns:
                 try:
-                    conn.execute(
-                        f"ALTER TABLE technical_data ADD COLUMN {col} REAL"
-                    )
-                except:
+                    conn.execute(f"ALTER TABLE technical_data ADD COLUMN {col} REAL")
+                except sqlite3.OperationalError:
                     pass  # Column already exists
 
             # Batch update using executemany for performance
@@ -367,7 +368,9 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
                         if target_date:
                             date_filter = "AND date = ?"
                         else:
-                            date_filter = "AND date = (SELECT MAX(date) FROM technical_data)"
+                            date_filter = (
+                                "AND date = (SELECT MAX(date) FROM technical_data)"
+                            )
 
                         conn.executemany(
                             f"UPDATE technical_data SET {col} = ? WHERE symbol = ? AND date = ? AND {col} IS NULL {date_filter}",
@@ -390,7 +393,7 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
                     set_clauses = [f"{c}=?" for c in score_values]
                     conn.execute(
                         f"UPDATE technical_data SET {','.join(set_clauses)} WHERE symbol=? AND date=?",
-                        list(score_values.values()) + [symbol, date_str]
+                        list(score_values.values()) + [symbol, date_str],
                     )
                 conn.commit()
 
@@ -400,28 +403,39 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
             # --- 52-week high/low and SMA-50 computation ---
             update(tid, "Computing SMA-50 and 52-week metrics…")
             print("[MYRA Enrichment] Computing SMA-50 and 52-week high/low...")
-            for col in ['sma_50', 'high_52w', 'low_52w']:
+            for col in ["sma_50", "high_52w", "low_52w"]:
                 try:
                     conn.execute(f"ALTER TABLE technical_data ADD COLUMN {col} REAL")
-                except:
+                except sqlite3.OperationalError:
                     pass
 
-            df_roll = df_enriched.sort(['symbol', 'date'])
-            df_roll = df_roll.with_columns([
-                pl.col("close").rolling_mean(50, min_periods=1).over("symbol").alias("sma_50"),
-                pl.col("high").rolling_max(252, min_periods=1).over("symbol").alias("high_52w"),
-                pl.col("low").rolling_min(252, min_periods=1).over("symbol").alias("low_52w"),
-            ])
+            df_roll = df_enriched.sort(["symbol", "date"])
+            df_roll = df_roll.with_columns(
+                [
+                    pl.col("close")
+                    .rolling_mean(50, min_periods=1)
+                    .over("symbol")
+                    .alias("sma_50"),
+                    pl.col("high")
+                    .rolling_max(252, min_periods=1)
+                    .over("symbol")
+                    .alias("high_52w"),
+                    pl.col("low")
+                    .rolling_min(252, min_periods=1)
+                    .over("symbol")
+                    .alias("low_52w"),
+                ]
+            )
 
             df_latest = df_roll.filter(pl.col("date") == str(latest_date))
 
             update_rows = []
             for row in df_latest.iter_rows(named=True):
-                sma = float(row['sma_50']) if row['sma_50'] is not None else None
-                h52 = float(row['high_52w']) if row['high_52w'] is not None else None
-                l52 = float(row['low_52w']) if row['low_52w'] is not None else None
+                sma = float(row["sma_50"]) if row["sma_50"] is not None else None
+                h52 = float(row["high_52w"]) if row["high_52w"] is not None else None
+                l52 = float(row["low_52w"]) if row["low_52w"] is not None else None
                 if sma is not None or h52 is not None or l52 is not None:
-                    update_rows.append((sma, h52, l52, row['symbol'], str(row['date'])))
+                    update_rows.append((sma, h52, l52, row["symbol"], str(row["date"])))
 
             if update_rows:
                 conn.executemany(
@@ -429,7 +443,9 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
                     update_rows,
                 )
                 conn.commit()
-                print(f"[MYRA Enrichment] Updated {len(update_rows)} symbols with 52-week/SMA-50 metrics")
+                print(
+                    f"[MYRA Enrichment] Updated {len(update_rows)} symbols with 52-week/SMA-50 metrics"
+                )
 
         update(tid, "Enrichment complete")
 

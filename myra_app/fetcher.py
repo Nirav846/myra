@@ -36,17 +36,19 @@ class GhostSession:
         # Ignore cache for now (simpler)
         self.session = cloudscraper.create_scraper(
             browser={
-                'browser': 'chrome',
-                'platform': 'windows',
-                'desktop': True,
+                "browser": "chrome",
+                "platform": "windows",
+                "desktop": True,
             }
         )
-        self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Referer': 'https://www.nseindia.com/',
-        })
+        self.session.headers.update(
+            {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5",
+                "Referer": "https://www.nseindia.com/",
+            }
+        )
         self.user_agents = [
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0",
@@ -54,42 +56,45 @@ class GhostSession:
         ]
         self.cookies = {}
 
-    def request(self, url, method='GET', data=None, headers=None, use_cache=False):
+    def request(self, url, method="GET", data=None, headers=None, use_cache=False):
         # Random delay to avoid rate limiting
         time.sleep(random.uniform(0.5, 2.5))
 
         # Start with base headers
         req_headers = self.session.headers.copy()
-        req_headers['User-Agent'] = random.choice(self.user_agents)
+        req_headers["User-Agent"] = random.choice(self.user_agents)
         # Merge any additional headers passed in
         if headers:
             req_headers.update(headers)
         if self.cookies:
-            req_headers['Cookie'] = '; '.join([f"{k}={v}" for k, v in self.cookies.items()])
+            req_headers["Cookie"] = "; ".join(
+                [f"{k}={v}" for k, v in self.cookies.items()]
+            )
 
-        if method.upper() == 'GET':
+        if method.upper() == "GET":
             resp = self.session.get(url, headers=req_headers, timeout=30)
         else:
             resp = self.session.post(url, headers=req_headers, data=data, timeout=30)
 
         # Capture cookies from response
-        if 'Set-Cookie' in resp.headers:
-            raw_cookies = resp.headers.get('Set-Cookie', '')
-            for cookie_part in raw_cookies.split(','):
-                if '=' in cookie_part:
-                    key_val = cookie_part.split(';')[0]
-                    if '=' in key_val:
-                        key, val = key_val.split('=', 1)
+        if "Set-Cookie" in resp.headers:
+            raw_cookies = resp.headers.get("Set-Cookie", "")
+            for cookie_part in raw_cookies.split(","):
+                if "=" in cookie_part:
+                    key_val = cookie_part.split(";")[0]
+                    if "=" in key_val:
+                        key, val = key_val.split("=", 1)
                         self.cookies[key.strip()] = val.strip()
         return resp
 
     def get(self, url, headers=None, **kwargs):
-        return self.request(url, method='GET', headers=headers)
+        return self.request(url, method="GET", headers=headers)
 
     def close(self):
         try:
             self.session.close()
-        except:
+        except Exception:
+            logger.debug("Session close error", exc_info=True)
             pass
 
 
@@ -323,7 +328,8 @@ class DataFetcher:
             try:
                 df = pd.read_csv(self.cal_path)
                 self.valid_dates = set(df["date"].astype(str).tolist())
-            except:
+            except Exception:
+                logger.debug("Non-critical fetch error skipped", exc_info=True)
                 pass
 
     def _is_holiday(self, dt):
@@ -350,7 +356,8 @@ class DataFetcher:
             target_date = dt.date() if hasattr(dt, "date") else dt
             if target_date > ist_now.date():
                 return True
-        except:
+        except Exception:
+            logger.debug("Non-critical fetch error skipped", exc_info=True)
             pass
 
         return False
@@ -364,7 +371,9 @@ class DataFetcher:
         if target_date == ist_now.date():
             ready = ist_now.hour > 18 or (ist_now.hour == 18 and ist_now.minute >= 30)
             if not ready:
-                print(f"[INFO] Data not ready yet - IST time: {ist_now.hour}:{ist_now.minute:02d}, need 18:30+")
+                print(
+                    f"[INFO] Data not ready yet - IST time: {ist_now.hour}:{ist_now.minute:02d}, need 18:30+"
+                )
             return ready
         return False
 
@@ -374,7 +383,9 @@ class DataFetcher:
         Returns dict with readiness info.
         """
         ist_now = self.get_ist_now()
-        target_date = current_date.date() if hasattr(current_date, "date") else current_date
+        target_date = (
+            current_date.date() if hasattr(current_date, "date") else current_date
+        )
 
         status = {
             "can_fetch": False,
@@ -463,7 +474,8 @@ class DataFetcher:
                 (name, name),
             )
             conn.commit()
-        except:
+        except Exception:
+            logger.debug("Non-critical fetch error skipped", exc_info=True)
             pass
 
     def get_reliability(self, name):
@@ -586,19 +598,19 @@ class DataFetcher:
 
     def fetch_bhavcopy_with_retry(self, current_date):
         # Circuit breaker: after 3 consecutive failures, wait 30 minutes before retrying
-        consecutive_failures = getattr(self, '_consecutive_failures', 0)
-        
+        consecutive_failures = getattr(self, "_consecutive_failures", 0)
+
         for i in range(5):
             data, name = self.fetch_ohlcv_delivery(current_date)
             if data:
                 # Reset consecutive failures on success
                 self._consecutive_failures = 0
                 return data, name
-            
+
             # Increment consecutive failures
             consecutive_failures += 1
             self._consecutive_failures = consecutive_failures
-            
+
             # Check if circuit breaker should trigger
             if consecutive_failures >= 3:
                 wait_time = 30 * 60  # 30 minutes in seconds
@@ -609,7 +621,7 @@ class DataFetcher:
                 # Reset counter after waiting
                 self._consecutive_failures = 0
                 continue
-                
+
             if self._is_holiday(current_date):
                 break
             print(
@@ -656,7 +668,8 @@ class DataFetcher:
                         "[MYRA] Auto-Response in Cooldown. Skipping action to prevent cascade."
                     )
                     return
-        except:
+        except Exception:
+            logger.debug("Non-critical fetch error skipped", exc_info=True)
             pass
 
         FAILURE_WEIGHTS = {"schema": 0.6, "truth": 1.0, "anchor": 1.0, "default": 0.3}
@@ -682,7 +695,8 @@ class DataFetcher:
                         ),
                     )
                     conn.commit()
-            except:
+            except Exception:
+                logger.debug("Non-critical fetch error skipped", exc_info=True)
                 pass
             if failures.get("schema", 0) >= 3:
                 print("👉 Action: SCHEMA EMERGENCY. Forcing Mirror Priority Reset.")
@@ -920,7 +934,8 @@ class DataFetcher:
                             )
                             if not valid_price:
                                 score = 0.0
-                    except:
+                    except Exception:
+                        logger.debug("Non-critical fetch error skipped", exc_info=True)
                         pass
 
                     rel = self.get_reliability(stream["name"])
@@ -1008,7 +1023,8 @@ class DataFetcher:
                         for deal in data.get(key, [])
                     ]
                     return results
-            except:
+            except Exception:
+                logger.debug("Non-critical fetch error, skipping item", exc_info=True)
                 continue
         return []
 
@@ -1025,7 +1041,8 @@ class DataFetcher:
                     continue
                 if res:
                     return res, stream["name"]
-            except:
+            except Exception:
+                logger.debug("Non-critical fetch error, skipping item", exc_info=True)
                 continue
         return None, None
 
@@ -1172,7 +1189,8 @@ class DataFetcher:
             r = self.session.get(sources["primary"])
             if r and r.status_code == 200:
                 return [self.unify_symbol(s) for s in self._parse_nse_csv(r.text)]
-        except:
+        except Exception:
+            logger.debug("Non-critical fetch error skipped", exc_info=True)
             pass
         return []
 
@@ -1199,7 +1217,8 @@ class DataFetcher:
                 r = self.session.get(stream["url"], headers=headers)
                 if r and r.status_code == 200:
                     return r.json()
-            except:
+            except Exception:
+                logger.debug("Non-critical fetch error, skipping item", exc_info=True)
                 continue
         return None
 
@@ -1247,7 +1266,8 @@ class DataFetcher:
             r = self.session.get(url, headers=headers)
             if r and r.status_code == 200:
                 return r.json().get("data", [])
-        except:
+        except Exception:
+            logger.debug("Non-critical fetch error skipped", exc_info=True)
             pass
         return []
 
@@ -1259,7 +1279,8 @@ class DataFetcher:
             r = self.session.get(url, headers=headers)
             if r and r.status_code == 200:
                 return r.json().get("data", [])
-        except:
+        except Exception:
+            logger.debug("Non-critical fetch error skipped", exc_info=True)
             pass
         return []
 
@@ -1271,7 +1292,8 @@ class DataFetcher:
             r = self.session.get(url, headers=headers)
             if r and r.status_code == 200:
                 return r.json()
-        except:
+        except Exception:
+            logger.debug("Non-critical fetch error skipped", exc_info=True)
             pass
         return []
 
@@ -1283,7 +1305,8 @@ class DataFetcher:
             r = self.session.get(url, headers=headers)
             if r and r.status_code == 200:
                 return r.json().get("data", [])
-        except:
+        except Exception:
+            logger.debug("Non-critical fetch error skipped", exc_info=True)
             pass
         return []
 
@@ -1299,7 +1322,8 @@ class DataFetcher:
             r = self.session.get(url, headers=headers)
             if r and r.status_code == 200:
                 return r.json()
-        except:
+        except Exception:
+            logger.debug("Non-critical fetch error skipped", exc_info=True)
             pass
         return []
 
