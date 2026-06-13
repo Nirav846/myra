@@ -6,6 +6,7 @@ import { fetchMarketCapMap } from '../lib/marketCapCache';
 import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
 import ScrollableTable from '../components/ScrollableTable';
+import { API_BASE } from '../config';
 
 interface ScanPrediction {
   symbol: string;
@@ -37,8 +38,6 @@ interface PipelineStatus {
   overall: { status: string };
   tasks: Record<string, PipelineTaskStatus>;
 }
-
-const API_BASE = 'http://localhost:8000/api';
 
 function formatMarketCap(mcap: number | null | undefined): string {
   if (mcap == null) return '\u2014';

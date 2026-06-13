@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Librarian } from '../lib/Librarian';
 import { BrainCircuit, ChevronDown, ChevronRight, Activity, Cpu, Play, SlidersHorizontal, Rocket, Tag, AlertTriangle, XCircle } from 'lucide-react';
 import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar } from 'recharts';
+import { API_BASE } from '../config';
 
 interface MLStatus {
   exists: boolean;
@@ -49,8 +50,6 @@ interface PipelineTaskStatus {
 interface PipelineStatus {
   tasks: Record<string, PipelineTaskStatus>;
 }
-
-const API_BASE = 'http://localhost:8000/api';
 
 const FORWARD_RETURN_FEATURES = [
   'delivery_pct', 'delivery_divergence_score', 'volatility_compression_score',

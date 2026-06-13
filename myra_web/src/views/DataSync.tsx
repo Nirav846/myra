@@ -4,14 +4,13 @@ import {
   Database, HardDrive, Key, Server, StopCircle, X, ChevronRight, CalendarClock
 } from 'lucide-react';
 import { useHealthStatus } from '../hooks/useHealthStatus';
+import { API_BASE } from '../config';
 
 interface DBHealthStatus {
   connected: boolean;
   error?: string;
   count?: number;
 }
-
-const API_BASE = 'http://localhost:8000/api';
 
 interface TaskInfo {
   last_run: string | null;

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Librarian } from '../lib/Librarian';
 import { SymbolSearch } from '../components/SymbolSearch';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import { API_BASE } from '../config';
 
 interface FinStackAgent {
   name: string;
@@ -15,8 +16,6 @@ interface FinStackResponse {
   agents: FinStackAgent[];
   summary: string;
 }
-
-const API_BASE = 'http://localhost:8000/api';
 
 export default function AIAnalysisView({ lib }: { lib: Librarian }) {
   const [ticker, setTicker] = useState('');

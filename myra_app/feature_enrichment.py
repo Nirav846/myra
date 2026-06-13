@@ -461,3 +461,113 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
         logging.getLogger(__name__).error(f"Enrichment pipeline failed: {e}")
     finally:
         unregister(tid)
+
+
+# --- Columns used by enrich_from_dataframe --------------------------------
+_SCORE_COLS = [
+    "delivery_divergence_score",
+    "volatility_compression_score",
+    "relative_volume_score",
+    "nifty_outperformance_score",
+]
+_SMC_COLS = [
+    "bullish_fvg",
+    "bearish_fvg",
+    "fvg_top",
+    "fvg_bottom",
+    "fvg_boundary",
+    "fvg_freshness",
+    "swing_high",
+    "swing_low",
+    "liquidity_distance",
+    "htf_bullish",
+    "htf_bearish",
+    "mtf_bullish",
+    "mtf_bearish",
+    "trend_alignment",
+    "delivery_ma_60",
+    "has_bullish_fvg",
+]
+_ROLL_COLS = ["sma_50", "high_52w", "low_52w"]
+
+
+def enrich_from_dataframe(
+    full_df: pl.DataFrame,
+    nifty_df: pl.DataFrame,
+    target_date: str,
+) -> dict[str, dict[str, float]]:
+    """
+    Compute enrichment for a single *target_date* using a pre-loaded Polars
+    DataFrame instead of hitting the database.
+
+    Parameters
+    ----------
+    full_df : pl.DataFrame
+        Complete *technical_data* table (all dates, all symbols).
+    nifty_df : pl.DataFrame
+        Nifty 50 benchmark with columns ``["date", "close"]``, indexed to
+        every date present in *full_df* (forward-filled for gaps).
+    target_date : str
+        ISO date (``YYYY-MM-DD``) to enrich.
+
+    Returns
+    -------
+    dict[str, dict[str, float]]
+        ``{symbol: {column_name: value, …}}`` for the target date.
+        Only non‑null values are included.
+    """
+    from datetime import datetime, timedelta
+
+    logger = logging.getLogger(__name__)
+
+    # 1. Slice a 365‑day look‑back window ending at target_date
+    td = datetime.strptime(target_date, "%Y-%m-%d")
+    window_start = (td - timedelta(days=365)).strftime("%Y-%m-%d")
+
+    window_df = full_df.filter(
+        (pl.col("date") >= window_start) & (pl.col("date") <= target_date)
+    )
+
+    if window_df.is_empty():
+        logger.warning("Empty window for %s — skipping", target_date)
+        return {}
+
+    # 2. Scores + rolling metrics (idempotent by construction)
+    enriched = enrich_features(window_df, nifty_df)
+
+    # 3. SMC indicators — pass Polars directly (avoids pandas round‑trip)
+    from myra_app.utils.smc_calculator import calculate_smc_indicators
+
+    smc_result = calculate_smc_indicators(enriched)  # returns pl.DataFrame
+
+    # 4. Keep only the target date from each result
+    enriched_today = enriched.filter(pl.col("date") == target_date)
+    smc_today = smc_result.filter(pl.col("date") == target_date)
+
+    # 5. Merge into {symbol: {col: val}}
+    results: dict[str, dict[str, float]] = {}
+
+    for row in enriched_today.iter_rows(named=True):
+        sym: str = row["symbol"]
+        entry: dict[str, float] = {}
+        for col in _SCORE_COLS + _ROLL_COLS:
+            val = row.get(col)
+            if val is not None:
+                try:
+                    entry[col] = float(val)
+                except (TypeError, ValueError):
+                    pass
+        results[sym] = entry
+
+    for row in smc_today.iter_rows(named=True):
+        sym: str = row["symbol"]
+        entry = results.setdefault(sym, {})
+        for col in _SMC_COLS:
+            val = row.get(col)
+            if val is not None:
+                try:
+                    entry[col] = float(val)
+                except (TypeError, ValueError):
+                    pass
+
+    return results

@@ -1,9 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, Play, CheckCircle, AlertTriangle } from 'lucide-react';
 import { Librarian } from '../lib/Librarian';
-
-const API_BASE = 'http://localhost:8000/api';
-const ROOT_BASE = API_BASE.replace(/\/api$/, '');
+import { API_ROOT } from '../config';
 
 interface PipelineStatus {
   fundamentals: string;
@@ -45,7 +43,7 @@ export default function ToolsView({ lib }: { lib: Librarian }) {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await fetch(`${ROOT_BASE}/api/tools/status`);
+      const res = await fetch(`${API_ROOT}/api/tools/status`);
       if (!res.ok) throw new Error('Network response was not ok');
       const data: PipelineStatus = await res.json();
       setStatus(data);
@@ -74,7 +72,7 @@ export default function ToolsView({ lib }: { lib: Librarian }) {
     });
 
     try {
-      const res = await fetch(`${ROOT_BASE}${ENDPOINTS[taskKey]}`, {
+      const res = await fetch(`${API_ROOT}${ENDPOINTS[taskKey]}`, {
         method: 'POST',
       });
       if (!res.ok) throw new Error('Failed to start task');

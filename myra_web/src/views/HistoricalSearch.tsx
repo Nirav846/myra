@@ -5,8 +5,7 @@ import { ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, CartesianG
 import { SymbolSearch } from '../components/SymbolSearch';
 import { motion, AnimatePresence } from 'motion/react';
 import { useSettings } from '../lib/SettingsContext';
-
-const API_BASE = 'http://localhost:8000/api';
+import { API_BASE } from '../config';
 
 interface HistoricalDataRow {
   date: string;

@@ -23,7 +23,7 @@ interface Candidate {
   seasonal_score: number;
   close: number;
   wk52_pos: number;
-  trading_days_so_far: number;
+  grade?: string;
 }
 
 interface ScanStatus {
@@ -583,7 +583,7 @@ export default function SeasonalDeliveryHarvesterView({ lib }: { lib: Librarian 
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.close.toFixed(2)}</td>
                         <td className="px-3 py-3 text-center">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${GRADE_COLORS[row.grade] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
-                            {row.seasonal_score.toFixed(0)} · {row.grade}
+                            {row.seasonal_score.toFixed(0)} · {row.grade || '?'}
                           </span>
                         </td>
                       </tr>
