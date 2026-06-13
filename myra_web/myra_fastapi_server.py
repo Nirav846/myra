@@ -50,7 +50,7 @@ app = FastAPI(title="MYRA v3.2 API Bridge")
 # Allow the React frontend to communicate with this local API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins for development
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
