@@ -28,21 +28,6 @@ from myra_app.utils.index_sync import sync_index_constituents
 
 logger = logging.getLogger(__name__)
 
-# ─── Active-queries flag (file-based, shared with FastAPI server) ────────────
-_ACTIVE_QUERIES_FILE = os.path.join(DB_DIR, ".active_queries")
-
-
-def _has_active_queries() -> bool:
-    """Check if any user queries are currently in flight."""
-    try:
-        if os.path.exists(_ACTIVE_QUERIES_FILE):
-            with open(_ACTIVE_QUERIES_FILE) as f:
-                count = int(f.read().strip() or "0")
-            return count > 0
-    except (FileNotFoundError, ValueError):
-        pass
-    return False
-
 
 # ─── Shared shutdown event ────────────────────────────────────────────────────
 _shutdown_event = threading.Event()
@@ -409,11 +394,6 @@ def _task_watchdog():
                     tid,
                     f"Watching – Last check: {ist_now.strftime('%H:%M:%S')}",
                 )
-
-                if _has_active_queries():
-                    logger.debug("[MYRA BG] Active queries detected – sleeping 30s")
-                    _shutdown_event.wait(timeout=30)
-                    continue
 
                 if _is_db_stale(days_threshold=1):
                     ist_now = datetime.now(timezone.utc).astimezone(IST)
