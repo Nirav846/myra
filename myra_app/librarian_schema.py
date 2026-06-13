@@ -1,6 +1,7 @@
 import logging
 import sqlite3
 
+from myra_app.librarian_core import LibrarianCore
 from myra_app.schema_registry import SchemaRegistry
 
 logger = logging.getLogger(__name__)
@@ -280,8 +281,37 @@ class LibrarianSchemaMixin:
         self._create_indices()
 
         # PRIORITY 2.3: Runtime Schema Validation on Startup
-        if self._tech_conn:
-            SchemaRegistry.validate_schema(self._tech_conn, "technical_data")
+        conn_map = {
+            "technical": self._tech_conn,
+            "institutional": self._inst_conn,
+            "meta": self._meta_conn,
+            "valuation": self._val_conn,
+            "governance": self._gov_conn,
+        }
+        for table_name, table_info in SchemaRegistry.TABLES.items():
+            db_key = table_info.get("db", "")
+            conn = conn_map.get(db_key)
+            if conn is None:
+                # Connect ad-hoc for databases without a dedicated handle
+                db_file = LibrarianCore.DB_MAP.get(db_key)
+                if db_file:
+                    import os
+                    from myra_app.constants import DB_DIR
+
+                    path = os.path.join(DB_DIR, db_file)
+                    if os.path.exists(path):
+                        try:
+                            conn = sqlite3.connect(path)
+                            conn.execute("PRAGMA journal_mode=WAL")
+                        except Exception:
+                            pass
+            if conn is not None:
+                try:
+                    result = SchemaRegistry.validate_schema(conn, table_name)
+                    if result:
+                        logger.info(f"[SCHEMA_REGISTRY] {table_name}: schema valid")
+                except Exception as exc:
+                    logger.warning(f"[SCHEMA_REGISTRY] {table_name}: validation skipped ({exc})")
 
     def _create_indices(self):
         """Optimizes all sidecars with covering indices."""
