@@ -236,14 +236,14 @@ class FundamentalSync:
         db_path = self._get_valuation_db_path()
         records = []
 
-        # Fetch existing shares_outstanding and market_cap to preserve them
+        # Fetch existing values that we must NOT overwrite
         existing_values = {}
         try:
             with sqlite3.connect(db_path, timeout=10) as conn:
                 for row in conn.execute(
-                    "SELECT symbol, shares_outstanding, market_cap FROM fundamentals"
+                    "SELECT symbol, shares_outstanding, market_cap, promoter_holding_pct, free_float_pct, free_float_market_cap FROM fundamentals"
                 ):
-                    existing_values[row[0]] = (row[1], row[2])
+                    existing_values[row[0]] = (row[1], row[2], row[3], row[4], row[5])
         except Exception:
             pass
 
@@ -291,13 +291,19 @@ class FundamentalSync:
                 "source_ms": "MORNINGSTAR" if ms else None,
                 "source_nse": "YFINANCE" if nse else None,
             }
-            # Do NOT overwrite shares_outstanding or market_cap — managed separately
+            # Do NOT overwrite columns managed by separate backfills
             existing = existing_values.get(symbol)
             if existing:
                 if existing[0] is not None and existing[0] > 0:
                     record["shares_outstanding"] = existing[0]
                 if existing[1] is not None and existing[1] > 0:
                     record["market_cap"] = existing[1]
+                if existing[2] is not None and existing[2] > 0:
+                    record["promoter_holding_pct"] = existing[2]
+                if existing[3] is not None and existing[3] > 0:
+                    record["free_float_pct"] = existing[3]
+                if existing[4] is not None and existing[4] > 0:
+                    record["free_float_market_cap"] = existing[4]
             records.append(record)
 
         if not records:
