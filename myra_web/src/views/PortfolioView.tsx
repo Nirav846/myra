@@ -19,6 +19,17 @@ interface Holding {
   pe: number | null;
   sector: string;
   alert: string | null;
+  operating_margin?: number | null;
+  gross_margin?: number | null;
+  free_cash_flow_yield?: number | null;
+  current_ratio?: number | null;
+  quick_ratio?: number | null;
+  payout_ratio?: number | null;
+  promoter_holding?: number | null;
+  market_cap?: number | null;
+  beta?: number | null;
+  morningstar_rating?: number;
+  morningstar_fields_available?: number;
 }
 
 interface SectorAllocation {
@@ -98,6 +109,48 @@ const formatTimestamp = (): string => {
   return `Today ${hours}:${mins} IST`;
 };
 
+function renderStars(rating: number | null | undefined): string {
+  if (rating == null) return '\u2014';
+  const filled = Math.max(1, Math.min(5, Math.round(rating)));
+  return '\u2605'.repeat(filled) + '\u2606'.repeat(5 - filled);
+}
+
+function formatMarketCap(mc: number | null | undefined): string {
+  if (mc == null) return '\u2014';
+  const cr = mc / 1e7;
+  if (cr >= 1000) return `${(cr / 1000).toFixed(1)}K Cr`;
+  return `${cr.toFixed(0)} Cr`;
+}
+
+function fcfYieldColor(v: number | null | undefined): string {
+  if (v == null) return '';
+  if (v > 5) return 'text-green-400';
+  if (v > 2) return 'text-amber-400';
+  return 'text-red-400';
+}
+
+function promoterColor(v: number | null | undefined): string {
+  if (v == null) return '';
+  if (v > 50) return 'text-green-400';
+  if (v > 30) return 'text-amber-400';
+  return 'text-red-400';
+}
+
+function currentRatioColor(v: number | null | undefined): string {
+  if (v == null) return '';
+  if (v > 1.5) return 'text-green-400';
+  if (v > 1.0) return 'text-amber-400';
+  return 'text-red-400';
+}
+
+function peColor(v: number | null | undefined): string {
+  if (v == null) return '';
+  if (v < 0) return 'text-red-400';
+  if (v < 15) return 'text-green-400';
+  if (v < 25) return 'text-amber-400';
+  return 'text-red-400';
+}
+
 const SECTOR_COLORS = [
   'bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-violet-500',
   'bg-rose-500', 'bg-cyan-500', 'bg-lime-500', 'bg-fuchsia-500',
@@ -114,6 +167,10 @@ export default function PortfolioView() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshStatus, setRefreshStatus] = useState<{type: 'success' | 'error'; message: string} | null>(null);
   const [lastRefreshedLabel, setLastRefreshedLabel] = useState<string>('');
+  const [showFundamentals, setShowFundamentals] = useState(false);
+  const [showLivePrices, setShowLivePrices] = useState(false);
+  const [livePrices, setLivePrices] = useState<Record<string, any>>({});
+  const [liveLoading, setLiveLoading] = useState(false);
   const mountedRef = useRef(true);
   const autoRefreshDoneRef = useRef(false);
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -185,6 +242,22 @@ export default function PortfolioView() {
       }, 4000);
     }
   }, [refreshing, fetchPortfolio, data?.freshness?.prices_from]);
+
+  const fetchLivePrices = useCallback(async () => {
+    setLiveLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/portfolio/live-prices`);
+      const data = await res.json();
+      if (data.status === 'ok') {
+        setLivePrices(data.prices);
+        setShowLivePrices(true);
+      }
+    } catch {
+      // live fetch failed silently
+    } finally {
+      setLiveLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -357,6 +430,63 @@ export default function PortfolioView() {
         </div>
       )}
 
+      {/* ── Toolbar ── */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="px-3 py-1 text-[11px] rounded font-mono transition-colors bg-[#ffffff0a] text-[#888] hover:text-white disabled:opacity-50"
+        >
+          {refreshing ? '\u23F3 Refreshing...' : '\u27F3 Refresh'}
+        </button>
+        <button
+          onClick={() => setShowFundamentals(!showFundamentals)}
+          className={`px-3 py-1 text-[11px] rounded font-mono transition-colors ${
+            showFundamentals ? 'bg-blue-600 text-white' : 'bg-[#ffffff0a] text-[#888] hover:text-white'
+          }`}
+        >
+          {'\uD83D\uDCCA'} Fundamentals {showFundamentals ? 'ON' : 'OFF'}
+        </button>
+        <button
+          onClick={() => (showLivePrices ? setShowLivePrices(false) : fetchLivePrices())}
+          disabled={liveLoading}
+          className={`px-3 py-1 text-[11px] rounded font-mono transition-colors disabled:opacity-50 ${
+            showLivePrices ? 'bg-green-600 text-white' : 'bg-[#ffffff0a] text-[#888] hover:text-white'
+          }`}
+        >
+          {liveLoading ? '\u23F3 Loading...' : showLivePrices ? '\uD83D\uDCE1 Live ON' : '\uD83D\uDCE1 Live Prices'}
+        </button>
+        <button
+          onClick={() => {
+            const csvRows = [['Symbol','Qty','Avg','LTP','Value','P&L%','Day%','Sector','Rating']];
+            for (const h of sortedHoldings) {
+              csvRows.push([
+                h.symbol, String(h.net_qty), String(h.avg_price),
+                h.ltp != null ? String(h.ltp) : '', String(h.current_value),
+                String(h.overall_pnl_pct), String(h.day_pnl_pct),
+                h.sector, h.morningstar_rating != null ? String(h.morningstar_rating) : '',
+              ]);
+            }
+            const csv = csvRows.map(r => r.join(',')).join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = 'portfolio.csv'; a.click();
+            URL.revokeObjectURL(url);
+          }}
+          className="px-3 py-1 text-[11px] rounded font-mono transition-colors bg-[#ffffff0a] text-[#888] hover:text-white"
+        >
+          {'\uD83D\uDCCB'} Export CSV
+        </button>
+      </div>
+
+      {/* ── Live Price Disclaimer ── */}
+      {showLivePrices && (
+        <div className="text-[10px] font-mono text-[#888] bg-emerald-500/5 border border-emerald-500/20 rounded px-3 py-1.5">
+          {'\uD83D\uDFE2'} Live prices via Yahoo Finance. 15-minute delayed. For reference only.
+        </div>
+      )}
+
       {/* ── Holdings Table ── */}
       <div className="bg-[#1a1c24] rounded-lg border border-[#ffffff1a] overflow-hidden">
         <div className="px-4 py-2 border-b border-[#ffffff1a] flex items-center justify-between">
@@ -370,23 +500,41 @@ export default function PortfolioView() {
                 <th className={thClass} onClick={() => toggleSort('symbol')}>Symbol{sortIndicator('symbol')}</th>
                 <th className={thClass} onClick={() => toggleSort('net_qty')}>Qty{sortIndicator('net_qty')}</th>
                 <th className={thClass} onClick={() => toggleSort('avg_price')}>Avg{sortIndicator('avg_price')}</th>
-                <th className={thClass} onClick={() => toggleSort('ltp')}>LTP{sortIndicator('ltp')}</th>
+                <th className={thClass} onClick={() => toggleSort('ltp')}>
+                  {showLivePrices ? '\uD83D\uDFE2 Live' : 'LTP'}{sortIndicator('ltp')}
+                </th>
                 <th className={thClass} onClick={() => toggleSort('current_value')}>Value{sortIndicator('current_value')}</th>
                 <th className={thClass} onClick={() => toggleSort('overall_pnl_pct')}>P&L%{sortIndicator('overall_pnl_pct')}</th>
                 <th className={thClass} onClick={() => toggleSort('day_pnl_pct')}>Day%{sortIndicator('day_pnl_pct')}</th>
                 <th className={thClass} onClick={() => toggleSort('delivery_pct')}>Del{sortIndicator('delivery_pct')}</th>
                 <th className={thClass} onClick={() => toggleSort('vs_sma50_pct')}>vs SMA50{sortIndicator('vs_sma50_pct')}</th>
+                {showFundamentals && (
+                  <>
+                    <th className={thClass} onClick={() => toggleSort('morningstar_rating')}>Stars{sortIndicator('morningstar_rating')}</th>
+                    <th className={thClass} onClick={() => toggleSort('operating_margin')}>OpMgn%{sortIndicator('operating_margin')}</th>
+                    <th className={thClass} onClick={() => toggleSort('free_cash_flow_yield')}>FCFY%{sortIndicator('free_cash_flow_yield')}</th>
+                    <th className={thClass} onClick={() => toggleSort('promoter_holding')}>Prmtr%{sortIndicator('promoter_holding')}</th>
+                    <th className={thClass} onClick={() => toggleSort('current_ratio')}>CurRatio{sortIndicator('current_ratio')}</th>
+                    <th className={thClass} onClick={() => toggleSort('market_cap')}>MktCap{sortIndicator('market_cap')}</th>
+                  </>
+                )}
                 <th className={thClass} onClick={() => toggleSort('pe')}>P/E{sortIndicator('pe')}</th>
                 <th className={thClass} onClick={() => toggleSort('sector')}>Sector{sortIndicator('sector')}</th>
               </tr>
             </thead>
             <tbody>
-              {sortedHoldings.map((h) => (
+              {sortedHoldings.map((h) => {
+                const live = showLivePrices && livePrices[h.symbol];
+                const ltpDisplay = live ? livePrices[h.symbol].ltp : h.ltp;
+                const ltpClass = live ? 'text-cyan-400' : (h.overall_pnl_pct >= 0 ? 'text-green-400' : 'text-red-400');
+                return (
                 <tr key={h.symbol} className="hover:bg-[#ffffff05] transition-colors">
                   <td className={`${tdClass} font-bold text-[#fafafa]`}>{h.symbol}</td>
                   <td className={tdClass}>{formatQty(h.net_qty)}</td>
                   <td className={tdClass}>{formatIndianDec(h.avg_price)}</td>
-                  <td className={tdClass}>{h.ltp ? formatIndianDec(h.ltp) : '\u2014'}</td>
+                  <td className={`${tdClass} ${ltpClass}`}>
+                    {live ? '\u25CF ' : ''}{ltpDisplay ? formatIndianDec(ltpDisplay) : '\u2014'}
+                  </td>
                   <td className={tdClass}>{formatIndianDec(h.current_value)}</td>
                   <td className={`${tdClass} ${h.overall_pnl_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                     {formatPct(h.overall_pnl_pct)}
@@ -400,10 +548,27 @@ export default function PortfolioView() {
                   <td className={`${tdClass} ${h.vs_sma50_pct != null ? (h.vs_sma50_pct >= 0 ? 'text-green-400' : 'text-red-400') : ''}`}>
                     {h.vs_sma50_pct != null ? `${h.vs_sma50_pct >= 0 ? '+' : ''}${h.vs_sma50_pct.toFixed(1)}%` : '\u2014'}
                   </td>
-                  <td className={tdClass}>{h.pe != null ? h.pe.toFixed(1) : '\u2014'}</td>
+                  {showFundamentals && (
+                    <>
+                      <td className={tdClass}>{renderStars(h.morningstar_rating)}</td>
+                      <td className={tdClass}>{h.operating_margin != null ? `${h.operating_margin.toFixed(1)}%` : '\u2014'}</td>
+                      <td className={`${tdClass} ${fcfYieldColor(h.free_cash_flow_yield)}`}>
+                        {h.free_cash_flow_yield != null ? `${h.free_cash_flow_yield.toFixed(1)}%` : '\u2014'}
+                      </td>
+                      <td className={`${tdClass} ${promoterColor(h.promoter_holding)}`}>
+                        {h.promoter_holding != null ? `${h.promoter_holding.toFixed(1)}%` : '\u2014'}
+                      </td>
+                      <td className={`${tdClass} ${currentRatioColor(h.current_ratio)}`}>
+                        {h.current_ratio != null ? h.current_ratio.toFixed(2) : '\u2014'}
+                      </td>
+                      <td className={tdClass}>{formatMarketCap(h.market_cap)}</td>
+                    </>
+                  )}
+                  <td className={`${tdClass} ${peColor(h.pe)}`}>{h.pe != null ? h.pe.toFixed(1) : '\u2014'}</td>
                   <td className={tdClass}>{h.sector}</td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
