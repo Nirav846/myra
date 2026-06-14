@@ -349,6 +349,20 @@ def _task_daily_ingest(force: bool = False):
                 logger.info("[MYRA BG] Daily ingest complete - metadata updated.")
                 from myra_app.fundamental_sync import FundamentalSync
                 FundamentalSync()._compute_market_cap_from_prices()
+
+                # Refresh portfolio prices if portfolio exists
+                try:
+                    from myra_app.portfolio_db import auto_refresh_portfolio
+                    pr = auto_refresh_portfolio()
+                    if pr.get("error"):
+                        logger.warning(f"[MYRA BG] Portfolio refresh skipped: {pr['error']}")
+                    else:
+                        logger.info(
+                            f"[MYRA BG] Portfolio refreshed: {pr.get('prices_updated', 0)} prices, "
+                            f"{pr.get('fundamentals_updated', 0)} fundamentals"
+                        )
+                except Exception as e:
+                    logger.debug(f"[MYRA BG] Portfolio refresh not available: {e}")
             else:
                 logger.info(
                     "[MYRA BG] Ingestion succeeded but no new rows - DB is already up to date."
