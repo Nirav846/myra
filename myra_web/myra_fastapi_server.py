@@ -510,6 +510,26 @@ async def get_system_info():
         return {"error": "psutil not installed"}
 
 
+@app.post("/api/portfolio/refresh")
+async def refresh_portfolio():
+    """Trigger a manual refresh of portfolio prices and fundamentals."""
+    try:
+        from myra_app.portfolio_db import auto_refresh_portfolio
+
+        result = auto_refresh_portfolio()
+        if result.get("error"):
+            return {"status": "error", "result": result}
+        return {"status": "ok", "result": result}
+    except ImportError as e:
+        return {"status": "error", "message": f"portfolio_db import failed: {e}"}
+    except Exception as e:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": str(e)},
+        )
+
+
 @app.get("/api/portfolio")
 async def get_portfolio():
     """Returns full portfolio data: holdings, summary, sector allocation,

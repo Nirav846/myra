@@ -90,6 +90,13 @@ const formatPct = (n: number | null | undefined): string => {
 
 const formatQty = (n: number): string => n.toLocaleString('en-IN');
 
+const formatTimestamp = (): string => {
+  const now = new Date();
+  const hours = now.getHours().toString().padStart(2, '0');
+  const mins = now.getMinutes().toString().padStart(2, '0');
+  return `Today ${hours}:${mins} IST`;
+};
+
 const SECTOR_COLORS = [
   'bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-violet-500',
   'bg-rose-500', 'bg-cyan-500', 'bg-lime-500', 'bg-fuchsia-500',
@@ -103,8 +110,12 @@ export default function PortfolioView() {
   const [sortKey, setSortKey] = useState<string>('symbol');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [riskExpanded, setRiskExpanded] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshStatus, setRefreshStatus] = useState<{type: 'success' | 'error'; message: string} | null>(null);
+  const [lastRefreshedLabel, setLastRefreshedLabel] = useState<string>('');
   const mountedRef = useRef(true);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoRefreshDoneRef = useRef(false);
+  const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchPortfolio = useCallback(async () => {
     try {
@@ -134,16 +145,68 @@ export default function PortfolioView() {
     }
   }, []);
 
+  const handleRefresh = useCallback(async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    setRefreshStatus(null);
+    try {
+      const refreshRes = await fetch(`${API_BASE}/portfolio/refresh`, { method: 'POST' });
+      if (!mountedRef.current) return;
+      const refreshResult = await refreshRes.json();
+      const pricesUpdated = refreshResult?.result?.prices_updated ?? 0;
+      const fundsUpdated = refreshResult?.result?.fundamentals_updated ?? 0;
+      if (refreshRes.ok && refreshResult.status === 'ok') {
+        await fetchPortfolio();
+        setRefreshStatus({
+          type: 'success',
+          message: `✓ Refreshed — ${pricesUpdated} prices, ${fundsUpdated} fundamentals updated`,
+        });
+      } else {
+        await fetchPortfolio();
+        setRefreshStatus({
+          type: 'error',
+          message: `Could not refresh — using cached data from ${data?.freshness?.prices_from || 'earlier'}`,
+        });
+      }
+    } catch {
+      if (!mountedRef.current) return;
+      await fetchPortfolio();
+      setRefreshStatus({
+        type: 'error',
+        message: `Could not refresh — using cached data from ${data?.freshness?.prices_from || 'earlier'}`,
+      });
+    } finally {
+      setRefreshing(false);
+      setLastRefreshedLabel(formatTimestamp());
+      if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+      statusTimerRef.current = setTimeout(() => {
+        if (mountedRef.current) setRefreshStatus(null);
+      }, 4000);
+    }
+  }, [refreshing, fetchPortfolio, data?.freshness?.prices_from]);
+
   useEffect(() => {
     mountedRef.current = true;
     setLoading(true);
     fetchPortfolio();
-    intervalRef.current = setInterval(fetchPortfolio, 300000);
     return () => {
       mountedRef.current = false;
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
     };
   }, [fetchPortfolio]);
+
+  useEffect(() => {
+    if (!data || autoRefreshDoneRef.current) return;
+    autoRefreshDoneRef.current = true;
+    const priceDate = data.freshness?.prices_from;
+    if (!priceDate) return;
+    const lastPriceDate = new Date(priceDate);
+    const today = new Date();
+    const isWeekday = today.getDay() !== 0 && today.getDay() !== 6;
+    if (lastPriceDate.toDateString() !== today.toDateString() && isWeekday) {
+      handleRefresh();
+    }
+  }, [data, handleRefresh]);
 
   const toggleSort = (key: string) => {
     if (sortKey === key) {
@@ -258,8 +321,40 @@ export default function PortfolioView() {
           color={summary.day_pnl >= 0 ? 'text-green-400' : 'text-red-400'}
         />
         <SummaryCard label="Holdings" value={String(summary.holdings_count)} color="text-[#fafafa]" />
-        <SummaryCard label="Last Refresh" value={summary.last_refresh} color="text-[#888]" small />
+        <div
+          onClick={handleRefresh}
+          className="bg-[#1a1c24] rounded-lg border border-[#ffffff1a] p-3 flex flex-col gap-1 cursor-pointer hover:bg-[#ffffff08] transition-colors group"
+          title="Click to refresh portfolio data"
+        >
+          <span className="text-[10px] font-mono text-[#888] uppercase tracking-wider">Last Refreshed</span>
+          <span className="text-[11px] font-semibold font-mono text-[#888] flex items-center gap-1.5">
+            {refreshing ? (
+              <>
+                <span className="inline-block w-3 h-3 border-2 border-[#888] border-t-transparent rounded-full animate-spin" />
+                Refreshing...
+              </>
+            ) : (
+              <>
+                {lastRefreshedLabel || summary.last_refresh}
+                <span className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-cyan-400">⟳</span>
+              </>
+            )}
+          </span>
+        </div>
       </div>
+
+      {/* ── Refresh Status Flash ── */}
+      {refreshStatus && (
+        <div
+          className={`text-[11px] font-mono px-4 py-2 rounded-lg border animate-in fade-in ${
+            refreshStatus.type === 'success'
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+              : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+          }`}
+        >
+          {refreshStatus.message}
+        </div>
+      )}
 
       {/* ── Holdings Table ── */}
       <div className="bg-[#1a1c24] rounded-lg border border-[#ffffff1a] overflow-hidden">
@@ -425,9 +520,15 @@ export default function PortfolioView() {
       </div>
 
       {/* ── Data Freshness Footer ── */}
-      <div className="text-[10px] font-mono text-[#555] text-center py-2 border-t border-[#ffffff0a]">
-        Prices: {freshness.prices_from} | Fundamentals: {freshness.fundamentals_cached} | 
-        Coverage: {freshness.fundamentals_coverage_pct}% | Auto-refreshes every 5 min
+      <div className="text-[10px] font-mono text-[#555] text-center py-3 border-t border-[#ffffff0a] flex items-center justify-center gap-3">
+        <span>Prices as of: {freshness.prices_from || 'N/A'} (EOD) | Fundamentals: {freshness.fundamentals_cached || 'N/A'}</span>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="px-2 py-0.5 bg-[#ffffff0a] border border-[#ffffff1a] rounded text-[10px] text-cyan-400 hover:text-white hover:bg-[#ffffff15] transition-colors disabled:opacity-50"
+        >
+          {refreshing ? '⟳ Refreshing...' : '[Refresh now]'}
+        </button>
       </div>
     </div>
   );
