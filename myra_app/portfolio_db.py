@@ -96,6 +96,17 @@ def init_db():
         )
     """
     )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS industry_cache (
+            symbol TEXT PRIMARY KEY,
+            industry TEXT,
+            yf_sector TEXT,
+            fetched_at TEXT DEFAULT (datetime('now','localtime'))
+        )
+    """
+    )
     conn.commit()
     conn.close()
 
@@ -862,6 +873,79 @@ def auto_refresh_portfolio() -> dict:
         "fundamentals_updated": fundamentals_updated,
         "error": None,
     }
+
+
+def get_cached_industries(symbols: list[str]) -> dict:
+    """
+    Returns {symbol: {industry, yf_sector, fetched_at}} for all symbols in cache.
+    Only returns entries where fetched_at is within 7 days.
+    Stale entries are excluded.
+    """
+    conn = get_connection()
+    placeholders = ",".join("?" * len(symbols))
+    rows = conn.execute(
+        f"SELECT symbol, industry, yf_sector, fetched_at FROM industry_cache "
+        f"WHERE symbol IN ({placeholders}) AND date(fetched_at) >= date('now', '-7 days')",
+        symbols,
+    ).fetchall()
+    conn.close()
+    result = {}
+    for row in rows:
+        result[row[0]] = {
+            "industry": row[1],
+            "yf_sector": row[2],
+            "fetched_at": row[3],
+        }
+    return result
+
+
+def refresh_industry_cache(symbols: list[str]) -> dict:
+    """
+    Fetch industry from yfinance for given symbols.
+    Stores in industry_cache table.
+    Returns {symbol: {industry, yf_sector}} for all fetched symbols.
+    Handles rate limiting (200ms delay between symbols).
+    Falls back to None for symbols that fail.
+    """
+    import time
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        import yfinance as yf
+    except ImportError:
+        logger.warning("yfinance not installed, skipping industry refresh")
+        return {s: {"industry": None, "yf_sector": None} for s in symbols}
+
+    conn = get_connection()
+    results = {}
+
+    for symbol in symbols:
+        try:
+            ticker = yf.Ticker(symbol + ".NS")
+            info = ticker.info
+            industry = info.get("industry")
+            yf_sector = info.get("sector")
+
+            conn.execute(
+                "INSERT OR REPLACE INTO industry_cache (symbol, industry, yf_sector, fetched_at) "
+                "VALUES (?, ?, ?, datetime('now','localtime'))",
+                (symbol, industry, yf_sector),
+            )
+            results[symbol] = {
+                "industry": industry,
+                "yf_sector": yf_sector,
+            }
+        except Exception as e:
+            logger.warning(f"yfinance industry fetch failed for {symbol}: {e}")
+            results[symbol] = {"industry": None, "yf_sector": None}
+
+        time.sleep(0.2)
+
+    conn.commit()
+    conn.close()
+    return results
 
 
 init_db()
