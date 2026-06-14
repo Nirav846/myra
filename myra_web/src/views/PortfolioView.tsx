@@ -467,20 +467,42 @@ export default function PortfolioView() {
         </button>
         <button
           onClick={() => {
-            const csvRows = [['Symbol','Qty','Avg','LTP','Value','P&L%','Day%','Sector','Rating']];
+            const headers = ['Symbol','Qty','Avg','LTP','Live','Value','P&L%','Day%','Del%','vsSMA50%','Sector'];
+            if (showFundamentals) {
+              headers.push('Stars','OpMgn%','FCFY%','Prmtr%','CurRatio','MktCap','P/E');
+            }
+            const csvRows = [headers];
             for (const h of sortedHoldings) {
-              csvRows.push([
+              const live = showLivePrices && livePrices[h.symbol];
+              const ltpVal = live ? livePrices[h.symbol].ltp : h.ltp;
+              const row = [
                 h.symbol, String(h.net_qty), String(h.avg_price),
-                h.ltp != null ? String(h.ltp) : '', String(h.current_value),
-                String(h.overall_pnl_pct), String(h.day_pnl_pct),
-                h.sector, h.morningstar_rating != null ? String(h.morningstar_rating) : '',
-              ]);
+                ltpVal != null ? String(ltpVal) : '',
+                live ? 'Y' : 'N',
+                String(h.current_value), String(h.overall_pnl_pct),
+                String(h.day_pnl_pct),
+                h.delivery_pct != null ? String(h.delivery_pct) : '',
+                h.vs_sma50_pct != null ? String(h.vs_sma50_pct) : '',
+                h.sector,
+              ];
+              if (showFundamentals) {
+                row.push(
+                  h.morningstar_rating != null ? String(h.morningstar_rating) : '',
+                  h.operating_margin != null ? String(h.operating_margin) : '',
+                  h.free_cash_flow_yield != null ? String(h.free_cash_flow_yield) : '',
+                  h.promoter_holding != null ? String(h.promoter_holding) : '',
+                  h.current_ratio != null ? String(h.current_ratio) : '',
+                  h.market_cap != null ? String(h.market_cap) : '',
+                  h.pe != null ? String(h.pe) : '',
+                );
+              }
+              csvRows.push(row);
             }
             const csv = csvRows.map(r => r.join(',')).join('\n');
             const blob = new Blob([csv], { type: 'text/csv' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url; a.download = 'portfolio.csv'; a.click();
+            a.href = url; a.download = `portfolio_${new Date().toISOString().slice(0,10)}.csv`; a.click();
             URL.revokeObjectURL(url);
           }}
           className="px-3 py-1 text-[11px] rounded font-mono transition-colors bg-[#ffffff0a] text-[#888] hover:text-white"
