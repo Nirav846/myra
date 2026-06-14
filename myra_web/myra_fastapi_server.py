@@ -600,6 +600,46 @@ async def get_portfolio():
     except Exception:
         pass
 
+    val_funda_map = {}
+    VAL_DB = os.path.join(DB_DIR, LibrarianCore.DB_MAP["valuation"])
+    if os.path.exists(VAL_DB):
+        try:
+            vc = sqlite3.connect(VAL_DB)
+            vc.row_factory = sqlite3.Row
+            placeholders = ",".join("?" for _ in symbols)
+            for row in vc.execute(
+                f"""SELECT symbol, pe, operatingMargin, grossMargin,
+                           freeCashFlowYield, currentRatio, quickRatio,
+                           payoutRatio, beta, promoter_holding_pct,
+                           sector, market_cap
+                    FROM fundamentals WHERE symbol IN ({placeholders})""",
+                symbols,
+            ).fetchall():
+                val_funda_map[row["symbol"]] = dict(row)
+            vc.close()
+        except Exception:
+            pass
+
+    def compute_myra_quality_score(f):
+        score = 1
+        if f.get("operatingMargin") and f["operatingMargin"] > 15:
+            score += 1
+        if f.get("freeCashFlowYield") and f["freeCashFlowYield"] > 5:
+            score += 1
+        if f.get("promoter_holding_pct") and f["promoter_holding_pct"] > 50:
+            score += 1
+        if f.get("pe") and 0 < f["pe"] < 20:
+            score += 1
+        if f.get("currentRatio") and f["currentRatio"] > 1.5:
+            score += 1
+        return min(score, 5)
+
+    FUNDA_FIELDS = [
+        "operatingMargin", "grossMargin", "freeCashFlowYield",
+        "currentRatio", "quickRatio", "payoutRatio",
+        "beta", "promoter_holding_pct", "market_cap",
+    ]
+
     for h in holdings:
         sym = h["symbol"]
         qty = h.get("net_qty", 0)
@@ -626,6 +666,12 @@ async def get_portfolio():
             pass
 
         funda = funda_map.get(sym, {})
+        vf = val_funda_map.get(sym, {})
+
+        morningstar_rating = compute_myra_quality_score(vf)
+        morningstar_fields_available = sum(
+            1 for f in FUNDA_FIELDS if vf.get(f) is not None
+        )
 
         total_invested += invested
         total_current += current_value
@@ -649,9 +695,20 @@ async def get_portfolio():
                 "delivery_trend": delivery.get("del_trend", "\u2014"),
                 "vs_sma50_pct": tech_pos.get("vs_sma_pct"),
                 "vs_52w_high_pct": tech_pos.get("vs_52w_high_pct"),
-                "pe": funda.get("pe"),
-                "sector": funda.get("sector") or "Other",
+                "pe": funda.get("pe") or vf.get("pe"),
+                "sector": funda.get("sector") or vf.get("sector") or "Other",
                 "alert": None,
+                "operating_margin": vf.get("operatingMargin"),
+                "gross_margin": vf.get("grossMargin"),
+                "free_cash_flow_yield": vf.get("freeCashFlowYield"),
+                "current_ratio": vf.get("currentRatio"),
+                "quick_ratio": vf.get("quickRatio"),
+                "payout_ratio": vf.get("payoutRatio"),
+                "promoter_holding": vf.get("promoter_holding_pct"),
+                "market_cap": vf.get("market_cap"),
+                "beta": vf.get("beta"),
+                "morningstar_rating": morningstar_rating,
+                "morningstar_fields_available": morningstar_fields_available,
             }
         )
 
