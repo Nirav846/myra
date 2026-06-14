@@ -123,4 +123,5 @@ dist/
 *.local
 nse-mcp/node_modules/
 nse-mcp/dist/
+exports/
 *.log
