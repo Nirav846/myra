@@ -104,6 +104,50 @@ Training is triggered via the `/api/ml/train` and `/api/ml/launchpad/train` endp
 
 Task execution is logged in the `task_registry` table (meta.db) with status, duration, and error messages, queryable via `GET /api/pipeline/status`.
 
+## Portfolio System
+
+The portfolio tracker is a CLI tool (`tools/portfolio.py`) backed by a standalone SQLite database (`myra_portfolio.db`) and a data-access layer (`myra_app/portfolio_db.py`).
+
+### Architecture
+
+```
+myra_portfolio.db          ←── portfolio_db.py (CRUD + cache layer)
+         │                          │
+         │                          ├── import_holdings()  — from broker XLSX
+         │                          ├── get_all_holdings() — current positions
+         │                          ├── record_snapshot()  — daily NAV
+         │                          ├── auto_refresh_portfolio() — called by orchestrator
+         │                          ├── get_delivery_metrics()  — technical_data join
+         │                          ├── get_technical_position() — SMA/52w context
+         │                          ├── get_sector_allocation() — valuation.db join
+         │                          └── get_scanner_overlap()  — scanner caches join
+         │
+         ▼
+tools/portfolio.py (CLI: view, import, refresh, scanner, risk, alerts, ...)
+```
+
+### Data Flow
+
+1. **Bhavcopy ingestion** populates `technical_data` (OHLCV + delivery) in `myra_technical.db`.
+2. After ingestion succeeds, the background orchestrator calls `auto_refresh_portfolio()`.
+3. `auto_refresh_portfolio()` reads latest closes and dates from `technical_data` for each holding, storing them in the `price_cache` table.
+4. Fundamentals join from `myra_valuation.db` → `fundamental_cache`.
+5. CLI `view` reads from cache — no database joins at render time.
+
+### Cache Strategy
+
+| Cache Table | Source | Refresh Trigger | Read Latency |
+|-------------|--------|----------------|--------------|
+| `price_cache` | `technical_data` (bhavcopy) | Daily after ingest | Instant |
+| `fundamental_cache` | `valuation.fundamentals` | On first view + daily refresh | Instant |
+| `portfolio_meta` | Orchestrator timestamps | After each refresh | Instant |
+
+### Integration Points
+
+- **Background orchestrator** (`background_orchestrator.py:362`): Calls `auto_refresh_portfolio()` after daily ingestion completes. Best-effort — failure does not block the pipeline.
+- **myra_portfolio.db** is gitignored. Contains all sensitive holding data locally.
+- **--live flag**: The only code path that calls external APIs (yfinance for 15-min delayed prices). All other operations are fully offline once your broker XLSX is imported.
+
 ## Code Conventions
 
 - All paths via `myra_app/constants.py` (`DB_DIR`, `DATA_DIR`, `CACHE_DIR`, etc.) — never `os.getcwd()`.
