@@ -510,6 +510,224 @@ async def get_system_info():
         return {"error": "psutil not installed"}
 
 
+@app.get("/api/portfolio")
+async def get_portfolio():
+    """Returns full portfolio data: holdings, summary, sector allocation,
+    scanner overlap, alerts, risk metrics, and freshness."""
+    try:
+        from myra_app.portfolio_db import (
+            get_all_holdings,
+            get_delivery_metrics,
+            get_technical_position,
+            get_sector_allocation as _get_sector_allocation,
+            get_scanner_overlap as _get_scanner_overlap,
+            get_delivery_alerts as _get_delivery_alerts,
+            get_concentration_risk as _get_concentration_risk,
+            get_drawdown_metrics as _get_drawdown_metrics,
+            get_diversification_score as _get_diversification_score,
+            _get_portfolio_meta,
+            get_db_path,
+        )
+    except ImportError as e:
+        return {"status": "error", "message": f"portfolio_db not available: {e}"}
+
+    try:
+        holdings = get_all_holdings()
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to read holdings: {e}"}
+
+    if not holdings:
+        return {
+            "status": "empty",
+            "message": "No portfolio data. Import your broker XLSX first: python tools/portfolio.py import <file>",
+        }
+
+    PORTFOLIO_DB = get_db_path()
+    total_invested = 0.0
+    total_current = 0.0
+    total_day_pnl = 0.0
+    enriched = []
+    symbols = [h["symbol"] for h in holdings]
+
+    price_map = {}
+    prev_price_map = {}
+    try:
+        if os.path.exists(PORTFOLIO_DB):
+            pc = sqlite3.connect(PORTFOLIO_DB)
+            pc.row_factory = sqlite3.Row
+            for row in pc.execute(
+                "SELECT symbol, latest_close, previous_close, latest_date FROM price_cache"
+            ).fetchall():
+                price_map[row["symbol"]] = row["latest_close"]
+                prev_price_map[row["symbol"]] = row["previous_close"]
+            pc.close()
+    except Exception:
+        pass
+
+    funda_map = {}
+    try:
+        if os.path.exists(PORTFOLIO_DB):
+            fc = sqlite3.connect(PORTFOLIO_DB)
+            fc.row_factory = sqlite3.Row
+            for row in fc.execute(
+                "SELECT symbol, pe, sector FROM fundamental_cache"
+            ).fetchall():
+                funda_map[row["symbol"]] = {
+                    "pe": row["pe"],
+                    "sector": row["sector"],
+                }
+            fc.close()
+    except Exception:
+        pass
+
+    for h in holdings:
+        sym = h["symbol"]
+        qty = h.get("net_qty", 0)
+        avg = h.get("avg_price", 0)
+        invested = qty * avg
+        ltp = price_map.get(sym)
+        current_value = qty * ltp if ltp else 0
+        prev_close = prev_price_map.get(sym)
+        day_change = (ltp - prev_close) if ltp and prev_close else 0
+        day_pnl = qty * day_change
+        overall_pnl = current_value - invested
+        overall_pnl_pct = round((overall_pnl / invested * 100), 2) if invested else 0
+
+        delivery = {}
+        try:
+            delivery = get_delivery_metrics(sym) or {}
+        except Exception:
+            pass
+
+        tech_pos = {}
+        try:
+            tech_pos = get_technical_position(sym) or {}
+        except Exception:
+            pass
+
+        funda = funda_map.get(sym, {})
+
+        total_invested += invested
+        total_current += current_value
+        total_day_pnl += day_pnl
+
+        enriched.append(
+            {
+                "symbol": sym,
+                "category": h.get("category", "NSE EQ"),
+                "net_qty": qty,
+                "avg_price": round(avg, 2),
+                "ltp": ltp,
+                "current_value": round(current_value, 2),
+                "overall_pnl": round(overall_pnl, 2),
+                "overall_pnl_pct": overall_pnl_pct,
+                "day_pnl": round(day_pnl, 2),
+                "day_pnl_pct": round((day_pnl / (current_value - day_pnl) * 100), 2)
+                if (current_value - day_pnl)
+                else 0,
+                "delivery_pct": delivery.get("del_pct"),
+                "delivery_trend": delivery.get("del_trend", "\u2014"),
+                "vs_sma50_pct": tech_pos.get("vs_sma_pct"),
+                "vs_52w_high_pct": tech_pos.get("vs_52w_high_pct"),
+                "pe": funda.get("pe"),
+                "sector": funda.get("sector") or "Other",
+                "alert": None,
+            }
+        )
+
+    total_day_pnl_pct = (
+        round((total_day_pnl / (total_current - total_day_pnl) * 100), 2)
+        if (total_current - total_day_pnl)
+        else 0
+    )
+    overall_pnl = total_current - total_invested
+    overall_pnl_pct = (
+        round((overall_pnl / total_invested * 100), 2) if total_invested else 0
+    )
+
+    summary = {
+        "total_invested": round(total_invested, 2),
+        "total_current": round(total_current, 2),
+        "overall_pnl": round(overall_pnl, 2),
+        "overall_pnl_pct": overall_pnl_pct,
+        "day_pnl": round(total_day_pnl, 2),
+        "day_pnl_pct": total_day_pnl_pct,
+        "holdings_count": len(enriched),
+        "last_refresh": _get_portfolio_meta("last_refresh") or "Not refreshed yet",
+    }
+
+    sector_allocation = []
+    try:
+        sector_allocation = _get_sector_allocation(enriched) or []
+    except Exception:
+        pass
+
+    scanner_overlap = {}
+    try:
+        scanner_overlap = _get_scanner_overlap(enriched) or {}
+    except Exception:
+        pass
+
+    alerts = []
+    try:
+        alerts = _get_delivery_alerts(enriched) or []
+    except Exception:
+        pass
+
+    concentration = {}
+    try:
+        concentration = _get_concentration_risk() or {}
+    except Exception:
+        pass
+
+    drawdown = {}
+    try:
+        drawdown = _get_drawdown_metrics() or {}
+    except Exception:
+        pass
+
+    diversification = {}
+    try:
+        diversification = _get_diversification_score() or {}
+    except Exception:
+        pass
+
+    risk = {
+        "concentration": {
+            "top3_pct": concentration.get("top3_pct", 0),
+            "holdings": concentration.get("top3_holdings", []),
+        },
+        "drawdown": {
+            "peak_value": drawdown.get("peak_value", 0),
+            "peak_date": drawdown.get("peak_date", ""),
+            "current_value": drawdown.get("current_value", 0),
+            "drawdown_pct": drawdown.get("drawdown_pct", 0),
+            "days_from_peak": drawdown.get("days_from_peak", 0),
+        },
+        "diversification_score": diversification.get("score", 0),
+        "diversification_rating": diversification.get("rating", ""),
+    }
+
+    freshness = {
+        "prices_from": _get_portfolio_meta("prices_updated_at") or "unknown",
+        "fundamentals_cached": _get_portfolio_meta("funds_updated_at") or "unknown",
+        "fundamentals_coverage_pct": round(
+            sum(1 for h in enriched if h.get("pe")) / max(len(enriched), 1) * 100
+        ),
+    }
+
+    return {
+        "status": "ok",
+        "summary": summary,
+        "holdings": enriched,
+        "sector_allocation": sector_allocation,
+        "scanner_overlap": scanner_overlap,
+        "alerts": alerts,
+        "risk": risk,
+        "freshness": freshness,
+    }
+
+
 @app.get("/api/logs/recent")
 async def get_recent_logs():
     """Return last 5 lines of pipeline.log or a placeholder."""
