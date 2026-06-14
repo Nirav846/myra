@@ -28,7 +28,8 @@ def get_connection():
 
 def init_db():
     conn = get_connection()
-    conn.executescript("""
+    conn.executescript(
+        """
         CREATE TABLE IF NOT EXISTS holdings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol TEXT NOT NULL UNIQUE,
@@ -60,7 +61,41 @@ def init_db():
             notes TEXT,
             created_at TEXT DEFAULT (datetime('now','localtime'))
         );
-    """)
+    """
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS price_cache (
+            symbol TEXT PRIMARY KEY,
+            latest_close REAL,
+            previous_close REAL,
+            latest_date TEXT,
+            updated_at TEXT DEFAULT (datetime('now','localtime'))
+        )
+    """
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS fundamental_cache (
+            symbol TEXT PRIMARY KEY,
+            pe REAL,
+            sector TEXT,
+            market_cap REAL,
+            fetched_at TEXT DEFAULT (datetime('now','localtime'))
+        )
+    """
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS portfolio_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """
+    )
     conn.commit()
     conn.close()
 
@@ -73,7 +108,8 @@ def import_holdings(rows):
         qty = int(row["net_qty"])
         price = float(row["avg_price"])
         category = row.get("category", "NSE EQ")
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO holdings (symbol, category, net_qty, avg_price)
             VALUES (?, ?, ?, ?)
             ON CONFLICT(symbol) DO UPDATE SET
@@ -81,11 +117,16 @@ def import_holdings(rows):
                 net_qty=excluded.net_qty,
                 avg_price=excluded.avg_price,
                 updated_at=datetime('now','localtime')
-        """, (symbol, category, qty, price))
-        conn.execute("""
+        """,
+            (symbol, category, qty, price),
+        )
+        conn.execute(
+            """
             INSERT INTO transactions (symbol, action, qty, price, notes)
             VALUES (?, 'IMPORT', ?, ?, ?)
-        """, (symbol, qty, price, f"Imported {qty} @ {price}"))
+        """,
+            (symbol, qty, price, f"Imported {qty} @ {price}"),
+        )
         count += 1
     conn.commit()
     conn.close()
@@ -108,7 +149,8 @@ def get_holding(symbol):
 
 def add_holding(symbol, qty, avg_price, category="NSE EQ"):
     conn = get_connection()
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO holdings (symbol, category, net_qty, avg_price)
         VALUES (?, ?, ?, ?)
         ON CONFLICT(symbol) DO UPDATE SET
@@ -116,11 +158,16 @@ def add_holding(symbol, qty, avg_price, category="NSE EQ"):
             net_qty=excluded.net_qty,
             avg_price=excluded.avg_price,
             updated_at=datetime('now','localtime')
-    """, (symbol, category, qty, avg_price))
-    conn.execute("""
+    """,
+        (symbol, category, qty, avg_price),
+    )
+    conn.execute(
+        """
         INSERT INTO transactions (symbol, action, qty, price, notes)
         VALUES (?, 'BUY', ?, ?, ?)
-    """, (symbol, qty, avg_price, f"Added {qty} @ {avg_price}"))
+    """,
+        (symbol, qty, avg_price, f"Added {qty} @ {avg_price}"),
+    )
     conn.commit()
     conn.close()
 
@@ -136,12 +183,18 @@ def update_holding(symbol, **kwargs):
     set_clause = ", ".join(f"{k}=?" for k in updates)
     values = list(updates.values()) + [symbol]
     conn = get_connection()
-    conn.execute(f"UPDATE holdings SET {set_clause}, updated_at=datetime('now','localtime') WHERE symbol=?", values)
+    conn.execute(
+        f"UPDATE holdings SET {set_clause}, updated_at=datetime('now','localtime') WHERE symbol=?",
+        values,
+    )
     notes = ", ".join(f"{k}={v}" for k, v in updates.items())
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO transactions (symbol, action, qty, price, notes)
         VALUES (?, 'UPDATE', ?, ?, ?)
-    """, (symbol, updates.get("net_qty"), updates.get("avg_price"), notes))
+    """,
+        (symbol, updates.get("net_qty"), updates.get("avg_price"), notes),
+    )
     conn.commit()
     conn.close()
 
@@ -149,21 +202,29 @@ def update_holding(symbol, **kwargs):
 def delete_holding(symbol):
     conn = get_connection()
     conn.execute("DELETE FROM holdings WHERE symbol=?", (symbol,))
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO transactions (symbol, action, notes)
         VALUES (?, 'SELL', 'Full exit')
-    """, (symbol,))
+    """,
+        (symbol,),
+    )
     conn.commit()
     conn.close()
 
 
-def record_snapshot(invested, current, overall_pnl, overall_pnl_pct, day_pnl, day_pnl_pct):
+def record_snapshot(
+    invested, current, overall_pnl, overall_pnl_pct, day_pnl, day_pnl_pct
+):
     date = datetime.now().strftime("%Y-%m-%d")
     conn = get_connection()
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO snapshots (date, total_invested, total_current, overall_pnl, overall_pnl_pct, day_pnl, day_pnl_pct)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (date, invested, current, overall_pnl, overall_pnl_pct, day_pnl, day_pnl_pct))
+    """,
+        (date, invested, current, overall_pnl, overall_pnl_pct, day_pnl, day_pnl_pct),
+    )
     conn.commit()
     conn.close()
     return date
@@ -183,7 +244,7 @@ def get_transactions(symbol=None, limit=50):
     if symbol:
         rows = conn.execute(
             "SELECT * FROM transactions WHERE symbol=? ORDER BY created_at DESC LIMIT ?",
-            (symbol, limit)
+            (symbol, limit),
         ).fetchall()
     else:
         rows = conn.execute(
@@ -196,8 +257,10 @@ def get_transactions(symbol=None, limit=50):
 def _tech_db():
     return os.path.join(DB_DIR, "myra_technical.db")
 
+
 def _val_db():
     return os.path.join(DB_DIR, "myra_valuation.db")
+
 
 def get_delivery_metrics(symbol):
     path = _tech_db()
@@ -209,7 +272,7 @@ def get_delivery_metrics(symbol):
             "SELECT date, delivery_qty, volume, close FROM technical_data "
             "WHERE symbol=? AND delivery_qty IS NOT NULL AND volume IS NOT NULL AND volume > 0 "
             "ORDER BY date DESC LIMIT 21",
-            (symbol,)
+            (symbol,),
         )
         rows = cur.fetchall()
         conn.close()
@@ -248,6 +311,7 @@ def get_delivery_metrics(symbol):
     except sqlite3.Error:
         return None
 
+
 def get_technical_position(symbol):
     path = _tech_db()
     if not os.path.exists(path):
@@ -258,7 +322,7 @@ def get_technical_position(symbol):
             "SELECT close, sma_50, high_52w, low_52w FROM technical_data "
             "WHERE symbol=? AND close IS NOT NULL "
             "ORDER BY date DESC LIMIT 1",
-            (symbol,)
+            (symbol,),
         )
         row = cur.fetchone()
         conn.close()
@@ -288,6 +352,7 @@ def get_technical_position(symbol):
     except sqlite3.Error:
         return None
 
+
 def get_sector_allocation(holdings):
     sectors = {}
     total_current = sum(h.get("current", 0) for h in holdings) or 1
@@ -307,6 +372,7 @@ def get_sector_allocation(holdings):
         for s, v in sorted(sectors.items(), key=lambda x: -x[1]["total_value"])
     ]
     return result
+
 
 def get_scanner_overlap(holdings):
     models_dir = os.path.join(PROJECT_ROOT, "models")
@@ -347,6 +413,7 @@ def get_scanner_overlap(holdings):
                 result[s][scanner_name] = None
     return result
 
+
 def get_delivery_alerts(holdings):
     alerts = []
     for h in holdings:
@@ -358,19 +425,23 @@ def get_delivery_alerts(holdings):
         if avg_20d and avg_20d > 0:
             ratio = del_pct / avg_20d
             if ratio >= 2.0:
-                alerts.append({
-                    "symbol": h["symbol"],
-                    "alert_type": "DELIVERY SURGE",
-                    "severity": "high",
-                    "detail": f"Today's delivery {del_pct}% is {ratio:.1f}x the 20d avg ({avg_20d}%)",
-                })
+                alerts.append(
+                    {
+                        "symbol": h["symbol"],
+                        "alert_type": "DELIVERY SURGE",
+                        "severity": "high",
+                        "detail": f"Today's delivery {del_pct}% is {ratio:.1f}x the 20d avg ({avg_20d}%)",
+                    }
+                )
             elif ratio <= 0.5:
-                alerts.append({
-                    "symbol": h["symbol"],
-                    "alert_type": "DELIVERY COLLAPSE",
-                    "severity": "high",
-                    "detail": f"Today's delivery {del_pct}% is only {ratio:.1f}x the 20d avg ({avg_20d}%)",
-                })
+                alerts.append(
+                    {
+                        "symbol": h["symbol"],
+                        "alert_type": "DELIVERY COLLAPSE",
+                        "severity": "high",
+                        "detail": f"Today's delivery {del_pct}% is only {ratio:.1f}x the 20d avg ({avg_20d}%)",
+                    }
+                )
         path = _tech_db()
         if os.path.exists(path):
             try:
@@ -379,7 +450,7 @@ def get_delivery_alerts(holdings):
                     "SELECT date, delivery_qty, volume, close FROM technical_data "
                     "WHERE symbol=? AND delivery_qty IS NOT NULL AND volume > 0 "
                     "ORDER BY date DESC LIMIT 5",
-                    (h["symbol"],)
+                    (h["symbol"],),
                 ).fetchall()
                 conn_tech.close()
                 if len(rows) >= 2:
@@ -387,25 +458,40 @@ def get_delivery_alerts(holdings):
                     recent_close = [r[3] for r in rows]
                     avg_recent_del = sum(recent_del) / len(recent_del)
                     price_changed = recent_close[0] - recent_close[-1]
-                    if avg_recent_del > (avg_20d or 0) * 1.5 and price_changed < -0.01 * recent_close[-1]:
-                        alerts.append({
-                            "symbol": h["symbol"],
-                            "alert_type": "ABSORPTION",
-                            "severity": "info",
-                            "detail": (f"Delivery surged ({avg_recent_del:.1f}%) while price dropped "
-                                       f"{abs(price_changed)/recent_close[-1]*100:.1f}% over 5 days"),
-                        })
-                    elif avg_recent_del < (avg_20d or 0) * 0.5 and price_changed > 0.01 * recent_close[-1]:
-                        alerts.append({
-                            "symbol": h["symbol"],
-                            "alert_type": "DISTRIBUTION",
-                            "severity": "warning",
-                            "detail": (f"Delivery collapsed ({avg_recent_del:.1f}%) while price rose "
-                                       f"{price_changed/recent_close[-1]*100:.1f}% over 5 days"),
-                        })
+                    if (
+                        avg_recent_del > (avg_20d or 0) * 1.5
+                        and price_changed < -0.01 * recent_close[-1]
+                    ):
+                        alerts.append(
+                            {
+                                "symbol": h["symbol"],
+                                "alert_type": "ABSORPTION",
+                                "severity": "info",
+                                "detail": (
+                                    f"Delivery surged ({avg_recent_del:.1f}%) while price dropped "
+                                    f"{abs(price_changed)/recent_close[-1]*100:.1f}% over 5 days"
+                                ),
+                            }
+                        )
+                    elif (
+                        avg_recent_del < (avg_20d or 0) * 0.5
+                        and price_changed > 0.01 * recent_close[-1]
+                    ):
+                        alerts.append(
+                            {
+                                "symbol": h["symbol"],
+                                "alert_type": "DISTRIBUTION",
+                                "severity": "warning",
+                                "detail": (
+                                    f"Delivery collapsed ({avg_recent_del:.1f}%) while price rose "
+                                    f"{price_changed/recent_close[-1]*100:.1f}% over 5 days"
+                                ),
+                            }
+                        )
             except sqlite3.Error:
                 pass
     return alerts
+
 
 def get_concentration_risk():
     conn = get_connection()
@@ -425,7 +511,7 @@ def get_concentration_risk():
             tech = sqlite3.connect(path)
             cur = tech.execute(
                 "SELECT close FROM technical_data WHERE symbol=? ORDER BY date DESC LIMIT 1",
-                (symbol,)
+                (symbol,),
             )
             close_row = cur.fetchone()
             tech.close()
@@ -442,7 +528,12 @@ def get_concentration_risk():
     holdings_with_value.sort(key=lambda x: -x["value"])
     top3 = holdings_with_value[:3]
     top3_pct = sum(h["pct"] for h in top3)
-    return {"top3_pct": round(top3_pct, 1), "top3_holdings": top3, "total_value": total_value}
+    return {
+        "top3_pct": round(top3_pct, 1),
+        "top3_holdings": top3,
+        "total_value": total_value,
+    }
+
 
 def get_drawdown_metrics():
     snapshots = get_snapshots(limit=365)
@@ -462,8 +553,14 @@ def get_drawdown_metrics():
         "current_value": current_value,
         "drawdown_pct": drawdown_pct,
         "drawdown_amount": drawdown,
-        "days_from_peak": abs((datetime.strptime(dates[0], "%Y-%m-%d") - datetime.strptime(peak_date, "%Y-%m-%d")).days),
+        "days_from_peak": abs(
+            (
+                datetime.strptime(dates[0], "%Y-%m-%d")
+                - datetime.strptime(peak_date, "%Y-%m-%d")
+            ).days
+        ),
     }
+
 
 def get_allocation_by_mcap():
     conn = get_connection()
@@ -500,7 +597,7 @@ def get_allocation_by_mcap():
                 tech = sqlite3.connect(tech_path)
                 cur = tech.execute(
                     "SELECT close FROM technical_data WHERE symbol=? ORDER BY date DESC LIMIT 1",
-                    (symbol,)
+                    (symbol,),
                 )
                 p = cur.fetchone()
                 tech.close()
@@ -524,8 +621,11 @@ def get_allocation_by_mcap():
             categories["unknown"]["count"] += 1
             categories["unknown"]["value"] += val
     for k in categories:
-        categories[k]["pct"] = round(categories[k]["value"] / total_value * 100, 1) if total_value else 0
+        categories[k]["pct"] = (
+            round(categories[k]["value"] / total_value * 100, 1) if total_value else 0
+        )
     return categories
+
 
 def get_volatility_metrics():
     snapshots = get_snapshots(limit=30)
@@ -545,6 +645,7 @@ def get_volatility_metrics():
             returns.append((curr - prev) / prev)
     if returns:
         import statistics
+
         daily_vol_pct = round(statistics.stdev(returns) * 100, 1)
     else:
         daily_vol_pct = 0
@@ -564,13 +665,19 @@ def get_volatility_metrics():
         "loss_date": loss_date,
     }
 
+
 def get_diversification_score():
     conn = get_connection()
     rows = conn.execute("SELECT symbol FROM holdings").fetchall()
     conn.close()
     total_holdings = len(rows)
     if not total_holdings:
-        return {"score": 0, "rating": "Empty portfolio", "details": "No holdings", "top3_pct": 0}
+        return {
+            "score": 0,
+            "rating": "Empty portfolio",
+            "details": "No holdings",
+            "top3_pct": 0,
+        }
     path = _val_db()
     sectors = set()
     for r in rows:
@@ -622,6 +729,113 @@ def get_diversification_score():
         "rating": rating,
         "details": f"{total_holdings} holdings across {num_sectors} sectors",
         "top3_pct": top3_pct,
+    }
+
+
+def _get_portfolio_meta(key: str) -> str | None:
+    """Get a metadata value from portfolio_meta table."""
+    db_path = get_db_path()
+    if not os.path.exists(db_path):
+        return None
+    try:
+        conn = sqlite3.connect(db_path)
+        row = conn.execute(
+            "SELECT value FROM portfolio_meta WHERE key=?", (key,)
+        ).fetchone()
+        conn.close()
+        return row[0] if row else None
+    except sqlite3.Error:
+        return None
+
+
+def auto_refresh_portfolio() -> dict:
+    """
+    Refresh portfolio prices and fundamentals from MYRA databases.
+    Called by the background orchestrator after daily ingest completes.
+    Returns {'prices_updated': N, 'fundamentals_updated': N, 'error': None}
+    or {'error': str}.
+    """
+    db_path = get_db_path()
+    if not os.path.exists(db_path):
+        return {"error": "portfolio db not found"}
+
+    holdings = get_all_holdings()
+    if not holdings:
+        return {"error": "no holdings in portfolio"}
+
+    symbols = [h["symbol"] for h in holdings]
+    tech_db = os.path.join(DB_DIR, "myra_technical.db")
+    val_db = os.path.join(DB_DIR, "myra_valuation.db")
+
+    prices_updated = 0
+    fundamentals_updated = 0
+
+    try:
+        conn = get_connection()
+
+        # Refresh prices from technical_data
+        if os.path.exists(tech_db):
+            try:
+                tech_conn = sqlite3.connect(tech_db)
+                for sym in symbols:
+                    row = tech_conn.execute(
+                        "SELECT close, date FROM technical_data WHERE symbol=? "
+                        "AND close IS NOT NULL ORDER BY date DESC LIMIT 2",
+                        (sym,),
+                    ).fetchall()
+                    if row:
+                        latest_close = row[0][0]
+                        latest_date = row[0][1]
+                        prev_close = row[1][0] if len(row) > 1 else None
+                        conn.execute(
+                            """INSERT OR REPLACE INTO price_cache
+                               (symbol, latest_close, previous_close, latest_date, updated_at)
+                               VALUES (?, ?, ?, ?, datetime('now','localtime'))""",
+                            (sym, latest_close, prev_close, latest_date),
+                        )
+                        prices_updated += 1
+                tech_conn.close()
+            except sqlite3.Error as e:
+                return {"error": f"price refresh failed: {e}"}
+        else:
+            return {"error": "technical db not found"}
+
+        # Refresh fundamentals from valuation db
+        if os.path.exists(val_db):
+            try:
+                val_conn = sqlite3.connect(val_db)
+                for sym in symbols:
+                    row = val_conn.execute(
+                        "SELECT pe, sector, market_cap FROM fundamentals WHERE symbol=?",
+                        (sym,),
+                    ).fetchone()
+                    if row:
+                        conn.execute(
+                            """INSERT OR REPLACE INTO fundamental_cache
+                               (symbol, pe, sector, market_cap, fetched_at)
+                               VALUES (?, ?, ?, ?, datetime('now','localtime'))""",
+                            (sym, row[0], row[1], row[2]),
+                        )
+                        fundamentals_updated += 1
+                val_conn.close()
+            except sqlite3.Error as e:
+                conn.close()
+                return {"error": f"fundamental refresh failed: {e}"}
+
+        # Update last_refresh timestamp
+        conn.execute(
+            "INSERT OR REPLACE INTO portfolio_meta (key, value) VALUES (?, ?)",
+            ("last_refresh", datetime.now().strftime("%Y-%m-%d %H:%M")),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        return {"error": f"portfolio refresh failed: {e}"}
+
+    return {
+        "prices_updated": prices_updated,
+        "fundamentals_updated": fundamentals_updated,
+        "error": None,
     }
 
 
