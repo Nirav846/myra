@@ -210,12 +210,14 @@ def _ensure_sync_log_table():
     """Create sync_log table if it doesn't exist."""
     try:
         lib = _get_metadata_connection(read_only=False)
-        lib._meta_conn.execute("""
+        lib._meta_conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS sync_log (
                 task_name   TEXT PRIMARY KEY,
                 last_run    TEXT
             )
-        """)
+        """
+        )
         lib._meta_conn.commit()
     except Exception as e:
         logger.warning(f"[MYRA BG] Failed to ensure sync_log table: {e}")
@@ -317,7 +319,7 @@ def _task_daily_ingest(force: bool = False):
     # Skip before 6 PM IST (data not yet available) unless forced
     if not force and ist_now.hour < 18:
         logger.info(
-            f"[MYRA BG] Market data not yet available (IST: {ist_now.strftime('%H:%M')}). Skipping."
+            f"[MYRA BG] Market data not yet available (IST: {ist_now.hour:02d}:{ist_now.minute:02d}). Skipping."
         )
         return
 
@@ -336,9 +338,15 @@ def _task_daily_ingest(force: bool = False):
             f"backfill={result.get('backfill_performed')}"
         )
 
-        if not result.get('success') and result.get('total_rows_inserted', 0) == 0 and not result.get('dates_failed'):
-            logger.info("[MYRA BG] Ingestion returned no new rows – DB is already current.")
-            result['success'] = True
+        if (
+            not result.get("success")
+            and result.get("total_rows_inserted", 0) == 0
+            and not result.get("dates_failed")
+        ):
+            logger.info(
+                "[MYRA BG] Ingestion returned no new rows – DB is already current."
+            )
+            result["success"] = True
 
         if result.get("success"):
             new_latest = get_db_latest_date()
@@ -348,14 +356,18 @@ def _task_daily_ingest(force: bool = False):
             if result.get("total_rows_inserted", 0) > 0:
                 logger.info("[MYRA BG] Daily ingest complete - metadata updated.")
                 from myra_app.fundamental_sync import FundamentalSync
+
                 FundamentalSync()._compute_market_cap_from_prices()
 
                 # Refresh portfolio prices if portfolio exists
                 try:
                     from myra_app.portfolio_db import auto_refresh_portfolio
+
                     pr = auto_refresh_portfolio()
                     if pr.get("error"):
-                        logger.warning(f"[MYRA BG] Portfolio refresh skipped: {pr['error']}")
+                        logger.warning(
+                            f"[MYRA BG] Portfolio refresh skipped: {pr['error']}"
+                        )
                     else:
                         logger.info(
                             f"[MYRA BG] Portfolio refreshed: {pr.get('prices_updated', 0)} prices, "
@@ -406,22 +418,31 @@ def _task_watchdog():
 
                 update(
                     tid,
-                    f"Watching – Last check: {ist_now.strftime('%H:%M:%S')}",
+                    f"Watching – Last check: {ist_now.hour:02d}:{ist_now.minute:02d}:{ist_now.second:02d}",
                 )
 
                 if _is_db_stale(days_threshold=1):
                     ist_now = datetime.now(timezone.utc).astimezone(IST)
                     last_attempt = _get_last_run("stale_catchup")
                     already_tried_today = (
-                        last_attempt is not None and last_attempt.date() == ist_now.date()
+                        last_attempt is not None
+                        and last_attempt.date() == ist_now.date()
                     )
 
                     if not already_tried_today:
-                        logger.info("[MYRA BG] Database is STALE (1+ days behind). Triggering catch-up...")
+                        logger.info(
+                            "[MYRA BG] Database is STALE (1+ days behind). Triggering catch-up..."
+                        )
                         _mark_task_run("stale_catchup")
                         _task_daily_ingest(force=True)
-                    elif ist_now.hour >= 18 and ist_now.minute >= 30 and not _already_ingested_today():
-                        logger.info("[MYRA BG] Market closed – retrying post-close ingestion...")
+                    elif (
+                        ist_now.hour >= 18
+                        and ist_now.minute >= 30
+                        and not _already_ingested_today()
+                    ):
+                        logger.info(
+                            "[MYRA BG] Market closed – retrying post-close ingestion..."
+                        )
                         _mark_task_run("stale_catchup")
                         _task_daily_ingest(force=True)
                     continue
@@ -515,6 +536,7 @@ def _task_index_sync():
             # Refresh Nifty benchmark closes for RS calculations
             try:
                 from myra_app.utils.index_sync import sync_nifty_benchmarks
+
                 sync_nifty_benchmarks()
                 logger.info("[MYRA BG] Nifty benchmark data refreshed")
             except Exception as e:
@@ -547,6 +569,7 @@ def _task_index_sync():
                     # Refresh Nifty benchmark closes for RS calculations
                     try:
                         from myra_app.utils.index_sync import sync_nifty_benchmarks
+
                         sync_nifty_benchmarks()
                         logger.info("[MYRA BG] Nifty benchmark data refreshed")
                     except Exception as e:
@@ -657,9 +680,13 @@ def _task_fundamentals_daily():
                             fs = FundamentalSync()
                             result = fs._refresh_stale_shares_outstanding()
                             _mark_task_run("shares_outstanding_sync")
-                            logger.info(f"[MYRA BG] Stale shares refresh complete: {result}")
+                            logger.info(
+                                f"[MYRA BG] Stale shares refresh complete: {result}"
+                            )
                         except Exception as e:
-                            logger.warning(f"[MYRA BG] Stale shares refresh failed: {e}")
+                            logger.warning(
+                                f"[MYRA BG] Stale shares refresh failed: {e}"
+                            )
                     # Wait until next day to avoid multiple runs
                     for _ in range(360):  # 6 hours
                         if _shutdown_event.wait(60):
@@ -748,6 +775,7 @@ def _task_db_backup():
 
                     # Optimize databases for query performance
                     import sqlite3
+
                     for db_name, db_file in LibrarianCore.DB_MAP.items():
                         db_path = os.path.join(DB_DIR, db_file)
                         if os.path.exists(db_path):
@@ -816,7 +844,7 @@ def _register_signals():
         import win32api
 
         win32api.SetConsoleCtrlHandler(
-            lambda e: (_graceful_shutdown(), time.sleep(3), True)[-1], True
+            lambda e: (_graceful_shutdown(), _shutdown_event.wait(3), True)[-1], True
         )
     except ImportError:
         pass
@@ -938,15 +966,22 @@ def _launch_background_threads():
         threading.Thread(target=fn, name=f"myra-bg-{name}", daemon=True)
         for name, fn in tasks
     ]
-    sync_task_names = {"etf-sync", "index-sync", "fundamentals-sync", "institutional-sync"}
+    sync_task_names = {
+        "etf-sync",
+        "index-sync",
+        "fundamentals-sync",
+        "institutional-sync",
+    }
     stagger_seconds = 30
     with _task_lock:
         for i, t in enumerate(threads):
             t.start()
             prev_name = tasks[i][0] if i > 0 else None
             if prev_name in sync_task_names:
-                logger.info(f"[MYRA BG] Staggering next sync task by {stagger_seconds}s...")
-                time.sleep(stagger_seconds)
+                logger.info(
+                    f"[MYRA BG] Staggering next sync task by {stagger_seconds}s..."
+                )
+                _shutdown_event.wait(stagger_seconds)
         _active_tasks.extend(threads)
     for name, _ in tasks:
         logger.info(f"[MYRA BG] Started task: {name}")
@@ -958,13 +993,15 @@ def _ensure_calendar_db():
         calendar_db_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["calendar"])
         os.makedirs(os.path.dirname(calendar_db_path), exist_ok=True)
         conn = sqlite3.connect(calendar_db_path)
-        conn.execute("""
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS market_calendar (
                 date TEXT PRIMARY KEY,
                 is_trading_day INTEGER NOT NULL DEFAULT 1,
                 holiday_name TEXT
             )
-        """)
+        """
+        )
         conn.commit()
         conn.close()
         logger.info(f"[MYRA BG] Calendar database verified at {calendar_db_path}")
