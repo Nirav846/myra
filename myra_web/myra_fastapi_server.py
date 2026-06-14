@@ -524,6 +524,7 @@ async def refresh_portfolio():
         return {"status": "error", "message": f"portfolio_db import failed: {e}"}
     except Exception as e:
         from fastapi.responses import JSONResponse
+
         return JSONResponse(
             status_code=500,
             content={"status": "error", "message": str(e)},
@@ -771,9 +772,15 @@ async def get_portfolio():
         return min(score, 5)
 
     FUNDA_FIELDS = [
-        "operatingMargin", "grossMargin", "freeCashFlowYield",
-        "currentRatio", "quickRatio", "payoutRatio",
-        "beta", "promoter_holding_pct", "market_cap",
+        "operatingMargin",
+        "grossMargin",
+        "freeCashFlowYield",
+        "currentRatio",
+        "quickRatio",
+        "payoutRatio",
+        "beta",
+        "promoter_holding_pct",
+        "market_cap",
     ]
 
     for h in holdings:
@@ -922,9 +929,28 @@ async def get_portfolio():
         "diversification_rating": diversification.get("rating", ""),
     }
 
+    _prices_from = _get_portfolio_meta("prices_updated_at")
+    _funds_cached = _get_portfolio_meta("funds_updated_at")
+    if not _prices_from or _prices_from == "unknown":
+        try:
+            pc = sqlite3.connect(PORTFOLIO_DB)
+            row = pc.execute("SELECT MAX(latest_date) FROM price_cache").fetchone()
+            _prices_from = row[0] if row and row[0] else "unknown"
+            pc.close()
+        except Exception:
+            _prices_from = "unknown"
+    if not _funds_cached or _funds_cached == "unknown":
+        try:
+            fc = sqlite3.connect(PORTFOLIO_DB)
+            row = fc.execute("SELECT MAX(fetched_at) FROM fundamental_cache").fetchone()
+            _funds_cached = row[0] if row and row[0] else "unknown"
+            fc.close()
+        except Exception:
+            _funds_cached = "unknown"
+
     freshness = {
-        "prices_from": _get_portfolio_meta("prices_updated_at") or "unknown",
-        "fundamentals_cached": _get_portfolio_meta("funds_updated_at") or "unknown",
+        "prices_from": _prices_from,
+        "fundamentals_cached": _funds_cached,
         "fundamentals_coverage_pct": round(
             sum(1 for h in enriched if h.get("pe")) / max(len(enriched), 1) * 100
         ),

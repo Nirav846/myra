@@ -822,11 +822,25 @@ def auto_refresh_portfolio() -> dict:
                 conn.close()
                 return {"error": f"fundamental refresh failed: {e}"}
 
-        # Update last_refresh timestamp
-        conn.execute(
-            "INSERT OR REPLACE INTO portfolio_meta (key, value) VALUES (?, ?)",
+        # Track latest dates
+        max_price_date = conn.execute(
+            "SELECT MAX(latest_date) FROM price_cache"
+        ).fetchone()[0]
+        max_funda_date = conn.execute(
+            "SELECT MAX(fetched_at) FROM fundamental_cache"
+        ).fetchone()[0]
+
+        # Write freshness metadata
+        for k, v in [
             ("last_refresh", f"{datetime.now():%Y-%m-%d %H:%M}"),
-        )
+            ("prices_updated_at", max_price_date),
+            ("funds_updated_at", max_funda_date),
+        ]:
+            if v:
+                conn.execute(
+                    "INSERT OR REPLACE INTO portfolio_meta (key, value) VALUES (?, ?)",
+                    (k, v),
+                )
         conn.commit()
         conn.close()
     except Exception as e:

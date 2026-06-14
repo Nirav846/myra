@@ -15,6 +15,14 @@ export default defineConfig(({mode}) => {
         'assert': 'assert',
       },
     },
+    build: {
+      target: ['es2022'],
+    },
+    optimizeDeps: {
+      esbuildOptions: {
+        target: ['esnext'],
+      },
+    },
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
       global: 'globalThis',

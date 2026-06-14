@@ -151,11 +151,17 @@ function peColor(v: number | null | undefined): string {
   return 'text-red-400';
 }
 
-const SECTOR_COLORS = [
-  'bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-violet-500',
-  'bg-rose-500', 'bg-cyan-500', 'bg-lime-500', 'bg-fuchsia-500',
-  'bg-teal-500', 'bg-orange-500', 'bg-indigo-500', 'bg-pink-500',
-];
+const SECTOR_COLORS: Record<string, string> = {
+  'Basic Materials': 'bg-amber-600',
+  'Industrials': 'bg-blue-600',
+  'Utilities': 'bg-green-600',
+  'Technology': 'bg-purple-600',
+  'Energy': 'bg-red-600',
+  'Financial': 'bg-yellow-600',
+  'Consumer': 'bg-pink-600',
+  'Healthcare': 'bg-teal-600',
+  'Unknown': 'bg-gray-600',
+};
 
 export default function PortfolioView() {
   const [data, setData] = useState<PortfolioData | null>(null);
@@ -575,7 +581,7 @@ export default function PortfolioView() {
                     {formatPct(h.day_pnl_pct)}
                   </td>
                   <td className={tdClass}>
-                    {h.delivery_pct != null ? `${h.delivery_pct.toFixed(1)}% ${h.delivery_trend}` : '\u2014'}
+                    {h.delivery_pct != null ? `${h.delivery_pct.toFixed(1)}% ${h.delivery_trend}` : <span title="Delivery data not available for this symbol">N/A</span>}
                   </td>
                   <td className={`${tdClass} ${h.vs_sma50_pct != null ? (h.vs_sma50_pct >= 0 ? 'text-green-400' : 'text-red-400') : ''}`}>
                     {h.vs_sma50_pct != null ? `${h.vs_sma50_pct >= 0 ? '+' : ''}${h.vs_sma50_pct.toFixed(1)}%` : '\u2014'}
@@ -583,9 +589,9 @@ export default function PortfolioView() {
                   {showFundamentals && (
                     <>
                       <td className={tdClass}>{renderStars(h.morningstar_rating)}</td>
-                      <td className={tdClass}>{h.operating_margin != null ? `${h.operating_margin.toFixed(1)}%` : '\u2014'}</td>
-                      <td className={`${tdClass} ${fcfYieldColor(h.free_cash_flow_yield)}`}>
-                        {h.free_cash_flow_yield != null ? `${h.free_cash_flow_yield.toFixed(1)}%` : '\u2014'}
+                      <td className={tdClass}>{h.operating_margin != null ? `${(h.operating_margin * 100).toFixed(1)}%` : '\u2014'}</td>
+                      <td className={`${tdClass} ${h.free_cash_flow_yield != null ? fcfYieldColor(h.free_cash_flow_yield * 100) : ''}`}>
+                        {h.free_cash_flow_yield != null ? `${(h.free_cash_flow_yield * 100).toFixed(1)}%` : '\u2014'}
                       </td>
                       <td className={`${tdClass} ${promoterColor(h.promoter_holding)}`}>
                         {h.promoter_holding != null ? `${h.promoter_holding.toFixed(1)}%` : '\u2014'}
@@ -614,12 +620,12 @@ export default function PortfolioView() {
             {sector_allocation.map((s, i) => (
               <div key={s.sector} className="flex items-center gap-3">
                 <span className="text-[11px] font-mono text-[#fafafa] w-24 shrink-0 truncate">{s.sector}</span>
-                <div className="flex-1 h-5 bg-[#0e1117] rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all duration-500 ${SECTOR_COLORS[i % SECTOR_COLORS.length]}`}
-                    style={{ width: `${Math.max(s.weight_pct, 1)}%` }}
-                  />
-                </div>
+                  <div className="flex-1 h-5 bg-[#ffffff0a] rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${SECTOR_COLORS[s.sector] || SECTOR_COLORS['Unknown'] || 'bg-gray-600'}`}
+                      style={{ width: `${Math.max(s.weight_pct, 2)}%` }}
+                    />
+                  </div>
                 <span className="text-[11px] font-mono text-[#888] w-32 text-right shrink-0">
                   {s.weight_pct.toFixed(1)}% ({formatIndianDec(s.total_value)})
                 </span>
