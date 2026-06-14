@@ -263,14 +263,15 @@ def _val_db():
 
 
 def get_delivery_metrics(symbol):
+    """Get delivery metrics for a symbol from technical_data."""
     path = _tech_db()
     if not os.path.exists(path):
         return None
     try:
         conn = sqlite3.connect(path)
         cur = conn.execute(
-            "SELECT date, delivery_qty, volume, close FROM technical_data "
-            "WHERE symbol=? AND delivery_qty IS NOT NULL AND volume IS NOT NULL AND volume > 0 "
+            "SELECT date, delivery, volume, close, delivery_pct FROM technical_data "
+            "WHERE symbol=? AND delivery IS NOT NULL AND volume IS NOT NULL AND volume > 0 "
             "ORDER BY date DESC LIMIT 21",
             (symbol,),
         )
@@ -278,26 +279,36 @@ def get_delivery_metrics(symbol):
         conn.close()
         if not rows:
             return None
+
+        def calc_del_pct(row):
+            if row[4] is not None:
+                return row[4]
+            if row[2] and row[2] > 0:
+                return (row[1] / row[2] * 100) if row[1] else 0
+            return 0
+
         latest = rows[0]
-        del_pct = (latest[1] / latest[2] * 100) if latest[2] else 0
+        del_pct = calc_del_pct(latest)
         result = {
             "del_pct": round(del_pct, 1),
             "close": latest[3],
         }
+
         if len(rows) >= 6:
-            avg_5d = sum((r[1] / r[2] * 100) for r in rows[:5] if r[2]) / 5
+            avg_5d = sum(calc_del_pct(r) for r in rows[:5]) / 5
             result["avg_del_5d"] = round(avg_5d, 1)
         else:
             result["avg_del_5d"] = None
+
         if len(rows) >= 21:
-            avg_20d = sum((r[1] / r[2] * 100) for r in rows[:20] if r[2]) / 20
-            result["avg_del_20d"] = round(avg_20d, 1)
+            avg_20d = sum(calc_del_pct(r) for r in rows[:20]) / 20
         else:
-            total = sum((r[1] / r[2] * 100) for r in rows if r[2])
-            n = sum(1 for r in rows if r[2])
-            result["avg_del_20d"] = round(total / n, 1) if n else None
+            valid = [r for r in rows if r[2] and r[2] > 0]
+            avg_20d = sum(calc_del_pct(r) for r in valid) / len(valid) if valid else 0
+        result["avg_del_20d"] = round(avg_20d, 1) if avg_20d else None
+
         avg_20d = result["avg_del_20d"]
-        if avg_20d and avg_20d > 0:
+        if avg_20d and avg_20d > 0 and del_pct > 0:
             ratio = del_pct / avg_20d
             if ratio > 1.2:
                 result["del_trend"] = "\u2191"
@@ -448,7 +459,7 @@ def get_delivery_alerts(holdings):
                 conn_tech = sqlite3.connect(path)
                 rows = conn_tech.execute(
                     "SELECT date, delivery_qty, volume, close FROM technical_data "
-                    "WHERE symbol=? AND delivery_qty IS NOT NULL AND volume > 0 "
+                    "WHERE symbol=? AND delivery IS NOT NULL AND volume > 0 "
                     "ORDER BY date DESC LIMIT 5",
                     (h["symbol"],),
                 ).fetchall()
