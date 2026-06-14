@@ -38,6 +38,8 @@ try:
         get_allocation_by_mcap,
         get_volatility_metrics,
         get_diversification_score,
+        _get_portfolio_meta,
+        auto_refresh_portfolio,
     )
     from myra_app.constants import DB_DIR
 except ImportError as e:
@@ -1099,6 +1101,48 @@ def cmd_risk(args):
         print(f"  {div['details']}")
 
 
+def cmd_status(args):
+    holdings = get_all_holdings()
+    if not holdings:
+        print(f"{YELLOW}No holdings in portfolio. Use 'import' or 'add' first.{RESET}")
+        return
+
+    last_refresh = _get_portfolio_meta("last_refresh")
+    holdings_count = len(holdings)
+
+    fund_avail = 0
+    try:
+        conn = get_portfolio_conn()
+        row = conn.execute("SELECT COUNT(*) FROM fundamental_cache").fetchone()
+        fund_avail = row[0] if row else 0
+        conn.close()
+    except Exception:
+        pass
+
+    latest_eod_date = None
+    try:
+        conn = get_portfolio_conn()
+        row = conn.execute(
+            "SELECT latest_date FROM price_cache ORDER BY latest_date DESC LIMIT 1"
+        ).fetchone()
+        if row:
+            latest_eod_date = row[0]
+        conn.close()
+    except Exception:
+        pass
+
+    fund_pct = round(fund_avail / holdings_count * 100) if holdings_count else 0
+
+    print(f"\n{BOLD}Portfolio Status{RESET}")
+    print(f"{DASH * 53}")
+    print(f"Holdings:     {holdings_count} symbols")
+    print(f"Last refresh: {last_refresh or 'Never'} (auto)")
+    print(f"Prices from:  {latest_eod_date or 'N/A'} (EOD)")
+    print(f"Fundamentals: {fund_avail} of {holdings_count} available ({fund_pct}%)")
+    print(f"{DASH * 53}")
+    print(f"Next auto-refresh: After next bhavcopy ingestion (~18:30 IST tomorrow)")
+
+
 def main():
     import argparse
 
@@ -1187,6 +1231,10 @@ Examples:
         "risk", help="Portfolio risk metrics (concentration, drawdown, volatility)"
     )
 
+    p_status = sub.add_parser(
+        "status", help="Show portfolio refresh state and metadata"
+    )
+
     args = parser.parse_args()
 
     handlers = {
@@ -1202,6 +1250,7 @@ Examples:
         "scanner": cmd_scanner,
         "alerts": cmd_alerts,
         "risk": cmd_risk,
+        "status": cmd_status,
     }
 
     handler = handlers.get(args.command)
