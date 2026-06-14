@@ -968,6 +968,233 @@ async def get_portfolio():
     }
 
 
+@app.get("/api/portfolio/benchmark")
+async def get_portfolio_benchmark():
+    """Compare portfolio returns vs Nifty benchmark using snapshot history."""
+    from myra_app.portfolio_db import get_snapshots, get_db_path
+    import sqlite3
+    import os
+
+    # Get portfolio snapshots
+    snapshots = get_snapshots(limit=250)  # ~1 year of trading days
+    if len(snapshots) < 2:
+        return {
+            "status": "ok",
+            "benchmark": {
+                "portfolio_return": 0,
+                "nifty_return": 0,
+                "alpha": 0,
+                "message": "Not enough snapshot data for comparison",
+            },
+        }
+
+    # Portfolio return from first to latest snapshot
+    first = snapshots[-1]
+    last = snapshots[0]
+    portfolio_return = (
+        ((last["total_current"] - first["total_current"]) / first["total_current"])
+        * 100
+        if first["total_current"]
+        else 0
+    )
+
+    # Nifty benchmark from meta.db (index_history table)
+    nifty_return = 0
+    meta_db = os.path.join(DB_DIR, "meta.db")
+    if os.path.exists(meta_db):
+        try:
+            mc = sqlite3.connect(meta_db)
+            mc.row_factory = sqlite3.Row
+            # Get Nifty 50 data for the same date range
+            first_date = first["date"]
+            last_date = last["date"]
+            row = mc.execute(
+                "SELECT close FROM index_history WHERE symbol='NIFTY 50' AND date=?",
+                (first_date,),
+            ).fetchone()
+            first_close = row["close"] if row else None
+            row = mc.execute(
+                "SELECT close FROM index_history WHERE symbol='NIFTY 50' AND date=?",
+                (last_date,),
+            ).fetchone()
+            last_close = row["close"] if row else None
+            if first_close and last_close and first_close > 0:
+                nifty_return = ((last_close - first_close) / first_close) * 100
+            mc.close()
+        except Exception:
+            pass
+
+    alpha = portfolio_return - nifty_return
+    return {
+        "status": "ok",
+        "benchmark": {
+            "portfolio_return": round(portfolio_return, 2),
+            "nifty_return": round(nifty_return, 2),
+            "alpha": round(alpha, 2),
+            "period": f"{first['date']} to {last['date']}",
+        },
+    }
+
+
+@app.post("/api/portfolio/holdings")
+async def add_portfolio_holding(req: Request):
+    """Add a new holding or append to existing. Body: {symbol, qty, avg_price, category?}"""
+    try:
+        body = await req.json()
+    except Exception:
+        return JSONResponse(
+            status_code=400, content={"status": "error", "message": "Invalid JSON body"}
+        )
+    symbol = body.get("symbol", "").upper().strip()
+    qty = body.get("qty")
+    avg_price = body.get("avg_price")
+    category = body.get("category", "NSE EQ")
+    if not symbol or qty is None or avg_price is None:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "message": "symbol, qty, avg_price are required",
+            },
+        )
+    try:
+        qty = int(qty)
+        avg_price = float(avg_price)
+    except (ValueError, TypeError):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "message": "qty must be int, avg_price must be number",
+            },
+        )
+    if qty <= 0 or avg_price <= 0:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "message": "qty and avg_price must be positive",
+            },
+        )
+
+    from myra_app.portfolio_db import add_holding, get_holding
+
+    existing = get_holding(symbol)
+    if existing:
+        old_qty = existing["net_qty"]
+        old_avg = existing["avg_price"]
+        new_qty = old_qty + qty
+        new_avg = ((old_qty * old_avg) + (qty * avg_price)) / new_qty
+        from myra_app.portfolio_db import update_holding
+
+        update_holding(symbol, net_qty=new_qty, avg_price=round(new_avg, 2))
+        return {
+            "status": "ok",
+            "message": f"Added {qty} to {symbol}. New qty: {new_qty}, new avg: \u20B9{new_avg:.2f}",
+            "action": "updated",
+            "holding": {
+                "symbol": symbol,
+                "net_qty": new_qty,
+                "avg_price": round(new_avg, 2),
+            },
+        }
+    else:
+        add_holding(symbol, qty, avg_price, category)
+        return {
+            "status": "ok",
+            "message": f"Added {symbol}: {qty} @ \u20B9{avg_price}",
+            "action": "created",
+            "holding": {
+                "symbol": symbol,
+                "net_qty": qty,
+                "avg_price": avg_price,
+            },
+        }
+
+
+@app.put("/api/portfolio/holdings/{symbol}")
+async def update_portfolio_holding(symbol: str, req: Request):
+    """Update a holding's quantity or average price."""
+    try:
+        body = await req.json()
+    except Exception:
+        return JSONResponse(
+            status_code=400, content={"status": "error", "message": "Invalid JSON body"}
+        )
+    if not body:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": "No fields to update"},
+        )
+    kwargs = {}
+    if "net_qty" in body:
+        try:
+            kwargs["net_qty"] = int(body["net_qty"])
+            if kwargs["net_qty"] <= 0:
+                return JSONResponse(
+                    status_code=400,
+                    content={"status": "error", "message": "net_qty must be positive"},
+                )
+        except (ValueError, TypeError):
+            return JSONResponse(
+                status_code=400,
+                content={"status": "error", "message": "net_qty must be an integer"},
+            )
+    if "avg_price" in body:
+        try:
+            kwargs["avg_price"] = float(body["avg_price"])
+            if kwargs["avg_price"] <= 0:
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "status": "error",
+                        "message": "avg_price must be positive",
+                    },
+                )
+        except (ValueError, TypeError):
+            return JSONResponse(
+                status_code=400,
+                content={"status": "error", "message": "avg_price must be a number"},
+            )
+    if not kwargs:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": "No valid fields to update"},
+        )
+    from myra_app.portfolio_db import update_holding, get_holding
+
+    sym = symbol.upper().strip()
+    existing = get_holding(sym)
+    if not existing:
+        return JSONResponse(
+            status_code=404,
+            content={"status": "error", "message": f"'{sym}' not found in portfolio"},
+        )
+    update_holding(sym, **kwargs)
+    updated = get_holding(sym)
+    return {
+        "status": "ok",
+        "message": f"Updated {sym}",
+        "holding": dict(updated),
+    }
+
+
+@app.delete("/api/portfolio/holdings/{symbol}")
+async def delete_portfolio_holding(symbol: str):
+    """Remove a holding."""
+    from myra_app.portfolio_db import delete_holding, get_holding
+
+    sym = symbol.upper().strip()
+    existing = get_holding(sym)
+    if not existing:
+        return JSONResponse(
+            status_code=404,
+            content={"status": "error", "message": f"'{sym}' not found in portfolio"},
+        )
+    delete_holding(sym)
+    return {"status": "ok", "message": f"Removed {sym}"}
+
+
 @app.get("/api/logs/recent")
 async def get_recent_logs():
     """Return last 5 lines of pipeline.log or a placeholder."""

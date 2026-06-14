@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { API_BASE } from '../config';
+import { TrendingUp, Plus, Edit, Trash2, X, Check, Loader2, AlertTriangle, ChevronDown } from 'lucide-react';
 
 interface Holding {
   symbol: string;
@@ -177,9 +178,51 @@ export default function PortfolioView() {
   const [showLivePrices, setShowLivePrices] = useState(false);
   const [livePrices, setLivePrices] = useState<Record<string, any>>({});
   const [liveLoading, setLiveLoading] = useState(false);
-  const mountedRef = useRef(true);
+  const [mountedRef, setMountedRef] = useState(true);
   const autoRefreshDoneRef = useRef(false);
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addForm, setAddForm] = useState({
+    symbol: '',
+    qty: '',
+    price: '',
+    category: 'NSE EQ',
+  });
+  const [adding, setAdding] = useState(false);
+
+  const [toasts, setToasts] = useState<Array<{id: string; type: 'success' | 'error'; message: string}>>([]);
+  const addToast = (type: 'success' | 'error', message: string) => {
+    const id = Math.random().toString(36).substr(2, 9);
+    setToasts(prev => [...prev, { id, type, message }]);
+  };
+  const removeToast = (id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
+
+  const [editingCell, setEditingCell] = useState<{symbol: string; field: 'net_qty' | 'avg_price'} | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [savingCell, setSavingCell] = useState<{symbol: string; field: string} | null>(null);
+
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+
+  const [sectorWarningDismissed, setSectorWarningDismissed] = useState(false);
+
+  const [showScannerQuickAdd, setShowScannerQuickAdd] = useState(false);
+  const [scannerSymbolToAdd, setScannerSymbolToAdd] = useState<string>('');
+
+  const [benchmark, setBenchmark] = useState<{portfolio_return: number; nifty_return: number; alpha: number; period?: string} | null>(null);
+  const fetchBenchmark = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/portfolio/benchmark`);
+      const result = await res.json();
+      if (result.status === 'ok') {
+        setBenchmark(result.benchmark);
+      }
+    } catch {
+      // silent fail
+    }
+  }, []);
 
   const fetchPortfolio = useCallback(async () => {
     try {
@@ -195,9 +238,10 @@ export default function PortfolioView() {
       if (result.status === 'empty') {
         setData(result);
         setError(null);
-      } else if (result.status === 'ok') {
+        } else if (result.status === 'ok') {
         setData(result);
         setError(null);
+        fetchBenchmark();
       } else {
         setError(result.status);
       }
@@ -221,6 +265,7 @@ export default function PortfolioView() {
       const fundsUpdated = refreshResult?.result?.fundamentals_updated ?? 0;
       if (refreshRes.ok && refreshResult.status === 'ok') {
         await fetchPortfolio();
+        fetchBenchmark();
         setRefreshStatus({
           type: 'success',
           message: `✓ Refreshed — ${pricesUpdated} prices, ${fundsUpdated} fundamentals updated`,
@@ -266,6 +311,108 @@ export default function PortfolioView() {
       setLiveLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setToasts(prev => {
+        if (prev.length > 0 && Date.now() - parseInt(prev[0].id, 36) > 4000) {
+          return prev.slice(1);
+        }
+        return prev;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const handleAddStock = async () => {
+    if (!addForm.symbol.trim() || !addForm.qty || !addForm.price) {
+      addToast('error', 'Symbol, quantity, and price are required');
+      return;
+    }
+    setAdding(true);
+    try {
+      const res = await fetch(`${API_BASE}/portfolio/holdings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: addForm.symbol.toUpperCase().trim(),
+          qty: parseInt(addForm.qty),
+          avg_price: parseFloat(addForm.price),
+          category: addForm.category,
+        }),
+      });
+      const result = await res.json();
+      if (result.status === 'ok') {
+        addToast('success', result.message);
+        setShowAddModal(false);
+        setAddForm({ symbol: '', qty: '', price: '', category: 'NSE EQ' });
+        await fetchPortfolio();
+      } else {
+        addToast('error', result.message || 'Failed to add stock');
+      }
+    } catch (e: any) {
+      addToast('error', e.message || 'Network error');
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleUpdateCell = async (symbol: string, field: 'net_qty' | 'avg_price') => {
+    if (!editValue.trim()) {
+      setEditingCell(null);
+      return;
+    }
+    const value = field === 'net_qty' ? parseInt(editValue) : parseFloat(editValue);
+    if (isNaN(value) || value <= 0) {
+      addToast('error', `${field === 'net_qty' ? 'Quantity' : 'Price'} must be a positive number`);
+      setEditingCell(null);
+      return;
+    }
+    setSavingCell({ symbol, field });
+    try {
+      const res = await fetch(`${API_BASE}/portfolio/holdings/${symbol}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: value }),
+      });
+      const result = await res.json();
+      if (result.status === 'ok') {
+        addToast('success', result.message);
+        await fetchPortfolio();
+      } else {
+        addToast('error', result.message || 'Failed to update');
+      }
+    } catch (e: any) {
+      addToast('error', e.message || 'Network error');
+    } finally {
+      setSavingCell(null);
+      setEditingCell(null);
+      setEditValue('');
+    }
+  };
+
+  const handleDeleteHolding = async (symbol: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/portfolio/holdings/${symbol}`, { method: 'DELETE' });
+      const result = await res.json();
+      if (result.status === 'ok') {
+        addToast('success', result.message);
+        await fetchPortfolio();
+      } else {
+        addToast('error', result.message || 'Failed to delete');
+      }
+    } catch (e: any) {
+      addToast('error', e.message || 'Network error');
+    } finally {
+      setDeleteConfirm(null);
+    }
+  };
+
+  const handleQuickAddFromScanner = (symbol: string) => {
+    setAddForm({ ...addForm, symbol: symbol.toUpperCase() });
+    setShowAddModal(true);
+    setShowScannerQuickAdd(false);
+  };
 
   useEffect(() => {
     mountedRef.current = true;
@@ -368,6 +515,114 @@ export default function PortfolioView() {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* ── Toast Notifications ── */}
+      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+        {toasts.map((t) => (
+          <div
+            key={t.id}
+            className={`px-4 py-2 rounded text-[11px] font-mono pointer-events-auto cursor-pointer animate-in fade-in slide-in-from-right ${
+              t.type === 'success'
+                ? 'bg-emerald-500/20 border border-emerald-500/50 text-emerald-300'
+                : 'bg-red-500/20 border border-red-500/50 text-red-300'
+            }`}
+            onClick={() => removeToast(t.id)}
+          >
+            {t.message}
+          </div>
+        ))}
+      </div>
+
+      {/* ── Add Stock Modal ── */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-40 bg-black/80 flex items-center justify-center">
+          <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded-lg p-6 max-w-md w-full mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-[#fafafa]">Add / Append Stock</h3>
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="text-[#888] hover:text-white"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="flex flex-col gap-3">
+              <input
+                type="text"
+                placeholder="Symbol (e.g., INFY)"
+                value={addForm.symbol}
+                onChange={(e) => setAddForm({ ...addForm, symbol: e.target.value.toUpperCase() })}
+                className="px-3 py-2 text-[11px] rounded bg-[#0e1117] border border-[#ffffff1a] text-[#fafafa] placeholder-[#888]"
+              />
+              <input
+                type="number"
+                placeholder="Quantity"
+                value={addForm.qty}
+                onChange={(e) => setAddForm({ ...addForm, qty: e.target.value })}
+                className="px-3 py-2 text-[11px] rounded bg-[#0e1117] border border-[#ffffff1a] text-[#fafafa] placeholder-[#888]"
+              />
+              <input
+                type="number"
+                placeholder="Buy Price"
+                value={addForm.price}
+                onChange={(e) => setAddForm({ ...addForm, price: e.target.value })}
+                step="0.01"
+                className="px-3 py-2 text-[11px] rounded bg-[#0e1117] border border-[#ffffff1a] text-[#fafafa] placeholder-[#888]"
+              />
+              <select
+                value={addForm.category}
+                onChange={(e) => setAddForm({ ...addForm, category: e.target.value })}
+                className="px-3 py-2 text-[11px] rounded bg-[#0e1117] border border-[#ffffff1a] text-[#fafafa]"
+              >
+                <option>NSE EQ</option>
+                <option>NSE FO</option>
+                <option>BSE EQ</option>
+              </select>
+              <div className="flex gap-2 mt-2">
+                <button
+                  onClick={handleAddStock}
+                  disabled={adding}
+                  className="flex-1 px-3 py-2 text-[11px] rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-1"
+                >
+                  {adding ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                  Add
+                </button>
+                <button
+                  onClick={() => setShowAddModal(false)}
+                  className="flex-1 px-3 py-2 text-[11px] rounded bg-[#ffffff0a] text-[#888] hover:text-white"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete Confirmation Modal ── */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-40 bg-black/80 flex items-center justify-center">
+          <div className="bg-[#1a1c24] border border-red-500/30 rounded-lg p-6 max-w-sm w-full mx-4">
+            <h3 className="text-sm font-semibold text-red-400 mb-3">Remove from Portfolio?</h3>
+            <p className="text-[11px] text-[#888] mb-4">
+              Remove <span className="text-white font-bold">{deleteConfirm}</span> from your portfolio. This cannot be undone.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleDeleteHolding(deleteConfirm)}
+                className="flex-1 px-3 py-2 text-[11px] rounded bg-red-600 text-white hover:bg-red-700 flex items-center justify-center gap-1"
+              >
+                <Trash2 size={12} /> Remove
+              </button>
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="flex-1 px-3 py-2 text-[11px] rounded bg-[#ffffff0a] text-[#888] hover:text-white"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* ── Alerts Banner ── */}
       {hasAlerts && (
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
@@ -383,6 +638,29 @@ export default function PortfolioView() {
           ))}
         </div>
       )}
+
+      {/* ── Sector Concentration Warning ── */}
+      {!sectorWarningDismissed && (() => {
+        const highConcentration = sector_allocation.filter(s => s.weight_pct > 30);
+        if (highConcentration.length === 0) return null;
+        const top = highConcentration[0];
+        return (
+          <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-3 flex items-start gap-3">
+            <AlertTriangle size={16} className="text-orange-400 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-[11px] font-mono text-orange-300">
+                <span className="font-bold">{top.count} {top.sector}</span> holdings ({top.weight_pct.toFixed(1)}% of portfolio) — high sector concentration
+              </p>
+            </div>
+            <button
+              onClick={() => setSectorWarningDismissed(true)}
+              className="text-[#888] hover:text-white shrink-0"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        );
+      })()}
 
       {/* ── Summary Cards ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -423,6 +701,27 @@ export default function PortfolioView() {
             )}
           </span>
         </div>
+        {benchmark && (
+          <div className="bg-[#1a1c24] rounded-lg border border-[#ffffff1a] p-3 flex flex-col gap-1">
+            <span className="text-[10px] font-mono text-[#888] uppercase tracking-wider">You vs Nifty</span>
+            <span className="text-[11px] font-semibold font-mono">
+              You: {benchmark.portfolio_return >= 0 ? '+' : ''}{Math.abs(benchmark.portfolio_return).toFixed(1)}% vs Nifty: {benchmark.nifty_return >= 0 ? '+' : ''}{Math.abs(benchmark.nifty_return).toFixed(1)}%
+            </span>
+            <span className="text-[10px] font-mono">
+              {benchmark.portfolio_return >= benchmark.nifty_return
+                ? '✓ Beating Nifty by ' + (benchmark.portfolio_return - benchmark.nifty_return).toFixed(1) + '%'
+                : '⚠ Underperforming by ' + (benchmark.nifty_return - benchmark.portfolio_return).toFixed(1) + '%'}
+            </span>
+            <span className="text-[9px] font-mono text-[#888]">
+              {benchmark.period}
+            </span>
+          </div>
+        )}
+         {benchmark === null && (
+          <div className="bg-[#1a1c24] rounded-lg border border-[#ffffff1a] p-3 flex items-center justify-center">
+            <span className="text-[10px] font-mono text-[#888]">Loading benchmark...</span>
+          </div>
+        )}
       </div>
 
       {/* ── Refresh Status Flash ── */}
@@ -440,6 +739,12 @@ export default function PortfolioView() {
 
       {/* ── Toolbar ── */}
       <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="px-3 py-1 text-[11px] rounded font-mono transition-colors bg-emerald-600 text-white hover:bg-emerald-700 flex items-center gap-1"
+        >
+          <Plus size={14} /> Add Stock
+        </button>
         <button
           onClick={handleRefresh}
           disabled={refreshing}
@@ -558,6 +863,7 @@ export default function PortfolioView() {
                 )}
                 <th className={thClass} onClick={() => toggleSort('pe')}>P/E{sortIndicator('pe')}</th>
                 <th className={thClass} onClick={() => toggleSort('sector')}>Sector{sortIndicator('sector')}</th>
+                <th className="px-3 py-2 border-b border-[#ffffff1a]"></th>
               </tr>
             </thead>
             <tbody>
@@ -567,9 +873,84 @@ export default function PortfolioView() {
                 const ltpClass = live ? 'text-cyan-400' : (h.overall_pnl_pct >= 0 ? 'text-green-400' : 'text-red-400');
                 return (
                 <tr key={h.symbol} className="hover:bg-[#ffffff05] transition-colors">
-                  <td className={`${tdClass} font-bold text-[#fafafa]`}>{h.symbol}</td>
-                  <td className={tdClass}>{formatQty(h.net_qty)}</td>
-                  <td className={tdClass}>{formatIndianDec(h.avg_price)}</td>
+                  <td className={`${tdClass} font-bold`}>
+                    <div className="flex items-center gap-1">
+                      <span
+                        className="text-cyan-400 hover:text-white cursor-pointer"
+                        onClick={() => window.open(`/chart?symbol=${h.symbol}`, '_blank')}
+                        title={`Open chart for ${h.symbol}`}
+                      >
+                        {h.symbol}
+                      </span>
+                      <TrendingUp size={10} className="opacity-30" />
+                    </div>
+                  </td>
+                  <td
+                    className={`${tdClass} cursor-pointer hover:bg-[#ffffff0a] ${
+                      editingCell?.symbol === h.symbol && editingCell?.field === 'net_qty' ? 'p-0' : ''
+                    }`}
+                    onClick={() => {
+                      if (editingCell) return;
+                      setEditingCell({ symbol: h.symbol, field: 'net_qty' });
+                      setEditValue(String(h.net_qty));
+                    }}
+                  >
+                    {editingCell?.symbol === h.symbol && editingCell?.field === 'net_qty' ? (
+                      <input
+                        autoFocus
+                        className="w-full h-full bg-blue-600 text-white px-3 py-2 outline-none"
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        onBlur={() => handleUpdateCell(h.symbol, 'net_qty')}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleUpdateCell(h.symbol, 'net_qty');
+                          if (e.key === 'Escape') setEditingCell(null);
+                        }}
+                      />
+                    ) : (
+                      <div className="flex items-center justify-between group">
+                        <span>{formatQty(h.net_qty)}</span>
+                        {savingCell?.symbol === h.symbol && savingCell?.field === 'net_qty' ? (
+                          <Loader2 size={10} className="animate-spin text-[#888]" />
+                        ) : (
+                          <Edit size={10} className="text-[#888] opacity-0 group-hover:opacity-100" />
+                        )}
+                      </div>
+                    )}
+                  </td>
+                  <td
+                    className={`${tdClass} cursor-pointer hover:bg-[#ffffff0a] ${
+                      editingCell?.symbol === h.symbol && editingCell?.field === 'avg_price' ? 'p-0' : ''
+                    }`}
+                    onClick={() => {
+                      if (editingCell) return;
+                      setEditingCell({ symbol: h.symbol, field: 'avg_price' });
+                      setEditValue(String(h.avg_price));
+                    }}
+                  >
+                    {editingCell?.symbol === h.symbol && editingCell?.field === 'avg_price' ? (
+                      <input
+                        autoFocus
+                        className="w-full h-full bg-blue-600 text-white px-3 py-2 outline-none"
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        onBlur={() => handleUpdateCell(h.symbol, 'avg_price')}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleUpdateCell(h.symbol, 'avg_price');
+                          if (e.key === 'Escape') setEditingCell(null);
+                        }}
+                      />
+                    ) : (
+                      <div className="flex items-center justify-between group">
+                        <span>{formatIndianDec(h.avg_price)}</span>
+                        {savingCell?.symbol === h.symbol && savingCell?.field === 'avg_price' ? (
+                          <Loader2 size={10} className="animate-spin text-[#888]" />
+                        ) : (
+                          <Edit size={10} className="text-[#888] opacity-0 group-hover:opacity-100" />
+                        )}
+                      </div>
+                    )}
+                  </td>
                   <td className={`${tdClass} ${ltpClass}`}>
                     {live ? '\u25CF ' : ''}{ltpDisplay ? formatIndianDec(ltpDisplay) : '\u2014'}
                   </td>
@@ -604,6 +985,15 @@ export default function PortfolioView() {
                   )}
                   <td className={`${tdClass} ${peColor(h.pe)}`}>{h.pe != null ? h.pe.toFixed(1) : '\u2014'}</td>
                   <td className={tdClass}>{h.sector}</td>
+                  <td className={`${tdClass} text-right`}>
+                    <button
+                      onClick={() => setDeleteConfirm(h.symbol)}
+                      className="text-[#555] hover:text-red-400 transition-colors"
+                      title={`Remove ${h.symbol}`}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </td>
                 </tr>
                 );
               })}
@@ -669,6 +1059,13 @@ export default function PortfolioView() {
                           </span>
                         );
                       })}
+                      <button
+                        onClick={() => handleQuickAddFromScanner(sym)}
+                        className="p-1 rounded bg-[#ffffff0a] text-[#888] hover:text-emerald-400 hover:bg-emerald-400/10 border border-[#ffffff1a] ml-1"
+                        title={`Add ${sym} to portfolio`}
+                      >
+                        <Plus size={10} />
+                      </button>
                     </div>
                   </div>
                 );
