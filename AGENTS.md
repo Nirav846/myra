@@ -72,6 +72,7 @@ AI-powered Indian stock market screener (NSE). FastAPI + React frontend + Python
 | Enrichment completion | 99.4% |
 | Databases | 8 SQLite sidecars (WAL mode) |
 | Registered scanners | 7 (Trigger, Float Exhaustion, Invisible Hand, Wyckoff, LFD, OFP, Seasonal Delivery) |
+| Portfolio Tracker | ✅ | CLI tool with auto-refresh, scanner overlap, risk metrics, smart caching |
 | Scanner candidates (typical) | 2–623 per run |
 | ML models | 2 (forward_return.xgb + launchpad_xgb.joblib) |
 | Test suite | 61 tests, all passing |
