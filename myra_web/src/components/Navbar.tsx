@@ -132,21 +132,24 @@ export default function Navbar({ tabs }: NavbarProps) {
 
   const renderCategoryContent = (catKey: string) => {
     if (catKey === 'dashboard') {
-      const tab = (grouped['dashboard'] || [])[0];
-      if (!tab) return null;
+      const tabs = grouped['dashboard'] || [];
+      if (tabs.length === 0) return null;
       return (
-        <div key="dashboard" data-cat="dashboard">
-          <NavLink
-            to={tab.path}
-            className={({ isActive }) =>
-              `px-2 py-1 text-[11px] font-mono whitespace-nowrap transition-colors inline-flex items-center gap-1 ${
-                isActive ? 'text-cyan-400' : 'text-[#888] hover:text-white'
-              }`
-            }
-          >
-            <span className="nav-icon">{typeof tab.icon === 'string' ? tab.icon : tab.icon}</span>
-            <span className="nav-label">{tab.id}</span>
-          </NavLink>
+        <div key="dashboard" data-cat="dashboard" className="flex items-center gap-1">
+          {tabs.map((tab) => (
+            <NavLink
+              key={tab.id}
+              to={tab.path}
+              className={({ isActive }) =>
+                `px-2 py-1 text-[11px] font-mono whitespace-nowrap transition-colors inline-flex items-center gap-1 ${
+                  isActive ? 'text-cyan-400' : 'text-[#888] hover:text-white'
+                }`
+              }
+            >
+              <span className="nav-icon">{typeof tab.icon === 'string' ? tab.icon : tab.icon}</span>
+              <span className="nav-label">{tab.id}</span>
+            </NavLink>
+          ))}
         </div>
       );
     }

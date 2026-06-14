@@ -54,6 +54,7 @@ interface Freshness {
 
 interface PortfolioData {
   status: string;
+  message?: string;
   summary: {
     total_invested: number;
     total_current: number;
