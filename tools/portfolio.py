@@ -9,6 +9,7 @@ import sys
 import os
 import csv
 import json
+import re
 import sqlite3
 from datetime import datetime, timedelta
 
@@ -16,15 +17,27 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     from myra_app.portfolio_db import (
-        get_db_path, get_connection as get_portfolio_conn,
-        import_holdings, get_all_holdings, get_holding,
-        add_holding, update_holding, delete_holding,
-        record_snapshot, get_snapshots, get_transactions,
-        get_delivery_metrics, get_technical_position,
-        get_sector_allocation, get_scanner_overlap,
-        get_delivery_alerts, get_concentration_risk,
-        get_drawdown_metrics, get_allocation_by_mcap,
-        get_volatility_metrics, get_diversification_score,
+        get_db_path,
+        get_connection as get_portfolio_conn,
+        import_holdings,
+        get_all_holdings,
+        get_holding,
+        add_holding,
+        update_holding,
+        delete_holding,
+        record_snapshot,
+        get_snapshots,
+        get_transactions,
+        get_delivery_metrics,
+        get_technical_position,
+        get_sector_allocation,
+        get_scanner_overlap,
+        get_delivery_alerts,
+        get_concentration_risk,
+        get_drawdown_metrics,
+        get_allocation_by_mcap,
+        get_volatility_metrics,
+        get_diversification_score,
     )
     from myra_app.constants import DB_DIR
 except ImportError as e:
@@ -57,7 +70,10 @@ try:
 except (UnicodeEncodeError, UnicodeDecodeError, AttributeError):
     CURRENCY = "Rs."
 
-_NEEDS_ASCII = sys.platform == "win32" or (sys.stdout.encoding or "").lower() in ("cp1252", "ascii")
+_NEEDS_ASCII = sys.platform == "win32" or (sys.stdout.encoding or "").lower() in (
+    "cp1252",
+    "ascii",
+)
 
 if _NEEDS_ASCII:
     ARROW_UP = "^"
@@ -78,7 +94,9 @@ else:
     TRIANGLE_DOWN = "\u25bc"
     DIAMOND = "\u25c6"
 
-EXPORTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "exports")
+EXPORTS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "exports"
+)
 
 
 def fmt_inr(amount):
@@ -144,7 +162,7 @@ def get_last_close(symbol):
         conn = sqlite3.connect(db_path)
         cur = conn.execute(
             "SELECT close, date FROM technical_data WHERE symbol=? ORDER BY date DESC LIMIT 1",
-            (symbol,)
+            (symbol,),
         )
         row = cur.fetchone()
         conn.close()
@@ -178,12 +196,18 @@ def get_fundamentals(symbol):
         conn = sqlite3.connect(db_path)
         cur = conn.execute(
             "SELECT pe, sector, market_cap, industry, roe FROM fundamentals WHERE symbol=?",
-            (symbol,)
+            (symbol,),
         )
         row = cur.fetchone()
         conn.close()
         if row:
-            return {"pe": row[0], "sector": row[1], "market_cap": row[2], "industry": row[3], "roe": row[4]}
+            return {
+                "pe": row[0],
+                "sector": row[1],
+                "market_cap": row[2],
+                "industry": row[3],
+                "roe": row[4],
+            }
         return {}
     except sqlite3.Error:
         return {}
@@ -263,7 +287,9 @@ def build_portfolio_rows(use_live, sort_col):
             if live_price is not None:
                 price = live_price
             else:
-                print(f"{YELLOW}Live price failed for {h['symbol']}: {err} - using EOD{RESET}")
+                print(
+                    f"{YELLOW}Live price failed for {h['symbol']}: {err} - using EOD{RESET}"
+                )
         invested = h["net_qty"] * h["avg_price"]
         current_value = h["net_qty"] * price if price else 0
         overall_pnl = current_value - invested
@@ -275,11 +301,13 @@ def build_portfolio_rows(use_live, sort_col):
             try:
                 prev = conn.execute(
                     "SELECT close FROM technical_data WHERE symbol=? AND date < ? ORDER BY date DESC LIMIT 1",
-                    (h["symbol"], price_date)
+                    (h["symbol"], price_date),
                 ).fetchone()
                 if prev:
                     day_pnl = h["net_qty"] * (price - prev[0])
-                    day_pnl_pct = (day_pnl / current_value * 100) if current_value else 0
+                    day_pnl_pct = (
+                        (day_pnl / current_value * 100) if current_value else 0
+                    )
             except sqlite3.Error:
                 pass
             conn.close()
@@ -327,54 +355,180 @@ def build_portfolio_rows(use_live, sort_col):
     return rows
 
 
+def _parse_indian_num(val):
+    if val is None:
+        return None
+    s = str(val).strip().replace(",", "")
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _parse_pnl(val):
+    if val is None:
+        return None
+    s = str(val).strip().replace(",", "")
+    m = re.match(r"([+-]?[\d.]+)", s)
+    if m:
+        return float(m.group(1))
+    return None
+
+
+COL_MAP = {
+    "symbol": ["Symbol"],
+    "net_qty": ["Net Qty", "NetQty", "Quantity", "Qty", "BQTY"],
+    "avg_price": [
+        "Avg. Price",
+        "Avg Price",
+        "Average Price",
+        "AvgPrice",
+        "Buy Price",
+        "Price",
+    ],
+    "ltp": ["LTP", "Last Price", "Close"],
+    "category": ["Category", "Exchange", "Segment"],
+}
+
+
+def _find_header_row(sheet_data):
+    for idx, row in enumerate(sheet_data):
+        if row and str(row[0]).strip().startswith("Symbol"):
+            return idx
+    return None
+
+
+def _build_col_map(header_row):
+    col_index = {}
+    for col_idx, cell in enumerate(header_row):
+        raw = str(cell).strip() if cell else ""
+        for internal, candidates in COL_MAP.items():
+            for c in candidates:
+                if raw == c or raw.startswith(c + " ("):
+                    col_index[internal] = col_idx
+                    break
+    return col_index
+
+
 def cmd_import(args):
     path = args.path
     if not os.path.exists(path):
         print(f"{RED}File not found:{RESET} {path}")
         sys.exit(1)
+
     try:
-        df = pd.read_excel(path)
+        import openpyxl
+
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
     except Exception as e:
         print(f"{RED}Failed to read XLSX:{RESET} {e}")
         sys.exit(1)
-    sym_col = match_columns(df, ["Symbol", "Ticker", "Scrip", "ISIN"])
-    qty_col = match_columns(df, ["Net Qty", "Quantity", "Qty", "NetQty", "BQTY"])
-    price_col = match_columns(df, ["Avg. Price", "Avg Price", "Average Price", "AvgPrice", "Buy Price", "Price"])
-    cat_col = match_columns(df, ["Category", "Exchange", "Segment"])
-    if not all([sym_col, qty_col, price_col]):
-        print(f"{RED}Could not identify required columns in XLSX.{RESET}")
-        print(f"  Columns found: {list(df.columns)}")
-        print(f"  Need: Symbol, Net Qty, Avg. Price")
+
+    sheet_name = None
+    for prefix in ("Demat", "All"):
+        for candidate in wb.sheetnames:
+            if candidate.startswith(prefix):
+                sheet_name = candidate
+                break
+        if sheet_name:
+            break
+    if sheet_name is None:
+        sheet_name = wb.sheetnames[0]
+    ws = wb[sheet_name]
+
+    sheet_data = list(ws.iter_rows(values_only=True))
+    wb.close()
+
+    header_row_idx = _find_header_row(sheet_data)
+    if header_row_idx is None:
+        print(f"{RED}Could not find header row in sheet '{sheet_name}'.{RESET}")
+        print(
+            f"  First cells: {[str(r[0])[:30] for r in sheet_data[:6] if r and r[0]]}"
+        )
         sys.exit(1)
-    rows = []
-    for _, r in df.iterrows():
-        symbol = str(r[sym_col]).strip().upper()
-        if not symbol or symbol in ("NAN", "", "NONE"):
-            continue
-        try:
-            qty = int(float(r[qty_col]))
-        except (ValueError, TypeError):
-            qty = 0
-        try:
-            price = float(r[price_col])
-        except (ValueError, TypeError):
-            price = 0.0
-        if qty <= 0 or price <= 0:
-            continue
-        category = str(r[cat_col]).strip() if cat_col and pd.notna(r.get(cat_col)) else "NSE EQ"
-        rows.append({"symbol": symbol, "net_qty": qty, "avg_price": price, "category": category})
-    if not rows:
-        print(f"{RED}No valid holdings found in XLSX.{RESET}")
+
+    header = list(sheet_data[header_row_idx])
+    col_map = _build_col_map(header)
+    if "symbol" not in col_map:
+        print(f"{RED}Could not identify Symbol column in sheet '{sheet_name}'.{RESET}")
+        print(f"  Header row: {header}")
         sys.exit(1)
-    count = import_holdings(rows)
-    invested = sum(r["net_qty"] * r["avg_price"] for r in rows)
-    total_qty = sum(r["net_qty"] for r in rows)
-    print(f"{GREEN}Imported {count} holdings.{RESET} Total invested: {fmt_inr(invested)} over {total_qty} shares.")
+
+    data_rows = []
+    for row in sheet_data[header_row_idx + 1 :]:
+        if not row or not row[col_map["symbol"]]:
+            continue
+        symbol = str(row[col_map["symbol"]]).strip().upper()
+        if not symbol:
+            continue
+        qty_raw = (
+            str(row[col_map.get("net_qty", 0)]).strip()
+            if col_map.get("net_qty") is not None
+            else "0"
+        )
+        price_raw = (
+            str(row[col_map.get("avg_price", 0)]).strip()
+            if col_map.get("avg_price") is not None
+            else "0"
+        )
+        qty_val = _parse_indian_num(qty_raw)
+        price_val = _parse_indian_num(price_raw)
+        if qty_val is None or price_val is None or qty_val <= 0 or price_val <= 0:
+            continue
+        category = "NSE EQ"
+        if col_map.get("category") is not None:
+            cat_val = row[col_map["category"]]
+            if cat_val:
+                category = str(cat_val).strip()
+        data_rows.append(
+            {
+                "symbol": symbol,
+                "net_qty": int(qty_val),
+                "avg_price": price_val,
+                "category": category,
+            }
+        )
+
+    if not data_rows:
+        print(f"{RED}No valid holdings found in sheet '{sheet_name}'.{RESET}")
+        sys.exit(1)
+
+    summary = {}
+    if header_row_idx >= 2 and sheet_data[0] and sheet_data[1]:
+        summary["invested"] = _parse_indian_num(sheet_data[1][0])
+        summary["current"] = _parse_indian_num(sheet_data[1][1])
+        summary["overall_pnl"] = _parse_pnl(sheet_data[1][2])
+        summary["day_pnl"] = _parse_pnl(sheet_data[1][3])
+
+    count = import_holdings(data_rows)
+    print(f"{GREEN}Imported {count} holdings from {sheet_name}{RESET}")
+    print(f"{DASH * 53}")
+    if summary.get("invested") is not None:
+        overall_pnl = summary.get("overall_pnl")
+        overall_pnl_str = (
+            f" ({color_pnl_pct(overall_pnl / summary['invested'] * 100) if overall_pnl is not None and summary['invested'] else ''})"
+            if overall_pnl is not None
+            else ""
+        )
+        print(f"Invested:    {fmt_inr(summary['invested'])}")
+        print(f"Current:     {fmt_inr(summary['current'])}")
+        print(
+            f"Overall P&L: {color_pnl(summary['overall_pnl']) if summary['overall_pnl'] is not None else 'N/A'}{overall_pnl_str}"
+        )
+        print(
+            f"Day P&L:     {color_pnl(summary['day_pnl']) if summary['day_pnl'] is not None else 'N/A'}"
+        )
+    else:
+        invested = sum(r["net_qty"] * r["avg_price"] for r in data_rows)
+        print(f"Invested:    {fmt_inr(invested)}")
+    print(f"{DASH * 53}")
 
 
 def cmd_view(args):
     if args.live:
-        print(f"{YELLOW}Live prices via yfinance. Data may be delayed by 15 minutes. Use for reference only.{RESET}")
+        print(
+            f"{YELLOW}Live prices via yfinance. Data may be delayed by 15 minutes. Use for reference only.{RESET}"
+        )
     rows = build_portfolio_rows(args.live, args.sort)
     if not rows:
         return
@@ -392,12 +546,15 @@ def cmd_view(args):
         headers = ["Symbol", "LTP", "P&L%", "Alert"]
         table_data = []
         for r in rows:
-            table_data.append([
-                r["symbol"],
-                fmt_inr(r["ltp"]),
-                color_pnl_pct(r["pnl_pct"]),
-                fmt_alert_short(r["alerts"]),
-            ])
+            table_data.append(
+                [
+                    r["symbol"],
+                    fmt_inr(r["ltp"]),
+                    color_pnl_pct(r["pnl_pct"]),
+                    fmt_alert_short(r["alerts"]),
+                ]
+            )
+
     def _fmt_del_trend(trend):
         if not trend or trend == DASH:
             return f"{YELLOW}{DASH}{RESET}"
@@ -417,44 +574,72 @@ def cmd_view(args):
         headers = ["Symbol", "LTP", "P&L%", "Alert"]
         table_data = []
         for r in rows:
-            table_data.append([
-                r["symbol"],
-                fmt_inr(r["ltp"]),
-                color_pnl_pct(r["pnl_pct"]),
-                fmt_alert_short(r["alerts"]),
-            ])
+            table_data.append(
+                [
+                    r["symbol"],
+                    fmt_inr(r["ltp"]),
+                    color_pnl_pct(r["pnl_pct"]),
+                    fmt_alert_short(r["alerts"]),
+                ]
+            )
     elif args.detailed:
-        headers = ["Symbol", "LTP", "P&L%", "Del%", "Trend", "vs 50SMA", "vs 52wH", "vs 52wL", "Alert"]
+        headers = [
+            "Symbol",
+            "LTP",
+            "P&L%",
+            "Del%",
+            "Trend",
+            "vs 50SMA",
+            "vs 52wH",
+            "vs 52wL",
+            "Alert",
+        ]
         table_data = []
         for r in rows:
-            table_data.append([
-                r["symbol"],
-                fmt_inr(r["ltp"]),
-                color_pnl_pct(r["pnl_pct"]),
-                _fmt_del_pct(r["del_pct"]),
-                _fmt_del_trend(r["del_trend"]),
-                fmt_vs_sma(r["vs_sma_pct"]),
-                fmt_vs_52w_high(r["vs_52w_high_pct"]),
-                fmt_vs_52w_low(r["vs_52w_low_pct"]),
-                fmt_alert_short(r["alerts"]),
-            ])
+            table_data.append(
+                [
+                    r["symbol"],
+                    fmt_inr(r["ltp"]),
+                    color_pnl_pct(r["pnl_pct"]),
+                    _fmt_del_pct(r["del_pct"]),
+                    _fmt_del_trend(r["del_trend"]),
+                    fmt_vs_sma(r["vs_sma_pct"]),
+                    fmt_vs_52w_high(r["vs_52w_high_pct"]),
+                    fmt_vs_52w_low(r["vs_52w_low_pct"]),
+                    fmt_alert_short(r["alerts"]),
+                ]
+            )
     else:
-        headers = ["Symbol", "Qty", "Avg", "LTP", "Invested", "Current", "P&L", "P&L%", "Del%", "Trend", "Alert"]
+        headers = [
+            "Symbol",
+            "Qty",
+            "Avg",
+            "LTP",
+            "Invested",
+            "Current",
+            "P&L",
+            "P&L%",
+            "Del%",
+            "Trend",
+            "Alert",
+        ]
         table_data = []
         for r in rows:
-            table_data.append([
-                r["symbol"],
-                r["qty"],
-                fmt_inr(r["avg"]),
-                fmt_inr(r["ltp"]),
-                fmt_inr(r["invested"]),
-                fmt_inr(r["current"]),
-                color_pnl(r["pnl"]),
-                color_pnl_pct(r["pnl_pct"]),
-                _fmt_del_pct(r["del_pct"]),
-                _fmt_del_trend(r["del_trend"]),
-                fmt_alert_short(r["alerts"]),
-            ])
+            table_data.append(
+                [
+                    r["symbol"],
+                    r["qty"],
+                    fmt_inr(r["avg"]),
+                    fmt_inr(r["ltp"]),
+                    fmt_inr(r["invested"]),
+                    fmt_inr(r["current"]),
+                    color_pnl(r["pnl"]),
+                    color_pnl_pct(r["pnl_pct"]),
+                    _fmt_del_pct(r["del_pct"]),
+                    _fmt_del_trend(r["del_trend"]),
+                    fmt_alert_short(r["alerts"]),
+                ]
+            )
     if tabulate:
         print(f"\n{tabulate(table_data, headers=headers, tablefmt='simple')}")
     else:
@@ -470,7 +655,9 @@ def cmd_add(args):
     category = args.category
     existing = get_holding(symbol)
     if existing:
-        print(f"{YELLOW}{symbol} already exists ({existing['net_qty']} shares @ {fmt_inr(existing['avg_price'])}).{RESET}")
+        print(
+            f"{YELLOW}{symbol} already exists ({existing['net_qty']} shares @ {fmt_inr(existing['avg_price'])}).{RESET}"
+        )
         confirm = input("Overwrite? (y/N): ").strip().lower()
         if confirm != "y":
             print("Aborted.")
@@ -502,10 +689,13 @@ def cmd_sell(args):
     else:
         update_holding(symbol, net_qty=holding["net_qty"] - qty)
         conn = get_portfolio_conn()
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO transactions (symbol, action, qty, price, notes)
             VALUES (?, 'SELL', ?, ?, ?)
-        """, (symbol, qty, price, f"Sold {qty} @ {price}"))
+        """,
+            (symbol, qty, price, f"Sold {qty} @ {price}"),
+        )
         conn.commit()
         conn.close()
     pnl_str = color_pnl(realised_pnl)
@@ -560,7 +750,7 @@ def cmd_snapshot(args):
             try:
                 prev = conn.execute(
                     "SELECT close FROM technical_data WHERE symbol=? AND date < ? ORDER BY date DESC LIMIT 1",
-                    (h["symbol"], eod["date"])
+                    (h["symbol"], eod["date"]),
                 ).fetchone()
                 if prev:
                     day_pnl += h["net_qty"] * (price - prev[0])
@@ -570,7 +760,14 @@ def cmd_snapshot(args):
     overall_pnl = total_current - total_invested
     overall_pnl_pct = (overall_pnl / total_invested * 100) if total_invested else 0
     day_pnl_pct = (day_pnl / total_current * 100) if total_current else 0
-    date = record_snapshot(total_invested, total_current, overall_pnl, overall_pnl_pct, day_pnl, day_pnl_pct)
+    date = record_snapshot(
+        total_invested,
+        total_current,
+        overall_pnl,
+        overall_pnl_pct,
+        day_pnl,
+        day_pnl_pct,
+    )
     print(f"{GREEN}Snapshot saved for {date}.{RESET}")
     print(f"  Invested: {fmt_inr(total_invested)}")
     print(f"  Value:    {fmt_inr(total_current)}")
@@ -584,14 +781,16 @@ def cmd_history(args):
         return
     table_data = []
     for s in snapshots:
-        table_data.append([
-            s["date"],
-            fmt_inr(s["total_invested"]),
-            fmt_inr(s["total_current"]),
-            color_pnl(s["overall_pnl"]),
-            color_pnl_pct(s["overall_pnl_pct"]),
-            color_pnl(s["day_pnl"]),
-        ])
+        table_data.append(
+            [
+                s["date"],
+                fmt_inr(s["total_invested"]),
+                fmt_inr(s["total_current"]),
+                color_pnl(s["overall_pnl"]),
+                color_pnl_pct(s["overall_pnl_pct"]),
+                color_pnl(s["day_pnl"]),
+            ]
+        )
     headers = ["Date", "Invested", "Current", "P&L", "P&L%", "Day P&L"]
     if tabulate:
         print(tabulate(table_data, headers=headers, tablefmt="simple"))
@@ -611,14 +810,42 @@ def cmd_export(args):
     format_type = args.format
     if format_type == "csv":
         os.makedirs(EXPORTS_DIR, exist_ok=True)
-        filename = args.filename or f"exports/portfolio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-        filepath = filename if os.path.isabs(filename) else os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), filename)
+        filename = (
+            args.filename
+            or f"exports/portfolio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        )
+        filepath = (
+            filename
+            if os.path.isabs(filename)
+            else os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))), filename
+            )
+        )
         os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
         rows = build_portfolio_rows(use_live=False, sort_col=None)
         if not rows:
             return
         with open(filepath, "w", newline="") as f:
-            fieldnames = ["symbol","qty","avg","ltp","invested","current","pnl","pnl_pct","day_pnl","day_pnl_pct","del_pct","del_trend","vs_sma_pct","vs_52w_high_pct","vs_52w_low_pct","pe","sector","market_cap"]
+            fieldnames = [
+                "symbol",
+                "qty",
+                "avg",
+                "ltp",
+                "invested",
+                "current",
+                "pnl",
+                "pnl_pct",
+                "day_pnl",
+                "day_pnl_pct",
+                "del_pct",
+                "del_trend",
+                "vs_sma_pct",
+                "vs_52w_high_pct",
+                "vs_52w_low_pct",
+                "pe",
+                "sector",
+                "market_cap",
+            ]
             w = csv.DictWriter(f, fieldnames=fieldnames)
             w.writeheader()
             for r in rows:
@@ -637,15 +864,17 @@ def cmd_performance(args):
     table_data = []
     for r in rows:
         weight = (r["current"] / total_current * 100) if total_current else 0
-        table_data.append([
-            r["symbol"],
-            fmt_inr(r["invested"]),
-            fmt_inr(r["current"]),
-            color_pnl(r["pnl"]),
-            color_pnl_pct(r["pnl_pct"]),
-            f"{weight:.1f}%",
-            color_pnl(r["day_pnl"]),
-        ])
+        table_data.append(
+            [
+                r["symbol"],
+                fmt_inr(r["invested"]),
+                fmt_inr(r["current"]),
+                color_pnl(r["pnl"]),
+                color_pnl_pct(r["pnl_pct"]),
+                f"{weight:.1f}%",
+                color_pnl(r["day_pnl"]),
+            ]
+        )
     headers = ["Symbol", "Invested", "Current", "P&L", "P&L%", "Weight", "Day P&L"]
     if tabulate:
         print(f"\n{BOLD}Per-Stock Performance{RESET}")
@@ -663,7 +892,13 @@ def cmd_performance(args):
         total_str = ["", "", fmt_inr(total_current), "100%"]
         if tabulate:
             print(f"\n{BOLD}Sector Allocation{RESET}")
-            print(tabulate(sec_data + [total_str], headers=["Sector", "Holdings", "Value", "Weight%"], tablefmt="simple"))
+            print(
+                tabulate(
+                    sec_data + [total_str],
+                    headers=["Sector", "Holdings", "Value", "Weight%"],
+                    tablefmt="simple",
+                )
+            )
         else:
             print(f"\n{'  '.join(['Sector','Holdings','Value','Weight%'])}")
             for row in sec_data + [total_str]:
@@ -676,11 +911,23 @@ def cmd_scanner(args):
         print(f"{YELLOW}No holdings in portfolio.{RESET}")
         return
     overlap = get_scanner_overlap(holdings)
-    has_signal = any(any(v is not None for v in data.values()) for data in overlap.values())
+    has_signal = any(
+        any(v is not None for v in data.values()) for data in overlap.values()
+    )
     if not has_signal:
         print(f"{YELLOW}No scanner signals detected for your holdings.{RESET}")
         return
-    scanner_names = ["Trigger", "InvisHand", "FloatExh", "Wyckoff", "OpFinger", "LiqFlip", "Darvas", "Launchpad", "SeasDel"]
+    scanner_names = [
+        "Trigger",
+        "InvisHand",
+        "FloatExh",
+        "Wyckoff",
+        "OpFinger",
+        "LiqFlip",
+        "Darvas",
+        "Launchpad",
+        "SeasDel",
+    ]
     headers = ["Symbol"] + scanner_names
     table_data = []
     for symbol in sorted(overlap.keys()):
@@ -695,7 +942,9 @@ def cmd_scanner(args):
                 any_hit = True
                 if sn == "Trigger":
                     grade = raw.get("grade", raw.get("trigger_signal", ""))
-                    row.append(f"{GREEN}{grade}{RESET}" if grade else f"{GREEN}{CHECK}{RESET}")
+                    row.append(
+                        f"{GREEN}{grade}{RESET}" if grade else f"{GREEN}{CHECK}{RESET}"
+                    )
                 elif sn == "InvisHand":
                     score = raw.get("ih_score")
                     if score:
@@ -712,7 +961,9 @@ def cmd_scanner(args):
                         row.append(f"{CYAN}low{RESET}")
                 elif sn == "Wyckoff":
                     phase = raw.get("scheme", raw.get("phase", ""))
-                    row.append(f"{CYAN}{phase}{RESET}" if phase else f"{GREEN}{CHECK}{RESET}")
+                    row.append(
+                        f"{CYAN}{phase}{RESET}" if phase else f"{GREEN}{CHECK}{RESET}"
+                    )
                 elif sn == "OpFinger":
                     cr = raw.get("compression_ratio", 0)
                     if cr and cr > 2:
@@ -725,7 +976,9 @@ def cmd_scanner(args):
                     row.append(f"{GREEN}{CHECK}{RESET}")
                 elif sn == "SeasDel":
                     month = raw.get("current_month", "")
-                    row.append(f"{CYAN}{month}{RESET}" if month else f"{GREEN}{CHECK}{RESET}")
+                    row.append(
+                        f"{CYAN}{month}{RESET}" if month else f"{GREEN}{CHECK}{RESET}"
+                    )
         if any_hit:
             table_data.append(row)
     if not table_data:
@@ -747,7 +1000,9 @@ def cmd_alerts(args):
         return
     alerts = get_delivery_alerts(holdings)
     if not alerts:
-        print(f"{GREEN}No active alerts. All holdings have normal delivery patterns.{RESET}")
+        print(
+            f"{GREEN}No active alerts. All holdings have normal delivery patterns.{RESET}"
+        )
         return
     sev_order = {"high": 0, "warning": 1, "info": 2}
     alerts.sort(key=lambda a: (sev_order.get(a["severity"], 99), a["symbol"]))
@@ -756,7 +1011,9 @@ def cmd_alerts(args):
     for a in alerts:
         color = sev_colors.get(a["severity"], RESET)
         label = a["alert_type"].ljust(18)
-        print(f"  {color}[{a['severity'].upper()}]{RESET} {styled(label, BOLD)} {a['symbol']}")
+        print(
+            f"  {color}[{a['severity'].upper()}]{RESET} {styled(label, BOLD)} {a['symbol']}"
+        )
         print(f"         {a['detail']}")
 
 
@@ -774,7 +1031,9 @@ def cmd_risk(args):
     if conc:
         print(f"\n  Concentration Risk")
         print(f"  {HR}")
-        top3_label = styled(f'{conc["top3_pct"]}%', YELLOW if conc["top3_pct"] >= 50 else GREEN)
+        top3_label = styled(
+            f'{conc["top3_pct"]}%', YELLOW if conc["top3_pct"] >= 50 else GREEN
+        )
         print(f"  Top 3 holdings: {top3_label} of portfolio")
         for h in conc["top3_holdings"]:
             print(f"    {h['symbol']}: {fmt_inr(h['value'])} ({h['pct']}%)")
@@ -788,17 +1047,26 @@ def cmd_risk(args):
         _hline()
         print(f"  Peak value:     {fmt_inr(draw['peak_value'])} ({draw['peak_date']})")
         print(f"  Current value:  {fmt_inr(draw['current_value'])}")
-        print(f"  Max drawdown:   {color_pnl_pct(draw['drawdown_pct'])} ({fmt_inr(abs(draw['drawdown_amount']))})")
+        print(
+            f"  Max drawdown:   {color_pnl_pct(draw['drawdown_pct'])} ({fmt_inr(abs(draw['drawdown_amount']))})"
+        )
         print(f"  Days from peak: {draw['days_from_peak']}")
     else:
         print(f"\n  Drawdown Analysis")
         _hline()
-        print(f"  {YELLOW}Not enough history. Run 'snapshot' daily to build history.{RESET}")
+        print(
+            f"  {YELLOW}Not enough history. Run 'snapshot' daily to build history.{RESET}"
+        )
     mcap = get_allocation_by_mcap()
     if mcap:
         print(f"\n  Allocation by Market Cap")
         _hline()
-        labels = {"large": "Large Cap", "mid": "Mid Cap", "small": "Small Cap", "unknown": "Unknown"}
+        labels = {
+            "large": "Large Cap",
+            "mid": "Mid Cap",
+            "small": "Small Cap",
+            "unknown": "Unknown",
+        }
         for k in ["large", "mid", "small", "unknown"]:
             v = mcap[k]
             if v["count"]:
@@ -808,21 +1076,32 @@ def cmd_risk(args):
         print(f"\n  Volatility (from daily snapshots)")
         _hline()
         print(f"  30-day volatility: {vol['daily_vol_pct']}% daily")
-        print(f"  Max single-day gain: {color_pnl(vol['max_gain'])} ({vol['gain_date']})")
-        print(f"  Max single-day loss: {color_pnl(vol['max_loss'])} ({vol['loss_date']})")
+        print(
+            f"  Max single-day gain: {color_pnl(vol['max_gain'])} ({vol['gain_date']})"
+        )
+        print(
+            f"  Max single-day loss: {color_pnl(vol['max_loss'])} ({vol['loss_date']})"
+        )
     else:
         print(f"\n  Volatility")
         _hline()
-        print(f"  {YELLOW}Not enough history. Run 'snapshot' daily to build history.{RESET}")
+        print(
+            f"  {YELLOW}Not enough history. Run 'snapshot' daily to build history.{RESET}"
+        )
     div = get_diversification_score()
     if div:
-        score_color = GREEN if div["score"] >= 60 else (YELLOW if div["score"] >= 40 else RED)
-        print(f"\n  Diversification Score: {score_color}{div['score']}/100{RESET} ({div['rating']})")
+        score_color = (
+            GREEN if div["score"] >= 60 else (YELLOW if div["score"] >= 40 else RED)
+        )
+        print(
+            f"\n  Diversification Score: {score_color}{div['score']}/100{RESET} ({div['rating']})"
+        )
         print(f"  {div['details']}")
 
 
 def main():
     import argparse
+
     parser = argparse.ArgumentParser(
         description="MYRA Portfolio Tracker - CLI tool for managing stock holdings.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -841,7 +1120,7 @@ Examples:
   python tools/portfolio.py scanner
   python tools/portfolio.py alerts
   python tools/portfolio.py risk
-        """
+        """,
     )
     sub = parser.add_subparsers(dest="command")
     sub.required = True
@@ -850,10 +1129,23 @@ Examples:
     p_import.add_argument("path", help="Path to XLSX file")
 
     p_view = sub.add_parser("view", help="View portfolio with prices and P&L")
-    p_view.add_argument("--live", action="store_true", help="Fetch live prices via yfinance")
-    p_view.add_argument("--sort", choices=["symbol","value","pnl","day_pnl","pnl_pct"], default=None, help="Sort column")
-    p_view.add_argument("--compact", action="store_true", help="Compact view: symbol, LTP, P&L%, alerts only")
-    p_view.add_argument("--detailed", action="store_true", help="Show all enriched columns")
+    p_view.add_argument(
+        "--live", action="store_true", help="Fetch live prices via yfinance"
+    )
+    p_view.add_argument(
+        "--sort",
+        choices=["symbol", "value", "pnl", "day_pnl", "pnl_pct"],
+        default=None,
+        help="Sort column",
+    )
+    p_view.add_argument(
+        "--compact",
+        action="store_true",
+        help="Compact view: symbol, LTP, P&L%, alerts only",
+    )
+    p_view.add_argument(
+        "--detailed", action="store_true", help="Show all enriched columns"
+    )
 
     p_add = sub.add_parser("add", help="Add a holding")
     p_add.add_argument("symbol")
@@ -884,10 +1176,16 @@ Examples:
 
     p_perf = sub.add_parser("performance", help="Per-stock and sector breakdown")
 
-    p_scanner = sub.add_parser("scanner", help="Cross-reference holdings with MYRA scanner results")
-    p_alerts = sub.add_parser("alerts", help="Show delivery anomaly alerts for your holdings")
+    p_scanner = sub.add_parser(
+        "scanner", help="Cross-reference holdings with MYRA scanner results"
+    )
+    p_alerts = sub.add_parser(
+        "alerts", help="Show delivery anomaly alerts for your holdings"
+    )
 
-    p_risk = sub.add_parser("risk", help="Portfolio risk metrics (concentration, drawdown, volatility)")
+    p_risk = sub.add_parser(
+        "risk", help="Portfolio risk metrics (concentration, drawdown, volatility)"
+    )
 
     args = parser.parse_args()
 
