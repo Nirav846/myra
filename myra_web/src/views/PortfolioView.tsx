@@ -178,7 +178,7 @@ export default function PortfolioView() {
   const [showLivePrices, setShowLivePrices] = useState(false);
   const [livePrices, setLivePrices] = useState<Record<string, any>>({});
   const [liveLoading, setLiveLoading] = useState(false);
-  const [mountedRef, setMountedRef] = useState(true);
+  const mountedRef = useRef(true);
   const autoRefreshDoneRef = useRef(false);
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
