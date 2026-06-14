@@ -181,6 +181,47 @@ myra/
 
 All scanners are thread-safe, cache results to JSON, and support configurable market-cap ranges.
 
+## Portfolio Tracker
+
+The CLI portfolio tracker (`tools/portfolio.py`) manages your personal NSE holdings with auto-refreshed pricing, risk analytics, and scanner overlap — all from MYRA's own databases without external API calls.
+
+### Quick Start
+
+```bash
+# 1. One-time import from your broker's XLSX
+python tools/portfolio.py import path/to/export.xlsx
+
+# 2. View your portfolio
+python tools/portfolio.py view
+
+# 3. Next day: prices auto-refresh during daily ingest
+python tools/portfolio.py view
+```
+
+### Key Commands
+
+| Command | Description |
+|---------|-------------|
+| `import <xlsx>` | One-time import from broker XLSX file |
+| `view` | Portfolio with P&L, delivery%, SMA/52w position, fundamentals, alerts |
+| `view --compact` | Minimal 4-column view |
+| `view --detailed` | Full 9-column deep dive with all enrichment |
+| `view --live` | Live yfinance prices (15-min delayed) |
+| `refresh` | Force-refresh all cached data from MYRA databases |
+| `performance` | Per-stock breakdown + sector allocation pie chart |
+| `scanner` | Cross-reference holdings with all 7 MYRA scanners |
+| `alerts` | Delivery anomaly alerts per holding |
+| `risk` | Concentration, drawdown, volatility, diversification score |
+| `snapshot` | Save daily NAV snapshot |
+| `history` | NAV history over time |
+| `add <symbol> <qty> <avg_cost>` | Add a new position |
+| `sell <symbol> <qty> <price>` | Reduce or close a position |
+| `status` | Show data freshness and last refresh time |
+
+### Data Security
+
+All portfolio data lives in `myra_portfolio.db` (automatically gitignored). After the one-time broker XLSX import, prices come exclusively from MYRA's own bhavcopy database — no external API calls unless `--live` is used. Fundamentals are cached locally from `myra_valuation.db`. Smart caching means the first `view` of the day takes ~3s (one database trip per symbol); subsequent views are instant.
+
 ## API Overview
 
 ### Health & Monitoring
