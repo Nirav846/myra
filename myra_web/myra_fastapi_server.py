@@ -530,6 +530,142 @@ async def refresh_portfolio():
         )
 
 
+@app.get("/api/portfolio/live-prices")
+async def get_live_prices():
+    """Fetch live intraday prices from yfinance for all portfolio holdings.
+    Cached for 5 minutes in live_price_cache table."""
+    import yfinance as yf
+    import time as _time
+
+    try:
+        from myra_app.portfolio_db import get_all_holdings, get_db_path
+    except ImportError as e:
+        return {"status": "error", "message": f"portfolio_db not available: {e}"}
+
+    try:
+        holdings = get_all_holdings()
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to read holdings: {e}"}
+
+    if not holdings:
+        return {"status": "ok", "prices": {}, "message": "No holdings in portfolio."}
+
+    PORTFOLIO_DB = get_db_path()
+    symbols = [h["symbol"] for h in holdings]
+
+    # Create live_price_cache table if not exists
+    try:
+        lc = sqlite3.connect(PORTFOLIO_DB)
+        lc.execute(
+            """CREATE TABLE IF NOT EXISTS live_price_cache (
+                symbol TEXT PRIMARY KEY,
+                ltp REAL,
+                change REAL,
+                change_pct REAL,
+                previous_close REAL,
+                fetched_at TEXT DEFAULT (datetime('now','localtime'))
+            )"""
+        )
+        lc.commit()
+    except Exception:
+        pass
+
+    # Check cache freshness (5 min TTL)
+    now = _time.time()
+    use_cache = True
+    try:
+        cached_count = lc.execute("SELECT COUNT(*) FROM live_price_cache").fetchone()[0]
+        if cached_count > 0:
+            first = lc.execute(
+                "SELECT fetched_at FROM live_price_cache LIMIT 1"
+            ).fetchone()[0]
+            if first:
+                try:
+                    cached_time = _time.mktime(
+                        _time.strptime(first, "%Y-%m-%d %H:%M:%S")
+                    )
+                    if (now - cached_time) < 300:
+                        # Return cached data
+                        lc.row_factory = sqlite3.Row
+                        rows = lc.execute("SELECT * FROM live_price_cache").fetchall()
+                        prices = {}
+                        for r in rows:
+                            prices[r["symbol"]] = {
+                                "ltp": r["ltp"],
+                                "change": r["change"],
+                                "change_pct": r["change_pct"],
+                                "previous_close": r["previous_close"],
+                                "fetched_at": r["fetched_at"],
+                                "cached": True,
+                            }
+                        lc.close()
+                        return {"status": "ok", "prices": prices, "source": "cache"}
+                except Exception:
+                    pass
+        lc.close()
+    except Exception:
+        pass
+
+    # Fetch from yfinance
+    prices = {}
+    warnings = []
+    for sym in symbols:
+        try:
+            ticker = yf.Ticker(f"{sym}.NS")
+            info = ticker.info
+            ltp = info.get("currentPrice") or info.get("regularMarketPrice")
+            prev_close = info.get("previousClose") or info.get(
+                "regularMarketPreviousClose"
+            )
+            change = info.get("regularMarketChange")
+            change_pct = info.get("regularMarketChangePercent")
+            if ltp is None:
+                warnings.append(f"{sym}: no live price available")
+                continue
+            prices[sym] = {
+                "ltp": ltp,
+                "change": change,
+                "change_pct": change_pct,
+                "previous_close": prev_close,
+                "fetched_at": datetime.now().strftime("%H:%M:%S"),
+                "cached": False,
+            }
+            _time.sleep(0.2)
+        except Exception as e:
+            warnings.append(f"{sym}: {e}")
+            continue
+
+    # Cache results
+    if prices:
+        try:
+            lc = sqlite3.connect(PORTFOLIO_DB)
+            for sym, p in prices.items():
+                lc.execute(
+                    """INSERT OR REPLACE INTO live_price_cache
+                       (symbol, ltp, change, change_pct, previous_close, fetched_at)
+                       VALUES (?, ?, ?, ?, ?, datetime('now','localtime'))""",
+                    (sym, p["ltp"], p["change"], p["change_pct"], p["previous_close"]),
+                )
+            lc.commit()
+            lc.close()
+        except Exception:
+            pass
+
+    if not prices:
+        return {
+            "status": "error",
+            "message": "Could not fetch any live prices",
+            "warnings": warnings,
+        }
+
+    return {
+        "status": "ok",
+        "prices": prices,
+        "source": "yfinance",
+        "warnings": warnings if warnings else None,
+    }
+
+
 @app.get("/api/portfolio")
 async def get_portfolio():
     """Returns full portfolio data: holdings, summary, sector allocation,
