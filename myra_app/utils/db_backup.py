@@ -23,7 +23,7 @@ def rotate_backups(task_id: int = None, keep_last_days: int = 7):
 
     backup_dir = os.path.join(DB_DIR, "backups")
     os.makedirs(backup_dir, exist_ok=True)
-    stamp = date.today().strftime("%Y-%m-%d")  # noqa: PG-STRFTIME
+    stamp = date.today().isoformat()
 
     for db_key, db_name in LibrarianCore.DB_MAP.items():
         db_path = os.path.join(DB_DIR, db_name)

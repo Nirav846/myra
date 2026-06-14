@@ -126,9 +126,7 @@ class FloatExhaustionScanner:
             as_on_date = date.today().isoformat()
 
         ref_date = pd.Timestamp(as_on_date)
-        min_date = (ref_date - pd.Timedelta(days=self.window_days + 10)).strftime(
-            "%Y-%m-%d"
-        )
+        min_date = f"{(ref_date - pd.Timedelta(days=self.window_days + 10)):%Y-%m-%d}"
 
         candidates: list[dict] = []
 

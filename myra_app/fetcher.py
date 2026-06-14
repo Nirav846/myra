@@ -391,7 +391,7 @@ class DataFetcher:
             "can_fetch": False,
             "reason": None,
             "target_date": target_date.isoformat(),
-            "ist_now": ist_now.strftime("%Y-%m-%d %H:%M:%S"),
+            "ist_now": f"{ist_now:%Y-%m-%d %H:%M:%S}",
         }
 
         if self._is_holiday(current_date):

@@ -18,15 +18,49 @@ DB_PATH = os.path.join(DB_DIR, LibrarianCore.DB_MAP["technical"])
 IST = timezone(timedelta(hours=5, minutes=30))
 
 NSE_HOLIDAYS_BASELINE = {
-    "2025-02-26","2025-03-14","2025-03-31","2025-04-14","2025-04-18",
-    "2025-05-01","2025-05-12","2025-08-15","2025-08-27","2025-10-02",
-    "2025-10-21","2025-10-22","2025-11-05","2025-11-12","2025-12-25",
-    "2026-02-26","2026-03-16","2026-03-31","2026-04-14","2026-04-17",
-    "2026-05-01","2026-05-28","2026-08-17","2026-09-02","2026-10-02",
-    "2026-10-22","2026-11-09","2026-11-25","2026-12-25",
-    "2027-02-15","2027-03-05","2027-03-22","2027-04-14","2027-04-02",
-    "2027-05-01","2027-05-21","2027-08-15","2027-09-10","2027-10-02",
-    "2027-10-10","2027-10-29","2027-11-17","2027-12-25",
+    "2025-02-26",
+    "2025-03-14",
+    "2025-03-31",
+    "2025-04-14",
+    "2025-04-18",
+    "2025-05-01",
+    "2025-05-12",
+    "2025-08-15",
+    "2025-08-27",
+    "2025-10-02",
+    "2025-10-21",
+    "2025-10-22",
+    "2025-11-05",
+    "2025-11-12",
+    "2025-12-25",
+    "2026-02-26",
+    "2026-03-16",
+    "2026-03-31",
+    "2026-04-14",
+    "2026-04-17",
+    "2026-05-01",
+    "2026-05-28",
+    "2026-08-17",
+    "2026-09-02",
+    "2026-10-02",
+    "2026-10-22",
+    "2026-11-09",
+    "2026-11-25",
+    "2026-12-25",
+    "2027-02-15",
+    "2027-03-05",
+    "2027-03-22",
+    "2027-04-14",
+    "2027-04-02",
+    "2027-05-01",
+    "2027-05-21",
+    "2027-08-15",
+    "2027-09-10",
+    "2027-10-02",
+    "2027-10-10",
+    "2027-10-29",
+    "2027-11-17",
+    "2027-12-25",
 }
 
 
@@ -192,7 +226,9 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
         elif data_csv == "holiday_skip":
             print("🛑 Market Holiday or Weekend. Skipping fetch.")
             try:
-                calendar_db_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["calendar"])
+                calendar_db_path = os.path.join(
+                    DB_DIR, LibrarianCore.DB_MAP["calendar"]
+                )
                 if os.path.exists(calendar_db_path):
                     with sqlite3.connect(calendar_db_path) as cal_conn:
                         cal_conn.execute(
@@ -229,10 +265,21 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
             df.columns = [c.strip().lower() for c in df.columns]
 
             EXPECTED_COLS = {
-                "symbol", "series", "date1", "prev_close", "open_price",
-                "high_price", "low_price", "last_price", "close_price",
-                "avg_price", "ttl_trd_qnty", "turnover_lacs", "no_of_trades",
-                "deliv_qty", "deliv_per",
+                "symbol",
+                "series",
+                "date1",
+                "prev_close",
+                "open_price",
+                "high_price",
+                "low_price",
+                "last_price",
+                "close_price",
+                "avg_price",
+                "ttl_trd_qnty",
+                "turnover_lacs",
+                "no_of_trades",
+                "deliv_qty",
+                "deliv_per",
             }
             actual_cols = set(df.columns)
             unknown = actual_cols - EXPECTED_COLS
@@ -249,14 +296,19 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
                 df = df[df["series"].isin(["EQ", "BE", "SM"])]
 
             from myra_app.utils.etf_sync import get_etf_symbols
+
             etf_symbols = get_etf_symbols()
             if etf_symbols and "symbol" in df.columns:
                 df = df[~df["symbol"].str.upper().isin(etf_symbols)]
 
             rename_map = {
-                "open_price": "open", "high_price": "high", "low_price": "low",
-                "close_price": "close", "ttl_trd_qnty": "volume",
-                "deliv_qty": "delivery", "deliv_per": "delivery_pct",
+                "open_price": "open",
+                "high_price": "high",
+                "low_price": "low",
+                "close_price": "close",
+                "ttl_trd_qnty": "volume",
+                "deliv_qty": "delivery",
+                "deliv_per": "delivery_pct",
             }
             df = df.rename(columns=rename_map)
             df["date"] = current_date.date().isoformat()
@@ -264,33 +316,39 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
             os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
             lib = LibrarianCore(read_only=False)
             conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-            conn.execute("PRAGMA busy_timeout = 30000")  # 30 seconds for pipeline writers
+            conn.execute(
+                "PRAGMA busy_timeout = 30000"
+            )  # 30 seconds for pipeline writers
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
             conn.isolation_level = None  # Manual transaction control
             cursor = conn.cursor()
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS ingestion_rejects (
                     symbol TEXT, date TEXT, reason TEXT, raw_values TEXT,
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
+            """
+            )
 
             cursor = lib.safe_execute("PRAGMA table_info(technical_data)", conn=conn)
             valid_cols = [info[1] for info in cursor.fetchall()]
 
             def validate_row(row):
                 reasons = []
-                for col in ['open', 'high', 'low', 'close']:
+                for col in ["open", "high", "low", "close"]:
                     if col in row and (pd.isna(row[col]) or float(row[col]) <= 0):
                         reasons.append(f"{col} <= 0")
-                if 'volume' in row and (pd.isna(row['volume']) or int(row['volume']) <= 0):
+                if "volume" in row and (
+                    pd.isna(row["volume"]) or int(row["volume"]) <= 0
+                ):
                     reasons.append("volume <= 0")
-                if 'delivery' in row and 'volume' in row:
-                    if not pd.isna(row['delivery']) and not pd.isna(row['volume']):
-                        delivery_val = float(row['delivery'])
-                        volume_val = int(row['volume'])
+                if "delivery" in row and "volume" in row:
+                    if not pd.isna(row["delivery"]) and not pd.isna(row["volume"]):
+                        delivery_val = float(row["delivery"])
+                        volume_val = int(row["volume"])
                         if delivery_val < 0 or delivery_val > volume_val:
                             reasons.append("delivery out of range [0, volume]")
                 return reasons
@@ -303,20 +361,42 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
                 for _, row in df.iterrows():
                     reject_reasons = validate_row(row)
                     if reject_reasons:
-                        raw_values = {col: row[col] for col in ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume', 'delivery'] if col in row}
+                        raw_values = {
+                            col: row[col]
+                            for col in [
+                                "symbol",
+                                "date",
+                                "open",
+                                "high",
+                                "low",
+                                "close",
+                                "volume",
+                                "delivery",
+                            ]
+                            if col in row
+                        }
                         cursor.execute(
                             "INSERT INTO ingestion_rejects (symbol, date, reason, raw_values) VALUES (?, ?, ?, ?)",
-                            (row.get('symbol', ''), row.get('date', ''), '; '.join(reject_reasons), str(raw_values))
+                            (
+                                row.get("symbol", ""),
+                                row.get("date", ""),
+                                "; ".join(reject_reasons),
+                                str(raw_values),
+                            ),
                         )
                         reject_rows.append(row)
                     else:
                         valid_rows.append(row)
 
                 if reject_rows:
-                    print(f"  [REJECTED] {len(reject_rows)} invalid rows skipped and logged")
+                    print(
+                        f"  [REJECTED] {len(reject_rows)} invalid rows skipped and logged"
+                    )
 
                 df_to_insert = pd.DataFrame(valid_rows)
-                df_to_insert = df_to_insert[[c for c in df_to_insert.columns if c in valid_cols]]
+                df_to_insert = df_to_insert[
+                    [c for c in df_to_insert.columns if c in valid_cols]
+                ]
 
                 if not df_to_insert.empty:
                     cols = df_to_insert.columns.tolist()
@@ -325,16 +405,22 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
                     sql = f"INSERT OR REPLACE INTO technical_data ({col_names}) VALUES ({placeholders})"
                     conn.executemany(sql, df_to_insert.values.tolist())
 
-                print(f"✅ Successfully added {len(df_to_insert)} rows to Atomic Vault from {source}.")
+                print(
+                    f"✅ Successfully added {len(df_to_insert)} rows to Atomic Vault from {source}."
+                )
                 result["rows_inserted"] = len(df_to_insert)
 
                 if result["rows_inserted"] > 0:
                     pass
                 else:
-                    print(f"⚠️ WARNING: No new rows inserted for {current_date.date().isoformat()}")
+                    print(
+                        f"⚠️ WARNING: No new rows inserted for {current_date.date().isoformat()}"
+                    )
                     conn.execute("ROLLBACK")
                     try:
-                        calendar_db_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["calendar"])
+                        calendar_db_path = os.path.join(
+                            DB_DIR, LibrarianCore.DB_MAP["calendar"]
+                        )
                         if os.path.exists(calendar_db_path):
                             with sqlite3.connect(calendar_db_path) as cal_conn:
                                 cal_conn.execute(
@@ -363,6 +449,7 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
             try:
                 from myra_app.feature_enrichment import process_enrichment_pipeline
                 from myra_app.librarian import Librarian
+
                 enrichment_lib = Librarian(read_only=False)
                 enrichment_lib.connect()
                 enrich_conn = sqlite3.connect(DB_PATH)
@@ -374,12 +461,15 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
                 if result["rows_inserted"] > 0:
                     try:
                         from myra_app.fundamental_sync import FundamentalSync
+
                         FundamentalSync()._compute_market_cap_from_prices()
                         print("[MYRA] Market-cap recompute complete.")
                     except Exception as e:
                         print(f"[!] Market-cap recompute failed: {e}")
             except Exception as e:
-                logging.error(f"Enrichment failed for {current_date.date().isoformat()}: {e}")
+                logging.error(
+                    f"Enrichment failed for {current_date.date().isoformat()}: {e}"
+                )
                 if enrich_conn:
                     enrich_conn.rollback()
             finally:
@@ -445,7 +535,7 @@ def run_daily_update(force_date: str = None, skip_backfill: bool = False) -> dic
         target_date_str = force_date or args.date
 
         ist_now = datetime.now(timezone.utc).astimezone(IST)
-        print(f"[MYRA] Current IST time: {ist_now.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"[MYRA] Current IST time: {ist_now:%Y-%m-%d %H:%M:%S}")
 
         if target_date_str:
             current_date = datetime.strptime(target_date_str, "%d-%m-%Y")
@@ -478,7 +568,9 @@ def run_daily_update(force_date: str = None, skip_backfill: bool = False) -> dic
 
         missing_dates = calculate_missing_dates(db_latest_date, ist_now)
         if missing_dates:
-            print(f"[MYRA] Found {len(missing_dates)} missing trading days: {missing_dates[:5]}...")
+            print(
+                f"[MYRA] Found {len(missing_dates)} missing trading days: {missing_dates[:5]}..."
+            )
             if not skip_backfill:
                 overall_result["backfill_performed"] = True
                 for date_str in missing_dates:
@@ -487,12 +579,16 @@ def run_daily_update(force_date: str = None, skip_backfill: bool = False) -> dic
                         result = run_daily_update_for_date(target_date)
                         overall_result["dates_processed"].append(result)
                         if result["success"]:
-                            overall_result["total_rows_inserted"] += result.get("rows_inserted", 0)
+                            overall_result["total_rows_inserted"] += result.get(
+                                "rows_inserted", 0
+                            )
                             if not overall_result["success"]:
                                 overall_result["success"] = True
                         else:
                             overall_result["dates_failed"].append(date_str)
-                            print(f"[MYRA] Failed to ingest {date_str}: {result.get('error')}")
+                            print(
+                                f"[MYRA] Failed to ingest {date_str}: {result.get('error')}"
+                            )
                     except Exception as e:
                         print(f"[MYRA] Error processing {date_str}: {e}")
                         overall_result["dates_failed"].append(date_str)
@@ -502,7 +598,9 @@ def run_daily_update(force_date: str = None, skip_backfill: bool = False) -> dic
             print("[MYRA] No missing dates detected")
 
         if ist_now.hour < 18:
-            print(f"[MYRA] Before market close (IST: {ist_now.hour}:00). Today's data not yet available.")
+            print(
+                f"[MYRA] Before market close (IST: {ist_now.hour}:00). Today's data not yet available."
+            )
             print(f"[MYRA] Latest available is likely: {db_latest_date}")
             if not overall_result["dates_processed"]:
                 overall_result["success"] = True
@@ -517,7 +615,9 @@ def run_daily_update(force_date: str = None, skip_backfill: bool = False) -> dic
                 result = run_daily_update_for_date(ist_now)
                 overall_result["dates_processed"].append(result)
                 if result["success"]:
-                    overall_result["total_rows_inserted"] += result.get("rows_inserted", 0)
+                    overall_result["total_rows_inserted"] += result.get(
+                        "rows_inserted", 0
+                    )
                     if not overall_result["success"]:
                         overall_result["success"] = True
                 else:
@@ -526,7 +626,9 @@ def run_daily_update(force_date: str = None, skip_backfill: bool = False) -> dic
             print(f"[MYRA] Today ({today_str}) is not a trading day")
 
         if overall_result["total_rows_inserted"] > 0:
-            print(f"[MYRA] Total rows inserted: {overall_result['total_rows_inserted']}")
+            print(
+                f"[MYRA] Total rows inserted: {overall_result['total_rows_inserted']}"
+            )
 
         unregister(tid)
         return overall_result
@@ -570,7 +672,9 @@ def get_db_health_status() -> dict:
             health["is_stale"] = days_behind >= 1
             if health["is_stale"]:
                 health["is_healthy"] = False
-                health["warnings"].append(f"Database is {days_behind} days behind current date")
+                health["warnings"].append(
+                    f"Database is {days_behind} days behind current date"
+                )
         else:
             health["is_healthy"] = False
             health["warnings"].append("Database has no data")

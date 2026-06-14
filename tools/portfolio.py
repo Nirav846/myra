@@ -813,8 +813,7 @@ def cmd_export(args):
     if format_type == "csv":
         os.makedirs(EXPORTS_DIR, exist_ok=True)
         filename = (
-            args.filename
-            or f"exports/portfolio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            args.filename or f"exports/portfolio_{datetime.now():%Y%m%d_%H%M%S}.csv"
         )
         filepath = (
             filename

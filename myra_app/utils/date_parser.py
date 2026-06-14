@@ -37,7 +37,7 @@ def parse_bhavcopy_date(raw_str: str) -> Optional[str]:
     if re.match(r"^\d{1,2}-[A-Za-z]{3}-\d{4}$", raw_str, re.IGNORECASE):
         try:
             dt = datetime.strptime(raw_str, "%d-%b-%Y")
-            return dt.strftime("%Y-%m-%d")  # noqa: PG-STRFTIME
+            return f"{dt:%Y-%m-%d}"
         except ValueError:
             pass
 
@@ -45,7 +45,7 @@ def parse_bhavcopy_date(raw_str: str) -> Optional[str]:
     if re.match(r"^\d{8}$", raw_str):
         try:
             dt = datetime.strptime(raw_str, "%d%m%Y")
-            return dt.strftime("%Y-%m-%d")  # noqa: PG-STRFTIME
+            return f"{dt:%Y-%m-%d}"
         except ValueError:
             pass
 
@@ -53,7 +53,7 @@ def parse_bhavcopy_date(raw_str: str) -> Optional[str]:
     if re.match(r"^\d{1,2}/\d{1,2}/\d{4}$", raw_str):
         try:
             dt = datetime.strptime(raw_str, "%d/%m/%Y")
-            return dt.strftime("%Y-%m-%d")  # noqa: PG-STRFTIME
+            return f"{dt:%Y-%m-%d}"
         except ValueError:
             pass
 

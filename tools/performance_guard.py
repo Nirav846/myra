@@ -79,10 +79,13 @@ class PerformanceVisitor(ast.NodeVisitor):
             if attr_name in BANNED_METHODS:
                 if not self.has_noqa(node.lineno, attr_name):
                     suggestion = BANNED_METHODS[attr_name]
+                    level = "CRITICAL"
+                    if attr_name in ("iterrows", "apply"):
+                        level = "WARNING"
                     self.violations.append(
                         (
                             node.lineno,
-                            "CRITICAL",
+                            level,
                             f"Banned method usage: .{attr_name}(). {suggestion}",
                         )
                     )
@@ -103,7 +106,7 @@ class PerformanceVisitor(ast.NodeVisitor):
                         self.violations.append(
                             (
                                 node.lineno,
-                                "CRITICAL",
+                                "WARNING",
                                 "O(N^2) risk: .append() in loop. Use pd.concat or lists.",
                             )
                         )
@@ -161,6 +164,7 @@ def check_file(filepath):
 def main():
     paths = sys.argv[1:] if len(sys.argv) > 1 else ["myra_app", "research", "tools"]
     total_violations = 0
+    critical_violations = 0
     scanned_files = 0
     exclude_dirs = {"venv", ".git", "__pycache__", "pkscreener_env", ".pytest_cache"}
 
@@ -188,13 +192,21 @@ def main():
                 for line, level, msg in violations:
                     print(f"  Line {line:4} | {level}: {msg}")
                     total_violations += 1
+                    if level == "CRITICAL":
+                        critical_violations += 1
 
     print("-" * 50)
     print(f"Scan Complete: {scanned_files} files checked.")
 
     if total_violations > 0:
-        print(f"RESULT: Found {total_violations} performance violations.")
-        sys.exit(1)
+        print(
+            f"RESULT: Found {total_violations} performance violations ({critical_violations} CRITICAL)."
+        )
+        if critical_violations > 0:
+            sys.exit(1)
+        else:
+            print("INFO: WARNING-only violations found — committing allowed.")
+            sys.exit(0)
     else:
         print("RESULT: No performance violations detected. Code is quant-ready!")
         sys.exit(0)

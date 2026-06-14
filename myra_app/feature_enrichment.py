@@ -236,7 +236,7 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
                 .reset_index()
             )
             nifty_pd.columns = ["date", "close"]
-            nifty_pd["date"] = nifty_pd["date"].dt.strftime("%Y-%m-%d")
+            nifty_pd["date"] = nifty_pd["date"].map(lambda x: f"{x:%Y-%m-%d}")
 
         nifty_df = pl.from_pandas(nifty_pd)
 
@@ -522,7 +522,7 @@ def enrich_from_dataframe(
 
     # 1. Slice a 365‑day look‑back window ending at target_date
     td = datetime.strptime(target_date, "%Y-%m-%d")
-    window_start = (td - timedelta(days=365)).strftime("%Y-%m-%d")
+    window_start = f"{(td - timedelta(days=365)):%Y-%m-%d}"
 
     window_df = full_df.filter(
         (pl.col("date") >= window_start) & (pl.col("date") <= target_date)

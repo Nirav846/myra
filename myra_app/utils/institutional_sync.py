@@ -17,7 +17,9 @@ logger = logging.getLogger(__name__)
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 NSE_MCP_DIR = os.path.join(PROJECT_ROOT, "nse-mcp")
 
 
@@ -30,6 +32,7 @@ class InstitutionalSync:
     def __init__(self, db_path: str = None, retention_days: int = 1826):
         if db_path is None:
             from myra_app.constants import DB_DIR
+
             db_path = os.path.join(DB_DIR, "myra_institutional.db")
         self.db_path = db_path
         self.retention_days = retention_days
@@ -69,14 +72,17 @@ class InstitutionalSync:
         """Create all required tables if they don't exist."""
         conn = self._get_connection()
         try:
-            conn.execute("""CREATE TABLE IF NOT EXISTS fii_dii_daily (
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS fii_dii_daily (
                 date TEXT PRIMARY KEY,
                 fii_net_buy REAL,
                 dii_net_buy REAL,
                 source TEXT DEFAULT 'NSE-MCP'
-            )""")
+            )"""
+            )
 
-            conn.execute("""CREATE TABLE IF NOT EXISTS bulk_deals (
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS bulk_deals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 symbol TEXT NOT NULL,
                 date TEXT NOT NULL,
@@ -88,9 +94,11 @@ class InstitutionalSync:
                 trade_value REAL,
                 source TEXT DEFAULT 'NSE-MCP',
                 UNIQUE(symbol, date, client_name, buy_sell)
-            )""")
+            )"""
+            )
 
-            conn.execute("""CREATE TABLE IF NOT EXISTS block_deals (
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS block_deals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 symbol TEXT NOT NULL,
                 date TEXT NOT NULL,
@@ -102,9 +110,11 @@ class InstitutionalSync:
                 trade_value REAL,
                 source TEXT DEFAULT 'NSE-MCP',
                 UNIQUE(symbol, date, client_name, buy_sell)
-            )""")
+            )"""
+            )
 
-            conn.execute("""CREATE TABLE IF NOT EXISTS insider_trades (
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS insider_trades (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 symbol TEXT NOT NULL,
                 acq_name TEXT,
@@ -115,9 +125,11 @@ class InstitutionalSync:
                 avg_price REAL,
                 date TEXT NOT NULL,
                 source TEXT DEFAULT 'NSE-MCP'
-            )""")
+            )"""
+            )
 
-            conn.execute("""CREATE TABLE IF NOT EXISTS corporate_actions (
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS corporate_actions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 symbol TEXT NOT NULL,
                 date TEXT NOT NULL,
@@ -127,7 +139,8 @@ class InstitutionalSync:
                 record_date TEXT,
                 source TEXT DEFAULT 'NSE-MCP',
                 UNIQUE(symbol, date, action_type)
-            )""")
+            )"""
+            )
 
             conn.commit()
         finally:
@@ -149,7 +162,7 @@ class InstitutionalSync:
                     dt_raw = item.get("date", "")
                     try:
                         dt_obj = datetime.strptime(dt_raw, "%d-%b-%Y")
-                        dt = dt_obj.strftime("%Y-%m-%d")
+                        dt = f"{dt_obj:%Y-%m-%d}"
                     except Exception:
                         dt = dt_raw
                     fii = float(item.get("fiiNetValue", 0) or 0)
@@ -187,7 +200,7 @@ class InstitutionalSync:
                     dt_raw = item.get("date", "")
                     try:
                         dt_obj = datetime.strptime(dt_raw, "%d-%b-%Y")
-                        dt = dt_obj.strftime("%Y-%m-%d")
+                        dt = f"{dt_obj:%Y-%m-%d}"
                     except Exception:
                         dt = dt_raw
                     sec_name = item.get("name", "")
@@ -195,7 +208,9 @@ class InstitutionalSync:
                     bs = item.get("dealType", "").upper()
                     qty = int(item.get("quantity", 0) or 0)
                     price_val = float(item.get("price", 0) or 0)
-                    value = round(qty * price_val / 10000000, 2) if qty and price_val else 0
+                    value = (
+                        round(qty * price_val / 10000000, 2) if qty and price_val else 0
+                    )
                     if sym and dt:
                         conn.execute(
                             """INSERT OR IGNORE INTO bulk_deals
@@ -230,7 +245,7 @@ class InstitutionalSync:
                     dt_raw = item.get("date", "")
                     try:
                         dt_obj = datetime.strptime(dt_raw, "%d-%b-%Y")
-                        dt = dt_obj.strftime("%Y-%m-%d")
+                        dt = f"{dt_obj:%Y-%m-%d}"
                     except Exception:
                         dt = dt_raw
                     sec_name = item.get("name", "")
@@ -238,7 +253,9 @@ class InstitutionalSync:
                     bs = item.get("dealType", "").upper()
                     qty = int(item.get("quantity", 0) or 0)
                     price_val = float(item.get("price", 0) or 0)
-                    value = round(qty * price_val / 10000000, 2) if qty and price_val else 0
+                    value = (
+                        round(qty * price_val / 10000000, 2) if qty and price_val else 0
+                    )
                     if sym and dt:
                         conn.execute(
                             """INSERT OR IGNORE INTO block_deals
@@ -261,10 +278,13 @@ class InstitutionalSync:
         logger.info("[InstitutionalSync] Syncing insider trades...")
         try:
             from datetime import datetime, timedelta
-            to_date = datetime.now(IST).strftime("%Y-%m-%d")
-            from_date = (datetime.now(IST) - timedelta(days=30)).strftime("%Y-%m-%d")
 
-            data = self._call_sync("get_insider_trading", {"fromDate": from_date, "toDate": to_date})
+            to_date = f"{datetime.now(IST):%Y-%m-%d}"
+            from_date = f"{(datetime.now(IST) - timedelta(days=30)):%Y-%m-%d}"
+
+            data = self._call_sync(
+                "get_insider_trading", {"fromDate": from_date, "toDate": to_date}
+            )
             if not data:
                 logger.warning("[InstitutionalSync] No insider trades data returned")
                 return 0
@@ -277,12 +297,14 @@ class InstitutionalSync:
                     dt_raw = item.get("acquireFromDate", "")
                     try:
                         dt_obj = datetime.strptime(dt_raw, "%d-%b-%Y")
-                        dt = dt_obj.strftime("%Y-%m-%d")
+                        dt = f"{dt_obj:%Y-%m-%d}"
                     except Exception:
                         dt = dt_raw
                     acquirer = item.get("acquirerName", "")
                     category = item.get("personCategory", "")
-                    bs = "Buy" if int(item.get("sharesAcquired", 0) or 0) > 0 else "Sell"
+                    bs = (
+                        "Buy" if int(item.get("sharesAcquired", 0) or 0) > 0 else "Sell"
+                    )
                     qty = int(item.get("sharesAcquired", 0) or 0)
                     if qty < 0:
                         qty = abs(qty)
@@ -310,10 +332,13 @@ class InstitutionalSync:
         logger.info("[InstitutionalSync] Syncing corporate actions...")
         try:
             from datetime import datetime, timedelta
-            to_date = datetime.now(IST).strftime("%Y-%m-%d")
-            from_date = (datetime.now(IST) - timedelta(days=90)).strftime("%Y-%m-%d")
 
-            data = self._call_sync("get_corporate_actions", {"fromDate": from_date, "toDate": to_date})
+            to_date = f"{datetime.now(IST):%Y-%m-%d}"
+            from_date = f"{(datetime.now(IST) - timedelta(days=90)):%Y-%m-%d}"
+
+            data = self._call_sync(
+                "get_corporate_actions", {"fromDate": from_date, "toDate": to_date}
+            )
             if not data:
                 logger.warning("[InstitutionalSync] No corporate actions data returned")
                 return 0
@@ -326,7 +351,7 @@ class InstitutionalSync:
                     ex_date_raw = item.get("exDate", "")
                     try:
                         dt_obj = datetime.strptime(ex_date_raw, "%d-%b-%Y")
-                        dt = dt_obj.strftime("%Y-%m-%d")
+                        dt = f"{dt_obj:%Y-%m-%d}"
                     except Exception:
                         dt = ex_date_raw
                     sec_name = item.get("company", "")
@@ -334,7 +359,7 @@ class InstitutionalSync:
                     record_date_raw = item.get("recordDate", "")
                     try:
                         record_date_obj = datetime.strptime(record_date_raw, "%d-%b-%Y")
-                        record_date = record_date_obj.strftime("%Y-%m-%d")
+                        record_date = f"{record_date_obj:%Y-%m-%d}"
                     except Exception:
                         record_date = record_date_raw
                     if sym and dt:
@@ -346,7 +371,9 @@ class InstitutionalSync:
                         )
                         inserted += 1
                 conn.commit()
-                logger.info(f"[InstitutionalSync] Inserted {inserted} corporate actions")
+                logger.info(
+                    f"[InstitutionalSync] Inserted {inserted} corporate actions"
+                )
             finally:
                 conn.close()
             return inserted
@@ -364,13 +391,17 @@ class InstitutionalSync:
             try:
                 ist_now = datetime.now(IST)
                 cutoff = ist_now - timedelta(days=retention_days)
-                cutoff_str = cutoff.strftime("%Y-%m-%d")
+                cutoff_str = f"{cutoff:%Y-%m-%d}"
 
-                cursor = conn.execute(f"DELETE FROM {table} WHERE date < ?", (cutoff_str,))
+                cursor = conn.execute(
+                    f"DELETE FROM {table} WHERE date < ?", (cutoff_str,)
+                )
                 deleted = cursor.rowcount
                 conn.commit()
                 if deleted > 0:
-                    logger.info(f"[InstitutionalSync] Cleaned {deleted} old rows from {table}")
+                    logger.info(
+                        f"[InstitutionalSync] Cleaned {deleted} old rows from {table}"
+                    )
             finally:
                 conn.close()
         except Exception as e:

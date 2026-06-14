@@ -216,7 +216,7 @@ def delete_holding(symbol):
 def record_snapshot(
     invested, current, overall_pnl, overall_pnl_pct, day_pnl, day_pnl_pct
 ):
-    date = datetime.now().strftime("%Y-%m-%d")
+    date = f"{datetime.now():%Y-%m-%d}"
     conn = get_connection()
     conn.execute(
         """
@@ -825,7 +825,7 @@ def auto_refresh_portfolio() -> dict:
         # Update last_refresh timestamp
         conn.execute(
             "INSERT OR REPLACE INTO portfolio_meta (key, value) VALUES (?, ?)",
-            ("last_refresh", datetime.now().strftime("%Y-%m-%d %H:%M")),
+            ("last_refresh", f"{datetime.now():%Y-%m-%d %H:%M}"),
         )
         conn.commit()
         conn.close()

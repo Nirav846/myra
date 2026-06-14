@@ -146,7 +146,9 @@ class WyckoffAutomaton:
         if n > 0:
             logger.debug(
                 "rows=%d, avg_vol=%.0f, avg_del=%.1f",
-                n, avg_vol, avg_del,
+                n,
+                avg_vol,
+                avg_del,
             )
 
         # Scan last 30 sessions
@@ -390,9 +392,7 @@ class WyckoffAutomaton:
             as_on_date = date.today().isoformat()
 
         ref_date = pd.Timestamp(as_on_date)
-        min_date = (ref_date - pd.Timedelta(days=self.lookback_days)).strftime(
-            "%Y-%m-%d"
-        )
+        min_date = f"{(ref_date - pd.Timedelta(days=self.lookback_days)):%Y-%m-%d}"
 
         candidates: list[dict] = []
 

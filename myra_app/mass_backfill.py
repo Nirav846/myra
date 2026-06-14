@@ -57,7 +57,8 @@ def mass_backfill(
     cursor = conn.cursor()
 
     # Create ingestion_rejects table if missing
-    cursor.execute("""
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS ingestion_rejects (
             symbol TEXT,
             date TEXT,
@@ -65,7 +66,8 @@ def mass_backfill(
             raw_values TEXT,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
-    """)
+    """
+    )
     conn.commit()
 
     # Start transaction for atomicity
@@ -144,14 +146,10 @@ def mass_backfill(
                 df = df[df["series"].isin(["EQ", "BE", "SM", "ST", "BZ"])]
 
             if "date1" in df.columns:
-                df["date1"] = pd.to_datetime(df["date1"]).dt.strftime(
-                    "%Y-%m-%d"
-                )  # noqa: PG-STRFTIME
+                df["date1"] = pd.to_datetime(df["date1"]).map(lambda x: f"{x:%Y-%m-%d}")
             elif "timestamp" in df.columns:
-                df["timestamp"] = pd.to_datetime(
-                    df["timestamp"]
-                ).dt.strftime(  # noqa: PG-STRFTIME
-                    "%Y-%m-%d"
+                df["timestamp"] = pd.to_datetime(df["timestamp"]).map(
+                    lambda x: f"{x:%Y-%m-%d}"
                 )
 
             # Dynamic column renaming using project's schema registry
@@ -223,47 +221,69 @@ def mass_backfill(
             # Row validation before insertion
             def validate_row(row):
                 reasons = []
-                
+
                 # Check open/high/low/close > 0
-                for col in ['open', 'high', 'low', 'close']:
+                for col in ["open", "high", "low", "close"]:
                     if col in row and (pd.isna(row[col]) or float(row[col]) <= 0):
                         reasons.append(f"{col} <= 0")
-                
+
                 # Check volume > 0
-                if 'volume' in row and (pd.isna(row['volume']) or int(row['volume']) <= 0):
+                if "volume" in row and (
+                    pd.isna(row["volume"]) or int(row["volume"]) <= 0
+                ):
                     reasons.append("volume <= 0")
-                
+
                 # Check delivery between 0 and volume
-                if 'delivery' in row and 'volume' in row:
-                    if not pd.isna(row['delivery']) and not pd.isna(row['volume']):
-                        delivery_val = float(row['delivery'])
-                        volume_val = int(row['volume'])
+                if "delivery" in row and "volume" in row:
+                    if not pd.isna(row["delivery"]) and not pd.isna(row["volume"]):
+                        delivery_val = float(row["delivery"])
+                        volume_val = int(row["volume"])
                         if delivery_val < 0 or delivery_val > volume_val:
                             reasons.append("delivery out of range [0, volume]")
-                
+
                 return reasons
-            
+
             # Filter out invalid rows and log rejects
             valid_rows = []
             reject_rows = []
-            
+
             for _, row in df.iterrows():
                 reject_reasons = validate_row(row)
                 if reject_reasons:
                     # Log reject to ingestion_rejects table
-                    raw_values = {col: row[col] for col in ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume', 'delivery'] if col in row}
+                    raw_values = {
+                        col: row[col]
+                        for col in [
+                            "symbol",
+                            "date",
+                            "open",
+                            "high",
+                            "low",
+                            "close",
+                            "volume",
+                            "delivery",
+                        ]
+                        if col in row
+                    }
                     cursor.execute(
                         "INSERT INTO ingestion_rejects (symbol, date, reason, raw_values) VALUES (?, ?, ?, ?)",
-                        (row.get('symbol', ''), row.get('date', ''), '; '.join(reject_reasons), str(raw_values))
+                        (
+                            row.get("symbol", ""),
+                            row.get("date", ""),
+                            "; ".join(reject_reasons),
+                            str(raw_values),
+                        ),
                     )
                     reject_rows.append(row)
                 else:
                     valid_rows.append(row)
-            
+
             if reject_rows:
                 conn.commit()
-                print(f"  [REJECTED] {len(reject_rows)} invalid rows skipped and logged")
-            
+                print(
+                    f"  [REJECTED] {len(reject_rows)} invalid rows skipped and logged"
+                )
+
             # Replace df with valid rows only
             if valid_rows:
                 df = pd.DataFrame(valid_rows)

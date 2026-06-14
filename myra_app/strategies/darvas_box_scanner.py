@@ -13,9 +13,27 @@ logger = logging.getLogger(__name__)
 # Market-cap tiered thresholds. Keys are explicit so downstream code can
 # index by mcap without repeating conditional logic everywhere.
 TIER_THRESHOLDS = {
-    "small": {"max_mcap_cr": 2_000, "min_box_age": 5, "min_sar": None, "min_am": 4.0, "breakout_dar_floor": 1.5},
-    "mid":   {"max_mcap_cr": 20_000, "min_box_age": 6, "min_sar": 1.10, "min_am": 2.2, "breakout_dar_floor": None},
-    "large": {"max_mcap_cr": float("inf"), "min_box_age": 7, "min_sar": 1.15, "min_am": 1.5, "breakout_dar_floor": None},
+    "small": {
+        "max_mcap_cr": 2_000,
+        "min_box_age": 5,
+        "min_sar": None,
+        "min_am": 4.0,
+        "breakout_dar_floor": 1.5,
+    },
+    "mid": {
+        "max_mcap_cr": 20_000,
+        "min_box_age": 6,
+        "min_sar": 1.10,
+        "min_am": 2.2,
+        "breakout_dar_floor": None,
+    },
+    "large": {
+        "max_mcap_cr": float("inf"),
+        "min_box_age": 7,
+        "min_sar": 1.15,
+        "min_am": 1.5,
+        "breakout_dar_floor": None,
+    },
 }
 
 ENTRY_BUFFER_PCT = 0.005  # 0.5% above ceiling to confirm breakout
@@ -77,7 +95,10 @@ class DarvasBoxScanner(AccumulationBaseScanner):
         window_60 = df.tail(60)
         if len(window_60) >= 2:
             earliest_close = float(window_60["close"].iloc[0])
-            rallied_20 = earliest_close > 0 and ((high_52w - earliest_close) / earliest_close) >= 0.20
+            rallied_20 = (
+                earliest_close > 0
+                and ((high_52w - earliest_close) / earliest_close) >= 0.20
+            )
         else:
             rallied_20 = False
         if not (near_high or rallied_20):
@@ -95,13 +116,15 @@ class DarvasBoxScanner(AccumulationBaseScanner):
         unique_highs = sorted({float(h) for h in highs}, reverse=True)
         for candidate in unique_highs:
             tol = candidate * 0.01
-            touches = np.where((highs >= candidate - tol) & (highs <= candidate + tol))[0]
+            touches = np.where((highs >= candidate - tol) & (highs <= candidate + tol))[
+                0
+            ]
             if len(touches) < 2:
                 continue
             # "Not exceeded by a subsequent daily close" → no close > candidate
             # strictly after the first touch.
             first_touch = int(touches[0])
-            if np.any(closes[first_touch + 1:] > candidate + tol):
+            if np.any(closes[first_touch + 1 :] > candidate + tol):
                 continue
             ceiling = candidate
             ceiling_idx = first_touch
@@ -115,7 +138,7 @@ class DarvasBoxScanner(AccumulationBaseScanner):
         # Box floor: after the ceiling's first touch, find the lowest low
         # touched at least twice that has not been breached by a subsequent
         # close.
-        sub = df.iloc[ceiling_idx + 1:].reset_index(drop=True)
+        sub = df.iloc[ceiling_idx + 1 :].reset_index(drop=True)
         sub_lows = sub["low"].values.astype(float)
         sub_closes = sub["close"].values.astype(float)
         floor = None
@@ -125,11 +148,13 @@ class DarvasBoxScanner(AccumulationBaseScanner):
         unique_lows = sorted({float(l) for l in sub_lows})
         for candidate in unique_lows:
             tol = candidate * 0.01
-            touches = np.where((sub_lows >= candidate - tol) & (sub_lows <= candidate + tol))[0]
+            touches = np.where(
+                (sub_lows >= candidate - tol) & (sub_lows <= candidate + tol)
+            )[0]
             if len(touches) < 2:
                 continue
             first_touch = int(touches[0])
-            if np.any(sub_closes[first_touch + 1:] < candidate - tol):
+            if np.any(sub_closes[first_touch + 1 :] < candidate - tol):
                 continue
             floor = candidate
             floor_idx = first_touch + ceiling_idx  # absolute index in df
@@ -153,7 +178,7 @@ class DarvasBoxScanner(AccumulationBaseScanner):
 
         # Box floor integrity: no daily close below floor from the first floor
         # touch to the latest candle.
-        if np.any(closes[floor_idx + 1:] < floor - floor * 0.01):
+        if np.any(closes[floor_idx + 1 :] < floor - floor * 0.01):
             return None
 
         # Box start index = day after first ceiling touch (entry into the box).
@@ -176,24 +201,49 @@ class DarvasBoxScanner(AccumulationBaseScanner):
     # --- Intra-box analytics --------------------------------------------------
 
     def _compute_box_dar(
-        self, df: pd.DataFrame, box_start_idx: int, box_end_idx: int,
-        ff_mcap: float, ceiling: float
+        self,
+        df: pd.DataFrame,
+        box_start_idx: int,
+        box_end_idx: int,
+        ff_mcap: float,
+        ceiling: float,
     ) -> dict:
         # DAR = (delivery * close) / free_float_mcap * 100
         # free_float_mcap is now populated via BSE shareholding backfill (2,295 symbols)
         if ff_mcap is None or ff_mcap <= 0:
-            return {"dar_box_median": 0.0, "sar": 1.0, "breakout_dar": 0.0, "am": 0.0, "ftc": 1.0, "sar_z": 0.0}
+            return {
+                "dar_box_median": 0.0,
+                "sar": 1.0,
+                "breakout_dar": 0.0,
+                "am": 0.0,
+                "ftc": 1.0,
+                "sar_z": 0.0,
+            }
 
-        box_df = df.iloc[box_start_idx:box_end_idx + 1].copy()
+        box_df = df.iloc[box_start_idx : box_end_idx + 1].copy()
         if box_df.empty:
-            return {"dar_box_median": 0.0, "sar": 1.0, "breakout_dar": 0.0, "am": 0.0, "ftc": 1.0, "sar_z": 0.0}
+            return {
+                "dar_box_median": 0.0,
+                "sar": 1.0,
+                "breakout_dar": 0.0,
+                "am": 0.0,
+                "ftc": 1.0,
+                "sar_z": 0.0,
+            }
 
         deliveries = box_df["delivery"].values.astype(float)
         closes = box_df["close"].values.astype(float)
         dar_series = (deliveries * closes) / ff_mcap * 100
         dar_series = dar_series[~np.isnan(dar_series)]
         if len(dar_series) == 0:
-            return {"dar_box_median": 0.0, "sar": 1.0, "breakout_dar": 0.0, "am": 0.0, "ftc": 1.0, "sar_z": 0.0}
+            return {
+                "dar_box_median": 0.0,
+                "sar": 1.0,
+                "breakout_dar": 0.0,
+                "am": 0.0,
+                "ftc": 1.0,
+                "sar_z": 0.0,
+            }
 
         dar_box_median = float(np.median(dar_series))
         last3 = dar_series[-3:] if len(dar_series) >= 3 else dar_series
@@ -209,7 +259,9 @@ class DarvasBoxScanner(AccumulationBaseScanner):
         # FTC (Float Turnover Compression): falling volume + rising DAR = accumulation
         volumes = box_df["volume"].values.astype(float)
         median_vol_box = float(np.median(volumes))
-        median_vol_last5 = float(np.median(volumes[-5:])) if len(volumes) >= 5 else median_vol_box
+        median_vol_last5 = (
+            float(np.median(volumes[-5:])) if len(volumes) >= 5 else median_vol_box
+        )
         ftc = median_vol_last5 / median_vol_box if median_vol_box > 0 else 1.0
 
         # Breakout day = only a candle whose CLOSE exceeded the ceiling
@@ -220,7 +272,9 @@ class DarvasBoxScanner(AccumulationBaseScanner):
             breakout_dar = 0.0
         else:
             last_bo = breakout_candles.iloc[-1]
-            delivery = float(last_bo["delivery"]) if pd.notna(last_bo["delivery"]) else 0.0
+            delivery = (
+                float(last_bo["delivery"]) if pd.notna(last_bo["delivery"]) else 0.0
+            )
             close_val = float(last_bo["close"])
             breakout_dar = (delivery * close_val) / ff_mcap * 100
 
@@ -238,7 +292,11 @@ class DarvasBoxScanner(AccumulationBaseScanner):
     # --- Entry / SL / targets -------------------------------------------------
 
     def _compute_entry_sl_targets(
-        self, ceiling: float, floor: float, box_volumes: np.ndarray, breakout_volume: float
+        self,
+        ceiling: float,
+        floor: float,
+        box_volumes: np.ndarray,
+        breakout_volume: float,
     ) -> dict:
         entry = float(ceiling * (1.0 + ENTRY_BUFFER_PCT))
         sl = float(floor) * 0.995  # 0.5% below floor, gives room for stop hunts
@@ -267,8 +325,13 @@ class DarvasBoxScanner(AccumulationBaseScanner):
 
     @staticmethod
     def _composite_score(
-        am: float, sar_z: float, ftc: float, rs_mean: float,
-        box_range_pct: float, tier: str, is_pre_breakout: bool,
+        am: float,
+        sar_z: float,
+        ftc: float,
+        rs_mean: float,
+        box_range_pct: float,
+        tier: str,
+        is_pre_breakout: bool,
     ) -> tuple[float, str]:
         th = TIER_THRESHOLDS[tier]
 
@@ -276,19 +339,32 @@ class DarvasBoxScanner(AccumulationBaseScanner):
             # No AM yet — weight the observable signals
             score_sar = max(0.0, min(100.0, 50.0 + sar_z * 20.0))
             score_ftc = 100.0 if ftc < 0.7 else (0.0 if ftc > 1.2 else 50.0)
-            score_rs  = max(0.0, min(100.0, 50.0 + rs_mean * 20.0))
+            score_rs = max(0.0, min(100.0, 50.0 + rs_mean * 20.0))
             score_range = max(0.0, min(100.0, 100.0 * (1.0 - box_range_pct / 15.0)))
-            total = score_sar * 0.30 + score_ftc * 0.20 + score_rs * 0.30 + score_range * 0.20
+            total = (
+                score_sar * 0.30
+                + score_ftc * 0.20
+                + score_rs * 0.30
+                + score_range * 0.20
+            )
         else:
             # Full scoring with AM
             score_am = 100.0 * min(am / (th["min_am"] or 4.0), 2.0) / 2.0
             score_sar = max(0.0, min(100.0, 50.0 + sar_z * 20.0))
             score_ftc = 100.0 if ftc < 0.7 else (0.0 if ftc > 1.2 else 50.0)
-            score_rs  = max(0.0, min(100.0, 50.0 + rs_mean * 20.0))
+            score_rs = max(0.0, min(100.0, 50.0 + rs_mean * 20.0))
             score_range = max(0.0, min(100.0, 100.0 * (1.0 - box_range_pct / 15.0)))
-            total = score_am * 0.30 + score_sar * 0.25 + score_rs * 0.20 + score_range * 0.15 + score_ftc * 0.10
+            total = (
+                score_am * 0.30
+                + score_sar * 0.25
+                + score_rs * 0.20
+                + score_range * 0.15
+                + score_ftc * 0.10
+            )
 
-        grade = "A" if total >= 75 else "B" if total >= 55 else "C" if total >= 40 else "D"
+        grade = (
+            "A" if total >= 75 else "B" if total >= 55 else "C" if total >= 40 else "D"
+        )
         return total, grade
 
     @staticmethod
@@ -301,7 +377,10 @@ class DarvasBoxScanner(AccumulationBaseScanner):
     ) -> tuple[bool, str]:
         th = TIER_THRESHOLDS[tier]
         if box_age_days < th["min_box_age"]:
-            return False, f"Box age {box_age_days} below minimum {th['min_box_age']} for {tier}"
+            return (
+                False,
+                f"Box age {box_age_days} below minimum {th['min_box_age']} for {tier}",
+            )
         dar_floor = th.get("breakout_dar_floor")
         if dar_floor is not None:
             # Small cap: AM >= min_am OR breakout_dar >= dar_floor (either passes)
@@ -323,7 +402,11 @@ class DarvasBoxScanner(AccumulationBaseScanner):
     def scan(self, as_on_date: str | None = None) -> pd.DataFrame:
         rows = self._get_universe()
         if not rows:
-            logger.warning("No symbols found in universe (mcap %.0f-%.0f Cr)", self.min_mcap, self.max_mcap)
+            logger.warning(
+                "No symbols found in universe (mcap %.0f-%.0f Cr)",
+                self.min_mcap,
+                self.max_mcap,
+            )
             return pd.DataFrame()
 
         # Build a sector map from valuation DB.
@@ -353,7 +436,9 @@ class DarvasBoxScanner(AccumulationBaseScanner):
 
         ref_date = pd.Timestamp(as_on_date)
         # Fetch base_days * 3 worth of history to compute 52w high reliably.
-        min_date = (ref_date - pd.Timedelta(days=max(self.base_days * 2, 200))).strftime("%Y-%m-%d")
+        min_date = (
+            f"{(ref_date - pd.Timedelta(days=max(self.base_days * 2, 200))):%Y-%m-%d}"
+        )
 
         candidates: list[dict] = []
 
@@ -371,15 +456,35 @@ class DarvasBoxScanner(AccumulationBaseScanner):
             if col_count >= 12:
                 df = pd.DataFrame(
                     tech,
-                    columns=["date", "open", "high", "low", "close", "volume",
-                             "delivery", "delivery_pct", "nifty_outperformance_score",
-                             "sma_50", "high_52w", "low_52w"],
+                    columns=[
+                        "date",
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "volume",
+                        "delivery",
+                        "delivery_pct",
+                        "nifty_outperformance_score",
+                        "sma_50",
+                        "high_52w",
+                        "low_52w",
+                    ],
                 )
             else:
                 df = pd.DataFrame(
                     tech,
-                    columns=["date", "open", "high", "low", "close", "volume",
-                             "delivery", "delivery_pct", "nifty_outperformance_score"],
+                    columns=[
+                        "date",
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "volume",
+                        "delivery",
+                        "delivery_pct",
+                        "nifty_outperformance_score",
+                    ],
                 )
                 df["sma_50"] = None
                 df["high_52w"] = None
@@ -395,8 +500,11 @@ class DarvasBoxScanner(AccumulationBaseScanner):
 
             ff_mcap = mcap * ff_pct / 100.0
             box_dar = self._compute_box_dar(
-                df, box["box_start_idx"], box["box_end_idx"], ff_mcap,
-                ceiling=box["ceiling"]
+                df,
+                box["box_start_idx"],
+                box["box_end_idx"],
+                ff_mcap,
+                ceiling=box["ceiling"],
             )
             dar_box_median = box_dar["dar_box_median"]
             sar = box_dar["sar"]
@@ -415,7 +523,7 @@ class DarvasBoxScanner(AccumulationBaseScanner):
             breakout_threshold = ceiling * (1.0 + ENTRY_BUFFER_PCT)
 
             # Relative Strength: stock return vs Nifty return over the box period
-            box_df_rs = df.iloc[box["box_start_idx"]:box["box_end_idx"]]
+            box_df_rs = df.iloc[box["box_start_idx"] : box["box_end_idx"]]
             nifty_scores = box_df_rs["nifty_outperformance_score"].values.astype(float)
             rs_mean = float(np.mean(nifty_scores)) if len(nifty_scores) > 0 else 0.0
 
@@ -444,11 +552,16 @@ class DarvasBoxScanner(AccumulationBaseScanner):
                 # Price has confirmed the breakout — run tier validation
                 # and, if it passes, set up the trade.
                 validation_passed, failure_reason = self._passes_tier(
-                    am=am, sar=sar, breakout_dar=breakout_dar,
-                    box_age_days=box["box_age_days"], tier=tier,
+                    am=am,
+                    sar=sar,
+                    breakout_dar=breakout_dar,
+                    box_age_days=box["box_age_days"],
+                    tier=tier,
                 )
                 if validation_passed:
-                    box_vols = df.iloc[box["box_start_idx"]:box["box_end_idx"] + 1]["volume"].values.astype(float)
+                    box_vols = df.iloc[box["box_start_idx"] : box["box_end_idx"] + 1][
+                        "volume"
+                    ].values.astype(float)
                     breakout_volume = float(df["volume"].iloc[-1])
                     trade = self._compute_entry_sl_targets(
                         ceiling=ceiling,
@@ -476,46 +589,65 @@ class DarvasBoxScanner(AccumulationBaseScanner):
                 is_pre_breakout=is_pre_breakout,
             )
 
-            candidates.append({
-                "symbol": symbol,
-                "sector": _sector_map.get(symbol, "Unknown"),
-                "market_cap_cr": round(mcap_cr, 1),
-                "tier": tier,
-                "ceiling_price": round(box["ceiling"], 2),
-                "floor_price": round(box["floor"], 2),
-                "ceiling_date": box["ceiling_date"],
-                "floor_date": box["floor_date"],
-                "box_age_days": box["box_age_days"],
-                "box_range_pct": round(box["box_range_pct"], 2),
-                "touches_ceiling": box["touches_ceiling"],
-                "touches_floor": box["touches_floor"],
-                "dist_to_ceiling_pct": round(
-                    (box["ceiling"] - latest_close) / latest_close * 100, 2
-                ) if latest_close > 0 and latest_close <= box["ceiling"] else 0.0,
-                "dar_box_median": round(dar_box_median, 3),
-                "sar": round(sar, 3),
-                "sar_z": round(sar_z, 3),
-                "ftc": round(ftc, 3),
-                "breakout_dar": round(breakout_dar, 3),
-                "am": round(am, 3),
-                "rs_mean": round(rs_mean, 2),
-                "entry": round(entry, 2) if entry is not None else None,
-                "sl": round(sl, 2) if sl is not None else None,
-                "t1": round(t1, 2) if t1 is not None else None,
-                "t2": round(t2, 2) if t2 is not None else None,
-                "volume_ok": volume_ok,
-                "close": round(latest_close, 2),
-                "status": status,
-                "failure_reason": failure_reason,
-                "composite_score": round(composite_score, 1),
-                "grade": grade,
-            })
+            candidates.append(
+                {
+                    "symbol": symbol,
+                    "sector": _sector_map.get(symbol, "Unknown"),
+                    "market_cap_cr": round(mcap_cr, 1),
+                    "tier": tier,
+                    "ceiling_price": round(box["ceiling"], 2),
+                    "floor_price": round(box["floor"], 2),
+                    "ceiling_date": box["ceiling_date"],
+                    "floor_date": box["floor_date"],
+                    "box_age_days": box["box_age_days"],
+                    "box_range_pct": round(box["box_range_pct"], 2),
+                    "touches_ceiling": box["touches_ceiling"],
+                    "touches_floor": box["touches_floor"],
+                    "dist_to_ceiling_pct": round(
+                        (box["ceiling"] - latest_close) / latest_close * 100, 2
+                    )
+                    if latest_close > 0 and latest_close <= box["ceiling"]
+                    else 0.0,
+                    "dar_box_median": round(dar_box_median, 3),
+                    "sar": round(sar, 3),
+                    "sar_z": round(sar_z, 3),
+                    "ftc": round(ftc, 3),
+                    "breakout_dar": round(breakout_dar, 3),
+                    "am": round(am, 3),
+                    "rs_mean": round(rs_mean, 2),
+                    "entry": round(entry, 2) if entry is not None else None,
+                    "sl": round(sl, 2) if sl is not None else None,
+                    "t1": round(t1, 2) if t1 is not None else None,
+                    "t2": round(t2, 2) if t2 is not None else None,
+                    "volume_ok": volume_ok,
+                    "close": round(latest_close, 2),
+                    "status": status,
+                    "failure_reason": failure_reason,
+                    "composite_score": round(composite_score, 1),
+                    "grade": grade,
+                }
+            )
 
         # Sanitize NaN/Inf for JSON compatibility.
         float_fields = [
-            "market_cap_cr", "box_range_pct", "dar_box_median", "sar", "sar_z", "ftc",
-            "breakout_dar", "am", "rs_mean", "entry", "sl", "t1", "t2", "close",
-            "composite_score", "ceiling_price", "floor_price", "dist_to_ceiling_pct",
+            "market_cap_cr",
+            "box_range_pct",
+            "dar_box_median",
+            "sar",
+            "sar_z",
+            "ftc",
+            "breakout_dar",
+            "am",
+            "rs_mean",
+            "entry",
+            "sl",
+            "t1",
+            "t2",
+            "close",
+            "composite_score",
+            "ceiling_price",
+            "floor_price",
+            "dist_to_ceiling_pct",
         ]
         for c in candidates:
             for f in float_fields:

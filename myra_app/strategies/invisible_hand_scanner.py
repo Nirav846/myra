@@ -141,9 +141,7 @@ class InvisibleHandScanner:
 
         ref_date = pd.Timestamp(as_on_date)
         lookback_calendar_days = int((self.window + self.hist_window) * 1.8) + 10
-        min_date = (ref_date - pd.Timedelta(days=lookback_calendar_days)).strftime(
-            "%Y-%m-%d"
-        )
+        min_date = f"{(ref_date - pd.Timedelta(days=lookback_calendar_days)):%Y-%m-%d}"
 
         candidates: list[dict] = []
 

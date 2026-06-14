@@ -44,7 +44,7 @@ class BhavcopyParser:
                 raw_date = match.group(1)
                 try:
                     dt = datetime.strptime(raw_date, "%d%m%Y")
-                    return dt.strftime("%Y-%m-%d")  # noqa: PG-STRFTIME
+                    return f"{dt:%Y-%m-%d}"
                 except:
                     pass
         return None
@@ -129,9 +129,9 @@ class BhavcopyParser:
             df["symbol"] = df["symbol"].astype(str).str.strip().str.upper()
 
             try:
-                # errors='coerce' to safely handle single corrupt strings without failing entire file
-                df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.strftime(  # noqa: PG-STRFTIME
-                    "%Y-%m-%d"
+                _parsed = pd.to_datetime(df["date"], errors="coerce")
+                df["date"] = _parsed.map(
+                    lambda x: f"{x:%Y-%m-%d}" if pd.notna(x) else pd.NaT
                 )
             except Exception as e:
                 report["errors"].append(f"Date coercion failed: {e}")

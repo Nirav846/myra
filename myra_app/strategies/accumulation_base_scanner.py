@@ -214,8 +214,8 @@ class AccumulationBaseScanner:
             as_on_date = date.today().isoformat()
 
         ref_date = pd.Timestamp(as_on_date)
-        min_date = (ref_date - pd.Timedelta(days=max(self.base_days * 3, 90))).strftime(
-            "%Y-%m-%d"
+        min_date = (
+            f"{(ref_date - pd.Timedelta(days=max(self.base_days * 3, 90))):%Y-%m-%d}"
         )
 
         nifty_scores_all: list[float] = []
