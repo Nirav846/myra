@@ -856,6 +856,26 @@ async def get_portfolio():
             }
         )
 
+    # Enrich with industry data from cache (yfinance)
+    try:
+        from myra_app.portfolio_db import get_cached_industries, refresh_industry_cache
+
+        industry_data = get_cached_industries(symbols)
+        missing = [s for s in symbols if s not in industry_data]
+        if missing:
+            logger.info(
+                f"Fetching industry data for {len(missing)} symbols from yfinance"
+            )
+            fresh = refresh_industry_cache(missing)
+            industry_data.update(fresh)
+        for h in enriched:
+            sym = h["symbol"]
+            ind = industry_data.get(sym, {})
+            h["industry"] = ind.get("industry")
+            h["yf_sector"] = ind.get("yf_sector")
+    except Exception as e:
+        logger.warning(f"Industry enrichment failed: {e}")
+
     total_day_pnl_pct = (
         round((total_day_pnl / (total_current - total_day_pnl) * 100), 2)
         if (total_current - total_day_pnl)
@@ -2948,3 +2968,22 @@ async def wyckoff_scan(payload: dict = Body(default={})):
 
     threading.Thread(target=_run, daemon=True).start()
     return {"status": "started"}
+
+
+@app.post("/api/portfolio/refresh-industry")
+async def refresh_portfolio_industry():
+    """Force refresh industry data for all holdings from yfinance."""
+    try:
+        from myra_app.portfolio_db import get_all_holdings, refresh_industry_cache
+
+        holdings = get_all_holdings()
+        symbols = [h["symbol"] for h in holdings]
+        results = refresh_industry_cache(symbols)
+        count = sum(1 for r in results.values() if r.get("industry"))
+        return {
+            "status": "ok",
+            "message": f"Refreshed industry data for {count}/{len(symbols)} symbols",
+            "count": count,
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
