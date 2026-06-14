@@ -243,6 +243,7 @@ export default function PortfolioView() {
     }
   }, [refreshing, fetchPortfolio, data?.freshness?.prices_from]);
 
+  const [liveSource, setLiveSource] = useState<string>('');
   const fetchLivePrices = useCallback(async () => {
     setLiveLoading(true);
     try {
@@ -250,6 +251,7 @@ export default function PortfolioView() {
       const data = await res.json();
       if (data.status === 'ok') {
         setLivePrices(data.prices);
+        setLiveSource(data.source || 'yfinance');
         setShowLivePrices(true);
       }
     } catch {
@@ -448,7 +450,14 @@ export default function PortfolioView() {
           {'\uD83D\uDCCA'} Fundamentals {showFundamentals ? 'ON' : 'OFF'}
         </button>
         <button
-          onClick={() => (showLivePrices ? setShowLivePrices(false) : fetchLivePrices())}
+          onClick={() => {
+            if (showLivePrices) {
+              setShowLivePrices(false);
+              setTimeout(() => fetchLivePrices(), 50);
+            } else {
+              fetchLivePrices();
+            }
+          }}
           disabled={liveLoading}
           className={`px-3 py-1 text-[11px] rounded font-mono transition-colors disabled:opacity-50 ${
             showLivePrices ? 'bg-green-600 text-white' : 'bg-[#ffffff0a] text-[#888] hover:text-white'
@@ -482,8 +491,9 @@ export default function PortfolioView() {
 
       {/* ── Live Price Disclaimer ── */}
       {showLivePrices && (
-        <div className="text-[10px] font-mono text-[#888] bg-emerald-500/5 border border-emerald-500/20 rounded px-3 py-1.5">
-          {'\uD83D\uDFE2'} Live prices via Yahoo Finance. 15-minute delayed. For reference only.
+        <div className="text-[10px] font-mono text-[#888] bg-emerald-500/5 border border-emerald-500/20 rounded px-3 py-1.5 flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-green-500 inline-block animate-pulse" />
+          Live ({liveSource === 'cache' ? 'cached' : 'yfinance'}) via Yahoo Finance. 15-minute delayed. For reference only.
         </div>
       )}
 
