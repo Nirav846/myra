@@ -37,6 +37,7 @@ import OperatorFingerprintScannerView from './views/OperatorFingerprintScanner';
 import FloatExhaustionScannerView from './views/FloatExhaustionScanner';
 import SeasonalDeliveryHarvesterView from './views/SeasonalDeliveryHarvester';
 import WyckoffAutomatonView from './views/WyckoffAutomaton';
+import PortfolioView from './views/PortfolioView';
 import DataSyncView from './views/DataSync';
 import DeliveryAnomalyScannerView from './views/DeliveryAnomalyScanner';
 import { AlertCircle, Settings as SettingsIcon, SlidersHorizontal, BrainCircuit, Rocket, Database, RotateCw, Eye, Zap } from 'lucide-react';
@@ -44,6 +45,7 @@ import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-
 
 const TABS = [
   { id: 'Mission Control', path: '/mission-control', icon: '🎛️', category: 'dashboard' },
+  { id: 'Portfolio', path: '/portfolio', icon: '💰', category: 'dashboard' },
   { id: 'Price-Delivery Divergence', path: '/price-delivery-divergence', icon: '📉', category: 'scanners' },
   { id: 'FVG Scanner', path: '/fvg-scanner', icon: '📡', category: 'scanners' },
   { id: 'Delivery Anomaly', path: '/delivery-anomaly', icon: '📦', category: 'scanners' },
@@ -224,6 +226,7 @@ export default function App() {
                   const target = TABS.find(t => t.id === tab);
                   if (target) navigate(target.path);
                 }} />} />
+                <Route path="/portfolio" element={<PortfolioView />} />
                 <Route path="/ml-lab" element={<MLLabView lib={librarian} />} />
                 <Route path="/launchpad-scanner" element={<LaunchpadScannerView lib={librarian} onNavigate={(tab, symbol) => {
                   const target = TABS.find(t => t.id === tab);
