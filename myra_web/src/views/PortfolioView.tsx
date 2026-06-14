@@ -19,6 +19,8 @@ interface Holding {
   vs_52w_high_pct: number | null;
   pe: number | null;
   sector: string;
+  industry?: string | null;
+  yf_sector?: string | null;
   alert: string | null;
   operating_margin?: number | null;
   gross_margin?: number | null;
@@ -212,6 +214,9 @@ export default function PortfolioView() {
   const [scannerSymbolToAdd, setScannerSymbolToAdd] = useState<string>('');
 
   const [benchmark, setBenchmark] = useState<{portfolio_return: number; nifty_return: number; alpha: number; period?: string} | null>(null);
+  const [showIndustry, setShowIndustry] = useState(false);
+  const [industryLoading, setIndustryLoading] = useState(false);
+  
   const fetchBenchmark = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/portfolio/benchmark`);
@@ -513,6 +518,29 @@ export default function PortfolioView() {
   const { summary, sector_allocation, alerts, risk, freshness } = data;
   const hasAlerts = alerts.length > 0;
 
+  const allocationData = useMemo(() => {
+    if (!showIndustry || !data?.holdings) return data?.sector_allocation || [];
+    const grouped: Record<string, { count: number; total_value: number }> = {};
+    let totalPortfolioValue = 0;
+    
+    for (const h of data.holdings) {
+      const ind = h.industry || h.yf_sector || h.sector || 'Unknown';
+      if (!grouped[ind]) grouped[ind] = { count: 0, total_value: 0 };
+      grouped[ind].count += 1;
+      grouped[ind].total_value += h.current_value;
+      totalPortfolioValue += h.current_value;
+    }
+    
+    return Object.entries(grouped)
+      .map(([sector, stats]) => ({
+        sector,
+        count: stats.count,
+        total_value: stats.total_value,
+        weight_pct: totalPortfolioValue ? (stats.total_value / totalPortfolioValue) * 100 : 0
+      }))
+      .sort((a, b) => b.weight_pct - a.weight_pct);
+  }, [data, showIndustry]);
+
   return (
     <div className="flex flex-col gap-4">
       {/* ── Toast Notifications ── */}
@@ -777,6 +805,29 @@ export default function PortfolioView() {
           {liveLoading ? '\u23F3 Loading...' : showLivePrices ? '\uD83D\uDCE1 Live ON' : '\uD83D\uDCE1 Live Prices'}
         </button>
         <button
+          onClick={async () => {
+            if (!showIndustry) {
+              const hasData = data.holdings.some(h => h.industry);
+              if (!hasData) {
+                setIndustryLoading(true);
+                try {
+                  await fetch(`${API_BASE}/portfolio/refresh-industry`, { method: 'POST' });
+                  await fetchPortfolio();
+                } finally {
+                  setIndustryLoading(false);
+                }
+              }
+            }
+            setShowIndustry(!showIndustry);
+          }}
+          disabled={industryLoading}
+          className={`px-3 py-1 text-[11px] rounded font-mono transition-colors ${
+            showIndustry ? 'bg-purple-600 text-white' : 'bg-[#ffffff0a] text-[#888] hover:text-white'
+          }`}
+        >
+          {industryLoading ? '⏳ Loading...' : showIndustry ? '🏭 Industry' : '🏭 Sector'}
+        </button>
+        <button
           onClick={() => {
             const headers = ['Symbol','Qty','Avg','LTP','Live','Value','P&L%','Day%','Del%','vsSMA50%','Sector'];
             if (showFundamentals) {
@@ -862,7 +913,7 @@ export default function PortfolioView() {
                   </>
                 )}
                 <th className={thClass} onClick={() => toggleSort('pe')}>P/E{sortIndicator('pe')}</th>
-                <th className={thClass} onClick={() => toggleSort('sector')}>Sector{sortIndicator('sector')}</th>
+                <th className={thClass} onClick={() => toggleSort('sector')}>{showIndustry ? 'Industry' : 'Sector'}{sortIndicator('sector')}</th>
                 <th className="px-3 py-2 border-b border-[#ffffff1a]"></th>
               </tr>
             </thead>
@@ -984,7 +1035,7 @@ export default function PortfolioView() {
                     </>
                   )}
                   <td className={`${tdClass} ${peColor(h.pe)}`}>{h.pe != null ? h.pe.toFixed(1) : '\u2014'}</td>
-                  <td className={tdClass}>{h.sector}</td>
+                  <td className={tdClass}>{showIndustry ? (h.industry || h.yf_sector || h.sector || '\u2014') : (h.sector || '\u2014')}</td>
                   <td className={`${tdClass} text-right`}>
                     <button
                       onClick={() => setDeleteConfirm(h.symbol)}
@@ -1002,12 +1053,14 @@ export default function PortfolioView() {
         </div>
       </div>
 
-      {/* ── Sector Allocation ── */}
-      {sector_allocation.length > 0 && (
+      {/* ── Sector / Industry Allocation ── */}
+      {allocationData.length > 0 && (
         <div className="bg-[#1a1c24] rounded-lg border border-[#ffffff1a] p-4">
-          <h3 className="text-xs font-semibold text-[#fafafa] mb-3">Sector Allocation</h3>
+          <h3 className="text-xs font-semibold text-[#fafafa] mb-3">
+            {showIndustry ? 'Industry Allocation' : 'Sector Allocation'}
+          </h3>
           <div className="flex flex-col gap-2">
-            {sector_allocation.map((s, i) => (
+            {allocationData.map((s, i) => (
               <div key={s.sector} className="flex items-center gap-3">
                 <span className="text-[11px] font-mono text-[#fafafa] w-24 shrink-0 truncate">{s.sector}</span>
                   <div className="flex-1 h-5 bg-[#ffffff0a] rounded-full overflow-hidden">
