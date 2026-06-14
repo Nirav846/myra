@@ -758,9 +758,9 @@ async def get_portfolio():
 
     def compute_myra_quality_score(f):
         score = 1
-        if f.get("operatingMargin") and f["operatingMargin"] > 15:
+        if f.get("operatingMargin") and f["operatingMargin"] > 0.15:
             score += 1
-        if f.get("freeCashFlowYield") and f["freeCashFlowYield"] > 5:
+        if f.get("freeCashFlowYield") and f["freeCashFlowYield"] > 0.05:
             score += 1
         if f.get("promoter_holding_pct") and f["promoter_holding_pct"] > 50:
             score += 1
@@ -821,6 +821,7 @@ async def get_portfolio():
                 "avg_price": round(avg, 2),
                 "ltp": ltp,
                 "current_value": round(current_value, 2),
+                "current": round(current_value, 2),
                 "overall_pnl": round(overall_pnl, 2),
                 "overall_pnl_pct": overall_pnl_pct,
                 "day_pnl": round(day_pnl, 2),
