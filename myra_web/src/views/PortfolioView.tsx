@@ -656,6 +656,38 @@ export default function PortfolioView() {
     info: 'bg-blue-500',
   };
 
+  const displaySummary = useMemo(() => {
+    if (!showLivePrices || !livePrices || Object.keys(livePrices).length === 0 || !data?.holdings) {
+      return { ...data!.summary, isLive: false };
+    }
+    let total_current = 0;
+    const total_invested = data.summary.total_invested;
+    for (const holding of data.holdings) {
+      const live = livePrices[holding.symbol];
+      const price = live?.ltp || holding.ltp || 0;
+      total_current += price * holding.net_qty;
+    }
+    const overall_pnl = total_current - total_invested;
+    const overall_pnl_pct = total_invested > 0 ? (overall_pnl / total_invested) * 100 : 0;
+    let day_pnl = 0;
+    for (const holding of data.holdings) {
+      const live = livePrices[holding.symbol];
+      if (live?.change !== undefined) {
+        day_pnl += live.change * holding.net_qty;
+      }
+    }
+    const day_pnl_pct = total_current > 0 ? (day_pnl / (total_current - day_pnl)) * 100 : 0;
+    return {
+      ...data.summary,
+      total_current: Math.round(total_current * 100) / 100,
+      overall_pnl: Math.round(overall_pnl * 100) / 100,
+      overall_pnl_pct: Math.round(overall_pnl_pct * 100) / 100,
+      day_pnl: Math.round(day_pnl * 100) / 100,
+      day_pnl_pct: Math.round(day_pnl_pct * 100) / 100,
+      isLive: true,
+    };
+  }, [showLivePrices, livePrices, data]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -852,23 +884,23 @@ export default function PortfolioView() {
 
       {/* ── Summary Cards ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <SummaryCard label="Invested" value={formatIndianDec(summary.total_invested)} color="text-[#fafafa]" />
+        <SummaryCard label="Invested" value={formatIndianDec(displaySummary.total_invested)} color="text-[#fafafa]" />
         <SummaryCard
-          label="Current Value"
-          value={formatIndianDec(summary.total_current)}
-          color={summary.overall_pnl >= 0 ? 'text-green-400' : 'text-red-400'}
+          label={'Current Value' + (displaySummary.isLive ? ' \uD83D\uDFE2' : '')}
+          value={formatIndianDec(displaySummary.total_current)}
+          color={displaySummary.overall_pnl >= 0 ? 'text-green-400' : 'text-red-400'}
         />
         <SummaryCard
-          label="Overall P&L"
-          value={`${summary.overall_pnl >= 0 ? '+' : '-'}${formatIndianDec(summary.overall_pnl)} (${formatPct(summary.overall_pnl_pct)})`}
-          color={summary.overall_pnl >= 0 ? 'text-green-400' : 'text-red-400'}
+          label={'Overall P&L' + (displaySummary.isLive ? ' \uD83D\uDFE2' : '')}
+          value={`${displaySummary.overall_pnl >= 0 ? '+' : '-'}${formatIndianDec(displaySummary.overall_pnl)} (${formatPct(displaySummary.overall_pnl_pct)})`}
+          color={displaySummary.overall_pnl >= 0 ? 'text-green-400' : 'text-red-400'}
         />
         <SummaryCard
-          label="Day P&L"
-          value={`${summary.day_pnl >= 0 ? '+' : ''}${formatIndianDec(summary.day_pnl)} (${formatPct(summary.day_pnl_pct)})`}
-          color={summary.day_pnl >= 0 ? 'text-green-400' : 'text-red-400'}
+          label={'Day P&L' + (displaySummary.isLive ? ' \uD83D\uDFE2' : '')}
+          value={`${displaySummary.day_pnl >= 0 ? '+' : ''}${formatIndianDec(displaySummary.day_pnl)} (${formatPct(displaySummary.day_pnl_pct)})`}
+          color={displaySummary.day_pnl >= 0 ? 'text-green-400' : 'text-red-400'}
         />
-        <SummaryCard label="Holdings" value={String(summary.holdings_count)} color="text-[#fafafa]" />
+        <SummaryCard label="Holdings" value={String(displaySummary.holdings_count)} color="text-[#fafafa]" />
         <div
           onClick={handleRefresh}
           className="bg-[#1a1c24] rounded-lg border border-[#ffffff1a] p-3 flex flex-col gap-1 cursor-pointer hover:bg-[#ffffff08] transition-colors group"
@@ -883,7 +915,7 @@ export default function PortfolioView() {
               </>
             ) : (
               <>
-                {lastRefreshedLabel || summary.last_refresh}
+                {displaySummary.isLive ? 'Live (15-min delayed)' : (lastRefreshedLabel || displaySummary.last_refresh)}
                 <span className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-cyan-400">⟳</span>
               </>
             )}
