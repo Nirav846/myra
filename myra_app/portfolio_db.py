@@ -397,6 +397,10 @@ def get_sector_allocation(holdings):
 
 
 def get_scanner_overlap(holdings):
+    """Cross-reference holdings with scanner cache files.
+    Returns {symbol: {scanner_name: grade_string}} only for scanners that actually flagged the symbol.
+    Empty scanner results and non-matching symbols are excluded entirely.
+    """
     models_dir = os.path.join(PROJECT_ROOT, "models")
     scanner_files = {
         "Trigger": "trigger_cache.json",
@@ -410,30 +414,33 @@ def get_scanner_overlap(holdings):
         "SeasDel": "seasonal_delivery_cache.json",
     }
     symbol_set = {h["symbol"] for h in holdings}
-    result = {}
-    for s in symbol_set:
-        result[s] = {}
+    result = {s: {} for s in symbol_set}
+
     for scanner_name, filename in scanner_files.items():
         filepath = os.path.join(models_dir, filename)
         if not os.path.exists(filepath):
-            for s in symbol_set:
-                result[s][scanner_name] = None
             continue
         try:
             with open(filepath, encoding="utf-8") as f:
                 data = json.load(f)
         except (json.JSONDecodeError, OSError):
-            for s in symbol_set:
-                result[s][scanner_name] = None
             continue
+
         candidates = data.get("candidates", data.get("results", []))
-        cand_map = {c.get("symbol"): c for c in candidates if c.get("symbol")}
-        for s in symbol_set:
-            if s in cand_map:
-                result[s][scanner_name] = cand_map[s]
-            else:
-                result[s][scanner_name] = None
-    return result
+        if not candidates:
+            continue
+
+        for c in candidates:
+            sym = c.get("symbol")
+            if sym and sym in symbol_set:
+                # Extract grade: prefer 'grade' field, fall back to empty string (presence-only signal)
+                grade = c.get("grade", "")
+                if grade and not isinstance(grade, str):
+                    grade = str(grade)
+                result[sym][scanner_name] = grade if grade else ""
+
+    # Remove symbols with no scanner hits at all
+    return {s: v for s, v in result.items() if v}
 
 
 def get_delivery_alerts(holdings):
@@ -868,6 +875,36 @@ def auto_refresh_portfolio() -> dict:
     except Exception as e:
         return {"error": f"portfolio refresh failed: {e}"}
 
+    # Record daily snapshot for drawdown/history tracking
+    try:
+        holdings = get_all_holdings()
+        if holdings:
+            total_invested = sum(h["net_qty"] * h["avg_price"] for h in holdings)
+            total_current = sum(
+                h.get("current_value", 0) or (h.get("close", 0) * h["net_qty"])
+                for h in holdings
+            )
+            overall_pnl = total_current - total_invested
+            overall_pnl_pct = (
+                (overall_pnl / total_invested * 100) if total_invested else 0
+            )
+            # Day P&L: compare with previous snapshot
+            prev_snapshots = get_snapshots(limit=1)
+            prev_total = (
+                prev_snapshots[0]["total_current"] if prev_snapshots else total_current
+            )
+            day_pnl = total_current - prev_total
+            day_pnl_pct = (day_pnl / prev_total * 100) if prev_total else 0
+            record_snapshot(
+                total_invested,
+                total_current,
+                overall_pnl,
+                overall_pnl_pct,
+                day_pnl,
+                day_pnl_pct,
+            )
+    except Exception:
+        pass  # Snapshot failure must not block the rest
     return {
         "prices_updated": prices_updated,
         "fundamentals_updated": fundamentals_updated,

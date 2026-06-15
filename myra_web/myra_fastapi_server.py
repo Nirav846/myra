@@ -1018,28 +1018,27 @@ async def get_portfolio_benchmark():
         else 0
     )
 
-    # Nifty benchmark from meta.db (index_history table)
+    # Nifty benchmark from myra_metadata.db (benchmarks table, symbol ^NSEI)
     nifty_return = 0
-    meta_db = os.path.join(DB_DIR, "meta.db")
+    meta_db = os.path.join(DB_DIR, "myra_metadata.db")
     if os.path.exists(meta_db):
         try:
             mc = sqlite3.connect(meta_db)
             mc.row_factory = sqlite3.Row
-            # Get Nifty 50 data for the same date range
             first_date = first["date"]
             last_date = last["date"]
-            row = mc.execute(
-                "SELECT close FROM index_history WHERE symbol='NIFTY 50' AND date=?",
-                (first_date,),
+            first_close = mc.execute(
+                "SELECT close FROM benchmarks WHERE symbol=? AND date <= ? ORDER BY date DESC LIMIT 1",
+                ("^NSEI", first_date),
             ).fetchone()
-            first_close = row["close"] if row else None
-            row = mc.execute(
-                "SELECT close FROM index_history WHERE symbol='NIFTY 50' AND date=?",
-                (last_date,),
+            last_close = mc.execute(
+                "SELECT close FROM benchmarks WHERE symbol=? AND date <= ? ORDER BY date DESC LIMIT 1",
+                ("^NSEI", last_date),
             ).fetchone()
-            last_close = row["close"] if row else None
-            if first_close and last_close and first_close > 0:
-                nifty_return = ((last_close - first_close) / first_close) * 100
+            fc = first_close["close"] if first_close else None
+            lc = last_close["close"] if last_close else None
+            if fc and lc and fc > 0:
+                nifty_return = ((lc - fc) / fc) * 100
             mc.close()
         except Exception:
             pass
