@@ -2,6 +2,98 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { API_BASE } from '../config';
 import { TrendingUp, Plus, Edit, Trash2, X, Check, Loader2, AlertTriangle, ChevronDown } from 'lucide-react';
 
+interface SignalDefinition {
+  key: string;
+  label: string;
+  description: string;
+  suggestion: string;
+  severity: 'bullish' | 'neutral' | 'bearish' | 'info';
+  icon: string;
+}
+
+const SCANNER_SIGNAL_CONFIG: SignalDefinition[] = [
+  {
+    key: 'FloatExhaustion',
+    label: 'Float Exhaustion',
+    description: 'Available shares being absorbed from the market',
+    suggestion: 'Watch for price confirmation. Add if price starts rising on high delivery.',
+    severity: 'bullish',
+    icon: '\uD83E\uDEAB',
+  },
+  {
+    key: 'FloatExh',
+    label: 'Float Exhaustion',
+    description: 'Available shares being absorbed from the market',
+    suggestion: 'Watch for price confirmation. Add if price starts rising on high delivery.',
+    severity: 'bullish',
+    icon: '\uD83E\uDEAB',
+  },
+  {
+    key: 'Darvas',
+    label: 'Darvas Box',
+    description: 'Price consolidating in a defined box range',
+    suggestion: 'Buy near box bottom, sell near box top. Grade {grade} pattern.',
+    severity: 'neutral',
+    icon: '\uD83D\uDCE6',
+  },
+  {
+    key: 'OpFinger',
+    label: 'Operator Fingerprint',
+    description: 'ATR compression + delivery drift. Stock is coiling.',
+    suggestion: 'Wait for expansion on high delivery before entering.',
+    severity: 'neutral',
+    icon: '\uD83D\uDD0D',
+  },
+  {
+    key: 'SeasDel',
+    label: 'Seasonal Delivery',
+    description: 'Historical delivery surge during this period',
+    suggestion: 'Monitor if delivery confirms the seasonal pattern this year.',
+    severity: 'info',
+    icon: '\uD83D\uDCC5',
+  },
+  {
+    key: 'Trigger',
+    label: 'The Trigger',
+    description: '4-gate technical setup: float utilisation, volume pinch, price range, smart-float',
+    suggestion: 'Grade {grade} setup. Review gate details before acting.',
+    severity: 'bullish',
+    icon: '\u26A1',
+  },
+  {
+    key: 'InvisibleHand',
+    label: 'Invisible Hand',
+    description: 'Systematic accumulation when nobody is watching',
+    suggestion: 'Score {grade} \u2014 higher scores indicate stronger accumulation.',
+    severity: 'bullish',
+    icon: '\uD83D\uDC41',
+  },
+  {
+    key: 'Wyckoff',
+    label: 'Wyckoff Automaton',
+    description: 'Accumulation/distribution phase detection',
+    suggestion: 'Phase: {grade}. Check chart structure for confirmation.',
+    severity: 'neutral',
+    icon: '\uD83E\uDD16',
+  },
+  {
+    key: 'LiqFlip',
+    label: 'Liquidity Flip',
+    description: 'Churn \u2192 conviction flip signal',
+    suggestion: 'Delivery pattern shifting. Confirm with volume.',
+    severity: 'bullish',
+    icon: '\uD83D\uDD04',
+  },
+  {
+    key: 'MultiBag',
+    label: 'Multibagger Pro',
+    description: 'Multibagger potential with strong delivery trend',
+    suggestion: 'Grade {grade}. Review DAR median and base tightness.',
+    severity: 'bullish',
+    icon: '\uD83D\uDE80',
+  },
+];
+
 interface Holding {
   symbol: string;
   category: string;
@@ -211,6 +303,7 @@ export default function PortfolioView() {
   const [sectorWarningDismissed, setSectorWarningDismissed] = useState(false);
 
   const [showScannerQuickAdd, setShowScannerQuickAdd] = useState(false);
+  const [signalsExpanded, setSignalsExpanded] = useState(true);
   const [scannerSymbolToAdd, setScannerSymbolToAdd] = useState<string>('');
 
   const [benchmark, setBenchmark] = useState<{portfolio_return: number; nifty_return: number; alpha: number; period?: string} | null>(null);
@@ -475,6 +568,85 @@ export default function PortfolioView() {
   const thClass = 'px-3 py-2 text-left text-[11px] font-mono text-[#888] cursor-pointer hover:text-white select-none whitespace-nowrap border-b border-[#ffffff1a]';
   const tdClass = 'px-3 py-2 text-[11px] font-mono whitespace-nowrap border-b border-[#ffffff0a]';
 
+  const allocationData = useMemo(() => {
+    if (!showIndustry || !data?.holdings) return data?.sector_allocation || [];
+    const grouped: Record<string, { count: number; total_value: number }> = {};
+    let totalPortfolioValue = 0;
+    
+    for (const h of data.holdings) {
+      const ind = h.industry || h.yf_sector || h.sector || 'Unknown';
+      if (!grouped[ind]) grouped[ind] = { count: 0, total_value: 0 };
+      grouped[ind].count += 1;
+      grouped[ind].total_value += h.current_value;
+      totalPortfolioValue += h.current_value;
+    }
+    
+    return Object.entries(grouped)
+      .map(([sector, stats]) => ({
+        sector,
+        count: stats.count,
+        total_value: stats.total_value,
+        weight_pct: totalPortfolioValue ? (stats.total_value / totalPortfolioValue) * 100 : 0
+      }))
+      .sort((a, b) => b.weight_pct - a.weight_pct);
+  }, [data, showIndustry]);
+  const resolveSignals = useMemo(() => {
+    if (!data?.scanner_overlap) return [];
+
+    const configMap = new Map<string, SignalDefinition>();
+    SCANNER_SIGNAL_CONFIG.forEach(s => configMap.set(s.key, s));
+
+    const results: Array<{
+      symbol: string;
+      signals: Array<SignalDefinition & { grade: string }>;
+      signalCount: number;
+      highestSeverity: SignalDefinition['severity'];
+    }> = [];
+
+    for (const [symbol, scannerSignals] of Object.entries(data.scanner_overlap)) {
+      const enriched: Array<SignalDefinition & { grade: string }> = [];
+
+      for (const [scannerKey, grade] of Object.entries(scannerSignals)) {
+        const def = configMap.get(scannerKey);
+        if (def) {
+          enriched.push({ ...def, grade: grade || '' });
+        }
+      }
+
+      if (enriched.length > 0) {
+        const severityOrder: Record<string, number> = { bullish: 3, neutral: 2, info: 1, bearish: 0 };
+        results.push({
+          symbol,
+          signals: enriched,
+          signalCount: enriched.length,
+          highestSeverity: enriched.reduce((max, s) =>
+            severityOrder[s.severity] > severityOrder[max] ? s.severity : max
+          , 'info' as SignalDefinition['severity']),
+        });
+      }
+    }
+
+    return results.sort((a, b) => {
+      if (b.signalCount !== a.signalCount) return b.signalCount - a.signalCount;
+      const order: Record<string, number> = { bullish: 3, neutral: 2, info: 1, bearish: 0 };
+      return order[b.highestSeverity] - order[a.highestSeverity];
+    });
+  }, [data?.scanner_overlap]);
+
+  const severityColors: Record<string, string> = {
+    bullish: 'border-l-green-500 bg-green-500/5',
+    neutral: 'border-l-amber-500 bg-amber-500/5',
+    bearish: 'border-l-red-500 bg-red-500/5',
+    info: 'border-l-blue-500 bg-blue-500/5',
+  };
+
+  const severityDotColors: Record<string, string> = {
+    bullish: 'bg-green-500',
+    neutral: 'bg-amber-500',
+    bearish: 'bg-red-500',
+    info: 'bg-blue-500',
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -518,28 +690,7 @@ export default function PortfolioView() {
   const { summary, sector_allocation, alerts, risk, freshness } = data;
   const hasAlerts = alerts.length > 0;
 
-  const allocationData = useMemo(() => {
-    if (!showIndustry || !data?.holdings) return data?.sector_allocation || [];
-    const grouped: Record<string, { count: number; total_value: number }> = {};
-    let totalPortfolioValue = 0;
-    
-    for (const h of data.holdings) {
-      const ind = h.industry || h.yf_sector || h.sector || 'Unknown';
-      if (!grouped[ind]) grouped[ind] = { count: 0, total_value: 0 };
-      grouped[ind].count += 1;
-      grouped[ind].total_value += h.current_value;
-      totalPortfolioValue += h.current_value;
-    }
-    
-    return Object.entries(grouped)
-      .map(([sector, stats]) => ({
-        sector,
-        count: stats.count,
-        total_value: stats.total_value,
-        weight_pct: totalPortfolioValue ? (stats.total_value / totalPortfolioValue) * 100 : 0
-      }))
-      .sort((a, b) => b.weight_pct - a.weight_pct);
-  }, [data, showIndustry]);
+
 
   return (
     <div className="flex flex-col gap-4">
@@ -1078,55 +1229,119 @@ export default function PortfolioView() {
         </div>
       )}
 
-      {/* ── Scanner Overlap ── */}
-      <div className="bg-[#1a1c24] rounded-lg border border-[#ffffff1a] p-4">
-        <h3 className="text-xs font-semibold text-[#fafafa] mb-3">Scanner Signals on Your Holdings</h3>
-        {(() => {
-          const symbolsWithSignals = Object.entries(data.scanner_overlap).filter(
-            ([_, scanners]) => Object.values(scanners).some((v: any) => v != null)
-          );
-          if (symbolsWithSignals.length === 0) {
-            return <p className="text-[#888] font-mono text-[11px]">No active scanner signals on your holdings.</p>;
-          }
-          return (
-            <div className="flex flex-col gap-2">
-              {symbolsWithSignals.map(([sym, scanners]) => {
-                const active = Object.entries(scanners).filter(([_, v]) => v != null) as [string, any][];
-                return (
-                  <div key={sym} className="flex items-center gap-2 text-[11px] font-mono">
-                    <span className="font-bold text-[#fafafa] w-28 shrink-0">{sym}</span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {active.map(([name, val]) => {
-                        let display: string;
-                        if (typeof val === 'number') display = `${name} (${val})`;
-                        else if (typeof val === 'object' && val !== null) {
-                          const grade = val.grade || val.score || val.signal || '';
-                          display = `${name}${grade ? ` (${grade})` : ''}`;
-                        } else display = `${name} (${String(val)})`;
-                        return (
-                          <span
-                            key={name}
-                            className="px-2 py-0.5 bg-[#ffffff0a] rounded text-[10px] text-cyan-400 border border-[#ffffff1a]"
-                          >
-                            {display}
-                          </span>
-                        );
-                      })}
-                      <button
-                        onClick={() => handleQuickAddFromScanner(sym)}
-                        className="p-1 rounded bg-[#ffffff0a] text-[#888] hover:text-emerald-400 hover:bg-emerald-400/10 border border-[#ffffff1a] ml-1"
-                        title={`Add ${sym} to portfolio`}
-                      >
-                        <Plus size={10} />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+      {/* ── Scanner Signals Section ── */}
+      {resolveSignals.length > 0 && (
+        <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded-lg overflow-hidden">
+          <div
+            className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-[#ffffff05] transition-colors"
+            onClick={() => setSignalsExpanded(!signalsExpanded)}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-sm">{'\uD83D\uDCE1'}</span>
+              <h3 className="text-sm font-semibold text-[#fafafa]">Scanner Signals on Your Holdings</h3>
+              <span className="text-[10px] text-[#888] bg-[#ffffff0a] px-2 py-0.5 rounded-full">
+                {resolveSignals.length} stocks flagged
+              </span>
             </div>
-          );
-        })()}
-      </div>
+            <span className={`text-[#888] text-xs transition-transform ${signalsExpanded ? 'rotate-180' : ''}`}>
+              {'\u25BE'}
+            </span>
+          </div>
+
+          {signalsExpanded && (
+            <div className="border-t border-[#ffffff0a] px-4 py-3 space-y-3">
+              {/* Summary bar */}
+              <div className="flex items-center gap-4 text-[11px] font-mono text-[#888] mb-2">
+                <span>{'\uD83D\uDFE2'} {resolveSignals.filter(s => s.highestSeverity === 'bullish').length} bullish</span>
+                <span>{'\uD83D\uDFE1'} {resolveSignals.filter(s => s.highestSeverity === 'neutral').length} neutral</span>
+                <span>{'\uD83D\uDD35'} {resolveSignals.filter(s => s.highestSeverity === 'info').length} informational</span>
+                {resolveSignals.filter(s => s.highestSeverity === 'bearish').length > 0 && (
+                  <span>{'\uD83D\uDD34'} {resolveSignals.filter(s => s.highestSeverity === 'bearish').length} bearish</span>
+                )}
+              </div>
+
+              {/* Signal cards */}
+              {resolveSignals.map((item) => (
+                <div
+                  key={item.symbol}
+                  className={`border-l-2 rounded-r-lg p-3 ${severityColors[item.highestSeverity]}`}
+                >
+                  {/* Stock header */}
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${severityDotColors[item.highestSeverity]}`} />
+                      <span
+                        className="text-sm font-semibold text-cyan-400 hover:text-white cursor-pointer"
+                        onClick={() => window.open(`/chart?symbol=${item.symbol}`, '_blank')}
+                      >
+                        {item.symbol}
+                      </span>
+                      <span className="text-[10px] text-[#888]">
+                        {item.signalCount} signal{item.signalCount > 1 ? 's' : ''}
+                        {item.signalCount >= 3 ? ' \u2014 Highest conviction' : ''}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setScannerSymbolToAdd(item.symbol);
+                        setAddForm({ symbol: item.symbol, qty: '', price: '', category: 'NSE EQ' });
+                        setShowAddModal(true);
+                      }}
+                      className="text-[10px] text-[#888] hover:text-white bg-[#ffffff0a] hover:bg-[#ffffff1a] px-2 py-0.5 rounded transition-colors"
+                      title="Add to portfolio"
+                    >
+                      + Add
+                    </button>
+                  </div>
+
+                  {/* Individual signals */}
+                  <div className="space-y-1.5 ml-4">
+                    {item.signals.map((signal, idx) => (
+                      <div key={idx} className="flex items-start gap-2 text-xs">
+                        <span className="mt-0.5">{signal.icon}</span>
+                        <div className="flex-1">
+                          <span className="text-[#ccc] font-medium">{signal.label}</span>
+                          {signal.grade && (
+                            <span className={`ml-1 px-1 py-0.5 rounded text-[10px] font-bold ${
+                              signal.grade === 'A' ? 'bg-green-500/20 text-green-400' :
+                              signal.grade === 'B' ? 'bg-blue-500/20 text-blue-400' :
+                              'bg-[#ffffff1a] text-[#aaa]'
+                            }`}>
+                              {signal.grade}
+                            </span>
+                          )}
+                          <span className="text-[#888] ml-1">\u2014 {signal.description}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Consolidated suggestion */}
+                  {item.signals.length > 0 && (
+                    <div className="mt-2 ml-4 text-[10px] text-[#888] italic">
+                      {'\u2192'} SUGGESTION: {item.signals[0].suggestion.replace('{grade}', item.signals[0].grade || 'N/A')}
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {/* Stocks with no signals */}
+              {data?.holdings && (() => {
+                const flaggedSymbols = new Set(resolveSignals.map(s => s.symbol));
+                const unflagged = data.holdings.filter(h => !flaggedSymbols.has(h.symbol));
+                if (unflagged.length > 0) {
+                  return (
+                    <div className="text-[10px] text-[#555] mt-2 pt-2 border-t border-[#ffffff05]">
+                      {'\uD83D\uDFE2'} {unflagged.length} stock{unflagged.length > 1 ? 's' : ''} with no active signals \u2014 {unflagged.map(h => h.symbol).join(', ')}
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Risk Metrics (Collapsible) ── */}
       <div className="bg-[#1a1c24] rounded-lg border border-[#ffffff1a] overflow-hidden">
