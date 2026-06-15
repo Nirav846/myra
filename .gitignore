@@ -107,7 +107,7 @@ HELP FILES/
 # Dev/debug scripts (keep in root only during active session)
 check_*.py
 verify_*.py
-test_*.py
+/test_*.py
 fix_*.py
 inspect_*.py
 simulate_*.py.env
@@ -125,3 +125,5 @@ nse-mcp/node_modules/
 nse-mcp/dist/
 exports/
 *.log
+
+nse-mcp/
