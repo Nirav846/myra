@@ -609,7 +609,16 @@ export default function PortfolioView() {
       for (const [scannerKey, grade] of Object.entries(scannerSignals)) {
         const def = configMap.get(scannerKey);
         if (def) {
-          enriched.push({ ...def, grade: grade || '' });
+                  // Normalize grade — some scanner caches return full objects instead of strings
+        let gradeStr = '';
+        if (typeof grade === 'string') {
+          gradeStr = grade;
+        } else if (grade && typeof grade === 'object' && grade.grade) {
+          gradeStr = grade.grade;  // Extract grade from candidate object
+        } else if (grade && typeof grade === 'object') {
+          gradeStr = '';  // Object without grade — presence-only signal
+        }
+        enriched.push({ ...def, grade: gradeStr });
         }
       }
 
@@ -1301,15 +1310,15 @@ export default function PortfolioView() {
                         <span className="mt-0.5">{signal.icon}</span>
                         <div className="flex-1">
                           <span className="text-[#ccc] font-medium">{signal.label}</span>
-                          {signal.grade && (
-                            <span className={`ml-1 px-1 py-0.5 rounded text-[10px] font-bold ${
-                              signal.grade === 'A' ? 'bg-green-500/20 text-green-400' :
-                              signal.grade === 'B' ? 'bg-blue-500/20 text-blue-400' :
-                              'bg-[#ffffff1a] text-[#aaa]'
+                          {signal.grade ? (
+                            <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                              signal.grade === 'A' ? 'bg-green-500/20 text-green-400 border-green-500/30' :
+                              signal.grade === 'B' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
+                              'bg-[#ffffff0a] text-[#aaa] border-[#ffffff1a]'
                             }`}>
                               {signal.grade}
                             </span>
-                          )}
+                          ) : null}
                           <span className="text-[#888] ml-1">\u2014 {signal.description}</span>
                         </div>
                       </div>
@@ -1319,7 +1328,14 @@ export default function PortfolioView() {
                   {/* Consolidated suggestion */}
                   {item.signals.length > 0 && (
                     <div className="mt-2 ml-4 text-[10px] text-[#888] italic">
-                      {'\u2192'} SUGGESTION: {item.signals[0].suggestion.replace('{grade}', item.signals[0].grade || 'N/A')}
+                      {'\u2192'} SUGGESTION: {(() => {
+                        const bestSignal = item.signals.reduce((best, s) => {
+                          const order = { bullish: 3, neutral: 2, info: 1, bearish: 0 };
+                          return order[s.severity] > order[best.severity] ? s : best;
+                        }, item.signals[0]);
+                        const grade = typeof bestSignal.grade === 'string' && bestSignal.grade ? bestSignal.grade : '';
+                        return bestSignal.suggestion.replace('{grade}', grade || 'N/A');
+                      })()}
                     </div>
                   )}
                 </div>
