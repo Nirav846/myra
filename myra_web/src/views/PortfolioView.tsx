@@ -657,8 +657,9 @@ export default function PortfolioView() {
   };
 
   const displaySummary = useMemo(() => {
+    if (!data) return null;
     if (!showLivePrices || !livePrices || Object.keys(livePrices).length === 0 || !data?.holdings) {
-      return { ...data!.summary, isLive: false };
+      return { ...data.summary, isLive: false };
     }
     let total_current = 0;
     const total_invested = data.summary.total_invested;
