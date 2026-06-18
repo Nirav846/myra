@@ -6,6 +6,11 @@ Stores data in myra_valuation.db fundamentals table.
 
 import logging
 import os
+
+# Load .env for MORNINGSTAR_TOKEN
+from dotenv import load_dotenv
+from pathlib import Path
+load_dotenv(Path(__file__).resolve().parent.parent / '.env')
 import sqlite3
 import threading
 import time
@@ -23,7 +28,7 @@ logger = logging.getLogger("myra.fundamental_sync")
 IST = timezone(timedelta(hours=5, minutes=30))
 
 # Morningstar API configuration
-MORNINGSTAR_TOKEN = os.environ.get("MORNINGSTAR_TOKEN", "g9vi2nsqjb")
+MORNINGSTAR_TOKEN = os.environ["MORNINGSTAR_TOKEN"]  # Required — set in .env
 MORNINGSTAR_URL = (
     f"https://lt.morningstar.com/api/rest.svc/{MORNINGSTAR_TOKEN}/security/screener"
 )
