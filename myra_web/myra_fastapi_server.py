@@ -2006,6 +2006,18 @@ _trigger_scan_lock = threading.Lock()
 _TRIGGER_SCAN_CACHE = os.path.join(MODELS_DIR, "trigger_cache.json")
 
 
+# Darvas scanner state
+_darvas_scan_state: dict = {
+    "scan_status": "idle",
+    "last_scan": None,
+    "progress": 0,
+    "message": "Idle — click Scan to start",
+    "candidates": [],
+}
+_darvas_scan_lock = threading.Lock()
+_DARVAS_SCAN_CACHE = os.path.join(MODELS_DIR, "darvas_cache.json")
+
+
 def _save_trigger_cache():
     import json as _json, os as _os
 
@@ -2823,6 +2835,37 @@ _wy_scan_lock = threading.Lock()
 _WY_SCAN_CACHE = os.path.join(MODELS_DIR, "wyckoff_cache.json")
 
 
+def _save_darvas_cache():
+    import json as _json
+    import os as _os
+
+    try:
+        _os.makedirs("models", exist_ok=True)
+        with _darvas_scan_lock:
+            data = {
+                "last_scan": _darvas_scan_state["last_scan"],
+                "candidates": _darvas_scan_state["candidates"],
+                "message": _darvas_scan_state["message"],
+            }
+        with open(_DARVAS_SCAN_CACHE, "w") as _f:
+            _json.dump(data, _f)
+    except Exception as e:
+        logger.warning(f"Cache operation failed: {e}")
+
+
+def _load_darvas_cache() -> dict | None:
+    import json as _json
+    import os as _os
+
+    try:
+        if _os.path.exists(_DARVAS_SCAN_CACHE):
+            with open(_DARVAS_SCAN_CACHE) as _f:
+                return _json.load(_f)
+    except Exception as e:
+        logger.warning(f"Cache operation failed: {e}")
+    return None
+
+
 def _save_wy_cache():
     import json as _json
     import os as _os
@@ -2852,6 +2895,124 @@ def _load_wy_cache() -> dict | None:
     except Exception as e:
         logger.warning(f"Cache operation failed: {e}")
     return None
+
+
+@app.get("/api/darvas/status")
+async def darvas_status():
+    import copy
+
+    with _darvas_scan_lock:
+        state = copy.deepcopy(_darvas_scan_state)
+
+    if state["scan_status"] == "idle":
+        cache = _load_darvas_cache()
+        if cache and cache.get("candidates") is not None:
+            return {
+                "scan_status": "idle",
+                "last_scan": cache.get("last_scan"),
+                "progress": 100,
+                "message": cache.get(
+                    "message", f"Found {len(cache['candidates'])} candidates."
+                ),
+                "candidates": cache["candidates"],
+            }
+
+    return state
+
+
+@app.post("/api/darvas/scan")
+async def darvas_scan(payload: dict = Body(default={})):
+    with _darvas_scan_lock:
+        if _darvas_scan_state["scan_status"] == "scanning":
+            return {"detail": "Scan already in progress"}, 409
+
+        _darvas_scan_state.update(
+            {
+                "scan_status": "scanning",
+                "progress": 0,
+                "message": "Initialising scanner...",
+                "candidates": [],
+            }
+        )
+
+    lookback = int(payload.get("lookback", 120))
+    min_mcap = int(payload.get("min_mcap", 200))
+    max_mcap = int(payload.get("max_mcap", 50000))
+
+    def _run():
+        try:
+            from myra_app.strategies.darvas_box_scanner import DarvasBoxScanner
+            import math as _math
+
+            # The implementation uses 'base_days' instead of 'lookback'
+            scanner = DarvasBoxScanner(
+                base_days=lookback,
+                min_mcap=min_mcap,
+                max_mcap=max_mcap,
+            )
+
+            _darvas_scan_state["message"] = "Loading universe..."
+            _darvas_scan_state["progress"] = 5
+
+            universe = scanner._get_universe()
+            total = max(len(universe), 1)
+            _darvas_scan_state["message"] = f"Scanning {total} symbols..."
+            _darvas_scan_state["progress"] = 10
+
+            original_get_tech = scanner._get_tech_data
+            processed = [0]
+
+            def _tracked_get_tech(symbol, min_date):
+                processed[0] += 1
+                if processed[0] % 25 == 0:
+                    pct = 10 + int((processed[0] / total) * 82)
+                    _darvas_scan_state["progress"] = min(pct, 92)
+                    _darvas_scan_state[
+                        "message"
+                    ] = f"Scanning {processed[0]}/{total} symbols..."
+                return original_get_tech(symbol, min_date)
+
+            scanner._get_tech_data = _tracked_get_tech
+
+            df = scanner.scan()
+
+            _darvas_scan_state["progress"] = 95
+            _darvas_scan_state["message"] = "Finalising results..."
+
+            candidates = []
+            if not df.empty:
+                for _, row in df.iterrows():
+                    rec = row.to_dict()
+                    for key, val in list(rec.items()):
+                        if isinstance(val, float) and (
+                            _math.isnan(val) or _math.isinf(val)
+                        ):
+                            rec[key] = None
+                    candidates.append(rec)
+
+            _darvas_scan_state.update(
+                {
+                    "scan_status": "completed",
+                    "last_scan": datetime.now().isoformat(),
+                    "progress": 100,
+                    "message": f"Found {len(candidates)} candidates",
+                    "candidates": candidates,
+                }
+            )
+            _save_darvas_cache()
+
+        except Exception as e:
+            logger.error("Darvas Box scan failed: %s", e, exc_info=True)
+            _darvas_scan_state.update(
+                {
+                    "scan_status": "error",
+                    "progress": 0,
+                    "message": str(e),
+                }
+            )
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"status": "started"}
 
 
 @app.get("/api/wyckoff/status")
