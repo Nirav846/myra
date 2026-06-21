@@ -3147,3 +3147,103 @@ async def refresh_portfolio_industry():
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+# ---- Multibagger Pro Scanner ----
+
+_multibagger_result = {"scan_status": "idle", "candidates": [], "message": "Use POST /api/multibagger/scan to run"}
+
+@app.post("/api/multibagger/scan")
+async def multibagger_scan(payload: dict = Body(default={})):
+    """Run Multibagger Pro scan and store results for status polling."""
+    global _multibagger_result
+    _multibagger_result = {"scan_status": "scanning", "candidates": [], "message": "Running..."}
+    
+    def _run():
+        global _multibagger_result
+        try:
+            from myra_app.strategies.multibagger_early_detection import Strategy as MultibaggerScanner
+            from myra_app.librarian_core import LibrarianCore
+            import math as _math, pandas as pd, sqlite3, os
+            from myra_app.constants import DB_DIR
+            
+            lookback = int(payload.get("lookback", 42))
+            min_mcap = int(payload.get("min_mcap", 200))
+            max_mcap = int(payload.get("max_mcap", 50000))
+            
+            scanner = MultibaggerScanner()
+            
+            # Build universe from valuation.db
+            val_path = os.path.join(DB_DIR, 'myra_valuation.db')
+            tech_path = os.path.join(DB_DIR, 'myra_technical.db')
+            
+            val_conn = sqlite3.connect(val_path)
+            symbols = [r[0] for r in val_conn.execute(
+                "SELECT symbol FROM fundamentals WHERE COALESCE(market_cap,0) BETWEEN ? AND ?",
+                (min_mcap, max_mcap)
+            ).fetchall()]
+            val_conn.close()
+            
+            if not symbols:
+                symbols = [r[0] for r in sqlite3.connect(tech_path).execute(
+                    "SELECT DISTINCT symbol FROM technical_data ORDER BY symbol"
+                ).fetchall()][:500]
+            
+            candidates = []
+            tech_conn = sqlite3.connect(tech_path)
+            
+            for i, sym in enumerate(symbols):
+                if i % 50 == 0:
+                    _multibagger_result["message"] = f"Scanning {i+1}/{len(symbols)}..."
+                
+                # Fetch OHLCV data
+                df = pd.read_sql(
+                    f"SELECT date, open, high, low, close, volume FROM technical_data WHERE symbol=? AND date >= date('now','-{lookback+30} days') ORDER BY date",
+                    tech_conn, params=(sym,)
+                )
+                if df.empty or len(df) < 30:
+                    continue
+                
+                # Fetch fundamentals
+                val_conn2 = sqlite3.connect(val_path)
+                row = val_conn2.execute(
+                    "SELECT * FROM fundamentals WHERE symbol=?", (sym,)
+                ).fetchone()
+                if row:
+                    cols = [c[0] for c in val_conn2.execute("PRAGMA table_info(fundamentals)").fetchall()]
+                    funda = dict(zip(cols, row))
+                else:
+                    funda = {}
+                val_conn2.close()
+                
+                try:
+                    result = scanner.run(df, funda)
+                    if result and result.get("signal"):
+                        result["symbol"] = sym
+                        # Sanitize NaN/Inf
+                        for k, v in list(result.items()):
+                            if isinstance(v, float) and (_math.isnan(v) or _math.isinf(v)):
+                                result[k] = None
+                        candidates.append(result)
+                except Exception:
+                    pass
+            
+            tech_conn.close()
+            
+            _multibagger_result = {
+                "scan_status": "completed",
+                "last_scan": datetime.now().isoformat(),
+                "candidates": candidates,
+                "message": f"Found {len(candidates)} candidates",
+            }
+        except Exception as e:
+            _multibagger_result = {"scan_status": "error", "message": str(e), "candidates": []}
+    
+    threading.Thread(target=_run, daemon=True).start()
+    return {"status": "started"}
+
+
+@app.get("/api/multibagger/status")
+async def multibagger_status():
+    """Return last Multibagger scan results."""
+    return _multibagger_result
