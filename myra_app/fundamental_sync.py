@@ -326,8 +326,17 @@ class FundamentalSync:
         try:
             with sqlite3.connect(db_path, timeout=30) as conn:
                 # Schema managed by librarian_schema.py — no _ensure_table_exists call
-                # Build INSERT dynamically from record keys
-                columns = list(records[0].keys())
+                # Build INSERT dynamically from ALL record keys
+                # (some symbols may lack certain Morningstar fields)
+                all_columns = set()
+                for r in records:
+                    all_columns.update(r.keys())
+                columns = sorted(all_columns)
+                # Pad missing fields with None
+                for r in records:
+                    for c in columns:
+                        if c not in r:
+                            r[c] = None
                 placeholders = [f":{c}" for c in columns]
                 sql = f"INSERT OR REPLACE INTO fundamentals ({','.join(columns)}) VALUES ({','.join(placeholders)})"
                 conn.executemany(sql, records)
