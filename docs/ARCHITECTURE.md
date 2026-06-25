@@ -68,6 +68,35 @@ Schema definitions are maintained in `myra_app/schema_registry.py` (30 tables ac
 
 **Lookback-day convention:** All scanners use calendar days for lookback parameters. Internal minimum-row thresholds use `max(floor, int(lookback_days * 0.6) + 5)` to convert to approximate trading-day counts.
 
+## Historical Time-Travel Scan (Invisible Hand)
+
+The Invisible Hand scanner supports scanning as-of any past trading day, enabling users to backtest or investigate historical setups.
+
+### How it works
+
+1. **Frontend** (`InvisibleHandScanner.tsx`) renders a `<input type="date">` calendar widget next to the Scan button. On mount it fetches `GET /api/latest-trading-day` to set `max` on the picker (preventing future dates).
+
+2. When the user clicks Scan, `scan_date` (YYYY-MM-DD) is included in the POST payload only if set. An empty/cleared date means "live scan" (latest available data).
+
+3. **Backend** (`myra_fastapi_server.py`):
+   - `POST /api/invisible-hand/scan` extracts `scan_date` from the payload.
+   - `_get_latest_trading_day_before(date_str)` queries `technical_data` to find the nearest trading day on or before the given date (handles weekends and NSE holidays automatically).
+   - If no `scan_date` is provided, the latest trading day is used (live scan).
+   - `target_date` (the adjusted date) is passed to `InvisibleHandScanner(target_date=...)`.
+
+4. **`InvisibleHandScanner`** (`invisible_hand_scanner.py`):
+   - `__init__` accepts `target_date: Optional[str]`. When set, all data fetching uses this as the reference date.
+   - `_get_tech_data(symbol, min_date, max_date=None)` adds `AND date <= max_date` to the SQL query when `max_date` is provided.
+   - `scan()` uses `self.target_date or date.today().isoformat()` as the reference for lookback calculations.
+
+5. **Response** includes `scanned_date` in the status payload — the actual date used after holiday/weekend adjustment. The frontend displays "Adjusted to YYYY-MM-DD (previous trading day)" when the user-selected date was adjusted.
+
+### Constraints
+
+- Historical scans are **read-only** — no database writes.
+- The universe (symbols + market cap) is drawn from the **current** fundamentals table. For dates far in the past, some symbols may not yet be listed.
+- The `scanned_date` field is always present in the status response after a scan completes.
+
 ## Enrichment Pipeline
 
 `feature_enrichment.py` computes SMC indicators using vectorized Polars operations:

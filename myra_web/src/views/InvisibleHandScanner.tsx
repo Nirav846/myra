@@ -36,6 +36,7 @@ interface ScanStatus {
   message: string;
   candidates: Candidate[];
   bear_market?: boolean;
+  scanned_date?: string | null;
 }
 
 function relativeTime(dateStr: string | null | undefined): string {
@@ -83,6 +84,16 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
   const [minIhScoreFilter, setMinIhScoreFilter] = useState(0);
   const [minQcdFilter, setMinQcdFilter] = useState(0);
   const [gradeFilter, setGradeFilter] = useState<string>('All');
+
+  const [scanDate, setScanDate] = useState('');
+  const [latestTradingDay, setLatestTradingDay] = useState('');
+
+  useEffect(() => {
+    fetch(`${API_BASE}/latest-trading-day`)
+      .then(r => r.json())
+      .then(d => setLatestTradingDay(d.date || ''))
+      .catch(() => {});
+  }, []);
 
   const [sortCol, setSortCol] = useState<string>('ih_score');
   const [sortAsc, setSortAsc] = useState(false);
@@ -185,6 +196,7 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
           window: 20,
           hist_window: 60,
           min_ih_score: 35,
+          ...(scanDate.trim() && { scan_date: scanDate }),
         }),
       });
       if (!mountedRef.current) return;
@@ -260,18 +272,43 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
             <p className="text-xs font-mono text-[#888]">Systematic accumulation when nobody is watching</p>
           </div>
         </div>
-        <button
-          onClick={startScan}
-          disabled={isScanning}
-          className="px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white rounded text-xs font-semibold flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
-          aria-label={isScanning ? 'Scanning, please wait' : 'Start scan'}
-        >
-          {isScanning ? (
-            <><RefreshCw size={14} className="animate-spin" aria-hidden="true" /> Scanning...</>
-          ) : (
-            <><Eye size={14} fill="currentColor" aria-hidden="true" /> Scan</>
-          )}
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            <Tooltip content="Time-travel the scan to any past trading day. Weekend/holidays auto-adjust to the nearest previous trading day.">
+              <input
+                type="date"
+                id="scan-date-picker"
+                value={scanDate}
+                max={latestTradingDay}
+                onChange={e => setScanDate(e.target.value)}
+                className="bg-[#0e1117] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#ccc] font-mono focus:border-violet-500 outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 cursor-pointer"
+                aria-label="Scan date (past trading day)"
+              />
+            </Tooltip>
+            {scanDate && (
+              <button
+                onClick={() => setScanDate('')}
+                className="text-[#666] hover:text-[#aaa] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 rounded"
+                aria-label="Clear scan date"
+                title="Clear — scan latest data"
+              >
+                <XCircle size={13} aria-hidden="true" />
+              </button>
+            )}
+          </div>
+          <button
+            onClick={startScan}
+            disabled={isScanning}
+            className="px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white rounded text-xs font-semibold flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
+            aria-label={isScanning ? 'Scanning, please wait' : 'Start scan'}
+          >
+            {isScanning ? (
+              <><RefreshCw size={14} className="animate-spin" aria-hidden="true" /> Scanning...</>
+            ) : (
+              <><Eye size={14} fill="currentColor" aria-hidden="true" /> Scan</>
+            )}
+          </button>
+        </div>
       </header>
 
       {/* ── INVISIBLE HAND 101 GUIDE ── */}
@@ -389,6 +426,13 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
              scanStatus.message}
           </span>
           <span className="ml-auto text-[#666]">{scanStatus.message}</span>
+        </div>
+      )}
+
+      {scanDate && scanStatus?.scan_status === 'completed' && scanStatus.scanned_date && scanStatus.scanned_date !== scanDate && (
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-[11px] font-mono text-cyan-400 bg-cyan-500/5 border border-cyan-500/20">
+          <Info size={12} aria-hidden="true" />
+          <span>Selected date is a holiday or weekend — adjusted to {scanStatus.scanned_date} (previous trading day)</span>
         </div>
       )}
 

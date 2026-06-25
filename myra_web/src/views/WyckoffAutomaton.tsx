@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { Box, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Star, BookOpen, ChevronRight } from 'lucide-react';
+import { Box, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Star, BookOpen, ChevronRight, Info } from 'lucide-react';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
 import { useWatchlist } from '../lib/WatchlistContext';
@@ -8,6 +8,7 @@ import { StarButton } from '../components/StarButton';
 import { API_BASE } from '../config';
 import { Tooltip } from '../components/Tooltip';
 import ScrollableTable from '../components/ScrollableTable';
+import { HistoricalScanDatePicker } from '../components/HistoricalScanDatePicker';
 
 interface Candidate {
   symbol: string;
@@ -32,6 +33,7 @@ interface ScanStatus {
   progress: number;
   message: string;
   candidates: Candidate[];
+  scanned_date?: string | null;
 }
 
 function relativeTime(dateStr: string | null | undefined): string {
@@ -139,6 +141,8 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
   const [minQualityFilter, setMinQualityFilter] = useState(0);
   const [maxDaysFilter, setMaxDaysFilter] = useState<number>(30);
 
+  const [scanDate, setScanDate] = useState('');
+
   const [sortCol, setSortCol] = useState<string>('phase_complete_pct');
   const [sortAsc, setSortAsc] = useState(false);
 
@@ -196,6 +200,9 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
         body.min_mcap = mcapRange.min;
         body.max_mcap = mcapRange.max;
       }
+      if (scanDate.trim()) {
+        body.scan_date = scanDate;
+      }
       const res = await fetch(`${API_BASE}/wyckoff/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -216,7 +223,7 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
         setIsScanning(false);
       }
     }
-  }, [mcapRange, fetchStatus, clearPolling]);
+  }, [mcapRange, fetchStatus, clearPolling, scanDate]);
 
   useEffect(() => {
     if (!mcapRange) {
@@ -362,6 +369,7 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <HistoricalScanDatePicker selectedDate={scanDate} onSelect={setScanDate} />
           {isScanning && (
             <span className="flex items-center gap-1 text-xs text-yellow-400">
               <RefreshCw size={14} className="animate-spin" /> Scanning...
@@ -466,6 +474,13 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
              scanStatus.message}
           </span>
           <span className="ml-auto text-[#666]">{scanStatus.message}</span>
+        </div>
+      )}
+
+      {scanDate && scanStatus?.scan_status === 'completed' && scanStatus.scanned_date && scanStatus.scanned_date !== scanDate && (
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-[11px] font-mono text-cyan-400 bg-cyan-500/5 border border-cyan-500/20">
+          <Info size={12} aria-hidden="true" />
+          <span>Selected date is a holiday or weekend — adjusted to {scanStatus.scanned_date} (previous trading day)</span>
         </div>
       )}
 

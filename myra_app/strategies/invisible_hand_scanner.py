@@ -5,6 +5,8 @@ import os
 import numpy as np
 import pandas as pd
 from datetime import date
+from typing import Optional
+
 from myra_app.constants import DB_DIR
 from myra_app.librarian_core import LibrarianCore
 
@@ -13,13 +15,20 @@ logger = logging.getLogger(__name__)
 
 class InvisibleHandScanner:
     def __init__(
-        self, min_mcap=200, max_mcap=50000, window=20, hist_window=60, min_ih_score=35
+        self,
+        min_mcap=200,
+        max_mcap=50000,
+        window=20,
+        hist_window=60,
+        min_ih_score=35,
+        target_date: Optional[str] = None,
     ):
         self.min_mcap = min_mcap
         self.max_mcap = max_mcap
-        self.window = window  # recent window for all current metrics
-        self.hist_window = hist_window  # historical window for DER baseline
+        self.window = window
+        self.hist_window = hist_window
         self.min_ih_score = min_ih_score
+        self.target_date = target_date
 
     def _db_path(self, key: str) -> str:
         return os.path.join(DB_DIR, LibrarianCore.DB_MAP[key])
@@ -47,35 +56,63 @@ class InvisibleHandScanner:
             ).fetchall()
         return rows
 
-    def _get_tech_data(self, symbol: str, min_date: str) -> list[tuple]:
+    def _get_tech_data(
+        self, symbol: str, min_date: str, max_date: Optional[str] = None
+    ) -> list[tuple]:
         tech_db = self._db_path("technical")
         if not os.path.exists(tech_db):
             return []
         with sqlite3.connect(tech_db) as conn:
             try:
-                rows = conn.execute(
-                    """
-                    SELECT date, open, high, low, close, volume, delivery,
-                           delivery_pct, nifty_outperformance_score,
-                           sma_50, high_52w, low_52w
-                    FROM technical_data
-                    WHERE symbol = ? AND date >= ?
-                    ORDER BY date ASC
-                    """,
-                    (symbol, min_date),
-                ).fetchall()
+                if max_date:
+                    rows = conn.execute(
+                        """
+                        SELECT date, open, high, low, close, volume, delivery,
+                               delivery_pct, nifty_outperformance_score,
+                               sma_50, high_52w, low_52w
+                        FROM technical_data
+                        WHERE symbol = ? AND date >= ? AND date <= ?
+                        ORDER BY date ASC
+                        """,
+                        (symbol, min_date, max_date),
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        """
+                        SELECT date, open, high, low, close, volume, delivery,
+                               delivery_pct, nifty_outperformance_score,
+                               sma_50, high_52w, low_52w
+                        FROM technical_data
+                        WHERE symbol = ? AND date >= ?
+                        ORDER BY date ASC
+                        """,
+                        (symbol, min_date),
+                    ).fetchall()
             except sqlite3.OperationalError:
-                rows = conn.execute(
-                    """
-                    SELECT date, open, high, low, close, volume, delivery,
-                           delivery_pct, nifty_outperformance_score,
-                           NULL AS sma_50, NULL AS high_52w, NULL AS low_52w
-                    FROM technical_data
-                    WHERE symbol = ? AND date >= ?
-                    ORDER BY date ASC
-                    """,
-                    (symbol, min_date),
-                ).fetchall()
+                if max_date:
+                    rows = conn.execute(
+                        """
+                        SELECT date, open, high, low, close, volume, delivery,
+                               delivery_pct, nifty_outperformance_score,
+                               NULL AS sma_50, NULL AS high_52w, NULL AS low_52w
+                        FROM technical_data
+                        WHERE symbol = ? AND date >= ? AND date <= ?
+                        ORDER BY date ASC
+                        """,
+                        (symbol, min_date, max_date),
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        """
+                        SELECT date, open, high, low, close, volume, delivery,
+                               delivery_pct, nifty_outperformance_score,
+                               NULL AS sma_50, NULL AS high_52w, NULL AS low_52w
+                        FROM technical_data
+                        WHERE symbol = ? AND date >= ?
+                        ORDER BY date ASC
+                        """,
+                        (symbol, min_date),
+                    ).fetchall()
         return rows
 
     @staticmethod
@@ -137,7 +174,7 @@ class InvisibleHandScanner:
             pass
 
         if as_on_date is None:
-            as_on_date = date.today().isoformat()
+            as_on_date = self.target_date or date.today().isoformat()
 
         ref_date = pd.Timestamp(as_on_date)
         lookback_calendar_days = int((self.window + self.hist_window) * 1.8) + 10
@@ -148,7 +185,7 @@ class InvisibleHandScanner:
         for idx, (symbol, mcap, ff_pct) in enumerate(rows):
             symbol = symbol.strip()
 
-            tech = self._get_tech_data(symbol, min_date)
+            tech = self._get_tech_data(symbol, min_date, max_date=self.target_date)
             if len(tech) < self.window + self.hist_window + 10:
                 continue
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { Box, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Star } from 'lucide-react';
+import { Box, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Star, Info } from 'lucide-react';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
 import { useWatchlist } from '../lib/WatchlistContext';
@@ -8,6 +8,7 @@ import { StarButton } from '../components/StarButton';
 import { API_BASE } from '../config';
 import { Tooltip } from '../components/Tooltip';
 import ScrollableTable from '../components/ScrollableTable';
+import { HistoricalScanDatePicker } from '../components/HistoricalScanDatePicker';
 
 interface Candidate {
   symbol: string;
@@ -33,6 +34,7 @@ interface ScanStatus {
   message: string;
   candidates: Candidate[];
   bear_market?: boolean;
+  scanned_date?: string | null;
 }
 
 function relativeTime(dateStr: string | null | undefined): string {
@@ -86,6 +88,8 @@ export default function SeasonalDeliveryHarvesterView({ lib }: { lib: Librarian 
   const [minConsistencyFilter, setMinConsistencyFilter] = useState(55);
   const [minEdgeFilter, setMinEdgeFilter] = useState(0);
   const [earlyOnlyFilter, setEarlyOnlyFilter] = useState(false);
+
+  const [scanDate, setScanDate] = useState('');
 
   const [sortCol, setSortCol] = useState<string>('seasonal_score');
   const [sortAsc, setSortAsc] = useState(false);
@@ -186,6 +190,7 @@ export default function SeasonalDeliveryHarvesterView({ lib }: { lib: Librarian 
           min_mcap: mcapRange?.min ?? 200,
           max_mcap: mcapRange?.max ?? 50000,
           target_month: targetMonth,
+          ...(scanDate.trim() && { scan_date: scanDate }),
         }),
       });
       if (!mountedRef.current) return;
@@ -203,7 +208,7 @@ export default function SeasonalDeliveryHarvesterView({ lib }: { lib: Librarian 
         setIsScanning(false);
       }
     }
-  }, [fetchScanStatus, clearPolling, mcapRange, targetMonth]);
+  }, [fetchScanStatus, clearPolling, mcapRange, targetMonth, scanDate]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -263,18 +268,21 @@ export default function SeasonalDeliveryHarvesterView({ lib }: { lib: Librarian 
             <p className="text-xs font-mono text-[#888]">Calendar-Driven Institutional Delivery Patterns</p>
           </div>
         </div>
-        <button
-          onClick={startScan}
-          disabled={isScanning}
-          className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded text-xs font-semibold flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400/50"
-          aria-label={isScanning ? 'Scanning, please wait' : 'Start scan'}
-        >
-          {isScanning ? (
-            <><RefreshCw size={14} className="animate-spin" aria-hidden="true" /> Scanning...</>
-          ) : (
-            <><Box size={14} fill="currentColor" aria-hidden="true" /> Scan</>
-          )}
-        </button>
+        <div className="flex items-center gap-2">
+          <HistoricalScanDatePicker selectedDate={scanDate} onSelect={setScanDate} />
+          <button
+            onClick={startScan}
+            disabled={isScanning}
+            className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded text-xs font-semibold flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400/50"
+            aria-label={isScanning ? 'Scanning, please wait' : 'Start scan'}
+          >
+            {isScanning ? (
+              <><RefreshCw size={14} className="animate-spin" aria-hidden="true" /> Scanning...</>
+            ) : (
+              <><Box size={14} fill="currentColor" aria-hidden="true" /> Scan</>
+            )}
+          </button>
+        </div>
       </header>
 
       {isScanning && (
@@ -305,6 +313,13 @@ export default function SeasonalDeliveryHarvesterView({ lib }: { lib: Librarian 
              scanStatus.message}
           </span>
           <span className="ml-auto text-[#666]">{scanStatus.message}</span>
+        </div>
+      )}
+
+      {scanDate && scanStatus?.scan_status === 'completed' && scanStatus.scanned_date && scanStatus.scanned_date !== scanDate && (
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-[11px] font-mono text-cyan-400 bg-cyan-500/5 border border-cyan-500/20">
+          <Info size={12} aria-hidden="true" />
+          <span>Selected date is a holiday or weekend — adjusted to {scanStatus.scanned_date} (previous trading day)</span>
         </div>
       )}
 

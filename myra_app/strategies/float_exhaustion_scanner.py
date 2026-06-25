@@ -49,7 +49,10 @@ class FloatExhaustionScanner:
             ).fetchall()
         return rows
 
-    def _get_tech_data(self, symbol: str, min_date: str) -> list[tuple]:
+    def _get_tech_data(
+        self, symbol: str, min_date: str, max_date: str | None = None
+    ) -> list[tuple]:
+        max_date = max_date or date.today().isoformat()
         tech_db = self._db_path("technical")
         if not os.path.exists(tech_db):
             return []
@@ -61,10 +64,10 @@ class FloatExhaustionScanner:
                            delivery_pct, nifty_outperformance_score,
                            sma_50, high_52w, low_52w
                     FROM technical_data
-                    WHERE symbol = ? AND date >= ?
+                    WHERE symbol = ? AND date >= ? AND date <= ?
                     ORDER BY date ASC
                     """,
-                    (symbol, min_date),
+                    (symbol, min_date, max_date),
                 ).fetchall()
             except sqlite3.OperationalError:
                 rows = conn.execute(
@@ -73,10 +76,10 @@ class FloatExhaustionScanner:
                            delivery_pct, nifty_outperformance_score,
                            NULL AS sma_50, NULL AS high_52w, NULL AS low_52w
                     FROM technical_data
-                    WHERE symbol = ? AND date >= ?
+                    WHERE symbol = ? AND date >= ? AND date <= ?
                     ORDER BY date ASC
                     """,
-                    (symbol, min_date),
+                    (symbol, min_date, max_date),
                 ).fetchall()
         return rows
 
@@ -140,8 +143,8 @@ class FloatExhaustionScanner:
         ) in enumerate(rows):
             symbol = symbol.strip()
 
-            tech = self._get_tech_data(symbol, min_date)
-            if len(tech) < self.window_days:
+            tech = self._get_tech_data(symbol, min_date, max_date=as_on_date)
+            if len(tech) < max(14, int(self.window_days * 0.7) + 2):
                 continue
 
             col_count = len(tech[0]) if tech else 0
@@ -184,7 +187,7 @@ class FloatExhaustionScanner:
             df["date"] = pd.to_datetime(df["date"])
             df = df.sort_values("date").reset_index(drop=True)
 
-            if len(df) < self.window_days:
+            if len(df) < max(14, int(self.window_days * 0.7) + 2):
                 continue
 
             latest_close = float(df["close"].iloc[-1])

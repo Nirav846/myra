@@ -7,6 +7,7 @@ import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
 import { API_BASE } from '../config';
 import { Tooltip } from '../components/Tooltip';
+import { HistoricalScanDatePicker } from '../components/HistoricalScanDatePicker';
 import ScrollableTable from '../components/ScrollableTable';
 
 interface Candidate {
@@ -38,6 +39,7 @@ interface ScanStatus {
   message: string;
   candidates: Candidate[];
   bear_market?: boolean;
+  scanned_date?: string | null;
 }
 
 function relativeTime(dateStr: string | null | undefined): string {
@@ -90,6 +92,8 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
   const [minSmartFloatRatio, setMinSmartFloatRatio] = useState(0.55);
   const [priceRangeMax, setPriceRangeMax] = useState(10.0);
   const [gradeFilter, setGradeFilter] = useState<string>('All');
+
+  const [scanDate, setScanDate] = useState('');
 
   const [sortCol, setSortCol] = useState<string>('trigger_score');
   const [sortAsc, setSortAsc] = useState(false);
@@ -194,6 +198,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
           vol_pinch_ratio: volPinchRatio,
           price_range_max_pct: priceRangeMax,
           min_smart_float_ratio: minSmartFloatRatio,
+          ...(scanDate.trim() && { scan_date: scanDate }),
         }),
       });
       if (!mountedRef.current) return;
@@ -211,7 +216,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
         setIsScanning(false);
       }
     }
-  }, [fetchScanStatus, clearPolling, mcapRange, minFloatUtilPct, volPinchRatio, minSmartFloatRatio, priceRangeMax]);
+  }, [fetchScanStatus, clearPolling, mcapRange, minFloatUtilPct, volPinchRatio, minSmartFloatRatio, priceRangeMax, scanDate]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -271,18 +276,21 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
             <p className="text-xs font-mono text-[#888]">Three-gate system for precise accumulation timing</p>
           </div>
         </div>
-        <button
-          onClick={startScan}
-          disabled={isScanning}
-          className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white rounded text-xs font-semibold flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/50"
-          aria-label={isScanning ? 'Scanning, please wait' : 'Start scan'}
-        >
-          {isScanning ? (
-            <><RefreshCw size={14} className="animate-spin" aria-hidden="true" /> Scanning...</>
-          ) : (
-            <><Zap size={14} fill="currentColor" aria-hidden="true" /> Scan</>
-          )}
-        </button>
+        <div className="flex items-center gap-2">
+          <HistoricalScanDatePicker selectedDate={scanDate} onSelect={setScanDate} />
+          <button
+            onClick={startScan}
+            disabled={isScanning}
+            className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white rounded text-xs font-semibold flex items-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/50"
+            aria-label={isScanning ? 'Scanning, please wait' : 'Start scan'}
+          >
+            {isScanning ? (
+              <><RefreshCw size={14} className="animate-spin" aria-hidden="true" /> Scanning...</>
+            ) : (
+              <><Zap size={14} fill="currentColor" aria-hidden="true" /> Scan</>
+            )}
+          </button>
+        </div>
       </header>
 
       {/* ── TRIGGER 101 GUIDE ── */}
@@ -407,6 +415,13 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
              scanStatus.message}
           </span>
           <span className="ml-auto text-[#666]">{scanStatus.message}</span>
+        </div>
+      )}
+
+      {scanDate && scanStatus?.scan_status === 'completed' && scanStatus.scanned_date && scanStatus.scanned_date !== scanDate && (
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-[11px] font-mono text-cyan-400 bg-cyan-500/5 border border-cyan-500/20">
+          <Info size={12} aria-hidden="true" />
+          <span>Selected date is a holiday or weekend — adjusted to {scanStatus.scanned_date} (previous trading day)</span>
         </div>
       )}
 

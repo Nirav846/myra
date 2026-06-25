@@ -279,6 +279,37 @@ async def data_health():
     return result
 
 
+@app.get("/api/pipeline/status")
+async def pipeline_status():
+    """Return background pipeline task statuses."""
+    try:
+        from myra_app.task_tracker import list_tasks
+        tasks = list_tasks(limit=50)
+        return {"tasks": tasks, "status": "ok"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/pipeline/events")
+async def pipeline_events():
+    """Return recent pipeline events (last 50 task updates)."""
+    try:
+        from myra_app.task_tracker import list_tasks
+        tasks = list_tasks(limit=50)
+        events = []
+        for t in tasks:
+            if t.get("message"):
+                events.append({
+                    "time": t.get("updated_at") or t.get("started_at"),
+                    "task": t.get("name"),
+                    "message": t.get("message"),
+                    "status": t.get("status"),
+                })
+        return {"events": events, "status": "ok"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 class QueryRequest(BaseModel):
     db: str
     query: str
@@ -1832,6 +1863,25 @@ async def finstack_stock_timeline(symbol: str = ""):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _get_latest_trading_day_before(date_str: str) -> str:
+    """Find the most recent trading day on or before date_str by querying technical_data."""
+    from datetime import datetime, timedelta
+
+    target = datetime.strptime(date_str, "%Y-%m-%d")
+    tech_db = os.path.join(DB_DIR, LibrarianCore.DB_MAP["technical"])
+    conn = sqlite3.connect(tech_db)
+    for offset in range(10):
+        check = (target - timedelta(days=offset)).strftime("%Y-%m-%d")
+        row = conn.execute(
+            "SELECT COUNT(*) FROM technical_data WHERE date = ?", (check,)
+        ).fetchone()
+        if row and row[0] > 0:
+            conn.close()
+            return check
+    conn.close()
+    return date_str
+
+
 # --- Invisible Hand Scanner State ---
 _ih_scan_state: dict = {
     "scan_status": "idle",
@@ -1840,6 +1890,7 @@ _ih_scan_state: dict = {
     "message": "Idle — click Scan to start",
     "candidates": [],
     "bear_market": False,
+    "scanned_date": None,
 }
 _ih_scan_lock = threading.Lock()
 _IH_SCAN_CACHE = os.path.join(MODELS_DIR, "invisible_hand_cache.json")
@@ -1896,8 +1947,28 @@ async def invisible_hand_status():
     return state
 
 
+@app.get("/api/latest-trading-day")
+async def latest_trading_day():
+    """Return today's date adjusted to the most recent available trading day."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    return {"date": _get_latest_trading_day_before(today)}
+
+
 @app.post("/api/invisible-hand/scan")
 async def invisible_hand_scan(payload: dict = Body(default={})):
+    min_mcap = int(payload.get("min_mcap", 200))
+    max_mcap = int(payload.get("max_mcap", 50000))
+    window = int(payload.get("window", 20))
+    hist_window = int(payload.get("hist_window", 60))
+    min_ih_score = int(payload.get("min_ih_score", 35))
+
+    raw_date = payload.get("scan_date", "")
+    if raw_date and str(raw_date).strip():
+        effective_date = _get_latest_trading_day_before(str(raw_date).strip())
+    else:
+        effective_date = _get_latest_trading_day_before(datetime.now().strftime("%Y-%m-%d"))
+    target_date = effective_date
+
     with _ih_scan_lock:
         if _ih_scan_state["scan_status"] == "scanning":
             return {"detail": "Scan already in progress"}, 409
@@ -1907,14 +1978,9 @@ async def invisible_hand_scan(payload: dict = Body(default={})):
                 "progress": 0,
                 "message": "Initialising scanner...",
                 "candidates": [],
+                "scanned_date": effective_date,
             }
         )
-
-    min_mcap = int(payload.get("min_mcap", 200))
-    max_mcap = int(payload.get("max_mcap", 50000))
-    window = int(payload.get("window", 20))
-    hist_window = int(payload.get("hist_window", 60))
-    min_ih_score = int(payload.get("min_ih_score", 35))
 
     def _run():
         try:
@@ -1927,6 +1993,7 @@ async def invisible_hand_scan(payload: dict = Body(default={})):
                 window=window,
                 hist_window=hist_window,
                 min_ih_score=min_ih_score,
+                target_date=target_date,
             )
             _ih_scan_state["message"] = "Loading universe..."
             _ih_scan_state["progress"] = 5
@@ -1938,7 +2005,7 @@ async def invisible_hand_scan(payload: dict = Body(default={})):
             original_get_tech = scanner._get_tech_data
             processed = [0]
 
-            def _tracked_get_tech(symbol, min_date):
+            def _tracked_get_tech(symbol, min_date, max_date=None):
                 processed[0] += 1
                 if processed[0] % 25 == 0:
                     pct = 10 + int((processed[0] / total) * 82)
@@ -1946,7 +2013,7 @@ async def invisible_hand_scan(payload: dict = Body(default={})):
                     _ih_scan_state[
                         "message"
                     ] = f"Scanning {processed[0]}/{total} symbols..."
-                return original_get_tech(symbol, min_date)
+                return original_get_tech(symbol, min_date, max_date)
 
             scanner._get_tech_data = _tracked_get_tech
 
@@ -1975,6 +2042,7 @@ async def invisible_hand_scan(payload: dict = Body(default={})):
                     "bear_market": scanner.bear_market
                     if hasattr(scanner, "bear_market")
                     else False,
+                    "scanned_date": effective_date,
                 }
             )
             _save_ih_cache()
@@ -2001,6 +2069,7 @@ _trigger_scan_state: dict = {
     "message": "Idle — click Scan to start",
     "candidates": [],
     "bear_market": False,
+    "scanned_date": None,
 }
 _trigger_scan_lock = threading.Lock()
 _TRIGGER_SCAN_CACHE = os.path.join(MODELS_DIR, "trigger_cache.json")
@@ -2013,6 +2082,7 @@ _darvas_scan_state: dict = {
     "progress": 0,
     "message": "Idle — click Scan to start",
     "candidates": [],
+    "scanned_date": None,
 }
 _darvas_scan_lock = threading.Lock()
 _DARVAS_SCAN_CACHE = os.path.join(MODELS_DIR, "darvas_cache.json")
@@ -2071,6 +2141,19 @@ async def trigger_status():
 
 @app.post("/api/trigger/scan")
 async def trigger_scan(payload: dict = Body(default={})):
+    min_mcap = int(payload.get("min_mcap", 200))
+    max_mcap = int(payload.get("max_mcap", 50000))
+    min_float_util_pct = float(payload.get("min_float_util_pct", 8.0))
+    vol_pinch_ratio = float(payload.get("vol_pinch_ratio", 0.75))
+    price_range_max_pct = float(payload.get("price_range_max_pct", 10.0))
+    min_smart_float_ratio = float(payload.get("min_smart_float_ratio", 0.55))
+
+    raw_date = payload.get("scan_date", "")
+    if raw_date and str(raw_date).strip():
+        scan_date = _get_latest_trading_day_before(str(raw_date).strip())
+    else:
+        scan_date = None
+
     with _trigger_scan_lock:
         if _trigger_scan_state["scan_status"] == "scanning":
             return {"detail": "Scan already in progress"}, 409
@@ -2080,15 +2163,9 @@ async def trigger_scan(payload: dict = Body(default={})):
                 "progress": 0,
                 "message": "Initialising scanner...",
                 "candidates": [],
+                "scanned_date": scan_date,
             }
         )
-
-    min_mcap = int(payload.get("min_mcap", 200))
-    max_mcap = int(payload.get("max_mcap", 50000))
-    min_float_util_pct = float(payload.get("min_float_util_pct", 8.0))
-    vol_pinch_ratio = float(payload.get("vol_pinch_ratio", 0.75))
-    price_range_max_pct = float(payload.get("price_range_max_pct", 10.0))
-    min_smart_float_ratio = float(payload.get("min_smart_float_ratio", 0.55))
 
     def _run():
         try:
@@ -2113,7 +2190,7 @@ async def trigger_scan(payload: dict = Body(default={})):
             original_get_tech = scanner._get_tech_data
             processed = [0]
 
-            def _tracked_get_tech(symbol, min_date):
+            def _tracked_get_tech(symbol, min_date, max_date=None):
                 processed[0] += 1
                 if processed[0] % 25 == 0:
                     pct = 10 + int((processed[0] / total) * 82)
@@ -2121,11 +2198,11 @@ async def trigger_scan(payload: dict = Body(default={})):
                     _trigger_scan_state[
                         "message"
                     ] = f"Scanning {processed[0]}/{total} symbols..."
-                return original_get_tech(symbol, min_date)
+                return original_get_tech(symbol, min_date, max_date)
 
             scanner._get_tech_data = _tracked_get_tech
 
-            candidates = scanner.scan()
+            candidates = scanner.scan(as_on_date=scan_date)
             _trigger_scan_state["progress"] = 95
             _trigger_scan_state["message"] = "Finalising results..."
 
@@ -2146,6 +2223,7 @@ async def trigger_scan(payload: dict = Body(default={})):
                     "bear_market": scanner.bear_market
                     if hasattr(scanner, "bear_market")
                     else False,
+                    "scanned_date": scan_date,
                 }
             )
             _save_trigger_cache()
@@ -2171,6 +2249,7 @@ _lf_scan_state: dict = {
     "message": "Idle — click Scan to start",
     "candidates": [],
     "bear_market": False,
+    "scanned_date": None,
 }
 _lf_scan_lock = threading.Lock()
 _LF_SCAN_CACHE = os.path.join(MODELS_DIR, "liquidity_flip_cache.json")
@@ -2233,6 +2312,15 @@ async def liquidity_flip_status():
 
 @app.post("/api/liquidity-flip/scan")
 async def liquidity_flip_scan(payload: dict = Body(default={})):
+    min_mcap = int(payload.get("min_mcap", 200))
+    max_mcap = int(payload.get("max_mcap", 50000))
+
+    raw_date = payload.get("scan_date", "")
+    if raw_date and str(raw_date).strip():
+        scan_date = _get_latest_trading_day_before(str(raw_date).strip())
+    else:
+        scan_date = None
+
     with _lf_scan_lock:
         if _lf_scan_state["scan_status"] == "scanning":
             return {"detail": "Scan already in progress"}, 409
@@ -2243,11 +2331,9 @@ async def liquidity_flip_scan(payload: dict = Body(default={})):
                 "progress": 0,
                 "message": "Initialising scanner...",
                 "candidates": [],
+                "scanned_date": scan_date,
             }
         )
-
-    min_mcap = int(payload.get("min_mcap", 200))
-    max_mcap = int(payload.get("max_mcap", 50000))
 
     def _run():
         try:
@@ -2272,7 +2358,7 @@ async def liquidity_flip_scan(payload: dict = Body(default={})):
             original_get_tech = scanner._get_tech_data
             processed = [0]
 
-            def _tracked_get_tech(symbol, min_date):
+            def _tracked_get_tech(symbol, min_date, max_date=None):
                 processed[0] += 1
                 if processed[0] % 25 == 0:
                     pct = 10 + int((processed[0] / total) * 82)
@@ -2280,11 +2366,11 @@ async def liquidity_flip_scan(payload: dict = Body(default={})):
                     _lf_scan_state[
                         "message"
                     ] = f"Scanning {processed[0]}/{total} symbols..."
-                return original_get_tech(symbol, min_date)
+                return original_get_tech(symbol, min_date, max_date)
 
             scanner._get_tech_data = _tracked_get_tech
 
-            df = scanner.scan()
+            df = scanner.scan(as_on_date=scan_date)
 
             _lf_scan_state["progress"] = 95
             _lf_scan_state["message"] = "Finalising results..."
@@ -2310,6 +2396,7 @@ async def liquidity_flip_scan(payload: dict = Body(default={})):
                     "bear_market": scanner.bear_market
                     if hasattr(scanner, "bear_market")
                     else False,
+                    "scanned_date": scan_date,
                 }
             )
             _save_lf_cache()
@@ -2336,6 +2423,7 @@ _of_scan_state: dict = {
     "message": "Idle — click Scan to start",
     "candidates": [],
     "bear_market": False,
+    "scanned_date": None,
 }
 _of_scan_lock = threading.Lock()
 _OF_SCAN_CACHE = os.path.join(MODELS_DIR, "operator_fingerprint_cache.json")
@@ -2398,6 +2486,15 @@ async def operator_fingerprint_status():
 
 @app.post("/api/operator-fingerprint/scan")
 async def operator_fingerprint_scan(payload: dict = Body(default={})):
+    min_mcap = int(payload.get("min_mcap", 200))
+    max_mcap = int(payload.get("max_mcap", 50000))
+
+    raw_date = payload.get("scan_date", "")
+    if raw_date and str(raw_date).strip():
+        scan_date = _get_latest_trading_day_before(str(raw_date).strip())
+    else:
+        scan_date = None
+
     with _of_scan_lock:
         if _of_scan_state["scan_status"] == "scanning":
             return {"detail": "Scan already in progress"}, 409
@@ -2408,11 +2505,9 @@ async def operator_fingerprint_scan(payload: dict = Body(default={})):
                 "progress": 0,
                 "message": "Initialising scanner...",
                 "candidates": [],
+                "scanned_date": scan_date,
             }
         )
-
-    min_mcap = int(payload.get("min_mcap", 200))
-    max_mcap = int(payload.get("max_mcap", 50000))
 
     def _run():
         try:
@@ -2437,7 +2532,7 @@ async def operator_fingerprint_scan(payload: dict = Body(default={})):
             original_get_tech = scanner._get_tech_data
             processed = [0]
 
-            def _tracked_get_tech(symbol, min_date):
+            def _tracked_get_tech(symbol, min_date, max_date=None):
                 processed[0] += 1
                 if processed[0] % 25 == 0:
                     pct = 10 + int((processed[0] / total) * 82)
@@ -2445,11 +2540,11 @@ async def operator_fingerprint_scan(payload: dict = Body(default={})):
                     _of_scan_state[
                         "message"
                     ] = f"Scanning {processed[0]}/{total} symbols..."
-                return original_get_tech(symbol, min_date)
+                return original_get_tech(symbol, min_date, max_date)
 
             scanner._get_tech_data = _tracked_get_tech
 
-            df = scanner.scan()
+            df = scanner.scan(as_on_date=scan_date)
 
             _of_scan_state["progress"] = 95
             _of_scan_state["message"] = "Finalising results..."
@@ -2475,6 +2570,7 @@ async def operator_fingerprint_scan(payload: dict = Body(default={})):
                     "bear_market": scanner.bear_market
                     if hasattr(scanner, "bear_market")
                     else False,
+                    "scanned_date": scan_date,
                 }
             )
             _save_of_cache()
@@ -2501,6 +2597,7 @@ _fe_scan_state: dict = {
     "message": "Idle — click Scan to start",
     "candidates": [],
     "bear_market": False,
+    "scanned_date": None,
 }
 _fe_scan_lock = threading.Lock()
 _FE_SCAN_CACHE = os.path.join(MODELS_DIR, "float_exhaustion_cache.json")
@@ -2563,6 +2660,15 @@ async def float_exhaustion_status():
 
 @app.post("/api/float-exhaustion/scan")
 async def float_exhaustion_scan(payload: dict = Body(default={})):
+    min_mcap = int(payload.get("min_mcap", 200))
+    max_mcap = int(payload.get("max_mcap", 50000))
+
+    raw_date = payload.get("scan_date", "")
+    if raw_date and str(raw_date).strip():
+        scan_date = _get_latest_trading_day_before(str(raw_date).strip())
+    else:
+        scan_date = None
+
     with _fe_scan_lock:
         if _fe_scan_state["scan_status"] == "scanning":
             return {"detail": "Scan already in progress"}, 409
@@ -2573,11 +2679,9 @@ async def float_exhaustion_scan(payload: dict = Body(default={})):
                 "progress": 0,
                 "message": "Initialising scanner...",
                 "candidates": [],
+                "scanned_date": scan_date,
             }
         )
-
-    min_mcap = int(payload.get("min_mcap", 200))
-    max_mcap = int(payload.get("max_mcap", 50000))
 
     def _run():
         try:
@@ -2602,7 +2706,7 @@ async def float_exhaustion_scan(payload: dict = Body(default={})):
             original_get_tech = scanner._get_tech_data
             processed = [0]
 
-            def _tracked_get_tech(symbol, min_date):
+            def _tracked_get_tech(symbol, min_date, max_date=None):
                 processed[0] += 1
                 if processed[0] % 25 == 0:
                     pct = 10 + int((processed[0] / total) * 82)
@@ -2610,11 +2714,11 @@ async def float_exhaustion_scan(payload: dict = Body(default={})):
                     _fe_scan_state[
                         "message"
                     ] = f"Scanning {processed[0]}/{total} symbols..."
-                return original_get_tech(symbol, min_date)
+                return original_get_tech(symbol, min_date, max_date)
 
             scanner._get_tech_data = _tracked_get_tech
 
-            candidates = scanner.scan()
+            candidates = scanner.scan(as_on_date=scan_date)
 
             _fe_scan_state["progress"] = 95
             _fe_scan_state["message"] = "Finalising results..."
@@ -2636,6 +2740,7 @@ async def float_exhaustion_scan(payload: dict = Body(default={})):
                     "bear_market": scanner.bear_market
                     if hasattr(scanner, "bear_market")
                     else False,
+                    "scanned_date": scan_date,
                 }
             )
             _save_fe_cache()
@@ -2662,6 +2767,7 @@ _sd_scan_state: dict = {
     "message": "Idle — click Scan to start",
     "candidates": [],
     "bear_market": False,
+    "scanned_date": None,
 }
 _sd_scan_lock = threading.Lock()
 _SD_SCAN_CACHE = os.path.join(MODELS_DIR, "seasonal_delivery_cache.json")
@@ -2724,6 +2830,18 @@ async def seasonal_delivery_status():
 
 @app.post("/api/seasonal-delivery/scan")
 async def seasonal_delivery_scan(payload: dict = Body(default={})):
+    min_mcap = int(payload.get("min_mcap", 200))
+    max_mcap = int(payload.get("max_mcap", 50000))
+    target_month = payload.get("target_month")
+    if target_month is not None:
+        target_month = int(target_month)
+
+    raw_date = payload.get("scan_date", "")
+    if raw_date and str(raw_date).strip():
+        scan_date = _get_latest_trading_day_before(str(raw_date).strip())
+    else:
+        scan_date = None
+
     with _sd_scan_lock:
         if _sd_scan_state["scan_status"] == "scanning":
             return {"detail": "Scan already in progress"}, 409
@@ -2734,14 +2852,9 @@ async def seasonal_delivery_scan(payload: dict = Body(default={})):
                 "progress": 0,
                 "message": "Initialising scanner...",
                 "candidates": [],
+                "scanned_date": scan_date,
             }
         )
-
-    min_mcap = int(payload.get("min_mcap", 200))
-    max_mcap = int(payload.get("max_mcap", 50000))
-    target_month = payload.get("target_month")
-    if target_month is not None:
-        target_month = int(target_month)
 
     def _run():
         try:
@@ -2767,7 +2880,7 @@ async def seasonal_delivery_scan(payload: dict = Body(default={})):
             original_get_tech = scanner._get_all_tech_data
             processed = [0]
 
-            def _tracked_get_tech(symbol):
+            def _tracked_get_tech(symbol, min_date=None, max_date=None):
                 processed[0] += 1
                 if processed[0] % 25 == 0:
                     pct = 10 + int((processed[0] / total) * 82)
@@ -2775,11 +2888,16 @@ async def seasonal_delivery_scan(payload: dict = Body(default={})):
                     _sd_scan_state[
                         "message"
                     ] = f"Scanning {processed[0]}/{total} symbols..."
-                return original_get_tech(symbol)
+                kwargs = {}
+                if min_date is not None:
+                    kwargs["min_date"] = min_date
+                if max_date is not None:
+                    kwargs["max_date"] = max_date
+                return original_get_tech(symbol, **kwargs)
 
             scanner._get_all_tech_data = _tracked_get_tech
 
-            df = scanner.scan()
+            df = scanner.scan(as_on_date=scan_date)
 
             _sd_scan_state["progress"] = 95
             _sd_scan_state["message"] = "Finalising results..."
@@ -2805,6 +2923,7 @@ async def seasonal_delivery_scan(payload: dict = Body(default={})):
                     "bear_market": scanner.bear_market
                     if hasattr(scanner, "bear_market")
                     else False,
+                    "scanned_date": scan_date,
                 }
             )
             _save_sd_cache()
@@ -2823,6 +2942,129 @@ async def seasonal_delivery_scan(payload: dict = Body(default={})):
     return {"status": "started"}
 
 
+# --- Launchpad Scan State ---
+_launchpad_scan_state: dict = {
+    "scan_status": "idle",
+    "last_scan": None,
+    "predictions": [],
+    "message": "",
+}
+_launchpad_scan_lock = threading.Lock()
+
+
+@app.get("/api/launchpad/status")
+async def launchpad_scan_status():
+    return _launchpad_scan_state
+
+
+@app.post("/api/launchpad/scan")
+async def launchpad_scan(payload: dict = Body(default={})):
+    with _launchpad_scan_lock:
+        if _launchpad_scan_state["scan_status"] == "scanning":
+            return {"detail": "Scan already in progress"}, 409
+        _launchpad_scan_state.update({
+            "scan_status": "scanning",
+            "predictions": [],
+            "message": "Running launchpad predictions...",
+        })
+
+    def _run():
+        try:
+            import os as _os, sqlite3, pandas as pd, numpy as np, joblib
+            from myra_app.librarian_core import LibrarianCore
+
+            model_path = "models/launchpad_xgb.joblib"
+            if not _os.path.exists(model_path):
+                _launchpad_scan_state.update({
+                    "scan_status": "error",
+                    "message": "Model not trained. Run Label + Train first.",
+                })
+                return
+
+            tech_db = _os.path.join(DB_DIR, LibrarianCore.DB_MAP["technical"])
+            val_db = _os.path.join(DB_DIR, LibrarianCore.DB_MAP["valuation"])
+
+            with sqlite3.connect(tech_db) as conn:
+                events = conn.execute(
+                    "SELECT symbol, trigger_date FROM launchpad_events WHERE success = 0 AND trigger_date >= date('now', '-180 days') ORDER BY trigger_date DESC"
+                ).fetchall()
+
+            if not events:
+                _launchpad_scan_state.update({
+                    "scan_status": "completed",
+                    "predictions": [],
+                    "message": "No stocks in digestion phase.",
+                    "last_scan": datetime.now().isoformat(),
+                })
+                return
+
+            model = joblib.load(model_path)
+            results = []
+            for sym, trig in events:
+                try:
+                    with sqlite3.connect(tech_db) as conn:
+                        row = conn.execute(
+                            "SELECT date, close, volume, delivery, high, low FROM technical_data WHERE symbol = ? AND date >= ? ORDER BY date ASC LIMIT 30",
+                            (sym, trig),
+                        ).fetchall()
+                    if len(row) < 2:
+                        continue
+                    closes = [r[1] for r in row]
+                    volumes = [r[2] for r in row]
+                    deliveries = [r[3] for r in row]
+                    highs = [r[4] for r in row]
+                    lows = [r[5] for r in row]
+                    first_close = closes[0]
+                    last_close = closes[-1]
+                    max_dd = (min(closes) - first_close) / first_close * 100 if first_close > 0 else 0
+                    avg_vol = np.mean(volumes) if volumes else 1
+                    avg_del = np.mean(deliveries) if deliveries else 0
+                    avg_range = np.mean([h - l for h, l in zip(highs, lows)]) if highs else 1
+                    del_vals = deliveries
+                    if len(del_vals) > 1:
+                        del_mean = np.mean(del_vals)
+                        del_std = np.std(del_vals) if len(del_vals) > 1 else 1
+                        del_zscores = [(d - del_mean) / (del_std + 1e-9) for d in del_vals]
+                        del_z_min = min(del_zscores)
+                        del_z_mean = np.mean(del_zscores)
+                    else:
+                        del_z_min = 0.0
+                        del_z_mean = 0.0
+                    features = [del_z_min, del_z_mean, avg_range / (avg_range + 1e-9), volumes[-1] / (avg_vol + 1e-9), len(row), max_dd]
+                    X = pd.DataFrame([features], columns=["del_zscore_min", "del_zscore_mean", "range_atr_min", "vol_ratio_min", "digestion_days", "max_drawdown_pct"])
+                    preds = model.predict(X)
+                    predicted_return_pct = round(float(preds[0, 0]), 2)
+                    breakout_probability = round(1 / (1 + np.exp(-predicted_return_pct / 10)), 4)
+                    confidence = "High" if breakout_probability >= 0.7 else ("Medium" if breakout_probability >= 0.4 else "Low")
+                    sector = None
+                    mcap = None
+                    if _os.path.exists(val_db):
+                        with sqlite3.connect(val_db) as vconn:
+                            vrow = vconn.execute("SELECT COALESCE(market_cap, 0), sector FROM fundamentals WHERE symbol = ? LIMIT 1", (sym,)).fetchone()
+                            if vrow:
+                                mcap = float(vrow[0]) if vrow[0] else None
+                                sector = vrow[1]
+                    results.append({
+                        "symbol": sym, "trigger_date": trig, "predicted_return_pct": predicted_return_pct,
+                        "confidence": confidence, "sector": sector, "market_cap": mcap,
+                        "breakout_probability": breakout_probability,
+                    })
+                except Exception:
+                    continue
+
+            _launchpad_scan_state.update({
+                "scan_status": "completed",
+                "last_scan": datetime.now().isoformat(),
+                "predictions": results,
+                "message": f"Found {len(results)} predictions",
+            })
+        except Exception as e:
+            _launchpad_scan_state.update({"scan_status": "error", "message": str(e)})
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"status": "started"}
+
+
 # --- Wyckoff Automaton State ---
 _wy_scan_state: dict = {
     "scan_status": "idle",
@@ -2830,6 +3072,7 @@ _wy_scan_state: dict = {
     "progress": 0,
     "message": "Idle — click Scan to start",
     "candidates": [],
+    "scanned_date": None,
 }
 _wy_scan_lock = threading.Lock()
 _WY_SCAN_CACHE = os.path.join(MODELS_DIR, "wyckoff_cache.json")
@@ -2922,6 +3165,16 @@ async def darvas_status():
 
 @app.post("/api/darvas/scan")
 async def darvas_scan(payload: dict = Body(default={})):
+    lookback = int(payload.get("lookback", 120))
+    min_mcap = int(payload.get("min_mcap", 200))
+    max_mcap = int(payload.get("max_mcap", 50000))
+
+    raw_date = payload.get("scan_date", "")
+    if raw_date and str(raw_date).strip():
+        scan_date = _get_latest_trading_day_before(str(raw_date).strip())
+    else:
+        scan_date = None
+
     with _darvas_scan_lock:
         if _darvas_scan_state["scan_status"] == "scanning":
             return {"detail": "Scan already in progress"}, 409
@@ -2932,12 +3185,9 @@ async def darvas_scan(payload: dict = Body(default={})):
                 "progress": 0,
                 "message": "Initialising scanner...",
                 "candidates": [],
+                "scanned_date": scan_date,
             }
         )
-
-    lookback = int(payload.get("lookback", 120))
-    min_mcap = int(payload.get("min_mcap", 200))
-    max_mcap = int(payload.get("max_mcap", 50000))
 
     def _run():
         try:
@@ -2962,7 +3212,7 @@ async def darvas_scan(payload: dict = Body(default={})):
             original_get_tech = scanner._get_tech_data
             processed = [0]
 
-            def _tracked_get_tech(symbol, min_date):
+            def _tracked_get_tech(symbol, min_date, max_date=None):
                 processed[0] += 1
                 if processed[0] % 25 == 0:
                     pct = 10 + int((processed[0] / total) * 82)
@@ -2970,11 +3220,11 @@ async def darvas_scan(payload: dict = Body(default={})):
                     _darvas_scan_state[
                         "message"
                     ] = f"Scanning {processed[0]}/{total} symbols..."
-                return original_get_tech(symbol, min_date)
+                return original_get_tech(symbol, min_date, max_date)
 
             scanner._get_tech_data = _tracked_get_tech
 
-            df = scanner.scan()
+            df = scanner.scan(as_on_date=scan_date)
 
             _darvas_scan_state["progress"] = 95
             _darvas_scan_state["message"] = "Finalising results..."
@@ -2997,6 +3247,7 @@ async def darvas_scan(payload: dict = Body(default={})):
                     "progress": 100,
                     "message": f"Found {len(candidates)} candidates",
                     "candidates": candidates,
+                    "scanned_date": scan_date,
                 }
             )
             _save_darvas_cache()
@@ -3040,6 +3291,15 @@ async def wyckoff_status():
 
 @app.post("/api/wyckoff/scan")
 async def wyckoff_scan(payload: dict = Body(default={})):
+    min_mcap = int(payload.get("min_mcap", 200))
+    max_mcap = int(payload.get("max_mcap", 50000))
+
+    raw_date = payload.get("scan_date", "")
+    if raw_date and str(raw_date).strip():
+        scan_date = _get_latest_trading_day_before(str(raw_date).strip())
+    else:
+        scan_date = None
+
     with _wy_scan_lock:
         if _wy_scan_state["scan_status"] == "scanning":
             return {"detail": "Scan already in progress"}, 409
@@ -3050,11 +3310,9 @@ async def wyckoff_scan(payload: dict = Body(default={})):
                 "progress": 0,
                 "message": "Initialising scanner...",
                 "candidates": [],
+                "scanned_date": scan_date,
             }
         )
-
-    min_mcap = int(payload.get("min_mcap", 200))
-    max_mcap = int(payload.get("max_mcap", 50000))
 
     def _run():
         try:
@@ -3077,7 +3335,7 @@ async def wyckoff_scan(payload: dict = Body(default={})):
             original_get_tech = scanner._get_tech_data
             processed = [0]
 
-            def _tracked_get_tech(symbol, min_date):
+            def _tracked_get_tech(symbol, min_date, max_date=None):
                 processed[0] += 1
                 if processed[0] % 25 == 0:
                     pct = 10 + int((processed[0] / total) * 82)
@@ -3085,11 +3343,11 @@ async def wyckoff_scan(payload: dict = Body(default={})):
                     _wy_scan_state[
                         "message"
                     ] = f"Scanning {processed[0]}/{total} symbols..."
-                return original_get_tech(symbol, min_date)
+                return original_get_tech(symbol, min_date, max_date)
 
             scanner._get_tech_data = _tracked_get_tech
 
-            df = scanner.scan()
+            df = scanner.scan(as_on_date=scan_date)
 
             _wy_scan_state["progress"] = 95
             _wy_scan_state["message"] = "Finalising results..."
@@ -3112,6 +3370,7 @@ async def wyckoff_scan(payload: dict = Body(default={})):
                     "progress": 100,
                     "message": f"Found {len(candidates)} candidates",
                     "candidates": candidates,
+                    "scanned_date": scan_date,
                 }
             )
             _save_wy_cache()

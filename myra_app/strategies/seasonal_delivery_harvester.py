@@ -70,7 +70,10 @@ class SeasonalDeliveryHarvester:
             ).fetchall()
         return rows
 
-    def _get_all_tech_data(self, symbol: str) -> list[tuple]:
+    def _get_all_tech_data(
+        self, symbol: str, max_date: str | None = None
+    ) -> list[tuple]:
+        max_date = max_date or date.today().isoformat()
         tech_db = self._db_path("technical")
         if not os.path.exists(tech_db):
             return []
@@ -81,10 +84,10 @@ class SeasonalDeliveryHarvester:
                     SELECT date, close, delivery_pct, nifty_outperformance_score,
                            high_52w, low_52w
                     FROM technical_data
-                    WHERE symbol = ?
+                    WHERE symbol = ? AND date <= ?
                     ORDER BY date ASC
                     """,
-                    (symbol,),
+                    (symbol, max_date),
                 ).fetchall()
             except sqlite3.OperationalError:
                 rows = conn.execute(
@@ -92,10 +95,10 @@ class SeasonalDeliveryHarvester:
                     SELECT date, close, delivery_pct, nifty_outperformance_score,
                            NULL AS high_52w, NULL AS low_52w
                     FROM technical_data
-                    WHERE symbol = ?
+                    WHERE symbol = ? AND date <= ?
                     ORDER BY date ASC
                     """,
-                    (symbol,),
+                    (symbol, max_date),
                 ).fetchall()
         return rows
 
@@ -155,7 +158,7 @@ class SeasonalDeliveryHarvester:
         for idx, (symbol, mcap, ff_pct) in enumerate(rows):
             symbol = symbol.strip()
 
-            tech = self._get_all_tech_data(symbol)
+            tech = self._get_all_tech_data(symbol, max_date=as_on_date)
             if len(tech) < 60:
                 continue
 

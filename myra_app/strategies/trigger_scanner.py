@@ -57,7 +57,10 @@ class TriggerScanner:
             ).fetchall()
         return rows
 
-    def _get_tech_data(self, symbol: str, min_date: str) -> list[tuple]:
+    def _get_tech_data(
+        self, symbol: str, min_date: str, max_date: str | None = None
+    ) -> list[tuple]:
+        max_date = max_date or date.today().isoformat()
         tech_db = self._db_path("technical")
         if not os.path.exists(tech_db):
             return []
@@ -69,10 +72,10 @@ class TriggerScanner:
                            delivery_pct, nifty_outperformance_score,
                            sma_50, high_52w, low_52w
                     FROM technical_data
-                    WHERE symbol = ? AND date >= ?
+                    WHERE symbol = ? AND date >= ? AND date <= ?
                     ORDER BY date ASC
                     """,
-                    (symbol, min_date),
+                    (symbol, min_date, max_date),
                 ).fetchall()
             except sqlite3.OperationalError:
                 rows = conn.execute(
@@ -81,10 +84,10 @@ class TriggerScanner:
                            delivery_pct, nifty_outperformance_score,
                            NULL AS sma_50, NULL AS high_52w, NULL AS low_52w
                     FROM technical_data
-                    WHERE symbol = ? AND date >= ?
+                    WHERE symbol = ? AND date >= ? AND date <= ?
                     ORDER BY date ASC
                     """,
-                    (symbol, min_date),
+                    (symbol, min_date, max_date),
                 ).fetchall()
         return rows
 
@@ -148,7 +151,7 @@ class TriggerScanner:
         ) in enumerate(rows):
             symbol = symbol.strip()
 
-            tech = self._get_tech_data(symbol, min_date)
+            tech = self._get_tech_data(symbol, min_date, max_date=as_on_date)
             if len(tech) < 25:
                 continue
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { Box, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Star } from 'lucide-react';
+import { Box, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Star, Info } from 'lucide-react';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
 import { useWatchlist } from '../lib/WatchlistContext';
@@ -8,6 +8,7 @@ import { StarButton } from '../components/StarButton';
 import { API_BASE } from '../config';
 import { Tooltip } from '../components/Tooltip';
 import ScrollableTable from '../components/ScrollableTable';
+import { HistoricalScanDatePicker } from '../components/HistoricalScanDatePicker';
 
 interface Candidate {
   symbol: string;
@@ -49,6 +50,7 @@ interface ScanStatus {
   message: string;
   candidates: Candidate[];
   bear_market?: boolean;
+  scanned_date?: string | null;
 }
 
 function relativeTime(dateStr: string | null | undefined): string {
@@ -109,6 +111,8 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
   const [error, setError] = useState<string | null>(null);
   const [staleBannerOpen, setStaleBannerOpen] = useState(true);
   const [bearMarket, setBearMarket] = useState(false);
+
+  const [scanDate, setScanDate] = useState('');
 
   const [baseDays, setBaseDays] = useState(120);
   const [minDar, setMinDar] = useState(0.2);
@@ -230,6 +234,7 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
           min_dar: minDar,
           min_mcap: mcapRange?.min ?? 100,
           max_mcap: mcapRange?.max ?? 50000,
+          ...(scanDate.trim() && { scan_date: scanDate }),
         }),
       });
       if (!mountedRef.current) return;
@@ -247,7 +252,7 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
         setIsScanning(false);
       }
     }
-  }, [fetchScanStatus, clearPolling, baseDays, minDar, mcapRange]);
+  }, [fetchScanStatus, clearPolling, baseDays, minDar, mcapRange, scanDate]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -334,6 +339,7 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
             </button>
           ))}
         </div>
+        <HistoricalScanDatePicker selectedDate={scanDate} onSelect={setScanDate} />
         <button
           onClick={startScan}
           disabled={isScanning}
@@ -377,6 +383,13 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
              scanStatus.message}
           </span>
           <span className="ml-auto text-[#666]">{scanStatus.message}</span>
+        </div>
+      )}
+
+      {scanDate && scanStatus?.scan_status === 'completed' && scanStatus.scanned_date && scanStatus.scanned_date !== scanDate && (
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-[11px] font-mono text-cyan-400 bg-cyan-500/5 border border-cyan-500/20">
+          <Info size={12} aria-hidden="true" />
+          <span>Selected date is a holiday or weekend — adjusted to {scanStatus.scanned_date} (previous trading day)</span>
         </div>
       )}
 
