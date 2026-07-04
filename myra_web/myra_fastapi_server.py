@@ -3527,3 +3527,22 @@ async def multibagger_scan(payload: dict = Body(default={})):
 async def multibagger_status():
     """Return last Multibagger scan results."""
     return _multibagger_result
+
+
+@app.delete("/api/cache/{scanner_name}")
+async def clear_scanner_cache(scanner_name: str):
+    """Delete the cached scan results for a given scanner."""
+    allowed = {
+        "invisible-hand", "trigger", "wyckoff", "float-exhaustion",
+        "liquidity-flip", "operator-fingerprint", "seasonal-delivery",
+        "darvas", "multibagger", "launchpad",
+    }
+    if scanner_name not in allowed:
+        raise HTTPException(status_code=400, detail="Unknown scanner")
+
+    stem = scanner_name.replace("-", "_")
+    cache_path = os.path.join(MODELS_DIR, f"{stem}_cache.json")
+    if os.path.exists(cache_path):
+        os.remove(cache_path)
+        return {"status": "deleted", "scanner": scanner_name}
+    return {"status": "not_found", "scanner": scanner_name}

@@ -308,6 +308,13 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
               <><Eye size={14} fill="currentColor" aria-hidden="true" /> Scan</>
             )}
           </button>
+          <button
+            onClick={() => fetch(`${API_BASE}/cache/invisible-hand`, { method: 'DELETE' })}
+            className="text-[10px] text-[#888] hover:text-red-400 transition-colors"
+            title="Clear cached scan results"
+          >
+            Clear cache
+          </button>
         </div>
       </header>
 

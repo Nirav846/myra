@@ -269,6 +269,13 @@ export default function FloatExhaustionScannerView({ lib }: { lib: Librarian }) 
               <><Box size={14} fill="currentColor" aria-hidden="true" /> Scan</>
             )}
           </button>
+          <button
+            onClick={() => fetch(`${API_BASE}/cache/float-exhaustion`, { method: 'DELETE' })}
+            className="text-[10px] text-[#888] hover:text-red-400 transition-colors"
+            title="Clear cached scan results"
+          >
+            Clear cache
+          </button>
         </div>
       </header>
 

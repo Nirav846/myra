@@ -387,6 +387,13 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
               <><Box size={14} fill="currentColor" /> Scan</>
             )}
           </button>
+          <button
+            onClick={() => fetch(`${API_BASE}/cache/wyckoff`, { method: 'DELETE' })}
+            className="text-[10px] text-[#888] hover:text-red-400 transition-colors"
+            title="Clear cached scan results"
+          >
+            Clear cache
+          </button>
         </div>
       </header>
 
