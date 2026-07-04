@@ -10,10 +10,17 @@ import { Tooltip } from '../components/Tooltip';
 import ScrollableTable from '../components/ScrollableTable';
 import { HistoricalScanDatePicker } from '../components/HistoricalScanDatePicker';
 
+const CONFIDENCE_COLORS: Record<string, string> = {
+  High: 'bg-green-500/20 text-green-400 border-green-500/30',
+  Moderate: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+  Low: 'bg-[#ffffff0a] text-[#888] border-[#ffffff1a]',
+};
+
 interface Candidate {
   symbol: string;
   sector?: string;
   market_cap_cr: number;
+  confidence?: string;
   prior_del_pct: number;
   current_del_pct: number;
   del_jump_pp: number;
@@ -24,6 +31,10 @@ interface Candidate {
   prior_vol_rank: number;
   close: number;
   wk52_pos: number;
+  avg_del_value_cr?: number;
+  flip_consistency?: number;
+  sma_200?: number | null;
+  sma_200_factor?: number;
 }
 
 interface ScanStatus {
@@ -65,9 +76,16 @@ const GRADE_COLORS: Record<string, string> = {
 const FLIP_TYPE_COLORS: Record<string, string> = {
   'STRONG FLIP': 'bg-green-500/20 text-green-400 border-green-500/30',
   'MODERATE FLIP': 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
+  'EARLY FLIP': 'bg-amber-500/20 text-amber-400 border-amber-500/30',
 };
 
-const STATUS_FILTERS = ['All', 'STRONG FLIP', 'MODERATE FLIP'];
+const STATUS_FILTERS = ['All', 'STRONG FLIP', 'MODERATE FLIP', 'EARLY FLIP'];
+
+const PRESETS: Record<string, { prior_window: number; recent_window: number; lookback_days: number }> = {
+  'Swing / Momentum': { prior_window: 75, recent_window: 5, lookback_days: 80 },
+  'Structural Accumulation': { prior_window: 120, recent_window: 21, lookback_days: 141 },
+  'Value / Deep Accumulation': { prior_window: 180, recent_window: 42, lookback_days: 222 },
+};
 
 export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
   const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
@@ -87,6 +105,8 @@ export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
   const [minDel50Days, setMinDel50Days] = useState(0);
 
   const [scanDate, setScanDate] = useState('');
+
+  const [activePreset, setActivePreset] = useState('Structural Accumulation');
 
   const [sortCol, setSortCol] = useState<string>('flip_score');
   const [sortAsc, setSortAsc] = useState(false);
@@ -180,10 +200,12 @@ export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
     clearPolling();
 
     try {
+      const preset = PRESETS[activePreset];
       const res = await fetch(`${API_BASE}/liquidity-flip/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          ...preset,
           min_mcap: mcapRange?.min ?? 200,
           max_mcap: mcapRange?.max ?? 50000,
           ...(scanDate.trim() && { scan_date: scanDate }),
@@ -220,12 +242,16 @@ export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
   const handleCSV = () => {
     if (filteredData.length === 0) return;
     const headers = [
-      'Symbol', 'Sector', 'Market Cap Cr', 'Prior Del%', 'Current Del%', 'Jump(pp)',
-      'Del50 Days', 'Flip Type', 'Vol Rank', 'Close', '52W Pos%', 'Score', 'Grade',
+      'Symbol', 'Sector', 'Market Cap Cr', 'Confidence', 'Prior Del%', 'Current Del%', 'Jump(pp)',
+      'Del50 Days', 'Del Val (₹ Cr)', 'Consistency%', 'SMA-200', 'Flip Type', 'Vol Rank', 'Close',
+      '52W Pos%', 'Score', 'Grade',
     ];
     const rows = filteredData.map(r => [
-      r.symbol, r.sector ?? '', r.market_cap_cr, r.prior_del_pct, r.current_del_pct,
-      r.del_jump_pp, r.del50_days, r.flip_type, r.prior_vol_rank, r.close,
+      r.symbol, r.sector ?? '', r.market_cap_cr, r.confidence ?? 'Low', r.prior_del_pct, r.current_del_pct,
+      r.del_jump_pp, r.del50_days,
+      r.avg_del_value_cr?.toFixed(1) ?? '', r.flip_consistency ?? '',
+      r.sma_200 != null ? ((r.close ?? 0) >= r.sma_200 ? 'Above' : 'Below') : '',
+      r.flip_type, r.prior_vol_rank, r.close,
       r.wk52_pos, r.flip_score, r.grade,
     ].join(','));
     const csv = [headers.join(','), ...rows].join('\n');
@@ -265,6 +291,21 @@ export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
         </div>
         <div className="flex items-center gap-2">
           <HistoricalScanDatePicker selectedDate={scanDate} onSelect={setScanDate} />
+          <div className="flex items-center gap-1">
+            {Object.entries(PRESETS).map(([name, _config]) => (
+              <button
+                key={name}
+                onClick={() => setActivePreset(name)}
+                className={`px-2 py-1 text-[10px] rounded font-mono transition-colors ${
+                  activePreset === name
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-[#ffffff0a] text-[#888] hover:text-white'
+                }`}
+              >
+                {name.split(' / ')[0]}
+              </button>
+            ))}
+          </div>
           <button
             onClick={startScan}
             disabled={isScanning}
@@ -476,7 +517,7 @@ export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
                 role="grid"
                 aria-label="Liquidity Flip Detector results"
                 aria-rowcount={filteredData.length}
-                aria-colcount={13}
+                aria-colcount={17}
               >
                 <thead className="sticky top-0 z-20 text-[#888]">
                   <tr style={{ boxShadow: '0 1px 0 0 rgba(255,255,255,0.08), 0 2px 4px 0 rgba(0,0,0,0.4)' }}>
@@ -489,6 +530,9 @@ export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('market_cap_cr')} scope="col" aria-sort={sortCol === 'market_cap_cr' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       MCap (₹ Cr) <SortIcon column="market_cap_cr" />
                     </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('confidence')} scope="col">
+                      <Tooltip content="Confidence based on flip type, SMA-200 trend, and 52-week position." good="High: strong flip, above SMA-200, 30-90% range" bad="Low: weak setup">Conf <SortIcon column="confidence" /></Tooltip>
+                    </th>
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('prior_del_pct')} scope="col">
                       <Tooltip content="Average delivery% over the prior 75 days (baseline churn level). Lower = more noise." good="<35: churning (good setup)" bad="≥45: not a flip">Prior Del% <SortIcon column="prior_del_pct" /></Tooltip>
                     </th>
@@ -500,6 +544,15 @@ export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
                     </th>
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('del50_days')} scope="col">
                       <Tooltip content="Number of days (out of last 5) where delivery% > 50%. 5/5 = maximum conviction." good="5: perfect" bad="<3: inconsistent">Del50 Days <SortIcon column="del50_days" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('avg_del_value_cr')} scope="col">
+                      <Tooltip content="Average daily delivery value in ₹ Cr. Higher = stronger institutional participation." good=">15: institutional" bad="<15: retail-driven">Del Val (₹ Cr) <SortIcon column="avg_del_value_cr" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('flip_consistency')} scope="col">
+                      <Tooltip content="% of recent window days with delivery > 50%. Higher = more persistent conviction.">Consistency% <SortIcon column="flip_consistency" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('sma_200')} scope="col">
+                      <Tooltip content="Price vs SMA-200. Above = uptrend, Below = downtrend (penalised).">SMA-200 <SortIcon column="sma_200" /></Tooltip>
                     </th>
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('flip_type')} scope="col">
                       Flip Type <SortIcon column="flip_type" />
@@ -521,7 +574,7 @@ export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={13} className="px-4 py-8 text-center text-[#666]">No liquidity flips match current filters.</td>
+                      <td colSpan={17} className="px-4 py-8 text-center text-[#666]">No liquidity flips match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((row, index) => (
@@ -543,6 +596,11 @@ export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
                           {row.sector ?? '—'}
                         </td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.market_cap_cr.toFixed(0)}</td>
+                        <td className="px-3 py-3 text-center">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${CONFIDENCE_COLORS[row.confidence ?? 'Low']}`}>
+                            {row.confidence ?? 'Low'}
+                          </span>
+                        </td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.prior_del_pct.toFixed(1)}%</td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.current_del_pct.toFixed(1)}%</td>
                         <td className="px-3 py-3 text-right">
@@ -555,20 +613,28 @@ export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
                           </span>
                         </td>
                         <td className="px-3 py-3 text-right">
-                          <span className={
-                            row.del50_days === 5 ? 'text-green-400' :
-                            row.del50_days === 4 ? 'text-yellow-400' :
-                            row.del50_days === 3 ? 'text-amber-400' :
-                            'text-[#888]'
-                          }>
-                            {row.del50_days}/5
+                          <span className="text-[#ccc]">
+                            {row.del50_days}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-right text-[#ccc]">
+                          {row.avg_del_value_cr?.toFixed(1) ?? '—'}
+                        </td>
+                        <td className="px-3 py-3 text-right">
+                          <span className={row.flip_consistency != null && row.flip_consistency >= 80 ? 'text-green-400' : row.flip_consistency != null && row.flip_consistency >= 50 ? 'text-yellow-400' : 'text-[#888]'}>
+                            {row.flip_consistency != null ? `${row.flip_consistency}%` : '—'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          <span className={row.sma_200 != null && (row.close ?? 0) >= row.sma_200 ? 'text-green-400' : row.sma_200 != null ? 'text-red-400' : 'text-[#888]'}>
+                            {row.sma_200 != null ? ((row.close ?? 0) >= row.sma_200 ? 'Above' : 'Below') : '—'}
                           </span>
                         </td>
                         <td className="px-3 py-3 text-center">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
                             FLIP_TYPE_COLORS[row.flip_type] || 'bg-[#ffffff1a] text-[#aaa]'
                           }`}>
-                            {row.flip_type === 'STRONG FLIP' ? 'STRONG' : 'MODERATE'}
+                            {row.flip_type === 'STRONG FLIP' ? 'STRONG' : row.flip_type === 'MODERATE FLIP' ? 'MOD' : row.flip_type === 'EARLY FLIP' ? 'EARLY' : row.flip_type}
                           </span>
                         </td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.prior_vol_rank.toFixed(2)}</td>

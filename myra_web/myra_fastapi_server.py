@@ -2314,6 +2314,9 @@ async def liquidity_flip_status():
 async def liquidity_flip_scan(payload: dict = Body(default={})):
     min_mcap = int(payload.get("min_mcap", 200))
     max_mcap = int(payload.get("max_mcap", 50000))
+    prior_window = int(payload.get("prior_window", 120))
+    recent_window = int(payload.get("recent_window", 30))
+    lookback_days = int(payload.get("lookback_days", 150))
 
     raw_date = payload.get("scan_date", "")
     if raw_date and str(raw_date).strip():
@@ -2345,6 +2348,9 @@ async def liquidity_flip_scan(payload: dict = Body(default={})):
             scanner = LiquidityFlipDetector(
                 min_mcap=min_mcap,
                 max_mcap=max_mcap,
+                prior_window=prior_window,
+                recent_window=recent_window,
+                lookback_days=lookback_days,
             )
 
             _lf_scan_state["message"] = "Loading universe..."
@@ -2488,6 +2494,9 @@ async def operator_fingerprint_status():
 async def operator_fingerprint_scan(payload: dict = Body(default={})):
     min_mcap = int(payload.get("min_mcap", 200))
     max_mcap = int(payload.get("max_mcap", 50000))
+    prior_window = int(payload.get("prior_window", 120))
+    recent_window = int(payload.get("recent_window", 30))
+    lookback_days = int(payload.get("lookback_days", 150))
 
     raw_date = payload.get("scan_date", "")
     if raw_date and str(raw_date).strip():
@@ -2662,6 +2671,9 @@ async def float_exhaustion_status():
 async def float_exhaustion_scan(payload: dict = Body(default={})):
     min_mcap = int(payload.get("min_mcap", 200))
     max_mcap = int(payload.get("max_mcap", 50000))
+    prior_window = int(payload.get("prior_window", 120))
+    recent_window = int(payload.get("recent_window", 30))
+    lookback_days = int(payload.get("lookback_days", 150))
 
     raw_date = payload.get("scan_date", "")
     if raw_date and str(raw_date).strip():
@@ -3168,6 +3180,9 @@ async def darvas_scan(payload: dict = Body(default={})):
     lookback = int(payload.get("lookback", 120))
     min_mcap = int(payload.get("min_mcap", 200))
     max_mcap = int(payload.get("max_mcap", 50000))
+    prior_window = int(payload.get("prior_window", 120))
+    recent_window = int(payload.get("recent_window", 30))
+    lookback_days = int(payload.get("lookback_days", 150))
 
     raw_date = payload.get("scan_date", "")
     if raw_date and str(raw_date).strip():
@@ -3293,6 +3308,9 @@ async def wyckoff_status():
 async def wyckoff_scan(payload: dict = Body(default={})):
     min_mcap = int(payload.get("min_mcap", 200))
     max_mcap = int(payload.get("max_mcap", 50000))
+    prior_window = int(payload.get("prior_window", 120))
+    recent_window = int(payload.get("recent_window", 30))
+    lookback_days = int(payload.get("lookback_days", 150))
 
     raw_date = payload.get("scan_date", "")
     if raw_date and str(raw_date).strip():
@@ -3429,6 +3447,9 @@ async def multibagger_scan(payload: dict = Body(default={})):
             lookback = int(payload.get("lookback", 42))
             min_mcap = int(payload.get("min_mcap", 200))
             max_mcap = int(payload.get("max_mcap", 50000))
+            prior_window = int(payload.get("prior_window", 120))
+            recent_window = int(payload.get("recent_window", 30))
+            lookback_days = int(payload.get("lookback_days", 150))
             
             scanner = MultibaggerScanner()
             

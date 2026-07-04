@@ -283,13 +283,60 @@ class InvisibleHandScanner:
 
             qcd_score = min(100.0, max(0.0, qcd / 12.0 * 100))
 
+            opens = curr_df["open"].values.astype(float)
+            deliveries = curr_df["delivery"].values.astype(float)
+
+            # Delivery Spoofing Gate (hard rejection)
+            del_vol_5d = float(np.nanmean(deliveries[-5:]))
+            del_vol_20d = float(np.nanmean(deliveries[-20:]))
+            del_pct_5d_avg = float(np.nanmean(del_pcts[-5:]))
+            del_pct_20d_avg = float(np.nanmean(del_pcts[-20:]))
+            if del_vol_5d < del_vol_20d * 0.8 and del_pct_5d_avg > del_pct_20d_avg:
+                continue
+
+            # Enhancement 1: Delivery Momentum (20 points)
+            del_pct_5d = float(curr_df["delivery_pct"].iloc[-5:].mean())
+            del_pct_20d = float(curr_df["delivery_pct"].iloc[-20:].mean())
+            price_ret_5d = (float(closes[-1]) / float(closes[-6]) - 1) if len(curr_df) >= 6 else 0.0
+            del_momentum_score = 0.0
+            if del_pct_20d > 0 and del_pct_5d > del_pct_20d:
+                ratio = min(del_pct_5d / del_pct_20d, 2.0)
+                del_momentum_score = (ratio - 1.0) * 20.0
+                if price_ret_5d > 0:
+                    del_momentum_score *= 0.5
+
+            # Enhancement 2: Delivery Value Efficiency (25 points)
+            del_values = deliveries * closes
+            total_del_value = float(np.nansum(del_values))
+            price_change_pct = abs(float(closes[-1]) / float(closes[0]) - 1) * 100 if closes[0] > 0 else 1.0
+            efficiency = total_del_value / 1e7 / max(price_change_pct, 0.1)
+            del_efficiency_score = min(efficiency / 50.0 * 25.0, 25.0)
+
+            # Enhancement 3: Delivery Consistency (15 points)
+            consistency_score = 0.0
+            if mean_del > 40 and mean_del > 0:
+                cv = std_del / mean_del
+                consistency_score = max(0, (1.0 - cv) * 15.0)
+
+            # Enhancement 4: Down-Day Delivery Bonus (5 points max)
+            down_day_del_count = 0
+            for i in range(-min(10, len(curr_df)), 0):
+                if closes[i] < opens[i] and del_pcts[i] > mean_del:
+                    down_day_del_count += 1
+            down_day_bonus = min(down_day_del_count, 5) * 1.0
+
             # Composite IH Score
-            ih_score = (
-                der_score * 0.35
-                + ddas_score * 0.30
-                + dcs_score * 0.20
-                + qcd_score * 0.15
+            ih_composite = (
+                der_score * 0.20
+                + ddas_score * 0.20
+                + dcs_score * 0.10
+                + qcd_score * 0.10
+                + del_momentum_score * 0.20
+                + del_efficiency_score * 0.25
+                + consistency_score * 0.15
+                + down_day_bonus
             )
+            ih_score = min(ih_composite, 100.0)
 
             if ih_score >= 75:
                 grade = "A"
@@ -357,6 +404,10 @@ class InvisibleHandScanner:
                     "dcs_score": round(dcs_score, 1),
                     "qcd": qcd,
                     "qcd_score": round(qcd_score, 1),
+                    "del_momentum_score": round(del_momentum_score, 1),
+                    "del_efficiency_score": round(del_efficiency_score, 1),
+                    "consistency_score": round(consistency_score, 1),
+                    "down_day_bonus": round(down_day_bonus, 1),
                     "ih_score": round(ih_score, 1),
                     "grade": grade,
                     "down_day_count": down_day_count,
@@ -374,6 +425,10 @@ class InvisibleHandScanner:
             "mean_del_pct",
             "dcs_score",
             "qcd_score",
+            "del_momentum_score",
+            "del_efficiency_score",
+            "consistency_score",
+            "down_day_bonus",
             "ih_score",
             "close",
             "wk52_pos",
