@@ -40,6 +40,7 @@ import WyckoffAutomatonView from './views/WyckoffAutomaton';
 import PortfolioView from './views/PortfolioView';
 import DataSyncView from './views/DataSync';
 import DeliveryAnomalyScannerView from './views/DeliveryAnomalyScanner';
+import BottomHunterView from './views/BottomHunter';
 import { AlertCircle, Settings as SettingsIcon, SlidersHorizontal, BrainCircuit, Rocket, Database, RotateCw, Eye, Zap } from 'lucide-react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 
@@ -66,6 +67,7 @@ const TABS = [
   { id: 'Historical Search', path: '/historical-search', icon: '🔍', category: 'analysis' },
   { id: 'Invisible Hand', path: '/invisible-hand', icon: <Eye size={16} />, category: 'scanners' },
   { id: 'The Trigger', path: '/trigger', icon: <Zap size={16} />, category: 'scanners' },
+  { id: 'Bottom Hunter', path: '/bottom-hunter', icon: '🎯', category: 'scanners' },
   { id: 'Data Sync', path: '/data-sync', icon: <Database size={18} />, category: 'data' },
   { id: 'Parquet Lake', path: '/parquet-lake', icon: '🌊', category: 'data' },
   { id: 'Sector Flow', path: '/sector-flow', icon: '🚥', category: 'data' },
@@ -257,6 +259,7 @@ export default function App() {
                 <Route path="/data-sync" element={<DataSyncView />} />
                 <Route path="/delivery-anomaly" element={<DeliveryAnomalyScannerView lib={librarian} />} />
                 <Route path="/multibagger-pro-scanner" element={<MultibaggerProScannerView lib={librarian} />} />
+                <Route path="/bottom-hunter" element={<BottomHunterView lib={librarian} />} />
 
                 {/* Fallback */}
                 <Route path="*" element={<Navigate to="/mission-control" replace />} />

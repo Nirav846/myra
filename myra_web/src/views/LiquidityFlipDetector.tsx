@@ -115,6 +115,8 @@ export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
 
   const mountedRef = useRef(true);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const presetScanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startScanRef = useRef<(() => void) | null>(null);
 
   const candidates = scanStatus?.candidates ?? [];
 
@@ -226,7 +228,15 @@ export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
         setIsScanning(false);
       }
     }
-  }, [fetchScanStatus, clearPolling, mcapRange, scanDate]);
+  }, [fetchScanStatus, clearPolling, mcapRange, scanDate, activePreset]);
+  startScanRef.current = startScan;
+
+  const handlePresetChange = (name: string) => {
+    if (presetScanTimerRef.current) clearTimeout(presetScanTimerRef.current);
+    setActivePreset(name);
+    fetch(`${API_BASE}/cache/liquidity-flip`, { method: 'DELETE' }).catch(() => {});
+    presetScanTimerRef.current = setTimeout(() => startScanRef.current(), 300);
+  };
 
   useEffect(() => {
     mountedRef.current = true;
@@ -295,7 +305,7 @@ export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
             {Object.entries(PRESETS).map(([name, _config]) => (
               <button
                 key={name}
-                onClick={() => setActivePreset(name)}
+                onClick={() => handlePresetChange(name)}
                 className={`px-2 py-1 text-[10px] rounded font-mono transition-colors ${
                   activePreset === name
                     ? 'bg-blue-600 text-white'
@@ -319,7 +329,9 @@ export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
             )}
           </button>
           <button
-            onClick={() => fetch(`${API_BASE}/cache/liquidity-flip`, { method: 'DELETE' })}
+            onClick={() => {
+              fetch(`${API_BASE}/cache/liquidity-flip`, { method: 'DELETE' }).then(() => fetchScanStatus()).catch(() => {});
+            }}
             className="text-[10px] text-[#888] hover:text-red-400 transition-colors"
             title="Clear cached scan results"
           >

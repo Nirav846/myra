@@ -3529,20 +3529,211 @@ async def multibagger_status():
     return _multibagger_result
 
 
+
+# --- Bottom Hunter Scan State ---
+_bh_scan_state: dict = {
+    "scan_status": "idle",
+    "last_scan": None,
+    "progress": 0,
+    "message": "Idle — click Scan to start",
+    "candidates": [],
+    "scanned_date": None,
+}
+_bh_scan_lock = threading.Lock()
+_BH_SCAN_CACHE = os.path.join(MODELS_DIR, "bottom_hunter_cache.json")
+
+
+def _save_bh_cache():
+    import json as _json
+    import os as _os
+
+    try:
+        _os.makedirs("models", exist_ok=True)
+        with _bh_scan_lock:
+            data = {
+                "last_scan": _bh_scan_state["last_scan"],
+                "candidates": _bh_scan_state["candidates"],
+                "message": _bh_scan_state["message"],
+            }
+        with open(_BH_SCAN_CACHE, "w") as _f:
+            _json.dump(data, _f)
+    except Exception as e:
+        logger.warning(f"Cache operation failed: {e}")
+
+
+def _load_bh_cache() -> dict | None:
+    import json as _json
+    import os as _os
+
+    try:
+        if _os.path.exists(_BH_SCAN_CACHE):
+            with open(_BH_SCAN_CACHE) as _f:
+                return _json.load(_f)
+    except Exception as e:
+        logger.warning(f"Cache operation failed: {e}")
+    return None
+
+
+@app.get("/api/bottom-hunter/status")
+async def bottom_hunter_status():
+    import copy
+
+    with _bh_scan_lock:
+        state = copy.deepcopy(_bh_scan_state)
+
+    if state["scan_status"] == "idle":
+        cache = _load_bh_cache()
+        if cache and cache.get("candidates") is not None:
+            return {
+                "scan_status": "idle",
+                "last_scan": cache.get("last_scan"),
+                "progress": 100,
+                "message": cache.get(
+                    "message", f"Found {len(cache['candidates'])} candidates."
+                ),
+                "candidates": cache["candidates"],
+                "scanned_date": None,
+            }
+
+    return state
+
+
+@app.post("/api/bottom-hunter/scan")
+async def bottom_hunter_scan(payload: dict = Body(default={})):
+    min_mcap = int(payload.get("min_mcap", 200))
+    max_mcap = int(payload.get("max_mcap", 50000))
+    min_delivery_absorption = float(payload.get("min_delivery_absorption", 5.0))
+    adtv_min_cr = float(payload.get("adtv_min_cr", 1.0))
+    lookback_days = int(payload.get("lookback_days", 260))
+
+    raw_date = payload.get("scan_date", "")
+    if raw_date and str(raw_date).strip():
+        scan_date = _get_latest_trading_day_before(str(raw_date).strip())
+    else:
+        scan_date = None
+
+    with _bh_scan_lock:
+        if _bh_scan_state["scan_status"] == "scanning":
+            return {"detail": "Scan already in progress"}, 409
+
+        _bh_scan_state.update(
+            {
+                "scan_status": "scanning",
+                "progress": 0,
+                "message": "Initializing scanner...",
+                "candidates": [],
+                "scanned_date": scan_date,
+            }
+        )
+
+    def _run():
+        try:
+            from myra_app.strategies.bottom_hunter import BottomHunter
+            import math as _math
+
+            scanner = BottomHunter(
+                min_mcap=min_mcap,
+                max_mcap=max_mcap,
+                min_delivery_absorption=min_delivery_absorption,
+                adtv_min_cr=adtv_min_cr,
+                lookback_days=lookback_days,
+            )
+
+            _bh_scan_state["message"] = "Loading universe..."
+            _bh_scan_state["progress"] = 5
+
+            universe = scanner._get_universe()
+            total = max(len(universe), 1)
+            _bh_scan_state["message"] = f"Scanning {total} symbols..."
+            _bh_scan_state["progress"] = 10
+
+            original_get_tech = scanner._get_tech_data
+            processed = [0]
+
+            def _tracked_get_tech(symbol, min_date, max_date=None):
+                processed[0] += 1
+                if processed[0] % 25 == 0:
+                    pct = 10 + int((processed[0] / total) * 82)
+                    _bh_scan_state["progress"] = min(pct, 92)
+                    _bh_scan_state["message"] = f"Scanning {processed[0]}/{total} symbols..."
+                return original_get_tech(symbol, min_date, max_date)
+
+            scanner._get_tech_data = _tracked_get_tech
+
+            df = scanner.scan(as_on_date=scan_date)
+
+            _bh_scan_state["progress"] = 95
+            _bh_scan_state["message"] = "Finalizing results..."
+
+            candidates = []
+            if not df.empty:
+                for _, row in df.iterrows():
+                    rec = row.to_dict()
+                    for key, val in list(rec.items()):
+                        if isinstance(val, float) and (_math.isnan(val) or _math.isinf(val)):
+                            rec[key] = None
+                    candidates.append(rec)
+
+            _bh_scan_state.update(
+                {
+                    "scan_status": "completed",
+                    "last_scan": datetime.now().isoformat(),
+                    "progress": 100,
+                    "message": f"Found {len(candidates)} candidates",
+                    "candidates": candidates,
+                    "scanned_date": scan_date,
+                }
+            )
+            _save_bh_cache()
+
+        except Exception as e:
+            logger.error("Bottom Hunter scan failed: %s", e, exc_info=True)
+            _bh_scan_state.update(
+                {
+                    "scan_status": "error",
+                    "progress": 0,
+                    "message": str(e),
+                }
+            )
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"status": "started"}
+
 @app.delete("/api/cache/{scanner_name}")
 async def clear_scanner_cache(scanner_name: str):
     """Delete the cached scan results for a given scanner."""
     allowed = {
         "invisible-hand", "trigger", "wyckoff", "float-exhaustion",
         "liquidity-flip", "operator-fingerprint", "seasonal-delivery",
-        "darvas", "multibagger", "launchpad",
+        "darvas", "multibagger", "launchpad", "bottom-hunter",
     }
     if scanner_name not in allowed:
         raise HTTPException(status_code=400, detail="Unknown scanner")
 
     stem = scanner_name.replace("-", "_")
     cache_path = os.path.join(MODELS_DIR, f"{stem}_cache.json")
-    if os.path.exists(cache_path):
+    existed = os.path.exists(cache_path)
+    if existed:
         os.remove(cache_path)
-        return {"status": "deleted", "scanner": scanner_name}
-    return {"status": "not_found", "scanner": scanner_name}
+
+    reset = {"scan_status": "idle", "candidates": [], "message": "Cache cleared", "last_scan": None}
+    if scanner_name == "invisible-hand":
+        _ih_scan_state.update(reset)
+    elif scanner_name == "trigger":
+        _trigger_scan_state.update(reset)
+    elif scanner_name == "darvas":
+        _darvas_scan_state.update(reset)
+    elif scanner_name == "liquidity-flip":
+        _lf_scan_state.update(reset)
+    elif scanner_name == "operator-fingerprint":
+        _of_scan_state.update(reset)
+    elif scanner_name == "float-exhaustion":
+        _fe_scan_state.update(reset)
+    elif scanner_name == "seasonal-delivery":
+        _sd_scan_state.update(reset)
+    elif scanner_name == "wyckoff":
+        _wy_scan_state.update(reset)
+    elif scanner_name == "bottom-hunter":
+        _bh_scan_state.update(reset)
+
+    return {"status": "deleted" if existed else "not_found", "scanner": scanner_name}
