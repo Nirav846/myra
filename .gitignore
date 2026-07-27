@@ -127,3 +127,17 @@ exports/
 *.log
 
 nse-mcp/
+.vscode/
+.jules/
+
+# Add these lines to .gitignore
+.vscode/
+.jules/
+.gatekeeper_last_run
+
+# Also consider ignoring any local override files
+*.local
+*.override
+.vscode/
+.jules/
+.gatekeeper_last_run
