@@ -19,6 +19,7 @@ interface Candidate {
   del_delta: number;
   sl_price: number;
   second_chance: boolean;
+  days_to_lowest: number | null;
 }
 
 interface ScanStatus {
@@ -171,12 +172,13 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
     if (filteredData.length === 0) return;
     const headers = [
       'Symbol', 'Sector', 'Climax Date', 'Base Days', 'Trigger Price', 'Last Close',
-      'Dist%', 'SL Price', 'Del Start%', 'Del End%', 'Del Delta', 'Second Chance',
+      'Dist%', 'SL Price', 'Del Start%', 'Del End%', 'Del Delta', 'Second Chance', 'Days to Lowest',
     ];
     const rows = filteredData.map(r => [
       r.symbol, r.sector ?? '', r.climax_date, r.base_days, r.trigger_price, r.last_close,
       r.dist_pct, r.sl_price, r.del_start, r.del_end, r.del_delta,
       r.second_chance ? 'YES' : '',
+      r.days_to_lowest ?? '',
     ].join(','));
     const csv = [headers.join(','), ...rows].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -289,10 +291,19 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
         <div className="flex items-start gap-2 text-[11px] font-mono text-purple-300">
           <Info size={14} className="shrink-0 mt-0.5" aria-hidden="true" />
           <div>
-            <span className="font-semibold text-purple-400">Climax Accumulation:</span>{' '}
-            High-volume distribution followed by tight consolidation with rising delivery.{' '}
-            354 events backtested. +12.5% avg 40d return, 59% win rate.{' '}
-            Broken-low recovery signals: +15% avg, 75% win rate.
+            <span className="font-semibold text-purple-400">Climax Accumulation Scanner:</span>{' '}
+            Identifies stocks where a high-volume distribution climax was followed by consolidation with rising delivery.{' '}
+            The climax low acts as a structural reference level.
+            <br />
+            2-year backtest (219 signals, entry at day 15): –0.6% gross / –2.0% net 40-day return, 42% win rate overall.{' '}
+            Test set (Mar 2026+): +4.2% gross, 54% win rate.
+            <br />
+            <span className="text-amber-400">⚠</span> This is NOT a standalone entry signal.{' '}
+            Use it as an overlay on your existing watchlist or scanner results.
+            <br />
+            <span className="text-green-400 font-semibold">Second-Chance signals</span> (low broke, then recovered): 9 events.{' '}
+            Entry at the LOWEST point after the break produced +35.5% avg 40-day return, 67% win rate.{' '}
+            These are rare but powerful averaging opportunities.
           </div>
         </div>
       </div>
@@ -333,7 +344,7 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
                 role="grid"
                 aria-label="Climax Accumulation results"
                 aria-rowcount={filteredData.length}
-                aria-colcount={12}
+                aria-colcount={13}
               >
                 <thead className="sticky top-0 z-20 text-[#888]">
                   <tr style={{ boxShadow: '0 1px 0 0 rgba(255,255,255,0.08), 0 2px 4px 0 rgba(0,0,0,0.4)' }}>
@@ -359,7 +370,7 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
                       <Tooltip content="Distance from current close to trigger price. Negative = already above trigger." good="<1%: coiled spring" bad="≥3%: extended">Dist% <SortIcon column="dist_pct" /></Tooltip>
                     </th>
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('sl_price')} scope="col">
-                      <Tooltip content="Stop-loss below climax low. Risk is the distance from trigger to SL.">SL ₹ <SortIcon column="sl_price" /></Tooltip>
+                      <Tooltip content="Reference level: climax week low. A break below this that does NOT recover invalidates the thesis. A break that recovers is a potential averaging opportunity.">SL ₹ <SortIcon column="sl_price" /></Tooltip>
                     </th>
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('del_start')} scope="col">
                       <Tooltip content="Average delivery% in first 30% of post-climax days. Lower = initial distribution.">Del Start% <SortIcon column="del_start" /></Tooltip>
@@ -371,14 +382,17 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
                       <Tooltip content="Del End% minus Del Start%. Positive = delivery rising (good).">Del Δ <SortIcon column="del_delta" /></Tooltip>
                     </th>
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('second_chance')} scope="col">
-                      <Tooltip content="Low briefly broke below climax low then recovered — shakeout recovery signal. Historically +15% avg, 75% win rate.">2nd Chance <SortIcon column="second_chance" /></Tooltip>
+                      <Tooltip content="Low briefly broke below climax low then recovered. 9 events backtested. Entry at the lowest point after break: +35.5% avg, 67% win rate.">2nd Chance <SortIcon column="second_chance" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('days_to_lowest')} scope="col">
+                      <Tooltip content="For second-chance signals: days from the break to the lowest low. Lower = faster bottoming. Higher = still finding support.">Days to Low <SortIcon column="days_to_lowest" /></Tooltip>
                     </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={12} className="px-4 py-8 text-center text-[#666]">No climax accumulation setups match current filters.</td>
+                      <td colSpan={13} className="px-4 py-8 text-center text-[#666]">No climax accumulation setups match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((row, index) => (
@@ -409,7 +423,7 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
                           </span>
                         </td>
                         <td className="px-3 py-3 text-right">
-                          <Tooltip content="Stop-loss below climax low">
+                          <Tooltip content="Reference level: climax week low. A break that recovers is an averaging opportunity.">
                             <span className="text-red-400">₹{row.sl_price.toFixed(2)}</span>
                           </Tooltip>
                         </td>
@@ -426,6 +440,9 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
                               YES — Shakeout Recovered
                             </span>
                           ) : null}
+                        </td>
+                        <td className="px-3 py-3 text-center text-[#ccc]">
+                          {row.days_to_lowest != null ? row.days_to_lowest : '—'}
                         </td>
                       </tr>
                     ))

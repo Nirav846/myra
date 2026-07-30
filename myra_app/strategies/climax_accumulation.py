@@ -1,10 +1,14 @@
 """Climax Accumulation Scanner
 =============================
-Detects high-volume climax days (vol_ratio >= 10, delivery_pct < 15%) followed
-by tight consolidation with rising delivery — a classic accumulation pattern.
+Identifies stocks where a high-volume distribution climax was followed by
+consolidation with rising delivery. The climax low acts as a structural
+reference level — not a standalone entry signal.
 
-Backtested: 354 events, +12.5% avg 40d return, 59% win rate.
-Broken-low recovery signals: +15% avg, 75% win rate.
+2-year backtest (219 signals, entry at day 15):
+  All signals: -0.6% gross / -2.0% net 40-day return, 42% win rate.
+  Test set (Mar 2026+): +4.2% gross, 54% win rate.
+  Second-chance (broke low, then recovered): entry at LOWEST point after
+  break produced +35.5% avg 40-day return, 67% win rate.
 """
 
 import logging
@@ -14,6 +18,7 @@ import os
 from datetime import date
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 
 from myra_app.constants import DB_DIR
@@ -194,6 +199,7 @@ class ClimaxAccumulationScanner:
         # --- Second chance detection ---
         second_chance = False
         broke_low = False
+        days_to_lowest: int | None = None
         for i, low_val in enumerate(post_lows):
             if low_val < climax_low:
                 broke_low = True
@@ -201,6 +207,12 @@ class ClimaxAccumulationScanner:
                 remaining_highs = post_highs[i:]
                 if any(h >= climax_low for h in remaining_highs):
                     second_chance = True
+                    # Find how many days from break to the lowest low after it
+                    remaining_lows = post_lows[i:]
+                    lowest_idx = int(np.argmin(remaining_lows))
+                    days_to_lowest = (
+                        lowest_idx + 1
+                    )  # 1-indexed (day 1 = break day itself)
                 break
 
         # --- Qualification ---
@@ -245,6 +257,7 @@ class ClimaxAccumulationScanner:
             "del_delta": round(del_delta, 1),
             "sl_price": round(climax_low, 2),
             "second_chance": second_chance,
+            "days_to_lowest": days_to_lowest,
         }
 
     # ------------------------------------------------------------------
