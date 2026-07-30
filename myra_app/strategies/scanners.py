@@ -1,5 +1,9 @@
-import numpy as np
+import logging
+
 import pandas as pd
+import ta
+
+logger = logging.getLogger(__name__)
 
 
 def run_primitive(df: pd.DataFrame, scanner_id: str) -> bool:
@@ -61,6 +65,6 @@ def run_primitive(df: pd.DataFrame, scanner_id: str) -> bool:
                 df["High"].iloc[-1] > df["High"].iloc[-2] > df["High"].iloc[-3]
             ) and (df["Low"].iloc[-1] > df["Low"].iloc[-2] > df["Low"].iloc[-3])
 
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Primitive scanner %s failed on data of length %d: %s", scanner_id, len(df), e)
     return False
