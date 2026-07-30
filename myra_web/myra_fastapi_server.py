@@ -284,6 +284,7 @@ async def pipeline_status():
     """Return background pipeline task statuses."""
     try:
         from myra_app.task_tracker import list_tasks
+
         tasks = list_tasks(limit=50)
         return {"tasks": tasks, "status": "ok"}
     except Exception as e:
@@ -295,16 +296,19 @@ async def pipeline_events():
     """Return recent pipeline events (last 50 task updates)."""
     try:
         from myra_app.task_tracker import list_tasks
+
         tasks = list_tasks(limit=50)
         events = []
         for t in tasks:
             if t.get("message"):
-                events.append({
-                    "time": t.get("updated_at") or t.get("started_at"),
-                    "task": t.get("name"),
-                    "message": t.get("message"),
-                    "status": t.get("status"),
-                })
+                events.append(
+                    {
+                        "time": t.get("updated_at") or t.get("started_at"),
+                        "task": t.get("name"),
+                        "message": t.get("message"),
+                        "status": t.get("status"),
+                    }
+                )
         return {"events": events, "status": "ok"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -1966,7 +1970,9 @@ async def invisible_hand_scan(payload: dict = Body(default={})):
     if raw_date and str(raw_date).strip():
         effective_date = _get_latest_trading_day_before(str(raw_date).strip())
     else:
-        effective_date = _get_latest_trading_day_before(datetime.now().strftime("%Y-%m-%d"))
+        effective_date = _get_latest_trading_day_before(
+            datetime.now().strftime("%Y-%m-%d")
+        )
     target_date = effective_date
 
     with _ih_scan_lock:
@@ -2974,11 +2980,13 @@ async def launchpad_scan(payload: dict = Body(default={})):
     with _launchpad_scan_lock:
         if _launchpad_scan_state["scan_status"] == "scanning":
             return {"detail": "Scan already in progress"}, 409
-        _launchpad_scan_state.update({
-            "scan_status": "scanning",
-            "predictions": [],
-            "message": "Running launchpad predictions...",
-        })
+        _launchpad_scan_state.update(
+            {
+                "scan_status": "scanning",
+                "predictions": [],
+                "message": "Running launchpad predictions...",
+            }
+        )
 
     def _run():
         try:
@@ -2987,10 +2995,12 @@ async def launchpad_scan(payload: dict = Body(default={})):
 
             model_path = "models/launchpad_xgb.joblib"
             if not _os.path.exists(model_path):
-                _launchpad_scan_state.update({
-                    "scan_status": "error",
-                    "message": "Model not trained. Run Label + Train first.",
-                })
+                _launchpad_scan_state.update(
+                    {
+                        "scan_status": "error",
+                        "message": "Model not trained. Run Label + Train first.",
+                    }
+                )
                 return
 
             tech_db = _os.path.join(DB_DIR, LibrarianCore.DB_MAP["technical"])
@@ -3002,12 +3012,14 @@ async def launchpad_scan(payload: dict = Body(default={})):
                 ).fetchall()
 
             if not events:
-                _launchpad_scan_state.update({
-                    "scan_status": "completed",
-                    "predictions": [],
-                    "message": "No stocks in digestion phase.",
-                    "last_scan": datetime.now().isoformat(),
-                })
+                _launchpad_scan_state.update(
+                    {
+                        "scan_status": "completed",
+                        "predictions": [],
+                        "message": "No stocks in digestion phase.",
+                        "last_scan": datetime.now().isoformat(),
+                    }
+                )
                 return
 
             model = joblib.load(model_path)
@@ -3028,48 +3040,90 @@ async def launchpad_scan(payload: dict = Body(default={})):
                     lows = [r[5] for r in row]
                     first_close = closes[0]
                     last_close = closes[-1]
-                    max_dd = (min(closes) - first_close) / first_close * 100 if first_close > 0 else 0
+                    max_dd = (
+                        (min(closes) - first_close) / first_close * 100
+                        if first_close > 0
+                        else 0
+                    )
                     avg_vol = np.mean(volumes) if volumes else 1
                     avg_del = np.mean(deliveries) if deliveries else 0
-                    avg_range = np.mean([h - l for h, l in zip(highs, lows)]) if highs else 1
+                    avg_range = (
+                        np.mean([h - l for h, l in zip(highs, lows)]) if highs else 1
+                    )
                     del_vals = deliveries
                     if len(del_vals) > 1:
                         del_mean = np.mean(del_vals)
                         del_std = np.std(del_vals) if len(del_vals) > 1 else 1
-                        del_zscores = [(d - del_mean) / (del_std + 1e-9) for d in del_vals]
+                        del_zscores = [
+                            (d - del_mean) / (del_std + 1e-9) for d in del_vals
+                        ]
                         del_z_min = min(del_zscores)
                         del_z_mean = np.mean(del_zscores)
                     else:
                         del_z_min = 0.0
                         del_z_mean = 0.0
-                    features = [del_z_min, del_z_mean, avg_range / (avg_range + 1e-9), volumes[-1] / (avg_vol + 1e-9), len(row), max_dd]
-                    X = pd.DataFrame([features], columns=["del_zscore_min", "del_zscore_mean", "range_atr_min", "vol_ratio_min", "digestion_days", "max_drawdown_pct"])
+                    features = [
+                        del_z_min,
+                        del_z_mean,
+                        avg_range / (avg_range + 1e-9),
+                        volumes[-1] / (avg_vol + 1e-9),
+                        len(row),
+                        max_dd,
+                    ]
+                    X = pd.DataFrame(
+                        [features],
+                        columns=[
+                            "del_zscore_min",
+                            "del_zscore_mean",
+                            "range_atr_min",
+                            "vol_ratio_min",
+                            "digestion_days",
+                            "max_drawdown_pct",
+                        ],
+                    )
                     preds = model.predict(X)
                     predicted_return_pct = round(float(preds[0, 0]), 2)
-                    breakout_probability = round(1 / (1 + np.exp(-predicted_return_pct / 10)), 4)
-                    confidence = "High" if breakout_probability >= 0.7 else ("Medium" if breakout_probability >= 0.4 else "Low")
+                    breakout_probability = round(
+                        1 / (1 + np.exp(-predicted_return_pct / 10)), 4
+                    )
+                    confidence = (
+                        "High"
+                        if breakout_probability >= 0.7
+                        else ("Medium" if breakout_probability >= 0.4 else "Low")
+                    )
                     sector = None
                     mcap = None
                     if _os.path.exists(val_db):
                         with sqlite3.connect(val_db) as vconn:
-                            vrow = vconn.execute("SELECT COALESCE(market_cap, 0), sector FROM fundamentals WHERE symbol = ? LIMIT 1", (sym,)).fetchone()
+                            vrow = vconn.execute(
+                                "SELECT COALESCE(market_cap, 0), sector FROM fundamentals WHERE symbol = ? LIMIT 1",
+                                (sym,),
+                            ).fetchone()
                             if vrow:
                                 mcap = float(vrow[0]) if vrow[0] else None
                                 sector = vrow[1]
-                    results.append({
-                        "symbol": sym, "trigger_date": trig, "predicted_return_pct": predicted_return_pct,
-                        "confidence": confidence, "sector": sector, "market_cap": mcap,
-                        "breakout_probability": breakout_probability,
-                    })
+                    results.append(
+                        {
+                            "symbol": sym,
+                            "trigger_date": trig,
+                            "predicted_return_pct": predicted_return_pct,
+                            "confidence": confidence,
+                            "sector": sector,
+                            "market_cap": mcap,
+                            "breakout_probability": breakout_probability,
+                        }
+                    )
                 except Exception:
                     continue
 
-            _launchpad_scan_state.update({
-                "scan_status": "completed",
-                "last_scan": datetime.now().isoformat(),
-                "predictions": results,
-                "message": f"Found {len(results)} predictions",
-            })
+            _launchpad_scan_state.update(
+                {
+                    "scan_status": "completed",
+                    "last_scan": datetime.now().isoformat(),
+                    "predictions": results,
+                    "message": f"Found {len(results)} predictions",
+                }
+            )
         except Exception as e:
             _launchpad_scan_state.update({"scan_status": "error", "message": str(e)})
 
@@ -3428,88 +3482,115 @@ async def refresh_portfolio_industry():
 
 # ---- Multibagger Pro Scanner ----
 
-_multibagger_result = {"scan_status": "idle", "candidates": [], "message": "Use POST /api/multibagger/scan to run"}
+_multibagger_result = {
+    "scan_status": "idle",
+    "candidates": [],
+    "message": "Use POST /api/multibagger/scan to run",
+}
+
 
 @app.post("/api/multibagger/scan")
 async def multibagger_scan(payload: dict = Body(default={})):
     """Run Multibagger Pro scan and store results for status polling."""
     global _multibagger_result
-    _multibagger_result = {"scan_status": "scanning", "candidates": [], "message": "Running..."}
-    
+    _multibagger_result = {
+        "scan_status": "scanning",
+        "candidates": [],
+        "message": "Running...",
+    }
+
     def _run():
         global _multibagger_result
         try:
-            from myra_app.strategies.multibagger_early_detection import Strategy as MultibaggerScanner
+            from myra_app.strategies.multibagger_early_detection import (
+                Strategy as MultibaggerScanner,
+            )
             from myra_app.librarian_core import LibrarianCore
             import math as _math, pandas as pd, sqlite3, os
             from myra_app.constants import DB_DIR
-            
+
             lookback = int(payload.get("lookback", 42))
             min_mcap = int(payload.get("min_mcap", 200))
             max_mcap = int(payload.get("max_mcap", 50000))
             prior_window = int(payload.get("prior_window", 120))
             recent_window = int(payload.get("recent_window", 30))
             lookback_days = int(payload.get("lookback_days", 150))
-            
+
             scanner = MultibaggerScanner()
-            
+
             # Build universe from valuation.db
-            val_path = os.path.join(DB_DIR, 'myra_valuation.db')
-            tech_path = os.path.join(DB_DIR, 'myra_technical.db')
-            
+            val_path = os.path.join(DB_DIR, "myra_valuation.db")
+            tech_path = os.path.join(DB_DIR, "myra_technical.db")
+
             val_conn = sqlite3.connect(val_path)
-            symbols = [r[0] for r in val_conn.execute(
-                "SELECT symbol FROM fundamentals WHERE COALESCE(market_cap,0) BETWEEN ? AND ?",
-                (min_mcap, max_mcap)
-            ).fetchall()]
+            symbols = [
+                r[0]
+                for r in val_conn.execute(
+                    "SELECT symbol FROM fundamentals WHERE COALESCE(market_cap,0) BETWEEN ? AND ?",
+                    (min_mcap, max_mcap),
+                ).fetchall()
+            ]
             val_conn.close()
-            
+
             if not symbols:
-                symbols = [r[0] for r in sqlite3.connect(tech_path).execute(
-                    "SELECT DISTINCT symbol FROM technical_data ORDER BY symbol"
-                ).fetchall()][:500]
-            
+                symbols = [
+                    r[0]
+                    for r in sqlite3.connect(tech_path)
+                    .execute(
+                        "SELECT DISTINCT symbol FROM technical_data ORDER BY symbol"
+                    )
+                    .fetchall()
+                ][:500]
+
             candidates = []
             tech_conn = sqlite3.connect(tech_path)
-            
+
             for i, sym in enumerate(symbols):
                 if i % 50 == 0:
                     _multibagger_result["message"] = f"Scanning {i+1}/{len(symbols)}..."
-                
+
                 # Fetch OHLCV data
                 df = pd.read_sql(
                     f"SELECT date, open, high, low, close, volume FROM technical_data WHERE symbol=? AND date >= date('now','-{lookback+30} days') ORDER BY date",
-                    tech_conn, params=(sym,)
+                    tech_conn,
+                    params=(sym,),
                 )
                 if df.empty or len(df) < 30:
                     continue
-                
+
                 # Fetch fundamentals
                 val_conn2 = sqlite3.connect(val_path)
                 row = val_conn2.execute(
                     "SELECT * FROM fundamentals WHERE symbol=?", (sym,)
                 ).fetchone()
                 if row:
-                    cols = [c[0] for c in val_conn2.execute("PRAGMA table_info(fundamentals)").fetchall()]
+                    cols = [
+                        c[0]
+                        for c in val_conn2.execute(
+                            "PRAGMA table_info(fundamentals)"
+                        ).fetchall()
+                    ]
                     funda = dict(zip(cols, row))
                 else:
                     funda = {}
                 val_conn2.close()
-                
+
                 try:
                     result = scanner.run(df, funda)
                     if result and result.get("signal"):
                         result["symbol"] = sym
                         # Sanitize NaN/Inf
                         for k, v in list(result.items()):
-                            if isinstance(v, float) and (_math.isnan(v) or _math.isinf(v)):
+                            if isinstance(v, float) and (
+                                _math.isnan(v) or _math.isinf(v)
+                            ):
                                 result[k] = None
                         candidates.append(result)
                 except Exception:
                     pass
-            
+
             tech_conn.close()
-            
+
             _multibagger_result = {
                 "scan_status": "completed",
                 "last_scan": datetime.now().isoformat(),
@@ -3517,8 +3598,12 @@ async def multibagger_scan(payload: dict = Body(default={})):
                 "message": f"Found {len(candidates)} candidates",
             }
         except Exception as e:
-            _multibagger_result = {"scan_status": "error", "message": str(e), "candidates": []}
-    
+            _multibagger_result = {
+                "scan_status": "error",
+                "message": str(e),
+                "candidates": [],
+            }
+
     threading.Thread(target=_run, daemon=True).start()
     return {"status": "started"}
 
@@ -3527,7 +3612,6 @@ async def multibagger_scan(payload: dict = Body(default={})):
 async def multibagger_status():
     """Return last Multibagger scan results."""
     return _multibagger_result
-
 
 
 # --- Bottom Hunter Scan State ---
@@ -3655,7 +3739,9 @@ async def bottom_hunter_scan(payload: dict = Body(default={})):
                 if processed[0] % 25 == 0:
                     pct = 10 + int((processed[0] / total) * 82)
                     _bh_scan_state["progress"] = min(pct, 92)
-                    _bh_scan_state["message"] = f"Scanning {processed[0]}/{total} symbols..."
+                    _bh_scan_state[
+                        "message"
+                    ] = f"Scanning {processed[0]}/{total} symbols..."
                 return original_get_tech(symbol, min_date, max_date)
 
             scanner._get_tech_data = _tracked_get_tech
@@ -3670,7 +3756,9 @@ async def bottom_hunter_scan(payload: dict = Body(default={})):
                 for _, row in df.iterrows():
                     rec = row.to_dict()
                     for key, val in list(rec.items()):
-                        if isinstance(val, float) and (_math.isnan(val) or _math.isinf(val)):
+                        if isinstance(val, float) and (
+                            _math.isnan(val) or _math.isinf(val)
+                        ):
                             rec[key] = None
                     candidates.append(rec)
 
@@ -3699,13 +3787,188 @@ async def bottom_hunter_scan(payload: dict = Body(default={})):
     threading.Thread(target=_run, daemon=True).start()
     return {"status": "started"}
 
+
+# --- Climax Accumulation State ---
+_climax_scan_state: dict = {
+    "scan_status": "idle",
+    "last_scan": None,
+    "progress": 0,
+    "message": "Idle — click Scan to start",
+    "candidates": [],
+    "scanned_date": None,
+}
+_climax_scan_lock = threading.Lock()
+_CLIMAX_CACHE = os.path.join(MODELS_DIR, "climax_accumulation_cache.json")
+
+
+def _save_climax_cache():
+    import json as _json
+    import os as _os
+
+    try:
+        _os.makedirs("models", exist_ok=True)
+        with _climax_scan_lock:
+            data = {
+                "last_scan": _climax_scan_state["last_scan"],
+                "candidates": _climax_scan_state["candidates"],
+                "message": _climax_scan_state["message"],
+            }
+        with open(_CLIMAX_CACHE, "w") as _f:
+            _json.dump(data, _f)
+    except Exception as e:
+        logger.warning(f"Climax cache save failed: {e}")
+
+
+def _load_climax_cache() -> dict | None:
+    import json as _json
+    import os as _os
+
+    try:
+        if _os.path.exists(_CLIMAX_CACHE):
+            with open(_CLIMAX_CACHE) as _f:
+                return _json.load(_f)
+    except Exception as e:
+        logger.warning(f"Climax cache load failed: {e}")
+    return None
+
+
+@app.get("/api/climax-accumulation/status")
+async def climax_accumulation_status():
+    import copy
+
+    with _climax_scan_lock:
+        state = copy.deepcopy(_climax_scan_state)
+
+    if state["scan_status"] == "idle":
+        cache = _load_climax_cache()
+        if cache and cache.get("candidates") is not None:
+            return {
+                "scan_status": "idle",
+                "last_scan": cache.get("last_scan"),
+                "progress": 100,
+                "message": cache.get(
+                    "message", f"Found {len(cache['candidates'])} candidates."
+                ),
+                "candidates": cache["candidates"],
+            }
+
+    return state
+
+
+@app.post("/api/climax-accumulation/scan")
+async def climax_accumulation_scan(payload: dict = Body(default={})):
+    raw_date = payload.get("scan_date", "")
+    if raw_date and str(raw_date).strip():
+        scan_date = _get_latest_trading_day_before(str(raw_date).strip())
+    else:
+        scan_date = None
+
+    with _climax_scan_lock:
+        if _climax_scan_state["scan_status"] == "scanning":
+            return {"detail": "Scan already in progress"}, 409
+
+        _climax_scan_state.update(
+            {
+                "scan_status": "scanning",
+                "progress": 0,
+                "message": "Initialising Climax Accumulation scanner...",
+                "candidates": [],
+                "scanned_date": scan_date,
+            }
+        )
+
+    def _run():
+        try:
+            from myra_app.strategies.climax_accumulation import (
+                ClimaxAccumulationScanner,
+            )
+            import math as _math
+
+            scanner = ClimaxAccumulationScanner(
+                target_date=scan_date,
+            )
+
+            _climax_scan_state["message"] = "Loading universe..."
+            _climax_scan_state["progress"] = 5
+
+            universe = scanner._get_universe()
+            total = max(len(universe), 1)
+            _climax_scan_state["message"] = f"Scanning {total} symbols..."
+            _climax_scan_state["progress"] = 10
+
+            original_get_tech = scanner._get_tech_data
+            processed = [0]
+
+            def _tracked_get_tech(symbol, min_date, max_date=None):
+                processed[0] += 1
+                if processed[0] % 25 == 0:
+                    pct = 10 + int((processed[0] / total) * 82)
+                    _climax_scan_state["progress"] = min(pct, 92)
+                    _climax_scan_state[
+                        "message"
+                    ] = f"Scanning {processed[0]}/{total} symbols..."
+                return original_get_tech(symbol, min_date, max_date)
+
+            scanner._get_tech_data = _tracked_get_tech
+
+            df = scanner.scan(as_on_date=scan_date)
+
+            _climax_scan_state["progress"] = 95
+            _climax_scan_state["message"] = "Finalising results..."
+
+            candidates = []
+            if not df.empty:
+                for _, row in df.iterrows():
+                    rec = row.to_dict()
+                    for key, val in list(rec.items()):
+                        if isinstance(val, float) and (
+                            _math.isnan(val) or _math.isinf(val)
+                        ):
+                            rec[key] = None
+                    candidates.append(rec)
+
+            _climax_scan_state.update(
+                {
+                    "scan_status": "completed",
+                    "last_scan": datetime.now().isoformat(),
+                    "progress": 100,
+                    "message": f"Found {len(candidates)} candidates",
+                    "candidates": candidates,
+                    "scanned_date": scan_date,
+                }
+            )
+            _save_climax_cache()
+
+        except Exception as e:
+            logger.error("Climax Accumulation scan failed: %s", e, exc_info=True)
+            _climax_scan_state.update(
+                {
+                    "scan_status": "error",
+                    "progress": 0,
+                    "message": str(e),
+                }
+            )
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"status": "started"}
+
+
 @app.delete("/api/cache/{scanner_name}")
 async def clear_scanner_cache(scanner_name: str):
     """Delete the cached scan results for a given scanner."""
     allowed = {
-        "invisible-hand", "trigger", "wyckoff", "float-exhaustion",
-        "liquidity-flip", "operator-fingerprint", "seasonal-delivery",
-        "darvas", "multibagger", "launchpad", "bottom-hunter",
+        "invisible-hand",
+        "trigger",
+        "wyckoff",
+        "float-exhaustion",
+        "liquidity-flip",
+        "operator-fingerprint",
+        "seasonal-delivery",
+        "darvas",
+        "multibagger",
+        "launchpad",
+        "bottom-hunter",
+        "climax-accumulation",
     }
     if scanner_name not in allowed:
         raise HTTPException(status_code=400, detail="Unknown scanner")
@@ -3716,7 +3979,12 @@ async def clear_scanner_cache(scanner_name: str):
     if existed:
         os.remove(cache_path)
 
-    reset = {"scan_status": "idle", "candidates": [], "message": "Cache cleared", "last_scan": None}
+    reset = {
+        "scan_status": "idle",
+        "candidates": [],
+        "message": "Cache cleared",
+        "last_scan": None,
+    }
     if scanner_name == "invisible-hand":
         _ih_scan_state.update(reset)
     elif scanner_name == "trigger":
@@ -3735,5 +4003,7 @@ async def clear_scanner_cache(scanner_name: str):
         _wy_scan_state.update(reset)
     elif scanner_name == "bottom-hunter":
         _bh_scan_state.update(reset)
+    elif scanner_name == "climax-accumulation":
+        _climax_scan_state.update(reset)
 
     return {"status": "deleted" if existed else "not_found", "scanner": scanner_name}
