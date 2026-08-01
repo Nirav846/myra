@@ -7,6 +7,7 @@ import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
 import { API_BASE } from '../config';
 import { Tooltip } from '../components/Tooltip';
+import { HistoricalScanDatePicker } from '../components/HistoricalScanDatePicker';
 import ScrollableTable from '../components/ScrollableTable';
 
 interface Candidate {
@@ -103,6 +104,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
   const [error, setError] = useState<string | null>(null);
   const [staleBannerOpen, setStaleBannerOpen] = useState(true);
   const [bearMarket, setBearMarket] = useState(false);
+  const [scanDate, setScanDate] = useState('');
 
   const [baseDays, setBaseDays] = useState(21);
   const [minDar, setMinDar] = useState(0.2);
@@ -276,7 +278,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
       const res = await fetch(`${API_BASE}/multibagger/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ base_days: baseDays, min_dar: minDar, target_dar: targetDar, tightness_full_score_pct: tightnessFull, tightness_zero_score_pct: tightnessZero }),
+        body: JSON.stringify({ base_days: baseDays, min_dar: minDar, target_dar: targetDar, tightness_full_score_pct: tightnessFull, tightness_zero_score_pct: tightnessZero, ...(scanDate.trim() && { scan_date: scanDate }) }),
       });
       if (!mountedRef.current) return;
       if (res.ok) {
@@ -293,7 +295,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
         setIsScanning(false);
       }
     }
-  }, [fetchScanStatus, clearPolling, baseDays, minDar, targetDar, tightnessFull, tightnessZero]);
+  }, [fetchScanStatus, clearPolling, baseDays, minDar, targetDar, tightnessFull, tightnessZero, scanDate]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -383,6 +385,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
             ))}
           </div>
         </div>
+        <HistoricalScanDatePicker selectedDate={scanDate} onSelect={setScanDate} />
         <button
           onClick={startScan}
           disabled={isScanning}
@@ -394,6 +397,13 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
           ) : (
             <><Rocket size={14} fill="currentColor" aria-hidden="true" /> Scan</>
           )}
+        </button>
+        <button
+          onClick={() => fetch(`${API_BASE}/cache/multibagger`, { method: 'DELETE' }).then(() => fetchScanStatus())}
+          className="text-[10px] text-[#888] hover:text-red-400 transition-colors"
+          title="Clear cached scan results"
+        >
+          Clear cache
         </button>
       </header>
 
