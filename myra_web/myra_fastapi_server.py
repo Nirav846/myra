@@ -3544,6 +3544,11 @@ async def multibagger_scan(payload: dict = Body(default={})):
 
             candidates = []
             tech_conn = sqlite3.connect(tech_path)
+            val_conn2 = sqlite3.connect(val_path)
+            funda_cols = [
+                c[0]
+                for c in val_conn2.execute("PRAGMA table_info(fundamentals)").fetchall()
+            ]
 
             for i, sym in enumerate(symbols):
                 if i % 50 == 0:
@@ -3559,21 +3564,13 @@ async def multibagger_scan(payload: dict = Body(default={})):
                     continue
 
                 # Fetch fundamentals
-                val_conn2 = sqlite3.connect(val_path)
                 row = val_conn2.execute(
                     "SELECT * FROM fundamentals WHERE symbol=?", (sym,)
                 ).fetchone()
                 if row:
-                    cols = [
-                        c[0]
-                        for c in val_conn2.execute(
-                            "PRAGMA table_info(fundamentals)"
-                        ).fetchall()
-                    ]
-                    funda = dict(zip(cols, row))
+                    funda = dict(zip(funda_cols, row))
                 else:
                     funda = {}
-                val_conn2.close()
 
                 try:
                     result = scanner.run(df, funda)
@@ -3590,6 +3587,7 @@ async def multibagger_scan(payload: dict = Body(default={})):
                     pass
 
             tech_conn.close()
+            val_conn2.close()
 
             _multibagger_result = {
                 "scan_status": "completed",
