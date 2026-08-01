@@ -37,6 +37,7 @@ interface Candidate {
   sl_type: string;
   swing_low_20d: number;
   delivery_spike_conf?: boolean;
+  timeframe?: string;
   score: number;
   tier: string;
 }
@@ -86,6 +87,7 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
   const [tierFilter, setTierFilter] = useState<string>('All');
 
   const [scanDate, setScanDate] = useState('');
+  const [timeframe, setTimeframe] = useState<'daily' | 'weekly'>('daily');
 
   const [sortCol, setSortCol] = useState<string>('score');
   const [sortAsc, setSortAsc] = useState(false);
@@ -184,6 +186,7 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
         body: JSON.stringify({
           min_mcap: mcapRange?.min ?? 200,
           max_mcap: mcapRange?.max ?? 50000,
+          timeframe,
           ...(scanDate.trim() && { scan_date: scanDate }),
         }),
       });
@@ -202,7 +205,7 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
         setIsScanning(false);
       }
     }
-  }, [fetchScanStatus, clearPolling, mcapRange, scanDate]);
+  }, [fetchScanStatus, clearPolling, mcapRange, scanDate, timeframe]);
   startScanRef.current = startScan;
 
   useEffect(() => {
@@ -438,8 +441,29 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
         </div>
       </section>
 
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
+          <button onClick={() => setTimeframe('daily')}
+            className={`px-2 py-1 text-[10px] rounded ${timeframe === 'daily' ? 'bg-blue-600 text-white' : 'bg-[#ffffff0a] text-[#888]'}`}>
+            Daily
+          </button>
+          <button onClick={() => setTimeframe('weekly')}
+            className={`px-2 py-1 text-[10px] rounded ${timeframe === 'weekly' ? 'bg-blue-600 text-white' : 'bg-[#ffffff0a] text-[#888]'}`}>
+            Weekly
+          </button>
+        </div>
+        {timeframe === 'weekly' && (
+          <span className="text-[10px] font-mono text-[#888]">
+            Weekly mode — uses 8-week delivery absorption window. Experimental: based on limited backtest (8 trades). For long-term screening.
+          </span>
+        )}
+      </div>
+
       {(scanStatus?.scan_status === 'completed' || (isIdle && candidates.length > 0)) && !isScanning && (
         <>
+          <div className="text-[10px] font-mono text-[#888]">
+            Results: <span className="text-blue-400 capitalize">{timeframe}</span>
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
               <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Candidates</div>
