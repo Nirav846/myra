@@ -881,9 +881,11 @@ async def get_portfolio():
                 "overall_pnl": round(overall_pnl, 2),
                 "overall_pnl_pct": overall_pnl_pct,
                 "day_pnl": round(day_pnl, 2),
-                "day_pnl_pct": round((day_pnl / (current_value - day_pnl) * 100), 2)
-                if (current_value - day_pnl)
-                else 0,
+                "day_pnl_pct": (
+                    round((day_pnl / (current_value - day_pnl) * 100), 2)
+                    if (current_value - day_pnl)
+                    else 0
+                ),
                 "delivery_pct": delivery.get("del_pct"),
                 "delivery_trend": delivery.get("del_trend", "\u2014"),
                 "vs_sma50_pct": tech_pos.get("vs_sma_pct"),
@@ -1158,7 +1160,7 @@ async def add_portfolio_holding(req: Request):
         update_holding(symbol, net_qty=new_qty, avg_price=round(new_avg, 2))
         return {
             "status": "ok",
-            "message": f"Added {qty} to {symbol}. New qty: {new_qty}, new avg: \u20B9{new_avg:.2f}",
+            "message": f"Added {qty} to {symbol}. New qty: {new_qty}, new avg: \u20b9{new_avg:.2f}",
             "action": "updated",
             "holding": {
                 "symbol": symbol,
@@ -1170,7 +1172,7 @@ async def add_portfolio_holding(req: Request):
         add_holding(symbol, qty, avg_price, category)
         return {
             "status": "ok",
-            "message": f"Added {symbol}: {qty} @ \u20B9{avg_price}",
+            "message": f"Added {symbol}: {qty} @ \u20b9{avg_price}",
             "action": "created",
             "holding": {
                 "symbol": symbol,
@@ -1279,19 +1281,21 @@ async def get_recent_logs():
 async def get_pipeline_status():
     """Return last run times of all background tasks."""
     return {
-        "fundamentals": _get_last_run("fundamentals_sync")
-        if "_get_last_run" in globals()
-        else "Never",
+        "fundamentals": (
+            _get_last_run("fundamentals_sync")
+            if "_get_last_run" in globals()
+            else "Never"
+        ),
         "etf": _get_last_run("etf_sync") if "_get_last_run" in globals() else "Never",
-        "index": _get_last_run("index_sync")
-        if "_get_last_run" in globals()
-        else "Never",
-        "ingest": _get_last_run("daily_ingest")
-        if "_get_last_run" in globals()
-        else "Never",
-        "db_doctor": _get_last_run("db_doctor")
-        if "_get_last_run" in globals()
-        else "Never",
+        "index": (
+            _get_last_run("index_sync") if "_get_last_run" in globals() else "Never"
+        ),
+        "ingest": (
+            _get_last_run("daily_ingest") if "_get_last_run" in globals() else "Never"
+        ),
+        "db_doctor": (
+            _get_last_run("db_doctor") if "_get_last_run" in globals() else "Never"
+        ),
     }
 
 
@@ -1375,9 +1379,9 @@ async def get_live_fundamentals(symbol: str):
                     "dii_pct": latest_sh.get("DIIs"),
                     "public_pct": latest_sh.get("Public"),
                     "government_pct": latest_sh.get("Government"),
-                    "period_end": sh.get("headers", [None])[-1]
-                    if sh.get("headers")
-                    else None,
+                    "period_end": (
+                        sh.get("headers", [None])[-1] if sh.get("headers") else None
+                    ),
                 }
 
             pc = data.get("sections", {}).get("pros_cons", {})
@@ -2050,9 +2054,11 @@ async def invisible_hand_scan(payload: dict = Body(default={})):
                     "progress": 100,
                     "message": f"Found {len(candidates)} candidates",
                     "candidates": candidates,
-                    "bear_market": scanner.bear_market
-                    if hasattr(scanner, "bear_market")
-                    else False,
+                    "bear_market": (
+                        scanner.bear_market
+                        if hasattr(scanner, "bear_market")
+                        else False
+                    ),
                     "scanned_date": effective_date,
                 }
             )
@@ -2231,9 +2237,11 @@ async def trigger_scan(payload: dict = Body(default={})):
                     "progress": 100,
                     "message": f"Found {len(candidates)} candidates",
                     "candidates": candidates,
-                    "bear_market": scanner.bear_market
-                    if hasattr(scanner, "bear_market")
-                    else False,
+                    "bear_market": (
+                        scanner.bear_market
+                        if hasattr(scanner, "bear_market")
+                        else False
+                    ),
                     "scanned_date": scan_date,
                 }
             )
@@ -2401,9 +2409,11 @@ async def liquidity_flip_scan(payload: dict = Body(default={})):
                     "progress": 100,
                     "message": f"Found {len(candidates)} candidates",
                     "candidates": candidates,
-                    "bear_market": scanner.bear_market
-                    if hasattr(scanner, "bear_market")
-                    else False,
+                    "bear_market": (
+                        scanner.bear_market
+                        if hasattr(scanner, "bear_market")
+                        else False
+                    ),
                     "scanned_date": scan_date,
                 }
             )
@@ -2569,9 +2579,11 @@ async def operator_fingerprint_scan(payload: dict = Body(default={})):
                     "progress": 100,
                     "message": f"Found {len(candidates)} candidates",
                     "candidates": candidates,
-                    "bear_market": scanner.bear_market
-                    if hasattr(scanner, "bear_market")
-                    else False,
+                    "bear_market": (
+                        scanner.bear_market
+                        if hasattr(scanner, "bear_market")
+                        else False
+                    ),
                     "scanned_date": scan_date,
                 }
             )
@@ -2742,9 +2754,11 @@ async def float_exhaustion_scan(payload: dict = Body(default={})):
                     "progress": 100,
                     "message": f"Found {len(candidates)} candidates",
                     "candidates": candidates,
-                    "bear_market": scanner.bear_market
-                    if hasattr(scanner, "bear_market")
-                    else False,
+                    "bear_market": (
+                        scanner.bear_market
+                        if hasattr(scanner, "bear_market")
+                        else False
+                    ),
                     "scanned_date": scan_date,
                 }
             )
@@ -2916,9 +2930,11 @@ async def seasonal_delivery_scan(payload: dict = Body(default={})):
                     "progress": 100,
                     "message": f"Found {len(candidates)} candidates",
                     "candidates": candidates,
-                    "bear_market": scanner.bear_market
-                    if hasattr(scanner, "bear_market")
-                    else False,
+                    "bear_market": (
+                        scanner.bear_market
+                        if hasattr(scanner, "bear_market")
+                        else False
+                    ),
                     "scanned_date": scan_date,
                 }
             )
@@ -3648,6 +3664,10 @@ async def bottom_hunter_scan(payload: dict = Body(default={})):
     adtv_min_cr = float(payload.get("adtv_min_cr", 1.0))
     lookback_days = int(payload.get("lookback_days", 260))
 
+    timeframe = str(payload.get("timeframe", "daily")).strip().lower()
+    if timeframe not in ("daily", "weekly"):
+        timeframe = "daily"
+
     raw_date = payload.get("scan_date", "")
     if raw_date and str(raw_date).strip():
         scan_date = _get_latest_trading_day_before(str(raw_date).strip())
@@ -3679,6 +3699,7 @@ async def bottom_hunter_scan(payload: dict = Body(default={})):
                 min_delivery_absorption=min_delivery_absorption,
                 adtv_min_cr=adtv_min_cr,
                 lookback_days=lookback_days,
+                timeframe=timeframe,
             )
 
             _bh_scan_state["message"] = "Loading universe..."
@@ -3986,10 +4007,16 @@ _SCANNER_ROUTES: dict[str, str] = {
 }
 
 _GRADE_RANK: dict[str, float] = {
-    "A+": 4.5, "A": 4, "B": 3, "C": 2, "D": 1,
+    "A+": 4.5,
+    "A": 4,
+    "B": 3,
+    "C": 2,
+    "D": 1,
 }
 _TIER_RANK: dict[str, float] = {
-    "HIGH": 3.5, "MID": 2.5, "LOW": 1.5,
+    "HIGH": 3.5,
+    "MID": 2.5,
+    "LOW": 1.5,
 }
 
 
@@ -4125,6 +4152,4 @@ async def confluence_endpoint():
         return build_confluence_report()
     except Exception as e:
         logger.error("Confluence report failed: %s", e, exc_info=True)
-        return JSONResponse(
-            status_code=500, content={"error": str(e)}
-        )
+        return JSONResponse(status_code=500, content={"error": str(e)})

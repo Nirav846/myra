@@ -126,12 +126,14 @@ class BottomHunter:
         min_delivery_absorption=5.0,
         adtv_min_cr=1.0,
         lookback_days=260,
+        timeframe: str = "daily",
     ):
         self.min_mcap = min_mcap
         self.max_mcap = max_mcap
         self.min_delivery_absorption = min_delivery_absorption
         self.adtv_min_cr = adtv_min_cr
         self.lookback_days = lookback_days
+        self.timeframe = timeframe if timeframe in ("daily", "weekly") else "daily"
 
     def _db_path(self, key: str) -> str:
         return os.path.join(DB_DIR, LibrarianCore.DB_MAP[key])
@@ -192,6 +194,29 @@ class BottomHunter:
                     (symbol, min_date, max_date),
                 ).fetchall()
         return rows
+
+    def _get_weekly_data(self, df_daily: pd.DataFrame) -> pd.DataFrame:
+        """Aggregate daily OHLCV+delivery to weekly candles."""
+        if df_daily is None or len(df_daily) < 5:
+            return pd.DataFrame()
+        df = df_daily.copy()
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.set_index("date").sort_index()
+        weekly = df.resample("W").agg(
+            {
+                "open": "first",
+                "high": "max",
+                "low": "min",
+                "close": "last",
+                "volume": "sum",
+                "delivery": "sum",
+            }
+        )
+        weekly["delivery_pct"] = (
+            weekly["delivery"] / weekly["volume"].replace(0, float("nan")) * 100
+        ).fillna(0)
+        weekly = weekly.dropna(subset=["open", "close"])
+        return weekly.reset_index()
 
     @staticmethod
     def _check_delivery_spike(df: pd.DataFrame) -> bool:
@@ -345,22 +370,31 @@ class BottomHunter:
             if len(df) < max(30, int(self.lookback_days * 0.6) + 5):
                 continue
 
-            # Get last 20 days for calculations
-            last_20 = df.tail(20)
-            if len(last_20) < 20:
+            # Weekly aggregation
+            if self.timeframe == "weekly":
+                df_for_scoring = self._get_weekly_data(df)
+                if df_for_scoring.empty or len(df_for_scoring) < 8:
+                    continue
+            else:
+                df_for_scoring = df
+
+            # Get last N periods for calculations
+            window_n = 8 if self.timeframe == "weekly" else 20
+            last_n = df_for_scoring.tail(window_n)
+            if len(last_n) < window_n:
                 continue
 
             # Separate up and down days (close > open = up, close < open = down)
-            up_days = last_20[last_20["close"] > last_20["open"]]
-            down_days = last_20[last_20["close"] < last_20["open"]]
+            up_days = last_n[last_n["close"] > last_n["open"]]
+            down_days = last_n[last_n["close"] < last_n["open"]]
 
             # Calculate delivery absorption
             up_del_avg = up_days["delivery_pct"].mean() if len(up_days) > 0 else 0
             down_del_avg = down_days["delivery_pct"].mean() if len(down_days) > 0 else 0
             delivery_absorption = up_del_avg - down_del_avg
 
-            # Calculate ADTV (average daily turnover in Cr) over last 20 days
-            adtv_cr = ((last_20["close"] * last_20["volume"]) / 1e7).mean()
+            # Calculate ADTV (average daily turnover in Cr) over last N periods
+            adtv_cr = ((last_n["close"] * last_n["volume"]) / 1e7).mean()
 
             # Apply filters
             if adtv_cr < self.adtv_min_cr:
@@ -369,21 +403,17 @@ class BottomHunter:
                 continue
 
             # Calculate % above 52w low
-            latest_close = float(last_20["close"].iloc[-1])
-            high_52w = (
-                float(last_20["high_52w"].iloc[-1])
-                if pd.notna(last_20["high_52w"].iloc[-1])
-                else float(df["high"].max())
-            )
-            low_52w = (
-                float(last_20["low_52w"].iloc[-1])
-                if pd.notna(last_20["low_52w"].iloc[-1])
-                else float(df["low"].min())
-            )
+            latest_close = float(last_n["close"].iloc[-1])
+            if "high_52w" in last_n.columns and pd.notna(last_n["high_52w"].iloc[-1]):
+                high_52w = float(last_n["high_52w"].iloc[-1])
+            else:
+                high_52w = float(df["high"].max())
+            if "low_52w" in last_n.columns and pd.notna(last_n["low_52w"].iloc[-1]):
+                low_52w = float(last_n["low_52w"].iloc[-1])
+            else:
+                low_52w = float(df["low"].min())
             pct_above_52w_low = (
-                ((latest_close - low_52w) / low_52w) * 100
-                if low_52w > 0
-                else 0
+                ((latest_close - low_52w) / low_52w) * 100 if low_52w > 0 else 0
             )
 
             # Entry signal based on recovery from 52-week low
@@ -396,45 +426,53 @@ class BottomHunter:
 
             # Stop-loss: anchor to entry price, not historical lows
             # Compute ATR
-            prev_close = last_20["close"].shift(1)
-            tr = pd.concat([
-                last_20["high"] - last_20["low"],
-                (last_20["high"] - prev_close).abs(),
-                (last_20["low"] - prev_close).abs()
-            ], axis=1).max(axis=1)
-            atr_20d = float(tr.mean())
-            swing_low_20d = float(last_20["low"].min())
+            prev_close = last_n["close"].shift(1)
+            tr = pd.concat(
+                [
+                    last_n["high"] - last_n["low"],
+                    (last_n["high"] - prev_close).abs(),
+                    (last_n["low"] - prev_close).abs(),
+                ],
+                axis=1,
+            ).max(axis=1)
+            atr_n = float(tr.mean())
+            swing_low_n = float(last_n["low"].min())
 
             # Base SL: 2x ATR below entry — always tight and volatility-adjusted
-            sl_base = latest_close - 2 * atr_20d
+            sl_base = latest_close - 2 * atr_n
             sl_type = "Entry - 2×ATR"
 
             # If a relevant swing low exists between entry and 2xATR, use that instead
-            if swing_low_20d < latest_close and swing_low_20d > sl_base:
-                sl_price = swing_low_20d - atr_20d * 0.5
-                sl_type = "Below 20d Swing Low"
-                sl_base = swing_low_20d
+            if swing_low_n < latest_close and swing_low_n > sl_base:
+                sl_price = swing_low_n - atr_n * 0.5
+                sl_type = "Below Window Swing Low"
+                sl_base = swing_low_n
             else:
                 sl_price = sl_base
 
-            spike_result = self._check_delivery_spike(df)
+            spike_result = self._check_delivery_spike(df_for_scoring)
 
-            candidates.append({
-                "symbol": symbol,
-                "sector": _sector_map.get(symbol, "Unknown"),
-                "sector_mom_tier": _sector_mom_tier.get(_sector_map.get(symbol, ""), "Unknown"),
-                "quality_score": None,
-                "delivery_spike_conf": spike_result,
-                "close": latest_close,
-                "market_cap_cr": mcap / 1e7,
-                "delivery_absorption": delivery_absorption,
-                "pct_above_52w_low": pct_above_52w_low,
-                "adtv_cr": adtv_cr,
-                "entry_signal": entry_signal,
-                "sl_price": round(sl_price, 2),
-                "sl_type": sl_type,
-                "swing_low_20d": round(swing_low_20d, 2),
-            })
+            candidates.append(
+                {
+                    "symbol": symbol,
+                    "sector": _sector_map.get(symbol, "Unknown"),
+                    "sector_mom_tier": _sector_mom_tier.get(
+                        _sector_map.get(symbol, ""), "Unknown"
+                    ),
+                    "quality_score": None,
+                    "delivery_spike_conf": spike_result,
+                    "timeframe": self.timeframe,
+                    "close": latest_close,
+                    "market_cap_cr": mcap / 1e7,
+                    "delivery_absorption": delivery_absorption,
+                    "pct_above_52w_low": pct_above_52w_low,
+                    "adtv_cr": adtv_cr,
+                    "entry_signal": entry_signal,
+                    "sl_price": round(sl_price, 2),
+                    "sl_type": sl_type,
+                    "swing_low_n": round(swing_low_n, 2),
+                }
+            )
 
         # Now calculate percentile rank of delivery_absorption for the composite score
         if len(candidates) > 0:
@@ -447,7 +485,7 @@ class BottomHunter:
                 candidate_df["score"],
                 bins=[-1, 50, 80, 101],
                 labels=["LOW", "MOD", "HIGH"],
-                right=False
+                right=False,
             ).astype(str)
 
             # Compute cross-sectional quality score (0-100)
@@ -460,9 +498,21 @@ class BottomHunter:
                 nm = qf.get("net_margin")
                 ph = qf.get("promoter_holding_pct")
                 pe = qf.get("pe")
-                _nm.append(nm if nm is not None and not (isinstance(nm, float) and math.isnan(nm)) else None)
-                _ph.append(ph if ph is not None and not (isinstance(ph, float) and math.isnan(ph)) else None)
-                if pe is not None and pe > 0 and not (isinstance(pe, float) and math.isnan(pe)):
+                _nm.append(
+                    nm
+                    if nm is not None and not (isinstance(nm, float) and math.isnan(nm))
+                    else None
+                )
+                _ph.append(
+                    ph
+                    if ph is not None and not (isinstance(ph, float) and math.isnan(ph))
+                    else None
+                )
+                if (
+                    pe is not None
+                    and pe > 0
+                    and not (isinstance(pe, float) and math.isnan(pe))
+                ):
                     _inv_pe.append(1.0 / pe)
                 else:
                     _inv_pe.append(None)
@@ -471,9 +521,21 @@ class BottomHunter:
             candidate_df["_ph"] = _ph
             candidate_df["_inv_pe"] = _inv_pe
 
-            nm_rank = candidate_df["_nm"].apply(lambda x: x if x is not None else np.nan).rank(pct=True, ascending=True)
-            ph_rank = candidate_df["_ph"].apply(lambda x: x if x is not None else np.nan).rank(pct=True, ascending=True)
-            pe_rank = candidate_df["_inv_pe"].apply(lambda x: x if x is not None else np.nan).rank(pct=True, ascending=True)
+            nm_rank = (
+                candidate_df["_nm"]
+                .apply(lambda x: x if x is not None else np.nan)
+                .rank(pct=True, ascending=True)
+            )
+            ph_rank = (
+                candidate_df["_ph"]
+                .apply(lambda x: x if x is not None else np.nan)
+                .rank(pct=True, ascending=True)
+            )
+            pe_rank = (
+                candidate_df["_inv_pe"]
+                .apply(lambda x: x if x is not None else np.nan)
+                .rank(pct=True, ascending=True)
+            )
 
             nm_valid = candidate_df["_nm"].notna()
             ph_valid = candidate_df["_ph"].notna()
@@ -518,12 +580,14 @@ class BottomHunter:
                 "score",
                 "quality_score",
                 "sl_price",
-                "swing_low_20d",
+                "swing_low_n",
             ]
             for field in float_fields:
                 candidate_df[field] = candidate_df[field].apply(self._sanitize_float)
             # Sort by score descending
-            candidate_df = candidate_df.sort_values("score", ascending=False).reset_index(drop=True)
+            candidate_df = candidate_df.sort_values(
+                "score", ascending=False
+            ).reset_index(drop=True)
         else:
             candidate_df = pd.DataFrame(
                 columns=[
@@ -532,6 +596,7 @@ class BottomHunter:
                     "sector_mom_tier",
                     "quality_score",
                     "delivery_spike_conf",
+                    "timeframe",
                     "close",
                     "market_cap_cr",
                     "delivery_absorption",
@@ -542,5 +607,7 @@ class BottomHunter:
                 ]
             )
 
-        logger.info("Bottom Hunter scan complete: %d candidates found", len(candidate_df))
+        logger.info(
+            "Bottom Hunter scan complete: %d candidates found", len(candidate_df)
+        )
         return candidate_df
