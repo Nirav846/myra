@@ -378,8 +378,11 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
                         )
                         conn.commit()
 
-            # Write enrichment score columns row by row
+            # Write enrichment score columns in batches (executemany + single commit)
             enriched_today = df_enriched.filter(pl.col("date") == str(latest_date))
+            # Group rows by the set of columns they update, so each group uses one
+            # executemany with a single commit (mirrors the SMA-50 batch pattern).
+            updates_by_cols: dict = {}
             for row in enriched_today.iter_rows(named=True):
                 symbol = row["symbol"]
                 date_str = str(row["date"])
@@ -390,12 +393,17 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
                         if val is not None:
                             score_values[col] = float(val)
                 if score_values:
-                    set_clauses = [f"{c}=?" for c in score_values]
-                    conn.execute(
-                        f"UPDATE technical_data SET {','.join(set_clauses)} WHERE symbol=? AND date=?",
-                        list(score_values.values()) + [symbol, date_str],
+                    col_tuple = tuple(score_values.keys())
+                    updates_by_cols.setdefault(col_tuple, []).append(
+                        list(score_values.values()) + [symbol, date_str]
                     )
-                conn.commit()
+            for col_tuple, batch in updates_by_cols.items():
+                set_clauses = [f"{c}=?" for c in col_tuple]
+                conn.executemany(
+                    f"UPDATE technical_data SET {','.join(set_clauses)} WHERE symbol=? AND date=?",
+                    batch,
+                )
+            conn.commit()
 
             # Check if enrichment should pause after processing all symbols
             wait_if_paused()
