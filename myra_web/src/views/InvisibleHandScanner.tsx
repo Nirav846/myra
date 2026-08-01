@@ -8,6 +8,7 @@ import { StarButton } from '../components/StarButton';
 import { API_BASE } from '../config';
 import { Tooltip } from '../components/Tooltip';
 import ScrollableTable from '../components/ScrollableTable';
+import { HistoricalScanDatePicker } from '../components/HistoricalScanDatePicker';
 
 interface Candidate {
   symbol: string;
@@ -86,14 +87,6 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
   const [gradeFilter, setGradeFilter] = useState<string>('All');
 
   const [scanDate, setScanDate] = useState('');
-  const [latestTradingDay, setLatestTradingDay] = useState('');
-
-  useEffect(() => {
-    fetch(`${API_BASE}/latest-trading-day`)
-      .then(r => r.json())
-      .then(d => setLatestTradingDay(d.date || ''))
-      .catch(() => {});
-  }, []);
 
   const [sortCol, setSortCol] = useState<string>('ih_score');
   const [sortAsc, setSortAsc] = useState(false);
@@ -273,29 +266,7 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1">
-            <Tooltip content="Time-travel the scan to any past trading day. Weekend/holidays auto-adjust to the nearest previous trading day.">
-              <input
-                type="date"
-                id="scan-date-picker"
-                value={scanDate}
-                max={latestTradingDay}
-                onChange={e => setScanDate(e.target.value)}
-                className="bg-[#0e1117] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#ccc] font-mono focus:border-violet-500 outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 cursor-pointer"
-                aria-label="Scan date (past trading day)"
-              />
-            </Tooltip>
-            {scanDate && (
-              <button
-                onClick={() => setScanDate('')}
-                className="text-[#666] hover:text-[#aaa] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 rounded"
-                aria-label="Clear scan date"
-                title="Clear — scan latest data"
-              >
-                <XCircle size={13} aria-hidden="true" />
-              </button>
-            )}
-          </div>
+          <HistoricalScanDatePicker selectedDate={scanDate} onSelect={setScanDate} />
           <button
             onClick={startScan}
             disabled={isScanning}
