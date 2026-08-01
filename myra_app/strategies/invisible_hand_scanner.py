@@ -180,6 +180,31 @@ class InvisibleHandScanner:
         except Exception:
             _sector_mom_tier = {}
 
+        # Load quality-factor map (net_margin, pe, promoter_holding_pct)
+        _quality_map: dict[str, dict] = {}
+        try:
+            val_db_q = self._db_path("valuation")
+            with sqlite3.connect(val_db_q) as _qc:
+                _q_rows = _qc.execute(
+                    """
+                    SELECT f.symbol, f.net_margin, f.pe, f.promoter_holding_pct
+                    FROM fundamentals f
+                    INNER JOIN (
+                        SELECT symbol, MAX(date) as max_date
+                        FROM fundamentals
+                        GROUP BY symbol
+                    ) latest ON f.symbol = latest.symbol AND f.date = latest.max_date
+                    """
+                ).fetchall()
+                for r in _q_rows:
+                    _quality_map[r[0].strip()] = {
+                        "net_margin": r[1],
+                        "pe": r[2],
+                        "promoter_holding_pct": r[3],
+                    }
+        except Exception:
+            pass
+
         if as_on_date is None:
             as_on_date = self.target_date or date.today().isoformat()
 
@@ -403,6 +428,7 @@ class InvisibleHandScanner:
                     "symbol": symbol,
                     "sector": _sector_map.get(symbol, "Unknown"),
                     "sector_mom_tier": _sector_mom_tier.get(_sector_map.get(symbol, ""), "Unknown"),
+                    "quality_score": None,
                     "market_cap_cr": round(mcap / 1e7, 1),
                     "der_ratio": round(der_ratio, 2),
                     "der_score": round(der_score, 1),
@@ -446,6 +472,67 @@ class InvisibleHandScanner:
             for f in float_fields:
                 if f in c:
                     c[f] = self._sanitize_float(c[f])
+
+        # Compute cross-sectional quality score (0-100)
+        # Formula: 0.4 * pct_rank(net_margin) + 0.3 * pct_rank(promoter) + 0.3 * pct_rank(1/pe)
+        if len(candidates) > 0:
+            cand_df = pd.DataFrame(candidates)
+            _nm = []
+            _ph = []
+            _inv_pe = []
+            for sym in cand_df["symbol"]:
+                qf = _quality_map.get(sym, {})
+                nm = qf.get("net_margin")
+                ph = qf.get("promoter_holding_pct")
+                pe = qf.get("pe")
+                _nm.append(nm if nm is not None and not (isinstance(nm, float) and math.isnan(nm)) else None)
+                _ph.append(ph if ph is not None and not (isinstance(ph, float) and math.isnan(ph)) else None)
+                if pe is not None and pe > 0 and not (isinstance(pe, float) and math.isnan(pe)):
+                    _inv_pe.append(1.0 / pe)
+                else:
+                    _inv_pe.append(None)
+
+            cand_df["_nm"] = _nm
+            cand_df["_ph"] = _ph
+            cand_df["_inv_pe"] = _inv_pe
+
+            nm_rank = cand_df["_nm"].apply(lambda x: x if x is not None else np.nan).rank(pct=True, ascending=True)
+            ph_rank = cand_df["_ph"].apply(lambda x: x if x is not None else np.nan).rank(pct=True, ascending=True)
+            pe_rank = cand_df["_inv_pe"].apply(lambda x: x if x is not None else np.nan).rank(pct=True, ascending=True)
+
+            nm_valid = cand_df["_nm"].notna()
+            ph_valid = cand_df["_ph"].notna()
+            pe_valid = cand_df["_inv_pe"].notna()
+
+            # Default weights: 0.4, 0.3, 0.3
+            w_nm, w_ph, w_pe = 0.4, 0.3, 0.3
+
+            qscores = []
+            for i in range(len(cand_df)):
+                has_nm = nm_valid.iloc[i]
+                has_ph = ph_valid.iloc[i]
+                has_pe = pe_valid.iloc[i]
+                active_w = 0.0
+                if has_nm:
+                    active_w += w_nm
+                if has_ph:
+                    active_w += w_ph
+                if has_pe:
+                    active_w += w_pe
+                if active_w == 0:
+                    qscores.append(None)
+                    continue
+                qscore = 0.0
+                if has_nm:
+                    qscore += (w_nm / active_w) * nm_rank.iloc[i] * 100
+                if has_ph:
+                    qscore += (w_ph / active_w) * ph_rank.iloc[i] * 100
+                if has_pe:
+                    qscore += (w_pe / active_w) * pe_rank.iloc[i] * 100
+                qscores.append(round(qscore, 1))
+
+            for idx_c, qs in enumerate(qscores):
+                candidates[idx_c]["quality_score"] = self._sanitize_float(qs)
 
         candidates.sort(key=lambda x: x["ih_score"], reverse=True)
         logger.info(

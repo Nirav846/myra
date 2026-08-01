@@ -26,6 +26,7 @@ interface Candidate {
   symbol: string;
   sector?: string;
   sector_mom_tier?: string;
+  quality_score?: number | null;
   close: number;
   market_cap_cr: number;
   delivery_absorption: number;
@@ -216,12 +217,13 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
   const handleCSV = () => {
     if (filteredData.length === 0) return;
     const headers = [
-      'Symbol', 'Sector', 'Sector Mom', 'Close', 'Market Cap Cr', 'Delivery Absorption',
+      'Symbol', 'Sector', 'Sector Mom', 'Quality Score', 'Close', 'Market Cap Cr', 'Delivery Absorption',
       '% Above 52W Low', 'Entry Signal', 'ADTV (₹ Cr)', 'SL Price', 'SL Type',
       'Swing Low 20d', 'Score', 'Tier',
     ];
     const rows = filteredData.map(r => [
-      r.symbol, r.sector ?? '', r.sector_mom_tier ?? '', r.close.toFixed(2), r.market_cap_cr.toFixed(0),
+      r.symbol, r.sector ?? '', r.sector_mom_tier ?? '', r.quality_score != null ? r.quality_score.toFixed(0) : '',
+      r.close.toFixed(2), r.market_cap_cr.toFixed(0),
       r.delivery_absorption.toFixed(2), r.pct_above_52w_low.toFixed(2),
       `"${r.entry_signal ?? ''}"`, r.adtv_cr.toFixed(2),
       r.sl_price != null ? r.sl_price.toFixed(2) : '',
@@ -455,7 +457,7 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
                 role="grid"
                 aria-label="Bottom Hunter results"
                 aria-rowcount={filteredData.length}
-                aria-colcount={14}
+                aria-colcount={15}
               >
                 <thead className="sticky top-0 z-20 text-[#888]">
                   <tr style={{ boxShadow: '0 1px 0 0 rgba(255,255,255,0.08), 0 2px 4px 0 rgba(0,0,0,0.4)' }}>
@@ -467,6 +469,9 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
                     </th>
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500/50" onClick={() => handleSort('sector_mom_tier')} scope="col" aria-sort={sortCol === 'sector_mom_tier' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       Sector Mom <SortIcon column="sector_mom_tier" />
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('quality_score')} scope="col">
+                      <Tooltip content="Three-factor quality score (0-100): net margin (40%), promoter holding (30%), earnings yield 1/PE (30%). Cross-sectionally ranked within the scan universe.">Quality Score <SortIcon column="quality_score" /></Tooltip>
                     </th>
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('close')} scope="col">
                       Close <SortIcon column="close" />
@@ -506,7 +511,7 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={14} className="px-4 py-8 text-center text-[#666]">No candidates match current filters.</td>
+                      <td colSpan={15} className="px-4 py-8 text-center text-[#666]">No candidates match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((row, index) => (
@@ -531,6 +536,17 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${SECTOR_MOM_COLORS[row.sector_mom_tier ?? ''] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
                             {row.sector_mom_tier ?? '—'}
                           </span>
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          {row.quality_score != null ? (
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                              row.quality_score >= 70 ? 'bg-green-500/20 text-green-400 border-green-500/30' :
+                              row.quality_score >= 40 ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' :
+                              'bg-red-500/20 text-red-400 border-red-500/30'
+                            }`}>
+                              {row.quality_score.toFixed(0)}
+                            </span>
+                          ) : '—'}
                         </td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.close.toFixed(2)}</td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.market_cap_cr.toFixed(0)}</td>
