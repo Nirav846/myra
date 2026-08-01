@@ -13,6 +13,7 @@ import { HistoricalScanDatePicker } from '../components/HistoricalScanDatePicker
 interface Candidate {
   symbol: string;
   sector?: string;
+  sector_mom_tier?: string;
   market_cap_cr: number;
   der_ratio: number;
   der_score: number;
@@ -64,6 +65,12 @@ const GRADE_COLORS: Record<string, string> = {
   B: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
   C: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
   D: 'bg-red-500/20 text-red-400 border-red-500/30',
+};
+
+const SECTOR_MOM_COLORS: Record<string, string> = {
+  TOP: 'bg-green-500/20 text-green-400 border-green-500/30',
+  MID: 'bg-[#ffffff0a] text-amber-400 border-amber-500/30',
+  BOTTOM: 'bg-red-500/20 text-red-400 border-red-500/30',
 };
 
 const STATUS_FILTERS = ['All', 'A', 'B', 'C', 'D'];
@@ -579,7 +586,7 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
                 role="grid"
                 aria-label="Invisible Hand Scanner results"
                 aria-rowcount={filteredData.length}
-                aria-colcount={14}
+                aria-colcount={15}
               >
                 <thead className="sticky top-0 z-20 text-[#888]">
                   <tr style={{ boxShadow: '0 1px 0 0 rgba(255,255,255,0.08), 0 2px 4px 0 rgba(0,0,0,0.4)' }}>
@@ -592,6 +599,11 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white select-none"
                         onClick={() => handleSort('sector')}>
                       Sector <SortIcon column="sector" />
+                    </th>
+
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white select-none"
+                        onClick={() => handleSort('sector_mom_tier')}>
+                      Sector Mom <SortIcon column="sector_mom_tier" />
                     </th>
 
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
@@ -665,7 +677,7 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={14} className="px-4 py-8 text-center text-[#666]">No invisible hand setups match current filters.</td>
+                      <td colSpan={15} className="px-4 py-8 text-center text-[#666]">No invisible hand setups match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((row, index) => (
@@ -684,6 +696,11 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
                           </div>
                         </td>
                         <td className="px-3 py-3 text-[#888] text-[11px] max-w-[120px] truncate" title={row.sector ?? ''}>{row.sector ?? '—'}</td>
+                        <td className="px-3 py-3 text-center">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${SECTOR_MOM_COLORS[row.sector_mom_tier ?? ''] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
+                            {row.sector_mom_tier ?? '—'}
+                          </span>
+                        </td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.market_cap_cr.toFixed(0)}</td>
                         <td className="px-3 py-3 text-right">
                           <span className={row.der_ratio > 2.0 ? 'text-violet-400' : row.der_ratio > 1.5 ? 'text-cyan-400' : 'text-[#888]'}>

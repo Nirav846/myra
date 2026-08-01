@@ -9,6 +9,7 @@ from typing import Optional
 
 from myra_app.constants import DB_DIR
 from myra_app.librarian_core import LibrarianCore
+from myra_app.strategies.bottom_hunter import compute_sector_momentum_tiers
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +173,12 @@ class InvisibleHandScanner:
                 _sector_map = {r[0].strip(): r[1] for r in _sec_rows}
         except Exception:
             pass
+
+        # Compute sector momentum tiers
+        try:
+            _sector_mom_tier: dict[str, str] = compute_sector_momentum_tiers()
+        except Exception:
+            _sector_mom_tier = {}
 
         if as_on_date is None:
             as_on_date = self.target_date or date.today().isoformat()
@@ -395,6 +402,7 @@ class InvisibleHandScanner:
                 {
                     "symbol": symbol,
                     "sector": _sector_map.get(symbol, "Unknown"),
+                    "sector_mom_tier": _sector_mom_tier.get(_sector_map.get(symbol, ""), "Unknown"),
                     "market_cap_cr": round(mcap / 1e7, 1),
                     "der_ratio": round(der_ratio, 2),
                     "der_score": round(der_score, 1),

@@ -13,6 +13,111 @@ from myra_app.librarian_core import LibrarianCore
 logger = logging.getLogger(__name__)
 
 
+def compute_sector_momentum_tiers() -> dict[str, str]:
+    """Compute 6-month ROC per sector and tier into TOP / MID / BOTTOM.
+
+    Returns a dict mapping sector name → tier string.
+    Falls back to returning an empty dict if data is insufficient.
+    """
+    tech_db = os.path.join(DB_DIR, LibrarianCore.DB_MAP["technical"])
+    val_db = os.path.join(DB_DIR, LibrarianCore.DB_MAP["valuation"])
+
+    if not os.path.exists(tech_db) or not os.path.exists(val_db):
+        return {}
+
+    # Step 1: Build symbol → sector map from fundamentals
+    symbol_sector: dict[str, str] = {}
+    try:
+        with sqlite3.connect(val_db) as conn:
+            rows = conn.execute(
+                """
+                SELECT f.symbol, f.sector
+                FROM fundamentals f
+                INNER JOIN (
+                    SELECT symbol, MAX(date) as max_date
+                    FROM fundamentals
+                    WHERE sector IS NOT NULL
+                    GROUP BY symbol
+                ) latest ON f.symbol = latest.symbol AND f.date = latest.max_date
+                WHERE f.sector IS NOT NULL
+                """
+            ).fetchall()
+            symbol_sector = {r[0].strip(): r[1] for r in rows}
+    except Exception:
+        return {}
+
+    if not symbol_sector:
+        return {}
+
+    # Step 2: For each symbol, compute 6-month ROC from technical_data
+    # We need ~126 trading days of close data per symbol
+    sector_rocs: dict[str, list[float]] = {}
+    symbols = list(symbol_sector.keys())
+
+    try:
+        with sqlite3.connect(tech_db) as conn:
+            for sym in symbols:
+                try:
+                    # Get last 150 trading days of data (more than 126 to handle gaps)
+                    rows = conn.execute(
+                        """
+                        SELECT date, close FROM technical_data
+                        WHERE symbol = ?
+                        ORDER BY date DESC
+                        LIMIT 150
+                        """,
+                        (sym,),
+                    ).fetchall()
+                except Exception:
+                    continue
+
+                if len(rows) < 30:
+                    continue
+
+                # rows are DESC ordered; latest is rows[0]
+                latest_close = float(rows[0][1])
+                # Find close ~126 trading days ago (index 125 in DESC list)
+                target_idx = min(125, len(rows) - 1)
+                old_close = float(rows[target_idx][1])
+
+                if old_close <= 0 or latest_close <= 0:
+                    continue
+
+                roc = (latest_close - old_close) / old_close
+                sector = symbol_sector[sym]
+                sector_rocs.setdefault(sector, []).append(roc)
+    except Exception:
+        return {}
+
+    # Step 3: Equal-weight mean ROC per sector
+    sector_avg_roc: dict[str, float] = {}
+    for sec, rocs in sector_rocs.items():
+        if rocs:
+            sector_avg_roc[sec] = sum(rocs) / len(rocs)
+
+    if len(sector_avg_roc) < 5:
+        # Not enough sectors to tier meaningfully
+        return {}
+
+    # Step 4: Percentile-rank sectors
+    sorted_sectors = sorted(sector_avg_roc.items(), key=lambda x: x[1], reverse=True)
+    n = len(sorted_sectors)
+    top_cutoff = max(1, int(n * 0.2))
+    bottom_cutoff = max(1, int(n * 0.2))
+    bottom_start = n - bottom_cutoff
+
+    result: dict[str, str] = {}
+    for i, (sec, _) in enumerate(sorted_sectors):
+        if i < top_cutoff:
+            result[sec] = "TOP"
+        elif i >= bottom_start:
+            result[sec] = "BOTTOM"
+        else:
+            result[sec] = "MID"
+
+    return result
+
+
 class BottomHunter:
     def __init__(
         self,
@@ -129,6 +234,12 @@ class BottomHunter:
                 _sector_map = {r[0].strip(): r[1] for r in _sec_rows}
         except Exception:
             pass
+
+        # Compute sector momentum tiers
+        try:
+            _sector_mom_tier: dict[str, str] = compute_sector_momentum_tiers()
+        except Exception:
+            _sector_mom_tier = {}
 
         if as_on_date is None:
             as_on_date = date.today().isoformat()
@@ -263,6 +374,7 @@ class BottomHunter:
             candidates.append({
                 "symbol": symbol,
                 "sector": _sector_map.get(symbol, "Unknown"),
+                "sector_mom_tier": _sector_mom_tier.get(_sector_map.get(symbol, ""), "Unknown"),
                 "close": latest_close,
                 "market_cap_cr": mcap / 1e7,
                 "delivery_absorption": delivery_absorption,
@@ -307,6 +419,7 @@ class BottomHunter:
                 columns=[
                     "symbol",
                     "sector",
+                    "sector_mom_tier",
                     "close",
                     "market_cap_cr",
                     "delivery_absorption",
