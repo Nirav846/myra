@@ -36,6 +36,7 @@ interface Candidate {
   sl_price: number;
   sl_type: string;
   swing_low_20d: number;
+  delivery_spike_conf?: boolean;
   score: number;
   tier: string;
 }
@@ -219,7 +220,7 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
     const headers = [
       'Symbol', 'Sector', 'Sector Mom', 'Quality Score', 'Close', 'Market Cap Cr', 'Delivery Absorption',
       '% Above 52W Low', 'Entry Signal', 'ADTV (₹ Cr)', 'SL Price', 'SL Type',
-      'Swing Low 20d', 'Score', 'Tier',
+      'Swing Low 20d', 'Score', 'Tier', 'Spike Conf',
     ];
     const rows = filteredData.map(r => [
       r.symbol, r.sector ?? '', r.sector_mom_tier ?? '', r.quality_score != null ? r.quality_score.toFixed(0) : '',
@@ -230,6 +231,7 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
       `"${r.sl_type ?? ''}"`,
       r.swing_low_20d != null ? r.swing_low_20d.toFixed(2) : '',
       r.score.toFixed(0), r.tier,
+      r.delivery_spike_conf === true ? 'YES' : '',
     ].join(','));
     const csv = [headers.join(','), ...rows].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -457,7 +459,7 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
                 role="grid"
                 aria-label="Bottom Hunter results"
                 aria-rowcount={filteredData.length}
-                aria-colcount={15}
+                aria-colcount={16}
               >
                 <thead className="sticky top-0 z-20 text-[#888]">
                   <tr style={{ boxShadow: '0 1px 0 0 rgba(255,255,255,0.08), 0 2px 4px 0 rgba(0,0,0,0.4)' }}>
@@ -506,12 +508,15 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('tier')} scope="col">
                       Tier <SortIcon column="tier" />
                     </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('delivery_spike_conf')} scope="col">
+                      Spike Conf <SortIcon column="delivery_spike_conf" />
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={15} className="px-4 py-8 text-center text-[#666]">No candidates match current filters.</td>
+                      <td colSpan={16} className="px-4 py-8 text-center text-[#666]">No candidates match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((row, index) => (
@@ -586,6 +591,15 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${TIER_COLORS[row.tier] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
                             {row.tier}
                           </span>
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          {row.delivery_spike_conf === true ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-green-500/10 text-green-400 border-green-500/30">
+                              YES
+                            </span>
+                          ) : (
+                            <span className="text-[#666]">—</span>
+                          )}
                         </td>
                       </tr>
                     ))
