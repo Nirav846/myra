@@ -11,6 +11,18 @@
     },
     "myra-orchestrator": {
       "model": "opencode/deepseek-v4-flash-free"
+    },
+    "myra-data-auditor": {
+      "model": "opencode/deepseek-v4-flash-free"
+    },
+    "myra-consistency-guard": {
+      "model": "opencode/deepseek-v4-flash-free"
+    },
+    "myra-model-trainer": {
+      "model": "opencode/deepseek-v4-flash-free"
+    },
+    "myra-decay-monitor": {
+      "model": "opencode/deepseek-v4-flash-free"
     }
   }
 }

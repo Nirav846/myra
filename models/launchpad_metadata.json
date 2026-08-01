@@ -1,0 +1,7 @@
+{
+  "last_trained_date": "2026-06-14",
+  "model_file": "models/launchpad_xgb.joblib",
+  "training_rows": 722000,
+  "features": 14,
+  "test_accuracy": 0.408
+}
