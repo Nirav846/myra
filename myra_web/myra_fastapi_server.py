@@ -77,6 +77,20 @@ def get_db_path(db_key: str):
     return os.path.join(DB_DIR, filename)
 
 
+def _df_to_safe_records(df) -> list[dict]:
+    """Convert a DataFrame to a list of dicts, replacing NaN/Inf with None."""
+    import math as _math
+
+    if df.empty:
+        return []
+    records = df.to_dict("records")
+    for rec in records:
+        for key, val in list(rec.items()):
+            if isinstance(val, float) and (_math.isnan(val) or _math.isinf(val)):
+                rec[key] = None
+    return records
+
+
 @app.get("/api/health")
 def health_check():
     """
@@ -2027,16 +2041,7 @@ async def invisible_hand_scan(payload: dict = Body(default={})):
             _ih_scan_state["progress"] = 95
             _ih_scan_state["message"] = "Finalising results..."
 
-            candidates = []
-            if not df.empty:
-                for _, row in df.iterrows():
-                    rec = row.to_dict()
-                    for key, val in list(rec.items()):
-                        if isinstance(val, float) and (
-                            _math.isnan(val) or _math.isinf(val)
-                        ):
-                            rec[key] = None
-                    candidates.append(rec)
+            candidates = _df_to_safe_records(df)
 
             _ih_scan_state.update(
                 {
@@ -2387,16 +2392,7 @@ async def liquidity_flip_scan(payload: dict = Body(default={})):
             _lf_scan_state["progress"] = 95
             _lf_scan_state["message"] = "Finalising results..."
 
-            candidates = []
-            if not df.empty:
-                for _, row in df.iterrows():
-                    rec = row.to_dict()
-                    for key, val in list(rec.items()):
-                        if isinstance(val, float) and (
-                            _math.isnan(val) or _math.isinf(val)
-                        ):
-                            rec[key] = None
-                    candidates.append(rec)
+            candidates = _df_to_safe_records(df)
 
             _lf_scan_state.update(
                 {
@@ -2564,16 +2560,7 @@ async def operator_fingerprint_scan(payload: dict = Body(default={})):
             _of_scan_state["progress"] = 95
             _of_scan_state["message"] = "Finalising results..."
 
-            candidates = []
-            if not df.empty:
-                for _, row in df.iterrows():
-                    rec = row.to_dict()
-                    for key, val in list(rec.items()):
-                        if isinstance(val, float) and (
-                            _math.isnan(val) or _math.isinf(val)
-                        ):
-                            rec[key] = None
-                    candidates.append(rec)
+            candidates = _df_to_safe_records(df)
 
             _of_scan_state.update(
                 {
@@ -2920,16 +2907,7 @@ async def seasonal_delivery_scan(payload: dict = Body(default={})):
             _sd_scan_state["progress"] = 95
             _sd_scan_state["message"] = "Finalising results..."
 
-            candidates = []
-            if not df.empty:
-                for _, row in df.iterrows():
-                    rec = row.to_dict()
-                    for key, val in list(rec.items()):
-                        if isinstance(val, float) and (
-                            _math.isnan(val) or _math.isinf(val)
-                        ):
-                            rec[key] = None
-                    candidates.append(rec)
+            candidates = _df_to_safe_records(df)
 
             _sd_scan_state.update(
                 {
@@ -3298,16 +3276,7 @@ async def darvas_scan(payload: dict = Body(default={})):
             _darvas_scan_state["progress"] = 95
             _darvas_scan_state["message"] = "Finalising results..."
 
-            candidates = []
-            if not df.empty:
-                for _, row in df.iterrows():
-                    rec = row.to_dict()
-                    for key, val in list(rec.items()):
-                        if isinstance(val, float) and (
-                            _math.isnan(val) or _math.isinf(val)
-                        ):
-                            rec[key] = None
-                    candidates.append(rec)
+            candidates = _df_to_safe_records(df)
 
             _darvas_scan_state.update(
                 {
@@ -3424,16 +3393,7 @@ async def wyckoff_scan(payload: dict = Body(default={})):
             _wy_scan_state["progress"] = 95
             _wy_scan_state["message"] = "Finalising results..."
 
-            candidates = []
-            if not df.empty:
-                for _, row in df.iterrows():
-                    rec = row.to_dict()
-                    for key, val in list(rec.items()):
-                        if isinstance(val, float) and (
-                            _math.isnan(val) or _math.isinf(val)
-                        ):
-                            rec[key] = None
-                    candidates.append(rec)
+            candidates = _df_to_safe_records(df)
 
             _wy_scan_state.update(
                 {
@@ -3749,16 +3709,7 @@ async def bottom_hunter_scan(payload: dict = Body(default={})):
             _bh_scan_state["progress"] = 95
             _bh_scan_state["message"] = "Finalizing results..."
 
-            candidates = []
-            if not df.empty:
-                for _, row in df.iterrows():
-                    rec = row.to_dict()
-                    for key, val in list(rec.items()):
-                        if isinstance(val, float) and (
-                            _math.isnan(val) or _math.isinf(val)
-                        ):
-                            rec[key] = None
-                    candidates.append(rec)
+            candidates = _df_to_safe_records(df)
 
             _bh_scan_state.update(
                 {
@@ -3914,16 +3865,7 @@ async def climax_accumulation_scan(payload: dict = Body(default={})):
             _climax_scan_state["progress"] = 95
             _climax_scan_state["message"] = "Finalising results..."
 
-            candidates = []
-            if not df.empty:
-                for _, row in df.iterrows():
-                    rec = row.to_dict()
-                    for key, val in list(rec.items()):
-                        if isinstance(val, float) and (
-                            _math.isnan(val) or _math.isinf(val)
-                        ):
-                            rec[key] = None
-                    candidates.append(rec)
+            candidates = _df_to_safe_records(df)
 
             _climax_scan_state.update(
                 {
