@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { Box, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Star, Info, Target } from 'lucide-react';
+import { Box, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ChevronRight, ArrowUpDown, Star, Info, Target, BookOpen } from 'lucide-react';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
 import { useWatchlist } from '../lib/WatchlistContext';
@@ -74,6 +74,7 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [staleBannerOpen, setStaleBannerOpen] = useState(true);
+  const [guideOpen, setGuideOpen] = useState(false);
 
   const [mcapRange, setMcapRange] = useState<{ min: number; max: number } | null>(null);
   const mcapMapRef = useRef<Map<string, number>>(new Map());
@@ -302,6 +303,45 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
           </button>
         </div>
       </header>
+
+      {/* How to read Bottom Hunter */}
+      <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden">
+        <button
+          onClick={() => setGuideOpen(o => !o)}
+          className="w-full flex items-center gap-2 px-4 py-2.5 text-xs font-mono text-[#888] hover:text-[#fafafa] transition-colors"
+        >
+          <BookOpen size={14} className="text-blue-400" />
+          <span className="font-semibold text-[#fafafa]">How to use Bottom Hunter</span>
+          <span className="text-[10px] text-[#666]">- A guide to delivery-absorption signals</span>
+          <ChevronRight size={14} className={`ml-auto transition-transform ${guideOpen ? 'rotate-90' : ''}`} />
+        </button>
+        {guideOpen && (
+          <div className="px-4 pb-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div>
+              <h4 className="text-blue-400 font-semibold mb-1">How it works</h4>
+              <p className="text-[#aaa] leading-relaxed">
+                Bottom Hunter scans for <span className="text-[#fafafa]">delivery-based accumulation near 52-week lows</span> — the same "quiet institutional buying" theme as Invisible Hand, but the setup is a stock basing at or near its 52-week low while up-days absorb more delivery than down-days (delivery_absorption).
+              </p>
+              <ul className="space-y-1 text-[#aaa] mt-2">
+                <li><span className="text-[#888] font-bold">Score / Tier</span> — percentile rank of delivery absorption; HIGH ≥80, MOD 50-80, LOW &lt;50.</li>
+                <li><span className="text-[#888] font-bold">Entry Signal</span> — how close price is to the 52-week low (At &lt;5%, Near 5-10%, Above &gt;10%).</li>
+                <li><span className="text-[#888] font-bold">SL Price</span> — stop-loss below the 20-day swing low minus 0.5×ATR (or the 52-week low if deeper).</li>
+                <li><span className="text-[#888] font-bold">Spike Conf</span> (delivery_spike_conf) — TODAY's delivery ≥ 1.3× the 50-day average AND close in the upper 60% of the day's range. Confirmed entry-timing signal (backtest: +8.5% mean 40d @ 70% win rate).</li>
+              </ul>
+            </div>
+            <div>
+              <h4 className="text-cyan-400 font-semibold mb-1">Signals & context</h4>
+              <ul className="space-y-1.5 text-[#aaa]">
+                <li><span className="text-cyan-400 font-bold">Quality Score</span> — composite of net_margin (40%) + promoter holding (30%) + PE inverse (30%), percentile-ranked within the scan. ≥70 strong, 40-69 neutral, &lt;40 weak.</li>
+                <li><span className="text-cyan-400 font-bold">Sector Mom</span> — 6-month sector momentum tier (TOP/MID/BOTTOM). Top-quintile-momentum sectors tend to outperform.</li>
+                <li className="pt-1 text-[#888] border-t border-[#ffffff0a]">
+                  The signal is strongest over a <span className="text-[#fafafa] font-semibold">3-9 month horizon</span>; combine with fundamental analysis for multi-year holds. Historical backtest: +57% net return over 6 months (173 observations, 2022-2024).
+                </li>
+              </ul>
+            </div>
+          </div>
+        )}
+      </div>
 
       {isScanning && (
         <div className="bg-blue-500/10 border border-blue-500/30 rounded p-3" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100} aria-label="Scan progress">
