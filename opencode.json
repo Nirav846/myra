@@ -1,4 +1,16 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "default_agent": "myra-orchestrator"
+  "default_agent": "myra-orchestrator",
+  "model": "opencode/deepseek-v4-flash-free",
+  "agent": {
+    "myra-planner": {
+      "model": "opencode/deepseek-v4-flash-free"
+    },
+    "myra-builder": {
+      "model": "opencode/mimo-v2.5-free"
+    },
+    "myra-orchestrator": {
+      "model": "opencode/deepseek-v4-flash-free"
+    }
+  }
 }
