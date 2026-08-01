@@ -422,6 +422,13 @@ class LaunchpadLabeler:
                 "breakout_date TEXT, breakout_close REAL, return_pct REAL, days_to_breakout INTEGER, "
                 "success INTEGER, max_drawdown_pct REAL, min_range_atr_ratio REAL, min_vol_ratio REAL)"
             )
+            # Add indexes for better query performance
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_lp_active ON launchpad_events(success, trigger_date)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_lp_sym ON launchpad_events(symbol, trigger_date)"
+            )
             conn.commit()
 
         stats = {
