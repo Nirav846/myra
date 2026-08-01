@@ -23,7 +23,111 @@ scanner: invisible_hand OK 2026-07-04 None
 scanner: wyckoff STALE 2026-06-22 Re-scan from UI
 portfolio_snapshots OK 2026-07-15 None
 
-7. Do NOT write any code. Do NOT fix anything. Output the report only.
+## Correctness Checks
+
+After the freshness checks, run these validations:
+
+### 2a. Row count anomaly detection
+Run this bash command and report the result:
+python -c "
+import sqlite3, os
+from myra_app.constants import DB_DIR
+conn = sqlite3.connect(os.path.join(DB_DIR, 'myra_technical.db'))
+dates = [r[0] for r in conn.execute('SELECT DISTINCT date FROM technical_data ORDER BY date DESC LIMIT 2').fetchall()]
+if len(dates) == 2:
+    today = conn.execute('SELECT COUNT(*) FROM technical_data WHERE date=?', (dates[0],)).fetchone()[0]
+    yesterday = conn.execute('SELECT COUNT(*) FROM technical_data WHERE date=?', (dates[1],)).fetchone()[0]
+    pct_change = (today - yesterday) / yesterday * 100 if yesterday > 0 else 0
+    if abs(pct_change) > 10:
+        print(f'WARNING: Row count changed by {pct_change:+.1f}% — {today} vs {yesterday} yesterday')
+    else:
+        print(f'OK: Row count {today} (change {pct_change:+.1f}%)')
+else:
+    print('Not enough dates to compare')
+conn.close()
+"
+
+### 2b. Enrichment completeness
+Run this bash command and report the result:
+python -c "
+import sqlite3, os
+from myra_app.constants import DB_DIR
+conn = sqlite3.connect(os.path.join(DB_DIR, 'myra_technical.db'))
+latest = conn.execute('SELECT MAX(date) FROM technical_data').fetchone()[0]
+total = conn.execute('SELECT COUNT(*) FROM technical_data WHERE date=?', (latest,)).fetchone()[0]
+enriched = conn.execute('SELECT COUNT(*) FROM technical_data WHERE date=? AND delivery_divergence_score IS NOT NULL', (latest,)).fetchone()[0]
+if enriched < total:
+    print(f'ISSUE: Only {enriched}/{total} rows enriched on {latest}')
+else:
+    print(f'OK: All {total} rows enriched on {latest}')
+conn.close()
+"
+
+### 2c. Fundamentals sync success
+Run this bash command and report the result:
+python -c "
+import sqlite3, os
+from myra_app.constants import DB_DIR
+conn = sqlite3.connect(os.path.join(DB_DIR, 'myra_metadata.db'))
+row = conn.execute(\"SELECT status, started_at, message FROM task_registry WHERE name='Fundamentals sync' ORDER BY started_at DESC LIMIT 1\").fetchone()
+if row:
+    if row[0] == 'Done':
+        print(f'OK: Fundamentals sync completed at {row[1]}')
+    else:
+        print(f'ISSUE: Fundamentals sync status={row[0]} at {row[1]} — {row[2]}')
+else:
+    print(f'ISSUE: No fundamentals sync found in task registry')
+conn.close()
+"
+
+### 2d. Backup integrity
+Run this bash command and report the result:
+python -c "
+import os, glob
+from myra_app.constants import DB_DIR
+backup_dir = os.path.join(DB_DIR, 'backups')
+files = sorted(glob.glob(os.path.join(backup_dir, 'technical_*.db')), reverse=True)
+if files:
+    size = os.path.getsize(files[0])
+    if size > 0:
+        print(f'OK: Latest backup {os.path.basename(files[0])} ({size/1024/1024:.1f} MB)')
+    else:
+        print(f'ISSUE: Backup file {os.path.basename(files[0])} is zero bytes')
+else:
+    print(f'ISSUE: No backup files found')
+"
+
+### 2e. Scanner cache sanity
+Run this bash command and report the result:
+python -c "
+import os, json
+from myra_app.constants import MODELS_DIR
+scanners = ['invisible_hand', 'trigger', 'float_exhaustion', 'wyckoff', 'bottom_hunter']
+for s in scanners:
+    path = os.path.join(MODELS_DIR, f'{s}_cache.json')
+    if os.path.exists(path):
+        with open(path) as f:
+            data = json.load(f)
+        n = len(data.get('candidates', []))
+        if n == 0:
+            print(f'NOTE: {s} cache has 0 candidates — may need re-scan')
+        else:
+            print(f'OK: {s} cache has {n} candidates')
+    else:
+        print(f'NOTE: {s} cache not found')
+"
+
+### Correctness Summary Table
+
+After all correctness checks, output a summary:
+--- CORRECTNESS SUMMARY ---
+Row count: OK / WARNING
+Enrichment: OK / ISSUE
+Fundamentals: OK / ISSUE
+Backups: OK / ISSUE
+Scanner caches: OK / NOTE (X scanners have 0 candidates)
+
+Do NOT write any code. Do NOT fix anything. Output the report only.
 
 To perform the checks, run the following Python commands (adjust as needed):
 
