@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import LeaderboardView from './views/Leaderboard';
 import FVGScannerView from './views/FVGScanner';
-import AIAnalysisView from './views/AIAnalysis';
 import DataLakeView from './views/DataLake';
 
 import MissionControlView from './views/MissionControl';
