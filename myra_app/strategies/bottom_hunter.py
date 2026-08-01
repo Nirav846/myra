@@ -194,6 +194,27 @@ class BottomHunter:
         return rows
 
     @staticmethod
+    def _check_delivery_spike(df: pd.DataFrame) -> bool:
+        """Return True if today's delivery % is ≥1.3× the 50-day avg AND
+        close is in the upper 40% of the day's range (CLR ≥ 0.6)."""
+        if len(df) < 20:
+            return False
+        del_avg = df["delivery_pct"].tail(50).mean()
+        if pd.isna(del_avg) or del_avg <= 0:
+            return False
+        last = df.iloc[-1]
+        # Condition A: delivery spike
+        if last["delivery_pct"] < 1.3 * del_avg:
+            return False
+        # Condition B: close location ratio ≥ 0.6
+        high, low, close = float(last["high"]), float(last["low"]), float(last["close"])
+        if high == low:
+            clr = 1.0 if close == high else 0.0
+        else:
+            clr = (close - low) / (high - low)
+        return clr >= 0.6
+
+    @staticmethod
     def _sanitize_float(value):
         if value is None:
             return None
@@ -396,11 +417,14 @@ class BottomHunter:
             else:
                 sl_price = sl_base
 
+            spike_result = self._check_delivery_spike(df)
+
             candidates.append({
                 "symbol": symbol,
                 "sector": _sector_map.get(symbol, "Unknown"),
                 "sector_mom_tier": _sector_mom_tier.get(_sector_map.get(symbol, ""), "Unknown"),
                 "quality_score": None,
+                "delivery_spike_conf": spike_result,
                 "close": latest_close,
                 "market_cap_cr": mcap / 1e7,
                 "delivery_absorption": delivery_absorption,
@@ -507,6 +531,7 @@ class BottomHunter:
                     "sector",
                     "sector_mom_tier",
                     "quality_score",
+                    "delivery_spike_conf",
                     "close",
                     "market_cap_cr",
                     "delivery_absorption",
