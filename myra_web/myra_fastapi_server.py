@@ -3947,3 +3947,184 @@ async def clear_scanner_cache(scanner_name: str):
         _climax_scan_state.update(reset)
 
     return {"status": "deleted" if existed else "not_found", "scanner": scanner_name}
+
+
+# ---------------------------------------------------------------------------
+# Scanner Confluence endpoint
+# ---------------------------------------------------------------------------
+
+# Map cache filenames to friendly display names
+_SCANNER_CACHE_MAP: dict[str, str] = {
+    "trigger_cache.json": "The Trigger",
+    "bottom_hunter_cache.json": "Bottom Hunter",
+    "invisible_hand_cache.json": "Invisible Hand",
+    "wyckoff_cache.json": "Wyckoff Automaton",
+    "liquidity_flip_cache.json": "Liquidity Flip",
+    "operator_fingerprint_cache.json": "Operator Fingerprint",
+    "float_exhaustion_cache.json": "Float Exhaustion",
+    "seasonal_delivery_cache.json": "Seasonal Delivery",
+    "darvas_cache.json": "Darvas Box Pro",
+    "multibagger_cache.json": "Multibagger Pro",
+    "climax_accumulation_cache.json": "Climax Accumulation",
+    "launchpad_scan_cache.json": "Launchpad Scanner",
+}
+
+# Display-name → frontend route (for link column)
+_SCANNER_ROUTES: dict[str, str] = {
+    "The Trigger": "/trigger",
+    "Bottom Hunter": "/bottom-hunter",
+    "Invisible Hand": "/invisible-hand",
+    "Wyckoff Automaton": "/wyckoff",
+    "Liquidity Flip": "/liquidity-flip",
+    "Operator Fingerprint": "/operator-fingerprint",
+    "Float Exhaustion": "/float-exhaustion",
+    "Seasonal Delivery": "/seasonal-delivery",
+    "Darvas Box Pro": "/darvas-box-pro",
+    "Multibagger Pro": "/multibagger-pro-scanner",
+    "Climax Accumulation": "/climax-accumulation",
+    "Launchpad Scanner": "/launchpad-scanner",
+}
+
+_GRADE_RANK: dict[str, float] = {
+    "A+": 4.5, "A": 4, "B": 3, "C": 2, "D": 1,
+}
+_TIER_RANK: dict[str, float] = {
+    "HIGH": 3.5, "MID": 2.5, "LOW": 1.5,
+}
+
+
+def _grade_rank(value) -> float:
+    """Convert a grade/tier/score value to a numeric rank (higher = better)."""
+    if value is None:
+        return -1
+    if isinstance(value, (int, float)):
+        return float(value) / 100 * 4  # normalise 0-100 to 0-4 scale
+    s = str(value).strip()
+    return _GRADE_RANK.get(s.upper(), _TIER_RANK.get(s.upper(), 0))
+
+
+def _best_grade(candidates: list[dict]) -> str | None:
+    """Return the best grade string from a list of candidate dicts."""
+    best_rank: float = -1
+    best_str: str | None = None
+
+    for c in candidates:
+        for key in ("grade", "score", "tier"):
+            if key in c and c[key] is not None:
+                rank = _grade_rank(c[key])
+                if rank > best_rank:
+                    best_rank = rank
+                    best_str = str(c[key])
+    return best_str
+
+
+def build_confluence_report() -> dict:
+    """Aggregate all scanner cache files into a confluence report.
+
+    Only symbols flagged by 2+ distinct scanners are included.
+    """
+    from datetime import timezone, timedelta
+
+    IST = timezone(timedelta(hours=5, minutes=30))
+
+    # Collect all cache files that match our known names
+    cache_files: dict[str, str] = {}  # display_name → filepath
+    try:
+        for fname in os.listdir(MODELS_DIR):
+            if fname not in _SCANNER_CACHE_MAP:
+                continue
+            display = _SCANNER_CACHE_MAP[fname]
+            # Handle darvas_scan_cache.json vs darvas_cache.json — prefer the
+            # one with more candidates; if both exist we'll resolve below.
+            fpath = os.path.join(MODELS_DIR, fname)
+            if display in cache_files:
+                # Already have one for this display name — keep the one with
+                # more candidates (lazy: replace if new file is larger).
+                try:
+                    with open(cache_files[display], encoding="utf-8") as f:
+                        existing = json.load(f)
+                    with open(fpath, encoding="utf-8") as f:
+                        new_data = json.load(f)
+                    if len(new_data.get("candidates", [])) > len(
+                        existing.get("candidates", [])
+                    ):
+                        cache_files[display] = fpath
+                except Exception:
+                    pass
+            else:
+                cache_files[display] = fpath
+    except Exception:
+        pass
+
+    if len(cache_files) < 2:
+        return {"generated_at": datetime.now(IST).isoformat(), "symbols": []}
+
+    # --- Aggregate per-symbol data -------------------------------------------
+    # symbol → { sector, scanners: { display_name: candidate }, last_scan str }
+    agg: dict[str, dict] = {}
+
+    for display_name, fpath in cache_files.items():
+        try:
+            with open(fpath, encoding="utf-8") as fh:
+                data = json.load(fh)
+        except Exception:
+            continue  # graceful degradation
+
+        last_scan = data.get("last_scan")
+        for cand in data.get("candidates", []):
+            sym = cand.get("symbol")
+            if not sym:
+                continue
+            if sym not in agg:
+                agg[sym] = {
+                    "sector": cand.get("sector", ""),
+                    "scanners": {},
+                    "last_scan": last_scan,
+                }
+            agg[sym]["scanners"][display_name] = cand
+            # Track the latest scan timestamp across all scanners
+            if last_scan and (
+                agg[sym]["last_scan"] is None or last_scan > agg[sym]["last_scan"]
+            ):
+                agg[sym]["last_scan"] = last_scan
+            # Update sector if the new candidate has a value
+            if cand.get("sector") and not agg[sym]["sector"]:
+                agg[sym]["sector"] = cand["sector"]
+
+    # --- Filter to 2+ scanners and build output -----------------------------
+    symbols_out: list[dict] = []
+    for sym, info in agg.items():
+        scanner_names = sorted(info["scanners"].keys())
+        if len(scanner_names) < 2:
+            continue
+        cand_list = [info["scanners"][n] for n in scanner_names]
+        symbols_out.append(
+            {
+                "symbol": sym,
+                "sector": info["sector"],
+                "scanner_count": len(scanner_names),
+                "scanners": scanner_names,
+                "last_scan": info["last_scan"],
+                "best_grade": _best_grade(cand_list),
+            }
+        )
+
+    # Sort: scanner_count desc, then symbol asc
+    symbols_out.sort(key=lambda x: (-x["scanner_count"], x["symbol"]))
+
+    return {
+        "generated_at": datetime.now(IST).isoformat(),
+        "symbols": symbols_out,
+    }
+
+
+@app.get("/api/confluence")
+async def confluence_endpoint():
+    """Return an aggregated view of symbols flagged by 2+ scanners."""
+    try:
+        return build_confluence_report()
+    except Exception as e:
+        logger.error("Confluence report failed: %s", e, exc_info=True)
+        return JSONResponse(
+            status_code=500, content={"error": str(e)}
+        )
