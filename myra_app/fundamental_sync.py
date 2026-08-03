@@ -301,6 +301,7 @@ class FundamentalSync:
                 "impact_cost": nse.get("impact_cost"),
                 "source_ms": "MORNINGSTAR" if ms else None,
                 "source_nse": "YFINANCE" if nse else None,
+                "last_updated": datetime.now().isoformat(),
                 # MS fields (canonical snake_case)
                 **ms_fields,
             }

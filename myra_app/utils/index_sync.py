@@ -15,8 +15,8 @@ IST = timezone(timedelta(hours=5, minutes=30))
 
 INDEX_SOURCES = {
     "NIFTY 50": {
-        "type": "api",
-        "url": "https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%2050"
+        "type": "csv",
+        "url": "https://www.niftyindices.com/IndexConstituent/ind_nifty50list.csv"
     },
     "NIFTY 500": {
         "type": "csv",
