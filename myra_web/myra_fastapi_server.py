@@ -3827,6 +3827,7 @@ async def climax_accumulation_status():
 
 @app.post("/api/climax-accumulation/scan")
 async def climax_accumulation_scan(payload: dict = Body(default={})):
+    min_adtv_cr = float(payload.get("min_adtv_cr", 1.0))
     raw_date = payload.get("scan_date", "")
     if raw_date and str(raw_date).strip():
         scan_date = _get_latest_trading_day_before(str(raw_date).strip())
@@ -3856,6 +3857,7 @@ async def climax_accumulation_scan(payload: dict = Body(default={})):
 
             scanner = ClimaxAccumulationScanner(
                 target_date=scan_date,
+                min_adtv_cr=min_adtv_cr,
             )
 
             _climax_scan_state["message"] = "Loading universe..."

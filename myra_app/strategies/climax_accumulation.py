@@ -37,6 +37,7 @@ class ClimaxAccumulationScanner:
         lookback_days: int = 90,
         vol_ratio_threshold: float = 10.0,
         delivery_pct_ceiling: float = 15.0,
+        min_adtv_cr: float = 1.0,
         post_climax_min: int = 3,
         post_climax_max: int = 15,
         target_date: Optional[str] = None,
@@ -46,6 +47,7 @@ class ClimaxAccumulationScanner:
         self.lookback_days = lookback_days
         self.vol_ratio_threshold = vol_ratio_threshold
         self.delivery_pct_ceiling = delivery_pct_ceiling
+        self.min_adtv_cr = min_adtv_cr
         self.post_climax_min = post_climax_min
         self.post_climax_max = post_climax_max
         self.target_date = target_date
@@ -335,9 +337,20 @@ class ClimaxAccumulationScanner:
             ]:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
 
-            # Filter: close > 50, volume > 500000
-            df = df[(df["close"] > 50) & (df["volume"] > 500000)]
+            # Filter: close > 50, then require minimum ADTV (₹ Cr).
+            # ADTV = mean(close * volume) over the last 20 trading days,
+            # same window used by the vol_sma20 in _find_climax_days().
+            # ADTV is split-adjusted by construction (price * split-adjusted
+            # volume is invariant across a corporate action), unlike a raw
+            # share-volume threshold. Fallback: tail(20) automatically uses
+            # the most recent available days if fewer than 20 remain.
+            df = df[df["close"] > 50]
             if len(df) < 30:
+                continue
+
+            last_20 = df.tail(20)
+            adtv_cr = (last_20["close"] * last_20["volume"] / 1e7).mean()
+            if adtv_cr < self.min_adtv_cr:
                 continue
 
             # Find climax days
