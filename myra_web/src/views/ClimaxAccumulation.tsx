@@ -57,6 +57,7 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
   const [staleBannerOpen, setStaleBannerOpen] = useState(true);
 
   const [scanDate, setScanDate] = useState('');
+  const [minAdtvCr, setMinAdtvCr] = useState(1.0);
 
   const [sortCol, setSortCol] = useState<string>('dist_pct');
   const [sortAsc, setSortAsc] = useState(false);
@@ -136,6 +137,7 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          min_adtv_cr: Number(minAdtvCr) || 1.0,
           ...(scanDate.trim() && { scan_date: scanDate }),
         }),
       });
@@ -154,7 +156,7 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
         setIsScanning(false);
       }
     }
-  }, [fetchScanStatus, clearPolling, scanDate]);
+  }, [fetchScanStatus, clearPolling, scanDate, minAdtvCr]);
   startScanRef.current = startScan;
 
   useEffect(() => {
@@ -217,6 +219,20 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
         </div>
         <div className="flex items-center gap-2">
           <HistoricalScanDatePicker selectedDate={scanDate} onSelect={setScanDate} />
+          <div className="flex flex-col gap-1">
+            <label htmlFor="min-adtv-input" className="text-[10px] text-[#888] font-mono">Min ADTV (₹ Cr)</label>
+            <input
+              id="min-adtv-input"
+              type="number"
+              min="0"
+              step="0.5"
+              value={minAdtvCr}
+              onChange={e => setMinAdtvCr(Number(e.target.value))}
+              className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 w-24 text-xs text-[#fafafa] font-mono focus:border-purple-500 outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50"
+              title="Minimum average daily traded value (₹ Cr) over the last 20 trading days — split-adjusted liquidity filter"
+              aria-label="Minimum ADTV in crore rupees"
+            />
+          </div>
           <button
             onClick={startScan}
             disabled={isScanning}
@@ -294,6 +310,8 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
             <span className="font-semibold text-purple-400">Climax Accumulation Scanner:</span>{' '}
             Identifies stocks where a high-volume distribution climax was followed by consolidation with rising delivery.{' '}
             The climax low acts as a structural reference level.
+            <br />
+            Liquidity filter: minimum {minAdtvCr} ₹ Cr average daily traded value (ADTV, 20-day) — split-adjusted, unlike a raw share-volume cutoff.
             <br />
             2-year backtest (219 signals, entry at day 15): –0.6% gross / –2.0% net 40-day return, 42% win rate overall.{' '}
             Test set (Mar 2026+): +4.2% gross, 54% win rate.
