@@ -55,7 +55,8 @@ class WyckoffAutomaton:
                 rows = conn.execute(
                     """
                     SELECT date, open, high, low, close, volume, delivery,
-                           delivery_pct, nifty_outperformance_score,
+                           delivery_pct, swing_low,
+                           nifty_outperformance_score,
                            sma_50, high_52w, low_52w
                     FROM technical_data
                     WHERE symbol = ? AND date >= ? AND date <= ?
@@ -87,6 +88,61 @@ class WyckoffAutomaton:
         except TypeError:
             pass
         return value
+
+    @staticmethod
+    def _delivery_absorption_score(del_abs: float) -> float:
+        """0-30. Linear: <=0 -> 0, +5 -> 15, +10 -> 30."""
+        return round(min(max(del_abs, 0.0) / 10.0 * 30.0, 30.0), 1)
+
+    @staticmethod
+    def _lower_wick_score(ratio: float) -> float:
+        """0-30. Piecewise-linear through (0.20,0), (0.40,15), (0.60,22), (0.75,30)."""
+        pts = [(0.20, 0.0), (0.40, 15.0), (0.60, 22.0), (0.75, 30.0)]
+        if ratio <= pts[0][0]:
+            return 0.0
+        if ratio >= pts[-1][0]:
+            return 30.0
+        for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+            if x0 <= ratio < x1:
+                return round(y0 + (ratio - x0) / (x1 - x0) * (y1 - y0), 1)
+        return 0.0
+
+    @staticmethod
+    def _close_location_score(ratio: float) -> float:
+        """0-20. Step: <0.5 -> 5, 0.5-0.75 -> 10, >0.75 -> 20."""
+        if ratio > 0.75:
+            return 20.0
+        if ratio >= 0.5:
+            return 10.0
+        return 5.0
+
+    @staticmethod
+    def _grab_depth_score(depth_pct: float) -> float:
+        """0-10. Step: <0.5 -> 7, 0.5-1.5 -> 10, >1.5 -> 5."""
+        if depth_pct > 1.5:
+            return 5.0
+        if depth_pct >= 0.5:
+            return 10.0
+        return 7.0
+
+    @staticmethod
+    def _spring_grade(score: float) -> str:
+        """A+ >= 65, B >= 50, C >= 35, D < 35."""
+        if score >= 65:
+            return "A+"
+        if score >= 50:
+            return "B"
+        if score >= 35:
+            return "C"
+        return "D"
+
+    @staticmethod
+    def _compute_spring_score(del_score, wick_score, close_score, depth_score, equal_low_bonus, two_candle_confirm: bool = False) -> float:
+        """Sum of factors + 5 if two_candle_confirm, clamped to [0, 100]."""
+        total = del_score + wick_score + close_score + depth_score + equal_low_bonus
+        if two_candle_confirm:
+            total += 5.0
+        return round(min(max(total, 0.0), 100.0), 1)
 
     @staticmethod
     def _event_quality(
@@ -157,6 +213,7 @@ class WyckoffAutomaton:
         # Scan last 30 sessions
         scan_df = df.tail(90).reset_index(drop=True)
         for i in range(len(scan_df)):
+            abs_i = i + n - len(scan_df)
             row = scan_df.iloc[i]
             row_date = str(row["date"])
             open_p = float(row["open"])
@@ -206,34 +263,116 @@ class WyckoffAutomaton:
             )
 
             if is_spring:
-                recovery_pct = (
-                    (close_p - low_p) / (high_p - low_p) * 100
-                    if (high_p - low_p) > 0
-                    else 0.0
-                )
-                quality = self._event_quality(
-                    "Spring",
-                    vol_ratio,
-                    del_pct,
-                    avg_del,
-                    extra={"recovery_pct": recovery_pct},
-                )
-                events.append(
-                    {
-                        "symbol": symbol,
-                        "event": "Spring",
-                        "phase": "Phase C",
-                        "phase_pct": 75,
-                        "event_date": row_date,
-                        "del_pct": del_pct,
-                        "vol_ratio": vol_ratio,
-                        "quality": quality,
-                        "close": close_p,
-                        "range_low_90": range_low,
-                        "range_high_90": range_high,
-                        "sc_reference_close": close_p,
-                    }
-                )
+                try:
+                    recovery_pct = (
+                        (close_p - low_p) / (high_p - low_p) * 100
+                        if (high_p - low_p) > 0
+                        else 0.0
+                    )
+                    quality = self._event_quality(
+                        "Spring",
+                        vol_ratio,
+                        del_pct,
+                        avg_del,
+                        extra={"recovery_pct": recovery_pct},
+                    )
+
+                    # --- Structured Spring Scoring ---
+                    # 1. Delivery absorption
+                    start_idx = max(0, abs_i - 50)
+                    del_slice = df["delivery_pct"].values.astype(float)[start_idx:abs_i]
+                    avg_del_50 = float(np.nanmean(del_slice)) if len(del_slice) > 0 else del_pct
+                    del_abs = del_pct - avg_del_50
+                    del_score = self._delivery_absorption_score(del_abs)
+
+                    # 2. Lower wick ratio + close location
+                    denom = high_p - low_p
+                    if denom > 0:
+                        lower_wick_ratio = (min(open_p, close_p) - low_p) / denom
+                        close_location = (close_p - low_p) / denom
+                    else:
+                        lower_wick_ratio = 0.5
+                        close_location = 0.5
+                    wick_score = self._lower_wick_score(lower_wick_ratio)
+                    close_score = self._close_location_score(close_location)
+
+                    # 3. Grab depth (uses SMC swing_low at the grab candle)
+                    has_swing = "swing_low" in df.columns
+                    swing_low_val = None
+                    if has_swing:
+                        _sl = df["swing_low"].iloc[abs_i]
+                        if pd.notna(_sl):
+                            swing_low_val = float(_sl)
+                    if swing_low_val is not None and swing_low_val > 0:
+                        grab_depth_pct = (swing_low_val - low_p) / swing_low_val * 100
+                    else:
+                        grab_depth_pct = 0.0
+                    depth_score = self._grab_depth_score(grab_depth_pct)
+
+                    # 4. Equal-low detection
+                    equal_low_zone = False
+                    if swing_low_val is not None:
+                        lo = max(0, abs_i - 20)
+                        hi = min(n, abs_i + 21)
+                        for j in range(lo, hi):
+                            if j == abs_i:
+                                continue
+                            sl_j_raw = df["swing_low"].iloc[j] if has_swing else None
+                            if sl_j_raw is not None and pd.notna(sl_j_raw):
+                                sl_j = float(sl_j_raw)
+                                low_j = float(df["low"].iloc[j])
+                                if abs(low_j - sl_j) < 1e-9:
+                                    if abs(sl_j - swing_low_val) / swing_low_val <= 0.005:
+                                        equal_low_zone = True
+                                        break
+                    equal_low_bonus = 10.0 if equal_low_zone else 0.0
+
+                    # 5. Two-candle confirmation
+                    two_candle_confirm = False
+                    if close_p < open_p and abs_i + 1 < n:
+                        nrow = df.iloc[abs_i + 1]
+                        nclose = float(nrow["close"])
+                        nopen = float(nrow["open"])
+                        ref_level = swing_low_val if swing_low_val is not None else float(range_low)
+                        if nclose > nopen and nclose > ref_level:
+                            two_candle_confirm = True
+
+                    # 6. Compute score and grade
+                    spring_score = self._compute_spring_score(
+                        del_score, wick_score, close_score, depth_score,
+                        equal_low_bonus, two_candle_confirm
+                    )
+                    grade = self._spring_grade(spring_score)
+
+                    # 7. Skip grade D
+                    if grade == "D":
+                        continue
+
+                    events.append(
+                        {
+                            "symbol": symbol,
+                            "event": "Spring",
+                            "phase": "Phase C",
+                            "phase_pct": 75,
+                            "event_date": row_date,
+                            "del_pct": del_pct,
+                            "vol_ratio": vol_ratio,
+                            "quality": quality,
+                            "close": close_p,
+                            "range_low_90": range_low,
+                            "range_high_90": range_high,
+                            "sc_reference_close": close_p,
+                            "spring_score": self._sanitize_float(spring_score),
+                            "grade": grade,
+                            "lower_wick_ratio": self._sanitize_float(round(lower_wick_ratio, 3)),
+                            "close_location": self._sanitize_float(round(close_location, 3)),
+                            "grab_depth_pct": self._sanitize_float(round(grab_depth_pct, 2)),
+                            "equal_low_zone": bool(equal_low_zone),
+                            "two_candle_confirm": bool(two_candle_confirm),
+                        }
+                    )
+                except Exception as exc:
+                    logger.warning("Spring scoring failed for %s: %s", symbol, exc)
                 continue
 
             # SOS — Sign of Strength
@@ -407,7 +546,26 @@ class WyckoffAutomaton:
                 continue
 
             col_count = len(tech[0]) if tech else 0
-            if col_count >= 12:
+            if col_count >= 13:
+                df = pd.DataFrame(
+                    tech,
+                    columns=[
+                        "date",
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "volume",
+                        "delivery",
+                        "delivery_pct",
+                        "swing_low",
+                        "nifty_outperformance_score",
+                        "sma_50",
+                        "high_52w",
+                        "low_52w",
+                    ],
+                )
+            elif col_count >= 12:
                 df = pd.DataFrame(
                     tech,
                     columns=[
@@ -425,6 +583,7 @@ class WyckoffAutomaton:
                         "low_52w",
                     ],
                 )
+                df["swing_low"] = None
             else:
                 df = pd.DataFrame(
                     tech,
@@ -443,6 +602,7 @@ class WyckoffAutomaton:
                 df["sma_50"] = None
                 df["high_52w"] = None
                 df["low_52w"] = None
+                df["swing_low"] = None
             df["date"] = pd.to_datetime(df["date"])
             df = df.sort_values("date").reset_index(drop=True)
 
@@ -481,6 +641,13 @@ class WyckoffAutomaton:
                     "range_high_90": round(best["range_high_90"], 2),
                     "close": round(best["close"], 2),
                     "days_since_event": days_since,
+                    "spring_score": best.get("spring_score"),
+                    "grade": best.get("grade"),
+                    "lower_wick_ratio": best.get("lower_wick_ratio"),
+                    "close_location": best.get("close_location"),
+                    "grab_depth_pct": best.get("grab_depth_pct"),
+                    "equal_low_zone": best.get("equal_low_zone", False),
+                    "two_candle_confirm": best.get("two_candle_confirm", False),
                 }
             )
 
@@ -492,6 +659,10 @@ class WyckoffAutomaton:
             "range_low_90",
             "range_high_90",
             "close",
+            "spring_score",
+            "lower_wick_ratio",
+            "close_location",
+            "grab_depth_pct",
         ]
         for c in candidates:
             for f in float_fields:
