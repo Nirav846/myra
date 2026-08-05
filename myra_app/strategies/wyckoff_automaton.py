@@ -257,9 +257,16 @@ class WyckoffAutomaton:
                 )
                 continue
 
-            # Spring — Undercut & Recovery
+            # Spring — Undercut & Recovery.
+            # Undercut reference = prior running low (excludes the grab candle itself),
+            # otherwise no candle could ever dip below the window's global minimum.
+            prior_low = (
+                float(df["low"].iloc[max(0, abs_i - 60):abs_i].min())
+                if abs_i > 0
+                else float(range_low)
+            )
             is_spring = (
-                low_p < range_low * 0.99 and close_p > range_low and del_pct > 35
+                low_p < prior_low * 0.99 and close_p > prior_low and del_pct > 35
             )
 
             if is_spring:
@@ -333,7 +340,7 @@ class WyckoffAutomaton:
                         nrow = df.iloc[abs_i + 1]
                         nclose = float(nrow["close"])
                         nopen = float(nrow["open"])
-                        ref_level = swing_low_val if swing_low_val is not None else float(range_low)
+                        ref_level = swing_low_val if swing_low_val is not None else float(prior_low)
                         if nclose > nopen and nclose > ref_level:
                             two_candle_confirm = True
 
