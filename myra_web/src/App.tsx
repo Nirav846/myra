@@ -42,6 +42,7 @@ import DeliveryAnomalyScannerView from './views/DeliveryAnomalyScanner';
 import BottomHunterView from './views/BottomHunter';
 import ClimaxAccumulationView from './views/ClimaxAccumulation';
 import ConfluenceView from './views/ConfluenceView';
+import DCBBargainView from './views/DCBBargain';
 import { AlertCircle, Settings as SettingsIcon, SlidersHorizontal, BrainCircuit, Rocket, Database, RotateCw, Eye, Zap } from 'lucide-react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 
@@ -70,6 +71,7 @@ const TABS = [
   { id: 'The Trigger', path: '/trigger', icon: <Zap size={16} />, category: 'scanners' },
   { id: 'Bottom Hunter', path: '/bottom-hunter', icon: '🎯', category: 'scanners' },
   { id: 'Climax Accumulation', path: '/climax-accumulation', icon: '📊', category: 'scanners' },
+  { id: 'DCB Bargain', path: '/dcb-bargain', icon: '🏷️', category: 'scanners' },
   { id: 'Consensus', path: '/confluence', icon: '🔗', category: 'scanners' },
   { id: 'Data Sync', path: '/data-sync', icon: <Database size={18} />, category: 'data' },
   { id: 'Parquet Lake', path: '/parquet-lake', icon: '🌊', category: 'data' },
@@ -264,6 +266,7 @@ export default function App() {
                 <Route path="/multibagger-pro-scanner" element={<MultibaggerProScannerView lib={librarian} />} />
                 <Route path="/bottom-hunter" element={<BottomHunterView lib={librarian} />} />
                 <Route path="/climax-accumulation" element={<ClimaxAccumulationView lib={librarian} />} />
+                <Route path="/dcb-bargain" element={<DCBBargainView lib={librarian} />} />
                 <Route path="/confluence" element={<ConfluenceView />} />
 
                 {/* Fallback */}
