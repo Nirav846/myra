@@ -64,7 +64,7 @@ AI-powered Indian stock market screener (NSE). FastAPI + React frontend + Python
 - **Backtest results**: TP=10% / SL=8% → 14 trades, 50% win rate, +6.6% net/trade, +₹9,264 P&L, 315 signals.
 - **API endpoints**: `GET /api/dcb-bargain/status` + `POST /api/dcb-bargain/scan` in `myra_fastapi_server.py`.
 - **Frontend view**: `myra_web/src/views/DCBBargain.tsx` — adjustable parameters (lookback window, market-cap range), result cards with delivery metrics.
-- **Test count**: 75 tests, all passing.
+- **Test count**: 85 tests, all passing.
 
 ---
 
@@ -82,7 +82,7 @@ AI-powered Indian stock market screener (NSE). FastAPI + React frontend + Python
 | Portfolio Tracker | ✅ | CLI tool with auto-refresh, scanner overlap, risk metrics, smart caching |
 | Scanner candidates (typical) | 2–623 per run |
 | ML models | 2 (forward_return.xgb + launchpad_xgb.joblib) |
-| Test suite | 75 tests, all passing |
+| Test suite | 85 tests, all passing |
 | CI | GitHub Actions (push/PR to main) |
 
 ## Architecture References

@@ -209,4 +209,4 @@ React 19 + TypeScript + Vite in `myra_web/`. Key architecture choices:
 - `myra_app/background_orchestrator.py` — Daemon task management
 - `myra_web/myra_fastapi_server.py` — All API endpoints (~70 routes)
 - `tools/enrich_history.py` — Batch enrichment backfill
-- `tests/` — 75-test pytest suite
+- `tests/` — 85-test pytest suite
