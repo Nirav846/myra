@@ -3,7 +3,7 @@
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://python.org)
 [![React 19](https://img.shields.io/badge/react-19-61dafb.svg)](https://react.dev)
 [![SQLite](https://img.shields.io/badge/sqlite-wal%20mode-003b57.svg)](https://sqlite.org)
-[![Tests](https://img.shields.io/badge/tests-61%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-75%20passing-brightgreen.svg)](tests/)
 [![CI](https://github.com/Nirav846/myra/actions/workflows/ci.yml/badge.svg)](https://github.com/Nirav846/myra/actions)
 
 MYRA is a comprehensive stock screening and analysis platform for the National Stock Exchange (NSE) of India. It combines daily automated data ingestion, Smart Money Concepts (SMC) enrichment, institutional tracking, a suite of quantitative scanners, ML-based breakout prediction, and an interactive React frontend — all running locally with SQLite.
@@ -40,8 +40,8 @@ myra_technical.db (enriched)                   │
          /api/pipeline  ...       /api/finstack/*
               │
               ▼
-         React Frontend (:3000)
-         (7 scanner views, AdvancedChart,
+          React Frontend (:3000)
+          (8 scanner views, AdvancedChart,
           MissionControl dashboard, Leaderboard...)
 ```
 
@@ -51,7 +51,7 @@ myra_technical.db (enriched)                   │
 - **Gap-driven backfill** — `mass_backfill.py` detects date gaps and fills historical OHLCV + delivery for all symbols.
 - **SMC Enrichment** — Polars-based batch enrichment computes Fair Value Gaps (FVG), swing high/low levels, liquidity distance, trend alignment (50/200 SMA), and delivery MA. Full 2.2M-row backfill completed in ~57 min.
 - **Fundamentals sync** — Morningstar bulk API + yfinance fallback for PE, ROE, profit margins, market cap, dividend yield, enterprise value and 30+ other metrics. Promoter/free-float columns protected from overwrite.
-- **7 stock scanners** — Quantitative strategies run against enriched data; each with configurable parameters. See [Scanners table](#scanners).
+- **8 stock scanners** — Quantitative strategies run against enriched data; each with configurable parameters. See [Scanners table](#scanners).
 - **ML breakout prediction** — XGBoost models trained on 14 features predict forward returns. Separate Launchpad model identifies breakout candidates.
 - **Institutional tracking** — Insider trades, large deals, bulk deals, block deals, FII/DII daily flows via NSE-MCP.
 - **Data health dashboard** — Real-time `/api/data-health` endpoint reporting OHLCV freshness, enrichment completeness, fundamentals coverage, database status, and pipeline task timestamps.
@@ -133,6 +133,7 @@ myra/
 │   │   ├── liquidity_flip_detector.py
 │   │   ├── operator_fingerprint_scanner.py
 │   │   ├── seasonal_delivery_harvester.py
+│   │   ├── dcb_bargain.py
 │   │   └── ... (additional strategies)
 │   ├── db/                       # SQLite database files (8 sidecars)
 │   ├── librarian*.py             # Core DB abstraction (schema, sync, intelligence, ingestor)
@@ -178,6 +179,7 @@ myra/
 | **Liquidity Flip** | `/api/liquidity-flip/scan` | Transition from low-liquidity to high-liquidity regime signalling institutional entry | min_mcap=200, max_mcap=50000, lookback=95d |
 | **Operator Fingerprint** | `/api/operator-fingerprint/scan` | Smart-money fingerprint patterns in price-volume action over 45-day window | min_mcap=200, max_mcap=50000, lookback=45d |
 | **Seasonal Delivery** | `/api/seasonal-delivery/scan` | Historically high delivery volumes in a specific month using multi-year seasonal patterns | min_mcap=200, max_mcap=50000, min_hist_del=40%, min_consistency=55%, min_years=2 |
+| **DCB Bargain** | `/api/dcb-bargain/scan` | Stocks trading below institutional Delivery Cost Basis (delivery-weighted average price over 6 months) with positive delivery absorption | min_mcap=200, max_mcap=50000, lookback=120d |
 
 All scanners are thread-safe, cache results to JSON, and support configurable market-cap ranges.
 
@@ -209,7 +211,7 @@ python tools/portfolio.py view
 | `view --live` | Live yfinance prices (15-min delayed) |
 | `refresh` | Force-refresh all cached data from MYRA databases |
 | `performance` | Per-stock breakdown + sector allocation pie chart |
-| `scanner` | Cross-reference holdings with all 7 MYRA scanners |
+| `scanner` | Cross-reference holdings with all 8 MYRA scanners |
 | `alerts` | Delivery anomaly alerts per holding |
 | `risk` | Concentration, drawdown, volatility, diversification score |
 | `snapshot` | Save daily NAV snapshot |
@@ -304,7 +306,7 @@ All 8 SQLite databases reside in `myra_app/db/` and are referenced exclusively v
 # Run the full test suite
 pytest tests/ -v
 
-# Expected output: 61 passed
+# Expected output: 75 passed
 
 # Verify Python syntax (enforced for PRs)
 python -c "import ast; ast.parse(open('myra_app/strategies/trigger_scanner.py').read()); print('OK')"
@@ -314,7 +316,7 @@ The CI pipeline (`.github/workflows/ci.yml`) runs on every push/PR to `main`:
 - Ubuntu latest
 - Python 3.12
 - `pip install -r requirements.txt`
-- `pytest tests/ -v` (61 tests)
+- `pytest tests/ -v` (75 tests)
 
 ## Screenshots
 

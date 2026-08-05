@@ -57,7 +57,7 @@ Schema definitions are maintained in `myra_app/schema_registry.py` (30 tables ac
 
 ## Scanner Framework
 
-7 scanners are registered via API endpoints in `myra_fastapi_server.py`. Each scanner:
+8 scanners are registered via API endpoints in `myra_fastapi_server.py`. Each scanner:
 
 1. Extends no base class — is a standalone class with a `scan()` method
 2. Fetches its own universe via `_get_universe()` (market-cap filtered from `fundamentals` table)
@@ -67,6 +67,8 @@ Schema definitions are maintained in `myra_app/schema_registry.py` (30 tables ac
 6. Is thread-safe (each call spawns a thread; results cached to JSON in `models/`)
 
 **Lookback-day convention:** All scanners use calendar days for lookback parameters. Internal minimum-row thresholds use `max(floor, int(lookback_days * 0.6) + 5)` to convert to approximate trading-day counts.
+
+**DCB Bargain** follows the same `_get_universe`/`_get_tech_data`/`_sanitize_float` pattern as InvisibleHandScanner and LiquidityFlipDetector; its detection logic computes a delivery-weighted close on high-delivery days ( Delivery Cost Basis ) and flags symbols trading below that institutional accumulation price with positive delivery absorption.
 
 ## Historical Time-Travel Scan (Invisible Hand)
 
@@ -207,4 +209,4 @@ React 19 + TypeScript + Vite in `myra_web/`. Key architecture choices:
 - `myra_app/background_orchestrator.py` — Daemon task management
 - `myra_web/myra_fastapi_server.py` — All API endpoints (~70 routes)
 - `tools/enrich_history.py` — Batch enrichment backfill
-- `tests/` — 61-test pytest suite
+- `tests/` — 75-test pytest suite

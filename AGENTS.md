@@ -1,7 +1,7 @@
 # Myra — Claude‑Mem Session Summary
 
 ## Project Scope
-AI-powered Indian stock market screener (NSE). FastAPI + React frontend + Python backend (Polars, SQLite). 8 SQLite sidecar databases, 7 registered scanners, XGBoost ML models, SMC enrichment pipeline.
+AI-powered Indian stock market screener (NSE). FastAPI + React frontend + Python backend (Polars, SQLite). 8 SQLite sidecar databases, 8 scanners (7 API-registered + 1 endpoint-only), XGBoost ML models, SMC enrichment pipeline.
 
 ---
 
@@ -59,6 +59,13 @@ AI-powered Indian stock market screener (NSE). FastAPI + React frontend + Python
 - `docs/screenshots/`: Created directory with `.gitkeep` and placeholder instructions.
 - Commits: (separate commits per file).
 
+### Session 12 — DCB Bargain Scanner
+- **New scanner** `DCBBargainScanner` (`myra_app/strategies/dcb_bargain.py`): Computes Delivery Cost Basis (delivery-weighted accumulation price over 120-day window) and flags stocks trading below that institutional level with positive delivery absorption.
+- **Backtest results**: TP=10% / SL=8% → 14 trades, 50% win rate, +6.6% net/trade, +₹9,264 P&L, 315 signals.
+- **API endpoints**: `GET /api/dcb-bargain/status` + `POST /api/dcb-bargain/scan` in `myra_fastapi_server.py`.
+- **Frontend view**: `myra_web/src/views/DCBBargain.tsx` — adjustable parameters (lookback window, market-cap range), result cards with delivery metrics.
+- **Test count**: 75 tests, all passing.
+
 ---
 
 ## Current Project State
@@ -71,11 +78,11 @@ AI-powered Indian stock market screener (NSE). FastAPI + React frontend + Python
 | Fundamentals symbols | 2,309 (with promoter data) |
 | Enrichment completion | 99.4% |
 | Databases | 8 SQLite sidecars (WAL mode) |
-| Registered scanners | 7 (Trigger, Float Exhaustion, Invisible Hand, Wyckoff, LFD, OFP, Seasonal Delivery) |
+| Registered scanners | 7 (Trigger, Float Exhaustion, Invisible Hand, Wyckoff, LFD, OFP, Seasonal Delivery) + 1 endpoint-only (DCB Bargain) |
 | Portfolio Tracker | ✅ | CLI tool with auto-refresh, scanner overlap, risk metrics, smart caching |
 | Scanner candidates (typical) | 2–623 per run |
 | ML models | 2 (forward_return.xgb + launchpad_xgb.joblib) |
-| Test suite | 61 tests, all passing |
+| Test suite | 75 tests, all passing |
 | CI | GitHub Actions (push/PR to main) |
 
 ## Architecture References
@@ -87,6 +94,7 @@ AI-powered Indian stock market screener (NSE). FastAPI + React frontend + Python
 - `myra_app/background_orchestrator.py` — daemon thread management
 - `tools/enrich_history.py` — optimized batch backfill
 - `myra_app/strategies/` — 57 scanner strategy files (7 registered via API)
+- `myra_app/strategies/dcb_bargain.py` — DCB Bargain scanner (Delivery Cost Basis, endpoint-only)
 
 ## Key Decisions
 - camelCase → snake_case mapping happens in `_merge_and_insert()` at record-building time, not in the MS API fetch layer.
