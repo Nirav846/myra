@@ -25,6 +25,13 @@ interface Candidate {
   range_high_90: number;
   close: number;
   days_since_event: number;
+  spring_score?: number;
+  grade?: string;
+  lower_wick_ratio?: number;
+  close_location?: number;
+  grab_depth_pct?: number;
+  equal_low_zone?: boolean;
+  two_candle_confirm?: boolean;
 }
 
 interface ScanStatus {
@@ -117,6 +124,20 @@ function daysColor(days: number): string {
   if (days <= 5) return 'text-green-400';
   if (days <= 15) return 'text-yellow-400';
   return 'text-[#888]';
+}
+
+function springScoreColor(score: number | undefined): string {
+  if (score === undefined || score === null) return 'text-[#888]';
+  if (score >= 65) return 'text-green-400';
+  if (score >= 50) return 'text-amber-400';
+  return 'text-[#888]';
+}
+
+function springGradeBadge(grade: string | undefined): { label: string; color: string } {
+  if (grade === 'A+') return { label: 'A+', color: 'bg-green-500/20 text-green-400 border-green-500/30' };
+  if (grade === 'B') return { label: 'B', color: 'bg-amber-500/20 text-amber-400 border-amber-500/30' };
+  if (grade === 'C') return { label: 'C', color: 'bg-[#ffffff1a] text-[#888] border-[#ffffff1a]' };
+  return { label: '—', color: 'bg-[#ffffff0a] text-[#666] border-[#ffffff1a]' };
 }
 
 const EVENT_TYPES = ['All', 'SC', 'AR', 'ST', 'Spring', 'SOS'];
@@ -322,12 +343,18 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
   const exportCSV = () => {
     const data = filteredData;
     if (!data.length) return;
-    const headers = ['Symbol', 'Sector', 'MCap Cr', 'Event', 'Phase', 'Phase%', 'Event Date', 'Days Ago', 'Del%', 'Vol Ratio', 'Range Low', 'Range High', 'Quality', 'Close'];
+    const headers = ['Symbol','Sector','Spring Score','Grade','Close','Event','Phase','Lower Wick %','Close Location %','Grab Depth %','Equal Low','2-Candle','MCap Cr','Phase%','Event Date','Days Ago','Del%','Vol Ratio','Range Low','Range High','Quality'];
     const rows = data.map((c) => [
-      c.symbol, c.sector ?? '', c.market_cap_cr, c.wyckoff_event, c.phase,
-      c.phase_complete_pct, c.event_date, c.days_since_event,
+      c.symbol, c.sector ?? '', c.spring_score ?? '', c.grade ?? '',
+      c.close, c.wyckoff_event, c.phase,
+      c.lower_wick_ratio != null ? (c.lower_wick_ratio * 100).toFixed(0) : '',
+      c.close_location != null ? (c.close_location * 100).toFixed(0) : '',
+      c.grab_depth_pct ?? '',
+      c.equal_low_zone ? 'YES' : '',
+      c.two_candle_confirm ? 'YES' : '',
+      c.market_cap_cr, c.phase_complete_pct, c.event_date, c.days_since_event,
       c.event_delivery_pct, c.vol_ratio, c.range_low_90, c.range_high_90,
-      c.event_quality, c.close,
+      c.event_quality,
     ]);
     const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -356,6 +383,15 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
           </button>
         </div>
       )}
+
+      {/* Spring Score Info Banner */}
+      <div className="bg-blue-500/10 border border-blue-500/30 rounded px-4 py-3 flex items-start gap-2">
+        <Info size={14} className="text-blue-400 shrink-0 mt-0.5" />
+        <div className="text-xs font-mono text-blue-300/90 space-y-1">
+          <p>Spring Score: Composite 0‑100 based on delivery absorption (30%), lower wick ratio (30%), close location (20%), grab depth (10%), and equal‑low bonus (10%). A+ ≥ 65, B ≥ 50, C ≥ 35.</p>
+          <p>Spring events with delivery absorption &gt; 5% on the grab candle indicate institutional accumulation.</p>
+        </div>
+      </div>
 
       {/* Header */}
       <header className="flex justify-between items-center bg-[#1a1c24] border border-[#ffffff1a] rounded p-4">
@@ -437,6 +473,10 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
               <p className="text-[#aaa] leading-relaxed">
                 Each event gets a <span className="text-[#fafafa]">quality score (0–100)</span> based on delivery, volume, and price behavior.
                 <span className="text-green-400"> Grade A (75+)</span> = textbook event. <span className="text-blue-400">B (55–74)</span> = good. <span className="text-amber-400">C (40–54)</span> = weak. <span className="text-red-400">D (&lt;40)</span> = unreliable.
+              </p>
+              <p className="text-[#aaa] leading-relaxed mt-1">
+                The <span className="text-[#fafafa]">Spring Score</span> is separate — it specifically grades Spring (Phase C) setups on a 0–100 composite scale.
+                <span className="text-green-400"> A+ (≥65)</span> = strong institutional absorption. <span className="text-amber-400">B (≥50)</span> = moderate. <span className="text-[#888]">C (≥35)</span> = marginal.
               </p>
             </div>
           </div>
@@ -622,7 +662,7 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
           {/* Table */}
           <div className="flex-1 bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden">
             <ScrollableTable>
-              <table className="w-full min-w-max text-left text-xs font-mono whitespace-nowrap" role="grid" aria-label="Wyckoff Automaton results" aria-rowcount={filteredData.length} aria-colcount={13}>
+              <table className="w-full min-w-max text-left text-xs font-mono whitespace-nowrap" role="grid" aria-label="Wyckoff Automaton results" aria-rowcount={filteredData.length} aria-colcount={20}>
                 <thead className="sticky top-0 z-20 text-[#888]">
                   <tr style={{ boxShadow: '0 1px 0 0 rgba(255,255,255,0.08), 0 2px 4px 0 rgba(0,0,0,0.4)' }}>
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white" onClick={() => handleSort('symbol')} scope="col">
@@ -631,14 +671,38 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white" onClick={() => handleSort('sector')} scope="col">
                       Sector <SortIcon col="sector" />
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('market_cap_cr')} scope="col">
-                      MCap (₹Cr) <SortIcon col="market_cap_cr" />
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('spring_score')} scope="col">
+                      <Tooltip content="Composite 0-100: delivery absorption 30%, lower wick 30%, close location 20%, grab depth 10%, equal-low bonus 10%.">Spring Score <SortIcon col="spring_score" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('grade')} scope="col">
+                      <Tooltip content="Spring setup grade: A+ ≥ 65, B ≥ 50, C ≥ 35. Only C+ Springs are included.">Grade <SortIcon col="grade" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('close')} scope="col">
+                      Close <SortIcon col="close" />
                     </th>
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('wyckoff_event')} scope="col">
                       <Tooltip content="Wyckoff event type: SC (Selling Climax), AR (Automatic Rally), ST (Secondary Test), Spring (false breakdown), SOS (Sign of Strength). Each marks a different step in the accumulation process.">Event <SortIcon col="wyckoff_event" /></Tooltip>
                     </th>
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white" onClick={() => handleSort('phase')} scope="col">
                       <Tooltip content="Wyckoff accumulation phase. Phase A (supply ending) → Phase B (accumulation) → Phase C (spring) → Phase D (mark-up / breakout).">Phase <SortIcon col="phase" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('lower_wick_ratio')} scope="col">
+                      <Tooltip content="Lower wick as % of total candle range. ≥60% = strong buyer absorption below the range. ≥40% = moderate.">Lower Wick <SortIcon col="lower_wick_ratio" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('close_location')} scope="col">
+                      <Tooltip content="Close position within the candle range (0 = low, 1 = high). >75% = closed near top (bullish). ≥50% = neutral.">Close Location <SortIcon col="close_location" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('grab_depth_pct')} scope="col">
+                      <Tooltip content="How deep below the range the grab went (% of range). 0.5–1.5% = optimal institutional grab zone.">Grab Depth <SortIcon col="grab_depth_pct" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('equal_low_zone')} scope="col">
+                      <Tooltip content="Whether the Spring tested an equal-low support zone (multiple prior touches). Equal lows attract stop-losses — institutional grab target.">Equal Low <SortIcon col="equal_low_zone" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('two_candle_confirm')} scope="col">
+                      <Tooltip content="Two-candle confirmation: a second candle closes back above the range low after the Spring candle. Stronger signal.">2-Candle <SortIcon col="two_candle_confirm" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('market_cap_cr')} scope="col">
+                      MCap (₹Cr) <SortIcon col="market_cap_cr" />
                     </th>
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('phase_complete_pct')} scope="col">
                       <Tooltip content="How far through the current phase the stock has progressed. Higher = closer to the next phase. 100% = phase complete.">Phase% <SortIcon col="phase_complete_pct" /></Tooltip>
@@ -661,19 +725,17 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('event_quality')} scope="col">
                       <Tooltip content="Quality score (0–100) based on delivery, volume, and price action. A (75+) = textbook. B (55–74) = good. C (40–54) = marginal. D (<40) = unreliable." good="≥75: Grade A" bad="<40: Grade D">Quality <SortIcon col="event_quality" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('close')} scope="col">
-                      Close <SortIcon col="close" />
-                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={13} className="px-4 py-8 text-center text-[#666]">No signals match current filters.</td>
+                      <td colSpan={20} className="px-4 py-8 text-center text-[#666]">No signals match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((c, index) => {
                       const g = gradeBadge(c.event_quality);
+                      const sg = springGradeBadge(c.grade);
                       const em = EVENT_META[c.wyckoff_event];
                       const pm = PHASE_META[c.phase];
                       return (
@@ -692,7 +754,13 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
                             </div>
                           </td>
                           <td className="px-3 py-3 text-[#888] text-[11px] max-w-[120px] truncate" title={c.sector ?? ''}>{c.sector ?? '—'}</td>
-                          <td className="px-3 py-3 text-right text-[#ccc]">{c.market_cap_cr?.toFixed(0) ?? '—'}</td>
+                          <td className={`px-3 py-3 text-right ${springScoreColor(c.spring_score)}`}>{c.spring_score != null ? c.spring_score.toFixed(1) : '—'}</td>
+                          <td className="px-3 py-3 text-center">
+                            <Tooltip content={`Spring setup grade: A+ ≥ 65, B ≥ 50, C ≥ 35. Only C+ Springs are included.`}>
+                              <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border ${sg.color}`}>{sg.label}</span>
+                            </Tooltip>
+                          </td>
+                          <td className="px-3 py-3 text-right text-[#ccc]">{c.close?.toFixed(2) ?? '—'}</td>
                           <td className="px-3 py-3 text-center">
                             <Tooltip content={em?.desc ?? ''}>
                               <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${em?.color ?? 'bg-[#ffffff1a] text-[#888]'}`}>
@@ -707,6 +775,30 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
                               </span>
                             </Tooltip>
                           </td>
+                          <td className={`px-3 py-3 text-right ${c.lower_wick_ratio != null ? (c.lower_wick_ratio >= 0.6 ? 'text-green-400' : c.lower_wick_ratio >= 0.4 ? 'text-amber-400' : 'text-[#888]') : 'text-[#888]'}`}>
+                            {c.lower_wick_ratio != null ? `${(c.lower_wick_ratio * 100).toFixed(0)}%` : '—'}
+                          </td>
+                          <td className={`px-3 py-3 text-right ${c.close_location != null ? (c.close_location > 0.75 ? 'text-green-400' : c.close_location >= 0.5 ? 'text-amber-400' : 'text-[#888]') : 'text-[#888]'}`}>
+                            {c.close_location != null ? `${(c.close_location * 100).toFixed(0)}%` : '—'}
+                          </td>
+                          <td className={`px-3 py-3 text-right ${c.grab_depth_pct != null ? (c.grab_depth_pct >= 0.5 && c.grab_depth_pct <= 1.5 ? 'text-green-400' : 'text-[#888]') : 'text-[#888]'}`}>
+                            {c.grab_depth_pct != null ? `${c.grab_depth_pct.toFixed(2)}%` : '—'}
+                          </td>
+                          <td className="px-3 py-3 text-center">
+                            {c.equal_low_zone ? (
+                              <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-500/10 text-green-400 border border-green-500/30">YES</span>
+                            ) : (
+                              <span className="text-[#666]">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 text-center">
+                            {c.two_candle_confirm ? (
+                              <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-500/10 text-green-400 border border-green-500/30">YES</span>
+                            ) : (
+                              <span className="text-[#666]">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 text-right text-[#ccc]">{c.market_cap_cr?.toFixed(0) ?? '—'}</td>
                           <td className="px-3 py-3">
                             <div className="flex items-center gap-2 justify-end">
                               <div className="w-16 h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden">
@@ -727,7 +819,6 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
                               <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${g.color}`}>{g.label}</span>
                             </Tooltip>
                           </td>
-                          <td className="px-3 py-3 text-right text-[#ccc]">{c.close?.toFixed(2) ?? '—'}</td>
                         </tr>
                       );
                     })
