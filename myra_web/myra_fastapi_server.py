@@ -2433,6 +2433,184 @@ async def liquidity_flip_scan(payload: dict = Body(default={})):
     return {"status": "started"}
 
 
+# --- DCB Bargain Scanner State ---
+_dcb_scan_state: dict = {
+    "scan_status": "idle",
+    "last_scan": None,
+    "progress": 0,
+    "message": "Idle — click Scan to start",
+    "candidates": [],
+    "bear_market": False,
+    "scanned_date": None,
+}
+_dcb_scan_lock = threading.Lock()
+_DCB_CACHE = os.path.join(MODELS_DIR, "dcb_bargain_cache.json")
+
+
+def _save_dcb_cache():
+    import json as _json
+    import os as _os
+
+    try:
+        _os.makedirs("models", exist_ok=True)
+        with _dcb_scan_lock:
+            data = {
+                "last_scan": _dcb_scan_state["last_scan"],
+                "candidates": _dcb_scan_state["candidates"],
+                "message": _dcb_scan_state["message"],
+            }
+        with open(_DCB_CACHE, "w") as _f:
+            _json.dump(data, _f)
+    except Exception as e:
+        logger.warning(f"Cache operation failed: {e}")
+
+
+def _load_dcb_cache() -> dict | None:
+    import json as _json
+    import os as _os
+
+    try:
+        if _os.path.exists(_DCB_CACHE):
+            with open(_DCB_CACHE) as _f:
+                return _json.load(_f)
+    except Exception as e:
+        logger.warning(f"Cache operation failed: {e}")
+    return None
+
+
+@app.get("/api/dcb-bargain/status")
+async def dcb_bargain_status():
+    import copy
+
+    with _dcb_scan_lock:
+        state = copy.deepcopy(_dcb_scan_state)
+
+    if state["scan_status"] == "idle":
+        cache = _load_dcb_cache()
+        if cache and cache.get("candidates") is not None:
+            return {
+                "scan_status": "idle",
+                "last_scan": cache.get("last_scan"),
+                "progress": 100,
+                "message": cache.get(
+                    "message", f"Found {len(cache['candidates'])} candidates."
+                ),
+                "candidates": cache["candidates"],
+                "bear_market": state.get("bear_market", False),
+            }
+
+    return state
+
+
+@app.post("/api/dcb-bargain/scan")
+async def dcb_bargain_scan(payload: dict = Body(default={})):
+    min_mcap = int(payload.get("min_mcap", 200))
+    max_mcap = int(payload.get("max_mcap", 50000))
+    dcb_window = int(payload.get("dcb_window", 120))
+    min_discount_pct = float(payload.get("min_discount_pct", 5.0))
+    max_discount_pct = float(payload.get("max_discount_pct", 60.0))
+    min_del_abs = float(payload.get("min_del_abs", -2.0))
+    min_adtv_cr = float(payload.get("min_adtv_cr", 1.0))
+    min_high_del_days = int(payload.get("min_high_del_days", 10))
+    sanity_mult = float(payload.get("sanity_mult", 5.0))
+
+    raw_date = payload.get("scan_date", "")
+    if raw_date and str(raw_date).strip():
+        scan_date = _get_latest_trading_day_before(str(raw_date).strip())
+    else:
+        scan_date = None
+
+    with _dcb_scan_lock:
+        if _dcb_scan_state["scan_status"] == "scanning":
+            return {"detail": "Scan already in progress"}, 409
+
+        _dcb_scan_state.update(
+            {
+                "scan_status": "scanning",
+                "progress": 0,
+                "message": "Initialising scanner...",
+                "candidates": [],
+                "scanned_date": scan_date,
+            }
+        )
+
+    def _run():
+        try:
+            from myra_app.strategies.dcb_bargain import DCBBargainScanner
+
+            scanner = DCBBargainScanner(
+                min_mcap=min_mcap,
+                max_mcap=max_mcap,
+                dcb_window=dcb_window,
+                min_discount_pct=min_discount_pct,
+                max_discount_pct=max_discount_pct,
+                min_del_abs=min_del_abs,
+                min_adtv_cr=min_adtv_cr,
+                min_high_del_days=min_high_del_days,
+                sanity_mult=sanity_mult,
+            )
+
+            _dcb_scan_state["message"] = "Loading universe..."
+            _dcb_scan_state["progress"] = 5
+
+            universe = scanner._get_universe()
+            total = max(len(universe), 1)
+            _dcb_scan_state["message"] = f"Scanning {total} symbols..."
+            _dcb_scan_state["progress"] = 10
+
+            original_get_tech = scanner._get_tech_data
+            processed = [0]
+
+            def _tracked_get_tech(symbol, min_date, max_date=None):
+                processed[0] += 1
+                if processed[0] % 25 == 0:
+                    pct = 10 + int((processed[0] / total) * 82)
+                    _dcb_scan_state["progress"] = min(pct, 92)
+                    _dcb_scan_state[
+                        "message"
+                    ] = f"Scanning {processed[0]}/{total} symbols..."
+                return original_get_tech(symbol, min_date, max_date)
+
+            scanner._get_tech_data = _tracked_get_tech
+
+            df = scanner.scan(as_on_date=scan_date)
+
+            _dcb_scan_state["progress"] = 95
+            _dcb_scan_state["message"] = "Finalising results..."
+
+            candidates = _df_to_safe_records(df)
+
+            _dcb_scan_state.update(
+                {
+                    "scan_status": "completed",
+                    "last_scan": datetime.now().isoformat(),
+                    "progress": 100,
+                    "message": f"Found {len(candidates)} candidates",
+                    "candidates": candidates,
+                    "bear_market": (
+                        scanner.bear_market
+                        if hasattr(scanner, "bear_market")
+                        else False
+                    ),
+                    "scanned_date": scan_date,
+                }
+            )
+            _save_dcb_cache()
+
+        except Exception as e:
+            logger.error("DCB Bargain scan failed: %s", e, exc_info=True)
+            _dcb_scan_state.update(
+                {
+                    "scan_status": "error",
+                    "progress": 0,
+                    "message": str(e),
+                }
+            )
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"status": "started"}
+
+
 # --- Operator Fingerprint Scanner State ---
 _of_scan_state: dict = {
     "scan_status": "idle",
@@ -3932,6 +4110,7 @@ async def clear_scanner_cache(scanner_name: str):
         "launchpad",
         "bottom-hunter",
         "climax-accumulation",
+        "dcb-bargain",
     }
     if scanner_name not in allowed:
         raise HTTPException(status_code=400, detail="Unknown scanner")
@@ -3968,6 +4147,8 @@ async def clear_scanner_cache(scanner_name: str):
         _bh_scan_state.update(reset)
     elif scanner_name == "climax-accumulation":
         _climax_scan_state.update(reset)
+    elif scanner_name == "dcb-bargain":
+        _dcb_scan_state.update(reset)
 
     return {"status": "deleted" if existed else "not_found", "scanner": scanner_name}
 
