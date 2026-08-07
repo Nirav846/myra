@@ -16,18 +16,30 @@ const TIER_COLORS: Record<string, string> = {
   LOW: 'bg-[#ffffff0a] text-[#888] border-[#ffffff1a]',
 };
 
+const DEPTH_COLORS: Record<string, string> = {
+  DEEP: 'bg-red-500/20 text-red-400 border-red-500/30',
+  MID: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+  SHALLOW: 'bg-[#ffffff0a] text-[#888] border-[#ffffff1a]',
+};
+
 interface Candidate {
   symbol: string;
   sector?: string;
   close: number;
   dcb: number;
   discount_pct: number;
+  depth?: string;
   del_abs: number;
   adtv_cr: number;
   high_del_days: number;
   free_float_mcap_cr: number;
+  spike_deep?: boolean;
+  dcb_disc_min?: number | null;
+  dcb_disc_median?: number | null;
+  dcb_disc_max?: number | null;
   score: number;
   tier: string;
+  timeframe?: string;
 }
 
 interface ScanStatus {
@@ -59,13 +71,13 @@ function relativeTime(dateStr: string | null | undefined): string {
 }
 
 const ADVANCED_DEFAULTS = {
-  dcb_window: 120,
-  min_discount_pct: 5,
+  min_discount_pct: 15,
   max_discount_pct: 60,
   min_del_abs: -2,
   min_adtv_cr: 1.0,
   min_high_del_days: 10,
   sanity_mult: 5,
+  min_ff_mcap: 0,
 };
 
 export default function DCBBargainView({ lib }: { lib: Librarian }) {
@@ -84,14 +96,16 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
   const [tierFilter, setTierFilter] = useState<string>('All');
   const [sectorFilter, setSectorFilter] = useState<string>('All');
   const [scanDate, setScanDate] = useState('');
+  const [timeframe, setTimeframe] = useState<'daily' | 'weekly'>('daily');
 
-  const [dcbWindow, setDcbWindow] = useState(ADVANCED_DEFAULTS.dcb_window);
+  const [dcbWindow, setDcbWindow] = useState(120);
   const [minDiscountPct, setMinDiscountPct] = useState(ADVANCED_DEFAULTS.min_discount_pct);
   const [maxDiscountPct, setMaxDiscountPct] = useState(ADVANCED_DEFAULTS.max_discount_pct);
   const [minDelAbs, setMinDelAbs] = useState(ADVANCED_DEFAULTS.min_del_abs);
   const [minAdtvCr, setMinAdtvCr] = useState(ADVANCED_DEFAULTS.min_adtv_cr);
   const [minHighDelDays, setMinHighDelDays] = useState(ADVANCED_DEFAULTS.min_high_del_days);
   const [sanityMult, setSanityMult] = useState(ADVANCED_DEFAULTS.sanity_mult);
+  const [minFfMcap, setMinFfMcap] = useState(ADVANCED_DEFAULTS.min_ff_mcap);
 
   const [sortCol, setSortCol] = useState<string>('score');
   const [sortAsc, setSortAsc] = useState(false);
@@ -197,6 +211,8 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
           min_adtv_cr: minAdtvCr,
           min_high_del_days: minHighDelDays,
           sanity_mult: sanityMult,
+          timeframe,
+          min_ff_mcap: minFfMcap,
           ...(scanDate.trim() && { scan_date: scanDate }),
         }),
       });
@@ -215,7 +231,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
         setIsScanning(false);
       }
     }
-  }, [fetchScanStatus, clearPolling, mcapRange, scanDate, dcbWindow, minDiscountPct, maxDiscountPct, minDelAbs, minAdtvCr, minHighDelDays, sanityMult]);
+  }, [fetchScanStatus, clearPolling, mcapRange, scanDate, dcbWindow, minDiscountPct, maxDiscountPct, minDelAbs, minAdtvCr, minHighDelDays, sanityMult, timeframe, minFfMcap]);
   startScanRef.current = startScan;
 
   useEffect(() => {
@@ -236,26 +252,32 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
   }, [scanStatus?.scan_status]);
 
   const resetAdvanced = () => {
-    setDcbWindow(ADVANCED_DEFAULTS.dcb_window);
     setMinDiscountPct(ADVANCED_DEFAULTS.min_discount_pct);
     setMaxDiscountPct(ADVANCED_DEFAULTS.max_discount_pct);
     setMinDelAbs(ADVANCED_DEFAULTS.min_del_abs);
     setMinAdtvCr(ADVANCED_DEFAULTS.min_adtv_cr);
     setMinHighDelDays(ADVANCED_DEFAULTS.min_high_del_days);
     setSanityMult(ADVANCED_DEFAULTS.sanity_mult);
+    setMinFfMcap(ADVANCED_DEFAULTS.min_ff_mcap);
   };
 
   const handleCSV = () => {
     if (filteredData.length === 0) return;
     const headers = [
-      'Symbol', 'Sector', 'Close', 'DCB', 'Discount%', 'DelAbs', 'ADTV', 'HiDelDays', 'FF MCap Cr', 'Score', 'Tier',
+      'Symbol', 'Sector', 'Discount%', 'Depth', 'SpikeDeep', 'Close', 'DCB',
+      'DelAbs', 'ADTV', 'HiDelDays', 'FF MCap Cr', 'DCBRange', 'Score', 'Tier', 'Timeframe',
     ];
     const rows = filteredData.map(r => [
       r.symbol, r.sector ?? '',
-      r.close.toFixed(2), r.dcb.toFixed(2), r.discount_pct.toFixed(2),
+      r.discount_pct.toFixed(2), r.depth ?? '',
+      r.spike_deep ? 'YES' : '',
+      r.close.toFixed(2), r.dcb.toFixed(2),
       r.del_abs.toFixed(2), r.adtv_cr.toFixed(2),
       r.high_del_days, r.free_float_mcap_cr.toFixed(2),
-      r.score.toFixed(0), r.tier,
+      r.dcb_disc_min != null && r.dcb_disc_median != null && r.dcb_disc_max != null
+        ? `${r.dcb_disc_min.toFixed(1)}-${r.dcb_disc_median.toFixed(1)}-${r.dcb_disc_max.toFixed(1)}`
+        : '',
+      r.score.toFixed(0), r.tier, r.timeframe ?? 'daily',
     ].join(','));
     const csv = [headers.join(','), ...rows].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -286,9 +308,16 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
         <Info size={16} className="text-emerald-400 shrink-0 mt-0.5" aria-hidden="true" />
         <div className="text-xs font-mono text-emerald-300/90">
           <p className="mb-1">DCB Bargain Scanner: Finds stocks trading below their institutional Delivery Cost Basis — the weighted average price at which high‑delivery buyers accumulated over the last 6 months.</p>
-          <p className="mb-1">Backtested: 315 signals across 15 dates. TP=10%, SL=8%: 14 trades, 50% win rate, +6.6% net return per trade, +₹9,264 total P&L.</p>
-          <p>How to use: Look for stocks with positive Delivery Absorption — institutions are both underwater AND still buying. The Discount% is your margin of safety. Combine with the Quality Score filter for higher conviction.</p>
+          <p className="mb-1">Backtested: 1,101 signals across 15 dates (2022‑2024). TP=10%, SL=8%: 14 trades, 50% win rate, +6.6% net per trade, +₹9,264 total P&L. Deep discounts (&gt;20%) in large‑cap free‑float stocks averaged +17.6% (100% win rate).</p>
+          <p>How to use: Prefer DEEP discounts (&gt;20%) with positive Delivery Absorption. The Discount% is your margin of safety. The DCB Range shows whether today's discount is historically deep or shallow for this specific stock. Spike+Deep is the highest‑conviction signal.</p>
         </div>
+      </div>
+
+      {/* Color-coding legend */}
+      <div className="flex flex-wrap gap-4 text-[10px] font-mono text-[#888] px-1">
+        <span>🟢 Deep discount (≥20%) | 🟡 Moderate (10-20%) | ⚪ Shallow (&lt;10%)</span>
+        <span>DelAbs: 🟢 ≥3% | 🟡 ≥0% | 🔴 &lt;0%</span>
+        <span>Score: 🟢 ≥20 | 🟡 ≥10</span>
       </div>
 
       <header className="flex justify-between items-center bg-[#1a1c24] border border-[#ffffff1a] rounded p-4">
@@ -327,6 +356,25 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
         </div>
       </header>
 
+      {/* Timeframe toggle */}
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
+          <button onClick={() => { setTimeframe('daily'); clearCacheOnParamChange(); }}
+            className={`px-2 py-1 text-[10px] rounded ${timeframe === 'daily' ? 'bg-blue-600 text-white' : 'bg-[#ffffff0a] text-[#888]'}`}>
+            Daily
+          </button>
+          <button onClick={() => { setTimeframe('weekly'); clearCacheOnParamChange(); }}
+            className={`px-2 py-1 text-[10px] rounded ${timeframe === 'weekly' ? 'bg-blue-600 text-white' : 'bg-[#ffffff0a] text-[#888]'}`}>
+            Weekly
+          </button>
+        </div>
+        {timeframe === 'weekly' && (
+          <span className="text-[10px] font-mono text-[#888]">
+            Weekly mode — aggregates daily candles to weekly. Delivery absorption still computed on daily price action.
+          </span>
+        )}
+      </div>
+
       {/* DCB Parameters */}
       <section className="bg-[#0e1117] border border-[#ffffff1a] rounded p-4 flex flex-col gap-4" aria-label="DCB Parameters">
         <div className="flex items-center gap-2 text-xs text-[#888]">
@@ -335,6 +383,19 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
         <div className="flex flex-wrap gap-4 items-end">
           <div className="max-w-[220px] flex-shrink-0">
             <MarketCapRangeFilter onChange={setMcapRange} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label htmlFor="dcb-window" className="text-[10px] text-[#888] font-mono">DCB Window (days)</label>
+            <input
+              id="dcb-window"
+              type="number"
+              min={20}
+              step={5}
+              value={dcbWindow}
+              onChange={e => { setDcbWindow(Number(e.target.value)); clearCacheOnParamChange(); }}
+              className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] font-mono focus:border-emerald-500 outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 w-24"
+              aria-label="DCB Window in days"
+            />
           </div>
           <div className="flex items-center gap-1 mb-1 text-xs text-[#888]">
             <Star size={11} aria-hidden="true" />
@@ -387,24 +448,11 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
           >
             <Settings2 size={14} className="text-emerald-400" />
             <span className="font-semibold text-[#fafafa]">Advanced Parameters</span>
-            <span className="text-[10px] text-[#666]">- DCB window, discount range, delivery thresholds</span>
+            <span className="text-[10px] text-[#666]">- discount range, delivery thresholds, free-float</span>
             <ChevronRight size={14} className={`ml-auto transition-transform ${advancedOpen ? 'rotate-90' : ''}`} />
           </button>
           {advancedOpen && (
             <div className="px-4 pb-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-              <div className="flex flex-col gap-1">
-                <label htmlFor="dcb-window" className="text-[10px] text-[#888] font-mono">DCB Window (days)</label>
-                <input
-                  id="dcb-window"
-                  type="number"
-                  min={20}
-                  step={5}
-                  value={dcbWindow}
-                  onChange={e => { setDcbWindow(Number(e.target.value)); clearCacheOnParamChange(); }}
-                  className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] font-mono focus:border-emerald-500 outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50"
-                  aria-label="DCB Window in days"
-                />
-              </div>
               <div className="flex flex-col gap-1">
                 <label htmlFor="min-discount" className="text-[10px] text-[#888] font-mono">Min Discount %</label>
                 <input
@@ -483,6 +531,19 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                   aria-label="Sanity multiplier"
                 />
               </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="min-ff-mcap" className="text-[10px] text-[#888] font-mono">Min FF MCap (₹ Cr)</label>
+                <input
+                  id="min-ff-mcap"
+                  type="number"
+                  min={0}
+                  step={50}
+                  value={minFfMcap}
+                  onChange={e => { setMinFfMcap(Number(e.target.value)); clearCacheOnParamChange(); }}
+                  className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] font-mono focus:border-emerald-500 outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50"
+                  aria-label="Minimum free-float market cap in crore rupees"
+                />
+              </div>
               <div className="flex flex-col gap-1 justify-end">
                 <button
                   onClick={resetAdvanced}
@@ -546,8 +607,9 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
         <>
           <div className="text-[10px] font-mono text-[#888]">
             Results: <span className="text-emerald-400">{filteredData.length} candidates</span>
+            <span className="ml-2 text-blue-400 capitalize">{timeframe}</span>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
               <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Candidates</div>
               <div className="text-2xl font-bold text-[#fafafa]">{filteredData.length}</div>
@@ -569,11 +631,15 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
               </div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Best Discount</div>
+              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Spike+Deep</div>
               <div className="text-2xl font-bold text-green-400">
-                {filteredData.length > 0
-                  ? Math.max(...filteredData.map(d => d.discount_pct)).toFixed(2) + '%'
-                  : '—'}
+                {filteredData.filter(d => d.spike_deep).length}
+              </div>
+            </div>
+            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
+              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Deep Count</div>
+              <div className="text-2xl font-bold text-red-400">
+                {filteredData.filter(d => d.depth === 'DEEP').length}
               </div>
             </div>
           </div>
@@ -585,7 +651,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                 role="grid"
                 aria-label="DCB Bargain results"
                 aria-rowcount={filteredData.length}
-                aria-colcount={11}
+                aria-colcount={13}
               >
                 <thead className="sticky top-0 z-20 text-[#888]">
                   <tr style={{ boxShadow: '0 1px 0 0 rgba(255,255,255,0.08), 0 2px 4px 0 rgba(0,0,0,0.4)' }}>
@@ -595,14 +661,20 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500/50" onClick={() => handleSort('sector')} scope="col" aria-sort={sortCol === 'sector' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       Sector <SortIcon column="sector" />
                     </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('discount_pct')} scope="col">
+                      <Tooltip content="Discount % — how far current price is below the DCB. Higher = more margin of safety.">Discount% <SortIcon column="discount_pct" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('depth')} scope="col">
+                      <Tooltip content="Depth — DEEP (&gt;20%), MID (10-20%), SHALLOW (&lt;10%).">Depth <SortIcon column="depth" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('spike_deep')} scope="col">
+                      <Tooltip content="Spike+Deep — today's delivery spike with deep discount. Highest-conviction signal.">Spike+Deep <SortIcon column="spike_deep" /></Tooltip>
+                    </th>
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('close')} scope="col">
                       Close <SortIcon column="close" />
                     </th>
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('dcb')} scope="col">
                       <Tooltip content="Delivery Cost Basis — weighted average price at which high-delivery buyers accumulated.">DCB <SortIcon column="dcb" /></Tooltip>
-                    </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('discount_pct')} scope="col">
-                      <Tooltip content="Discount % — how far current price is below the DCB. Higher = more margin of safety.">Discount% <SortIcon column="discount_pct" /></Tooltip>
                     </th>
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('del_abs')} scope="col">
                       <Tooltip content="Delivery Absorption — net institutional buying pressure. Positive = institutions still accumulating.">DelAbs <SortIcon column="del_abs" /></Tooltip>
@@ -610,11 +682,11 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('adtv_cr')} scope="col">
                       <Tooltip content="Average daily traded value in ₹ Cr (last 20 days).">ADTV <SortIcon column="adtv_cr" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('high_del_days')} scope="col">
-                      <Tooltip content="Number of high-delivery days within the DCB window (delivery above median).">HiDelDays <SortIcon column="high_del_days" /></Tooltip>
-                    </th>
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('free_float_mcap_cr')} scope="col">
                       <Tooltip content="Free-float market capitalization in ₹ Cr.">FF MCap <SortIcon column="free_float_mcap_cr" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('dcb_disc_median')} scope="col">
+                      <Tooltip content="DCB Range (1Y) — historical min, median, max discount% over the past year.">DCB Range <SortIcon column="dcb_disc_median" /></Tooltip>
                     </th>
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('score')} scope="col" aria-sort={sortCol === 'score' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip content="Composite score combining discount%, delivery absorption, and accumulation strength.">Score <SortIcon column="score" /></Tooltip>
@@ -627,7 +699,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className="px-4 py-8 text-center text-[#666]">No candidates match current filters.</td>
+                      <td colSpan={13} className="px-4 py-8 text-center text-[#666]">No candidates match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((row, index) => (
@@ -648,34 +720,59 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                         <td className="px-3 py-3 text-[#888] text-[11px] max-w-[120px] truncate" title={row.sector ?? ''}>
                           {row.sector ?? '—'}
                         </td>
-                        <td className="px-3 py-3 text-right text-[#ccc]">{row.close.toFixed(2)}</td>
-                        <td className="px-3 py-3 text-right text-[#ccc]">{row.dcb.toFixed(2)}</td>
                         <td className="px-3 py-3 text-right">
                           <span className={
-                            row.discount_pct > 15 ? 'text-green-400' :
-                            row.discount_pct > 8 ? 'text-amber-400' :
+                            row.discount_pct >= 20 ? 'text-green-400' :
+                            row.discount_pct >= 10 ? 'text-amber-400' :
                             'text-[#888]'
                           }>
                             {row.discount_pct.toFixed(2)}%
                           </span>
                         </td>
+                        <td className="px-3 py-3 text-center">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${DEPTH_COLORS[row.depth ?? 'SHALLOW'] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
+                            {row.depth ?? '—'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          {row.spike_deep ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-green-500/20 text-green-400 border-green-500/30">YES</span>
+                          ) : (
+                            <span className="text-[#666]">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-right text-[#ccc]">{'\u20B9'}{row.close.toFixed(2)}</td>
+                        <td className="px-3 py-3 text-right text-[#ccc]">{'\u20B9'}{row.dcb.toFixed(2)}</td>
                         <td className="px-3 py-3 text-right">
                           <span className={
-                            row.del_abs > 3 ? 'text-green-400' :
-                            row.del_abs > 0 ? 'text-amber-400' :
-                            row.del_abs < 0 ? 'text-red-400' :
-                            'text-[#888]'
+                            row.del_abs >= 3 ? 'text-green-400' :
+                            row.del_abs >= 0 ? 'text-amber-400' :
+                            'text-red-400'
                           }>
                             {row.del_abs.toFixed(2)}
                           </span>
                         </td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.adtv_cr.toFixed(2)}</td>
-                        <td className="px-3 py-3 text-right text-[#ccc]">{row.high_del_days}</td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.free_float_mcap_cr.toFixed(2)}</td>
+                        <td className="px-3 py-3 text-center">
+                          {row.dcb_disc_min != null && row.dcb_disc_median != null && row.dcb_disc_max != null ? (() => {
+                            const range = row.dcb_disc_max - row.dcb_disc_min;
+                            const isNearMax = row.discount_pct >= row.dcb_disc_max - range * 0.25;
+                            const isNearMedian = Math.abs(row.discount_pct - row.dcb_disc_median) < range * 0.25;
+                            const cls = isNearMax ? 'text-green-400' : isNearMedian ? 'text-amber-400' : 'text-[#888]';
+                            return (
+                              <span className={cls} title={`Min: ${row.dcb_disc_min.toFixed(1)}% | Median: ${row.dcb_disc_median.toFixed(1)}% | Max: ${row.dcb_disc_max.toFixed(1)}%`}>
+                                {row.dcb_disc_min.toFixed(1)}% – {row.dcb_disc_median.toFixed(1)}% – {row.dcb_disc_max.toFixed(1)}%
+                              </span>
+                            );
+                          })() : (
+                            <span className="text-[#666]">—</span>
+                          )}
+                        </td>
                         <td className="px-3 py-3 text-right">
                           <span className={
-                            row.score >= 80 ? 'text-green-400' :
-                            row.score >= 50 ? 'text-amber-400' :
+                            row.score >= 20 ? 'text-green-400' :
+                            row.score >= 10 ? 'text-amber-400' :
                             'text-[#888]'
                           }>
                             {row.score.toFixed(0)}
