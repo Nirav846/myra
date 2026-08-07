@@ -2507,12 +2507,16 @@ async def dcb_bargain_scan(payload: dict = Body(default={})):
     min_mcap = int(payload.get("min_mcap", 200))
     max_mcap = int(payload.get("max_mcap", 50000))
     dcb_window = int(payload.get("dcb_window", 120))
-    min_discount_pct = float(payload.get("min_discount_pct", 5.0))
+    min_discount_pct = float(payload.get("min_discount_pct", 15.0))
     max_discount_pct = float(payload.get("max_discount_pct", 60.0))
     min_del_abs = float(payload.get("min_del_abs", -2.0))
     min_adtv_cr = float(payload.get("min_adtv_cr", 1.0))
     min_high_del_days = int(payload.get("min_high_del_days", 10))
     sanity_mult = float(payload.get("sanity_mult", 5.0))
+    timeframe = str(payload.get("timeframe", "daily"))
+    if timeframe not in ("daily", "weekly"):
+        return {"detail": "timeframe must be 'daily' or 'weekly'"}, 400
+    min_ff_mcap = float(payload.get("min_ff_mcap", 0.0))
 
     raw_date = payload.get("scan_date", "")
     if raw_date and str(raw_date).strip():
@@ -2548,6 +2552,8 @@ async def dcb_bargain_scan(payload: dict = Body(default={})):
                 min_adtv_cr=min_adtv_cr,
                 min_high_del_days=min_high_del_days,
                 sanity_mult=sanity_mult,
+                timeframe=timeframe,
+                min_ff_mcap=min_ff_mcap,
             )
 
             _dcb_scan_state["message"] = "Loading universe..."
