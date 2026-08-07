@@ -191,6 +191,20 @@ class DCBBargainScanner:
             return "MID"
         return "SHALLOW"
 
+    def _is_lower_circuit(self, df: pd.DataFrame, idx: int) -> bool:
+        """Check if the candle at idx was a lower-circuit day."""
+        if idx < 1:
+            return False
+        row = df.iloc[idx]
+        prev = df.iloc[idx - 1]
+        close = float(row['close'])
+        low = float(row['low'])
+        prev_close = float(prev['close'])
+        # Close pinned at the low (within 1%) AND dropped 5%+ from previous close
+        is_pinned = close <= low * 1.01
+        is_significant_drop = close < prev_close * 0.95  # 5% drop
+        return is_pinned and is_significant_drop
+
     @staticmethod
     def _check_spike_deep(df_daily: pd.DataFrame, discount_pct: float) -> bool:
         """Return True if today's delivery_pct >= 1.3x 50-day avg AND
@@ -417,6 +431,14 @@ class DCBBargainScanner:
                 # Depth history (1-year DCB discount range)
                 dcb_disc_min, dcb_disc_median, dcb_disc_max = self._compute_depth_history(df)
 
+                # Lower-circuit detection (uses daily df)
+                is_lower_circuit = self._is_lower_circuit(df, len(df) - 1)
+                circuit_days_last_5 = 0
+                start_idx = max(0, len(df) - 5)
+                for ci in range(start_idx, len(df)):
+                    if self._is_lower_circuit(df, ci):
+                        circuit_days_last_5 += 1
+
                 candidates.append(
                     {
                         "symbol": symbol,
@@ -430,6 +452,8 @@ class DCBBargainScanner:
                         "high_del_days": high_del_days,
                         "free_float_mcap_cr": round(free_float_mcap_cr, 2),
                         "spike_deep": spike_deep,
+                        "is_lower_circuit": is_lower_circuit,
+                        "circuit_days_last_5": circuit_days_last_5,
                         "dcb_disc_min": dcb_disc_min,
                         "dcb_disc_median": dcb_disc_median,
                         "dcb_disc_max": dcb_disc_max,
@@ -453,6 +477,7 @@ class DCBBargainScanner:
             "dcb_disc_min",
             "dcb_disc_median",
             "dcb_disc_max",
+            "circuit_days_last_5",
         ]
         for c in candidates:
             for f in float_fields:

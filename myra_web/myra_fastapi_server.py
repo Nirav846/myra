@@ -2517,6 +2517,7 @@ async def dcb_bargain_scan(payload: dict = Body(default={})):
     if timeframe not in ("daily", "weekly"):
         return {"detail": "timeframe must be 'daily' or 'weekly'"}, 400
     min_ff_mcap = float(payload.get("min_ff_mcap", 0.0))
+    exclude_circuits = bool(payload.get("exclude_circuits", True))
 
     raw_date = payload.get("scan_date", "")
     if raw_date and str(raw_date).strip():
@@ -2580,6 +2581,9 @@ async def dcb_bargain_scan(payload: dict = Body(default={})):
             scanner._get_tech_data = _tracked_get_tech
 
             df = scanner.scan(as_on_date=scan_date)
+
+            if exclude_circuits and "is_lower_circuit" in df.columns:
+                df = df[~df["is_lower_circuit"].fillna(False)].reset_index(drop=True)
 
             _dcb_scan_state["progress"] = 95
             _dcb_scan_state["message"] = "Finalising results..."

@@ -339,3 +339,93 @@ def test_get_weekly_data_empty():
         "delivery_pct": [10.0, 10.0],
     })
     assert DCBBargainScanner._get_weekly_data(tiny).empty
+
+
+# ---------------------------------------------------------------------------
+# _is_lower_circuit tests
+# ---------------------------------------------------------------------------
+
+
+def _make_circuit_df(
+    closes: list[float],
+    lows: list[float],
+    opens: list[float] | None = None,
+    highs: list[float] | None = None,
+) -> pd.DataFrame:
+    """Build a minimal DataFrame for circuit detection tests."""
+    n = len(closes)
+    if opens is None:
+        opens = [closes[0]] + closes[:-1]
+    if highs is None:
+        highs = [max(o, c) for o, c in zip(opens, closes)]
+    if lows is None:
+        lows = [min(o, c) for o, c in zip(opens, closes)]
+    return pd.DataFrame({
+        "date": pd.date_range("2025-01-01", periods=n),
+        "open": opens,
+        "high": highs,
+        "low": lows,
+        "close": closes,
+        "volume": [100000] * n,
+        "delivery": [10000] * n,
+        "delivery_pct": [20.0] * n,
+    })
+
+
+def test_lower_circuit_false_idx_zero():
+    """idx < 1 always returns False."""
+    df = _make_circuit_df([100.0], [99.0])
+    scanner = DCBBargainScanner()
+    assert scanner._is_lower_circuit(df, 0) is False
+
+
+def test_lower_circuit_true_pinned_low_big_drop():
+    """Close pinned at low (within 1%) AND close < 0.95 * prev_close -> True."""
+    # prev_close=100, close=93 (7% drop), low=92.5 (close <= low*1.01 = 93.425)
+    df = _make_circuit_df(
+        closes=[100.0, 93.0],
+        lows=[99.0, 92.5],
+        opens=[100.0, 99.0],
+        highs=[101.0, 99.5],
+    )
+    scanner = DCBBargainScanner()
+    assert scanner._is_lower_circuit(df, 1) is True
+
+
+def test_lower_circuit_false_pinned_but_small_drop():
+    """Close pinned at low but drop < 5% -> False."""
+    # prev_close=100, close=96 (4% drop), low=95 (close <= low*1.01 = 95.95)
+    df = _make_circuit_df(
+        closes=[100.0, 96.0],
+        lows=[99.0, 95.0],
+        opens=[100.0, 99.0],
+        highs=[101.0, 99.5],
+    )
+    scanner = DCBBargainScanner()
+    assert scanner._is_lower_circuit(df, 1) is False
+
+
+def test_lower_circuit_false_big_drop_but_not_pinned():
+    """Big drop but close is not pinned near the low -> False."""
+    # prev_close=100, close=93 (7% drop), low=85 (close=93 > low*1.01=85.85)
+    df = _make_circuit_df(
+        closes=[100.0, 93.0],
+        lows=[99.0, 85.0],
+        opens=[100.0, 95.0],
+        highs=[101.0, 96.0],
+    )
+    scanner = DCBBargainScanner()
+    assert scanner._is_lower_circuit(df, 1) is False
+
+
+def test_lower_circuit_false_exactly_5pct_drop():
+    """Close = exactly 0.95 * prev_close (not <) -> False."""
+    # prev_close=100, close=95.0 (exactly 5%, not less), low=94.5
+    df = _make_circuit_df(
+        closes=[100.0, 95.0],
+        lows=[99.0, 94.5],
+        opens=[100.0, 99.0],
+        highs=[101.0, 99.5],
+    )
+    scanner = DCBBargainScanner()
+    assert scanner._is_lower_circuit(df, 1) is False
