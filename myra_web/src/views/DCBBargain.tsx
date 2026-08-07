@@ -34,6 +34,8 @@ interface Candidate {
   high_del_days: number;
   free_float_mcap_cr: number;
   spike_deep?: boolean;
+  is_lower_circuit?: boolean;
+  circuit_days_last_5?: number;
   dcb_disc_min?: number | null;
   dcb_disc_median?: number | null;
   dcb_disc_max?: number | null;
@@ -106,6 +108,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
   const [minHighDelDays, setMinHighDelDays] = useState(ADVANCED_DEFAULTS.min_high_del_days);
   const [sanityMult, setSanityMult] = useState(ADVANCED_DEFAULTS.sanity_mult);
   const [minFfMcap, setMinFfMcap] = useState(ADVANCED_DEFAULTS.min_ff_mcap);
+  const [excludeCircuits, setExcludeCircuits] = useState(true);
 
   const [sortCol, setSortCol] = useState<string>('score');
   const [sortAsc, setSortAsc] = useState(false);
@@ -213,6 +216,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
           sanity_mult: sanityMult,
           timeframe,
           min_ff_mcap: minFfMcap,
+          exclude_circuits: excludeCircuits,
           ...(scanDate.trim() && { scan_date: scanDate }),
         }),
       });
@@ -231,7 +235,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
         setIsScanning(false);
       }
     }
-  }, [fetchScanStatus, clearPolling, mcapRange, scanDate, dcbWindow, minDiscountPct, maxDiscountPct, minDelAbs, minAdtvCr, minHighDelDays, sanityMult, timeframe, minFfMcap]);
+  }, [fetchScanStatus, clearPolling, mcapRange, scanDate, dcbWindow, minDiscountPct, maxDiscountPct, minDelAbs, minAdtvCr, minHighDelDays, sanityMult, timeframe, minFfMcap, excludeCircuits]);
   startScanRef.current = startScan;
 
   useEffect(() => {
@@ -259,18 +263,21 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
     setMinHighDelDays(ADVANCED_DEFAULTS.min_high_del_days);
     setSanityMult(ADVANCED_DEFAULTS.sanity_mult);
     setMinFfMcap(ADVANCED_DEFAULTS.min_ff_mcap);
+    setExcludeCircuits(true);
   };
 
   const handleCSV = () => {
     if (filteredData.length === 0) return;
     const headers = [
-      'Symbol', 'Sector', 'Discount%', 'Depth', 'SpikeDeep', 'Close', 'DCB',
+      'Symbol', 'Sector', 'Discount%', 'Depth', 'SpikeDeep', 'Circuit', 'CktDays', 'Close', 'DCB',
       'DelAbs', 'ADTV', 'HiDelDays', 'FF MCap Cr', 'DCBRange', 'Score', 'Tier', 'Timeframe',
     ];
     const rows = filteredData.map(r => [
       r.symbol, r.sector ?? '',
       r.discount_pct.toFixed(2), r.depth ?? '',
       r.spike_deep ? 'YES' : '',
+      r.is_lower_circuit ? 'LOWER CKT' : '',
+      r.circuit_days_last_5 ?? 0,
       r.close.toFixed(2), r.dcb.toFixed(2),
       r.del_abs.toFixed(2), r.adtv_cr.toFixed(2),
       r.high_del_days, r.free_float_mcap_cr.toFixed(2),
@@ -310,6 +317,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
           <p className="mb-1">DCB Bargain Scanner: Finds stocks trading below their institutional Delivery Cost Basis — the weighted average price at which high‑delivery buyers accumulated over the last 6 months.</p>
           <p className="mb-1">Backtested: 1,101 signals across 15 dates (2022‑2024). TP=10%, SL=8%: 14 trades, 50% win rate, +6.6% net per trade, +₹9,264 total P&L. Deep discounts (&gt;20%) in large‑cap free‑float stocks averaged +17.6% (100% win rate).</p>
           <p>How to use: Prefer DEEP discounts (&gt;20%) with positive Delivery Absorption. The Discount% is your margin of safety. The DCB Range shows whether today's discount is historically deep or shallow for this specific stock. Spike+Deep is the highest‑conviction signal.</p>
+          <p>⚠ Lower‑circuit stocks are excluded by default — their delivery data and DCB discount may be distorted by near‑zero volume. Toggle the filter in Advanced settings to include them.</p>
         </div>
       </div>
 
@@ -545,6 +553,17 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                 />
               </div>
               <div className="flex flex-col gap-1 justify-end">
+                <label className="flex items-center gap-2 text-[11px] text-[#888]">
+                  <input
+                    type="checkbox"
+                    checked={excludeCircuits}
+                    onChange={e => { setExcludeCircuits(e.target.checked); clearCacheOnParamChange(); }}
+                    className="accent-emerald-500"
+                  />
+                  Exclude circuit‑locked stocks
+                </label>
+              </div>
+              <div className="flex flex-col gap-1 justify-end">
                 <button
                   onClick={resetAdvanced}
                   className="px-3 py-1.5 bg-[#ffffff0a] hover:bg-[#ffffff15] border border-[#ffffff1a] rounded text-[11px] text-[#888] hover:text-[#fafafa] transition-colors font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50"
@@ -651,7 +670,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                 role="grid"
                 aria-label="DCB Bargain results"
                 aria-rowcount={filteredData.length}
-                aria-colcount={13}
+                aria-colcount={15}
               >
                 <thead className="sticky top-0 z-20 text-[#888]">
                   <tr style={{ boxShadow: '0 1px 0 0 rgba(255,255,255,0.08), 0 2px 4px 0 rgba(0,0,0,0.4)' }}>
@@ -669,6 +688,12 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                     </th>
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('spike_deep')} scope="col">
                       <Tooltip content="Spike+Deep — today's delivery spike with deep discount. Highest-conviction signal.">Spike+Deep <SortIcon column="spike_deep" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('is_lower_circuit')} scope="col">
+                      <Tooltip content="Lower circuit — close pinned at the low with a 5%+ drop. Delivery data may be distorted.">Circuit <SortIcon column="is_lower_circuit" /></Tooltip>
+                    </th>
+                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('circuit_days_last_5')} scope="col">
+                      <Tooltip content="Circuit days in the last 5 sessions. ≥3 = sustained circuit lock.">Ckt Days <SortIcon column="circuit_days_last_5" /></Tooltip>
                     </th>
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('close')} scope="col">
                       Close <SortIcon column="close" />
@@ -699,7 +724,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={13} className="px-4 py-8 text-center text-[#666]">No candidates match current filters.</td>
+                      <td colSpan={15} className="px-4 py-8 text-center text-[#666]">No candidates match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((row, index) => (
@@ -740,6 +765,18 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                           ) : (
                             <span className="text-[#666]">—</span>
                           )}
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          {row.is_lower_circuit ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-red-500/20 text-red-400 border-red-500/30">🔴 LOWER CKT</span>
+                          ) : (
+                            <span className="text-[#666]">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          <span className={row.circuit_days_last_5 >= 3 ? 'text-red-400' : (row.circuit_days_last_5 ?? 0) >= 1 ? 'text-amber-400' : 'text-[#888]'}>
+                            {row.circuit_days_last_5 ?? 0}
+                          </span>
                         </td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{'\u20B9'}{row.close.toFixed(2)}</td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{'\u20B9'}{row.dcb.toFixed(2)}</td>
