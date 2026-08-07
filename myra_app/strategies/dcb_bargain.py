@@ -18,12 +18,14 @@ class DCBBargainScanner:
         min_mcap=200,
         max_mcap=50000,
         dcb_window=120,
-        min_discount_pct=5.0,
+        min_discount_pct=15.0,
         max_discount_pct=60.0,
         min_del_abs=-2.0,
         min_adtv_cr=1.0,
         min_high_del_days=10,
         sanity_mult=5.0,
+        timeframe="daily",
+        min_ff_mcap=0.0,
     ):
         self.min_mcap = min_mcap
         self.max_mcap = max_mcap
@@ -34,6 +36,8 @@ class DCBBargainScanner:
         self.min_adtv_cr = min_adtv_cr
         self.min_high_del_days = min_high_del_days
         self.sanity_mult = sanity_mult
+        self.timeframe = timeframe
+        self.min_ff_mcap = min_ff_mcap
 
     def _db_path(self, key: str) -> str:
         return os.path.join(DB_DIR, LibrarianCore.DB_MAP[key])
@@ -138,18 +142,129 @@ class DCBBargainScanner:
 
     @staticmethod
     def _compute_del_abs(df: pd.DataFrame, window: int = 20) -> float:
-        """20-day delivery absorption: avg delivery% on up days minus avg delivery% on down days."""
+        """20-day delivery absorption: avg delivery% on up days minus avg delivery% on down days.
+        An 'up day' is close > open; a 'down day' is close < open. Flat days excluded."""
         sub = df.tail(window)
+        if len(sub) == 0:
+            return 0.0
+        opens = sub["open"].values.astype(float)
         closes = sub["close"].values.astype(float)
-        prev = np.roll(closes, 1)
-        prev[0] = closes[0]
-        returns = (closes - prev) / prev * 100
         del_pcts = sub["delivery_pct"].values.astype(float)
-        up_mask = returns >= 0
-        down_mask = returns < 0
+
+        up_mask = closes > opens
+        down_mask = closes < opens
+
         up_avg = float(np.nanmean(del_pcts[up_mask])) if np.any(up_mask) else 0.0
         down_avg = float(np.nanmean(del_pcts[down_mask])) if np.any(down_mask) else 0.0
         return up_avg - down_avg
+
+    @staticmethod
+    def _get_weekly_data(df_daily: pd.DataFrame) -> pd.DataFrame:
+        """Aggregate daily OHLCV+delivery to weekly candles."""
+        if df_daily is None or len(df_daily) < 5:
+            return pd.DataFrame()
+        df = df_daily.copy()
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.set_index("date").sort_index()
+        weekly = df.resample("W").agg(
+            {
+                "open": "first",
+                "high": "max",
+                "low": "min",
+                "close": "last",
+                "volume": "sum",
+                "delivery": "sum",
+            }
+        )
+        weekly["delivery_pct"] = (
+            weekly["delivery"] / weekly["volume"].replace(0, float("nan")) * 100
+        ).fillna(0)
+        weekly = weekly.dropna(subset=["open", "close"])
+        return weekly.reset_index()
+
+    @staticmethod
+    def _compute_depth_tag(discount_pct: float) -> str:
+        """Return DEEP / MID / SHALLOW based on discount percentage."""
+        if discount_pct > 20:
+            return "DEEP"
+        elif discount_pct > 10:
+            return "MID"
+        return "SHALLOW"
+
+    @staticmethod
+    def _check_spike_deep(df_daily: pd.DataFrame, discount_pct: float) -> bool:
+        """Return True if today's delivery_pct >= 1.3x 50-day avg AND
+        close_loc >= 0.6 AND discount_pct > 20. Uses daily frame."""
+        if len(df_daily) < 20:
+            return False
+        del_avg = df_daily["delivery_pct"].tail(50).mean()
+        if pd.isna(del_avg) or del_avg <= 0:
+            return False
+        last = df_daily.iloc[-1]
+        if last["delivery_pct"] < 1.3 * del_avg:
+            return False
+        high, low, close = float(last["high"]), float(last["low"]), float(last["close"])
+        if high == low:
+            clr = 1.0 if close == high else 0.0
+        else:
+            clr = (close - low) / (high - low)
+        return clr >= 0.6 and discount_pct > 20
+
+    def _compute_depth_history(
+        self, df_daily: pd.DataFrame
+    ) -> tuple[float | None, float | None, float | None]:
+        """Compute 1-year DCB discount range (min, median, max) from historical cutoffs.
+        Uses the daily frame with strided windows for efficiency."""
+        if len(df_daily) < self.dcb_window + 20:
+            return None, None, None
+
+        closes_all = df_daily["close"].values.astype(float)
+        del_all = df_daily["delivery_pct"].values.astype(float)
+
+        # Collect historical cutoffs: every 10th trading row, at least one per month
+        n = len(df_daily)
+        # Start from dcb_window (need at least that many rows)
+        # Generate candidate cutoff indices
+        step = max(1, n // 20)  # ~20 cutoffs evenly spaced
+        cutoff_indices = list(range(self.dcb_window, n, step))
+        # Also add one per month (roughly every 21 trading days)
+        month_step = 21
+        for i in range(self.dcb_window, n, month_step):
+            if i not in cutoff_indices:
+                cutoff_indices.append(i)
+        cutoff_indices = sorted(set(cutoff_indices))
+
+        discount_pcts = []
+        for cutoff_idx in cutoff_indices:
+            window_closes = closes_all[cutoff_idx - self.dcb_window : cutoff_idx]
+            window_del = del_all[cutoff_idx - self.dcb_window : cutoff_idx]
+            close_at_cutoff = closes_all[cutoff_idx]
+
+            if close_at_cutoff <= 0 or len(window_closes) < self.dcb_window:
+                continue
+
+            avg_del = float(np.nanmean(window_del))
+            mask = window_del > avg_del
+            if int(np.sum(mask)) == 0:
+                continue
+
+            dcb = float(np.average(window_closes[mask], weights=window_del[mask]))
+            if dcb <= 0:
+                continue
+
+            disc = (dcb - close_at_cutoff) / dcb * 100
+            if -50 < disc < 100:  # sanity bounds
+                discount_pcts.append(disc)
+
+        if len(discount_pcts) < 3:
+            return None, None, None
+
+        arr = np.array(discount_pcts)
+        return (
+            self._sanitize_float(float(np.min(arr))),
+            self._sanitize_float(float(np.median(arr))),
+            self._sanitize_float(float(np.max(arr))),
+        )
 
     def scan(self, as_on_date: str | None = None) -> pd.DataFrame:
         rows = self._get_universe()
@@ -186,8 +301,12 @@ class DCBBargainScanner:
             as_on_date = date.today().isoformat()
 
         ref_date = pd.Timestamp(as_on_date)
-        total_calendar = int((self.dcb_window + 50) * 1.8) + 10
+        # Fetch enough data: ~1 year + buffer for depth history
+        total_calendar = int(max(self.dcb_window + 50, 365) * 1.8) + 20
         min_date = f"{(ref_date - pd.Timedelta(days=total_calendar)):%Y-%m-%d}"
+
+        is_weekly = self.timeframe == "weekly"
+        effective_window = self.dcb_window // 5 if is_weekly else self.dcb_window
 
         candidates: list[dict] = []
 
@@ -222,8 +341,21 @@ class DCBBargainScanner:
                 if len(df) < max(60, int((self.dcb_window + 50) * 0.6) + 5):
                     continue
 
-                # DCB window: last dcb_window TRADING rows
-                window_df = df.iloc[-self.dcb_window:]
+                # Free-float filter
+                free_float_mcap_cr = (mcap * ff_pct / 100.0) / 1e7
+                if free_float_mcap_cr < self.min_ff_mcap:
+                    continue
+
+                # Weekly aggregation if needed
+                if is_weekly:
+                    work_df = self._get_weekly_data(df)
+                    if len(work_df) < max(15, effective_window):
+                        continue
+                else:
+                    work_df = df
+
+                # DCB window: last effective_window TRADING rows
+                window_df = work_df.iloc[-effective_window:]
 
                 # Average delivery % in window
                 avg_del = float(np.nanmean(window_df["delivery_pct"].values.astype(float)))
@@ -244,7 +376,7 @@ class DCBBargainScanner:
                     continue
 
                 # Current close
-                close = float(window_df["close"].values.astype(float)[-1])
+                close = float(work_df["close"].values.astype(float)[-1])
                 if close <= 0:
                     continue
 
@@ -260,24 +392,30 @@ class DCBBargainScanner:
                 # ADTV in ₹ Cr
                 adtv_cr = float(
                     np.nanmean(
-                        window_df["close"].values.astype(float)
-                        * window_df["volume"].values.astype(float)
+                        work_df["close"].values.astype(float)
+                        * work_df["volume"].values.astype(float)
                     )
                 ) / 1e7
                 if adtv_cr < self.min_adtv_cr:
                     continue
 
-                # Delivery absorption (last 20 rows of full df)
+                # Delivery absorption (last 20 rows of DAILY df — always daily)
                 del_abs = self._compute_del_abs(df)
                 if del_abs < self.min_del_abs:
                     continue
+
+                # Depth tag
+                depth = self._compute_depth_tag(discount_pct)
+
+                # Spike+Deep (uses daily frame)
+                spike_deep = self._check_spike_deep(df, discount_pct)
 
                 # Score and tier
                 score = discount_pct * 0.6 + del_abs * 0.4
                 tier = "HIGH" if score >= 20 else ("MOD" if score >= 10 else "LOW")
 
-                # Free float market cap
-                free_float_mcap_cr = (mcap * ff_pct / 100.0) / 1e7
+                # Depth history (1-year DCB discount range)
+                dcb_disc_min, dcb_disc_median, dcb_disc_max = self._compute_depth_history(df)
 
                 candidates.append(
                     {
@@ -286,12 +424,18 @@ class DCBBargainScanner:
                         "close": round(close, 2),
                         "dcb": round(dcb, 2),
                         "discount_pct": round(discount_pct, 2),
+                        "depth": depth,
                         "del_abs": round(del_abs, 2),
                         "adtv_cr": round(adtv_cr, 2),
                         "high_del_days": high_del_days,
                         "free_float_mcap_cr": round(free_float_mcap_cr, 2),
+                        "spike_deep": spike_deep,
+                        "dcb_disc_min": dcb_disc_min,
+                        "dcb_disc_median": dcb_disc_median,
+                        "dcb_disc_max": dcb_disc_max,
                         "score": round(score, 2),
                         "tier": tier,
+                        "timeframe": self.timeframe,
                     }
                 )
             except Exception:
@@ -306,6 +450,9 @@ class DCBBargainScanner:
             "adtv_cr",
             "free_float_mcap_cr",
             "score",
+            "dcb_disc_min",
+            "dcb_disc_median",
+            "dcb_disc_max",
         ]
         for c in candidates:
             for f in float_fields:
