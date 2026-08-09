@@ -7,6 +7,7 @@ interface Tab {
   path: string;
   icon: string | React.ReactNode;
   category?: string;
+  group?: string;
 }
 
 interface NavbarProps {
@@ -22,6 +23,8 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 const CATEGORY_ORDER = ['dashboard', 'scanners', 'analysis', 'data', 'experimental'];
 
+const GROUP_ORDER = ['Overview', 'Price Action', 'Delivery / Volume', 'Institutional / Flow', 'ML / Momentum'];
+
 export default function Navbar({ tabs }: NavbarProps) {
   const location = useLocation();
   const menuRef = useRef<HTMLDivElement>(null);
@@ -30,6 +33,7 @@ export default function Navbar({ tabs }: NavbarProps) {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [overflowCategoryKeys, setOverflowCategoryKeys] = useState<string[]>([]);
+  const [dropdownFilter, setDropdownFilter] = useState('');
 
   const grouped = useMemo(() => {
     const map: Record<string, Tab[]> = {};
@@ -59,6 +63,7 @@ export default function Navbar({ tabs }: NavbarProps) {
       if (!inMenu && !inDropdown) {
         setOpenDropdown(null);
         setMoreOpen(false);
+        setDropdownFilter('');
       }
     };
     document.addEventListener('mousedown', handler);
@@ -71,6 +76,7 @@ export default function Navbar({ tabs }: NavbarProps) {
       if (e.key === 'Escape') {
         setOpenDropdown(null);
         setMoreOpen(false);
+        setDropdownFilter('');
       }
     };
     document.addEventListener('keydown', handler);
@@ -162,7 +168,11 @@ export default function Navbar({ tabs }: NavbarProps) {
       <div key={catKey} data-cat={catKey} className="relative">
         <button
           ref={el => { buttonRefs.current[catKey] = el; }}
-          onClick={() => setOpenDropdown(openDropdown === catKey ? null : catKey)}
+          onClick={() => {
+            const next = openDropdown === catKey ? null : catKey;
+            setOpenDropdown(next);
+            setDropdownFilter(next ? '' : '');
+          }}
           aria-haspopup="true"
           aria-expanded={openDropdown === catKey}
           className={`px-2 py-1 text-[11px] font-mono whitespace-nowrap transition-colors flex items-center gap-1 ${
@@ -174,7 +184,7 @@ export default function Navbar({ tabs }: NavbarProps) {
         {openDropdown === catKey && createPortal(
           <div
             data-nav-dropdown={catKey}
-            className="bg-[#1a1c24] border border-[#ffffff1a] rounded shadow-xl py-1 min-w-[160px]"
+            className="bg-[#1a1c24] border border-[#ffffff1a] rounded shadow-xl py-1 min-w-[180px]"
             style={{
               position: 'fixed',
               left: buttonRefs.current[catKey]?.getBoundingClientRect().left ?? 0,
@@ -182,23 +192,130 @@ export default function Navbar({ tabs }: NavbarProps) {
               zIndex: 9999,
             }}
           >
-            {catTabs.map(tab => (
-              <NavLink
-                key={tab.id}
-                to={tab.path}
-                onClick={() => setOpenDropdown(null)}
-                className={({ isActive }) =>
-                  `block px-3 py-1.5 text-[11px] font-mono transition-colors flex items-center gap-2 ${
-                    isActive
-                      ? 'text-cyan-400 bg-cyan-500/10'
-                      : 'text-[#888] hover:text-white hover:bg-[#ffffff0a]'
-                  }`
-                }
-              >
-                <span className="w-4 text-center">{typeof tab.icon === 'string' ? tab.icon : null}</span>
-                {tab.id}
-              </NavLink>
-            ))}
+            {catTabs.some(t => t.group) && catTabs.length >= 8 ? (
+              <>
+                <div className="px-2 pt-1 pb-1">
+                  <input
+                    type="text"
+                    placeholder="Filter scanners…"
+                    value={dropdownFilter}
+                    onChange={e => setDropdownFilter(e.target.value)}
+                    onMouseDown={e => e.stopPropagation()}
+                    className="text-[11px] font-mono bg-[#12141a] border border-[#ffffff1a] rounded px-2 py-1 w-full focus:border-cyan-500/40 text-[#ccc] outline-none placeholder:text-[#555]"
+                  />
+                </div>
+                {dropdownFilter.trim() ? (
+                  (() => {
+                    const q = dropdownFilter.trim().toLowerCase();
+                    const matches = catTabs.filter(t => t.id.toLowerCase().includes(q));
+                    return matches.length > 0 ? (
+                      matches.map(tab => (
+                        <NavLink
+                          key={tab.id}
+                          to={tab.path}
+                          onClick={() => { setOpenDropdown(null); setDropdownFilter(''); }}
+                          className={({ isActive }) =>
+                            `block px-3 py-1.5 text-[11px] font-mono transition-colors flex items-center gap-2 ${
+                              isActive
+                                ? 'text-cyan-400 bg-cyan-500/10'
+                                : 'text-[#888] hover:text-white hover:bg-[#ffffff0a]'
+                            }`
+                          }
+                        >
+                          <span className="w-4 text-center">{typeof tab.icon === 'string' ? tab.icon : null}</span>
+                          {tab.id}
+                        </NavLink>
+                      ))
+                    ) : (
+                      <div className="px-3 py-2 text-[11px] text-[#555]">No scanners match</div>
+                    );
+                  })()
+                ) : (
+                  (() => {
+                    const groups = new Map<string, Tab[]>();
+                    const other: Tab[] = [];
+                    for (const tab of catTabs) {
+                      if (tab.group && GROUP_ORDER.includes(tab.group)) {
+                        if (!groups.has(tab.group)) groups.set(tab.group, []);
+                        groups.get(tab.group)!.push(tab);
+                      } else {
+                        other.push(tab);
+                      }
+                    }
+                    const elements: React.ReactNode[] = [];
+                    for (const g of GROUP_ORDER) {
+                      const items = groups.get(g);
+                      if (!items || items.length === 0) continue;
+                      elements.push(
+                        <div key={`h-${g}`} className="px-3 pt-2 pb-1 text-[9px] uppercase tracking-wider text-[#555]">{g}</div>
+                      );
+                      for (const tab of items) {
+                        elements.push(
+                          <NavLink
+                            key={tab.id}
+                            to={tab.path}
+                            onClick={() => { setOpenDropdown(null); setDropdownFilter(''); }}
+                            className={({ isActive }) =>
+                              `block px-3 py-1.5 text-[11px] font-mono transition-colors flex items-center gap-2 ${
+                                isActive
+                                  ? 'text-cyan-400 bg-cyan-500/10'
+                                  : 'text-[#888] hover:text-white hover:bg-[#ffffff0a]'
+                              }`
+                            }
+                          >
+                            <span className="w-4 text-center">{typeof tab.icon === 'string' ? tab.icon : null}</span>
+                            {tab.id}
+                          </NavLink>
+                        );
+                      }
+                    }
+                    if (other.length > 0) {
+                      elements.push(
+                        <div key="h-Other" className="px-3 pt-2 pb-1 text-[9px] uppercase tracking-wider text-[#555]">Other</div>
+                      );
+                      for (const tab of other) {
+                        elements.push(
+                          <NavLink
+                            key={tab.id}
+                            to={tab.path}
+                            onClick={() => { setOpenDropdown(null); setDropdownFilter(''); }}
+                            className={({ isActive }) =>
+                              `block px-3 py-1.5 text-[11px] font-mono transition-colors flex items-center gap-2 ${
+                                isActive
+                                  ? 'text-cyan-400 bg-cyan-500/10'
+                                  : 'text-[#888] hover:text-white hover:bg-[#ffffff0a]'
+                              }`
+                            }
+                          >
+                            <span className="w-4 text-center">{typeof tab.icon === 'string' ? tab.icon : null}</span>
+                            {tab.id}
+                          </NavLink>
+                        );
+                      }
+                    }
+                    return elements;
+                  })()
+                )}
+              </>
+            ) : (
+              catTabs.map(tab => (
+                <NavLink
+                  key={tab.id}
+                  to={tab.path}
+                  onClick={() => { setOpenDropdown(null); setDropdownFilter(''); }}
+                  className={({ isActive }) =>
+                    `block px-3 py-1.5 text-[11px] font-mono transition-colors flex items-center gap-2 ${
+                      isActive
+                        ? 'text-cyan-400 bg-cyan-500/10'
+                        : 'text-[#888] hover:text-white hover:bg-[#ffffff0a]'
+                    }`
+                  }
+                >
+                  <span className="w-4 text-center">{typeof tab.icon === 'string' ? tab.icon : null}</span>
+                  {tab.id}
+                </NavLink>
+              ))
+            )}
           </div>,
           document.body
         )}
