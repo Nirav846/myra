@@ -11,6 +11,17 @@ interface NewsItem {
   domain?: string;
   sentiment: 'positive' | 'negative' | 'neutral';
   confidence: number;
+  company_name?: string;
+}
+
+interface AiOpinion {
+  ticker: string;
+  signal: 'BUY' | 'SELL' | 'HOLD';
+  reason: string;
+  confidence: number;
+  source: 'gemini' | 'degraded';
+  cached: boolean;
+  summary: string;
 }
 
 export default function NewsSentimentView() {
@@ -19,6 +30,10 @@ export default function NewsSentimentView() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [cached, setCached] = useState(false);
+
+  const [aiOpinion, setAiOpinion] = useState<AiOpinion | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState('');
 
   const fetchNews = async (refresh = false) => {
     if (!ticker.trim()) return;
@@ -39,6 +54,32 @@ export default function NewsSentimentView() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchAiOpinion = async () => {
+    const t = ticker.trim().toUpperCase();
+    if (!t) return;
+    setAiLoading(true);
+    setAiError('');
+    try {
+      const res = await fetch(`${API_BASE}/ai-opinion/${t}`);
+      if (!res.ok) {
+        setAiError(`AI opinion request failed (${res.status})`);
+        setAiOpinion(null);
+        return;
+      }
+      const data: AiOpinion = await res.json();
+      setAiOpinion(data);
+    } catch {
+      setAiError('Failed to fetch AI opinion. Is the backend running?');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const clearAiOpinion = () => {
+    setAiOpinion(null);
+    setAiError('');
   };
 
   const posCount = news.filter(n => n.sentiment === 'positive').length;
@@ -64,12 +105,59 @@ export default function NewsSentimentView() {
         </button>
         <button onClick={() => fetchNews(true)} disabled={loading}
           className="px-4 py-1.5 bg-[#ffffff0a] border border-[#ffffff1a] text-[#888] rounded text-sm hover:text-white disabled:opacity-50"
-          title="Force refresh from GDELT">
+          title="Force refresh from news sources (GDELT + Groww)">
           🔄
         </button>
       </div>
 
+      {/* AI Opinion button row */}
+      <div className="flex gap-2 items-center">
+        <button onClick={fetchAiOpinion} disabled={aiLoading || !ticker.trim()}
+          className="px-4 py-1.5 bg-[#ffffff0a] border border-[#ffffff1a] text-[#888] rounded text-sm hover:text-white disabled:opacity-50">
+          {aiLoading ? '⏳ Thinking…' : '🤖 AI Opinion'}
+        </button>
+        {aiOpinion && (
+          <button onClick={clearAiOpinion}
+            className="px-3 py-1.5 bg-[#ffffff0a] border border-[#ffffff1a] text-[#888] rounded text-sm hover:text-white">
+            🗑 Clear
+          </button>
+        )}
+      </div>
+
       {error && <div className="bg-red-500/10 border border-red-500/30 rounded px-4 py-2 text-red-400 text-sm">{error}</div>}
+
+      {/* AI Opinion panel */}
+      {aiOpinion && (
+        <div className="bg-[#ffffff05] border border-[#ffffff0a] rounded p-3 space-y-1.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={
+              aiOpinion.signal === 'BUY' ? 'text-green-400 font-semibold' :
+              aiOpinion.signal === 'SELL' ? 'text-red-400 font-semibold' :
+              'text-[#888] font-semibold'
+            }>
+              🤖 AI: {aiOpinion.signal}
+            </span>
+            <span className="text-[10px] text-[#666]">{(aiOpinion.confidence * 100).toFixed(0)}%</span>
+            {aiOpinion.cached && <span className="text-[10px] text-[#666]">📦 cached</span>}
+          </div>
+          <div className="text-[10px] text-[#666]">
+            {aiOpinion.source === 'gemini' ? 'Gemini · 24h cache' : '⚙️ Degraded (no API key or LLM unavailable)'}
+          </div>
+          <p className="text-[11px] text-[#aaa] mt-1">{aiOpinion.reason}</p>
+          {aiOpinion.summary && (
+            <details className="mt-1">
+              <summary className="text-[10px] text-[#666] cursor-pointer hover:text-[#aaa]">
+                Show data the model evaluated
+              </summary>
+              <pre className="text-[10px] font-mono text-[#888] whitespace-pre-wrap mt-1 p-2 bg-[#ffffff05] rounded">
+                {aiOpinion.summary}
+              </pre>
+            </details>
+          )}
+        </div>
+      )}
+
+      {aiError && <div className="bg-red-500/10 border border-red-500/30 rounded px-4 py-2 text-red-400 text-sm">{aiError}</div>}
 
       {news.length > 0 && (
         <>
@@ -96,6 +184,9 @@ export default function NewsSentimentView() {
                     )}
                   </p>
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[10px] text-[#888]">
+                    {item.company_name && item.company_name.toUpperCase() !== ticker.trim().toUpperCase() && (
+                      <span className="text-cyan-400/80">{item.company_name}</span>
+                    )}
                     <span>{item.source || 'GDELT'}</span>
                     {item.domain && <span className="text-[#666]">{item.domain}</span>}
                     <span>{item.date ? new Date(item.date).toLocaleDateString('en-IN', {day:'numeric', month:'short', year:'numeric'}) : ''}</span>
@@ -123,7 +214,7 @@ export default function NewsSentimentView() {
         <div className="text-center text-[#888] py-12">
           <p className="text-3xl mb-2">🔍</p>
           <p className="text-sm">Enter a ticker to see recent news with AI sentiment</p>
-          <p className="text-[10px] mt-1">Powered by GDELT + FinBERT · Cached for 6 hours</p>
+          <p className="text-[10px] mt-1">Powered by GDELT + Groww + FinBERT · Cached for 6 hours</p>
         </div>
       )}
     </div>
