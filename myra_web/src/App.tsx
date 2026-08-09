@@ -43,36 +43,38 @@ import BottomHunterView from './views/BottomHunter';
 import ClimaxAccumulationView from './views/ClimaxAccumulation';
 import ConfluenceView from './views/ConfluenceView';
 import DCBBargainView from './views/DCBBargain';
+import NewsSentimentView from './views/NewsSentiment';
 import { AlertCircle, Settings as SettingsIcon, SlidersHorizontal, BrainCircuit, Rocket, Database, RotateCw, Eye, Zap } from 'lucide-react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 
 const TABS = [
   { id: 'Mission Control', path: '/mission-control', icon: '🎛️', category: 'dashboard' },
   { id: 'Portfolio', path: '/portfolio', icon: '💰', category: 'dashboard' },
-  { id: 'Price-Delivery Divergence', path: '/price-delivery-divergence', icon: '📉', category: 'scanners' },
-  { id: 'FVG Scanner', path: '/fvg-scanner', icon: '📡', category: 'scanners' },
-  { id: 'Delivery Anomaly', path: '/delivery-anomaly', icon: '📦', category: 'scanners' },
+  { id: 'Bottom Hunter', path: '/bottom-hunter', icon: '🎯', category: 'scanners' },
+  { id: 'DCB Bargain', path: '/dcb-bargain', icon: '🏷️', category: 'scanners' },
+  { id: 'Consensus', path: '/confluence', icon: '🔗', category: 'scanners' },
+  { id: 'Invisible Hand', path: '/invisible-hand', icon: <Eye size={16} />, category: 'scanners' },
+  { id: 'The Trigger', path: '/trigger', icon: <Zap size={16} />, category: 'scanners' },
+  { id: 'Climax Accumulation', path: '/climax-accumulation', icon: '📊', category: 'scanners' },
+  { id: 'Wyckoff Auto', path: '/wyckoff', icon: '🤖', category: 'scanners' },
+  { id: 'Float Exhaustion', path: '/float-exhaustion', icon: '🪫', category: 'scanners' },
+  { id: 'Liquidity Flip', path: '/liquidity-flip', icon: '🔄', category: 'scanners' },
+  { id: 'Operator Fingerprint', path: '/operator-fingerprint', icon: '🔍', category: 'scanners' },
+  { id: 'Darvas Box Pro', path: '/darvas-box-pro', icon: '📦', category: 'scanners' },
   { id: 'Multibagger Pro', path: '/multibagger-pro-scanner', icon: <Rocket size={18} />, category: 'scanners' },
+  { id: 'Price-Delivery Divergence', path: '/price-delivery-divergence', icon: '📉', category: 'scanners' },
+  { id: 'Delivery Anomaly', path: '/delivery-anomaly', icon: '📦', category: 'scanners' },
+  { id: 'Seasonal Delivery', path: '/seasonal-delivery', icon: '📅', category: 'scanners' },
   { id: 'Launchpad Scanner', path: '/launchpad-scanner', icon: <Rocket size={18} />, category: 'scanners' },
   { id: 'FII/DII Scanner', path: '/fii-dii-scanner', icon: '🏢', category: 'scanners' },
   { id: 'Leaderboard', path: '/leaderboard', icon: '📊', category: 'scanners' },
+  { id: 'FVG Scanner', path: '/fvg-scanner', icon: '📡', category: 'scanners' },
   { id: 'Technical Chart', path: '/chart', icon: '📈', category: 'analysis' },
   { id: 'Delivery Volume Profile', path: '/inst-dom', icon: '🧱', category: 'analysis' },
   { id: 'Multibagger Matrix', path: '/multibagger-matrix', icon: '🚀', category: 'analysis' },
   { id: 'Value Ranker', path: '/value-ranker', icon: '🎯', category: 'analysis' },
-  { id: 'Darvas Box Pro', path: '/darvas-box-pro', icon: '📦', category: 'scanners' },
-  { id: 'Liquidity Flip', path: '/liquidity-flip', icon: '🔄', category: 'scanners' },
-  { id: 'Operator Fingerprint', path: '/operator-fingerprint', icon: '🔍', category: 'scanners' },
-  { id: 'Float Exhaustion', path: '/float-exhaustion', icon: '🪫', category: 'scanners' },
-  { id: 'Seasonal Delivery', path: '/seasonal-delivery', icon: '📅', category: 'scanners' },
-  { id: 'Wyckoff Auto', path: '/wyckoff', icon: '🤖', category: 'scanners' },
+  { id: 'News Sentiment', path: '/news-sentiment', icon: '📰', category: 'analysis' },
   { id: 'Historical Search', path: '/historical-search', icon: '🔍', category: 'analysis' },
-  { id: 'Invisible Hand', path: '/invisible-hand', icon: <Eye size={16} />, category: 'scanners' },
-  { id: 'The Trigger', path: '/trigger', icon: <Zap size={16} />, category: 'scanners' },
-  { id: 'Bottom Hunter', path: '/bottom-hunter', icon: '🎯', category: 'scanners' },
-  { id: 'Climax Accumulation', path: '/climax-accumulation', icon: '📊', category: 'scanners' },
-  { id: 'DCB Bargain', path: '/dcb-bargain', icon: '🏷️', category: 'scanners' },
-  { id: 'Consensus', path: '/confluence', icon: '🔗', category: 'scanners' },
   { id: 'Data Sync', path: '/data-sync', icon: <Database size={18} />, category: 'data' },
   { id: 'Parquet Lake', path: '/parquet-lake', icon: '🌊', category: 'data' },
   { id: 'Sector Flow', path: '/sector-flow', icon: '🚥', category: 'data' },
@@ -267,6 +269,7 @@ export default function App() {
                 <Route path="/bottom-hunter" element={<BottomHunterView lib={librarian} />} />
                 <Route path="/climax-accumulation" element={<ClimaxAccumulationView lib={librarian} />} />
                 <Route path="/dcb-bargain" element={<DCBBargainView lib={librarian} />} />
+                <Route path="/news-sentiment" element={<NewsSentimentView />} />
                 <Route path="/confluence" element={<ConfluenceView />} />
 
                 {/* Fallback */}
