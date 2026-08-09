@@ -2478,6 +2478,21 @@ def _load_dcb_cache() -> dict | None:
     return None
 
 
+@app.get("/api/pcr/status")
+async def pcr_status():
+    """Read-only status of PCR snapshots stored in myra_options.db."""
+    try:
+        from myra_app.options_chain import get_all_pcr_snapshots
+
+        snapshots = get_all_pcr_snapshots()
+        if not snapshots:
+            return {"status": "ok", "snapshots": [], "message": "no snapshots yet"}
+        return {"status": "ok", "snapshots": snapshots}
+    except Exception as exc:
+        logger.warning("pcr_status failed: %s", exc)
+        return {"status": "error", "snapshots": [], "message": str(exc)}
+
+
 @app.get("/api/dcb-bargain/status")
 async def dcb_bargain_status():
     import copy

@@ -181,6 +181,8 @@ myra/
 | **Seasonal Delivery** | `/api/seasonal-delivery/scan` | Historically high delivery volumes in a specific month using multi-year seasonal patterns | min_mcap=200, max_mcap=50000, min_hist_del=40%, min_consistency=55%, min_years=2 |
 | **DCB Bargain** | `/api/dcb-bargain/scan` | Stocks trading below institutional Delivery Cost Basis (delivery-weighted average price over 6 months) with positive delivery absorption | min_mcap=200, max_mcap=50000, lookback=120d |
 
+**PCR Market Regime** — `get_market_mood()` now reads Put-Call Ratio snapshots from `myra_options.db` as the primary market-regime signal (BULLISH→GREED, BEARISH→FEAR), falling back to VIX when unavailable. Current PCR snapshots are exposed via `GET /api/pcr/status`.
+
 All scanners are thread-safe, cache results to JSON, and support configurable market-cap ranges.
 
 ## Portfolio Tracker
@@ -262,6 +264,7 @@ All portfolio data lives in `myra_portfolio.db` (automatically gitignored). Afte
 | GET | `/api/fundamentals/live/{symbol}` | Fundamentals + live snapshot from screener.in |
 | GET | `/api/search/symbols?q=` | Symbol search |
 | GET | `/api/market-breadth` | Advances / declines for latest trading day |
+| GET | `/api/pcr/status` | PCR snapshots for all indices (NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY) |
 
 ### Example: `/api/data-health` Response
 

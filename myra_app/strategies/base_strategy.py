@@ -22,9 +22,35 @@ class BaseStrategy(ABC):
 
     def get_market_mood(self, lib) -> str:
         """
-        Built-in: Determines Market Sentiment via VIX.
-        Fear (VIX > 20) | Neutral (15-20) | Greed (VIX < 15)
+        Determines Market Sentiment — PCR-first, VIX fallback.
+
+        Priority:
+          1. PCR snapshot from options_chain.db (standalone, no VIX needed).
+             BULLISH → GREED,  BEARISH → FEAR,  NEUTRAL → NEUTRAL.
+          2. Fallback: India VIX fear proxy (currently always NEUTRAL
+             because ^INDIAVIX has zero rows, but kept for future use).
+             Fear (VIX > 20) | Neutral (15-20) | Greed (VIX < 15).
+
+        The function never raises — any failure in the PCR path falls
+        through to the VIX path, which itself catches all exceptions.
         """
+        # --- Path 1: PCR snapshot (standalone, no VIX data required) ---
+        try:
+            from myra_app.options_chain import get_latest_pcr_snapshot
+
+            snapshot = get_latest_pcr_snapshot()
+            if snapshot is not None:
+                regime = snapshot.get("regime", "NEUTRAL")
+                _PCR_MOOD_MAP = {
+                    "BULLISH": "GREED",
+                    "BEARISH": "FEAR",
+                    "NEUTRAL": "NEUTRAL",
+                }
+                return _PCR_MOOD_MAP.get(regime, "NEUTRAL")
+        except Exception:
+            pass  # fall through to VIX path
+
+        # --- Path 2: VIX fallback (legacy) ---
         try:
             # We fetch India VIX as a fear proxy
             df_vix = lib.safe_execute(

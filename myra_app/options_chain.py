@@ -406,6 +406,39 @@ def store_pcr_snapshot(snapshot: dict) -> None:
     conn.close()
 
 
+def get_all_pcr_snapshots() -> list[dict]:
+    """Return all PCR snapshot rows, ordered by ``updated_at`` DESC.
+
+    Returns
+    -------
+    list[dict]
+        Empty list if the DB is empty or absent.
+    """
+    db_path = _get_db_path()
+    if not os.path.exists(db_path):
+        return []
+
+    _init_db()
+    conn = sqlite3.connect(db_path)
+    rows = conn.execute(
+        "SELECT index_symbol, pcr, regime, spot, expiry, updated_at "
+        "FROM pcr_snapshot ORDER BY updated_at DESC"
+    ).fetchall()
+    conn.close()
+
+    return [
+        {
+            "index_symbol": r[0],
+            "pcr": r[1],
+            "regime": r[2],
+            "spot": r[3],
+            "expiry": r[4],
+            "updated_at": r[5],
+        }
+        for r in rows
+    ]
+
+
 def get_latest_pcr_snapshot() -> dict | None:
     """Return the most recent PCR snapshot row, or ``None`` if the DB is
     empty or absent."""
