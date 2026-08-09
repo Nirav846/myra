@@ -181,6 +181,17 @@ cache/
 *.parquet
 
 # =================================================
+#  HuggingFace / ML model cache (FinBERT etc.)
+# =================================================
+.huggingface/
+hf_cache/
+huggingface/
+*.safetensors
+*.onnx
+*.msgpack
+*.ot
+
+# =================================================
 #  Environment & secrets
 # =================================================
 .env
