@@ -4346,3 +4346,26 @@ async def confluence_endpoint():
     except Exception as e:
         logger.error("Confluence report failed: %s", e, exc_info=True)
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.get("/api/sentiment/{ticker}")
+async def get_news_sentiment(ticker: str, refresh: bool = False):
+    """Get news headlines with FinBERT sentiment for a given NSE ticker.
+    Results are cached for 6 hours. Use ?refresh=true to force fresh fetch."""
+    try:
+        from myra_app.news_sentiment import get_ticker_news
+        news = get_ticker_news(ticker, refresh=refresh)
+        return {
+            "ticker": ticker.upper(),
+            "count": len(news),
+            "news": news,
+            "cached": not refresh,
+            "status": "success",
+        }
+    except Exception as e:
+        return {
+            "ticker": ticker.upper(),
+            "error": str(e),
+            "news": [],
+            "status": "error",
+        }
