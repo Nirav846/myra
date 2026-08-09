@@ -1,3 +1,13 @@
+import sys, os
+
+# ---- auto-activate virtual environment ----
+VENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pkscreener_env")
+VENV_PYTHON = os.path.join(VENV_PATH, "Scripts", "python.exe")
+if os.path.exists(VENV_PYTHON) and sys.executable.lower() != VENV_PYTHON.lower():
+    print(f"[venv] Re-launching with {VENV_PYTHON}")
+    os.execv(VENV_PYTHON, [VENV_PYTHON] + sys.argv)
+# -------------------------------------------
+
 # run_fastapi.py – Clean shutdown launcher for MYRA FastAPI
 import uvicorn
 import signal

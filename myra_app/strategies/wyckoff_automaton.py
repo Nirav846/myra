@@ -137,7 +137,14 @@ class WyckoffAutomaton:
         return "D"
 
     @staticmethod
-    def _compute_spring_score(del_score, wick_score, close_score, depth_score, equal_low_bonus, two_candle_confirm: bool = False) -> float:
+    def _compute_spring_score(
+        del_score,
+        wick_score,
+        close_score,
+        depth_score,
+        equal_low_bonus,
+        two_candle_confirm: bool = False,
+    ) -> float:
         """Sum of factors + 5 if two_candle_confirm, clamped to [0, 100]."""
         total = del_score + wick_score + close_score + depth_score + equal_low_bonus
         if two_candle_confirm:
@@ -261,12 +268,16 @@ class WyckoffAutomaton:
             # Undercut reference = prior running low (excludes the grab candle itself),
             # otherwise no candle could ever dip below the window's global minimum.
             prior_low = (
-                float(df["low"].iloc[max(0, abs_i - 60):abs_i].min())
+                float(df["low"].iloc[max(0, abs_i - 60) : abs_i].min())
                 if abs_i > 0
                 else float(range_low)
             )
+            # Dynamic delivery threshold: must be 20% above the stock's own 50-day average
+            # rather than an arbitrary absolute number that doesn't fit Indian markets
+            avg_del_50d = float(df["delivery_pct"].iloc[max(0, abs_i-50):abs_i].mean())
+            del_threshold = max(25.0, avg_del_50d * 1.2)  # floor at 25% to avoid noise
             is_spring = (
-                low_p < prior_low * 0.99 and close_p > prior_low and del_pct > 35
+                low_p < prior_low * 0.99 and close_p > prior_low and del_pct > del_threshold
             )
 
             if is_spring:
@@ -288,7 +299,9 @@ class WyckoffAutomaton:
                     # 1. Delivery absorption
                     start_idx = max(0, abs_i - 50)
                     del_slice = df["delivery_pct"].values.astype(float)[start_idx:abs_i]
-                    avg_del_50 = float(np.nanmean(del_slice)) if len(del_slice) > 0 else del_pct
+                    avg_del_50 = (
+                        float(np.nanmean(del_slice)) if len(del_slice) > 0 else del_pct
+                    )
                     del_abs = del_pct - avg_del_50
                     del_score = self._delivery_absorption_score(del_abs)
 
@@ -329,7 +342,10 @@ class WyckoffAutomaton:
                                 sl_j = float(sl_j_raw)
                                 low_j = float(df["low"].iloc[j])
                                 if abs(low_j - sl_j) < 1e-9:
-                                    if abs(sl_j - swing_low_val) / swing_low_val <= 0.005:
+                                    if (
+                                        abs(sl_j - swing_low_val) / swing_low_val
+                                        <= 0.005
+                                    ):
                                         equal_low_zone = True
                                         break
                     equal_low_bonus = 10.0 if equal_low_zone else 0.0
@@ -340,14 +356,22 @@ class WyckoffAutomaton:
                         nrow = df.iloc[abs_i + 1]
                         nclose = float(nrow["close"])
                         nopen = float(nrow["open"])
-                        ref_level = swing_low_val if swing_low_val is not None else float(prior_low)
+                        ref_level = (
+                            swing_low_val
+                            if swing_low_val is not None
+                            else float(prior_low)
+                        )
                         if nclose > nopen and nclose > ref_level:
                             two_candle_confirm = True
 
                     # 6. Compute score and grade
                     spring_score = self._compute_spring_score(
-                        del_score, wick_score, close_score, depth_score,
-                        equal_low_bonus, two_candle_confirm
+                        del_score,
+                        wick_score,
+                        close_score,
+                        depth_score,
+                        equal_low_bonus,
+                        two_candle_confirm,
                     )
                     grade = self._spring_grade(spring_score)
 
@@ -371,9 +395,15 @@ class WyckoffAutomaton:
                             "sc_reference_close": close_p,
                             "spring_score": self._sanitize_float(spring_score),
                             "grade": grade,
-                            "lower_wick_ratio": self._sanitize_float(round(lower_wick_ratio, 3)),
-                            "close_location": self._sanitize_float(round(close_location, 3)),
-                            "grab_depth_pct": self._sanitize_float(round(grab_depth_pct, 2)),
+                            "lower_wick_ratio": self._sanitize_float(
+                                round(lower_wick_ratio, 3)
+                            ),
+                            "close_location": self._sanitize_float(
+                                round(close_location, 3)
+                            ),
+                            "grab_depth_pct": self._sanitize_float(
+                                round(grab_depth_pct, 2)
+                            ),
                             "equal_low_zone": bool(equal_low_zone),
                             "two_candle_confirm": bool(two_candle_confirm),
                         }
