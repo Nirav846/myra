@@ -260,3 +260,4 @@ HELP.md
 *.tmp
 *.temp
 Thumbs.db
+nse-mcp/
