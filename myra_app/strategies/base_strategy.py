@@ -79,12 +79,22 @@ class BaseStrategy(ABC):
         k = win_rate - ((1 - win_rate) / reward_to_risk)
         return round(max(0.02, min(0.25, k)), 2)  # Clamp between 2% and 25%
 
-    def get_ai_second_opinion(self, symbol: str, technical_summary: str):
+    def get_ai_second_opinion(self, symbol: str, technical_summary: str) -> dict:
+        """LLM second opinion via Gemini (or degraded fallback).
+
+        Delegates to ``myra_app.ai_second_opinion.get_ai_second_opinion``.
+
+        Returns a dict with keys:
+            signal (str): "BUY" | "SELL" | "HOLD"
+            reason (str): Analyst rationale
+            confidence (float): 0.0 – 1.0
+            source (str): "gemini" | "degraded"
+            cached (bool): True if served from the local TTL cache
+        Never raises — any failure returns a degraded HOLD signal.
         """
-        Hook for Idea #3: LLM Integration.
-        To be implemented once we discuss the specific AI provider.
-        """
-        return "AI ANALYSIS PENDING"
+        from myra_app.ai_second_opinion import get_ai_second_opinion
+
+        return get_ai_second_opinion(symbol, technical_summary)
 
 
 class MarketMoodHelper(BaseStrategy):
