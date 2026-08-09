@@ -66,6 +66,12 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
     return res.json();
   });
 
+  const pcrWidget = useLazyWidgetData<any>('pcr_status', async () => {
+    const res = await fetch(`${API_ROOT}/api/pcr/status`);
+    if (!res.ok) throw new Error('Failed to load PCR data');
+    return res.json();
+  });
+
   const { watchlist, toggle } = useWatchlist();
 
   const fiiMount = useRef(true);
@@ -196,6 +202,28 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
     if (val < 18) return vixObj.interpretation['13_to_18'];
     if (val < 25) return vixObj.interpretation['18_to_25'];
     return vixObj.interpretation.above_25;
+  };
+
+  const timeAgo = (isoStr: string | null | undefined) => {
+    if (!isoStr) return '—';
+    try {
+      const diff = Date.now() - new Date(isoStr).getTime();
+      if (diff < 0) return 'just now';
+      const mins = Math.floor(diff / 60000);
+      if (mins < 1) return 'just now';
+      if (mins < 60) return `${mins}m ago`;
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return `${hrs}h ago`;
+      const days = Math.floor(hrs / 24);
+      return `${days}d ago`;
+    } catch {
+      return '—';
+    }
+  };
+
+  const formatSpot = (val: number | null) => {
+    if (val == null) return '—';
+    return '₹' + val.toLocaleString('en-IN');
   };
 
   return (
@@ -384,6 +412,50 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
         )}
       </section>
       </ErrorBoundary>
+
+      {/* PCR / Market Regime Strip */}
+      <section aria-label="PCR Market Regime" className="bg-[#1a1c24] border border-[#ffffff1a] rounded-xl p-3">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-[10px] font-semibold uppercase tracking-wider text-[#888] font-mono">📊 PCR / Market Regime</h3>
+          <div className="flex items-center gap-2">
+            <button onClick={pcrWidget.fetchData} disabled={pcrWidget.loading} className="text-[#888] hover:text-[#fafafa] transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 rounded" title="Refresh PCR data" aria-label="Refresh PCR data">
+              <RotateCw size={12} className={pcrWidget.loading ? 'animate-spin' : ''} aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+        {pcrWidget.loading && !pcrWidget.data ? (
+          <div className="text-[10px] text-[#888] font-mono py-2" role="status" aria-live="polite">Loading PCR data…</div>
+        ) : pcrWidget.error || !pcrWidget.data?.snapshots?.length ? (
+          <div className="text-[10px] text-[#555] font-mono py-2" role="status">No PCR data yet — run refresh_pcr</div>
+        ) : (
+          <div className="flex flex-wrap gap-2" role="group" aria-label="PCR snapshots">
+            {pcrWidget.data.snapshots.map((snap: any) => {
+              const regimeColor =
+                snap.regime === 'BULLISH'
+                  ? 'text-green-400 border-green-500/30 bg-green-500/10'
+                  : snap.regime === 'BEARISH'
+                  ? 'text-red-400 border-red-500/30 bg-red-500/10'
+                  : 'text-[#888] border-[#ffffff1a] bg-[#ffffff05]';
+              return (
+                <div key={snap.index_symbol} className="flex-1 min-w-[130px] bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg transition-colors hover:border-[#ffffff30]">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-[9px] text-[#888] font-mono uppercase tracking-wider">{snap.index_symbol}</p>
+                    <span className={`text-[8px] font-mono px-1.5 py-0.5 rounded border ${regimeColor}`}>{snap.regime}</span>
+                  </div>
+                  <p className="text-xs font-mono font-bold tabular-nums text-[#fafafa]">
+                    {snap.pcr != null ? snap.pcr.toFixed(2) : '—'}
+                  </p>
+                  <div className="flex items-center justify-between mt-0.5">
+                    <p className="text-[9px] font-mono text-[#ccc]">{formatSpot(snap.spot)}</p>
+                    {snap.expiry && <p className="text-[8px] font-mono text-[#666]">{snap.expiry}</p>}
+                  </div>
+                  <p className="text-[8px] font-mono text-[#555] mt-0.5">updated {timeAgo(snap.updated_at)}</p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       {/* System Metrics Strip */}
       <section aria-label="System Metrics" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
