@@ -486,6 +486,37 @@ class SchemaRegistry:
             },
             "primary_key": "(symbol, date)",
         },
+        # ── options.db ─────────────────────────────────────────
+        "option_chain": {
+            "db": "options",
+            "columns": {
+                "symbol": "TEXT",
+                "kind": "TEXT",
+                "spot": "REAL",
+                "pcr": "REAL",
+                "regime": "TEXT",
+                "total_ce_oi": "INTEGER",
+                "total_pe_oi": "INTEGER",
+                "atm_strike": "REAL",
+                "expiry": "TEXT",
+                "strike_count": "INTEGER",
+                "raw_json": "TEXT",
+                "created_at": "TEXT",
+            },
+            "primary_key": "",
+        },
+        "pcr_snapshot": {
+            "db": "options",
+            "columns": {
+                "index_symbol": "TEXT PRIMARY KEY",
+                "pcr": "REAL",
+                "regime": "TEXT",
+                "spot": "REAL",
+                "expiry": "TEXT",
+                "updated_at": "TEXT",
+            },
+            "primary_key": "(index_symbol)",
+        },
     }
 
     @classmethod

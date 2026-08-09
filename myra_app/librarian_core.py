@@ -58,6 +58,7 @@ class LibrarianCore:
         "network_cache": "myra_cache_network.db",
         "scoring": "myra_scoring.db",
         "calendar": "myra_calendar.db",
+        "options": "myra_options.db",
     }
 
     def __init__(self, read_only=False, console=None):

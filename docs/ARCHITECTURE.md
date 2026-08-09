@@ -2,7 +2,7 @@
 
 ## Overview
 
-MYRA is a local-first NSE stock screening platform. Data flows from NSE sources through ingestion, enrichment, and storage, then is served via FastAPI to a React frontend. All 8 SQLite databases use WAL mode for concurrent read/write.
+MYRA is a local-first NSE stock screening platform. Data flows from NSE sources through ingestion, enrichment, and storage, then is served via FastAPI to a React frontend. All 9 SQLite databases use WAL mode for concurrent read/write.
 
 ---
 
@@ -52,8 +52,9 @@ All databases reside in `myra_app/db/` and are referenced via `LibrarianCore.DB_
 | `scoring` | `myra_scoring.db` | Pre-materialized fundamental scores (growth, quality, stability, risk) |
 | `calendar` | `myra_calendar.db` | Market trading days, muhurat sessions |
 | `network_cache` | `myra_cache_network.db` | HTTP response cache for external API calls |
+| `options` | `myra_options.db` | `option_chain` + `pcr_snapshot` — live NSE option-chain PCR snapshots for market regime |
 
-Schema definitions are maintained in `myra_app/schema_registry.py` (30 tables across all databases). On startup, `librarian_schema.py` validates every table exists with correct columns.
+Schema definitions are maintained in `myra_app/schema_registry.py` (32 tables across all databases). On startup, `librarian_schema.py` validates every table exists with correct columns.
 
 ## Scanner Framework
 

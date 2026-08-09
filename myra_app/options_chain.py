@@ -1,9 +1,12 @@
 """
 NSE Option-Chain Fetcher + PCR Computation
 -------------------------------------------
-Pure data + math module — no DB persistence.
-Fetches live option-chain data from NSE India's free API,
-computes Put-Call Ratio (PCR) and classifies market regime.
+Pure data + math module — fetches live option-chain data from NSE India's
+free API, computes Put-Call Ratio (PCR) and classifies market regime.
+
+Persistence layer stores PCR snapshots in myra_options.db so that
+base_strategy can consume the latest PCR as a market-regime signal
+without hitting NSE on every call.
 
 NSE blocks naive requests; we use a cookie-warm-up session
 (same proven pattern as data_sources/nse_institutional.py).
@@ -11,10 +14,17 @@ NSE blocks naive requests; we use a cookie-warm-up session
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+import sqlite3
+import time
+from datetime import datetime, timezone
 from typing import Any
 
 import requests
+
+from myra_app.constants import DB_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -301,3 +311,187 @@ def parse_option_chain(
         "ce_rows": ce_rows,
         "pe_rows": pe_rows,
     }
+
+
+# ---------------------------------------------------------------------------
+# Persistence layer — myra_options.db sidecar
+# ---------------------------------------------------------------------------
+# Pattern mirrors news_sentiment.py: direct sqlite3 connections, WAL mode,
+# lazy init so importing the module never touches the DB.
+
+
+def _get_db_path() -> str:
+    """Return the path to myra_options.db."""
+    return os.path.join(DB_DIR, "myra_options.db")
+
+
+def _init_db() -> None:
+    """Create option_chain and pcr_snapshot tables if they don't exist.
+
+    Idempotent — safe to call repeatedly.  Uses direct sqlite3 connections
+    (not librarian.py) following the news_sentiment.py precedent for
+    standalone sidecar databases.
+    """
+    conn = sqlite3.connect(_get_db_path())
+    conn.execute("PRAGMA journal_mode=WAL")
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS option_chain (
+            symbol TEXT,
+            kind TEXT,
+            spot REAL,
+            pcr REAL,
+            regime TEXT,
+            total_ce_oi INTEGER,
+            total_pe_oi INTEGER,
+            atm_strike REAL,
+            expiry TEXT,
+            strike_count INTEGER,
+            raw_json TEXT,
+            created_at TEXT
+        )
+    """
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pcr_snapshot (
+            index_symbol TEXT PRIMARY KEY,
+            pcr REAL,
+            regime TEXT,
+            spot REAL,
+            expiry TEXT,
+            updated_at TEXT
+        )
+    """
+    )
+
+    conn.commit()
+    conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Store / Retrieve PCR snapshots
+# ---------------------------------------------------------------------------
+
+
+def store_pcr_snapshot(snapshot: dict) -> None:
+    """UPSERT a PCR snapshot into the pcr_snapshot table.
+
+    Parameters
+    ----------
+    snapshot:
+        Must contain keys: ``index_symbol``, ``pcr``, ``regime``, ``spot``,
+        ``expiry``, ``updated_at``.
+    """
+    _init_db()
+    conn = sqlite3.connect(_get_db_path())
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO pcr_snapshot
+            (index_symbol, pcr, regime, spot, expiry, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            snapshot["index_symbol"],
+            snapshot.get("pcr"),
+            snapshot.get("regime", "NEUTRAL"),
+            snapshot.get("spot"),
+            snapshot.get("expiry"),
+            snapshot.get("updated_at", datetime.now(timezone.utc).isoformat()),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_latest_pcr_snapshot() -> dict | None:
+    """Return the most recent PCR snapshot row, or ``None`` if the DB is
+    empty or absent."""
+    db_path = _get_db_path()
+    if not os.path.exists(db_path):
+        return None
+
+    _init_db()
+    conn = sqlite3.connect(db_path)
+    row = conn.execute(
+        "SELECT index_symbol, pcr, regime, spot, expiry, updated_at "
+        "FROM pcr_snapshot ORDER BY updated_at DESC LIMIT 1"
+    ).fetchone()
+    conn.close()
+
+    if row is None:
+        return None
+
+    return {
+        "index_symbol": row[0],
+        "pcr": row[1],
+        "regime": row[2],
+        "spot": row[3],
+        "expiry": row[4],
+        "updated_at": row[5],
+    }
+
+
+# ---------------------------------------------------------------------------
+# High-level refresh helper
+# ---------------------------------------------------------------------------
+
+
+def refresh_pcr() -> dict:
+    """Fetch option-chain for all 4 indices, compute PCR, store snapshots.
+
+    Returns
+    -------
+    dict
+        ``{"snapshots": [...], "updated_at": "<iso>"}``
+        On NSE failure: ``{"snapshots": [], "error": "<message>"}``.
+        If individual indices fail they are silently skipped (snapshot list
+        may be shorter than 4).
+
+    Notes
+    -----
+    - A 1.0 s delay is inserted between NSE calls to avoid throttling.
+    - Exceptions per index are caught so one failure does not abort the loop.
+    """
+    snapshots: list[dict] = []
+    errors: list[str] = []
+
+    for idx, symbol in enumerate(INDICES):
+        try:
+            raw = fetch_option_chain(symbol)
+            if raw is None:
+                errors.append(f"{symbol}: fetch returned None")
+                continue
+
+            parsed = parse_option_chain(raw)
+            pcr_val = parsed.get("pcr")
+            regime = pcr_regime(pcr_val)
+            now_iso = datetime.now(timezone.utc).isoformat()
+
+            snapshot = {
+                "index_symbol": symbol,
+                "pcr": pcr_val,
+                "regime": regime,
+                "spot": parsed.get("spot"),
+                "expiry": parsed.get("expiry"),
+                "updated_at": now_iso,
+            }
+            store_pcr_snapshot(snapshot)
+            snapshots.append(snapshot)
+
+        except Exception as exc:
+            errors.append(f"{symbol}: {exc}")
+            logger.warning("refresh_pcr failed for %s: %s", symbol, exc)
+
+        # Polite delay between NSE calls (skip after last)
+        if idx < len(INDICES) - 1:
+            time.sleep(1.0)
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    if not snapshots and errors:
+        return {"snapshots": [], "error": "; ".join(errors), "updated_at": now_iso}
+
+    return {"snapshots": snapshots, "updated_at": now_iso}
