@@ -114,30 +114,138 @@ simulate_*.py.env
 *.db
 *.db-wal
 *.db-shm
+# =================================================
+#  Python / virtual environments
+# =================================================
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+develop-eggs/
+eggs/
+parts/
+var/
+*.sdist
+*.manifest
+*.spec
+pip-wheel-metadata/
+share/python-wheels/
+.installed.cfg
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+*.log
+
+# =================================================
+#  Database files (SQLite, etc.)
+# =================================================
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
 myra_app/db/*.db
 myra_app/db/*.db-wal
 myra_app/db/*.db-shm
-node_modules/
-dist/
-.env
-*.local
-nse-mcp/node_modules/
-nse-mcp/dist/
+
+# =================================================
+#  Binary model files and cached data
+# =================================================
+models/
+*.joblib
+*.keras
+*.h5
+*.pkl
+*.pickle
+data/
 exports/
-*.log
+logs/
+results/
+cache/
+*.cache
+*.parquet
 
-nse-mcp/
-.vscode/
-.jules/
-
-# Add these lines to .gitignore
-.vscode/
-.jules/
-.gatekeeper_last_run
-
-# Also consider ignoring any local override files
+# =================================================
+#  Environment & secrets
+# =================================================
+.env
+.env.*
 *.local
 *.override
+*.dev
+*.ini
+myra_sources.json   # if it contains API keys
+
+# =================================================
+#  Node / frontend (if any)
+# =================================================
+node_modules/
+dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.pnpm-store/
+
+# =================================================
+#  IDE / editor files
+# =================================================
 .vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
 .jules/
 .gatekeeper_last_run
+
+# =================================================
+#  AI agent / local tools (not part of core app)
+# =================================================
+.opencode/
+conductor/
+memory/
+superpowers/
+opencode.json
+auto_improve.md
+AGENTS.md
+AI_INSTRUCTIONS.md
+SKILL.md
+
+# =================================================
+#  Temporary / debug scripts (at root)
+# =================================================
+_bse_full.py
+_check_lf_fields.py
+show_factors.py
+start_myra_web.bat
+
+# =================================================
+#  Redundant documentation (merge into main docs)
+# =================================================
+PROJECT_RULES.md
+PROJECT_SUMMARY.md
+HELP.md
+
+# =================================================
+#  Misc build / OS
+# =================================================
+*.lock
+*.tmp
+*.temp
+Thumbs.db

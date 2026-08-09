@@ -14,6 +14,8 @@ requests
 rich
 scikit-learn
 tensorflow
+torch
+transformers
 xgboost
 yfinance
 urllib3
