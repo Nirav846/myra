@@ -17,7 +17,9 @@ _FAKE_RESPONSE = {
         {
             "content": {
                 "parts": [
-                    {"text": '{"signal":"BUY","reason":"Strong momentum","confidence":0.8}'}
+                    {
+                        "text": '{"signal":"BUY","reason":"Strong momentum","confidence":0.8}'
+                    }
                 ]
             }
         }
@@ -55,10 +57,16 @@ class TestPostGenerateContent:
         mock_resp.json.return_value = _FAKE_RESPONSE
         mock_resp.raise_for_status = MagicMock()
 
-        with patch("myra_app.ai_second_opinion.requests.post", return_value=mock_resp) as m:
+        with patch(
+            "myra_app.ai_second_opinion.requests.post", return_value=mock_resp
+        ) as m:
             result = _post_generate_content("test prompt", "fake-key")
             m.assert_called_once()
-            assert result == {"signal": "BUY", "reason": "Strong momentum", "confidence": 0.8}
+            assert result == {
+                "signal": "BUY",
+                "reason": "Strong momentum",
+                "confidence": 0.8,
+            }
 
     def test_429_returns_none(self):
         from myra_app.ai_second_opinion import _post_generate_content
@@ -109,7 +117,9 @@ class TestPostGenerateContent:
 
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_resp.json.return_value = {"candidates": [{"content": {"parts": [{"text": "not json"}]}}]}
+        mock_resp.json.return_value = {
+            "candidates": [{"content": {"parts": [{"text": "not json"}]}}]
+        }
         mock_resp.raise_for_status = MagicMock()
 
         with patch("myra_app.ai_second_opinion.requests.post", return_value=mock_resp):
@@ -158,7 +168,9 @@ class TestGetAiSecondOpinion:
         mock_resp.status_code = 429
 
         with patch("myra_app.ai_second_opinion._GEMINI_API_KEY", "fake-key"):
-            with patch("myra_app.ai_second_opinion.requests.post", return_value=mock_resp):
+            with patch(
+                "myra_app.ai_second_opinion.requests.post", return_value=mock_resp
+            ):
                 result = get_ai_second_opinion("RELIANCE", "summary")
                 assert result["signal"] == "HOLD"
                 assert result["source"] == "degraded"
@@ -194,7 +206,9 @@ class TestGetAiSecondOpinion:
         mock_resp.raise_for_status = MagicMock()
 
         with patch("myra_app.ai_second_opinion._GEMINI_API_KEY", "fake-key"):
-            with patch("myra_app.ai_second_opinion.requests.post", return_value=mock_resp):
+            with patch(
+                "myra_app.ai_second_opinion.requests.post", return_value=mock_resp
+            ):
                 result = get_ai_second_opinion("TCS", "summary")
                 # Invalid signal should be clamped to HOLD
                 assert result["signal"] == "HOLD"
@@ -211,7 +225,9 @@ class TestGetAiSecondOpinion:
         mock_resp.raise_for_status = MagicMock()
 
         with patch("myra_app.ai_second_opinion._GEMINI_API_KEY", "fake-key"):
-            with patch("myra_app.ai_second_opinion.requests.post", return_value=mock_resp):
+            with patch(
+                "myra_app.ai_second_opinion.requests.post", return_value=mock_resp
+            ):
                 result = get_ai_second_opinion("INFY", "summary")
                 assert result["confidence"] == 1.0
 
@@ -227,7 +243,9 @@ class TestGetAiSecondOpinion:
         mock_resp.raise_for_status = MagicMock()
 
         with patch("myra_app.ai_second_opinion._GEMINI_API_KEY", "fake-key"):
-            with patch("myra_app.ai_second_opinion.requests.post", return_value=mock_resp):
+            with patch(
+                "myra_app.ai_second_opinion.requests.post", return_value=mock_resp
+            ):
                 result = get_ai_second_opinion("INFY", "summary")
                 assert result["confidence"] == 0.0
 
@@ -256,9 +274,14 @@ class TestGetAiSecondOpinion:
             fake_store[key] = result
 
         with patch("myra_app.ai_second_opinion._cache_get", side_effect=fake_cache_get):
-            with patch("myra_app.ai_second_opinion._cache_put", side_effect=fake_cache_put):
+            with patch(
+                "myra_app.ai_second_opinion._cache_put", side_effect=fake_cache_put
+            ):
                 with patch("myra_app.ai_second_opinion._GEMINI_API_KEY", "fake-key"):
-                    with patch("myra_app.ai_second_opinion.requests.post", side_effect=counting_post):
+                    with patch(
+                        "myra_app.ai_second_opinion.requests.post",
+                        side_effect=counting_post,
+                    ):
                         r1 = get_ai_second_opinion("TCS", "summary1")
                         r2 = get_ai_second_opinion("TCS", "summary2")
 
@@ -392,3 +415,124 @@ class TestBuildTechnicalSummary:
 
         # Should contain mood fallback
         assert "Market mood" in summary
+
+
+# ---------------------------------------------------------------------------
+# Endpoint tests — GET /api/ai-opinion/{ticker}
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def client():
+    """Create a FastAPI TestClient (import only when needed)."""
+    from fastapi.testclient import TestClient
+    from myra_web.myra_fastapi_server import app
+
+    return TestClient(app, raise_server_exceptions=False)
+
+
+class TestAiOpinionEndpoint:
+    """Tests for the GET /api/ai-opinion/{ticker} endpoint."""
+
+    def test_success(self, client):
+        """Happy path: endpoint returns 200 with expected JSON shape."""
+        fake_summary = "Ticker: RELIANCE\nLatest close: 2500"
+        fake_opinion = {
+            "signal": "BUY",
+            "reason": "Strong momentum",
+            "confidence": 0.82,
+            "source": "gemini",
+            "cached": False,
+        }
+
+        with (
+            patch(
+                "myra_app.ai_second_opinion.build_technical_summary",
+                return_value=fake_summary,
+            ),
+            patch(
+                "myra_app.ai_second_opinion.get_ai_second_opinion",
+                return_value=fake_opinion,
+            ),
+        ):
+            resp = client.get("/api/ai-opinion/RELIANCE")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ticker"] == "RELIANCE"
+        assert body["signal"] == "BUY"
+        assert body["reason"] == "Strong momentum"
+        assert body["confidence"] == 0.82
+        assert body["source"] == "gemini"
+        assert body["cached"] is False
+        assert body["summary"] == fake_summary
+
+    def test_degraded_path(self, client):
+        """When opinion function returns degraded, endpoint returns 200 (no raise)."""
+        fake_summary = "Ticker: TCS\nNo local data available."
+        fake_opinion = {
+            "signal": "HOLD",
+            "reason": "LLM degraded -- GEMINI_API_KEY not configured",
+            "confidence": 0.5,
+            "source": "degraded",
+            "cached": False,
+        }
+
+        with (
+            patch(
+                "myra_app.ai_second_opinion.build_technical_summary",
+                return_value=fake_summary,
+            ),
+            patch(
+                "myra_app.ai_second_opinion.get_ai_second_opinion",
+                return_value=fake_opinion,
+            ),
+        ):
+            resp = client.get("/api/ai-opinion/TCS")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ticker"] == "TCS"
+        assert body["signal"] == "HOLD"
+        assert body["source"] == "degraded"
+        assert body["cached"] is False
+        assert "summary" in body
+
+    def test_cached_response(self, client):
+        """Cached opinion returns cached=True."""
+        fake_summary = "Ticker: INFY"
+        fake_opinion = {
+            "signal": "SELL",
+            "reason": "Overbought",
+            "confidence": 0.71,
+            "source": "gemini",
+            "cached": True,
+        }
+
+        with (
+            patch(
+                "myra_app.ai_second_opinion.build_technical_summary",
+                return_value=fake_summary,
+            ),
+            patch(
+                "myra_app.ai_second_opinion.get_ai_second_opinion",
+                return_value=fake_opinion,
+            ),
+        ):
+            resp = client.get("/api/ai-opinion/INFY")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["cached"] is True
+        assert body["source"] == "gemini"
+
+    def test_exception_returns_500(self, client):
+        """Unexpected exception in the handler returns 500 with detail."""
+        with patch(
+            "myra_app.ai_second_opinion.build_technical_summary",
+            side_effect=RuntimeError("boom"),
+        ):
+            resp = client.get("/api/ai-opinion/WIPRO")
+
+        assert resp.status_code == 500
+        assert "boom" in resp.json()["detail"]

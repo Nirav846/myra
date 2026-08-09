@@ -265,6 +265,7 @@ All portfolio data lives in `myra_portfolio.db` (automatically gitignored). Afte
 | GET | `/api/search/symbols?q=` | Symbol search |
 | GET | `/api/market-breadth` | Advances / declines for latest trading day |
 | GET | `/api/pcr/status` | PCR snapshots for all indices (NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY) |
+| GET | `/api/ai-opinion/{ticker}` | Gemini LLM second opinion — BUY/SELL/HOLD signal with rationale, confidence, and technical summary |
 
 ### Example: `/api/data-health` Response
 

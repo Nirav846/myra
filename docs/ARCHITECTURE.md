@@ -71,6 +71,20 @@ Schema definitions are maintained in `myra_app/schema_registry.py` (32 tables ac
 
 **DCB Bargain** follows the same `_get_universe`/`_get_tech_data`/`_sanitize_float` pattern as InvisibleHandScanner and LiquidityFlipDetector; its detection logic computes a delivery-weighted close on high-delivery days ( Delivery Cost Basis ) and flags symbols trading below that institutional accumulation price with positive delivery absorption.
 
+## AI Second Opinion (Gemini LLM)
+
+On-demand endpoint that calls the Gemini LLM to produce a BUY/SELL/HOLD signal for any NSE ticker.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/ai-opinion/{ticker}` | GET | Returns signal, reason, confidence, source, cached status, and the technical summary the model evaluated |
+
+**Key design decisions:**
+- **On-demand only** — not wired into the alpha_ranker per-candidate loop (would hit the API per candidate).
+- **24-hour cache** — results stored in `myra_ai_cache.db` (`ai_opinion_cache` table) to avoid redundant calls.
+- **Graceful degradation** — if the Gemini API is unavailable or rate-limited, returns a degraded HOLD signal (never raises).
+- **Module:** `myra_app/ai_second_opinion.py` — `build_technical_summary(symbol)` builds a compact text summary from local SQLite data; `get_ai_second_opinion(symbol, summary)` calls Gemini and normalises the response.
+
 ## Historical Time-Travel Scan (Invisible Hand)
 
 The Invisible Hand scanner supports scanning as-of any past trading day, enabling users to backtest or investigate historical setups.
