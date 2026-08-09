@@ -1,7 +1,0 @@
-{
-  "bottom_hunter": {"win_rate": 65.7, "avg_return_6m": 57.1, "backtest_date": "2026-07-10", "observations": 173},
-  "invisible_hand": {"win_rate": 64.0, "avg_return_6m": 7.5, "backtest_date": "2026-07-04", "observations": 131},
-  "trigger": {"win_rate": 34.7, "avg_return_6m": -7.25, "backtest_date": "2026-06-10", "observations": 363},
-  "liquidity_flip": {"win_rate": 55.0, "avg_return_6m": 3.0, "backtest_date": "2026-07-04", "observations": 19},
-  "wyckoff": {"win_rate": 51.0, "avg_return_6m": 3.7, "backtest_date": "2026-06-10", "observations": 267}
-}
