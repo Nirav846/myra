@@ -5,6 +5,10 @@ interface NewsItem {
   headline: string;
   source: string;
   date: string;
+  url?: string;
+  language?: string;
+  tone?: number | null;
+  domain?: string;
   sentiment: 'positive' | 'negative' | 'neutral';
   confidence: number;
 }
@@ -37,6 +41,10 @@ export default function NewsSentimentView() {
     }
   };
 
+  const posCount = news.filter(n => n.sentiment === 'positive').length;
+  const negCount = news.filter(n => n.sentiment === 'negative').length;
+  const neuCount = news.filter(n => n.sentiment === 'neutral').length;
+
   return (
     <div className="flex flex-col gap-4 p-4">
       <h2 className="text-lg font-semibold">📰 News Sentiment</h2>
@@ -65,13 +73,39 @@ export default function NewsSentimentView() {
 
       {news.length > 0 && (
         <>
-          <div className="text-[10px] text-[#888]">{cached ? '📦 From cache (≤6 hours old)' : '🆕 Live from GDELT'} · {news.length} articles</div>
+          <div className="flex items-center gap-3 text-[11px]">
+            <span className="text-green-400">📈 {posCount} positive</span>
+            <span className="text-red-400">📉 {negCount} negative</span>
+            <span className="text-[#888]">➖ {neuCount} neutral</span>
+            <span className="text-[#666]">·</span>
+            <span className="text-[#888]">{cached ? '📦 Cached (≤6h)' : '🆕 Live'}</span>
+            <span className="text-[#666]">·</span>
+            <span className="text-[#888]">{news.length} articles</span>
+          </div>
           <div className="space-y-2">
             {news.map((item, i) => (
               <div key={i} className="bg-[#ffffff05] border border-[#ffffff0a] rounded p-3 flex justify-between gap-4">
-                <div className="flex-1">
-                  <p className="text-sm text-[#fafafa]">{item.headline}</p>
-                  <p className="text-[10px] text-[#888] mt-1">{item.source} · {item.date}</p>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-[#fafafa] leading-snug">
+                    {item.url ? (
+                      <a href={item.url} target="_blank" rel="noopener noreferrer" className="hover:text-cyan-400 transition-colors">
+                        {item.headline}
+                      </a>
+                    ) : (
+                      item.headline
+                    )}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[10px] text-[#888]">
+                    <span>{item.source || 'GDELT'}</span>
+                    {item.domain && <span className="text-[#666]">{item.domain}</span>}
+                    <span>{item.date ? new Date(item.date).toLocaleDateString('en-IN', {day:'numeric', month:'short', year:'numeric'}) : ''}</span>
+                    {item.language && item.language !== 'English' && <span className="text-[#666]">🌐 {item.language}</span>}
+                    {item.tone != null && (
+                      <span className={item.tone > 0 ? 'text-green-500' : item.tone < 0 ? 'text-red-500' : 'text-[#666]'}>
+                        Tone: {item.tone > 0 ? '+' : ''}{item.tone.toFixed(1)}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-1 text-sm whitespace-nowrap">
                   <span className={item.sentiment === 'positive' ? 'text-green-400' : item.sentiment === 'negative' ? 'text-red-400' : 'text-[#888]'}>
