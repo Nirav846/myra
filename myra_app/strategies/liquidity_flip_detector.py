@@ -7,13 +7,27 @@ import pandas as pd
 from datetime import date
 from myra_app.constants import DB_DIR
 from myra_app.librarian_core import LibrarianCore
+from myra_app.db.bulk_loader import (
+    load_ohlcv_for_universe,
+    rows_for_symbol,
+    COLUMNS_12,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class LiquidityFlipDetector:
-    def __init__(self, min_mcap=200, max_mcap=50000,
-                 prior_window=120, recent_window=30, lookback_days=150):
+    _bulk_data = None
+    _BULK_COLUMNS = COLUMNS_12
+
+    def __init__(
+        self,
+        min_mcap=200,
+        max_mcap=50000,
+        prior_window=120,
+        recent_window=30,
+        lookback_days=150,
+    ):
         self.min_mcap = min_mcap
         self.max_mcap = max_mcap
         self.prior_window = prior_window
@@ -50,6 +64,10 @@ class LiquidityFlipDetector:
         self, symbol: str, min_date: str, max_date: str | None = None
     ) -> list[tuple]:
         max_date = max_date or date.today().isoformat()
+        if self._bulk_data is not None:
+            return rows_for_symbol(
+                self._bulk_data, symbol, self._BULK_COLUMNS, min_date, max_date
+            )
         tech_db = self._db_path("technical")
         if not os.path.exists(tech_db):
             return []
@@ -126,7 +144,12 @@ class LiquidityFlipDetector:
             as_on_date = date.today().isoformat()
 
         ref_date = pd.Timestamp(as_on_date)
-        min_date = f"{(ref_date - pd.Timedelta(days=self.lookback_days + 200)):%Y-%m-%d}"
+        min_date = (
+            f"{(ref_date - pd.Timedelta(days=self.lookback_days + 200)):%Y-%m-%d}"
+        )
+
+        # Single bulk load replaces per-symbol sqlite connections.
+        self._bulk_data = load_ohlcv_for_universe(min_date, as_on_date)
 
         candidates: list[dict] = []
 
@@ -186,7 +209,9 @@ class LiquidityFlipDetector:
 
             # Churn baseline (prior_window days before recent_window)
             if self.prior_window > 0 and self.recent_window > 0:
-                prior_df = df.iloc[-(self.prior_window + self.recent_window) : -self.recent_window]
+                prior_df = df.iloc[
+                    -(self.prior_window + self.recent_window) : -self.recent_window
+                ]
             else:
                 prior_df = df.iloc[-self.lookback_days : -5]
             avg_vol_prior = float(np.nanmean(prior_df["volume"].values.astype(float)))
@@ -265,7 +290,9 @@ class LiquidityFlipDetector:
                     sma_200_factor = 1.1
 
             # Flip consistency: % of recent window days with delivery > 50%
-            flip_consistency = int(np.sum(recent["delivery_pct"] > 50) / self.recent_window * 100)
+            flip_consistency = int(
+                np.sum(recent["delivery_pct"] > 50) / self.recent_window * 100
+            )
 
             # Volume rank vs universe
             prior_vol_rank = avg_vol_prior / (
@@ -274,12 +301,16 @@ class LiquidityFlipDetector:
 
             # Flip score
             flip_score = (
-                (avg_del_recent * 0.30) +
-                (min(avg_del_value_cr / 50.0 * 25.0, 25.0)) +
-                (del_jump_pp * 0.20) +
-                (flip_consistency * 0.15) +
-                ((100 - wk52_pos) * 0.10)
-            ) * wk52_penalty * sma_200_factor
+                (
+                    (avg_del_recent * 0.30)
+                    + (min(avg_del_value_cr / 50.0 * 25.0, 25.0))
+                    + (del_jump_pp * 0.20)
+                    + (flip_consistency * 0.15)
+                    + ((100 - wk52_pos) * 0.10)
+                )
+                * wk52_penalty
+                * sma_200_factor
+            )
 
             flip_score = max(0, min(flip_score, 100))
 
@@ -296,13 +327,17 @@ class LiquidityFlipDetector:
             mcap_cr = mcap / 1e7
 
             # Confidence indicator
-            if (flip_type in ("STRONG FLIP", "MODERATE FLIP")
+            if (
+                flip_type in ("STRONG FLIP", "MODERATE FLIP")
                 and sma_200_factor >= 1.0
-                and 30 <= wk52_pos <= 90):
+                and 30 <= wk52_pos <= 90
+            ):
                 confidence = "High"
-            elif (flip_type in ("STRONG FLIP", "MODERATE FLIP", "EARLY FLIP")
-                  and sma_200_factor >= 0.7
-                  and wk52_pos <= 95):
+            elif (
+                flip_type in ("STRONG FLIP", "MODERATE FLIP", "EARLY FLIP")
+                and sma_200_factor >= 0.7
+                and wk52_pos <= 95
+            ):
                 confidence = "Moderate"
             else:
                 confidence = "Low"
@@ -320,7 +355,9 @@ class LiquidityFlipDetector:
                     "flip_type": flip_type,
                     "avg_del_value_cr": round(avg_del_value_cr, 2),
                     "flip_consistency": flip_consistency,
-                    "sma_200": round(sma_200_val, 2) if sma_200_val is not None else None,
+                    "sma_200": round(sma_200_val, 2)
+                    if sma_200_val is not None
+                    else None,
                     "sma_200_factor": round(sma_200_factor, 2),
                     "flip_score": round(flip_score, 1),
                     "grade": grade,

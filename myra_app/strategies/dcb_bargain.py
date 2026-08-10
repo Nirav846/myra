@@ -8,11 +8,19 @@ from datetime import date
 
 from myra_app.constants import DB_DIR
 from myra_app.librarian_core import LibrarianCore
+from myra_app.db.bulk_loader import (
+    load_ohlcv_for_universe,
+    rows_for_symbol,
+    COLUMNS_8,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class DCBBargainScanner:
+    _bulk_data = None
+    _BULK_COLUMNS = COLUMNS_8
+
     def __init__(
         self,
         min_mcap=200,
@@ -68,6 +76,10 @@ class DCBBargainScanner:
     def _get_tech_data(
         self, symbol: str, min_date: str, max_date: str | None = None
     ) -> list[tuple]:
+        if self._bulk_data is not None:
+            return rows_for_symbol(
+                self._bulk_data, symbol, self._BULK_COLUMNS, min_date, max_date
+            )
         tech_db = self._db_path("technical")
         if not os.path.exists(tech_db):
             return []
@@ -132,7 +144,9 @@ class DCBBargainScanner:
         return value
 
     @staticmethod
-    def _compute_dcb(closes: np.ndarray, delivery_pcts: np.ndarray, avg_del: float) -> float | None:
+    def _compute_dcb(
+        closes: np.ndarray, delivery_pcts: np.ndarray, avg_del: float
+    ) -> float | None:
         """Delivery-weighted average close on days where delivery_pct > avg_del."""
         mask = delivery_pcts > avg_del
         if int(np.sum(mask)) == 0:
@@ -143,7 +157,8 @@ class DCBBargainScanner:
     @staticmethod
     def _compute_del_abs(df: pd.DataFrame, window: int = 20) -> float:
         """20-day delivery absorption: avg delivery% on up days minus avg delivery% on down days.
-        An 'up day' is close > open; a 'down day' is close < open. Flat days excluded."""
+        An 'up day' is close > open; a 'down day' is close < open. Flat days excluded.
+        """
         sub = df.tail(window)
         if len(sub) == 0:
             return 0.0
@@ -197,9 +212,9 @@ class DCBBargainScanner:
             return False
         row = df.iloc[idx]
         prev = df.iloc[idx - 1]
-        close = float(row['close'])
-        low = float(row['low'])
-        prev_close = float(prev['close'])
+        close = float(row["close"])
+        low = float(row["low"])
+        prev_close = float(prev["close"])
         # Close pinned at the low (within 1%) AND dropped 5%+ from previous close
         is_pinned = close <= low * 1.01
         is_significant_drop = close < prev_close * 0.95  # 5% drop
@@ -319,6 +334,9 @@ class DCBBargainScanner:
         total_calendar = int(max(self.dcb_window + 50, 365) * 1.8) + 20
         min_date = f"{(ref_date - pd.Timedelta(days=total_calendar)):%Y-%m-%d}"
 
+        # Single bulk load replaces per-symbol sqlite connections.
+        self._bulk_data = load_ohlcv_for_universe(min_date, as_on_date)
+
         is_weekly = self.timeframe == "weekly"
         effective_window = self.dcb_window // 5 if is_weekly else self.dcb_window
 
@@ -372,7 +390,9 @@ class DCBBargainScanner:
                 window_df = work_df.iloc[-effective_window:]
 
                 # Average delivery % in window
-                avg_del = float(np.nanmean(window_df["delivery_pct"].values.astype(float)))
+                avg_del = float(
+                    np.nanmean(window_df["delivery_pct"].values.astype(float))
+                )
 
                 # High-delivery days count
                 mask = window_df["delivery_pct"].values.astype(float) > avg_del
@@ -400,16 +420,22 @@ class DCBBargainScanner:
 
                 # Discount %
                 discount_pct = (dcb - close) / dcb * 100
-                if discount_pct < self.min_discount_pct or discount_pct > self.max_discount_pct:
+                if (
+                    discount_pct < self.min_discount_pct
+                    or discount_pct > self.max_discount_pct
+                ):
                     continue
 
                 # ADTV in ₹ Cr
-                adtv_cr = float(
-                    np.nanmean(
-                        work_df["close"].values.astype(float)
-                        * work_df["volume"].values.astype(float)
+                adtv_cr = (
+                    float(
+                        np.nanmean(
+                            work_df["close"].values.astype(float)
+                            * work_df["volume"].values.astype(float)
+                        )
                     )
-                ) / 1e7
+                    / 1e7
+                )
                 if adtv_cr < self.min_adtv_cr:
                     continue
 
@@ -429,7 +455,11 @@ class DCBBargainScanner:
                 tier = "HIGH" if score >= 20 else ("MOD" if score >= 10 else "LOW")
 
                 # Depth history (1-year DCB discount range)
-                dcb_disc_min, dcb_disc_median, dcb_disc_max = self._compute_depth_history(df)
+                (
+                    dcb_disc_min,
+                    dcb_disc_median,
+                    dcb_disc_max,
+                ) = self._compute_depth_history(df)
 
                 # Lower-circuit detection (uses daily df)
                 is_lower_circuit = self._is_lower_circuit(df, len(df) - 1)
@@ -485,7 +515,5 @@ class DCBBargainScanner:
                     c[f] = self._sanitize_float(c[f])
 
         candidates.sort(key=lambda x: x["score"], reverse=True)
-        logger.info(
-            "DCB Bargain scan complete: %d candidates found", len(candidates)
-        )
+        logger.info("DCB Bargain scan complete: %d candidates found", len(candidates))
         return pd.DataFrame(candidates)

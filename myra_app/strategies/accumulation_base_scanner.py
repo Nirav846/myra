@@ -7,11 +7,19 @@ import pandas as pd
 from datetime import datetime, date
 from myra_app.constants import DB_DIR
 from myra_app.librarian_core import LibrarianCore
+from myra_app.db.bulk_loader import (
+    load_ohlcv_for_universe,
+    rows_for_symbol,
+    COLUMNS_12,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class AccumulationBaseScanner:
+    _bulk_data = None
+    _BULK_COLUMNS = COLUMNS_12
+
     def __init__(
         self,
         base_days=42,
@@ -76,6 +84,10 @@ class AccumulationBaseScanner:
         self, symbol: str, min_date: str, max_date: str | None = None
     ) -> list[tuple]:
         max_date = max_date or date.today().isoformat()
+        if self._bulk_data is not None:
+            return rows_for_symbol(
+                self._bulk_data, symbol, self._BULK_COLUMNS, min_date, max_date
+            )
         tech_db = self._db_path("technical")
         if not os.path.exists(tech_db):
             return []
@@ -220,6 +232,9 @@ class AccumulationBaseScanner:
         min_date = (
             f"{(ref_date - pd.Timedelta(days=max(self.base_days * 3, 90))):%Y-%m-%d}"
         )
+
+        # Single bulk load replaces per-symbol sqlite connections.
+        self._bulk_data = load_ohlcv_for_universe(min_date, as_on_date)
 
         nifty_scores_all: list[float] = []
         candidates: list[dict] = []

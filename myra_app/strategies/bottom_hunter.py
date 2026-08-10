@@ -9,6 +9,11 @@ from typing import Optional
 
 from myra_app.constants import DB_DIR
 from myra_app.librarian_core import LibrarianCore
+from myra_app.db.bulk_loader import (
+    load_ohlcv_for_universe,
+    rows_for_symbol,
+    COLUMNS_12,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +124,9 @@ def compute_sector_momentum_tiers() -> dict[str, str]:
 
 
 class BottomHunter:
+    _bulk_data = None
+    _BULK_COLUMNS = COLUMNS_12
+
     def __init__(
         self,
         min_mcap=200,
@@ -165,6 +173,10 @@ class BottomHunter:
         self, symbol: str, min_date: str, max_date: str | None = None
     ) -> list[tuple]:
         max_date = max_date or date.today().isoformat()
+        if self._bulk_data is not None:
+            return rows_for_symbol(
+                self._bulk_data, symbol, self._BULK_COLUMNS, min_date, max_date
+            )
         tech_db = self._db_path("technical")
         if not os.path.exists(tech_db):
             return []
@@ -317,6 +329,9 @@ class BottomHunter:
 
         ref_date = pd.Timestamp(as_on_date)
         min_date = f"{(ref_date - pd.Timedelta(days=self.lookback_days + 30)):%Y-%m-%d}"
+
+        # Single bulk load replaces per-symbol sqlite connections.
+        self._bulk_data = load_ohlcv_for_universe(min_date, as_on_date)
 
         candidates: list[dict] = []
 

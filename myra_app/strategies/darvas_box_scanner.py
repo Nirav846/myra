@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from datetime import date
 from myra_app.strategies.accumulation_base_scanner import AccumulationBaseScanner
+from myra_app.db.bulk_loader import load_ohlcv_for_universe
 
 logger = logging.getLogger(__name__)
 
@@ -439,6 +440,10 @@ class DarvasBoxScanner(AccumulationBaseScanner):
         min_date = (
             f"{(ref_date - pd.Timedelta(days=max(self.base_days * 2, 200))):%Y-%m-%d}"
         )
+
+        # Single bulk load replaces per-symbol sqlite connections.
+        # darvas calls _get_tech_data WITHOUT max_date -> effective max = today.
+        self._bulk_data = load_ohlcv_for_universe(min_date, date.today().isoformat())
 
         candidates: list[dict] = []
 

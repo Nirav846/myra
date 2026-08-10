@@ -10,11 +10,19 @@ from typing import Optional
 from myra_app.constants import DB_DIR
 from myra_app.librarian_core import LibrarianCore
 from myra_app.strategies.bottom_hunter import compute_sector_momentum_tiers
+from myra_app.db.bulk_loader import (
+    load_ohlcv_for_universe,
+    rows_for_symbol,
+    COLUMNS_12,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class InvisibleHandScanner:
+    _bulk_data = None
+    _BULK_COLUMNS = COLUMNS_12
+
     def __init__(
         self,
         min_mcap=200,
@@ -60,6 +68,10 @@ class InvisibleHandScanner:
     def _get_tech_data(
         self, symbol: str, min_date: str, max_date: Optional[str] = None
     ) -> list[tuple]:
+        if self._bulk_data is not None:
+            return rows_for_symbol(
+                self._bulk_data, symbol, self._BULK_COLUMNS, min_date, max_date
+            )
         tech_db = self._db_path("technical")
         if not os.path.exists(tech_db):
             return []
@@ -212,6 +224,9 @@ class InvisibleHandScanner:
         lookback_calendar_days = int((self.window + self.hist_window) * 1.8) + 10
         min_date = f"{(ref_date - pd.Timedelta(days=lookback_calendar_days)):%Y-%m-%d}"
 
+        # Single bulk load replaces per-symbol sqlite connections.
+        self._bulk_data = load_ohlcv_for_universe(min_date, as_on_date)
+
         candidates: list[dict] = []
 
         for idx, (symbol, mcap, ff_pct) in enumerate(rows):
@@ -329,7 +344,11 @@ class InvisibleHandScanner:
             # Enhancement 1: Delivery Momentum (20 points)
             del_pct_5d = float(curr_df["delivery_pct"].iloc[-5:].mean())
             del_pct_20d = float(curr_df["delivery_pct"].iloc[-20:].mean())
-            price_ret_5d = (float(closes[-1]) / float(closes[-6]) - 1) if len(curr_df) >= 6 else 0.0
+            price_ret_5d = (
+                (float(closes[-1]) / float(closes[-6]) - 1)
+                if len(curr_df) >= 6
+                else 0.0
+            )
             del_momentum_score = 0.0
             if del_pct_20d > 0 and del_pct_5d > del_pct_20d:
                 ratio = min(del_pct_5d / del_pct_20d, 2.0)
@@ -340,7 +359,11 @@ class InvisibleHandScanner:
             # Enhancement 2: Delivery Value Efficiency (25 points)
             del_values = deliveries * closes
             total_del_value = float(np.nansum(del_values))
-            price_change_pct = abs(float(closes[-1]) / float(closes[0]) - 1) * 100 if closes[0] > 0 else 1.0
+            price_change_pct = (
+                abs(float(closes[-1]) / float(closes[0]) - 1) * 100
+                if closes[0] > 0
+                else 1.0
+            )
             efficiency = total_del_value / 1e7 / max(price_change_pct, 0.1)
             del_efficiency_score = min(efficiency / 50.0 * 25.0, 25.0)
 
@@ -427,7 +450,9 @@ class InvisibleHandScanner:
                 {
                     "symbol": symbol,
                     "sector": _sector_map.get(symbol, "Unknown"),
-                    "sector_mom_tier": _sector_mom_tier.get(_sector_map.get(symbol, ""), "Unknown"),
+                    "sector_mom_tier": _sector_mom_tier.get(
+                        _sector_map.get(symbol, ""), "Unknown"
+                    ),
                     "quality_score": None,
                     "market_cap_cr": round(mcap / 1e7, 1),
                     "der_ratio": round(der_ratio, 2),
@@ -485,9 +510,21 @@ class InvisibleHandScanner:
                 nm = qf.get("net_margin")
                 ph = qf.get("promoter_holding_pct")
                 pe = qf.get("pe")
-                _nm.append(nm if nm is not None and not (isinstance(nm, float) and math.isnan(nm)) else None)
-                _ph.append(ph if ph is not None and not (isinstance(ph, float) and math.isnan(ph)) else None)
-                if pe is not None and pe > 0 and not (isinstance(pe, float) and math.isnan(pe)):
+                _nm.append(
+                    nm
+                    if nm is not None and not (isinstance(nm, float) and math.isnan(nm))
+                    else None
+                )
+                _ph.append(
+                    ph
+                    if ph is not None and not (isinstance(ph, float) and math.isnan(ph))
+                    else None
+                )
+                if (
+                    pe is not None
+                    and pe > 0
+                    and not (isinstance(pe, float) and math.isnan(pe))
+                ):
                     _inv_pe.append(1.0 / pe)
                 else:
                     _inv_pe.append(None)
@@ -496,9 +533,21 @@ class InvisibleHandScanner:
             cand_df["_ph"] = _ph
             cand_df["_inv_pe"] = _inv_pe
 
-            nm_rank = cand_df["_nm"].apply(lambda x: x if x is not None else np.nan).rank(pct=True, ascending=True)
-            ph_rank = cand_df["_ph"].apply(lambda x: x if x is not None else np.nan).rank(pct=True, ascending=True)
-            pe_rank = cand_df["_inv_pe"].apply(lambda x: x if x is not None else np.nan).rank(pct=True, ascending=True)
+            nm_rank = (
+                cand_df["_nm"]
+                .apply(lambda x: x if x is not None else np.nan)
+                .rank(pct=True, ascending=True)
+            )
+            ph_rank = (
+                cand_df["_ph"]
+                .apply(lambda x: x if x is not None else np.nan)
+                .rank(pct=True, ascending=True)
+            )
+            pe_rank = (
+                cand_df["_inv_pe"]
+                .apply(lambda x: x if x is not None else np.nan)
+                .rank(pct=True, ascending=True)
+            )
 
             nm_valid = cand_df["_nm"].notna()
             ph_valid = cand_df["_ph"].notna()

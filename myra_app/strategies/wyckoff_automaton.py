@@ -7,11 +7,19 @@ import pandas as pd
 from datetime import date, timedelta
 from myra_app.constants import DB_DIR
 from myra_app.librarian_core import LibrarianCore
+from myra_app.db.bulk_loader import (
+    load_ohlcv_for_universe,
+    rows_for_symbol,
+    COLUMNS_13,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class WyckoffAutomaton:
+    _bulk_data = None
+    _BULK_COLUMNS = COLUMNS_13
+
     def __init__(self, min_mcap=200, max_mcap=50000, lookback_days=90):
         self.min_mcap = min_mcap
         self.max_mcap = max_mcap
@@ -47,6 +55,10 @@ class WyckoffAutomaton:
         self, symbol: str, min_date: str, max_date: str | None = None
     ) -> list[tuple]:
         max_date = max_date or date.today().isoformat()
+        if self._bulk_data is not None:
+            return rows_for_symbol(
+                self._bulk_data, symbol, self._BULK_COLUMNS, min_date, max_date
+            )
         tech_db = self._db_path("technical")
         if not os.path.exists(tech_db):
             return []
@@ -274,10 +286,14 @@ class WyckoffAutomaton:
             )
             # Dynamic delivery threshold: must be 20% above the stock's own 50-day average
             # rather than an arbitrary absolute number that doesn't fit Indian markets
-            avg_del_50d = float(df["delivery_pct"].iloc[max(0, abs_i-50):abs_i].mean())
+            avg_del_50d = float(
+                df["delivery_pct"].iloc[max(0, abs_i - 50) : abs_i].mean()
+            )
             del_threshold = max(25.0, avg_del_50d * 1.2)  # floor at 25% to avoid noise
             is_spring = (
-                low_p < prior_low * 0.99 and close_p > prior_low and del_pct > del_threshold
+                low_p < prior_low * 0.99
+                and close_p > prior_low
+                and del_pct > del_threshold
             )
 
             if is_spring:
@@ -572,6 +588,9 @@ class WyckoffAutomaton:
 
         ref_date = pd.Timestamp(as_on_date)
         min_date = f"{(ref_date - pd.Timedelta(days=self.lookback_days)):%Y-%m-%d}"
+
+        # Single bulk load replaces per-symbol sqlite connections.
+        self._bulk_data = load_ohlcv_for_universe(min_date, as_on_date)
 
         candidates: list[dict] = []
 
