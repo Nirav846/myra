@@ -44,6 +44,26 @@ try:
 except ImportError:
     pass
 
+
+def _spawn_task(name, fn, *args, **kwargs):
+    """Run fn(*args, **kwargs) in a daemon thread; register in task_tracker; return task id."""
+    from myra_app.task_tracker import create_task, update, unregister
+
+    tid = create_task(name)
+
+    def _wrapped():
+        try:
+            fn(*args, **kwargs)
+            update(tid, status="completed")
+        except Exception as e:
+            update(tid, status=f"error: {e}")
+        finally:
+            unregister(tid)
+
+    threading.Thread(target=_wrapped, name=f"myra-task-{name}", daemon=True).start()
+    return tid
+
+
 _finstack_cache = {}
 CACHE_TTL = 300  # 5 minutes
 
@@ -467,42 +487,42 @@ def execute_tool(req: ToolRequest, _=Depends(verify_myra_auth)):
 
 @app.post("/api/tools/sync/fundamentals")
 async def force_fundamentals_sync():
-    """Trigger a full fundamentals sync (Morningstar + NSE) NOW."""
+    """Trigger a full fundamentals sync (Morningstar + NSE) NOW (async)."""
     try:
-        _task_fundamentals_sync()
-        return {"success": True, "message": "Fundamentals sync completed"}
+        tid = _spawn_task("fundamentals_sync", _task_fundamentals_sync)
+        return JSONResponse(status_code=202, content={"status": "started", "task_id": tid})
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
 
 @app.post("/api/tools/sync/etf")
 async def force_etf_sync():
-    """Trigger ETF blocklist sync NOW."""
+    """Trigger ETF blocklist sync NOW (async)."""
     try:
-        _task_etf_sync()
-        return {"success": True, "message": "ETF sync completed"}
+        tid = _spawn_task("etf_sync", _task_etf_sync)
+        return JSONResponse(status_code=202, content={"status": "started", "task_id": tid})
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
 
 @app.post("/api/tools/sync/index")
 async def force_index_sync():
-    """Trigger NIFTY index constituents sync NOW."""
+    """Trigger NIFTY index constituents sync NOW (async)."""
     try:
-        _task_index_sync()
-        return {"success": True, "message": "Index sync completed"}
+        tid = _spawn_task("index_sync", _task_index_sync)
+        return JSONResponse(status_code=202, content={"status": "started", "task_id": tid})
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
 
 @app.post("/api/tools/ingest")
 async def force_daily_ingest():
-    """Trigger daily bhavcopy ingest NOW."""
+    """Trigger daily bhavcopy ingest NOW (async)."""
     try:
-        _task_daily_ingest(force=True)
-        return {"success": True, "message": "Daily ingest completed"}
+        tid = _spawn_task("daily_ingest", _task_daily_ingest, force=True)
+        return JSONResponse(status_code=202, content={"status": "started", "task_id": tid})
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
 
 @app.post("/api/tools/db-doctor")
@@ -594,23 +614,15 @@ async def get_system_info():
 
 @app.post("/api/portfolio/refresh")
 async def refresh_portfolio():
-    """Trigger a manual refresh of portfolio prices and fundamentals."""
-    try:
+    """Trigger a manual refresh of portfolio prices and fundamentals (async)."""
+    def _run():
         from myra_app.portfolio_db import auto_refresh_portfolio
-
-        result = auto_refresh_portfolio()
-        if result.get("error"):
-            return {"status": "error", "result": result}
-        return {"status": "ok", "result": result}
-    except ImportError as e:
-        return {"status": "error", "message": f"portfolio_db import failed: {e}"}
+        return auto_refresh_portfolio()
+    try:
+        tid = _spawn_task("portfolio_refresh", _run)
+        return JSONResponse(status_code=202, content={"status": "started", "task_id": tid})
     except Exception as e:
-        from fastapi.responses import JSONResponse
-
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "message": str(e)},
-        )
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
 
 @app.get("/api/portfolio/live-prices")
@@ -1481,21 +1493,26 @@ async def ml_status():
 
 @app.post("/api/ml/train")
 async def ml_train(config: dict = None):
-    """Train a new model. Optionally pass a config dict to override defaults."""
-    from myra_app.ml_trainer import MLTrainer
-
-    trainer = MLTrainer(config)
-    result = trainer.train()
-    return result
+    """Train a new model (async). Optionally pass a config dict to override defaults."""
+    def _run():
+        from myra_app.ml_trainer import MLTrainer
+        trainer = MLTrainer(config)
+        return trainer.train()
+    try:
+        tid = _spawn_task("ml_train", _run)
+        return JSONResponse(status_code=202, content={"status": "started", "task_id": tid})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/ml/predict")
 async def ml_predict():
     """Return today's predictions for all symbols."""
-    from myra_app.ml_trainer import MLTrainer
-
-    trainer = MLTrainer()
-    return trainer.predict_today()
+    def _run():
+        from myra_app.ml_trainer import MLTrainer
+        trainer = MLTrainer()
+        return trainer.predict_today()
+    return await asyncio.to_thread(_run)
 
 
 @app.get("/api/ml/feature-importance")
