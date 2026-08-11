@@ -42,6 +42,7 @@ _CACHE_TTL_SECONDS = 86400  # 24 hours (one trading day)
 # Cache helpers (throwaway — errors never propagate)
 # ---------------------------------------------------------------------------
 
+
 def _init_cache_db() -> None:
     """Create the cache table if it doesn't exist."""
     try:
@@ -106,6 +107,7 @@ def _cache_put(cache_key: str, result: dict) -> None:
 # ---------------------------------------------------------------------------
 # Gemini REST call (isolated for monkeypatching)
 # ---------------------------------------------------------------------------
+
 
 def _post_generate_content(prompt: str, api_key: str) -> dict | None:
     """POST to Gemini generateContent endpoint. Returns parsed JSON or None."""
@@ -188,13 +190,14 @@ def _degraded(reason: str = "LLM degraded", cached: bool = False) -> dict:
 # Public API: get_ai_second_opinion
 # ---------------------------------------------------------------------------
 
+
 def get_ai_second_opinion(symbol: str, technical_summary: str) -> dict:
     """Fetch a second opinion from Gemini LLM.
 
     Returns a dict with keys: signal, reason, confidence, source, cached.
     Never raises — any error returns a degraded HOLD signal.
     """
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_str = datetime.now().date().isoformat()
     cache_key = f"{symbol}:{today_str}"
 
     # Check cache (return a copy so caller can't mutate the cache entry)
@@ -231,6 +234,7 @@ def get_ai_second_opinion(symbol: str, technical_summary: str) -> dict:
 # ---------------------------------------------------------------------------
 # build_technical_summary — local data only
 # ---------------------------------------------------------------------------
+
 
 def build_technical_summary(symbol: str) -> str:
     """Build a compact text summary from local SQLite data.
