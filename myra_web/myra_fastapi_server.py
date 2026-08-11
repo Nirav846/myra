@@ -2568,7 +2568,7 @@ async def dcb_bargain_defaults():
         "min_high_del_days": 10,
         "sanity_mult": 5.0,
         "timeframe": "daily",
-        "min_ff_mcap": 0.0,
+        "min_ff_mcap": 600.0,
         "exclude_circuits": True,
     }
 
@@ -2612,7 +2612,7 @@ async def dcb_bargain_scan(payload: dict = Body(default={})):
     timeframe = str(payload.get("timeframe", "daily"))
     if timeframe not in ("daily", "weekly"):
         return {"detail": "timeframe must be 'daily' or 'weekly'"}, 400
-    min_ff_mcap = float(payload.get("min_ff_mcap", 0.0))
+    min_ff_mcap = float(payload.get("min_ff_mcap", 600.0))
     exclude_circuits = bool(payload.get("exclude_circuits", True))
 
     raw_date = payload.get("scan_date", "")

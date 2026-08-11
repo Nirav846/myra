@@ -48,7 +48,7 @@ EXPECTED_DEFAULTS = {
     "min_high_del_days": 10,
     "sanity_mult": 5.0,
     "timeframe": "daily",
-    "min_ff_mcap": 0.0,
+    "min_ff_mcap": 600.0,
     "exclude_circuits": True,
 }
 

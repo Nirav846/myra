@@ -212,7 +212,7 @@ def test_default_params():
     assert scanner.min_high_del_days == 10
     assert scanner.sanity_mult == 5.0
     assert scanner.timeframe == "daily"
-    assert scanner.min_ff_mcap == 0.0
+    assert scanner.min_ff_mcap == 600.0
 
 
 # ---------------------------------------------------------------------------

@@ -33,7 +33,7 @@ class DCBBargainScanner:
         min_high_del_days=10,
         sanity_mult=5.0,
         timeframe="daily",
-        min_ff_mcap=0.0,
+        min_ff_mcap=600.0,
     ):
         self.min_mcap = min_mcap
         self.max_mcap = max_mcap

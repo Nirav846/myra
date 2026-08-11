@@ -81,7 +81,7 @@ const ADVANCED_DEFAULTS = {
   min_adtv_cr: 1.0,
   min_high_del_days: 10,
   sanity_mult: 5,
-  min_ff_mcap: 0,
+  min_ff_mcap: 600,
 };
 
 const DEFAULTS_FALLBACK = {
@@ -91,7 +91,7 @@ const DEFAULTS_FALLBACK = {
   min_adtv_cr: 1.0,
   min_high_del_days: 10,
   sanity_mult: 5.0,
-  min_ff_mcap: 0.0,
+  min_ff_mcap: 600.0,
   exclude_circuits: true,
 };
 
