@@ -433,7 +433,7 @@ export default function ReversionEngineView({ lib }: { lib: Librarian }) {
 
         <div className={`transition-opacity duration-300 ${isRefreshing ? 'opacity-50' : 'opacity-100'}`}>
           <ScrollableTable className="min-h-[250px] bg-[#12141a] rounded-lg border border-white/5">
-            <table className="w-full min-w-max whitespace-nowrap text-left font-mono text-xs">
+            <table className="w-full min-w-max whitespace-nowrap text-left font-mono text-xs" aria-label="Reversion engine candidates">
               <thead>
                 <tr className="text-[#888] border-b border-white/5 bg-black/20">
                 <th className="py-3 px-3 font-semibold uppercase min-w-[100px] tracking-wider rounded-tl-lg">Ticker</th>

@@ -539,7 +539,7 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
                 </div>
               ) : (
                 <div className="overflow-auto max-h-[400px] relative">
-                  <table className="w-full text-left font-mono text-xs">
+                  <table className="w-full text-left font-mono text-xs" aria-label="Historical search results">
                     <thead className="sticky top-0 bg-[#0e1117] z-10">
                       <tr className="text-[#888] border-b border-[#ffffff1a]">
                         <th className="pb-2 px-2 font-medium uppercase">Date</th>

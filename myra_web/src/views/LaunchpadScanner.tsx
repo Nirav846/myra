@@ -446,7 +446,7 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
 
           <div className="flex-1 bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden">
             <ScrollableTable>
-              <table className="w-full min-w-max text-left text-xs font-mono whitespace-nowrap">
+              <table className="w-full min-w-max text-left text-xs font-mono whitespace-nowrap" aria-label="Launchpad scanner candidates">
                 <thead className="sticky top-0 z-10 bg-[#1a1c24] text-[#888] shadow-sm">
                   <tr>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider">Symbol</th>

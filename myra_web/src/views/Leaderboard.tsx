@@ -219,7 +219,7 @@ export default function LeaderboardView({ lib }: { lib: Librarian }) {
               {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
             </button>
 
-            <table className="w-full min-w-max whitespace-nowrap text-left font-mono text-xs">
+            <table className="w-full min-w-max whitespace-nowrap text-left font-mono text-xs" aria-label="Leaderboard rankings">
             <thead>
               <tr className="text-[#888] border-b border-[#ffffff1a]">
                 <th className="pb-2 px-2 font-medium uppercase">Ticker</th>

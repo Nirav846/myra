@@ -694,90 +694,90 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
                   <tr style={{ boxShadow: '0 1px 0 0 rgba(255,255,255,0.08), 0 2px 4px 0 rgba(0,0,0,0.4)' }}>
 
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white select-none"
-                        onClick={() => handleSort('symbol')}>
+                        aria-sort={sortCol === 'symbol' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('symbol'); } }} onClick={() => handleSort('symbol')} scope="col">
                       Symbol <SortIcon column="symbol" />
                     </th>
 
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white select-none"
-                        onClick={() => handleSort('sector')}>
+                        aria-sort={sortCol === 'sector' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('sector'); } }} onClick={() => handleSort('sector')} scope="col">
                       Sector <SortIcon column="sector" />
                     </th>
 
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
-                        onClick={() => handleSort('market_cap_cr')}>
+                        aria-sort={sortCol === 'market_cap_cr' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('market_cap_cr'); } }} onClick={() => handleSort('market_cap_cr')} scope="col">
                       MCap (₹Cr) <SortIcon column="market_cap_cr" />
                     </th>
 
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
-                        onClick={() => handleSort('float_util_pct')}>
+                        aria-sort={sortCol === 'float_util_pct' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('float_util_pct'); } }} onClick={() => handleSort('float_util_pct')} scope="col">
                       <Tooltip content="Gate 1 — Float Utilisation. % of free float absorbed in last 20 days. >25% = critically short supply. Higher = more of the available stock has changed hands.">
                         Float Util% <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="float_util_pct" />
                       </Tooltip>
                     </th>
 
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
-                        onClick={() => handleSort('gate1_score')}>
+                        aria-sort={sortCol === 'gate1_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('gate1_score'); } }} onClick={() => handleSort('gate1_score')} scope="col">
                       <Tooltip content="Gate 1 Score (0–100). Scales with Float Util%: 30 at 12%, 62 at 25%, 100 at 40%.">
                         G1 Score <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="gate1_score" />
                       </Tooltip>
                     </th>
 
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
-                        onClick={() => handleSort('avg_down_del')}>
+                        aria-sort={sortCol === 'avg_down_del' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('avg_down_del'); } }} onClick={() => handleSort('avg_down_del')} scope="col">
                       <Tooltip content="Gate 2 — Average delivery% on sessions when the stock fell >0.15%. Low = sellers barely participated even on bad days. <35% is exceptional.">
                         Down Del% <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="avg_down_del" />
                       </Tooltip>
                     </th>
 
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
-                        onClick={() => handleSort('gate2_score')}>
+                        aria-sort={sortCol === 'gate2_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('gate2_score'); } }} onClick={() => handleSort('gate2_score')} scope="col">
                       <Tooltip content="Gate 2 Score — Seller Extinction strength. Combines how low down-day delivery is AND how fast it's declining. Higher = sellers more exhausted.">
                         G2 Score <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="gate2_score" />
                       </Tooltip>
                     </th>
 
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
-                        onClick={() => handleSort('gate3_score')}>
+                        aria-sort={sortCol === 'gate3_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('gate3_score'); } }} onClick={() => handleSort('gate3_score')} scope="col">
                       <Tooltip content="Gate 3 Score — Volume Pinch strength. Combines volume dry-up (5d vs 20d) and price range compression. Higher = coil more tightly wound.">
                         G3 Score <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="gate3_score" />
                       </Tooltip>
                     </th>
 
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
-                        onClick={() => handleSort('defense_bars')}>
+                        aria-sort={sortCol === 'defense_bars' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('defense_bars'); } }} onClick={() => handleSort('defense_bars')} scope="col">
                       <Tooltip content="Defense Bars — sessions where the stock opened lower but recovered strongly on high delivery. Each bar = a buyer defending the price. ≥3 bars = strong institutional floor.">
                         Defense <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="defense_bars" />
                       </Tooltip>
                     </th>
 
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
-                        onClick={() => handleSort('base_duration')}>
+                        aria-sort={sortCol === 'base_duration' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('base_duration'); } }} onClick={() => handleSort('base_duration')} scope="col">
                       <Tooltip content="How many consecutive recent sessions the stock has been in a tight base (daily H-L range < 3.5%). Longer = more patient accumulation underway.">
                         Base Days <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="base_duration" />
                       </Tooltip>
                     </th>
 
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
-                        onClick={() => handleSort('breakout_prox')}>
+                        aria-sort={sortCol === 'breakout_prox' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('breakout_prox'); } }} onClick={() => handleSort('breakout_prox')} scope="col">
                       <Tooltip content="Breakout Proximity — where price is within the 20-session base. 0% = at the base low. 100% = at the base high (breakout level). >70% = price approaching launch.">
                         Prox% <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="breakout_prox" />
                       </Tooltip>
                     </th>
 
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
-                        onClick={() => handleSort('trigger_score')}>
+                        aria-sort={sortCol === 'trigger_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('trigger_score'); } }} onClick={() => handleSort('trigger_score')} scope="col">
                       <Tooltip content="Trigger Score (0–100) = G1(30%) + G2(25%) + G3(25%) + defense bonus + proximity bonus + base bonus. Grade A = 75+.">
                         Score <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="trigger_score" />
                       </Tooltip>
                     </th>
 
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
-                        onClick={() => handleSort('close')}>
+                        aria-sort={sortCol === 'close' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('close'); } }} onClick={() => handleSort('close')} scope="col">
                       Price (₹) <SortIcon column="close" />
                     </th>
 
                     <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
-                        onClick={() => handleSort('wk52_pos')}>
+                        aria-sort={sortCol === 'wk52_pos' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('wk52_pos'); } }} onClick={() => handleSort('wk52_pos')} scope="col">
                       <Tooltip content="52-week position — 0% = at 52w low, 100% = at 52w high. Triggers ideally sit below 85% — still room to run.">
                         52W Pos% <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="wk52_pos" />
                       </Tooltip>

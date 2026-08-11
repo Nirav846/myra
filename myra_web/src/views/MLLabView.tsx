@@ -512,7 +512,7 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
                 <div className="space-y-4">
                   {predicting ? <div className="text-xs text-[#888] font-mono animate-pulse">Running inferences...</div> : predictions ? (
                     <div className="border border-[#ffffff0a] rounded overflow-hidden">
-                      <table className="w-full text-left text-xs font-mono">
+                      <table className="w-full text-left text-xs font-mono" aria-label="Model prediction results">
                         <thead className="bg-[#1a1c24] text-[#888]">
                           <tr>
                             <th className="px-4 py-2 font-normal">Symbol</th>
@@ -551,7 +551,7 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
                 </div>
               ) : (
                 <div className="border border-[#ffffff0a] rounded overflow-hidden">
-                  <table className="w-full text-left text-xs font-mono">
+                  <table className="w-full text-left text-xs font-mono" aria-label="Model training history">
                     <thead className="bg-[#1a1c24] text-[#888]">
                       <tr><th className="px-4 py-2">Date</th><th className="px-4 py-2 text-right">Train Acc</th><th className="px-4 py-2 text-right">Test Acc</th><th className="px-4 py-2 text-right">Train</th><th className="px-4 py-2 text-right">Test</th></tr>
                     </thead>

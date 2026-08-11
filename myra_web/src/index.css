@@ -166,6 +166,32 @@ body {
   line-height: 1.4;
 }
 
+/* Visible focus ring for keyboard-operable sortable table headers (Sprint 3).
+ * All sortable <th> carry aria-sort + tabIndex={0} + Enter/Space keydown. */
+th[aria-sort][tabindex="0"]:focus-visible {
+  outline: 2px solid #888;
+  outline-offset: -2px;
+}
+
+/* Skip-to-content link: visually hidden until focused (Sprint 3). */
+.skip-link {
+  position: fixed;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 100;
+  padding: 0.5rem 0.75rem;
+  background: #1a1c24;
+  color: #fafafa;
+  border: 1px solid #888;
+  border-radius: 4px;
+  font-size: 12px;
+  transform: translateY(-200%);
+  transition: transform 0.15s ease;
+}
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
 /* Respect users who request reduced motion. */
 @media (prefers-reduced-motion: reduce) {
   *,

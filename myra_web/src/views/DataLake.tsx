@@ -134,7 +134,7 @@ export default function DataLakeView({ lib }: { lib: Librarian }) {
             {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
           </button>
           
-          <table className="w-full text-left font-mono text-xs">
+          <table className="w-full text-left font-mono text-xs" aria-label="Data lake API results">
             <thead>
               <tr className="text-[#888] border-b border-[#ffffff1a]">
                 <th className="pb-2 px-2 font-medium uppercase min-w-[80px]">Date</th>

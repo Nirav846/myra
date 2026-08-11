@@ -206,7 +206,7 @@ export default function ConfluenceView() {
             </p>
           </div>
         ) : (
-          <table className="w-full text-xs font-mono">
+          <table className="w-full text-xs font-mono" aria-label="Confluence scanner results">
             <thead className="sticky top-0 z-10 bg-[#1a1c24] border-b border-[#ffffff1a]">
               <tr>
                 <th

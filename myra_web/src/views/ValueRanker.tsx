@@ -489,7 +489,7 @@ export default function ValueRankerView({ lib }: { lib: Librarian }) {
           </button>
 
           <ScrollableTable>
-            <table className="w-full min-w-max whitespace-nowrap text-left font-mono text-xs">
+            <table className="w-full min-w-max whitespace-nowrap text-left font-mono text-xs" aria-label="Value ranker results">
                 <thead className="sticky top-0 bg-[#1e2028] z-0 shadow-md">
                   <tr className="text-[#888] border-b border-[#ffffff1a]">
                     <th className="py-3 px-3 font-medium uppercase cursor-pointer hover:bg-[#ffffff0a] select-none text-nowrap" onClick={() => setSort('symbol')}>Symbol {sortCol==='symbol'&&(sortAsc?'↑':'↓')}</th>

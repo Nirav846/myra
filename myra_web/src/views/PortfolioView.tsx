@@ -1081,7 +1081,7 @@ export default function PortfolioView() {
           <span className="text-[12px] text-[#888] font-mono">{sortedHoldings.length} positions</span>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left">
+          <table className="w-full text-left" aria-label="Portfolio holdings">
             <thead>
               <tr className="bg-[#0e1117]/50">
                 <th className={thClass} onClick={() => toggleSort('symbol')}>Symbol{sortIndicator('symbol')}</th>

@@ -208,7 +208,7 @@ export default function BacktestPanel({ lib, symbol, entryPrice, stopLossPrice, 
                         )}
 
                         <div className="overflow-x-auto max-h-[300px] overflow-y-auto">
-                            <table className="w-full text-left border-collapse">
+                            <table className="w-full text-left border-collapse" aria-label="Backtest trade results">
                                 <thead className="sticky top-0 bg-[#1a1c24] z-10">
                                     <tr className="border-b border-[#ffffff1a]">
                                         <th className="px-3 py-2 text-[12px] font-medium uppercase text-[#888] font-mono whitespace-nowrap">Date</th>

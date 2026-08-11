@@ -512,28 +512,28 @@ export default function MultibaggerMatrixView({ lib }: { lib: Librarian }) {
 
           <div className="bg-[#0e1117] border border-[#ffffff0a] rounded-lg overflow-hidden flex-1">
             <div className="overflow-x-auto max-h-64">
-              <table className="w-full text-left font-mono text-xs relative">
+              <table className="w-full text-left font-mono text-xs relative" aria-label="Multibagger matrix results">
                 <thead className="bg-[#1a1c24] border-b border-[#ffffff1a] sticky top-0 z-10">
                   <tr className="text-[#888]">
-                    <th className={`py-3 px-4 font-medium uppercase cursor-pointer hover:text-white transition-colors ${sortConfig?.key === 'ticker' ? 'text-white' : ''}`} onClick={() => handleSort('ticker')}>
+                    <th className={`py-3 px-4 font-medium uppercase cursor-pointer hover:text-white transition-colors ${sortConfig?.key === 'ticker' ? 'text-white' : ''}`} aria-sort={sortConfig?.key === 'ticker' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('ticker'); } }} onClick={() => handleSort('ticker')} scope="col">
                       Ticker <SortIcon column="ticker" />
                     </th>
-                    <th className={`py-3 px-4 font-medium uppercase cursor-pointer hover:text-white transition-colors ${sortConfig?.key === 'sector' ? 'text-white' : ''}`} onClick={() => handleSort('sector')}>
+                    <th className={`py-3 px-4 font-medium uppercase cursor-pointer hover:text-white transition-colors ${sortConfig?.key === 'sector' ? 'text-white' : ''}`} aria-sort={sortConfig?.key === 'sector' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('sector'); } }} onClick={() => handleSort('sector')} scope="col">
                       Sector <SortIcon column="sector" />
                     </th>
-                    <th className={`py-3 px-4 font-medium uppercase text-right cursor-pointer hover:text-white transition-colors ${sortConfig?.key === 'returnOnEquity' ? 'text-white' : ''}`} onClick={() => handleSort('returnOnEquity')}>
+                    <th className={`py-3 px-4 font-medium uppercase text-right cursor-pointer hover:text-white transition-colors ${sortConfig?.key === 'returnOnEquity' ? 'text-white' : ''}`} aria-sort={sortConfig?.key === 'returnOnEquity' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('returnOnEquity'); } }} onClick={() => handleSort('returnOnEquity')} scope="col">
                       ROE <SortIcon column="returnOnEquity" />
                     </th>
-                    <th className={`py-3 px-4 font-medium uppercase text-right cursor-pointer hover:text-white transition-colors ${sortConfig?.key === 'earningsYield' ? 'text-white' : ''}`} onClick={() => handleSort('earningsYield')}>
+                    <th className={`py-3 px-4 font-medium uppercase text-right cursor-pointer hover:text-white transition-colors ${sortConfig?.key === 'earningsYield' ? 'text-white' : ''}`} aria-sort={sortConfig?.key === 'earningsYield' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('earningsYield'); } }} onClick={() => handleSort('earningsYield')} scope="col">
                       Earn Yield <SortIcon column="earningsYield" />
                     </th>
-                    <th className={`py-3 px-4 font-medium uppercase text-right cursor-pointer hover:text-green-300 transition-colors ${sortConfig?.key === 'accumulation' ? 'text-green-400' : 'text-green-400/70'}`} onClick={() => handleSort('accumulation')}>
+                    <th className={`py-3 px-4 font-medium uppercase text-right cursor-pointer hover:text-green-300 transition-colors ${sortConfig?.key === 'accumulation' ? 'text-green-400' : 'text-green-400/70'}`} aria-sort={sortConfig?.key === 'accumulation' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('accumulation'); } }} onClick={() => handleSort('accumulation')} scope="col">
                       Accumulation <SortIcon column="accumulation" />
                     </th>
-                    <th className={`py-3 px-4 font-medium uppercase text-center cursor-pointer hover:text-white transition-colors ${sortConfig?.key === 'moat_score' ? 'text-white' : ''}`} onClick={() => handleSort('moat_score')}>
+                    <th className={`py-3 px-4 font-medium uppercase text-center cursor-pointer hover:text-white transition-colors ${sortConfig?.key === 'moat_score' ? 'text-white' : ''}`} aria-sort={sortConfig?.key === 'moat_score' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('moat_score'); } }} onClick={() => handleSort('moat_score')} scope="col">
                       Moat <SortIcon column="moat_score" />
                     </th>
-                    <th className={`py-3 px-4 font-medium uppercase text-right cursor-pointer hover:text-orange-300 transition-colors ${sortConfig?.key === 'multibagger_index' ? 'text-orange-400' : 'text-orange-400/70'}`} onClick={() => handleSort('multibagger_index')}>
+                    <th className={`py-3 px-4 font-medium uppercase text-right cursor-pointer hover:text-orange-300 transition-colors ${sortConfig?.key === 'multibagger_index' ? 'text-orange-400' : 'text-orange-400/70'}`} aria-sort={sortConfig?.key === 'multibagger_index' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('multibagger_index'); } }} onClick={() => handleSort('multibagger_index')} scope="col">
                       MB Index <SortIcon column="multibagger_index" />
                     </th>
                   </tr>
