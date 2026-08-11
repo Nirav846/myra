@@ -56,13 +56,13 @@ export default function GhostSimulatorView({ lib }: { lib: Librarian }) {
         </h3>
         <div className="flex gap-2 items-center">
             {errorMsg && (
-              <span className="text-[10px] bg-red-500/20 text-red-500 px-2 py-1 rounded font-mono border border-red-500/30 flex items-center gap-1">
+              <span className="text-[12px] bg-red-500/20 text-red-500 px-2 py-1 rounded font-mono border border-red-500/30 flex items-center gap-1">
                  <AlertTriangle size={10} /> {errorMsg}
               </span>
             )}
             <button
               onClick={() => setWatchlistOnly(o => !o)}
-              className={`flex items-center gap-1.5 px-2 py-1.5 rounded border text-[11px] font-mono transition-colors ${
+              className={`flex items-center gap-1.5 px-2 py-1.5 rounded border text-[12px] font-mono transition-colors ${
                 watchlistOnly
                   ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
                   : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
@@ -157,7 +157,7 @@ export default function GhostSimulatorView({ lib }: { lib: Librarian }) {
         {/* Results Panel */}
         <div className="lg:col-span-2 bg-[#0e1117] rounded-lg border border-[#ffffff0a] p-6 flex flex-col justify-center">
           {!results && !running && (
-             <div className="text-center text-[#555]">
+             <div className="text-center text-[#888]">
                <Ghost size={48} className="mx-auto mb-4 opacity-20" />
                <p className="text-sm font-mono">Configure parameters and inject logic vector to generate backtest matrix.</p>
              </div>
@@ -179,27 +179,27 @@ export default function GhostSimulatorView({ lib }: { lib: Librarian }) {
               
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                  <div className="bg-[#1a1c24] p-4 rounded border border-[#ffffff1a]">
-                    <div className="text-[#888] text-[10px] uppercase font-mono">Win Rate</div>
+                    <div className="text-[#888] text-[12px] uppercase font-mono">Win Rate</div>
                     <div className={`text-3xl font-bold mt-1 ${results.winRate > 50 ? 'text-green-400' : 'text-red-400'}`}>{results.winRate}%</div>
                  </div>
                  <div className="bg-[#1a1c24] p-4 rounded border border-[#ffffff1a]">
-                    <div className="text-[#888] text-[10px] uppercase font-mono">Total Trades</div>
+                    <div className="text-[#888] text-[12px] uppercase font-mono">Total Trades</div>
                     <div className="text-3xl font-bold mt-1 text-white">{results.totalTrades}</div>
                  </div>
                  <div className="bg-[#1a1c24] p-4 rounded border border-[#ffffff1a]">
-                    <div className="text-[#888] text-[10px] uppercase font-mono">Profit Factor</div>
+                    <div className="text-[#888] text-[12px] uppercase font-mono">Profit Factor</div>
                     <div className="text-3xl font-bold mt-1 text-blue-400">{results.profitFactor}</div>
                  </div>
                  <div className="bg-[#1a1c24] p-4 rounded border border-[#ffffff1a]">
-                    <div className="text-[#888] text-[10px] uppercase font-mono">Avg Return / Trade</div>
+                    <div className="text-[#888] text-[12px] uppercase font-mono">Avg Return / Trade</div>
                     <div className="text-3xl font-bold mt-1 text-green-400">+{results.avgReturn}%</div>
                  </div>
                  <div className="bg-[#1a1c24] p-4 rounded border border-red-500/20">
-                    <div className="text-[#888] text-[10px] uppercase font-mono">Max Drawdown</div>
+                    <div className="text-[#888] text-[12px] uppercase font-mono">Max Drawdown</div>
                     <div className="text-3xl font-bold mt-1 text-red-500">{results.maxDrawdown}%</div>
                  </div>
                  <div className="bg-[#1a1c24] p-4 rounded border border-[#ffffff1a]">
-                    <div className="text-[#888] text-[10px] uppercase font-mono">Sharpe Ratio</div>
+                    <div className="text-[#888] text-[12px] uppercase font-mono">Sharpe Ratio</div>
                     <div className="text-3xl font-bold mt-1 text-yellow-500">{results.sharpe}</div>
                  </div>
               </div>

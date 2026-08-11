@@ -161,17 +161,17 @@ export default function InstDOMView({ lib }: { lib: Librarian }) {
           
            <div className="ml-auto flex items-center gap-3">
               {totals && !isLoading && (
-                <span className="text-[10px] font-mono text-[#888] hidden md:flex items-center gap-2 border-r border-[#ffffff1a] pr-3">
+                <span className="text-[12px] font-mono text-[#888] hidden md:flex items-center gap-2 border-r border-[#ffffff1a] pr-3">
                   <TrendingUp size={11} className="text-green-400" />
                   Del: {(totals.delPct).toFixed(1)}%
                 </span>
               )}
-              {errorMsg && <span className="text-[10px] text-red-400 font-mono px-2 py-1 bg-red-500/10 rounded border border-red-500/20">{errorMsg}</span>}
-              {isDemo && <span className="text-[10px] text-yellow-500 font-mono px-2 py-1 bg-yellow-500/10 rounded border border-yellow-500/20">⚠️ DEMO DATA</span>}
-             {isLoading && <span className="text-[10px] text-blue-400 font-mono animate-pulse">Calculating DOM...</span>}
+              {errorMsg && <span className="text-[12px] text-red-400 font-mono px-2 py-1 bg-red-500/10 rounded border border-red-500/20">{errorMsg}</span>}
+              {isDemo && <span className="text-[12px] text-yellow-500 font-mono px-2 py-1 bg-yellow-500/10 rounded border border-yellow-500/20">⚠️ DEMO DATA</span>}
+             {isLoading && <span className="text-[12px] text-blue-400 font-mono animate-pulse">Calculating DOM...</span>}
             <button
               onClick={() => setWatchlistOnly(o => !o)}
-              className={`flex items-center gap-1.5 px-2 py-1.5 rounded border text-[11px] font-mono transition-colors ${
+              className={`flex items-center gap-1.5 px-2 py-1.5 rounded border text-[12px] font-mono transition-colors ${
                 watchlistOnly
                   ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
                   : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
@@ -180,7 +180,7 @@ export default function InstDOMView({ lib }: { lib: Librarian }) {
               <Star size={11} fill={watchlistOnly ? 'currentColor' : 'none'} />
               Watchlist
             </button>
-             <span className="text-[10px] text-fuchsia-400 font-mono hidden md:flex items-center gap-2" title="Shows price levels where institutional delivery volume is concentrated relative to total volume traded. High delivery % at a price level indicates strong-hand accumulation.">
+             <span className="text-[12px] text-fuchsia-400 font-mono hidden md:flex items-center gap-2" title="Shows price levels where institutional delivery volume is concentrated relative to total volume traded. High delivery % at a price level indicates strong-hand accumulation.">
               <Activity size={12}/> Delivery Profile (?)
             </span>
           </div>
@@ -191,11 +191,11 @@ export default function InstDOMView({ lib }: { lib: Librarian }) {
           {isLoading && (
             <div className="h-full flex flex-col items-center justify-center gap-3">
               <Loader2 size={24} className="animate-spin text-orange-500/50" />
-              <span className="text-xs font-mono text-[#666] animate-pulse">Loading volume profile...</span>
+              <span className="text-xs font-mono text-[#888] animate-pulse">Loading volume profile...</span>
             </div>
           )}
           {!isLoading && data.length === 0 && (
-            <div className="h-full flex items-center justify-center text-sm font-mono text-[#666]">
+            <div className="h-full flex items-center justify-center text-sm font-mono text-[#888]">
               {errorMsg || `No delivery data for ${ticker} in selected range.`}
             </div>
           )}

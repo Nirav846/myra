@@ -38,11 +38,11 @@ export default class ErrorBoundary extends Component<Props, State> {
       }
       return (
         <div className="bg-[#1a1c24] border border-red-500/20 rounded-xl p-4 flex flex-col items-center gap-2 text-center">
-          <div className="text-[10px] text-red-400 font-mono">Widget failed to load</div>
-          <div className="text-[9px] text-[#888] font-mono max-w-[300px] truncate">{this.state.error?.message}</div>
+          <div className="text-[12px] text-red-400 font-mono">Widget failed to load</div>
+          <div className="text-[12px] text-[#888] font-mono max-w-[300px] truncate">{this.state.error?.message}</div>
           <button
             onClick={this.handleRetry}
-            className="text-[10px] font-mono text-cyan-400 hover:text-cyan-300 transition-colors underline"
+            className="text-[12px] font-mono text-cyan-400 hover:text-cyan-300 transition-colors underline"
           >
             Retry
           </button>

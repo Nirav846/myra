@@ -310,7 +310,7 @@ export default function ReversionEngineView({ lib }: { lib: Librarian }) {
           {lastRefreshed && (
              <span className="text-xs text-[#888]">Last updated: {lastRefreshed.toLocaleTimeString()}</span>
           )}
-          <span className="text-[10px] font-mono text-cyan-500/70 border border-cyan-500/20 px-2 py-0.5 rounded-full bg-cyan-500/5">v1.2 Quantum</span>
+          <span className="text-[12px] font-mono text-cyan-500/70 border border-cyan-500/20 px-2 py-0.5 rounded-full bg-cyan-500/5">v1.2 Quantum</span>
         </div>
       </div>
 
@@ -384,7 +384,7 @@ export default function ReversionEngineView({ lib }: { lib: Librarian }) {
                
                 <button
                   onClick={() => setWatchlistOnly(o => !o)}
-                  className={`flex items-center gap-1.5 px-2 h-[34px] rounded border text-[11px] font-mono transition-colors shrink-0 ${
+                  className={`flex items-center gap-1.5 px-2 h-[34px] rounded border text-[12px] font-mono transition-colors shrink-0 ${
                     watchlistOnly
                       ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
                       : 'bg-[#0A0A0A] border-[#333] text-[#888] hover:text-yellow-400 hover:border-yellow-500/40'
@@ -395,7 +395,7 @@ export default function ReversionEngineView({ lib }: { lib: Librarian }) {
                   <span>★ {watchlistCount > 0 ? watchlistCount : 'Watchlist'}</span>
                 </button>
                 {errorMsg && <span className="text-xs text-red-500 font-mono px-2 py-1 bg-red-500/10 border border-red-500/20 rounded block">{errorMsg}</span>}
-               {isDemo && <span className="text-[10px] bg-yellow-500/20 text-yellow-500 px-2 py-1 rounded border border-yellow-500/20 font-mono block">⚠️ DEMO</span>}
+               {isDemo && <span className="text-[12px] bg-yellow-500/20 text-yellow-500 px-2 py-1 rounded border border-yellow-500/20 font-mono block">⚠️ DEMO</span>}
                
                <label className="flex items-center gap-2 text-xs font-mono text-[#888] hover:text-[#fafafa] cursor-pointer bg-[#1a1c24] px-2 py-1 rounded border border-[#333]">
                  <input 
@@ -435,7 +435,7 @@ export default function ReversionEngineView({ lib }: { lib: Librarian }) {
           <ScrollableTable className="min-h-[250px] bg-[#12141a] rounded-lg border border-white/5">
             <table className="w-full min-w-max whitespace-nowrap text-left font-mono text-xs">
               <thead>
-                <tr className="text-[#666] border-b border-white/5 bg-black/20">
+                <tr className="text-[#888] border-b border-white/5 bg-black/20">
                 <th className="py-3 px-3 font-semibold uppercase min-w-[100px] tracking-wider rounded-tl-lg">Ticker</th>
                 <th className="py-3 px-3 font-semibold uppercase tracking-wider">Sector</th>
                 <th className="py-3 px-3 font-semibold uppercase text-right tracking-wider">Close (₹)</th>
@@ -457,9 +457,9 @@ export default function ReversionEngineView({ lib }: { lib: Librarian }) {
                       >
                         {row.ticker}
                       </button>
-                      {row.isUncharted && <span className="text-[8px] bg-red-500/10 border border-red-500/20 text-red-400 font-bold px-1.5 py-0.5 rounded tracking-wide">UNCHARTED</span>}
+                      {row.isUncharted && <span className="text-[12px] bg-red-500/10 border border-red-500/20 text-red-400 font-bold px-1.5 py-0.5 rounded tracking-wide">UNCHARTED</span>}
                     </div>
-                    <div className="text-[9px] text-[#666] tracking-widest uppercase truncate mt-0.5">{row.bucket}</div>
+                    <div className="text-[12px] text-[#888] tracking-widest uppercase truncate mt-0.5">{row.bucket}</div>
                   </td>
                   <td className="py-3 px-3 text-[#888] truncate max-w-[120px]">{row.sector}</td>
                   <td className="py-3 px-3 text-right text-[#fafafa] font-medium">{row.close.toFixed(2)}</td>
@@ -473,24 +473,24 @@ export default function ReversionEngineView({ lib }: { lib: Librarian }) {
                   </td>
                   <td className="py-3 px-3 text-right text-gray-400 font-medium">{row.delPerc.toFixed(1)}%</td>
                   <td className="py-3 px-3 hidden md:table-cell">
-                    <div className="flex flex-col gap-1 text-[10px] font-mono">
-                      <div className="text-[9px] text-[#888] uppercase tracking-wider mb-0.5">T+1 Buy Stop</div>
+                    <div className="flex flex-col gap-1 text-[12px] font-mono">
+                      <div className="text-[12px] text-[#888] uppercase tracking-wider mb-0.5">T+1 Buy Stop</div>
                       <div className="flex items-center flex-wrap gap-x-3 gap-y-1 bg-black/40 p-1.5 rounded-md border border-white/5 shadow-inner">
                         <div className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-green-500"></div><span className="text-gray-300">En <span className="text-green-400 font-bold text-xs ml-0.5">₹{row.entry.toFixed(2)}</span></span></div>
-                        <span className="text-[#333]">|</span>
+                        <span className="text-[#888]">|</span>
                         <div className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-red-500"></div><span className="text-gray-300">SL <span className="text-red-400 font-bold text-xs ml-0.5">₹{row.sl.toFixed(2)}</span></span></div>
-                        <span className="text-[#333]">|</span>
+                        <span className="text-[#888]">|</span>
                         <span className="text-orange-400 font-bold">R {row.risk.toFixed(1)}%</span>
                       </div>
                     </div>
                   </td>
-                  <td className="py-3 px-3 text-[#777] italic hidden lg:table-cell truncate max-w-[150px]">{row.note}</td>
+                  <td className="py-3 px-3 text-[#888] italic hidden lg:table-cell truncate max-w-[150px]">{row.note}</td>
                 </tr>
               ))}
             </tbody>
           </table>
             {apiData.length === 0 && !isRefreshing && (
-              <div className="w-full py-16 text-center text-[#555] text-xs font-mono flex flex-col items-center justify-center gap-2">
+              <div className="w-full py-16 text-center text-[#888] text-xs font-mono flex flex-col items-center justify-center gap-2">
                   <Target size={24} className="opacity-20" />
                   <span>Run engine to scan opportunities.</span>
               </div>

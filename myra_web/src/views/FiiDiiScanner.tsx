@@ -288,19 +288,19 @@ export default function FiiDiiScannerView({ lib }: { lib: Librarian }) {
                     </h3>
                     <div className="flex gap-2 items-center">
                         {errorMsg && (
-                            <span className="text-[10px] bg-red-500/20 text-red-500 px-2 py-1 rounded font-mono border border-red-500/30 flex items-center gap-1">
+                            <span className="text-[12px] bg-red-500/20 text-red-500 px-2 py-1 rounded font-mono border border-red-500/30 flex items-center gap-1">
                                 <AlertTriangle size={10} /> {errorMsg}
                             </span>
                         )}
                         {isDemo && !isConnected && (
-                            <span className="text-[10px] bg-yellow-500/20 text-yellow-500 px-2 py-1 rounded font-mono border border-yellow-500/30">
+                            <span className="text-[12px] bg-yellow-500/20 text-yellow-500 px-2 py-1 rounded font-mono border border-yellow-500/30">
                                 ⚠️ SIMULATED PIPELINE
                             </span>
                         )}
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
-                    <span className="text-[10px] text-[#666] font-mono">Real-time Block/Bulk Monitor</span>
+                    <span className="text-[12px] text-[#888] font-mono">Real-time Block/Bulk Monitor</span>
                     <button 
                         onClick={fetchData} 
                         className="bg-[#2a2c34] hover:bg-[#3a3c44] text-[#aaa] hover:text-white px-2 py-1 rounded border border-[#ffffff1a] transition-all flex items-center gap-1"
@@ -315,7 +315,7 @@ export default function FiiDiiScannerView({ lib }: { lib: Librarian }) {
             {/* Controls */}
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4 p-4 border-b border-[#ffffff1a] bg-[#1a1c24]">
                 <div className="flex flex-col">
-                    <div className="flex justify-between text-[10px] text-[#888] font-mono mb-1">
+                    <div className="flex justify-between text-[12px] text-[#888] font-mono mb-1">
                         <label>Lookback Period</label>
                         <span className="text-blue-400">{days} Days</span>
                     </div>
@@ -329,7 +329,7 @@ export default function FiiDiiScannerView({ lib }: { lib: Librarian }) {
                 </div>
                 
                 <div className="flex flex-col">
-                    <label className="text-[10px] text-[#888] font-mono mb-1">Sector Filter</label>
+                    <label className="text-[12px] text-[#888] font-mono mb-1">Sector Filter</label>
                     <select value={filterSector} onChange={(e) => setFilterSector(e.target.value)} className="bg-[#2a2c34] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-blue-500 outline-none w-full">
                         <option value="All">All Sectors</option>
                         {uniqueSectors.map(s => <option key={s} value={s}>{s}</option>)}
@@ -337,7 +337,7 @@ export default function FiiDiiScannerView({ lib }: { lib: Librarian }) {
                 </div>
 
                 <div className="flex flex-col">
-                    <label className="text-[10px] text-[#888] font-mono mb-1">Market Cap Filter</label>
+                    <label className="text-[12px] text-[#888] font-mono mb-1">Market Cap Filter</label>
                     <select value={filterMcap} onChange={(e) => setFilterMcap(e.target.value)} className="bg-[#2a2c34] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-blue-500 outline-none w-full">
                         <option value="All">All Caps</option>
                         <option value="Large Cap (N50)">Large Cap (N50)</option>
@@ -349,7 +349,7 @@ export default function FiiDiiScannerView({ lib }: { lib: Librarian }) {
                 </div>
 
                 <div className="flex flex-col">
-                    <div className="flex justify-between text-[10px] text-[#888] font-mono mb-1">
+                    <div className="flex justify-between text-[12px] text-[#888] font-mono mb-1">
                         <label>Min Inst. Score</label>
                         <span className="text-blue-400">{minScore}+</span>
                     </div>
@@ -368,7 +368,7 @@ export default function FiiDiiScannerView({ lib }: { lib: Librarian }) {
                 <div className="flex flex-col self-end">
                   <button
                     onClick={() => setWatchlistOnly(o => !o)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors h-[32px] ${
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[12px] font-mono transition-colors h-[32px] ${
                       watchlistOnly
                         ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
                         : 'bg-[#1a1c24] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
@@ -410,25 +410,25 @@ export default function FiiDiiScannerView({ lib }: { lib: Librarian }) {
                         <table className="w-full text-left border-collapse">
                             <thead className="sticky top-0 bg-[#1a1c24] z-10 shadow-sm border-b border-[#ffffff1a]">
                             <tr>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap ${sortConfig?.key === 'symbol' ? 'text-white' : ''}`} onClick={() => handleSort('symbol')}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap ${sortConfig?.key === 'symbol' ? 'text-white' : ''}`} onClick={() => handleSort('symbol')}>
                                     Symbol <SortIcon column="symbol" />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap ${sortConfig?.key === 'sector' ? 'text-white' : ''}`} onClick={() => handleSort('sector')}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap ${sortConfig?.key === 'sector' ? 'text-white' : ''}`} onClick={() => handleSort('sector')}>
                                     Sector <SortIcon column="sector" />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap ${sortConfig?.key === 'bucket' ? 'text-white' : ''}`} onClick={() => handleSort('bucket')}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap ${sortConfig?.key === 'bucket' ? 'text-white' : ''}`} onClick={() => handleSort('bucket')}>
                                     Bucket <SortIcon column="bucket" />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap ${sortConfig?.key === 'bulkDeals' ? 'text-white' : ''}`} onClick={() => handleSort('bulkDeals')}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap ${sortConfig?.key === 'bulkDeals' ? 'text-white' : ''}`} onClick={() => handleSort('bulkDeals')}>
                                     Bulk Deals <SortIcon column="bulkDeals" />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap ${sortConfig?.key === 'blockDeals' ? 'text-white' : ''}`} onClick={() => handleSort('blockDeals')}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap ${sortConfig?.key === 'blockDeals' ? 'text-white' : ''}`} onClick={() => handleSort('blockDeals')}>
                                     Block Deals <SortIcon column="blockDeals" />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap ${sortConfig?.key === 'deliveryPct' ? 'text-white' : ''}`} onClick={() => handleSort('deliveryPct')}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap ${sortConfig?.key === 'deliveryPct' ? 'text-white' : ''}`} onClick={() => handleSort('deliveryPct')}>
                                     Delivery % <SortIcon column="deliveryPct" />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap ${sortConfig?.key === 'score' ? 'text-white' : ''}`} onClick={() => handleSort('score')}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap ${sortConfig?.key === 'score' ? 'text-white' : ''}`} onClick={() => handleSort('score')}>
                                     Score <SortIcon column="score" />
                                 </th>
                             </tr>
@@ -436,7 +436,7 @@ export default function FiiDiiScannerView({ lib }: { lib: Librarian }) {
                         <tbody>
                             {sortedData.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} className="p-8 text-center text-[#666] font-mono text-xs">
+                                    <td colSpan={7} className="p-8 text-center text-[#888] font-mono text-xs">
                                         No candidates found matching the active filters.
                                     </td>
                                 </tr>
@@ -456,12 +456,12 @@ export default function FiiDiiScannerView({ lib }: { lib: Librarian }) {
                                         </td>
                                         <td className="p-3 text-[#ccc] text-sm whitespace-nowrap">{d.sector}</td>
                                         <td className="p-3 text-[#888] text-xs font-mono whitespace-nowrap">{d.bucket}</td>
-                                        <td className="p-3 text-sm font-mono whitespace-nowrap"><span className={d.bulkDeals > 0 ? "text-purple-400" : "text-[#555]"}>{d.bulkDeals}</span></td>
-                                        <td className="p-3 text-sm font-mono whitespace-nowrap"><span className={d.blockDeals > 0 ? "text-blue-400" : "text-[#555]"}>{d.blockDeals}</span></td>
-                                        <td className="p-3 text-sm font-mono whitespace-nowrap"><span className={d.deliveryPct >= 60 ? "text-green-400" : d.deliveryPct >= 40 ? "text-[#ccc]" : "text-[#666]"}>{d.deliveryPct.toFixed(1)}%</span></td>
+                                        <td className="p-3 text-sm font-mono whitespace-nowrap"><span className={d.bulkDeals > 0 ? "text-purple-400" : "text-[#888]"}>{d.bulkDeals}</span></td>
+                                        <td className="p-3 text-sm font-mono whitespace-nowrap"><span className={d.blockDeals > 0 ? "text-blue-400" : "text-[#888]"}>{d.blockDeals}</span></td>
+                                        <td className="p-3 text-sm font-mono whitespace-nowrap"><span className={d.deliveryPct >= 60 ? "text-green-400" : d.deliveryPct >= 40 ? "text-[#ccc]" : "text-[#888]"}>{d.deliveryPct.toFixed(1)}%</span></td>
                                         <td className="p-3 w-48">
                                             <div className="flex items-center gap-2">
-                                                <span className={`text-sm font-mono w-8 text-right font-semibold ${d.score >= 80 ? 'text-blue-400' : d.score >= 50 ? 'text-[#fafafa]' : 'text-[#666]'}`}>
+                                                <span className={`text-sm font-mono w-8 text-right font-semibold ${d.score >= 80 ? 'text-blue-400' : d.score >= 50 ? 'text-[#fafafa]' : 'text-[#888]'}`}>
                                                     {d.score}
                                                 </span>
                                                 <div className="flex-1 h-1.5 bg-[#ffffff1a] rounded overflow-hidden">
@@ -478,7 +478,7 @@ export default function FiiDiiScannerView({ lib }: { lib: Librarian }) {
                 )}
             </div>
             {/* JS Filter Note */}
-            <div className="px-6 py-2 border-t border-[#ffffff1a] bg-[#1a1c24] text-[10px] text-[#666] font-mono text-center">
+            <div className="px-6 py-2 border-t border-[#ffffff1a] bg-[#1a1c24] text-[12px] text-[#888] font-mono text-center">
                 Filters applied client-side over active window. Future index integration can push constraints to SQL.
             </div>
         </div>

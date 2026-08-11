@@ -107,7 +107,7 @@ export function SymbolAutocomplete({ value, onSelect, placeholder = 'Search symb
   return (
     <div className={`relative ${className}`} ref={wrapperRef}>
       <div className="relative flex items-center">
-        <Search size={12} className="absolute left-2 text-[#666] pointer-events-none" />
+        <Search size={12} className="absolute left-2 text-[#888] pointer-events-none" />
         <input
           id="symbol-search-autocomplete"
           name="symbol-autocomplete"
@@ -118,12 +118,12 @@ export function SymbolAutocomplete({ value, onSelect, placeholder = 'Search symb
           onFocus={() => { if (suggestions.length > 0 || inputValue.length >= 2) setIsOpen(true); }}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          className="w-full bg-[#0e1117] border border-[#ffffff1a] pl-7 pr-7 py-1.5 focus:border-cyan-500 rounded text-[10px] text-[#ccc] font-mono outline-none uppercase transition-colors"
+          className="w-full bg-[#0e1117] border border-[#ffffff1a] pl-7 pr-7 py-1.5 focus:border-cyan-500 rounded text-[12px] text-[#ccc] font-mono outline-none uppercase transition-colors"
         />
         {loading ? (
           <Loader2 size={12} className="absolute right-2 text-cyan-500 animate-spin pointer-events-none" />
         ) : value && inputValue === value ? (
-          <button onClick={handleClear} className="absolute right-2 text-[#666] hover:text-red-400 transition-colors" title="Clear">
+          <button onClick={handleClear} className="absolute right-2 text-[#888] hover:text-red-400 transition-colors" title="Clear">
             <X size={12} />
           </button>
         ) : null}
@@ -134,20 +134,20 @@ export function SymbolAutocomplete({ value, onSelect, placeholder = 'Search symb
           {suggestions.map((opt, idx) => (
             <button
               key={opt.symbol}
-              className={`w-full text-left px-3 py-2 text-[10px] font-mono transition-colors flex items-center justify-between ${
+              className={`w-full text-left px-3 py-2 text-[12px] font-mono transition-colors flex items-center justify-between ${
                 idx === selectedIndex ? 'bg-cyan-500/20 text-cyan-300' : 'text-[#ccc] hover:bg-[#ffffff0a] hover:text-white'
               }`}
               onClick={() => handleSelect(opt.symbol)}
             >
               <span className="font-bold">{opt.symbol}</span>
-              <span className="text-[#666] truncate ml-2">{opt.sector || opt.industry || ''}</span>
+              <span className="text-[#888] truncate ml-2">{opt.sector || opt.industry || ''}</span>
             </button>
           ))}
         </div>
       )}
 
       {isOpen && inputValue.length >= 2 && suggestions.length === 0 && !loading && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-[#1a1c24] border border-[#ffffff1a] rounded shadow-xl overflow-hidden z-50 p-3 text-center text-[10px] text-[#666]">
+        <div className="absolute top-full left-0 right-0 mt-1 bg-[#1a1c24] border border-[#ffffff1a] rounded shadow-xl overflow-hidden z-50 p-3 text-center text-[12px] text-[#888]">
           No symbols found
         </div>
       )}

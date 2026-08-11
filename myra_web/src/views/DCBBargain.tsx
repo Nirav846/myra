@@ -350,7 +350,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
       </div>
 
       {/* Color-coding legend */}
-      <div className="flex flex-wrap gap-4 text-[10px] font-mono text-[#888] px-1" aria-label="Color legend: deep discount shown in green, moderate in yellow, shallow in white. Delivery absorption: green positive, yellow neutral, red negative. Score: green high, yellow medium.">
+      <div className="flex flex-wrap gap-4 text-[12px] font-mono text-[#888] px-1" aria-label="Color legend: deep discount shown in green, moderate in yellow, shallow in white. Delivery absorption: green positive, yellow neutral, red negative. Score: green high, yellow medium.">
         <span aria-hidden="true">🟢</span> Deep discount (≥20%) <span aria-hidden="true">| 🟡</span> Moderate (10-20%) <span aria-hidden="true">| ⚪</span> Shallow (&lt;10%)
         <span aria-hidden="true">| DelAbs:</span> <span aria-hidden="true">🟢</span> ≥3% <span aria-hidden="true">| 🟡</span> ≥0% <span aria-hidden="true">| 🔴</span> &lt;0%
         <span aria-hidden="true">| Score:</span> <span aria-hidden="true">🟢</span> ≥20 <span aria-hidden="true">| 🟡</span> ≥10
@@ -384,7 +384,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
             onClick={() => {
               fetch(`${API_BASE}/cache/dcb-bargain`, { method: 'DELETE' }).then(() => fetchScanStatus()).catch(() => {});
             }}
-            className="text-[10px] text-[#888] hover:text-red-400 transition-colors"
+            className="text-[12px] text-[#888] hover:text-red-400 transition-colors"
             title="Clear cached scan results"
           >
             Clear cache
@@ -396,16 +396,16 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
       <div className="flex items-center gap-2">
         <div className="flex items-center gap-1">
           <button onClick={() => { setTimeframe('daily'); clearCacheOnParamChange(); }}
-            className={`px-2 py-1 text-[10px] rounded ${timeframe === 'daily' ? 'bg-blue-600 text-white' : 'bg-[#ffffff0a] text-[#888]'}`}>
+            className={`px-2 py-1 text-[12px] rounded ${timeframe === 'daily' ? 'bg-blue-600 text-white' : 'bg-[#ffffff0a] text-[#888]'}`}>
             Daily
           </button>
           <button onClick={() => { setTimeframe('weekly'); clearCacheOnParamChange(); }}
-            className={`px-2 py-1 text-[10px] rounded ${timeframe === 'weekly' ? 'bg-blue-600 text-white' : 'bg-[#ffffff0a] text-[#888]'}`}>
+            className={`px-2 py-1 text-[12px] rounded ${timeframe === 'weekly' ? 'bg-blue-600 text-white' : 'bg-[#ffffff0a] text-[#888]'}`}>
             Weekly
           </button>
         </div>
         {timeframe === 'weekly' && (
-          <span className="text-[10px] font-mono text-[#888]">
+          <span className="text-[12px] font-mono text-[#888]">
             Weekly mode — aggregates daily candles to weekly. Delivery absorption still computed on daily price action.
           </span>
         )}
@@ -421,7 +421,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
             <MarketCapRangeFilter onChange={setMcapRange} />
           </div>
           <div className="flex flex-col gap-1">
-            <label htmlFor="dcb-window" className="text-[10px] text-[#888] font-mono">DCB Window (days)</label>
+            <label htmlFor="dcb-window" className="text-[12px] text-[#888] font-mono">DCB Window (days)</label>
             <input
               id="dcb-window"
               type="number"
@@ -437,7 +437,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
             <Star size={11} aria-hidden="true" />
             <button
               onClick={() => setWatchlistOnly(o => !o)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[12px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 ${
                 watchlistOnly
                   ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
                   : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
@@ -450,7 +450,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
             </button>
           </div>
           <div className="flex flex-col gap-1">
-            <div className="text-[10px] text-[#888] font-mono">Tier</div>
+            <div className="text-[12px] text-[#888] font-mono">Tier</div>
             <select
               value={tierFilter}
               onChange={e => setTierFilter(e.target.value)}
@@ -462,7 +462,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <div className="text-[10px] text-[#888] font-mono" id="sector-filter-label">Sector</div>
+            <div className="text-[12px] text-[#888] font-mono" id="sector-filter-label">Sector</div>
             <select
               value={sectorFilter}
               onChange={e => setSectorFilter(e.target.value)}
@@ -484,13 +484,13 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
           >
             <Settings2 size={14} className="text-emerald-400" />
             <span className="font-semibold text-[#fafafa]">Advanced Parameters</span>
-            <span className="text-[10px] text-[#666]">- discount range, delivery thresholds, free-float</span>
+            <span className="text-[12px] text-[#888]">- discount range, delivery thresholds, free-float</span>
             <ChevronRight size={14} className={`ml-auto transition-transform ${advancedOpen ? 'rotate-90' : ''}`} />
           </button>
           {advancedOpen && (
             <div className="px-4 pb-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
               <div className="flex flex-col gap-1">
-                <label htmlFor="min-discount" className="text-[10px] text-[#888] font-mono">Min Discount %</label>
+                <label htmlFor="min-discount" className="text-[12px] text-[#888] font-mono">Min Discount %</label>
                 <input
                   id="min-discount"
                   type="number"
@@ -503,7 +503,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label htmlFor="max-discount" className="text-[10px] text-[#888] font-mono">Max Discount %</label>
+                <label htmlFor="max-discount" className="text-[12px] text-[#888] font-mono">Max Discount %</label>
                 <input
                   id="max-discount"
                   type="number"
@@ -516,7 +516,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label htmlFor="min-del-abs" className="text-[10px] text-[#888] font-mono">Min Delivery Absorption</label>
+                <label htmlFor="min-del-abs" className="text-[12px] text-[#888] font-mono">Min Delivery Absorption</label>
                 <input
                   id="min-del-abs"
                   type="number"
@@ -529,7 +529,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label htmlFor="min-adtv" className="text-[10px] text-[#888] font-mono">Min ADTV (₹ Cr)</label>
+                <label htmlFor="min-adtv" className="text-[12px] text-[#888] font-mono">Min ADTV (₹ Cr)</label>
                 <input
                   id="min-adtv"
                   type="number"
@@ -542,7 +542,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label htmlFor="min-hi-del-days" className="text-[10px] text-[#888] font-mono">Min High-Delivery Days</label>
+                <label htmlFor="min-hi-del-days" className="text-[12px] text-[#888] font-mono">Min High-Delivery Days</label>
                 <input
                   id="min-hi-del-days"
                   type="number"
@@ -555,7 +555,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label htmlFor="sanity-mult" className="text-[10px] text-[#888] font-mono">Sanity Multiplier</label>
+                <label htmlFor="sanity-mult" className="text-[12px] text-[#888] font-mono">Sanity Multiplier</label>
                 <input
                   id="sanity-mult"
                   type="number"
@@ -568,7 +568,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label htmlFor="min-ff-mcap" className="text-[10px] text-[#888] font-mono">Min FF MCap (₹ Cr)</label>
+                <label htmlFor="min-ff-mcap" className="text-[12px] text-[#888] font-mono">Min FF MCap (₹ Cr)</label>
                 <input
                   id="min-ff-mcap"
                   type="number"
@@ -581,7 +581,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                 />
               </div>
               <div className="flex flex-col gap-1 justify-end">
-                <label className="flex items-center gap-2 text-[11px] text-[#888]">
+                <label className="flex items-center gap-2 text-[12px] text-[#888]">
                   <input
                     type="checkbox"
                     checked={excludeCircuits}
@@ -594,7 +594,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
               <div className="flex flex-col gap-1 justify-end">
                 <button
                   onClick={resetAdvanced}
-                  className="px-3 py-1.5 bg-[#ffffff0a] hover:bg-[#ffffff15] border border-[#ffffff1a] rounded text-[11px] text-[#888] hover:text-[#fafafa] transition-colors font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50"
+                  className="px-3 py-1.5 bg-[#ffffff0a] hover:bg-[#ffffff15] border border-[#ffffff1a] rounded text-[12px] text-[#888] hover:text-[#fafafa] transition-colors font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50"
                   aria-label="Reset all advanced parameters to defaults"
                 >
                   Reset defaults
@@ -632,12 +632,12 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
              scanStatus.scan_status === 'error' ? 'Scan failed' :
              scanStatus.message}
           </span>
-          <span className="ml-auto text-[#666]">{scanStatus.message}</span>
+          <span className="ml-auto text-[#888]">{scanStatus.message}</span>
         </div>
       )}
 
       {scanDate && scanStatus?.scan_status === 'completed' && scanStatus.scanned_date && scanStatus.scanned_date !== scanDate && (
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-[11px] font-mono text-emerald-400 bg-emerald-500/5 border border-emerald-500/20">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-[12px] font-mono text-emerald-400 bg-emerald-500/5 border border-emerald-500/20">
           <Info size={12} aria-hidden="true" />
           <span>Selected date is a holiday or weekend — adjusted to {scanStatus.scanned_date} (previous trading day)</span>
         </div>
@@ -652,17 +652,17 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
 
       {(scanStatus?.scan_status === 'completed' || (isIdle && candidates.length > 0)) && !isScanning && (
         <>
-          <div className="text-[10px] font-mono text-[#888]">
+          <div className="text-[12px] font-mono text-[#888]">
             Results: <span className="text-emerald-400">{filteredData.length} candidates</span>
             <span className="ml-2 text-blue-400 capitalize">{timeframe}</span>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Candidates</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Candidates</div>
               <div className="text-2xl font-bold text-[#fafafa]">{filteredData.length}</div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg Discount%</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Avg Discount%</div>
               <div className="text-2xl font-bold text-emerald-400">
                 {filteredData.length > 0
                   ? (filteredData.reduce((s, d) => s + d.discount_pct, 0) / filteredData.length).toFixed(2) + '%'
@@ -670,7 +670,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
               </div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg DelAbs</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Avg DelAbs</div>
               <div className="text-2xl font-bold text-blue-400">
                 {filteredData.length > 0
                   ? (filteredData.reduce((s, d) => s + d.del_abs, 0) / filteredData.length).toFixed(2)
@@ -678,13 +678,13 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
               </div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Spike+Deep</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Spike+Deep</div>
               <div className="text-2xl font-bold text-green-400">
                 {filteredData.filter(d => d.spike_deep).length}
               </div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Deep Count</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Deep Count</div>
               <div className="text-2xl font-bold text-red-400">
                 {filteredData.filter(d => d.depth === 'DEEP').length}
               </div>
@@ -752,7 +752,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={15} className="px-4 py-8 text-center text-[#666]">No candidates match current filters.</td>
+                      <td colSpan={15} className="px-4 py-8 text-center text-[#888]">No candidates match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((row, index) => (
@@ -770,7 +770,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                             </button>
                           </div>
                         </td>
-                        <td className="px-3 py-3 text-[#888] text-[11px] max-w-[120px] truncate" title={row.sector ?? ''}>
+                        <td className="px-3 py-3 text-[#888] text-[12px] max-w-[120px] truncate" title={row.sector ?? ''}>
                           {row.sector ?? '—'}
                         </td>
                         <td className="px-3 py-3 text-right">
@@ -783,22 +783,22 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                           </span>
                         </td>
                         <td className="px-3 py-3 text-center">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${DEPTH_COLORS[row.depth ?? 'SHALLOW'] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
+                          <span className={`px-2 py-0.5 rounded text-[12px] font-bold border ${DEPTH_COLORS[row.depth ?? 'SHALLOW'] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
                             {row.depth ?? '—'}
                           </span>
                         </td>
                         <td className="px-3 py-3 text-center">
                           {row.spike_deep ? (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-green-500/20 text-green-400 border-green-500/30">YES</span>
+                            <span className="px-2 py-0.5 rounded text-[12px] font-bold border bg-green-500/20 text-green-400 border-green-500/30">YES</span>
                           ) : (
-                            <span className="text-[#666]">—</span>
+                            <span className="text-[#888]">—</span>
                           )}
                         </td>
                         <td className="px-3 py-3 text-center">
                           {row.is_lower_circuit ? (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-red-500/20 text-red-400 border-red-500/30">🔴 LOWER CKT</span>
+                            <span className="px-2 py-0.5 rounded text-[12px] font-bold border bg-red-500/20 text-red-400 border-red-500/30">🔴 LOWER CKT</span>
                           ) : (
-                            <span className="text-[#666]">—</span>
+                            <span className="text-[#888]">—</span>
                           )}
                         </td>
                         <td className="px-3 py-3 text-center">
@@ -831,7 +831,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                               </span>
                             );
                           })() : (
-                            <span className="text-[#666]">—</span>
+                            <span className="text-[#888]">—</span>
                           )}
                         </td>
                         <td className="px-3 py-3 text-right">
@@ -844,7 +844,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                           </span>
                         </td>
                         <td className="px-3 py-3 text-center">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${TIER_COLORS[row.tier] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
+                          <span className={`px-2 py-0.5 rounded text-[12px] font-bold border ${TIER_COLORS[row.tier] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
                             {row.tier}
                           </span>
                         </td>
@@ -871,7 +871,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
 
       {isIdle && candidates.length === 0 && !isScanning && !error && (
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center text-[#666] font-mono flex flex-col items-center gap-2">
+          <div className="text-center text-[#888] font-mono flex flex-col items-center gap-2">
             <Target size={32} className="opacity-30" aria-hidden="true" />
             <p>Click Scan to find stocks trading below their institutional Delivery Cost Basis.</p>
           </div>

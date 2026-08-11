@@ -348,12 +348,12 @@ export default function MultibaggerMatrixView({ lib }: { lib: Librarian }) {
         </h3>
         <div className="flex gap-2 items-center">
           {errorMsg && (
-             <span className="text-[10px] bg-red-500/20 text-red-500 px-2 py-1 rounded font-mono border border-red-500/30 flex items-center gap-1">
+             <span className="text-[12px] bg-red-500/20 text-red-500 px-2 py-1 rounded font-mono border border-red-500/30 flex items-center gap-1">
                <AlertTriangle size={10} /> {errorMsg}
              </span>
           )}
           {isDemo && (
-             <span className="text-[10px] bg-yellow-500/20 text-yellow-500 px-2 py-1 rounded font-mono border border-yellow-500/30">
+             <span className="text-[12px] bg-yellow-500/20 text-yellow-500 px-2 py-1 rounded font-mono border border-yellow-500/30">
                ⚠️ SIMULATED PIPELINE
              </span>
           )}
@@ -417,7 +417,7 @@ export default function MultibaggerMatrixView({ lib }: { lib: Librarian }) {
                
                {/* Market Cap Filter */}
                <div className="flex flex-col pt-2 border-t border-[#ffffff1a]">
-                  <label className="text-[10px] text-[#888] font-mono mb-1">Market Cap Category</label>
+                  <label className="text-[12px] text-[#888] font-mono mb-1">Market Cap Category</label>
                   <select 
                     value={filterMcap} 
                     onChange={(e) => setFilterMcap(e.target.value)}
@@ -435,7 +435,7 @@ export default function MultibaggerMatrixView({ lib }: { lib: Librarian }) {
                 <div className="flex flex-col pt-2 border-t border-[#ffffff1a]">
                   <button
                     onClick={() => setWatchlistOnly(o => !o)}
-                    className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors w-full ${
+                    className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded border text-[12px] font-mono transition-colors w-full ${
                       watchlistOnly
                         ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
                         : 'bg-[#1a1c24] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
@@ -449,15 +449,15 @@ export default function MultibaggerMatrixView({ lib }: { lib: Librarian }) {
                 {/* Dynamic Threshold Inputs */}
                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#ffffff1a]">
                   <div className="flex flex-col">
-                    <label className="text-[10px] text-[#888] font-mono mb-1">Min ROE (%)</label>
+                    <label className="text-[12px] text-[#888] font-mono mb-1">Min ROE (%)</label>
                     <input type="number" value={minRoeInput} onChange={(e) => setMinRoeInput(Number(e.target.value))} className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] focus:border-orange-500 outline-none w-full"/>
                   </div>
                   <div className="flex flex-col">
-                    <label className="text-[10px] text-[#888] font-mono mb-1">Min EPS (₹)</label>
+                    <label className="text-[12px] text-[#888] font-mono mb-1">Min EPS (₹)</label>
                     <input type="number" value={minEpsInput} onChange={(e) => setMinEpsInput(Number(e.target.value))} className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] focus:border-orange-500 outline-none w-full"/>
                   </div>
                   <div className="flex flex-col col-span-2">
-                     <div className="flex justify-between text-[10px] text-[#888] font-mono mb-1">
+                     <div className="flex justify-between text-[12px] text-[#888] font-mono mb-1">
                         <label title="Lookback period for delivery accumulation only.">Lookback Period (Days) (?)</label>
                         <span className="text-orange-400">{daysInput}</span>
                      </div>
@@ -504,7 +504,7 @@ export default function MultibaggerMatrixView({ lib }: { lib: Librarian }) {
                 </ScatterChart>
              </ResponsiveContainer>
              {data.length === 0 && !isLoading && (
-                 <div className="absolute inset-0 flex items-center justify-center text-sm font-mono text-[#666] bg-[#0e1117]/80 z-20 rounded-lg">
+                 <div className="absolute inset-0 flex items-center justify-center text-sm font-mono text-[#888] bg-[#0e1117]/80 z-20 rounded-lg">
                      No candidates match the criteria.
                  </div>
              )}
@@ -551,7 +551,7 @@ export default function MultibaggerMatrixView({ lib }: { lib: Librarian }) {
                       <td className="py-2.5 px-4 text-right">{(row.earningsYield || 0).toFixed(2)}%</td>
                       <td className="py-2.5 px-4 text-right text-green-400">{(row.accumulation || 0).toFixed(1)}%</td>
                       <td className="py-2.5 px-4 text-center">
-                        <span className={`px-2 py-0.5 rounded text-[10px] ${row.moat_score === 'Monopoly' ? 'bg-purple-500/20 text-purple-400' : 'bg-[#ffffff1a] text-[#aaa]'}`}>
+                        <span className={`px-2 py-0.5 rounded text-[12px] ${row.moat_score === 'Monopoly' ? 'bg-purple-500/20 text-purple-400' : 'bg-[#ffffff1a] text-[#aaa]'}`}>
                           {row.moat_score}
                         </span>
                       </td>
@@ -560,7 +560,7 @@ export default function MultibaggerMatrixView({ lib }: { lib: Librarian }) {
                   ))}
                   {sortedData.length === 0 && (
                      <tr>
-                       <td colSpan={7} className="py-8 text-center text-[#666]">No candidates match the structural criteria.</td>
+                       <td colSpan={7} className="py-8 text-center text-[#888]">No candidates match the structural criteria.</td>
                      </tr>
                   )}
                 </tbody>

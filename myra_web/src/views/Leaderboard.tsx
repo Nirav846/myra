@@ -146,12 +146,12 @@ export default function LeaderboardView({ lib }: { lib: Librarian }) {
     <div className="bg-[#262730] rounded-lg border border-[#ffffff1a] flex flex-col overflow-hidden">
       <div className="p-3 border-b border-[#ffffff1a] bg-[#ffffff05] flex justify-between items-center">
         <span className="text-xs font-semibold uppercase tracking-wider text-[#fafafa]">Institutional Leaderboard</span>
-        <span className="text-[10px] font-mono text-[#666]">SQL: _inst_conn.execute()</span>
+        <span className="text-[12px] font-mono text-[#888]">SQL: _inst_conn.execute()</span>
       </div>
 
       <div className="p-4 space-y-4 relative">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-[#0e1117] border border-[#ffffff0a] p-3 rounded">
-          <div className="text-[#88d] font-mono text-[11px] italic flex items-center gap-4">
+          <div className="text-[#88d] font-mono text-[12px] italic flex items-center gap-4">
             {isDemo 
               ? "st.info: Insert quantitative logic here (using _inst_conn)"
               : "🚀 Querying Connected Python Backend (MYRA Repo)"}
@@ -169,7 +169,7 @@ export default function LeaderboardView({ lib }: { lib: Librarian }) {
           
           <div className="flex items-center gap-3 w-full md:w-auto">
             {errorMsg && (
-              <span className="text-[10px] text-red-400 bg-red-400/10 px-2 py-1 rounded border border-red-400/20 flex items-center gap-1">
+              <span className="text-[12px] text-red-400 bg-red-400/10 px-2 py-1 rounded border border-red-400/20 flex items-center gap-1">
                 <AlertTriangle size={10} /> {errorMsg}
               </span>
             )}
@@ -186,11 +186,11 @@ export default function LeaderboardView({ lib }: { lib: Librarian }) {
           </div>
         </div>
 
-        <div className="flex justify-between items-center text-[10px] text-[#666] font-mono mb-2 px-1">
+        <div className="flex justify-between items-center text-[12px] text-[#888] font-mono mb-2 px-1">
            <span>{lastRefreshed ? `Last update: ${lastRefreshed.toLocaleTimeString()}` : ''}</span>
            <button
               onClick={() => setWatchlistOnly(o => !o)}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded border text-[10px] font-mono transition-colors ${
+              className={`flex items-center gap-1.5 px-2 py-1 rounded border text-[12px] font-mono transition-colors ${
                 watchlistOnly
                   ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
                   : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
@@ -249,7 +249,7 @@ export default function LeaderboardView({ lib }: { lib: Librarian }) {
             </tbody>
           </table>
             {(!apiData || apiData.length === 0) && !isRefreshing && (
-              <div className="w-full py-8 text-center text-[#666] text-xs font-mono">No data loaded.</div>
+              <div className="w-full py-8 text-center text-[#888] text-xs font-mono">No data loaded.</div>
             )}
           </ScrollableTable>
         </div>

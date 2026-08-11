@@ -739,19 +739,19 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                     </h1>
                     <div className="flex gap-2 items-center">
                         {errorMsg && (
-                            <span className="text-[10px] bg-red-500/20 text-red-500 px-2 py-1 rounded font-mono border border-red-500/30 flex items-center gap-1" role="alert">
+                            <span className="text-[12px] bg-red-500/20 text-red-500 px-2 py-1 rounded font-mono border border-red-500/30 flex items-center gap-1" role="alert">
                                 <AlertTriangle size={10} aria-hidden="true" /> {errorMsg}
                             </span>
                         )}
                         {isDemo && !isConnected && (
-                            <span className="text-[10px] bg-yellow-500/20 text-yellow-500 px-2 py-1 rounded font-mono border border-yellow-500/30" role="status">
+                            <span className="text-[12px] bg-yellow-500/20 text-yellow-500 px-2 py-1 rounded font-mono border border-yellow-500/30" role="status">
                                 ⚠️ SIMULATED PIPELINE
                             </span>
                         )}
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
-                    <span className="text-[10px] text-[#666] font-mono">Dynamic Accumulation Logic</span>
+                    <span className="text-[12px] text-[#888] font-mono">Dynamic Accumulation Logic</span>
                     <button
                         onClick={exportCSV}
                         disabled={sortedData.length === 0}
@@ -771,7 +771,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                     </button>
                     <button
                         onClick={() => { const n = !filtersVisible; setFiltersVisible(n); localStorage.setItem('pdd_filters_visible', String(n)); }}
-                        className={`px-2.5 py-1 rounded text-[10px] font-mono border transition-all flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
+                        className={`px-2.5 py-1 rounded text-[12px] font-mono border transition-all flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
                             filtersVisible
                                 ? 'bg-[#2a2c34] border-[#ffffff3a] text-[#ccc]'
                                 : 'bg-[#2a2c34] border-[#ffffff1a] text-[#888]'
@@ -819,7 +819,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                     />
                     <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-9 gap-4 items-end">
                         <div className="flex flex-col">
-                           <label className="text-[10px] text-[#888] font-mono mb-1 text-nowrap" id="lookback-label">Lookback Period</label>
+                           <label className="text-[12px] text-[#888] font-mono mb-1 text-nowrap" id="lookback-label">Lookback Period</label>
                            <select value={lookbackBars} onChange={(e) => setLookbackBars(Number(e.target.value))} className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] focus:border-orange-500 outline-none w-full focus-visible:ring-2 focus-visible:ring-orange-500/50" aria-labelledby="lookback-label">
                                <option value={5}>1 Week</option>
                                <option value={10}>2 Weeks</option>
@@ -830,7 +830,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                            </select>
                         </div>
                         <div className="flex flex-col">
-                           <label className="text-[10px] text-[#888] font-mono mb-1" id="price-metric-label">Price Metric</label>
+                           <label className="text-[12px] text-[#888] font-mono mb-1" id="price-metric-label">Price Metric</label>
                            <select value={priceMetric} onChange={(e) => setPriceMetric(e.target.value as 'Close' | 'VWAP' | 'Typical')} className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] focus:border-orange-500 outline-none w-full focus-visible:ring-2 focus-visible:ring-orange-500/50" aria-labelledby="price-metric-label">
                                <option value="Close">Close</option>
                                <option value="VWAP">VWAP</option>
@@ -838,14 +838,14 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                            </select>
                         </div>
                         <div className="flex flex-col">
-                           <label className="text-[10px] text-[#888] font-mono mb-1 text-nowrap" id="delivery-metric-label">Delivery Metric</label>
+                           <label className="text-[12px] text-[#888] font-mono mb-1 text-nowrap" id="delivery-metric-label">Delivery Metric</label>
                            <select value={deliveryMetric} onChange={(e) => setDeliveryMetric(e.target.value as 'Pct' | 'Qty')} className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] focus:border-orange-500 outline-none w-full focus-visible:ring-2 focus-visible:ring-orange-500/50" aria-labelledby="delivery-metric-label">
                                <option value="Pct">Delivery %</option>
                                <option value="Qty">Delivery Qty</option>
                            </select>
                         </div>
                         <div className="flex flex-col">
-                           <label className="text-[10px] text-[#888] font-mono mb-1 text-nowrap" id="price-action-label">Price Action</label>
+                           <label className="text-[12px] text-[#888] font-mono mb-1 text-nowrap" id="price-action-label">Price Action</label>
                            <select value={priceDirection} onChange={(e) => {
                                const dir = e.target.value as 'Falling' | 'Rising';
                                setPriceDirection(dir);
@@ -858,7 +858,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                         </div>
                         
                         <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
-                           <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                           <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
                                 <label id="min-price-label">Min Price {priceDirection === 'Rising' ? 'Increase' : 'Decline'} %</label>
                                 <span className="text-orange-400">{minPriceChangeDisplay}%</span>
                             </div>
@@ -866,7 +866,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                         </div>
                         
                         <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
-                           <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                           <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
                                 <label id="min-del-label">Min Del Change {deliveryMetric === 'Pct' ? 'pp' : '%'}</label>
                                 <span className="text-orange-400">{minDeliveryChangeDisplay}%</span>
                             </div>
@@ -874,7 +874,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                         </div>
 
                         <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
-                            <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                            <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
                                 <label id="min-abs-del-label">Min Abs Delivery %</label>
                                 <span className="text-orange-400">{minAbsDeliveryPct}%</span>
                             </div>
@@ -882,7 +882,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                         </div>
 
                         <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
-                            <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                            <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
                                 <label id="min-consec-label">Min Consec. Sessions ≥40% Del</label>
                                 <span className="text-orange-400">{minConsecutiveDays === 0 ? 'Off' : `${minConsecutiveDays}+`}</span>
                             </div>
@@ -890,7 +890,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                         </div>
 
                         <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
-                            <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                            <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
                                 <label id="min-rr-label">Min R:R Ratio</label>
                                 <span className="text-orange-400">{minRR === 0 ? 'Off' : minRR.toFixed(1)}</span>
                             </div>
@@ -898,7 +898,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                         </div>
 
                         <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
-                            <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                            <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
                                 <label id="max-52w-label">Max 52W Position %</label>
                                 <span className="text-orange-400">{maxPosition52W === 100 ? 'All' : `<${maxPosition52W}%`}</span>
                             </div>
@@ -906,12 +906,12 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                         </div>
 
                         <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
-                            <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                            <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
                                 <label id="rs-label">RS vs N50</label>
                             </div>
                             <button
                                 onClick={() => setFilterRSNegative(prev => !prev)}
-                                className={`text-[11px] px-2 py-1 rounded border transition-colors font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
+                                className={`text-[12px] px-2 py-1 rounded border transition-colors font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
                                     filterRSNegative
                                         ? 'bg-orange-500/20 border-orange-500/50 text-orange-400'
                                         : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888]'
@@ -924,12 +924,12 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                         </div>
 
                         <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
-                            <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                            <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
                                 <label id="results-zone-label">Results Zone</label>
                             </div>
                             <button
                                 onClick={() => setHideNearEarnings(f => !f)}
-                                className={`text-[11px] px-2 py-1 rounded border transition-colors font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
+                                className={`text-[12px] px-2 py-1 rounded border transition-colors font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
                                     hideNearEarnings
                                         ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400'
                                         : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888]'
@@ -942,12 +942,12 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                         </div>
 
                         <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
-                            <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                            <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
                                 <label id="watchlist-label">Watchlist</label>
                             </div>
                             <button
                                 onClick={() => setShowWatchlistOnly(f => !f)}
-                                className={`text-[11px] px-2 py-1 rounded border transition-colors font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
+                                className={`text-[12px] px-2 py-1 rounded border transition-colors font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
                                     showWatchlistOnly
                                         ? 'bg-orange-500/20 border-orange-500/50 text-orange-400'
                                         : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888]'
@@ -960,12 +960,12 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                         </div>
 
                         <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
-                            <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                            <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
                                 <label id="new-signals-label">New Signals</label>
                             </div>
                             <button
                                 onClick={() => setShowNewOnly(f => !f)}
-                                className={`text-[11px] px-2 py-1 rounded border transition-colors font-mono flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
+                                className={`text-[12px] px-2 py-1 rounded border transition-colors font-mono flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
                                     showNewOnly
                                         ? 'bg-orange-500/20 border-orange-500/50 text-orange-400'
                                         : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888]'
@@ -979,7 +979,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                         </div>
 
                         <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
-                            <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                            <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
                                 <label id="min-rel-vol-label">Min Rel Volume</label>
                                 <span className="text-orange-400">{minRelativeVolumeDisplay}x</span>
                             </div>
@@ -987,7 +987,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                         </div>
 
                         <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
-                            <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                            <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
                                 <label id="min-dar-label">Min DAR %</label>
                                 <span className="text-orange-400">
                                     {minDAR === 0 ? 'Off' : `≥${minDAR}%`}
@@ -1003,7 +1003,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                         </div>
 
                         <div className="flex flex-col">
-                           <label className="text-[10px] text-[#888] font-mono mb-1 text-nowrap" id="weighting-label">Score Weighting</label>
+                           <label className="text-[12px] text-[#888] font-mono mb-1 text-nowrap" id="weighting-label">Score Weighting</label>
                            <select value={scoreWeighting} onChange={(e) => setScoreWeighting(e.target.value as 'Balanced' | 'Price' | 'Delivery')} className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] focus:border-orange-500 outline-none w-full focus-visible:ring-2 focus-visible:ring-orange-500/50" aria-labelledby="weighting-label">
                                <option value="Balanced">Balanced</option>
                                <option value="Price">Price-heavy</option>
@@ -1011,7 +1011,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                            </select>
                         </div>
                         <div className="flex flex-col">
-                           <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                           <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
                                 <label id="min-score-label">Min Score</label>
                                 <span className="text-orange-400">{minScoreDisplay}</span>
                             </div>
@@ -1052,19 +1052,19 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                     </div>
                     <div className="bg-[#2a2c34] border border-[#ffffff1a] rounded p-3 flex flex-col justify-center">
                         <span className="text-xs text-[#888] font-mono mb-1">Avg R:R Ratio</span>
-                        <span className={`text-2xl font-semibold ${summaries.avgRR >= 2 ? 'text-green-400' : summaries.avgRR >= 1 ? 'text-yellow-400' : 'text-[#666]'}`}>{summaries.avgRR.toFixed(2)}</span>
+                        <span className={`text-2xl font-semibold ${summaries.avgRR >= 2 ? 'text-green-400' : summaries.avgRR >= 1 ? 'text-yellow-400' : 'text-[#888]'}`}>{summaries.avgRR.toFixed(2)}</span>
                     </div>
                 </div>
                 <div className="flex flex-wrap gap-3 items-end">
                       <div className="flex flex-col">
-                         <label className="text-[10px] text-[#888] font-mono mb-1">Sector Filter</label>
+                         <label className="text-[12px] text-[#888] font-mono mb-1">Sector Filter</label>
                          <select value={filterSector} onChange={(e) => setFilterSector(e.target.value)} className="bg-[#2a2c34] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] focus:border-orange-500 outline-none w-full">
                              <option value="All">All Sectors</option>
                              {uniqueSectors.map(s => <option key={s} value={s}>{s}</option>)}
                          </select>
                       </div>
                       <div className="flex flex-col">
-                         <label className="text-[10px] text-[#888] font-mono mb-1">Mcap Filter</label>
+                         <label className="text-[12px] text-[#888] font-mono mb-1">Mcap Filter</label>
                          <select value={filterMcap} onChange={(e) => setFilterMcap(e.target.value)} className="bg-[#2a2c34] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] focus:border-orange-500 outline-none w-full">
                              <option value="All">All Caps</option>
                              <option value="Large Cap (N50)">Large Cap (N50)</option>
@@ -1092,63 +1092,63 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                         <table className="w-full min-w-max whitespace-nowrap text-left border-collapse">
                             <thead className="sticky top-0 bg-[#1a1c24] z-10 shadow-sm border-b border-[#ffffff1a]">
                             <tr className="bg-[#1a1c24] border-b border-[#ffffff1a]">
-                                <th colSpan={17} className="p-1 text-[10px] text-[#888] font-mono text-left" scope="colgroup">
-                                    <span className="text-[#555]">Nifty50</span>{' '}
+                                <th colSpan={17} className="p-1 text-[12px] text-[#888] font-mono text-left" scope="colgroup">
+                                    <span className="text-[#888]">Nifty50</span>{' '}
                                     <span className={niftyChangePct >= 0 ? 'text-green-400' : 'text-red-400'}>
                                         {niftyChangePct >= 0 ? '+' : ''}{niftyChangePct.toFixed(2)}%
                                     </span>
                                 </th>
                             </tr>
                             <tr>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'symbol' ? 'text-white' : ''}`} onClick={() => handleSort('symbol')} scope="col" aria-sort={sortConfig?.key === 'symbol' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'symbol' ? 'text-white' : ''}`} onClick={() => handleSort('symbol')} scope="col" aria-sort={sortConfig?.key === 'symbol' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     Symbol <SortIcon column="symbol" />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'sector' ? 'text-white' : ''}`} onClick={() => handleSort('sector')} scope="col" aria-sort={sortConfig?.key === 'sector' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'sector' ? 'text-white' : ''}`} onClick={() => handleSort('sector')} scope="col" aria-sort={sortConfig?.key === 'sector' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     Sector <SortIcon column="sector" />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'bucket' ? 'text-white' : ''}`} onClick={() => handleSort('bucket')} scope="col" aria-sort={sortConfig?.key === 'bucket' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'bucket' ? 'text-white' : ''}`} onClick={() => handleSort('bucket')} scope="col" aria-sort={sortConfig?.key === 'bucket' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     Bucket <SortIcon column="bucket" />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'priceChangePct' ? 'text-white' : ''}`} onClick={() => handleSort('priceChangePct')} scope="col" aria-sort={sortConfig?.key === 'priceChangePct' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'priceChangePct' ? 'text-white' : ''}`} onClick={() => handleSort('priceChangePct')} scope="col" aria-sort={sortConfig?.key === 'priceChangePct' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     Price Change % <SortIcon column="priceChangePct" />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'relativeStrength' ? 'text-white' : ''}`} onClick={() => handleSort('relativeStrength')} scope="col" aria-sort={sortConfig?.key === 'relativeStrength' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'relativeStrength' ? 'text-white' : ''}`} onClick={() => handleSort('relativeStrength')} scope="col" aria-sort={sortConfig?.key === 'relativeStrength' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     RS vs N50 <SortIcon column="relativeStrength" />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'deliveryChangePct' ? 'text-white' : ''}`} onClick={() => handleSort('deliveryChangePct')} scope="col" aria-sort={sortConfig?.key === 'deliveryChangePct' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'deliveryChangePct' ? 'text-white' : ''}`} onClick={() => handleSort('deliveryChangePct')} scope="col" aria-sort={sortConfig?.key === 'deliveryChangePct' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     Del Change <SortIcon column="deliveryChangePct" />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'dar' ? 'text-white' : ''}`} onClick={() => handleSort('dar')} scope="col" aria-sort={sortConfig?.key === 'dar' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'dar' ? 'text-white' : ''}`} onClick={() => handleSort('dar')} scope="col" aria-sort={sortConfig?.key === 'dar' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     DAR % <SortIcon column="dar" />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'consecutiveHighDeliveryDays' ? 'text-white' : ''}`} onClick={() => handleSort('consecutiveHighDeliveryDays')} scope="col" aria-sort={sortConfig?.key === 'consecutiveHighDeliveryDays' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'consecutiveHighDeliveryDays' ? 'text-white' : ''}`} onClick={() => handleSort('consecutiveHighDeliveryDays')} scope="col" aria-sort={sortConfig?.key === 'consecutiveHighDeliveryDays' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     Consec. Days <SortIcon column="consecutiveHighDeliveryDays" />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'detectedBaseLength' ? 'text-white' : ''}`} onClick={() => handleSort('detectedBaseLength')} scope="col" aria-sort={sortConfig?.key === 'detectedBaseLength' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'detectedBaseLength' ? 'text-white' : ''}`} onClick={() => handleSort('detectedBaseLength')} scope="col" aria-sort={sortConfig?.key === 'detectedBaseLength' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     Base <SortIcon column="detectedBaseLength" />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'baseTightness' ? 'text-white' : ''}`} onClick={() => handleSort('baseTightness')} scope="col" aria-sort={sortConfig?.key === 'baseTightness' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'baseTightness' ? 'text-white' : ''}`} onClick={() => handleSort('baseTightness')} scope="col" aria-sort={sortConfig?.key === 'baseTightness' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     Tightness <SortIcon column="baseTightness" />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'position52W' ? 'text-white' : ''}`} onClick={() => handleSort('position52W')} scope="col" aria-sort={sortConfig?.key === 'position52W' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'position52W' ? 'text-white' : ''}`} onClick={() => handleSort('position52W')} scope="col" aria-sort={sortConfig?.key === 'position52W' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     52W Pos <SortIcon column="position52W" />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'relativeVolume' ? 'text-white' : ''}`} onClick={() => handleSort('relativeVolume')} scope="col" aria-sort={sortConfig?.key === 'relativeVolume' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'relativeVolume' ? 'text-white' : ''}`} onClick={() => handleSort('relativeVolume')} scope="col" aria-sort={sortConfig?.key === 'relativeVolume' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     Rel Volume <SortIcon column="relativeVolume" />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'score' ? 'text-white' : ''}`} onClick={() => handleSort('score')} scope="col" aria-sort={sortConfig?.key === 'score' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'score' ? 'text-white' : ''}`} onClick={() => handleSort('score')} scope="col" aria-sort={sortConfig?.key === 'score' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     Score <SortIcon column="score" />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'signalBadge' ? 'text-white' : ''}`} onClick={() => handleSort('signalBadge')} scope="col" aria-sort={sortConfig?.key === 'signalBadge' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'signalBadge' ? 'text-white' : ''}`} onClick={() => handleSort('signalBadge')} scope="col" aria-sort={sortConfig?.key === 'signalBadge' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     Signal <SortIcon column="signalBadge" />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'triggerPrice' ? 'text-white' : ''}`} onClick={() => handleSort('triggerPrice')} scope="col" aria-sort={sortConfig?.key === 'triggerPrice' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'triggerPrice' ? 'text-white' : ''}`} onClick={() => handleSort('triggerPrice')} scope="col" aria-sort={sortConfig?.key === 'triggerPrice' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     Trigger <SortIcon column="triggerPrice" />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'stopLossPrice' ? 'text-white' : ''}`} onClick={() => handleSort('stopLossPrice')} scope="col" aria-sort={sortConfig?.key === 'stopLossPrice' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'stopLossPrice' ? 'text-white' : ''}`} onClick={() => handleSort('stopLossPrice')} scope="col" aria-sort={sortConfig?.key === 'stopLossPrice' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     SL <SortIcon column="stopLossPrice" />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'riskReward' ? 'text-white' : ''}`} onClick={() => handleSort('riskReward')} scope="col" aria-sort={sortConfig?.key === 'riskReward' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'riskReward' ? 'text-white' : ''}`} onClick={() => handleSort('riskReward')} scope="col" aria-sort={sortConfig?.key === 'riskReward' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     R:R <SortIcon column="riskReward" />
                                 </th>
                             </tr>
@@ -1156,7 +1156,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                         <tbody>
                             {sortedData.length === 0 ? (
                                 <tr>
-                                        <td colSpan={17} className="p-8 text-center text-[#666] font-mono text-xs">
+                                        <td colSpan={17} className="p-8 text-center text-[#888] font-mono text-xs">
                                         No divergence signals match your strict criteria.
                                     </td>
                                 </tr>
@@ -1169,7 +1169,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                                         <>
                                             {overflow && (
                                                 <tr>
-                                                    <td colSpan={17} className="px-3 py-1.5 text-[10px] text-center text-yellow-500 font-mono bg-yellow-500/5 border-b border-yellow-500/20" role="status">
+                                                    <td colSpan={17} className="px-3 py-1.5 text-[12px] text-center text-yellow-500 font-mono bg-yellow-500/5 border-b border-yellow-500/20" role="status">
                                                         Showing top {MAX_ROWS} of {sortedData.length} signals — tighten filters to see all
                                                     </td>
                                                 </tr>
@@ -1181,7 +1181,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                                                             onClick={(e) => { e.stopPropagation(); toggleWatchlist(d.symbol); }}
                                                             className={`transition-colors mr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
                                                                 watchlist.has(d.symbol)
-                                                                    ? 'text-orange-400' : 'text-[#333] hover:text-[#888]'
+                                                                    ? 'text-orange-400' : 'text-[#888] hover:text-[#888]'
                                                             }`}
                                                             title={watchlist.has(d.symbol) ? 'Remove from watchlist' : 'Add to watchlist'}
                                                             aria-label={watchlist.has(d.symbol) ? `Remove ${d.symbol} from watchlist` : `Add ${d.symbol} to watchlist`}
@@ -1195,28 +1195,28 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                                                             {d.symbol}
                                                         </span>
                                                         {d.alreadyTriggered && priceDirection === 'Falling' && (
-                                                            <span className="text-[9px] bg-green-500/20 text-green-400 px-1 rounded border border-green-500/30 font-mono ml-1">
+                                                            <span className="text-[12px] bg-green-500/20 text-green-400 px-1 rounded border border-green-500/30 font-mono ml-1">
                                                                 TRIGGERED
                                                             </span>
                                                         )}
                                                         {d.alreadyTriggered && priceDirection === 'Rising' && (
-                                                            <span className="text-[9px] bg-yellow-500/20 text-yellow-400 px-1 rounded border border-yellow-500/30 font-mono ml-1">
+                                                            <span className="text-[12px] bg-yellow-500/20 text-yellow-400 px-1 rounded border border-yellow-500/30 font-mono ml-1">
                                                                 STILL RUNNING
                                                             </span>
                                                         )}
                                                         {d.nearEarnings && (
-                                                            <span className="text-[9px] bg-yellow-500/20 text-yellow-400 px-1 rounded border border-yellow-500/30 font-mono ml-1" title="Quarterly results due within 10 days — delivery signal may be noise">
+                                                            <span className="text-[12px] bg-yellow-500/20 text-yellow-400 px-1 rounded border border-yellow-500/30 font-mono ml-1" title="Quarterly results due within 10 days — delivery signal may be noise">
                                                                 ⚠ RESULTS
                                                             </span>
                                                         )}
                                                         {newSymbols.has(d.symbol) && (
-                                                            <span className="text-[9px] bg-orange-500/20 text-orange-400 px-1 rounded border border-orange-500/30 font-mono ml-1 animate-pulse">
+                                                            <span className="text-[12px] bg-orange-500/20 text-orange-400 px-1 rounded border border-orange-500/30 font-mono ml-1 animate-pulse">
                                                                 NEW
                                                             </span>
                                                         )}
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); setBacktestSymbol(d.symbol); }}
-                                                            className="opacity-0 group-hover:opacity-100 transition-opacity text-[#666] hover:text-orange-400 ml-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50"
+                                                            className="opacity-0 group-hover:opacity-100 transition-opacity text-[#888] hover:text-orange-400 ml-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50"
                                                             title="Backtest this symbol"
                                                             aria-label={`Backtest ${d.symbol}`}
                                                         >
@@ -1233,7 +1233,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                                                             d.dar >= 2   ? 'text-orange-400 font-bold' :
                                                             d.dar >= 0.5 ? 'text-green-400' :
                                                             d.dar >= 0.1 ? 'text-[#fafafa]' :
-                                                            d.dar > 0    ? 'text-[#555]' : 'text-[#333]'
+                                                            d.dar > 0    ? 'text-[#888]' : 'text-[#888]'
                                                         }>
                                                             {d.dar > 0 ? `${d.dar.toFixed(2)}%` : '—'}
                                                         </span>
@@ -1241,7 +1241,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                                                     <td className="p-3 text-sm font-mono whitespace-nowrap text-right">
                                                         <span className={
                                                             d.consecutiveHighDeliveryDays >= 3 ? 'text-orange-400 font-bold' :
-                                                            d.consecutiveHighDeliveryDays >= 1 ? 'text-[#fafafa]' : 'text-[#555]'
+                                                            d.consecutiveHighDeliveryDays >= 1 ? 'text-[#fafafa]' : 'text-[#888]'
                                                         }>
                                                             {d.consecutiveHighDeliveryDays > 0 ? `${d.consecutiveHighDeliveryDays}d` : '—'}
                                                         </span>
@@ -1257,7 +1257,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                                                     <td className="p-3 text-xs font-mono whitespace-nowrap text-right">
                                                         <span className={
                                                             d.baseTightness >= 75 ? 'text-green-400 font-bold' :
-                                                            d.baseTightness >= 50 ? 'text-[#fafafa]' : 'text-[#555]'
+                                                            d.baseTightness >= 50 ? 'text-[#fafafa]' : 'text-[#888]'
                                                         }>
                                                             {d.baseTightness}
                                                         </span>
@@ -1266,7 +1266,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                                                     <td className="p-3 text-sm font-mono whitespace-nowrap text-right"><span className={d.relativeVolume > 1.5 ? "text-orange-400" : "text-[#aaa]"}>{d.relativeVolume.toFixed(2)}x</span></td>
                                                     <td className="p-3 w-48">
                                                         <div className="flex items-center gap-2">
-                                                            <span className={`text-sm font-mono w-8 text-right font-semibold ${d.score >= 80 ? 'text-orange-400' : d.score >= 50 ? 'text-[#fafafa]' : 'text-[#666]'}`}>
+                                                            <span className={`text-sm font-mono w-8 text-right font-semibold ${d.score >= 80 ? 'text-orange-400' : d.score >= 50 ? 'text-[#fafafa]' : 'text-[#888]'}`}>
                                                                 {d.score}
                                                             </span>
                                                             <div className="flex-1 h-1.5 bg-[#ffffff1a] rounded overflow-hidden">
@@ -1275,7 +1275,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                                                         </div>
                                                     </td>
                                                     <td className="p-3 whitespace-nowrap">
-                                                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded font-mono ${
+                                                        <span className={`text-[12px] font-bold px-1.5 py-0.5 rounded font-mono ${
                                                             d.signalBadge === 'A' ? 'bg-green-500/20 text-green-400 border border-green-500/30' :
                                                             d.signalBadge === 'B' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' :
                                                             d.signalBadge === 'C' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' :
@@ -1287,7 +1287,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                                                     <td className="p-3 text-sm font-mono whitespace-nowrap text-right text-[#fafafa]">{d.triggerPrice.toFixed(2)}</td>
                                                     <td className="p-3 text-sm font-mono whitespace-nowrap text-right text-red-400">{d.stopLossPrice.toFixed(2)}</td>
                                                     <td className="p-3 text-sm font-mono whitespace-nowrap text-right">
-                                                        <span className={d.riskReward >= 2 ? 'text-green-400 font-bold' : d.riskReward >= 1 ? 'text-yellow-400' : 'text-[#555]'}>
+                                                        <span className={d.riskReward >= 2 ? 'text-green-400 font-bold' : d.riskReward >= 1 ? 'text-yellow-400' : 'text-[#888]'}>
                                                             {d.riskReward.toFixed(2)}
                                                         </span>
                                                     </td>

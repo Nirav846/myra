@@ -275,7 +275,7 @@ export default function OperatorFingerprintScannerView({ lib }: { lib: Librarian
           </button>
           <button
             onClick={() => fetch(`${API_BASE}/cache/operator-fingerprint`, { method: 'DELETE' })}
-            className="text-[10px] text-[#888] hover:text-red-400 transition-colors"
+            className="text-[12px] text-[#888] hover:text-red-400 transition-colors"
             title="Clear cached scan results"
           >
             Clear cache
@@ -310,12 +310,12 @@ export default function OperatorFingerprintScannerView({ lib }: { lib: Librarian
              scanStatus.scan_status === 'error' ? 'Scan failed' :
              scanStatus.message}
           </span>
-          <span className="ml-auto text-[#666]">{scanStatus.message}</span>
+          <span className="ml-auto text-[#888]">{scanStatus.message}</span>
         </div>
       )}
 
       {scanDate && scanStatus?.scan_status === 'completed' && scanStatus.scanned_date && scanStatus.scanned_date !== scanDate && (
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-[11px] font-mono text-cyan-400 bg-cyan-500/5 border border-cyan-500/20">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-[12px] font-mono text-cyan-400 bg-cyan-500/5 border border-cyan-500/20">
           <Info size={12} aria-hidden="true" />
           <span>Selected date is a holiday or weekend — adjusted to {scanStatus.scanned_date} (previous trading day)</span>
         </div>
@@ -336,10 +336,10 @@ export default function OperatorFingerprintScannerView({ lib }: { lib: Librarian
           <MarketCapRangeFilter onChange={setMcapRange} />
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono">Watchlist</div>
+          <div className="text-[12px] text-[#888] font-mono">Watchlist</div>
           <button
             onClick={() => setWatchlistOnly(o => !o)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[12px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 ${
               watchlistOnly
                 ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
                 : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
@@ -352,7 +352,7 @@ export default function OperatorFingerprintScannerView({ lib }: { lib: Librarian
           </button>
         </div>
         <div className="flex flex-col gap-1 w-28">
-          <div className="flex justify-between text-[10px] text-[#888] font-mono items-center">
+          <div className="flex justify-between text-[12px] text-[#888] font-mono items-center">
             <Tooltip content="Minimum Coil Tension Score. 0 = all candidates, 20+ = minimal coil, 50+ = quality.">
               <span>Min Tension</span>
             </Tooltip>
@@ -370,7 +370,7 @@ export default function OperatorFingerprintScannerView({ lib }: { lib: Librarian
           />
         </div>
         <div className="flex flex-col gap-1 w-28">
-          <div className="flex justify-between text-[10px] text-[#888] font-mono items-center">
+          <div className="flex justify-between text-[12px] text-[#888] font-mono items-center">
             <Tooltip content="Minimum quiet accumulation days (out of last 20). Higher = quieter operator accumulation.">
               <span>Min Quiet Days</span>
             </Tooltip>
@@ -388,10 +388,10 @@ export default function OperatorFingerprintScannerView({ lib }: { lib: Librarian
           />
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono">Staircase</div>
+          <div className="text-[12px] text-[#888] font-mono">Staircase</div>
           <button
             onClick={() => setStaircaseOnly(o => !o)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-500/50 ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[12px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-500/50 ${
               staircaseOnly
                 ? 'bg-fuchsia-500/20 border-fuchsia-500/40 text-fuchsia-400'
                 : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-fuchsia-400'
@@ -403,7 +403,7 @@ export default function OperatorFingerprintScannerView({ lib }: { lib: Librarian
           </button>
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono" id="sector-filter-label">Sector</div>
+          <div className="text-[12px] text-[#888] font-mono" id="sector-filter-label">Sector</div>
           <select
             value={sectorFilter}
             onChange={e => setSectorFilter(e.target.value)}
@@ -421,11 +421,11 @@ export default function OperatorFingerprintScannerView({ lib }: { lib: Librarian
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Candidates</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Candidates</div>
               <div className="text-2xl font-bold text-[#fafafa]">{filteredData.length}</div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg Tension</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Avg Tension</div>
               <div className="text-2xl font-bold text-fuchsia-400">
                 {filteredData.length > 0
                   ? (filteredData.reduce((s, d) => s + d.coil_tension_score, 0) / filteredData.length).toFixed(0)
@@ -433,7 +433,7 @@ export default function OperatorFingerprintScannerView({ lib }: { lib: Librarian
               </div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg Base Duration</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Avg Base Duration</div>
               <div className="text-2xl font-bold text-cyan-400">
                 {filteredData.length > 0
                   ? (filteredData.reduce((s, d) => s + d.base_duration_days, 0) / filteredData.length).toFixed(0) + 'd'
@@ -441,16 +441,16 @@ export default function OperatorFingerprintScannerView({ lib }: { lib: Librarian
               </div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">With Staircase</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">With Staircase</div>
               <div className="text-2xl font-bold text-green-400">{filteredData.filter(d => d.volume_staircase).length}</div>
             </div>
           </div>
 
           {filteredData.filter(d => d.grade === 'A').length > 0 && (
             <div className="bg-green-500/5 border border-green-500/20 rounded p-3">
-              <div className="text-[10px] text-green-400 font-mono uppercase tracking-wider mb-2 flex items-center gap-2">
+              <div className="text-[12px] text-green-400 font-mono uppercase tracking-wider mb-2 flex items-center gap-2">
                 <span>Grade A Coils</span>
-                <span className="text-[#666]">— tightest springs ready to release</span>
+                <span className="text-[#888]">— tightest springs ready to release</span>
               </div>
               <div className="flex flex-wrap gap-2">
                 {filteredData
@@ -458,7 +458,7 @@ export default function OperatorFingerprintScannerView({ lib }: { lib: Librarian
                   .slice(0, 12)
                   .map(d => (
                     <div key={d.symbol}
-                      className="flex items-center gap-1.5 px-2 py-1 rounded border text-[11px] font-mono border-green-500/20 bg-[#1a1c24]"
+                      className="flex items-center gap-1.5 px-2 py-1 rounded border text-[12px] font-mono border-green-500/20 bg-[#1a1c24]"
                     >
                       <StarButton symbol={d.symbol} size={10} />
                       <span className="text-white font-bold">{d.symbol}</span>
@@ -518,7 +518,7 @@ export default function OperatorFingerprintScannerView({ lib }: { lib: Librarian
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className="px-4 py-8 text-center text-[#666]">No operator fingerprints match current filters.</td>
+                      <td colSpan={11} className="px-4 py-8 text-center text-[#888]">No operator fingerprints match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((row, index) => (
@@ -536,7 +536,7 @@ export default function OperatorFingerprintScannerView({ lib }: { lib: Librarian
                             </button>
                           </div>
                         </td>
-                        <td className="px-3 py-3 text-[#888] text-[11px] max-w-[120px] truncate" title={row.sector ?? ''}>
+                        <td className="px-3 py-3 text-[#888] text-[12px] max-w-[120px] truncate" title={row.sector ?? ''}>
                           {row.sector ?? '—'}
                         </td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.market_cap_cr.toFixed(0)}</td>
@@ -562,13 +562,13 @@ export default function OperatorFingerprintScannerView({ lib }: { lib: Librarian
                         <td className="px-3 py-3 text-center">
                           {row.volume_staircase
                             ? <span className="text-green-400"><Check size={14} className="inline" /></span>
-                            : <span className="text-[#555]"><X size={14} className="inline" /></span>
+                            : <span className="text-[#888]"><X size={14} className="inline" /></span>
                           }
                         </td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.base_duration_days}d</td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.close.toFixed(2)}</td>
                         <td className="px-3 py-3 text-center">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${GRADE_COLORS[row.grade] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
+                          <span className={`px-2 py-0.5 rounded text-[12px] font-bold border ${GRADE_COLORS[row.grade] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
                             {row.coil_tension_score.toFixed(0)} · {row.grade}
                           </span>
                         </td>
@@ -595,10 +595,10 @@ export default function OperatorFingerprintScannerView({ lib }: { lib: Librarian
 
       {isIdle && candidates.length === 0 && !isScanning && !error && (
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center text-[#666] font-mono flex flex-col items-center gap-2">
+          <div className="text-center text-[#888] font-mono flex flex-col items-center gap-2">
             <Box size={32} className="opacity-30" aria-hidden="true" />
             <p>Click Scan to detect operator accumulation fingerprints.</p>
-            <p className="text-[10px]">ATR compression + delivery drift + quiet accumulation = coiled spring.</p>
+            <p className="text-[12px]">ATR compression + delivery drift + quiet accumulation = coiled spring.</p>
           </div>
         </div>
       )}

@@ -271,7 +271,7 @@ export default function FloatExhaustionScannerView({ lib }: { lib: Librarian }) 
           </button>
           <button
             onClick={() => fetch(`${API_BASE}/cache/float-exhaustion`, { method: 'DELETE' })}
-            className="text-[10px] text-[#888] hover:text-red-400 transition-colors"
+            className="text-[12px] text-[#888] hover:text-red-400 transition-colors"
             title="Clear cached scan results"
           >
             Clear cache
@@ -306,12 +306,12 @@ export default function FloatExhaustionScannerView({ lib }: { lib: Librarian }) 
              scanStatus.scan_status === 'error' ? 'Scan failed' :
              scanStatus.message}
           </span>
-          <span className="ml-auto text-[#666]">{scanStatus.message}</span>
+          <span className="ml-auto text-[#888]">{scanStatus.message}</span>
         </div>
       )}
 
       {scanDate && scanStatus?.scan_status === 'completed' && scanStatus.scanned_date && scanStatus.scanned_date !== scanDate && (
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-[11px] font-mono text-cyan-400 bg-cyan-500/5 border border-cyan-500/20">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-[12px] font-mono text-cyan-400 bg-cyan-500/5 border border-cyan-500/20">
           <Info size={12} aria-hidden="true" />
           <span>Selected date is a holiday or weekend — adjusted to {scanStatus.scanned_date} (previous trading day)</span>
         </div>
@@ -332,10 +332,10 @@ export default function FloatExhaustionScannerView({ lib }: { lib: Librarian }) 
           <MarketCapRangeFilter onChange={setMcapRange} />
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono">Watchlist</div>
+          <div className="text-[12px] text-[#888] font-mono">Watchlist</div>
           <button
             onClick={() => setWatchlistOnly(o => !o)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[12px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 ${
               watchlistOnly
                 ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
                 : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
@@ -348,7 +348,7 @@ export default function FloatExhaustionScannerView({ lib }: { lib: Librarian }) 
           </button>
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono">Exhaustion Tier</div>
+          <div className="text-[12px] text-[#888] font-mono">Exhaustion Tier</div>
           <select
             value={tierFilter}
             onChange={e => setTierFilter(e.target.value)}
@@ -360,7 +360,7 @@ export default function FloatExhaustionScannerView({ lib }: { lib: Librarian }) 
           </select>
         </div>
         <div className="flex flex-col gap-1 w-28">
-          <div className="flex justify-between text-[10px] text-[#888] font-mono items-center">
+          <div className="flex justify-between text-[12px] text-[#888] font-mono items-center">
             <Tooltip content="Minimum float utilisation % threshold.">
               <span>Min Float Util%</span>
             </Tooltip>
@@ -378,7 +378,7 @@ export default function FloatExhaustionScannerView({ lib }: { lib: Librarian }) 
           />
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono" id="sector-filter-label">Sector</div>
+          <div className="text-[12px] text-[#888] font-mono" id="sector-filter-label">Sector</div>
           <select
             value={sectorFilter}
             onChange={e => setSectorFilter(e.target.value)}
@@ -396,15 +396,15 @@ export default function FloatExhaustionScannerView({ lib }: { lib: Librarian }) 
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Candidates</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Candidates</div>
               <div className="text-2xl font-bold text-[#fafafa]">{filteredData.length}</div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">T3 Critical</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">T3 Critical</div>
               <div className="text-2xl font-bold text-red-400">{filteredData.filter(d => d.exhaustion_tier === 'T3 CRITICAL').length}</div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg Float Util%</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Avg Float Util%</div>
               <div className="text-2xl font-bold text-amber-400">
                 {filteredData.length > 0
                   ? (filteredData.reduce((s, d) => s + d.float_util_pct, 0) / filteredData.length).toFixed(1) + '%'
@@ -412,7 +412,7 @@ export default function FloatExhaustionScannerView({ lib }: { lib: Librarian }) 
               </div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg Absorption</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Avg Absorption</div>
               <div className="text-2xl font-bold text-cyan-400">
                 {filteredData.length > 0
                   ? (filteredData.reduce((s, d) => s + d.absorption_rate, 0) / filteredData.length).toFixed(2)
@@ -467,7 +467,7 @@ export default function FloatExhaustionScannerView({ lib }: { lib: Librarian }) 
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="px-4 py-8 text-center text-[#666]">No float exhaustion candidates match current filters.</td>
+                      <td colSpan={10} className="px-4 py-8 text-center text-[#888]">No float exhaustion candidates match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((row, index) => (
@@ -485,7 +485,7 @@ export default function FloatExhaustionScannerView({ lib }: { lib: Librarian }) 
                             </button>
                           </div>
                         </td>
-                        <td className="px-3 py-3 text-[#888] text-[11px] max-w-[120px] truncate" title={row.sector ?? ''}>
+                        <td className="px-3 py-3 text-[#888] text-[12px] max-w-[120px] truncate" title={row.sector ?? ''}>
                           {row.sector ?? '—'}
                         </td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.market_cap_cr.toFixed(0)}</td>
@@ -521,7 +521,7 @@ export default function FloatExhaustionScannerView({ lib }: { lib: Librarian }) 
                           </span>
                         </td>
                         <td className="px-3 py-3 text-center">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                          <span className={`px-2 py-0.5 rounded text-[12px] font-bold border ${
                             TIER_COLORS[row.exhaustion_tier] || 'bg-[#ffffff1a] text-[#aaa]'
                           }`}>
                             {row.exhaustion_tier}
@@ -552,10 +552,10 @@ export default function FloatExhaustionScannerView({ lib }: { lib: Librarian }) 
 
       {isIdle && candidates.length === 0 && !isScanning && !error && (
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center text-[#666] font-mono flex flex-col items-center gap-2">
+          <div className="text-center text-[#888] font-mono flex flex-col items-center gap-2">
             <Box size={32} className="opacity-30" aria-hidden="true" />
             <p>Click Scan to detect float exhaustion — supply-side physics.</p>
-            <p className="text-[10px]">Cumulative delivery as % of free float shares. T3 = critical supply consumed.</p>
+            <p className="text-[12px]">Cumulative delivery as % of free float shares. T3 = critical supply consumed.</p>
           </div>
         </div>
       )}

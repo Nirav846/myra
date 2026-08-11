@@ -284,7 +284,7 @@ export default function SeasonalDeliveryHarvesterView({ lib }: { lib: Librarian 
           </button>
           <button
             onClick={() => fetch(`${API_BASE}/cache/seasonal-delivery`, { method: 'DELETE' })}
-            className="text-[10px] text-[#888] hover:text-red-400 transition-colors"
+            className="text-[12px] text-[#888] hover:text-red-400 transition-colors"
             title="Clear cached scan results"
           >
             Clear cache
@@ -319,12 +319,12 @@ export default function SeasonalDeliveryHarvesterView({ lib }: { lib: Librarian 
              scanStatus.scan_status === 'error' ? 'Scan failed' :
              scanStatus.message}
           </span>
-          <span className="ml-auto text-[#666]">{scanStatus.message}</span>
+          <span className="ml-auto text-[#888]">{scanStatus.message}</span>
         </div>
       )}
 
       {scanDate && scanStatus?.scan_status === 'completed' && scanStatus.scanned_date && scanStatus.scanned_date !== scanDate && (
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-[11px] font-mono text-cyan-400 bg-cyan-500/5 border border-cyan-500/20">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-[12px] font-mono text-cyan-400 bg-cyan-500/5 border border-cyan-500/20">
           <Info size={12} aria-hidden="true" />
           <span>Selected date is a holiday or weekend — adjusted to {scanStatus.scanned_date} (previous trading day)</span>
         </div>
@@ -345,10 +345,10 @@ export default function SeasonalDeliveryHarvesterView({ lib }: { lib: Librarian 
           <MarketCapRangeFilter onChange={setMcapRange} />
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono">Watchlist</div>
+          <div className="text-[12px] text-[#888] font-mono">Watchlist</div>
           <button
             onClick={() => setWatchlistOnly(o => !o)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[12px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 ${
               watchlistOnly
                 ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
                 : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
@@ -361,7 +361,7 @@ export default function SeasonalDeliveryHarvesterView({ lib }: { lib: Librarian 
           </button>
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono">View Month</div>
+          <div className="text-[12px] text-[#888] font-mono">View Month</div>
           <select
             value={targetMonth ?? 0}
             onChange={e => setTargetMonth(e.target.value ? Number(e.target.value) : null)}
@@ -373,7 +373,7 @@ export default function SeasonalDeliveryHarvesterView({ lib }: { lib: Librarian 
           </select>
         </div>
         <div className="flex flex-col gap-1 w-28">
-          <div className="flex justify-between text-[10px] text-[#888] font-mono items-center">
+          <div className="flex justify-between text-[12px] text-[#888] font-mono items-center">
             <Tooltip content="Minimum consistency % — how often this month has above-average delivery.">
               <span>Min Consistency</span>
             </Tooltip>
@@ -391,7 +391,7 @@ export default function SeasonalDeliveryHarvesterView({ lib }: { lib: Librarian 
           />
         </div>
         <div className="flex flex-col gap-1 w-28">
-          <div className="flex justify-between text-[10px] text-[#888] font-mono items-center">
+          <div className="flex justify-between text-[12px] text-[#888] font-mono items-center">
             <Tooltip content="Minimum seasonal edge in percentage points (current - historical average).">
               <span>Min Edge</span>
             </Tooltip>
@@ -409,10 +409,10 @@ export default function SeasonalDeliveryHarvesterView({ lib }: { lib: Librarian 
           />
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono">Early Signal</div>
+          <div className="text-[12px] text-[#888] font-mono">Early Signal</div>
           <button
             onClick={() => setEarlyOnlyFilter(o => !o)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500/50 ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[12px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500/50 ${
               earlyOnlyFilter
                 ? 'bg-green-500/20 border-green-500/40 text-green-400'
                 : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-green-400'
@@ -423,7 +423,7 @@ export default function SeasonalDeliveryHarvesterView({ lib }: { lib: Librarian 
           </button>
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono" id="sector-filter-label">Sector</div>
+          <div className="text-[12px] text-[#888] font-mono" id="sector-filter-label">Sector</div>
           <select
             value={sectorFilter}
             onChange={e => setSectorFilter(e.target.value)}
@@ -441,15 +441,15 @@ export default function SeasonalDeliveryHarvesterView({ lib }: { lib: Librarian 
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Candidates</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Candidates</div>
               <div className="text-2xl font-bold text-[#fafafa]">{filteredData.length}</div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Early Signals</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Early Signals</div>
               <div className="text-2xl font-bold text-green-400">{filteredData.filter(d => d.early_signal).length}</div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg Consistency</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Avg Consistency</div>
               <div className="text-2xl font-bold text-cyan-400">
                 {filteredData.length > 0
                   ? (filteredData.reduce((s, d) => s + d.consistency_pct, 0) / filteredData.length).toFixed(0) + '%'
@@ -457,7 +457,7 @@ export default function SeasonalDeliveryHarvesterView({ lib }: { lib: Librarian 
               </div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg Score</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Avg Score</div>
               <div className="text-2xl font-bold text-purple-400">
                 {filteredData.length > 0
                   ? (filteredData.reduce((s, d) => s + d.seasonal_score, 0) / filteredData.length).toFixed(0)
@@ -468,9 +468,9 @@ export default function SeasonalDeliveryHarvesterView({ lib }: { lib: Librarian 
 
           {filteredData.filter(d => d.early_signal).length > 0 && (
             <div className="bg-green-500/5 border border-green-500/20 rounded p-3">
-              <div className="text-[10px] text-green-400 font-mono uppercase tracking-wider mb-2 flex items-center gap-2">
+              <div className="text-[12px] text-green-400 font-mono uppercase tracking-wider mb-2 flex items-center gap-2">
                 <span>Early Signals</span>
-                <span className="text-[#666]">— seasonal delivery starting early, best entry window</span>
+                <span className="text-[#888]">— seasonal delivery starting early, best entry window</span>
               </div>
               <div className="flex flex-wrap gap-2">
                 {filteredData
@@ -478,7 +478,7 @@ export default function SeasonalDeliveryHarvesterView({ lib }: { lib: Librarian 
                   .slice(0, 12)
                   .map(d => (
                     <div key={d.symbol}
-                      className="flex items-center gap-1.5 px-2 py-1 rounded border text-[11px] font-mono border-green-500/20 bg-[#1a1c24]"
+                      className="flex items-center gap-1.5 px-2 py-1 rounded border text-[12px] font-mono border-green-500/20 bg-[#1a1c24]"
                     >
                       <StarButton symbol={d.symbol} size={10} />
                       <span className="text-white font-bold">{d.symbol}</span>
@@ -544,7 +544,7 @@ export default function SeasonalDeliveryHarvesterView({ lib }: { lib: Librarian 
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={12} className="px-4 py-8 text-center text-[#666]">No seasonal delivery candidates match current filters.</td>
+                      <td colSpan={12} className="px-4 py-8 text-center text-[#888]">No seasonal delivery candidates match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((row, index) => (
@@ -562,7 +562,7 @@ export default function SeasonalDeliveryHarvesterView({ lib }: { lib: Librarian 
                             </button>
                           </div>
                         </td>
-                        <td className="px-3 py-3 text-[#888] text-[11px] max-w-[120px] truncate" title={row.sector ?? ''}>
+                        <td className="px-3 py-3 text-[#888] text-[12px] max-w-[120px] truncate" title={row.sector ?? ''}>
                           {row.sector ?? '—'}
                         </td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.market_cap_cr.toFixed(0)}</td>
@@ -571,7 +571,7 @@ export default function SeasonalDeliveryHarvesterView({ lib }: { lib: Librarian 
                         <td className="px-3 py-3 text-right">
                           {row.current_del != null
                             ? <span className={row.current_del > row.hist_avg_del ? 'text-green-400' : 'text-[#888]'}>{row.current_del.toFixed(1)}%</span>
-                            : <span className="text-[#555]">—</span>
+                            : <span className="text-[#888]">—</span>
                           }
                         </td>
                         <td className="px-3 py-3 text-right">
@@ -583,7 +583,7 @@ export default function SeasonalDeliveryHarvesterView({ lib }: { lib: Librarian 
                               }>
                                 +{row.seasonal_edge.toFixed(1)}pp
                               </span>
-                            : <span className="text-[#555]">—</span>
+                            : <span className="text-[#888]">—</span>
                           }
                         </td>
                         <td className="px-3 py-3 text-right">
@@ -598,13 +598,13 @@ export default function SeasonalDeliveryHarvesterView({ lib }: { lib: Librarian 
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.years_of_data}y</td>
                         <td className="px-3 py-3 text-center">
                           {row.early_signal
-                            ? <span className="px-1.5 py-0.5 rounded bg-green-500/20 text-green-400 text-[10px] font-bold border border-green-500/30">EARLY</span>
-                            : <span className="text-[#555]">—</span>
+                            ? <span className="px-1.5 py-0.5 rounded bg-green-500/20 text-green-400 text-[12px] font-bold border border-green-500/30">EARLY</span>
+                            : <span className="text-[#888]">—</span>
                           }
                         </td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.close.toFixed(2)}</td>
                         <td className="px-3 py-3 text-center">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${GRADE_COLORS[row.grade] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
+                          <span className={`px-2 py-0.5 rounded text-[12px] font-bold border ${GRADE_COLORS[row.grade] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
                             {row.seasonal_score.toFixed(0)} · {row.grade || '?'}
                           </span>
                         </td>
@@ -631,10 +631,10 @@ export default function SeasonalDeliveryHarvesterView({ lib }: { lib: Librarian 
 
       {isIdle && candidates.length === 0 && !isScanning && !error && (
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center text-[#666] font-mono flex flex-col items-center gap-2">
+          <div className="text-center text-[#888] font-mono flex flex-col items-center gap-2">
             <Box size={32} className="opacity-30" aria-hidden="true" />
             <p>Click Scan to harvest seasonal delivery patterns.</p>
-            <p className="text-[10px]">Monthly institutional habits mapped across years — current vs historical delivery.</p>
+            <p className="text-[12px]">Monthly institutional habits mapped across years — current vs historical delivery.</p>
           </div>
         </div>
       )}

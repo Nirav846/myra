@@ -41,7 +41,7 @@ function SummarySortIcon({ column, sortCol, sortAsc }: { column: string; sortCol
 
 function ColTip({ text }: { text: string }) {
     return (
-        <span title={text} className="inline-flex items-center justify-center w-3 h-3 rounded-full border border-[#777] text-[#666] hover:text-white hover:border-white cursor-help text-[10px] leading-none font-bold ml-0.5 transition-colors">?</span>
+        <span title={text} className="inline-flex items-center justify-center w-3 h-3 rounded-full border border-[#777] text-[#888] hover:text-white hover:border-white cursor-help text-[12px] leading-none font-bold ml-0.5 transition-colors">?</span>
     );
 }
 
@@ -263,7 +263,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                     </h1>
                     <div className="flex gap-2 items-center">
                         {errorMsg && (
-                            <span className="text-[10px] bg-red-500/20 text-red-500 px-2 py-1 rounded font-mono border border-red-500/30 flex items-center gap-1" role="alert">
+                            <span className="text-[12px] bg-red-500/20 text-red-500 px-2 py-1 rounded font-mono border border-red-500/30 flex items-center gap-1" role="alert">
                                 <AlertTriangle size={10} aria-hidden="true" /> {errorMsg}
                             </span>
                         )}
@@ -271,12 +271,12 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                 </div>
                 <div className="flex items-center gap-3">
                     {lastScanned && (
-                        <span className="text-[10px] text-[#888] font-mono whitespace-nowrap">
+                        <span className="text-[12px] text-[#888] font-mono whitespace-nowrap">
                             Last scanned: {lastScanned ? relativeTime(lastScanned) : ''}
                         </span>
                     )}
                     {hasRun && (
-                        <span className="text-[10px] text-[#888] font-mono whitespace-nowrap">
+                        <span className="text-[12px] text-[#888] font-mono whitespace-nowrap">
                             Results: <span className="text-orange-400 font-bold">{triggerMode ? triggerSortedData.length : processedData.length}</span>
                         </span>
                     )}
@@ -307,7 +307,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                                         { key: 'nifty_outperformance_score', label: 'Nifty Outperform' },
                                         { key: 'strength', label: 'Strength' },
                                     ].map(col => (
-                                        <label key={col.key} className="flex items-center gap-2 px-2 py-1.5 text-[11px] text-[#ccc] font-mono cursor-pointer hover:bg-[#ffffff0a] rounded transition-colors whitespace-nowrap">
+                                        <label key={col.key} className="flex items-center gap-2 px-2 py-1.5 text-[12px] text-[#ccc] font-mono cursor-pointer hover:bg-[#ffffff0a] rounded transition-colors whitespace-nowrap">
                                             <input
                                                 type="checkbox"
                                                 checked={columnVisibility[col.key] ?? true}
@@ -332,7 +332,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                     </button>
                     <button
                         onClick={() => { const n = !filtersVisible; setFiltersVisible(n); localStorage.setItem('das_filters_visible', String(n)); }}
-                        className={`px-2.5 py-1 rounded text-[10px] font-mono border transition-all flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
+                        className={`px-2.5 py-1 rounded text-[12px] font-mono border transition-all flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
                             filtersVisible
                                 ? 'bg-[#2a2c34] border-[#ffffff3a] text-[#ccc]'
                                 : 'bg-[#2a2c34] border-[#ffffff1a] text-[#888]'
@@ -357,7 +357,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
 
             {/* Filter Presets */}
             <div className="bg-[#111318] border-b border-[#ffffff1a] px-4 py-2 flex items-center gap-2" role="radiogroup" aria-label="Filter presets">
-                <span className="text-[10px] text-[#888] font-mono mr-1" aria-hidden="true">Presets:</span>
+                <span className="text-[12px] text-[#888] font-mono mr-1" aria-hidden="true">Presets:</span>
                 {PRESETS.map(p => {
                     const active = activePreset === p.name;
                     return (
@@ -367,7 +367,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                             aria-checked={active}
                             aria-label={`${p.name} preset`}
                             onClick={() => applyPreset(p)}
-                            className={`px-3 py-1 rounded-full text-[10px] font-mono whitespace-nowrap transition-all border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/50 ${
+                            className={`px-3 py-1 rounded-full text-[12px] font-mono whitespace-nowrap transition-all border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/50 ${
                                 active
                                     ? 'border-cyan-500 bg-cyan-500/10 text-cyan-400'
                                     : 'border-[#ffffff1a] bg-[#1a1c24] text-[#aaa] hover:border-[#ffffff3a]'
@@ -394,7 +394,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
             <div className="bg-[#15171d] border-b border-[#ffffff1a] p-4">
                 <div className="flex flex-wrap gap-4 items-end">
                     <div className="flex flex-col flex-shrink-0 w-[100px]">
-                        <label className="text-[10px] text-[#888] font-mono mb-0.5" id="lookback-label">Lookback Days</label>
+                        <label className="text-[12px] text-[#888] font-mono mb-0.5" id="lookback-label">Lookback Days</label>
                         <input
                             type="number"
                             min={1}
@@ -406,32 +406,32 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                         />
                     </div>
                     <div className="flex flex-col flex-shrink-0 w-[130px]">
-                        <label className="text-[10px] text-[#888] font-mono mb-0.5" id="search-symbol-label">Search Symbol</label>
+                        <label className="text-[12px] text-[#888] font-mono mb-0.5" id="search-symbol-label">Search Symbol</label>
                         <input
                             type="text"
                             value={symbolSearch}
                             onChange={(e) => setSymbolSearch(e.target.value)}
                             placeholder="e.g. RELIANCE"
-                            className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] focus:border-orange-500 outline-none w-full placeholder-[#555] focus-visible:ring-2 focus-visible:ring-orange-500/50"
+                            className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] focus:border-orange-500 outline-none w-full placeholder-[#888] focus-visible:ring-2 focus-visible:ring-orange-500/50"
                             aria-labelledby="search-symbol-label"
                         />
                     </div>
                     <div className="flex flex-col flex-shrink-0 w-[130px]">
-                        <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                        <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
                             <label id="min-del-label">Min Delivery %</label>
                             <span className="text-orange-400">{minDeliveryPct}%</span>
                         </div>
                         <input type="range" min="0" max="100" value={minDeliveryPct} onChange={(e) => setMinDeliveryPct(Number(e.target.value))} className="w-full accent-orange-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50" aria-labelledby="min-del-label" />
                     </div>
                     <div className="flex flex-col flex-shrink-0 w-[130px]">
-                        <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                        <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
                             <label id="max-del-label">Max Delivery %</label>
                             <span className="text-orange-400">{maxDeliveryPct}%</span>
                         </div>
                         <input type="range" min="0" max="100" value={maxDeliveryPct} onChange={(e) => setMaxDeliveryPct(Number(e.target.value))} className="w-full accent-orange-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50" aria-labelledby="max-del-label" />
                     </div>
                     <div className="flex flex-col flex-shrink-0 w-[130px]">
-                        <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                        <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
                             <label id="min-vol-label">Min Rel Vol Score</label>
                             <span className="text-orange-400">{minRelVolScore}</span>
                         </div>
@@ -447,7 +447,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                         />
                     </div>
                     <div className="flex flex-col flex-shrink-0 w-[130px]">
-                        <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                        <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
                             <label>Min Del Value (₹ Cr)</label>
                             <span className="text-orange-400">{minDeliveryValueCr > 0 ? `≥${minDeliveryValueCr}` : 'Off'}</span>
                         </div>
@@ -456,7 +456,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                             className="w-full accent-orange-500" />
                     </div>
                     <div className="flex flex-col flex-shrink-0 w-[130px]">
-                        <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                        <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
                             <label>Min Vol/Mcap %</label>
                             <span className="text-orange-400">{minVolumeToMcap > 0 ? `≥${minVolumeToMcap}%` : 'Off'}</span>
                         </div>
@@ -465,14 +465,14 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                             className="w-full accent-orange-500" />
                     </div>
                     <div className="flex flex-col flex-shrink-0 w-[130px]">
-                        <label className="text-[10px] text-[#888] font-mono mb-1" id="sector-filter-label">Sector Filter</label>
+                        <label className="text-[12px] text-[#888] font-mono mb-1" id="sector-filter-label">Sector Filter</label>
                         <select value={filterSector} onChange={(e) => setFilterSector(e.target.value)} className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] focus:border-orange-500 outline-none w-full focus-visible:ring-2 focus-visible:ring-orange-500/50" aria-labelledby="sector-filter-label">
                             <option value="All">All Sectors</option>
                             {uniqueSectors.map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
                     </div>
                     <div className="flex flex-col flex-shrink-0 w-[140px]">
-                        <label className="text-[10px] text-[#888] font-mono mb-1" id="bucket-filter-label">Bucket</label>
+                        <label className="text-[12px] text-[#888] font-mono mb-1" id="bucket-filter-label">Bucket</label>
                         <select value={filterBucket} onChange={(e) => setFilterBucket(e.target.value)} className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] focus:border-orange-500 outline-none w-full focus-visible:ring-2 focus-visible:ring-orange-500/50" aria-labelledby="bucket-filter-label">
                             <option value="All Caps">All Caps</option>
                             {uniqueBuckets.map(b => <option key={b} value={b}>{b}</option>)}
@@ -484,7 +484,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                       <div className="flex flex-col self-end">
                          <button
                            onClick={() => setWatchlistOnly(o => !o)}
-                           className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors h-[32px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 ${
+                           className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[12px] font-mono transition-colors h-[32px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 ${
                              watchlistOnly
                                ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
                                : 'bg-[#1a1c24] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
@@ -501,7 +501,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                             <button
                                 onClick={() => setTriggerMode(t => !t)}
                                 disabled={!latestDataDate}
-                                className={`px-3 py-1 rounded text-[10px] font-mono whitespace-nowrap border transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500/50 ${
+                                className={`px-3 py-1 rounded text-[12px] font-mono whitespace-nowrap border transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500/50 ${
                                     triggerMode
                                         ? 'bg-green-500/10 border-green-500/50 text-green-400'
                                         : 'bg-[#2a2c34] border-[#ffffff1a] text-[#aaa] hover:border-[#ffffff3a]'
@@ -515,7 +515,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                         {triggerMode && (
                             <>
                                 <div className="flex flex-col flex-shrink-0 w-[100px]">
-                                    <label className="text-[10px] text-[#888] font-mono mb-0.5" id="trigger-max-days-label">Max Days Since</label>
+                                    <label className="text-[12px] text-[#888] font-mono mb-0.5" id="trigger-max-days-label">Max Days Since</label>
                                     <input
                                         type="number"
                                         min={1}
@@ -527,14 +527,14 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                                     />
                                 </div>
                                 <div className="flex flex-col flex-shrink-0 w-[120px]">
-                                    <div className="flex justify-between text-[10px] text-[#888] font-mono mb-0.5">
+                                    <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
                                         <label id="trigger-min-strength-label">Min Strength</label>
                                         <span className="text-orange-400">{triggerMinStrength.toFixed(2)}</span>
                                     </div>
                                     <input type="range" min="0" max="1" step="0.05" value={triggerMinStrength} onChange={(e) => setTriggerMinStrength(Number(e.target.value))} className="w-full accent-orange-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50" aria-labelledby="trigger-min-strength-label" />
                                 </div>
                                 <div className="flex flex-col flex-shrink-0 w-[100px]">
-                                    <label className="text-[10px] text-[#888] font-mono mb-0.5" id="trigger-min-comp-label">Min Composite</label>
+                                    <label className="text-[12px] text-[#888] font-mono mb-0.5" id="trigger-min-comp-label">Min Composite</label>
                                     <input
                                         type="number"
                                         min={0}
@@ -547,7 +547,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                                     />
                                 </div>
                                 <div className="flex flex-col flex-shrink-0 w-[100px]">
-                                    <label className="text-[10px] text-[#888] font-mono mb-0.5" id="trigger-min-return-label">Min Return %</label>
+                                    <label className="text-[12px] text-[#888] font-mono mb-0.5" id="trigger-min-return-label">Min Return %</label>
                                     <input
                                         type="number"
                                         step={1}
@@ -558,8 +558,8 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                                     />
                                 </div>
                                 <div className="flex flex-col flex-shrink-0">
-                                    <label className="text-[10px] text-[#888] font-mono mb-0.5">Persistence</label>
-                                    <label className="flex items-center gap-2 text-[11px] text-[#ccc] cursor-pointer h-[28px] hover:text-white transition-colors">
+                                    <label className="text-[12px] text-[#888] font-mono mb-0.5">Persistence</label>
+                                    <label className="flex items-center gap-2 text-[12px] text-[#ccc] cursor-pointer h-[28px] hover:text-white transition-colors">
                                         <input
                                             type="checkbox"
                                             checked={triggerRequirePersistence}
@@ -581,7 +581,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                     <AlertTriangle className="text-red-400 flex-shrink-0 mt-0.5" size={16} aria-hidden="true" />
                     <div>
                         <h4 className="text-red-400 text-xs font-semibold mb-0.5">Query Error</h4>
-                        <p className="text-[#ccc] text-[11px] font-mono">{errorMsg}</p>
+                        <p className="text-[#ccc] text-[12px] font-mono">{errorMsg}</p>
                     </div>
                 </div>
             )}
@@ -605,7 +605,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                     <span className="text-[#ffffff1a]">|</span>
                     <span>Avg Return Since: <span className="text-[#ccc]">{stats.avgReturnSince}%</span></span>
                     <span className="text-[#ffffff1a]">|</span>
-                    <span>Top Sector: <span className="text-[#ccc]">{stats.topSector}</span> <span className="text-[#666]">({stats.topSectorCount})</span></span>
+                    <span>Top Sector: <span className="text-[#ccc]">{stats.topSector}</span> <span className="text-[#888]">({stats.topSectorCount})</span></span>
                 </div>
             )}
 
@@ -622,56 +622,56 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                     <table className="w-full min-w-max whitespace-nowrap text-left border-collapse">
                         <thead className="sticky top-0 bg-[#1a1c24] z-10 shadow-sm border-b border-[#ffffff1a]">
                             <tr>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'symbol' ? 'text-white' : ''}`} onClick={() => handleSort('symbol')} scope="col" aria-sort={sortConfig?.key === 'symbol' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'symbol' ? 'text-white' : ''}`} onClick={() => handleSort('symbol')} scope="col" aria-sort={sortConfig?.key === 'symbol' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     Symbol <ColTip text="NSE symbol." /> <SortIcon column="symbol" sortConfig={sortConfig} />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'date' ? 'text-white' : ''}`} onClick={() => handleSort('date')} scope="col" aria-sort={sortConfig?.key === 'date' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'date' ? 'text-white' : ''}`} onClick={() => handleSort('date')} scope="col" aria-sort={sortConfig?.key === 'date' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     Date <ColTip text="Date of the anomaly." /> <SortIcon column="date" sortConfig={sortConfig} />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'close' ? 'text-white' : ''}`} onClick={() => handleSort('close')} scope="col" aria-sort={sortConfig?.key === 'close' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'close' ? 'text-white' : ''}`} onClick={() => handleSort('close')} scope="col" aria-sort={sortConfig?.key === 'close' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     Close <ColTip text="Most recent closing price for this symbol." /> <SortIcon column="close" sortConfig={sortConfig} />
                                 </th>
                                 {columnVisibility.return_since && (
-                                    <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'return_since' ? 'text-white' : ''}`} onClick={() => handleSort('return_since')} scope="col" aria-sort={sortConfig?.key === 'return_since' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                    <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'return_since' ? 'text-white' : ''}`} onClick={() => handleSort('return_since')} scope="col" aria-sort={sortConfig?.key === 'return_since' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                         Return Since <ColTip text="% change from anomaly date close to latest close. Forward validation of the anomaly signal." /> <SortIcon column="return_since" sortConfig={sortConfig} />
                                     </th>
                                 )}
                                 {columnVisibility.strength && (
-                                    <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'strength' ? 'text-white' : ''}`} onClick={() => handleSort('strength')} scope="col" aria-sort={sortConfig?.key === 'strength' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                    <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'strength' ? 'text-white' : ''}`} onClick={() => handleSort('strength')} scope="col" aria-sort={sortConfig?.key === 'strength' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                         Strength <ColTip text="Where the stock closed within the day's range. High = accumulation, Low = distribution." /> <SortIcon column="strength" sortConfig={sortConfig} />
                                     </th>
                                 )}
                                 {columnVisibility.composite_score && (
-                                    <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'composite_score' ? 'text-white' : ''}`} onClick={() => handleSort('composite_score')} scope="col" aria-sort={sortConfig?.key === 'composite_score' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                    <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'composite_score' ? 'text-white' : ''}`} onClick={() => handleSort('composite_score')} scope="col" aria-sort={sortConfig?.key === 'composite_score' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                         Composite <ColTip text="Composite anomaly score (weighted z-scores). Higher = stronger delivery/volume anomaly." /> <SortIcon column="composite_score" sortConfig={sortConfig} />
                                     </th>
                                 )}
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'delivery_pct' ? 'text-white' : ''}`} onClick={() => handleSort('delivery_pct')} scope="col" aria-sort={sortConfig?.key === 'delivery_pct' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'delivery_pct' ? 'text-white' : ''}`} onClick={() => handleSort('delivery_pct')} scope="col" aria-sort={sortConfig?.key === 'delivery_pct' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     Delivery % <ColTip text="Percentage of traded volume that was delivered (not intraday). High values indicate strong hands accumulating." /> <SortIcon column="delivery_pct" sortConfig={sortConfig} />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'delivery_divergence_score' ? 'text-white' : ''}`} onClick={() => handleSort('delivery_divergence_score')} scope="col" aria-sort={sortConfig?.key === 'delivery_divergence_score' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'delivery_divergence_score' ? 'text-white' : ''}`} onClick={() => handleSort('delivery_divergence_score')} scope="col" aria-sort={sortConfig?.key === 'delivery_divergence_score' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     Divergence <ColTip text="Z-score of delivery divergence. Positive values mean delivery is unusually high relative to the stock's own history." /> <SortIcon column="delivery_divergence_score" sortConfig={sortConfig} />
                                 </th>
                                 {columnVisibility.volatility_compression_score && (
-                                    <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'volatility_compression_score' ? 'text-white' : ''}`} onClick={() => handleSort('volatility_compression_score')} scope="col" aria-sort={sortConfig?.key === 'volatility_compression_score' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                    <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'volatility_compression_score' ? 'text-white' : ''}`} onClick={() => handleSort('volatility_compression_score')} scope="col" aria-sort={sortConfig?.key === 'volatility_compression_score' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                         Vol Compression <ColTip text="Z-score of volatility compression. High values mean the price range is tighter than normal — potential setup for expansion." /> <SortIcon column="volatility_compression_score" sortConfig={sortConfig} />
                                     </th>
                                 )}
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'relative_volume_score' ? 'text-white' : ''}`} onClick={() => handleSort('relative_volume_score')} scope="col" aria-sort={sortConfig?.key === 'relative_volume_score' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'relative_volume_score' ? 'text-white' : ''}`} onClick={() => handleSort('relative_volume_score')} scope="col" aria-sort={sortConfig?.key === 'relative_volume_score' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     Rel Vol Score <ColTip text="Z-score of relative volume. Positive values mean volume is above its rolling average." /> <SortIcon column="relative_volume_score" sortConfig={sortConfig} />
                                 </th>
                                 {columnVisibility.nifty_outperformance_score && (
-                                    <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'nifty_outperformance_score' ? 'text-white' : ''}`} onClick={() => handleSort('nifty_outperformance_score')} scope="col" aria-sort={sortConfig?.key === 'nifty_outperformance_score' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                    <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'nifty_outperformance_score' ? 'text-white' : ''}`} onClick={() => handleSort('nifty_outperformance_score')} scope="col" aria-sort={sortConfig?.key === 'nifty_outperformance_score' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                         Nifty Outperform <ColTip text="Stock return minus Nifty return on that day. Positive = outperformed Nifty." /> <SortIcon column="nifty_outperformance_score" sortConfig={sortConfig} />
                                     </th>
                                 )}
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'volume' ? 'text-white' : ''}`} onClick={() => handleSort('volume')} scope="col" aria-sort={sortConfig?.key === 'volume' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'volume' ? 'text-white' : ''}`} onClick={() => handleSort('volume')} scope="col" aria-sort={sortConfig?.key === 'volume' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     Volume <ColTip text="Total traded volume (shares)." /> <SortIcon column="volume" sortConfig={sortConfig} />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'delivery_value_cr' ? 'text-white' : ''}`} onClick={() => handleSort('delivery_value_cr')} scope="col" aria-sort={sortConfig?.key === 'delivery_value_cr' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'delivery_value_cr' ? 'text-white' : ''}`} onClick={() => handleSort('delivery_value_cr')} scope="col" aria-sort={sortConfig?.key === 'delivery_value_cr' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     Del Value (₹ Cr) <ColTip text="Delivery quantity × close price, in Crores. Distinguishes genuine institutional flow from microcap noise." /> <SortIcon column="delivery_value_cr" sortConfig={sortConfig} />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'volume_to_mcap_pct' ? 'text-white' : ''}`} onClick={() => handleSort('volume_to_mcap_pct')} scope="col" aria-sort={sortConfig?.key === 'volume_to_mcap_pct' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'volume_to_mcap_pct' ? 'text-white' : ''}`} onClick={() => handleSort('volume_to_mcap_pct')} scope="col" aria-sort={sortConfig?.key === 'volume_to_mcap_pct' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                                     Vol/Mcap % <ColTip text="Volume as a % of market cap. Above 5% flags extreme turnover events. Above 1% is meaningful." /> <SortIcon column="volume_to_mcap_pct" sortConfig={sortConfig} />
                                 </th>
                             </tr>
@@ -679,7 +679,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                         <tbody>
                             {(triggerMode ? triggerSortedData : sortedData).length === 0 && hasRun ? (
                                 <tr>
-                                    <td colSpan={visibleColCount} className="p-8 text-center text-[#666] font-mono text-xs">
+                                    <td colSpan={visibleColCount} className="p-8 text-center text-[#888] font-mono text-xs">
                                         {triggerMode
                                             ? 'No active setups match the current trigger filters. Try increasing Max Days Since Anomaly or lowering Min Strength.'
                                             : 'No delivery anomalies match your criteria.'}
@@ -687,7 +687,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                                 </tr>
                             ) : (triggerMode ? triggerSortedData : sortedData).length === 0 && !hasRun ? (
                                 <tr>
-                                    <td colSpan={visibleColCount} className="p-8 text-center text-[#666] font-mono text-xs">
+                                    <td colSpan={visibleColCount} className="p-8 text-center text-[#888] font-mono text-xs">
                                         Click Scan to detect delivery anomalies.
                                     </td>
                                 </tr>
@@ -727,11 +727,11 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                                     {columnVisibility.composite_score && (
                                         <td className="p-3 text-sm font-mono whitespace-nowrap text-right">
                                             <span className="inline-flex items-center gap-1">
-                                                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-bold ${d.composite_badge.className}`}>
+                                                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[12px] font-bold ${d.composite_badge.className}`}>
                                                     {d.composite_badge.text}
                                                 </span>
                                                 {triggerMode && (
-                                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">
+                                                    <span className="px-1.5 py-0.5 rounded text-[12px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">
                                                         ACTIVE
                                                     </span>
                                                 )}
@@ -768,7 +768,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                                                 : '—'}
                                     </td>
                                     <td className="p-3 text-sm font-mono whitespace-nowrap text-right">
-                                        <span className={d.volume_to_mcap_pct > 5 ? 'text-orange-400' : d.volume_to_mcap_pct > 1 ? 'text-[#fafafa]' : 'text-[#555]'}>
+                                        <span className={d.volume_to_mcap_pct > 5 ? 'text-orange-400' : d.volume_to_mcap_pct > 1 ? 'text-[#fafafa]' : 'text-[#888]'}>
                                             {d.volume_to_mcap_pct > 0 ? `${d.volume_to_mcap_pct.toFixed(2)}%` : '—'}
                                         </span>
                                     </td>
@@ -780,37 +780,37 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                     <table className="w-full min-w-max whitespace-nowrap text-left border-collapse">
                         <thead className="sticky top-0 bg-[#1a1c24] z-10 shadow-sm border-b border-[#ffffff1a]">
                             <tr>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${summarySortCol === 'symbol' ? 'text-white' : ''}`} onClick={() => handleSummarySort('symbol')} scope="col" aria-sort={summarySortCol === 'symbol' ? (summarySortAsc ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${summarySortCol === 'symbol' ? 'text-white' : ''}`} onClick={() => handleSummarySort('symbol')} scope="col" aria-sort={summarySortCol === 'symbol' ? (summarySortAsc ? 'ascending' : 'descending') : 'none'}>
                                     Symbol <SummarySortIcon column="symbol" sortCol={summarySortCol} sortAsc={summarySortAsc} />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${summarySortCol === 'sector' ? 'text-white' : ''}`} onClick={() => handleSummarySort('sector')} scope="col" aria-sort={summarySortCol === 'sector' ? (summarySortAsc ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${summarySortCol === 'sector' ? 'text-white' : ''}`} onClick={() => handleSummarySort('sector')} scope="col" aria-sort={summarySortCol === 'sector' ? (summarySortAsc ? 'ascending' : 'descending') : 'none'}>
                                     Sector <SummarySortIcon column="sector" sortCol={summarySortCol} sortAsc={summarySortAsc} />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${summarySortCol === 'bucket' ? 'text-white' : ''}`} onClick={() => handleSummarySort('bucket')} scope="col" aria-sort={summarySortCol === 'bucket' ? (summarySortAsc ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${summarySortCol === 'bucket' ? 'text-white' : ''}`} onClick={() => handleSummarySort('bucket')} scope="col" aria-sort={summarySortCol === 'bucket' ? (summarySortAsc ? 'ascending' : 'descending') : 'none'}>
                                     Bucket <SummarySortIcon column="bucket" sortCol={summarySortCol} sortAsc={summarySortAsc} />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${summarySortCol === 'persistence' ? 'text-white' : ''}`} onClick={() => handleSummarySort('persistence')} scope="col" aria-sort={summarySortCol === 'persistence' ? (summarySortAsc ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${summarySortCol === 'persistence' ? 'text-white' : ''}`} onClick={() => handleSummarySort('persistence')} scope="col" aria-sort={summarySortCol === 'persistence' ? (summarySortAsc ? 'ascending' : 'descending') : 'none'}>
                                     Persistence <ColTip text="Number of anomaly days for this symbol." /> <SummarySortIcon column="persistence" sortCol={summarySortCol} sortAsc={summarySortAsc} />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${summarySortCol === 'latestDate' ? 'text-white' : ''}`} onClick={() => handleSummarySort('latestDate')} scope="col" aria-sort={summarySortCol === 'latestDate' ? (summarySortAsc ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${summarySortCol === 'latestDate' ? 'text-white' : ''}`} onClick={() => handleSummarySort('latestDate')} scope="col" aria-sort={summarySortCol === 'latestDate' ? (summarySortAsc ? 'ascending' : 'descending') : 'none'}>
                                     Latest Date <SummarySortIcon column="latestDate" sortCol={summarySortCol} sortAsc={summarySortAsc} />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${summarySortCol === 'highestComposite' ? 'text-white' : ''}`} onClick={() => handleSummarySort('highestComposite')} scope="col" aria-sort={summarySortCol === 'highestComposite' ? (summarySortAsc ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${summarySortCol === 'highestComposite' ? 'text-white' : ''}`} onClick={() => handleSummarySort('highestComposite')} scope="col" aria-sort={summarySortCol === 'highestComposite' ? (summarySortAsc ? 'ascending' : 'descending') : 'none'}>
                                     Highest Composite <SummarySortIcon column="highestComposite" sortCol={summarySortCol} sortAsc={summarySortAsc} />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${summarySortCol === 'avgDelivery' ? 'text-white' : ''}`} onClick={() => handleSummarySort('avgDelivery')} scope="col" aria-sort={summarySortCol === 'avgDelivery' ? (summarySortAsc ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${summarySortCol === 'avgDelivery' ? 'text-white' : ''}`} onClick={() => handleSummarySort('avgDelivery')} scope="col" aria-sort={summarySortCol === 'avgDelivery' ? (summarySortAsc ? 'ascending' : 'descending') : 'none'}>
                                     Avg Delivery % <SummarySortIcon column="avgDelivery" sortCol={summarySortCol} sortAsc={summarySortAsc} />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${summarySortCol === 'avgStrength' ? 'text-white' : ''}`} onClick={() => handleSummarySort('avgStrength')} scope="col" aria-sort={summarySortCol === 'avgStrength' ? (summarySortAsc ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${summarySortCol === 'avgStrength' ? 'text-white' : ''}`} onClick={() => handleSummarySort('avgStrength')} scope="col" aria-sort={summarySortCol === 'avgStrength' ? (summarySortAsc ? 'ascending' : 'descending') : 'none'}>
                                     Avg Strength <ColTip text="Average anomaly-day strength across all anomaly rows." /> <SummarySortIcon column="avgStrength" sortCol={summarySortCol} sortAsc={summarySortAsc} />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${summarySortCol === 'returnSinceEarliest' ? 'text-white' : ''}`} onClick={() => handleSummarySort('returnSinceEarliest')} scope="col" aria-sort={summarySortCol === 'returnSinceEarliest' ? (summarySortAsc ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${summarySortCol === 'returnSinceEarliest' ? 'text-white' : ''}`} onClick={() => handleSummarySort('returnSinceEarliest')} scope="col" aria-sort={summarySortCol === 'returnSinceEarliest' ? (summarySortAsc ? 'ascending' : 'descending') : 'none'}>
                                     Return Since Earliest <SummarySortIcon column="returnSinceEarliest" sortCol={summarySortCol} sortAsc={summarySortAsc} />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${summarySortCol === 'close' ? 'text-white' : ''}`} onClick={() => handleSummarySort('close')} scope="col" aria-sort={summarySortCol === 'close' ? (summarySortAsc ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${summarySortCol === 'close' ? 'text-white' : ''}`} onClick={() => handleSummarySort('close')} scope="col" aria-sort={summarySortCol === 'close' ? (summarySortAsc ? 'ascending' : 'descending') : 'none'}>
                                     Close <SummarySortIcon column="close" sortCol={summarySortCol} sortAsc={summarySortAsc} />
                                 </th>
-                                <th className={`p-3 text-[10px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${summarySortCol === 'volume' ? 'text-white' : ''}`} onClick={() => handleSummarySort('volume')} scope="col" aria-sort={summarySortCol === 'volume' ? (summarySortAsc ? 'ascending' : 'descending') : 'none'}>
+                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${summarySortCol === 'volume' ? 'text-white' : ''}`} onClick={() => handleSummarySort('volume')} scope="col" aria-sort={summarySortCol === 'volume' ? (summarySortAsc ? 'ascending' : 'descending') : 'none'}>
                                     Volume <SummarySortIcon column="volume" sortCol={summarySortCol} sortAsc={summarySortAsc} />
                                 </th>
                             </tr>
@@ -818,7 +818,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                         <tbody>
                             {(triggerMode ? triggerSortedSummary : sortedSummary).length === 0 ? (
                                 <tr>
-                                    <td colSpan={11} className="p-8 text-center text-[#666] font-mono text-xs">
+                                    <td colSpan={11} className="p-8 text-center text-[#888] font-mono text-xs">
                                         {triggerMode
                                             ? 'No active setups match the current trigger filters. Try increasing Max Days Since Anomaly or lowering Min Strength.'
                                             : 'No symbols match your criteria.'}
@@ -846,11 +846,11 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                                         <td className="p-3 text-[#ccc] text-sm font-mono whitespace-nowrap text-right">{d.latestDate}</td>
                                         <td className="p-3 text-sm font-mono whitespace-nowrap text-right">
                                             <span className="inline-flex items-center gap-1">
-                                                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-bold ${d.highestBadge.className}`}>
+                                                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[12px] font-bold ${d.highestBadge.className}`}>
                                                     {d.highestBadge.text}
                                                 </span>
                                                 {triggerMode && (
-                                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">
+                                                    <span className="px-1.5 py-0.5 rounded text-[12px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">
                                                         ACTIVE
                                                     </span>
                                                 )}

@@ -189,13 +189,13 @@ export default function App() {
             <div className="flex items-center gap-2 h-full">
               <div className="flex items-baseline gap-2">
                 <h2 className="text-base font-semibold leading-none">Quantitative Engine Dashboard</h2>
-                <p className="text-[10px] text-[#888] hidden sm:block">Librarian v3.2: Myra React Bridge</p>
+                <p className="text-[12px] text-[#888] hidden sm:block">Librarian v3.2: Myra React Bridge</p>
               </div>
             </div>
             <div className="px-4 flex items-center gap-2">
               <button
                 onClick={() => navigate('/settings')}
-                className={`flex items-center gap-2 px-3 py-1.5 text-[10px] rounded font-mono transition-colors ${
+                className={`flex items-center gap-2 px-3 py-1.5 text-[12px] rounded font-mono transition-colors ${
                   activeTab === 'Settings'
                     ? 'bg-[#ffffff1a] text-white border border-[#ffffff3a]'
                     : 'bg-[#ffffff0a] border border-[#ffffff1a] text-[#888] hover:text-white'
@@ -207,7 +207,7 @@ export default function App() {
               </button>
               <button
                 onClick={() => setShowPresetsPanel(true)}
-                className="flex items-center gap-2 px-3 py-1.5 text-[10px] bg-[#ffffff0a] border border-[#ffffff1a] rounded font-mono text-[#888] hover:text-white transition-colors"
+                className="flex items-center gap-2 px-3 py-1.5 text-[12px] bg-[#ffffff0a] border border-[#ffffff1a] rounded font-mono text-[#888] hover:text-white transition-colors"
                 title="Scanner Presets"
               >
                 <SlidersHorizontal size={14} />
@@ -279,7 +279,7 @@ export default function App() {
         </div>
 
         {/* MYRA CLI Footer Replication */}
-        <footer className={`h-10 ${bgFooter} border-t border-blue-500/30 shrink-0 flex items-center justify-between px-4 font-mono text-[11px] shadow-[0_-2px_10px_rgba(59,130,246,0.05)] transition-colors`}>
+        <footer className={`h-10 ${bgFooter} border-t border-blue-500/30 shrink-0 flex items-center justify-between px-4 font-mono text-[12px] shadow-[0_-2px_10px_rgba(59,130,246,0.05)] transition-colors`}>
           <div className="flex items-center gap-4">
             <div>
               <span className={`${accent.text400} font-bold`}>DB: </span>
@@ -289,7 +289,7 @@ export default function App() {
               }
               <span className="text-[#888]"> ({dbSize})</span>
             </div>
-            <div className="text-[#555]">|</div>
+            <div className="text-[#888]">|</div>
             <div className="flex items-center gap-2">
               <span className="text-white font-bold">Data last synced: </span>
               <span className="text-cyan-400">{(() => {

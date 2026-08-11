@@ -160,8 +160,8 @@ export default function MarketCapRangeFilter({ onChange, className = '' }: Marke
     if (loading) {
         return (
             <div className={`flex flex-col flex-shrink-0 w-[160px] ${className}`}>
-                <label className="text-[10px] text-[#888] font-mono mb-1">Market Cap</label>
-                <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-[10px] text-[#555] font-mono flex items-center gap-1">
+                <label className="text-[12px] text-[#888] font-mono mb-1">Market Cap</label>
+                <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-[12px] text-[#888] font-mono flex items-center gap-1">
                     <span className="inline-block w-2 h-2 border border-[#555] border-t-transparent rounded-full animate-spin" />
                     Loading...
                 </div>
@@ -172,8 +172,8 @@ export default function MarketCapRangeFilter({ onChange, className = '' }: Marke
     if (error) {
         return (
             <div className={`flex flex-col flex-shrink-0 w-[160px] ${className}`}>
-                <label className="text-[10px] text-[#888] font-mono mb-1">Market Cap</label>
-                <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-[10px] text-[#666] font-mono">
+                <label className="text-[12px] text-[#888] font-mono mb-1">Market Cap</label>
+                <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-[12px] text-[#888] font-mono">
                     Unavailable
                 </div>
             </div>
@@ -182,11 +182,11 @@ export default function MarketCapRangeFilter({ onChange, className = '' }: Marke
 
     return (
         <div className={`flex flex-col flex-shrink-0 w-[230px] ${className}`}>
-            <label className="text-[10px] text-[#888] font-mono mb-1">Market Cap</label>
+            <label className="text-[12px] text-[#888] font-mono mb-1">Market Cap</label>
 
             {/* Input row */}
             <div className="flex items-center gap-1.5 mb-1">
-                <span className="text-[10px] text-[#888] font-mono">Min ₹</span>
+                <span className="text-[12px] text-[#888] font-mono">Min ₹</span>
                 <input
                     type="number"
                     value={draftMin}
@@ -196,8 +196,8 @@ export default function MarketCapRangeFilter({ onChange, className = '' }: Marke
                     onKeyDown={handleMinKeyDown}
                     className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-0.5 text-xs font-mono text-[#fafafa] w-20 text-right focus:border-cyan-500/50 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
-                <span className="text-[10px] text-[#888] font-mono">Cr</span>
-                <span className="text-[10px] text-[#888] font-mono ml-1">Max ₹</span>
+                <span className="text-[12px] text-[#888] font-mono">Cr</span>
+                <span className="text-[12px] text-[#888] font-mono ml-1">Max ₹</span>
                 <input
                     type="number"
                     value={draftMax}
@@ -207,7 +207,7 @@ export default function MarketCapRangeFilter({ onChange, className = '' }: Marke
                     onKeyDown={handleMaxKeyDown}
                     className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-0.5 text-xs font-mono text-[#fafafa] w-20 text-right focus:border-cyan-500/50 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
-                <span className="text-[10px] text-[#888] font-mono">Cr</span>
+                <span className="text-[12px] text-[#888] font-mono">Cr</span>
             </div>
 
             {/* Sliders */}

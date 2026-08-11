@@ -158,7 +158,7 @@ function sseEventLabel(ev: SseEvent): { icon: string; text: string; colorClass: 
     case 'shutdown':
       return { icon: '○', text: 'Server shutting down', colorClass: 'text-red-400' };
     default:
-      return { icon: '·', text: ev.type, colorClass: 'text-[#555]' };
+      return { icon: '·', text: ev.type, colorClass: 'text-[#888]' };
   }
 }
 
@@ -419,7 +419,7 @@ export default function DataSyncView() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold">Data Pipeline</h2>
-          <p className="text-[10px] text-[#888] font-mono mt-0.5">
+          <p className="text-[12px] text-[#888] font-mono mt-0.5">
             {isRunning
               ? `Running: ${TASK_META[activeTaskId || '']?.name || activeTaskId || '...'}`
               : status?.overall?.message || 'Idle'}
@@ -427,7 +427,7 @@ export default function DataSyncView() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1.5 text-[10px] text-[#888] font-mono cursor-pointer select-none">
+          <label className="flex items-center gap-1.5 text-[12px] text-[#888] font-mono cursor-pointer select-none">
             <input
               type="checkbox"
               checked={stopOnFail}
@@ -438,7 +438,7 @@ export default function DataSyncView() {
           </label>
           <button
             onClick={toggleSchedulePause}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-mono border transition-colors ${
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[12px] font-mono border transition-colors ${
               schedulePaused
                 ? 'bg-red-500/20 border-red-500/30 text-red-400'
                 : 'bg-green-500/20 border-green-500/30 text-green-400'
@@ -449,7 +449,7 @@ export default function DataSyncView() {
           {isRunning ? (
             <button
               onClick={cancelRun}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/20 border border-red-500/30 rounded text-[11px] text-red-400 font-mono hover:bg-red-500/30 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/20 border border-red-500/30 rounded text-[12px] text-red-400 font-mono hover:bg-red-500/30 transition-colors"
             >
               <StopCircle size={14} />
               Cancel
@@ -457,7 +457,7 @@ export default function DataSyncView() {
           ) : null}
           <button
             onClick={forceReset}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#ffffff0a] border border-[#ffffff1a] rounded text-[11px] text-[#888] font-mono hover:bg-[#ffffff15] hover:text-white transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#ffffff0a] border border-[#ffffff1a] rounded text-[12px] text-[#888] font-mono hover:bg-[#ffffff15] hover:text-white transition-colors"
             title="Force-reset pipeline to idle (use if stuck)"
           >
             <RefreshCw size={14} />
@@ -467,7 +467,7 @@ export default function DataSyncView() {
             <button
               onClick={() => triggerRun('all')}
               disabled={runRequested || isRunning}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500/20 border border-cyan-500/30 rounded text-[11px] text-cyan-400 font-mono hover:bg-cyan-500/30 transition-colors disabled:opacity-40"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500/20 border border-cyan-500/30 rounded text-[12px] text-cyan-400 font-mono hover:bg-cyan-500/30 transition-colors disabled:opacity-40"
             >
               <Play size={14} className={runningTask !== null ? 'animate-pulse' : ''} />
               Sync All
@@ -501,10 +501,10 @@ export default function DataSyncView() {
       {isRunning && (
         <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded-lg p-3">
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[10px] font-mono text-cyan-400">
+            <span className="text-[12px] font-mono text-cyan-400">
               {status?.overall?.message || 'Running...'}
             </span>
-            <span className="text-[10px] font-mono text-[#888] flex items-center gap-2">
+            <span className="text-[12px] font-mono text-[#888] flex items-center gap-2">
               {elapsed > 0 && <span>Running for {formatElapsed(elapsed)}</span>}
               <span>{status?.overall?.progress_pct || 0}%</span>
             </span>
@@ -546,7 +546,7 @@ export default function DataSyncView() {
                   <span className="text-lg leading-none">{meta.icon}</span>
                   <span className="text-sm font-semibold text-[#fafafa]">{meta.name}</span>
                 </div>
-                <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-mono border ${statusBg(displayStatus)}`}>
+                <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[12px] font-mono border ${statusBg(displayStatus)}`}>
                   {statusIcon(displayStatus)}
                   <span className={statusColor(displayStatus)}>
                     {displayStatus === 'never' ? 'Never run' : isThisRunning ? 'Running' : displayStatus}
@@ -554,7 +554,7 @@ export default function DataSyncView() {
                 </div>
               </div>
               {TASK_DEPS[taskKey] && (
-                <div className="text-[9px] font-mono text-[#555] flex items-center gap-1 mt-0.5">
+                <div className="text-[12px] font-mono text-[#888] flex items-center gap-1 mt-0.5">
                   <span>requires:</span>
                   {TASK_DEPS[taskKey].map(dep => {
                     const depInfo = status?.tasks[dep];
@@ -574,12 +574,12 @@ export default function DataSyncView() {
                 </div>
               )}
 
-              <div className="flex items-center justify-between text-[10px] font-mono text-[#888]">
+              <div className="flex items-center justify-between text-[12px] font-mono text-[#888]">
                 <div className="flex items-center gap-1">
                   <Clock size={11} />
                   <span>Last: {relativeTime(info?.last_run)}</span>
                 </div>
-                <span className="text-[#666]">~{meta.duration}</span>
+                <span className="text-[#888]">~{meta.duration}</span>
               </div>
 
               {isThisRunning && (
@@ -592,14 +592,14 @@ export default function DataSyncView() {
               )}
 
               {(displayStatus === 'failed' || displayStatus === 'timeout') && info?.error_message && (
-                <div className="bg-red-950/30 border border-red-500/20 rounded px-2 py-1 text-[10px] font-mono text-red-400 truncate" title={info.error_message}>
+                <div className="bg-red-950/30 border border-red-500/20 rounded px-2 py-1 text-[12px] font-mono text-red-400 truncate" title={info.error_message}>
                   <AlertTriangle size={10} className="inline mr-1" />
                   {info.error_message}
                 </div>
               )}
 
               <div className="flex items-center justify-between mt-1 pt-2 border-t border-[#ffffff0a]">
-                <label className="flex items-center gap-1.5 text-[10px] text-[#888] font-mono cursor-pointer select-none">
+                <label className="flex items-center gap-1.5 text-[12px] text-[#888] font-mono cursor-pointer select-none">
                   <input
                     type="checkbox"
                     checked={scheduleConfig[taskKey]?.enabled || false}
@@ -628,7 +628,7 @@ export default function DataSyncView() {
                       triggerRun(taskKey);
                     }}
                     disabled={runRequested || isRunning}
-                    className="flex items-center gap-1 px-2.5 py-1 bg-orange-500/20 border border-orange-500/30 rounded text-[10px] font-mono text-orange-400 hover:bg-orange-500/30 transition-colors disabled:opacity-40"
+                    className="flex items-center gap-1 px-2.5 py-1 bg-orange-500/20 border border-orange-500/30 rounded text-[12px] font-mono text-orange-400 hover:bg-orange-500/30 transition-colors disabled:opacity-40"
                   >
                     <RefreshCw size={11} />
                     Retry
@@ -638,7 +638,7 @@ export default function DataSyncView() {
                   <button
                     onClick={() => triggerRun(taskKey)}
                     disabled={runRequested || isRunning}
-                    className="flex items-center gap-1 px-2.5 py-1 bg-[#ffffff0a] border border-[#ffffff1a] rounded text-[10px] font-mono text-[#ccc] hover:bg-[#ffffff15] hover:text-white transition-colors disabled:opacity-40"
+                    className="flex items-center gap-1 px-2.5 py-1 bg-[#ffffff0a] border border-[#ffffff1a] rounded text-[12px] font-mono text-[#ccc] hover:bg-[#ffffff15] hover:text-white transition-colors disabled:opacity-40"
                   >
                     {isThisRunning ? 'Running...' : 'Sync Now'}
                     <ChevronRight size={11} />
@@ -674,7 +674,7 @@ export default function DataSyncView() {
             if (key === 'databases') return null;
             const item = val as CheckItem;
             return (
-              <div key={key} className="flex items-center gap-2 text-[10px] font-mono">
+              <div key={key} className="flex items-center gap-2 text-[12px] font-mono">
                 {item.exists ? (
                   <CheckCircle size={12} className="text-green-400 shrink-0" />
                 ) : (
@@ -688,7 +688,7 @@ export default function DataSyncView() {
 
         {checks && (checks as any).databases && (
           <>
-            <div className="text-[10px] text-[#888] font-mono mt-3 mb-2 flex items-center gap-1">
+            <div className="text-[12px] text-[#888] font-mono mt-3 mb-2 flex items-center gap-1">
               <Database size={11} />
               Databases
             </div>
@@ -696,7 +696,7 @@ export default function DataSyncView() {
               {Object.entries((checks as any).databases).map(([key, val]) => {
                 const item = val as CheckItem;
                 return (
-                  <div key={key} className="flex items-center gap-1.5 text-[9px] font-mono">
+                  <div key={key} className="flex items-center gap-1.5 text-[12px] font-mono">
                     {item.reachable ? (
                       <CheckCircle size={10} className="text-green-400 shrink-0" />
                     ) : (
@@ -712,13 +712,13 @@ export default function DataSyncView() {
 
         {checks && (checks as any).api_keys && (
           <>
-            <div className="text-[10px] text-[#888] font-mono mt-3 mb-2 flex items-center gap-1">
+            <div className="text-[12px] text-[#888] font-mono mt-3 mb-2 flex items-center gap-1">
               <Key size={11} />
               API Keys
             </div>
             <div className="flex gap-3">
               {Object.entries((checks as any).api_keys).map(([key, val]) => (
-                <div key={key} className="flex items-center gap-1.5 text-[9px] font-mono">
+                <div key={key} className="flex items-center gap-1.5 text-[12px] font-mono">
                   {val ? (
                     <CheckCircle size={10} className="text-green-400 shrink-0" />
                   ) : (
@@ -748,7 +748,7 @@ export default function DataSyncView() {
         <>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {Object.entries(health as Record<string, DBHealthStatus>).map(([dbName, status]) => (
-            <div key={dbName} className="flex items-center justify-between text-[10px] font-mono px-2 py-1.5 bg-[#0e1117] rounded border border-[#ffffff0a]">
+            <div key={dbName} className="flex items-center justify-between text-[12px] font-mono px-2 py-1.5 bg-[#0e1117] rounded border border-[#ffffff0a]">
               <span className="text-[#888] uppercase tracking-wider">{dbName}</span>
               <span className="flex items-center gap-1.5 shrink-0">
                 <span className={status.connected ? "text-green-400" : "text-red-400"}>
@@ -761,34 +761,34 @@ export default function DataSyncView() {
         </div>
         {coverage?.total_symbols > 0 && (
           <>
-            <div className="text-[10px] text-[#888] font-mono mt-4 mb-2 flex items-center gap-1">
+            <div className="text-[12px] text-[#888] font-mono mt-4 mb-2 flex items-center gap-1">
               <HardDrive size={11} />
               Fundamentals Coverage
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-              <div className="flex justify-between text-[10px] font-mono px-2 py-1 bg-[#0e1117] rounded border border-[#ffffff0a]">
+              <div className="flex justify-between text-[12px] font-mono px-2 py-1 bg-[#0e1117] rounded border border-[#ffffff0a]">
                 <span className="text-[#888]">shares_outstanding</span>
                 <span className={coverage.shares_outstanding > 0 ? 'text-green-400' : 'text-yellow-400'}>{coverage.shares_outstanding}/{coverage.total_symbols}</span>
               </div>
-              <div className="flex justify-between text-[10px] font-mono px-2 py-1 bg-[#0e1117] rounded border border-[#ffffff0a]">
+              <div className="flex justify-between text-[12px] font-mono px-2 py-1 bg-[#0e1117] rounded border border-[#ffffff0a]">
                 <span className="text-[#888]">insider_holding</span>
                 <span className={coverage.insider_holding_pct > 0 ? 'text-green-400' : 'text-yellow-400'}>{coverage.insider_holding_pct}/{coverage.total_symbols}</span>
               </div>
-              <div className="flex justify-between text-[10px] font-mono px-2 py-1 bg-[#0e1117] rounded border border-[#ffffff0a]">
+              <div className="flex justify-between text-[12px] font-mono px-2 py-1 bg-[#0e1117] rounded border border-[#ffffff0a]">
                 <span className="text-[#888]">promoter_holding</span>
                 <span className={coverage.promoter_holding_pct > 0 ? 'text-green-400' : 'text-yellow-400'}>{coverage.promoter_holding_pct}/{coverage.total_symbols}</span>
               </div>
-              <div className="flex justify-between text-[10px] font-mono px-2 py-1 bg-[#0e1117] rounded border border-[#ffffff0a]">
+              <div className="flex justify-between text-[12px] font-mono px-2 py-1 bg-[#0e1117] rounded border border-[#ffffff0a]">
                 <span className="text-[#888]">industry</span>
                 <span className={coverage.industry > 0 ? 'text-green-400' : 'text-yellow-400'}>{coverage.industry}/{coverage.total_symbols}</span>
               </div>
-              <div className="flex justify-between text-[10px] font-mono px-2 py-1 bg-[#0e1117] rounded border border-[#ffffff0a]">
+              <div className="flex justify-between text-[12px] font-mono px-2 py-1 bg-[#0e1117] rounded border border-[#ffffff0a]">
                 <span className="text-[#888]">free_float</span>
                 <span className={coverage.free_float_pct > 0 ? 'text-green-400' : 'text-yellow-400'}>{coverage.free_float_pct}/{coverage.total_symbols}</span>
               </div>
             </div>
             {coverage.shares_stale && (
-              <div className="text-[10px] font-mono text-yellow-400 mt-1">
+              <div className="text-[12px] font-mono text-yellow-400 mt-1">
                 ⚠ Shares data is stale — run "Shares Refresh" from pipeline tasks
               </div>
             )}
@@ -805,24 +805,24 @@ export default function DataSyncView() {
             <Server size={14} />
             Live Event Stream
             {sseEvents.length > 0 && (
-              <span className="text-[#555] font-normal normal-case tracking-normal">
+              <span className="text-[#888] font-normal normal-case tracking-normal">
                 ({sseEvents.length} events)
               </span>
             )}
           </h3>
           <button
             onClick={() => setSseEvents([])}
-            className="text-[10px] font-mono text-[#555] hover:text-[#888] transition-colors"
+            className="text-[12px] font-mono text-[#888] hover:text-[#888] transition-colors"
           >
             clear
           </button>
         </div>
         <div
           ref={eventLogRef}
-          className="h-40 overflow-y-auto font-mono text-[10px] space-y-0.5"
+          className="h-40 overflow-y-auto font-mono text-[12px] space-y-0.5"
         >
           {sseEvents.length === 0 ? (
-            <p className="text-[#444] py-4 text-center">
+            <p className="text-[#888] py-4 text-center">
               Waiting for events — run a task to see activity here
             </p>
           ) : (
@@ -833,8 +833,8 @@ export default function DataSyncView() {
               });
               return (
                 <div key={i} className="flex gap-2 py-0.5 border-b border-[#ffffff04] last:border-0">
-                  <span className="text-[#444] shrink-0 w-16">{time}</span>
-                  <span className="text-[#555] shrink-0">{icon}</span>
+                  <span className="text-[#888] shrink-0 w-16">{time}</span>
+                  <span className="text-[#888] shrink-0">{icon}</span>
                   <span className={colorClass}>{text}</span>
                 </div>
               );

@@ -16,7 +16,7 @@ const SliderRow = ({ label, value, min, max, step, onChange, defaultVal, onReset
             <span className="text-[#aaa]">{label}</span>
             <div className="flex items-center gap-2">
                 <span className="font-mono text-cyan-400">{Number(value).toFixed(2)}</span>
-                <button onClick={() => onReset(defaultVal)} className="text-[10px] bg-[#ffffff10] hover:bg-[#ffffff20] px-1.5 rounded text-[#888]">Reset</button>
+                <button onClick={() => onReset(defaultVal)} className="text-[12px] bg-[#ffffff10] hover:bg-[#ffffff20] px-1.5 rounded text-[#888]">Reset</button>
             </div>
         </div>
         <input type="range" min={min} max={max} step={step} value={value} onChange={e => onChange(Number(e.target.value))} className="w-full accent-cyan-500" />
@@ -57,7 +57,7 @@ export default function IndicatorSettingsPanel({ bucket, liqVoidSettings, smpSet
                 <div className="p-4 bg-[#0e1117] flex-1 overflow-y-auto">
                     {tab === 'lv' && (
                         <div>
-                            <div className="text-[10px] text-fuchsia-400 mb-4 bg-fuchsia-400/10 p-2 rounded border border-fuchsia-400/20">
+                            <div className="text-[12px] text-fuchsia-400 mb-4 bg-fuchsia-400/10 p-2 rounded border border-fuchsia-400/20">
                                 Mode: <span className="font-bold">{curBucket}</span>
                             </div>
                             <SliderRow 
@@ -88,7 +88,7 @@ export default function IndicatorSettingsPanel({ bucket, liqVoidSettings, smpSet
                     
                     {tab === 'smp' && (
                         <div>
-                            <div className="text-[10px] text-fuchsia-400 mb-4 bg-fuchsia-400/10 p-2 rounded border border-fuchsia-400/20">
+                            <div className="text-[12px] text-fuchsia-400 mb-4 bg-fuchsia-400/10 p-2 rounded border border-fuchsia-400/20">
                                 Mode: <span className="font-bold">{curBucket}</span>
                             </div>
                             <SliderRow 

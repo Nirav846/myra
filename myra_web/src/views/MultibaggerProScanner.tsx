@@ -353,7 +353,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
             <div className="flex items-center gap-2">
               <p className="text-xs font-mono text-[#888]">Accumulation Base Breakout Detection</p>
               {bearMarket && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border border-orange-500/40 bg-orange-500/15 text-orange-400" title="Minimum thresholds raised: base_days≥30, min_dar≥0.4%" aria-label="Risk-off mode — thresholds raised">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[12px] font-bold border border-orange-500/40 bg-orange-500/15 text-orange-400" title="Minimum thresholds raised: base_days≥30, min_dar≥0.4%" aria-label="Risk-off mode — thresholds raised">
                   ⚠ Risk-Off
                 </span>
               )}
@@ -363,7 +363,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
         <div className="flex items-center gap-2 ml-auto mr-3">
           {/* Lookback presets */}
           <div className="flex items-center gap-1" role="group" aria-label="Lookback presets">
-            <span className="text-[10px] text-[#555] font-mono" aria-hidden="true">Lookback:</span>
+            <span className="text-[12px] text-[#888] font-mono" aria-hidden="true">Lookback:</span>
             {[
               { label: 'Quick 21d', days: 21 },
               { label: 'Quality 42d', days: 42 },
@@ -372,10 +372,10 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
               <button
                 key={p.days}
                 onClick={() => setBaseDays(p.days)}
-                className={`px-2 py-1 rounded border text-[10px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 ${
+                className={`px-2 py-1 rounded border text-[12px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 ${
                   baseDays === p.days
                     ? 'bg-purple-500/20 border-purple-500/40 text-purple-400'
-                    : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#666] hover:text-[#aaa]'
+                    : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-[#aaa]'
                 }`}
                 aria-pressed={baseDays === p.days}
                 aria-label={`Set lookback to ${p.days} days`}
@@ -400,7 +400,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
         </button>
         <button
           onClick={() => fetch(`${API_BASE}/cache/multibagger`, { method: 'DELETE' }).then(() => fetchScanStatus())}
-          className="text-[10px] text-[#888] hover:text-red-400 transition-colors"
+          className="text-[12px] text-[#888] hover:text-red-400 transition-colors"
           title="Clear cached scan results"
         >
           Clear cache
@@ -435,7 +435,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
              scanStatus.scan_status === 'error' ? 'Scan failed' :
              scanStatus.message}
           </span>
-          <span className="ml-auto text-[#666]">{scanStatus.message}</span>
+          <span className="ml-auto text-[#888]">{scanStatus.message}</span>
         </div>
       )}
 
@@ -452,7 +452,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
           <Filter size={14} aria-hidden="true" /> <span className="font-mono uppercase font-semibold">Filters</span>
         </div>
         <div className="flex flex-col gap-1 w-24">
-          <label className="text-[10px] text-[#888] font-mono" id="lookback-label">Lookback Days</label>
+          <label className="text-[12px] text-[#888] font-mono" id="lookback-label">Lookback Days</label>
           <input
             type="number"
             min={7}
@@ -464,7 +464,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
           />
         </div>
         <div className="flex flex-col gap-1 w-24">
-          <label className="text-[10px] text-[#888] font-mono" id="min-dar-label">Min DAR %</label>
+          <label className="text-[12px] text-[#888] font-mono" id="min-dar-label">Min DAR %</label>
           <input
             type="number"
             min={0}
@@ -477,7 +477,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
           />
         </div>
         <div className="flex flex-col gap-1 w-24">
-          <label className="text-[10px] text-[#888] font-mono" id="target-dar-label">Target DAR %</label>
+          <label className="text-[12px] text-[#888] font-mono" id="target-dar-label">Target DAR %</label>
           {targetDar !== null ? (
             <div className="flex items-center gap-1">
               <input
@@ -492,7 +492,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
               />
               <button
                 onClick={() => setTargetDar(null)}
-                className="text-[9px] text-purple-400 hover:text-purple-300 font-mono shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 rounded"
+                className="text-[12px] text-purple-400 hover:text-purple-300 font-mono shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 rounded"
                 aria-label="Reset target DAR to auto"
               >
                 Reset
@@ -510,7 +510,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
           )}
         </div>
         <div className="flex flex-col gap-1 w-28">
-          <label className="text-[10px] text-[#888] font-mono" id="tightness-full-label">Tightness Full %</label>
+          <label className="text-[12px] text-[#888] font-mono" id="tightness-full-label">Tightness Full %</label>
           <input
             type="range"
             min={2}
@@ -525,16 +525,16 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
           <div className="flex items-center justify-between">
             {tightnessFull !== null ? (
               <>
-                <span className="text-[10px] text-[#ccc] font-mono">{tightnessFull.toFixed(1)}</span>
-                <button onClick={() => setTightnessFull(null)} className="text-[9px] text-purple-400 hover:text-purple-300 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 rounded" aria-label="Reset tightness full to auto">Reset</button>
+                <span className="text-[12px] text-[#ccc] font-mono">{tightnessFull.toFixed(1)}</span>
+                <button onClick={() => setTightnessFull(null)} className="text-[12px] text-purple-400 hover:text-purple-300 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 rounded" aria-label="Reset tightness full to auto">Reset</button>
               </>
             ) : (
-              <span className="text-[10px] text-purple-400 font-mono">Auto</span>
+              <span className="text-[12px] text-purple-400 font-mono">Auto</span>
             )}
           </div>
         </div>
         <div className="flex flex-col gap-1 w-28">
-          <label className="text-[10px] text-[#888] font-mono" id="tightness-zero-label">Tightness Zero %</label>
+          <label className="text-[12px] text-[#888] font-mono" id="tightness-zero-label">Tightness Zero %</label>
           <input
             type="range"
             min={10}
@@ -549,11 +549,11 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
           <div className="flex items-center justify-between">
             {tightnessZero !== null ? (
               <>
-                <span className="text-[10px] text-[#ccc] font-mono">{tightnessZero.toFixed(1)}</span>
-                <button onClick={() => setTightnessZero(null)} className="text-[9px] text-purple-400 hover:text-purple-300 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 rounded" aria-label="Reset tightness zero to auto">Reset</button>
+                <span className="text-[12px] text-[#ccc] font-mono">{tightnessZero.toFixed(1)}</span>
+                <button onClick={() => setTightnessZero(null)} className="text-[12px] text-purple-400 hover:text-purple-300 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 rounded" aria-label="Reset tightness zero to auto">Reset</button>
               </>
             ) : (
-              <span className="text-[10px] text-purple-400 font-mono">Auto</span>
+              <span className="text-[12px] text-purple-400 font-mono">Auto</span>
             )}
           </div>
         </div>
@@ -561,10 +561,10 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
           <MarketCapRangeFilter onChange={setMcapRange} />
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono">Watchlist</div>
+          <div className="text-[12px] text-[#888] font-mono">Watchlist</div>
           <button
             onClick={() => setWatchlistOnly(o => !o)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[12px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 ${
               watchlistOnly
                 ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
                 : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
@@ -577,13 +577,13 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
           </button>
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono">Entry Type</div>
+          <div className="text-[12px] text-[#888] font-mono">Entry Type</div>
           <div className="flex gap-1">
             {['All', 'LiqGrab', 'Cheat', 'Breakout'].map(t => (
               <button
                 key={t}
                 onClick={() => setEntryTypeFilter(t)}
-                className={`px-2 py-1.5 rounded border text-[10px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 ${
+                className={`px-2 py-1.5 rounded border text-[12px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 ${
                   entryTypeFilter === t
                     ? (t === 'LiqGrab' ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' :
                        t === 'Cheat'   ? 'bg-purple-500/20 border-purple-500/40 text-purple-400' :
@@ -600,7 +600,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
           </div>
         </div>
         <div className="flex flex-col gap-1">
-          <div className="flex justify-between text-[10px] text-[#888] font-mono items-center">
+          <div className="flex justify-between text-[12px] text-[#888] font-mono items-center">
             <Tooltip
               content="Minimum Accumulation Score to show. Recommended: 55+ for quality setups. Below 55 is noise for most users."
               good="55–70: good quality filter. 70+: only high-conviction setups."
@@ -621,7 +621,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
           />
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono" id="sector-filter-label">Sector</div>
+          <div className="text-[12px] text-[#888] font-mono" id="sector-filter-label">Sector</div>
           <select
             value={sectorFilter}
             onChange={e => setSectorFilter(e.target.value)}
@@ -641,23 +641,23 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
           {/* Stats Summary */}
           <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Candidates</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Candidates</div>
               <div className="text-2xl font-bold text-[#fafafa]">{filteredData.length}</div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Grade A</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Grade A</div>
               <div className="text-2xl font-bold text-green-400">{filteredData.filter(d => d.grade === 'A').length}</div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-emerald-400 font-mono uppercase tracking-wider">⚡ Liq Grabs</div>
+              <div className="text-[12px] text-emerald-400 font-mono uppercase tracking-wider">⚡ Liq Grabs</div>
               <div className="text-2xl font-bold text-emerald-400">{filteredData.filter(d => d.liq_grab).length}</div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-purple-400 font-mono uppercase tracking-wider">🎯 Cheat</div>
+              <div className="text-[12px] text-purple-400 font-mono uppercase tracking-wider">🎯 Cheat</div>
               <div className="text-2xl font-bold text-purple-400">{filteredData.filter(d => d.entry_type === 'Cheat').length}</div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg Score</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Avg Score</div>
               <div className="text-2xl font-bold text-cyan-400">
                 {filteredData.length > 0
                   ? (filteredData.reduce((s, d) => s + d.composite_score, 0) / filteredData.length).toFixed(1)
@@ -665,7 +665,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
               </div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Breakouts</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Breakouts</div>
               <div className="flex items-baseline gap-1.5">
                 <span className="text-2xl font-bold text-green-400">
                   {filteredData.filter(d => d.status === 'Triggered').length}
@@ -680,16 +680,16 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
           {/* Grade A Spotlight */}
           {filteredData.filter(d => d.grade === 'A').length > 0 && (
             <div className="bg-green-500/5 border border-green-500/20 rounded p-3">
-              <div className="text-[10px] text-green-400 font-mono uppercase tracking-wider mb-2 flex items-center gap-2">
+              <div className="text-[12px] text-green-400 font-mono uppercase tracking-wider mb-2 flex items-center gap-2">
                 <span>Grade A Candidates</span>
-                <span className="text-[#666]">— highest conviction setups</span>
+                <span className="text-[#888]">— highest conviction setups</span>
               </div>
               <div className="flex flex-wrap gap-2">
                 {filteredData
                   .filter(d => d.grade === 'A')
                   .map(d => (
                     <div key={d.symbol}
-                      className={`flex items-center gap-1.5 px-2 py-1 rounded border text-[11px] font-mono ${
+                      className={`flex items-center gap-1.5 px-2 py-1 rounded border text-[12px] font-mono ${
                         d.liq_grab ? 'border-emerald-500/40 bg-emerald-500/10' :
                         d.entry_type === 'Cheat' ? 'border-purple-500/30 bg-purple-500/10' :
                         'border-green-500/20 bg-[#1a1c24]'
@@ -698,11 +698,11 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                       <StarButton symbol={d.symbol} size={10} />
                       <span className="text-white font-bold">{d.symbol}</span>
                       <span className="text-[#888]">{d.sector ?? ''}</span>
-                      <span className={`text-[10px] px-1 rounded ${ENTRY_TYPE_COLORS[d.entry_type]}`}>
+                      <span className={`text-[12px] px-1 rounded ${ENTRY_TYPE_COLORS[d.entry_type]}`}>
                         {ENTRY_TYPE_LABELS[d.entry_type]}
                       </span>
                       <span className="text-green-400">{d.entry.toFixed(2)}</span>
-                      <span className="text-red-400 text-[10px]">SL {d.sl.toFixed(2)}</span>
+                      <span className="text-red-400 text-[12px]">SL {d.sl.toFixed(2)}</span>
                       {d.equal_lows && (
                         <span
                           className="text-orange-400"
@@ -722,7 +722,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
           <div className="flex items-center gap-2 px-1 relative" ref={colPanelRef}>
             <button
               onClick={() => setColPanelOpen(o => !o)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[12px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 ${
                 colPanelOpen
                   ? 'bg-purple-500/20 border-purple-500/40 text-purple-400'
                   : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-[#ccc]'
@@ -736,26 +736,26 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
 
             {/* Sort indicator when sorting by hidden column */}
             {!isVisible(sortCol as ColKey) && (
-              <span className="text-[10px] text-yellow-400 font-mono flex items-center gap-1" role="status">
+              <span className="text-[12px] text-yellow-400 font-mono flex items-center gap-1" role="status">
                 <ArrowUpDown size={10} aria-hidden="true" />
                 Sorted by hidden column: {ALL_COLUMNS.find(c => c.key === sortCol)?.label ?? sortCol}
               </span>
             )}
 
-            <span className="ml-auto text-[10px] text-[#555] font-mono" role="status" aria-live="polite">
+            <span className="ml-auto text-[12px] text-[#888] font-mono" role="status" aria-live="polite">
               {filteredData.length} results
             </span>
 
             {colPanelOpen && (
               <div className="absolute top-full left-0 mt-1 z-50 bg-[#0e1117] border border-[#ffffff20] rounded-lg shadow-2xl p-4 w-80">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-[11px] text-[#ccc] font-mono font-bold uppercase tracking-wider">Visible Columns</span>
+                  <span className="text-[12px] text-[#ccc] font-mono font-bold uppercase tracking-wider">Visible Columns</span>
                   <button
                     onClick={() => {
                       setVisibleCols(DEFAULT_VISIBLE);
                       localStorage.setItem('mb_visible_cols', JSON.stringify(Array.from(DEFAULT_VISIBLE)));
                     }}
-                    className="text-[10px] text-purple-400 hover:text-purple-300 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 rounded"
+                    className="text-[12px] text-purple-400 hover:text-purple-300 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 rounded"
                     aria-label="Reset columns to default"
                   >
                     Reset to default
@@ -763,8 +763,8 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                 </div>
                 {(['core', 'signals', 'trade'] as const).map(group => (
                   <div key={group} className="mb-3">
-                    <div className={`text-[9px] font-mono uppercase tracking-widest mb-1.5 ${
-                      group === 'core' ? 'text-[#666]' :
+                    <div className={`text-[12px] font-mono uppercase tracking-widest mb-1.5 ${
+                      group === 'core' ? 'text-[#888]' :
                       group === 'signals' ? 'text-cyan-500/60' : 'text-purple-500/60'
                     }`}>
                       {group === 'core' ? 'Core' : group === 'signals' ? 'Signal Analysis' : 'Trade Levels'}
@@ -778,7 +778,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                             onChange={() => toggleCol(col.key)}
                             className="accent-purple-500 cursor-pointer focus-visible:ring-2 focus-visible:ring-purple-500/50"
                           />
-                          <span className="text-[10px] text-[#aaa] group-hover:text-white transition-colors font-mono">
+                          <span className="text-[12px] text-[#aaa] group-hover:text-white transition-colors font-mono">
                             {col.label}
                           </span>
                         </label>
@@ -951,7 +951,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={1 + ALL_COLUMNS.filter(c => isVisible(c.key)).length} className="px-4 py-8 text-center text-[#666]">No candidates match current filters.</td>
+                      <td colSpan={1 + ALL_COLUMNS.filter(c => isVisible(c.key)).length} className="px-4 py-8 text-center text-[#888]">No candidates match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((row, index) => (
@@ -978,11 +978,11 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                             </button>
                           </div>
                         </td>
-                        {isVisible('sector') && <td className="px-4 py-3 text-[#888] text-[11px] max-w-[120px] truncate" title={row.sector}>
+                        {isVisible('sector') && <td className="px-4 py-3 text-[#888] text-[12px] max-w-[120px] truncate" title={row.sector}>
                           {row.sector ?? '—'}
                         </td>}
                         {isVisible('entry_type') && <td className="px-4 py-3 text-center">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${ENTRY_TYPE_COLORS[row.entry_type] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
+                          <span className={`px-2 py-0.5 rounded text-[12px] font-bold border ${ENTRY_TYPE_COLORS[row.entry_type] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
                             {ENTRY_TYPE_LABELS[row.entry_type] || row.entry_type}
                           </span>
                         </td>}
@@ -992,7 +992,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                           </span>
                         </td>}
                         {isVisible('grade') && <td className="px-4 py-3 text-center">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${GRADE_COLORS[row.grade] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
+                          <span className={`px-2 py-0.5 rounded text-[12px] font-bold border ${GRADE_COLORS[row.grade] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
                             {row.grade}
                           </span>
                         </td>}
@@ -1004,7 +1004,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                           </span>
                         </td>}
                         {isVisible('status') && <td className="px-4 py-3 text-center">
-                          <span className={`text-[10px] font-semibold ${STATUS_COLORS[row.status] || 'text-[#aaa]'}`}>
+                          <span className={`text-[12px] font-semibold ${STATUS_COLORS[row.status] || 'text-[#aaa]'}`}>
                             {row.status}
                           </span>
                         </td>}
@@ -1038,7 +1038,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                         {isVisible('cheat_entry') && <td className="px-4 py-3 text-right bg-purple-500/[0.02]">
                           {row.entry_type === 'Breakout'
                             ? <span className="text-purple-400">{row.cheat_entry?.toFixed(2) ?? '—'}</span>
-                            : <span className="text-[#333]">—</span>}
+                            : <span className="text-[#888]">—</span>}
                         </td>}
                         {isVisible('sl_pct') && <td className="px-4 py-3 text-right bg-purple-500/[0.02]">
                           <span className={row.sl_pct <= 5 ? 'text-green-400' : row.sl_pct <= 10 ? 'text-yellow-400' : 'text-red-400'}>
@@ -1068,7 +1068,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                             </Tooltip>
                           </td>
                         )}
-                        {isVisible('t1') && <td className="px-4 py-3 text-right text-[#777] bg-purple-500/[0.02]">{row.t1.toFixed(2)}</td>}
+                        {isVisible('t1') && <td className="px-4 py-3 text-right text-[#888] bg-purple-500/[0.02]">{row.t1.toFixed(2)}</td>}
                         {isVisible('t2') && <td className="px-4 py-3 text-right text-[#ccc] bg-purple-500/[0.02]">{row.t2.toFixed(2)}</td>}
                         {isVisible('t3') && <td className="px-4 py-3 text-right text-[#888] bg-purple-500/[0.02]">{row.t3 !== null ? row.t3.toFixed(2) : '—'}</td>}
                         {isVisible('dist_to_bo_pct') && <td className="px-4 py-3 text-right bg-purple-500/[0.02]">
@@ -1100,10 +1100,10 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
       {/* Empty state */}
       {isIdle && candidates.length === 0 && !isScanning && !error && (
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center text-[#666] font-mono flex flex-col items-center gap-2">
+          <div className="text-center text-[#888] font-mono flex flex-col items-center gap-2">
             <Rocket size={32} className="opacity-30" aria-hidden="true" />
             <p>Click Scan to detect multibagger candidates.</p>
-            <p className="text-[10px]">Scans for accumulation bases with delivery absorption, volume character, and tightness analysis.</p>
+            <p className="text-[12px]">Scans for accumulation bases with delivery absorption, volume character, and tightness analysis.</p>
           </div>
         </div>
       )}

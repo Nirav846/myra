@@ -1586,7 +1586,7 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
                   )}
                   <div className="flex flex-wrap gap-2">
                       {symbols.map(sym => (
-                         <div key={sym} className="flex items-center gap-1 bg-cyan-500/10 text-cyan-400 text-[10px] px-2 py-1 rounded border border-cyan-500/20 font-mono font-bold">
+                         <div key={sym} className="flex items-center gap-1 bg-cyan-500/10 text-cyan-400 text-[12px] px-2 py-1 rounded border border-cyan-500/20 font-mono font-bold">
                             {sym}
                             <button onClick={() => removeSymbol(sym)} className="hover:text-white"><X size={10} /></button>
                          </div>
@@ -1652,7 +1652,7 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
                          <button 
                            key={r} 
                            onClick={() => setRange(r)} 
-                           className={`px-2 py-1 text-[10px] rounded font-mono transition-colors ${range === r ? 'bg-cyan-500/20 text-cyan-400' : 'text-[#888] hover:bg-[#ffffff1a]'}`}
+                           className={`px-2 py-1 text-[12px] rounded font-mono transition-colors ${range === r ? 'bg-cyan-500/20 text-cyan-400' : 'text-[#888] hover:bg-[#ffffff1a]'}`}
                          >{r}</button>
                       ))}
                   </div>
@@ -1664,11 +1664,11 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
                           onChange={e => setScrollEnabled(e.target.checked)} 
                           className="accent-cyan-500 w-3 h-3 m-0" 
                       />
-                      <span className="text-[10px] font-mono text-[#666] group-hover:text-white transition-colors">Fast Scroll</span>
+                      <span className="text-[12px] font-mono text-[#888] group-hover:text-white transition-colors">Fast Scroll</span>
                   </label>
                   <button
                       onClick={() => setCrosshairEnabled(prev => !prev)}
-                      className={`flex items-center gap-1.5 text-[10px] font-mono px-2 py-1 rounded transition-colors border ${crosshairEnabled ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30' : 'bg-[#1a1c24] text-[#666] border-[#ffffff1a] hover:text-white'}`}
+                      className={`flex items-center gap-1.5 text-[12px] font-mono px-2 py-1 rounded transition-colors border ${crosshairEnabled ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30' : 'bg-[#1a1c24] text-[#888] border-[#ffffff1a] hover:text-white'}`}
                       title="Toggle Crosshair"
                   >
                       <Crosshair size={12} />
@@ -1676,7 +1676,7 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
                   </button>
                   <button
                       onClick={() => setShowDeliveryOverlay(prev => !prev)}
-                      className={`flex items-center gap-1.5 text-[10px] font-mono px-2 py-1 rounded transition-colors border ${showDeliveryOverlay ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30' : 'bg-[#1a1c24] text-[#666] border-[#ffffff1a] hover:text-white'}`}
+                      className={`flex items-center gap-1.5 text-[12px] font-mono px-2 py-1 rounded transition-colors border ${showDeliveryOverlay ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30' : 'bg-[#1a1c24] text-[#888] border-[#ffffff1a] hover:text-white'}`}
                       title="Toggle Delivery Divergence Overlay"
                   >
                       Delivery Overlay
@@ -1701,7 +1701,7 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
                   {scrollEnabled && symbols.length === 1 && effectiveSymbolsDesc.length > 0 && (
                       <div className="absolute top-12 right-12 z-10 pointer-events-none">
                           <div className="bg-[#1a1c24]/80 backdrop-blur px-3 py-1 rounded-full border border-white/10 shadow-lg flex items-center gap-2">
-                              <span className="text-cyan-400 font-mono text-[10px] font-bold">
+                              <span className="text-cyan-400 font-mono text-[12px] font-bold">
                                   {effectiveSymbolsDesc.indexOf(sym) + 1} / {effectiveSymbolsDesc.length}
                               </span>
                           </div>

@@ -80,7 +80,7 @@ export default function DataLakeView({ lib }: { lib: Librarian }) {
           <Database size={14} className="text-blue-400" />
           Data Lake Explorer: Indicators & SMC
         </span>
-        <span className="text-[10px] font-mono text-[#666]">SQL: technical_data</span>
+        <span className="text-[12px] font-mono text-[#888]">SQL: technical_data</span>
       </div>
 
       <div className="p-4 space-y-4">
@@ -101,7 +101,7 @@ export default function DataLakeView({ lib }: { lib: Librarian }) {
 
         <div className="flex justify-between items-center gap-4 bg-[#0e1117] border border-[#ffffff0a] p-3 rounded">
           <div className="flex items-center gap-3">
-             <div className="text-[#888] font-mono text-[11px] italic">
+             <div className="text-[#888] font-mono text-[12px] italic">
                {lib.isConnectedToLocalRepo 
                  ? "🚀 Connected to Local Technical Database" 
                  : "⚠️ Offline Mode - Local DB recommended"}
@@ -119,7 +119,7 @@ export default function DataLakeView({ lib }: { lib: Librarian }) {
         </div>
 
         {lastRefreshed && (
-          <div className="text-[10px] text-[#666] font-mono mb-2">
+          <div className="text-[12px] text-[#888] font-mono mb-2">
             Lake snapshot sync: {lastRefreshed.toLocaleTimeString()}
           </div>
         )}
@@ -181,7 +181,7 @@ export default function DataLakeView({ lib }: { lib: Librarian }) {
             </tbody>
           </table>
           {!dataLoaded && !isRefreshing && (
-            <div className="w-full py-8 text-center text-[#666] text-xs font-mono">No data loaded or empty result sequence.</div>
+            <div className="w-full py-8 text-center text-[#888] text-xs font-mono">No data loaded or empty result sequence.</div>
           )}
         </div>
       </div>

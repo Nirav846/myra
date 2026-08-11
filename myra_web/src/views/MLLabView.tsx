@@ -391,7 +391,7 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
               {status ? (
                 <div className="space-y-2 mt-2">
                   <div className="flex justify-between items-center text-xs font-mono">
-                    <span className="text-[#666]">Status:</span>
+                    <span className="text-[#888]">Status:</span>
                     <span className={status.exists ? 'text-green-400 font-bold' : 'text-yellow-400 font-bold'}>
                       {status.exists ? `Trained (${status.trained_at?.split('T')[0] || 'Unknown'})` : 'Not trained'}
                     </span>
@@ -399,25 +399,25 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
                   {status.exists && (
                     <>
                       <div className="flex justify-between items-center text-xs font-mono">
-                        <span className="text-[#666]">Train Accuracy:</span>
+                        <span className="text-[#888]">Train Accuracy:</span>
                         <span className="text-[#ccc]">{status.train_accuracy != null ? `${(status.train_accuracy * 100).toFixed(2)}%` : '-'}</span>
                       </div>
                       <div className="flex justify-between items-center text-xs font-mono">
-                        <span className="text-[#666]">Test Accuracy:</span>
+                        <span className="text-[#888]">Test Accuracy:</span>
                         <span className="text-[#ccc]">{status.test_accuracy != null ? `${(status.test_accuracy * 100).toFixed(2)}%` : '-'}</span>
                       </div>
                       <div className="flex justify-between items-center text-xs font-mono">
-                        <span className="text-[#666]">Train Samples:</span>
+                        <span className="text-[#888]">Train Samples:</span>
                         <span className="text-[#ccc]">{status.train_samples ?? '-'}</span>
                       </div>
                       <div className="flex justify-between items-center text-xs font-mono">
-                        <span className="text-[#666]">Test Samples:</span>
+                        <span className="text-[#888]">Test Samples:</span>
                         <span className="text-[#ccc]">{status.test_samples ?? '-'}</span>
                       </div>
                     </>
                   )}
                 </div>
-              ) : <div className="text-xs text-[#666] font-mono mt-2">Loading...</div>}
+              ) : <div className="text-xs text-[#888] font-mono mt-2">Loading...</div>}
             </div>
 
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded-xl overflow-hidden">
@@ -425,13 +425,13 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-[#888] flex items-center gap-2">
                   <Cpu size={14} /> Feature Selection
                 </h3>
-                {showFeatures ? <ChevronDown size={14} className="text-[#666]" /> : <ChevronRight size={14} className="text-[#666]" />}
+                {showFeatures ? <ChevronDown size={14} className="text-[#888]" /> : <ChevronRight size={14} className="text-[#888]" />}
               </button>
               {showFeatures && (
                 <div className="p-4 pt-2 border-t border-[#ffffff0a]">
                   <div className="flex gap-2 mb-3">
-                    <button onClick={() => { setSelectedFeatures(FORWARD_RETURN_FEATURES); saveConfig({ features: FORWARD_RETURN_FEATURES, hyperparameters: hyperparams }); }} className="text-[10px] bg-[#ffffff0a] hover:bg-[#ffffff1a] text-[#aaa] px-2 py-1 rounded">All</button>
-                    <button onClick={() => { setSelectedFeatures([]); saveConfig({ features: [], hyperparameters: hyperparams }); }} className="text-[10px] bg-[#ffffff0a] hover:bg-[#ffffff1a] text-[#aaa] px-2 py-1 rounded">None</button>
+                    <button onClick={() => { setSelectedFeatures(FORWARD_RETURN_FEATURES); saveConfig({ features: FORWARD_RETURN_FEATURES, hyperparameters: hyperparams }); }} className="text-[12px] bg-[#ffffff0a] hover:bg-[#ffffff1a] text-[#aaa] px-2 py-1 rounded">All</button>
+                    <button onClick={() => { setSelectedFeatures([]); saveConfig({ features: [], hyperparameters: hyperparams }); }} className="text-[12px] bg-[#ffffff0a] hover:bg-[#ffffff1a] text-[#aaa] px-2 py-1 rounded">None</button>
                   </div>
                   <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                     {FORWARD_RETURN_FEATURES.map(feat => (
@@ -456,13 +456,13 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-[#888] flex items-center gap-2">
                   <SlidersHorizontal size={14} /> Hyperparameters
                 </h3>
-                {showHyperparams ? <ChevronDown size={14} className="text-[#666]" /> : <ChevronRight size={14} className="text-[#666]" />}
+                {showHyperparams ? <ChevronDown size={14} className="text-[#888]" /> : <ChevronRight size={14} className="text-[#888]" />}
               </button>
               {showHyperparams && (
                 <div className="p-4 pt-2 space-y-4 border-t border-[#ffffff0a]">
                   {Object.entries(hyperparams).map(([key, val]) => (
                     <div key={key} className="space-y-1">
-                      <div className="flex justify-between text-[10px] font-mono text-[#888]">
+                      <div className="flex justify-between text-[12px] font-mono text-[#888]">
                         <span>{key}</span><span className="text-[#ccc]">{val}</span>
                       </div>
                       <input type="range" min={key === 'learning_rate' ? 0.01 : 1} max={key === 'lookback_days' ? 500 : key === 'n_estimators' ? 500 : 30} step={key === 'learning_rate' ? 0.01 : 1}
@@ -484,10 +484,10 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
                 {training ? <span className="animate-spin text-lg leading-none">&#9881;</span> : <Play size={14} fill="currentColor" />} {training ? 'Training...' : 'Train Model'}
               </button>
               <div className="flex gap-2">
-                <button onClick={handlePredict} disabled={predicting || !status?.exists} className="flex-1 py-2 bg-[#ffffff1a] hover:bg-[#ffffff2a] disabled:opacity-50 rounded text-[11px] font-mono text-[#ccc] transition-colors">
+                <button onClick={handlePredict} disabled={predicting || !status?.exists} className="flex-1 py-2 bg-[#ffffff1a] hover:bg-[#ffffff2a] disabled:opacity-50 rounded text-[12px] font-mono text-[#ccc] transition-colors">
                   {predicting ? '...' : 'Predict Today'}
                 </button>
-                <button onClick={handleImportance} disabled={fetchingImportance || !status?.exists} className="flex-1 py-2 bg-[#ffffff1a] hover:bg-[#ffffff2a] disabled:opacity-50 rounded text-[11px] font-mono text-[#ccc] transition-colors">
+                <button onClick={handleImportance} disabled={fetchingImportance || !status?.exists} className="flex-1 py-2 bg-[#ffffff1a] hover:bg-[#ffffff2a] disabled:opacity-50 rounded text-[12px] font-mono text-[#ccc] transition-colors">
                   {fetchingImportance ? '...' : 'Importance'}
                 </button>
               </div>
@@ -505,7 +505,7 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
             </div>
             <div className="flex-1 overflow-auto p-4">
               {!status?.exists && activeTab !== 'history' && !training ? (
-                <div className="h-full flex items-center justify-center flex-col gap-2 text-[#666]">
+                <div className="h-full flex items-center justify-center flex-col gap-2 text-[#888]">
                   <p className="text-sm font-mono">Not trained yet.</p>
                 </div>
               ) : activeTab === 'predictions' ? (
@@ -531,7 +531,7 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
                         </tbody>
                       </table>
                     </div>
-                  ) : <div className="text-xs text-[#666] font-mono">Click Predict Today to run batch inference.</div>}
+                  ) : <div className="text-xs text-[#888] font-mono">Click Predict Today to run batch inference.</div>}
                 </div>
               ) : activeTab === 'importance' ? (
                 <div className="h-full flex flex-col">
@@ -547,7 +547,7 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
-                  ) : <div className="text-xs text-[#666] font-mono">Click Importance.</div>}
+                  ) : <div className="text-xs text-[#888] font-mono">Click Importance.</div>}
                 </div>
               ) : (
                 <div className="border border-[#ffffff0a] rounded overflow-hidden">
@@ -585,37 +585,37 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
               {lpStatus ? (
                 <div className="space-y-2 mt-2">
                   <div className="flex justify-between items-center text-xs font-mono">
-                    <span className="text-[#666]">Status:</span>
+                    <span className="text-[#888]">Status:</span>
                     <span className={lpStatus.exists ? 'text-green-400 font-bold' : 'text-yellow-400 font-bold'}>
                       {lpStatus.exists ? `Trained (${lpStatus.trained_at?.split('T')[0] || 'Unknown'})` : 'Not trained'}
                     </span>
                   </div>
                   <div className="flex justify-between items-center text-xs font-mono">
-                    <span className="text-[#666]">Train Samples:</span>
+                    <span className="text-[#888]">Train Samples:</span>
                     <span className="text-[#ccc]">{lpStatus.train_samples ?? '-'}</span>
                   </div>
                   <div className="flex justify-between items-center text-xs font-mono">
-                    <span className="text-[#666]">Test Samples:</span>
+                    <span className="text-[#888]">Test Samples:</span>
                     <span className="text-[#ccc]">{lpStatus.test_samples ?? '-'}</span>
                   </div>
                   {lpStatus.exists && (
                     <>
                       <div className="flex justify-between items-center text-xs font-mono">
-                        <span className="text-[#666]">Test Accuracy:</span>
+                        <span className="text-[#888]">Test Accuracy:</span>
                         <span className="text-[#ccc]">{lpStatus.test_accuracy != null ? `${(lpStatus.test_accuracy * 100).toFixed(2)}%` : '-'}</span>
                       </div>
                       <div className="flex justify-between items-center text-xs font-mono">
-                        <span className="text-[#666]">RMSE (Return):</span>
+                        <span className="text-[#888]">RMSE (Return):</span>
                         <span className="text-[#ccc]">{lpStatus.test_rmse_return != null ? lpStatus.test_rmse_return.toFixed(3) : '-'}</span>
                       </div>
                       <div className="flex justify-between items-center text-xs font-mono">
-                        <span className="text-[#666]">RMSE (Days):</span>
+                        <span className="text-[#888]">RMSE (Days):</span>
                         <span className="text-[#ccc]">{lpStatus.test_rmse_days != null ? lpStatus.test_rmse_days.toFixed(2) : '-'}</span>
                       </div>
                     </>
                   )}
                 </div>
-              ) : <div className="text-xs text-[#666] font-mono mt-2">Loading...</div>}
+              ) : <div className="text-xs text-[#888] font-mono mt-2">Loading...</div>}
             </div>
 
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded-xl overflow-hidden">
@@ -623,13 +623,13 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-[#888] flex items-center gap-2">
                   <Tag size={14} /> Event Labelling
                 </h3>
-                {showLpLabeling ? <ChevronDown size={14} className="text-[#666]" /> : <ChevronRight size={14} className="text-[#666]" />}
+                {showLpLabeling ? <ChevronDown size={14} className="text-[#888]" /> : <ChevronRight size={14} className="text-[#888]" />}
               </button>
               {showLpLabeling && (
                 <div className="p-4 pt-2 space-y-4 border-t border-[#ffffff0a]">
                   {Object.entries(lpLabelConfig).map(([key, val]) => (
                     <div key={key} className="space-y-1">
-                      <div className="flex justify-between text-[10px] font-mono text-[#888]">
+                      <div className="flex justify-between text-[12px] font-mono text-[#888]">
                         <span>{key}</span><span className="text-[#ccc]">{val}</span>
                       </div>
                       <input type="range"
@@ -657,7 +657,7 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-[#888] flex items-center gap-2">
                   <Cpu size={14} /> Model Features
                 </h3>
-                {showLpFeatures ? <ChevronDown size={14} className="text-[#666]" /> : <ChevronRight size={14} className="text-[#666]" />}
+                {showLpFeatures ? <ChevronDown size={14} className="text-[#888]" /> : <ChevronRight size={14} className="text-[#888]" />}
               </button>
               {showLpFeatures && (
                 <div className="p-4 pt-2 border-t border-[#ffffff0a]">
@@ -684,13 +684,13 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-[#888] flex items-center gap-2">
                   <SlidersHorizontal size={14} /> Hyperparameters
                 </h3>
-                {showLpHyperparams ? <ChevronDown size={14} className="text-[#666]" /> : <ChevronRight size={14} className="text-[#666]" />}
+                {showLpHyperparams ? <ChevronDown size={14} className="text-[#888]" /> : <ChevronRight size={14} className="text-[#888]" />}
               </button>
               {showLpHyperparams && (
                 <div className="p-4 pt-2 space-y-4 border-t border-[#ffffff0a]">
                   {Object.entries(lpHyperparams).map(([key, val]) => (
                     <div key={key} className="space-y-1">
-                      <div className="flex justify-between text-[10px] font-mono text-[#888]">
+                      <div className="flex justify-between text-[12px] font-mono text-[#888]">
                         <span>{key}</span><span className="text-[#ccc]">{val}</span>
                       </div>
                       <input type="range"
@@ -730,7 +730,7 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
 
             <div className="flex-1 w-full bg-[#1a1c24] border border-[#ffffff1a] rounded">
               {!lpImportance ? (
-                <div className="h-full flex items-center justify-center text-xs font-mono text-[#666]">
+                <div className="h-full flex items-center justify-center text-xs font-mono text-[#888]">
                   {lpStatus?.exists ? 'Click "Fetch Importance" to load.' : 'Model not trained yet.'}
                 </div>
               ) : (
@@ -761,7 +761,7 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
                   Running factor discovery...
                 </div>
               ) : factorError || !factorData ? (
-                <div className="h-full flex items-center justify-center text-xs font-mono text-[#666]">
+                <div className="h-full flex items-center justify-center text-xs font-mono text-[#888]">
                   Not enough data for factor discovery.
                 </div>
               ) : (

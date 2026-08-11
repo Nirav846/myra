@@ -109,7 +109,7 @@ export function SavedWorkspaces() {
 
            <div className="max-h-48 overflow-y-auto w-full flex flex-col">
                {workspaces.length === 0 ? (
-                   <span className="p-4 text-center text-[#555] italic">No saved workspaces</span>
+                   <span className="p-4 text-center text-[#888] italic">No saved workspaces</span>
                ) : (
                    workspaces.map(ws => (
                        <button 
@@ -120,7 +120,7 @@ export function SavedWorkspaces() {
                            <span className="truncate pr-2 text-[#ccc] group-hover:text-white">{ws.name}</span>
                            <div 
                               onClick={(e) => handleDelete(ws.id, e)}
-                              className="text-[#555] hover:text-red-400 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                              className="text-[#888] hover:text-red-400 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
                            >
                                <Trash2 size={12} />
                            </div>

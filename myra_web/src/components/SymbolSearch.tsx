@@ -126,7 +126,7 @@ export function SymbolSearch({ lib, onSymbolSelect, placeholder = "Search symbol
 
   return (
     <div className={`relative ${className}`} ref={wrapperRef}>
-      <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#666]" />
+      <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#888]" />
       <input
         id="chart-symbol-search"
         name="symbol"
@@ -161,7 +161,7 @@ export function SymbolSearch({ lib, onSymbolSelect, placeholder = "Search symbol
       )}
       
       {showSuggestions && inputValue.length >= 2 && suggestions.length === 0 && !loading && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-[#1a1c24] border border-[#ffffff1a] rounded shadow-xl overflow-hidden z-50 p-3 text-center text-xs text-[#666]">
+        <div className="absolute top-full left-0 right-0 mt-1 bg-[#1a1c24] border border-[#ffffff1a] rounded shadow-xl overflow-hidden z-50 p-3 text-center text-xs text-[#888]">
           No symbols found
         </div>
       )}

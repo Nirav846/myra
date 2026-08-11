@@ -220,7 +220,7 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
       case 'no_model':
       case 'no_events': return <AlertCircle size={16} className="text-orange-400" />;
       case 'error': return <XCircle size={16} className="text-red-400" />;
-      default: return <Clock size={16} className="text-[#666]" />;
+      default: return <Clock size={16} className="text-[#888]" />;
     }
   };
 
@@ -313,7 +313,7 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
               ({new Date(scanStatus.last_scan).toLocaleTimeString()})
             </span>
           )}
-          <span className="ml-auto text-[#666]">{scanStatus.message}</span>
+          <span className="ml-auto text-[#888]">{scanStatus.message}</span>
         </div>
       )}
 
@@ -326,7 +326,7 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
 
       {scanStatus?.scan_status === 'no_model' && !isScanning && (
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center text-[#666] font-mono flex flex-col items-center gap-2">
+          <div className="text-center text-[#888] font-mono flex flex-col items-center gap-2">
             <AlertCircle size={32} className="opacity-50" />
             <p>No launchpad model trained yet.</p>
             <button onClick={() => onNavigate('ML Lab', '')} className="mt-2 px-4 py-2 bg-[#ffffff1a] hover:bg-[#ffffff2a] rounded text-white text-xs transition-colors">
@@ -338,17 +338,17 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
 
       {scanStatus?.scan_status === 'no_events' && !isScanning && (
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center text-[#666] font-mono flex flex-col items-center gap-2">
+          <div className="text-center text-[#888] font-mono flex flex-col items-center gap-2">
             <AlertCircle size={32} className="opacity-50" />
             <p>No stocks currently in digestion phase.</p>
-            <p className="text-[10px]">Check back later or run event labelling from ML Lab.</p>
+            <p className="text-[12px]">Check back later or run event labelling from ML Lab.</p>
           </div>
         </div>
       )}
 
       {scanStatus?.scan_status === 'error' && !isScanning && (
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center text-[#666] font-mono flex flex-col items-center gap-2">
+          <div className="text-center text-[#888] font-mono flex flex-col items-center gap-2">
             <XCircle size={32} className="opacity-50 text-red-400" />
             <p className="text-red-400">Scan failed: {scanStatus.message}</p>
           </div>
@@ -357,10 +357,10 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
 
       {scanStatus?.scan_status === 'completed' && predictions.length === 0 && !isScanning && (
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center text-[#666] font-mono flex flex-col items-center gap-2">
+          <div className="text-center text-[#888] font-mono flex flex-col items-center gap-2">
             <AlertCircle size={32} className="opacity-50" />
             <p>No stocks in digestion phase.</p>
-            <p className="text-[10px]">Check back later or run event labelling from ML Lab.</p>
+            <p className="text-[12px]">Check back later or run event labelling from ML Lab.</p>
           </div>
         </div>
       )}
@@ -375,17 +375,17 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
         <>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider mb-1">Stocks in Launch Window</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider mb-1">Stocks in Launch Window</div>
               <div className="text-2xl font-bold text-[#fafafa]">{filteredData.length}</div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider mb-1">Avg Expected Return</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider mb-1">Avg Expected Return</div>
               <div className={`text-2xl font-bold ${avgExpectedReturn > 0 ? 'text-green-400' : 'text-red-400'}`}>
                 {avgExpectedReturn.toFixed(2)}%
               </div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider mb-1">Highest Confidence Setup</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider mb-1">Highest Confidence Setup</div>
               <div className="text-xl font-bold text-[#fafafa] flex items-center gap-2">
                 {highestConfidence ? (
                   <>
@@ -400,7 +400,7 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
                     </span>
                   </>
                 ) : (
-                  <span className="text-[#666]">&mdash;</span>
+                  <span className="text-[#888]">&mdash;</span>
                 )}
               </div>
             </div>
@@ -411,7 +411,7 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
               <Filter size={14} /> <span className="font-mono uppercase font-semibold">Filters</span>
             </div>
             <div className="flex flex-col gap-1 w-64">
-              <div className="flex justify-between items-center text-[10px] text-[#888] font-mono">
+              <div className="flex justify-between items-center text-[12px] text-[#888] font-mono">
                 <span>Min Exp Return</span>
                 <span>{minReturn}%</span>
               </div>
@@ -429,10 +429,10 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
               <MarketCapRangeFilter onChange={setMcapRange} />
             </div>
             <div className="flex flex-col gap-1">
-              <div className="text-[10px] text-[#888] font-mono">Watchlist</div>
+              <div className="text-[12px] text-[#888] font-mono">Watchlist</div>
               <button
                 onClick={() => setWatchlistOnly(o => !o)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[12px] font-mono transition-colors ${
                   watchlistOnly
                     ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
                     : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
@@ -461,7 +461,7 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-[#666]">No setups match current filters.</td>
+                      <td colSpan={7} className="px-4 py-8 text-center text-[#888]">No setups match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((row, i) => {
@@ -489,7 +489,7 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
                             </span>
                           </td>
                           <td className="px-4 py-3 text-center">
-                            <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold
+                            <span className={`px-2 py-0.5 rounded text-[12px] uppercase font-bold
                               ${conf === 'High' ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
                                 conf === 'Medium' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' :
                                 'bg-red-500/10 text-red-400 border border-red-500/20'}`}
@@ -510,7 +510,7 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
 
       {(!scanStatus || (scanStatus.scan_status === 'idle' && predictions.length === 0)) && !isScanning && !error && (
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center text-[#666] font-mono flex flex-col items-center gap-2">
+          <div className="text-center text-[#888] font-mono flex flex-col items-center gap-2">
             <Rocket size={32} className="opacity-30" />
             <p>Click Scan to detect breakout setups.</p>
           </div>

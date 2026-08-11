@@ -59,11 +59,11 @@ export default function ScannerPresetsPanel({ onClose, onLoad }: ScannerPresetsP
                                 <div className="flex justify-between items-start">
                                     <div className="flex flex-col">
                                         <span className="text-sm font-semibold text-white">{preset.name}</span>
-                                        <span className="text-[10px] text-[#888] font-mono">{preset.module}</span>
+                                        <span className="text-[12px] text-[#888] font-mono">{preset.module}</span>
                                     </div>
                                     <div className="flex items-center gap-1">
                                         {preset.isDefault ? (
-                                            <span className="text-[9px] uppercase tracking-wider bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded">System</span>
+                                            <span className="text-[12px] uppercase tracking-wider bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded">System</span>
                                         ) : (
                                             <button 
                                                 onClick={() => {
@@ -94,7 +94,7 @@ export default function ScannerPresetsPanel({ onClose, onLoad }: ScannerPresetsP
                             </div>
                         ))}
                         {filteredPresets.length === 0 && (
-                            <div className="col-span-full py-12 flex flex-col items-center justify-center text-[#666] font-mono text-xs text-center border border-dashed border-[#ffffff1a] rounded-lg">
+                            <div className="col-span-full py-12 flex flex-col items-center justify-center text-[#888] font-mono text-xs text-center border border-dashed border-[#ffffff1a] rounded-lg">
                                 <Database size={24} className="mb-2 opacity-50" />
                                 No presets found for this category.
                             </div>
@@ -115,11 +115,11 @@ export default function ScannerPresetsPanel({ onClose, onLoad }: ScannerPresetsP
                       a.click();
                       URL.revokeObjectURL(url);
                     }}
-                    className="text-[10px] font-mono text-[#888] hover:text-white border border-white/10 px-2.5 py-1 rounded flex items-center gap-1.5"
+                    className="text-[12px] font-mono text-[#888] hover:text-white border border-white/10 px-2.5 py-1 rounded flex items-center gap-1.5"
                   >
                     <Download size={10} /> Export
                   </button>
-                  <label className="text-[10px] font-mono text-[#888] hover:text-white border border-white/10 px-2.5 py-1 rounded flex items-center gap-1.5 cursor-pointer">
+                  <label className="text-[12px] font-mono text-[#888] hover:text-white border border-white/10 px-2.5 py-1 rounded flex items-center gap-1.5 cursor-pointer">
                     <Upload size={10} /> Import
                     <input
                       type="file"

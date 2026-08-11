@@ -565,8 +565,8 @@ export default function PortfolioView() {
     return sortDir === 'asc' ? ' \u2191' : ' \u2193';
   };
 
-  const thClass = 'px-3 py-2 text-left text-[11px] font-mono text-[#888] cursor-pointer hover:text-white select-none whitespace-nowrap border-b border-[#ffffff1a]';
-  const tdClass = 'px-3 py-2 text-[11px] font-mono whitespace-nowrap border-b border-[#ffffff0a]';
+  const thClass = 'px-3 py-2 text-left text-[12px] font-mono text-[#888] cursor-pointer hover:text-white select-none whitespace-nowrap border-b border-[#ffffff1a]';
+  const tdClass = 'px-3 py-2 text-[12px] font-mono whitespace-nowrap border-b border-[#ffffff0a]';
 
   const allocationData = useMemo(() => {
     if (!showIndustry || !data?.holdings) return data?.sector_allocation || [];
@@ -741,7 +741,7 @@ export default function PortfolioView() {
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={`px-4 py-2 rounded text-[11px] font-mono pointer-events-auto cursor-pointer animate-in fade-in slide-in-from-right ${
+            className={`px-4 py-2 rounded text-[12px] font-mono pointer-events-auto cursor-pointer animate-in fade-in slide-in-from-right ${
               t.type === 'success'
                 ? 'bg-emerald-500/20 border border-emerald-500/50 text-emerald-300'
                 : 'bg-red-500/20 border border-red-500/50 text-red-300'
@@ -772,14 +772,14 @@ export default function PortfolioView() {
                 placeholder="Symbol (e.g., INFY)"
                 value={addForm.symbol}
                 onChange={(e) => setAddForm({ ...addForm, symbol: e.target.value.toUpperCase() })}
-                className="px-3 py-2 text-[11px] rounded bg-[#0e1117] border border-[#ffffff1a] text-[#fafafa] placeholder-[#888]"
+                className="px-3 py-2 text-[12px] rounded bg-[#0e1117] border border-[#ffffff1a] text-[#fafafa] placeholder-[#888]"
               />
               <input
                 type="number"
                 placeholder="Quantity"
                 value={addForm.qty}
                 onChange={(e) => setAddForm({ ...addForm, qty: e.target.value })}
-                className="px-3 py-2 text-[11px] rounded bg-[#0e1117] border border-[#ffffff1a] text-[#fafafa] placeholder-[#888]"
+                className="px-3 py-2 text-[12px] rounded bg-[#0e1117] border border-[#ffffff1a] text-[#fafafa] placeholder-[#888]"
               />
               <input
                 type="number"
@@ -787,12 +787,12 @@ export default function PortfolioView() {
                 value={addForm.price}
                 onChange={(e) => setAddForm({ ...addForm, price: e.target.value })}
                 step="0.01"
-                className="px-3 py-2 text-[11px] rounded bg-[#0e1117] border border-[#ffffff1a] text-[#fafafa] placeholder-[#888]"
+                className="px-3 py-2 text-[12px] rounded bg-[#0e1117] border border-[#ffffff1a] text-[#fafafa] placeholder-[#888]"
               />
               <select
                 value={addForm.category}
                 onChange={(e) => setAddForm({ ...addForm, category: e.target.value })}
-                className="px-3 py-2 text-[11px] rounded bg-[#0e1117] border border-[#ffffff1a] text-[#fafafa]"
+                className="px-3 py-2 text-[12px] rounded bg-[#0e1117] border border-[#ffffff1a] text-[#fafafa]"
               >
                 <option>NSE EQ</option>
                 <option>NSE FO</option>
@@ -802,14 +802,14 @@ export default function PortfolioView() {
                 <button
                   onClick={handleAddStock}
                   disabled={adding}
-                  className="flex-1 px-3 py-2 text-[11px] rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-1"
+                  className="flex-1 px-3 py-2 text-[12px] rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-1"
                 >
                   {adding ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
                   Add
                 </button>
                 <button
                   onClick={() => setShowAddModal(false)}
-                  className="flex-1 px-3 py-2 text-[11px] rounded bg-[#ffffff0a] text-[#888] hover:text-white"
+                  className="flex-1 px-3 py-2 text-[12px] rounded bg-[#ffffff0a] text-[#888] hover:text-white"
                 >
                   Cancel
                 </button>
@@ -824,19 +824,19 @@ export default function PortfolioView() {
         <div className="fixed inset-0 z-40 bg-black/80 flex items-center justify-center">
           <div className="bg-[#1a1c24] border border-red-500/30 rounded-lg p-6 max-w-sm w-full mx-4">
             <h3 className="text-sm font-semibold text-red-400 mb-3">Remove from Portfolio?</h3>
-            <p className="text-[11px] text-[#888] mb-4">
+            <p className="text-[12px] text-[#888] mb-4">
               Remove <span className="text-white font-bold">{deleteConfirm}</span> from your portfolio. This cannot be undone.
             </p>
             <div className="flex gap-2">
               <button
                 onClick={() => handleDeleteHolding(deleteConfirm)}
-                className="flex-1 px-3 py-2 text-[11px] rounded bg-red-600 text-white hover:bg-red-700 flex items-center justify-center gap-1"
+                className="flex-1 px-3 py-2 text-[12px] rounded bg-red-600 text-white hover:bg-red-700 flex items-center justify-center gap-1"
               >
                 <Trash2 size={12} /> Remove
               </button>
               <button
                 onClick={() => setDeleteConfirm(null)}
-                className="flex-1 px-3 py-2 text-[11px] rounded bg-[#ffffff0a] text-[#888] hover:text-white"
+                className="flex-1 px-3 py-2 text-[12px] rounded bg-[#ffffff0a] text-[#888] hover:text-white"
               >
                 Cancel
               </button>
@@ -849,10 +849,10 @@ export default function PortfolioView() {
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-amber-400 text-sm">⚠ ALERTS</span>
-            <span className="text-[10px] text-[#888] font-mono">({alerts.length})</span>
+            <span className="text-[12px] text-[#888] font-mono">({alerts.length})</span>
           </div>
           {alerts.map((a, i) => (
-            <div key={i} className="text-[11px] font-mono text-amber-300 flex items-start gap-2 mb-1 last:mb-0">
+            <div key={i} className="text-[12px] font-mono text-amber-300 flex items-start gap-2 mb-1 last:mb-0">
               <span className="font-bold shrink-0">{a.symbol}:</span>
               <span>{a.alert_type.replace('_', ' ')} \u2014 {a.detail}</span>
             </div>
@@ -869,7 +869,7 @@ export default function PortfolioView() {
           <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-3 flex items-start gap-3">
             <AlertTriangle size={16} className="text-orange-400 shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-[11px] font-mono text-orange-300">
+              <p className="text-[12px] font-mono text-orange-300">
                 <span className="font-bold">{top.count} {top.sector}</span> holdings ({top.weight_pct.toFixed(1)}% of portfolio) — high sector concentration
               </p>
             </div>
@@ -907,8 +907,8 @@ export default function PortfolioView() {
           className="bg-[#1a1c24] rounded-lg border border-[#ffffff1a] p-3 flex flex-col gap-1 cursor-pointer hover:bg-[#ffffff08] transition-colors group"
           title="Click to refresh portfolio data"
         >
-          <span className="text-[10px] font-mono text-[#888] uppercase tracking-wider">Last Refreshed</span>
-          <span className="text-[11px] font-semibold font-mono text-[#888] flex items-center gap-1.5">
+          <span className="text-[12px] font-mono text-[#888] uppercase tracking-wider">Last Refreshed</span>
+          <span className="text-[12px] font-semibold font-mono text-[#888] flex items-center gap-1.5">
             {refreshing ? (
               <>
                 <span className="inline-block w-3 h-3 border-2 border-[#888] border-t-transparent rounded-full animate-spin" />
@@ -917,30 +917,30 @@ export default function PortfolioView() {
             ) : (
               <>
                 {displaySummary.isLive ? 'Live (15-min delayed)' : (lastRefreshedLabel || displaySummary.last_refresh)}
-                <span className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-cyan-400">⟳</span>
+                <span className="opacity-0 group-hover:opacity-100 transition-opacity text-[12px] text-cyan-400">⟳</span>
               </>
             )}
           </span>
         </div>
         {benchmark && (
           <div className="bg-[#1a1c24] rounded-lg border border-[#ffffff1a] p-3 flex flex-col gap-1">
-            <span className="text-[10px] font-mono text-[#888] uppercase tracking-wider">You vs Nifty</span>
-            <span className="text-[11px] font-semibold font-mono">
+            <span className="text-[12px] font-mono text-[#888] uppercase tracking-wider">You vs Nifty</span>
+            <span className="text-[12px] font-semibold font-mono">
               You: {benchmark.portfolio_return >= 0 ? '+' : ''}{Math.abs(benchmark.portfolio_return).toFixed(1)}% vs Nifty: {benchmark.nifty_return >= 0 ? '+' : ''}{Math.abs(benchmark.nifty_return).toFixed(1)}%
             </span>
-            <span className="text-[10px] font-mono">
+            <span className="text-[12px] font-mono">
               {benchmark.portfolio_return >= benchmark.nifty_return
                 ? '✓ Beating Nifty by ' + (benchmark.portfolio_return - benchmark.nifty_return).toFixed(1) + '%'
                 : '⚠ Underperforming by ' + (benchmark.nifty_return - benchmark.portfolio_return).toFixed(1) + '%'}
             </span>
-            <span className="text-[9px] font-mono text-[#888]">
+            <span className="text-[12px] font-mono text-[#888]">
               {benchmark.period}
             </span>
           </div>
         )}
          {benchmark === null && (
           <div className="bg-[#1a1c24] rounded-lg border border-[#ffffff1a] p-3 flex items-center justify-center">
-            <span className="text-[10px] font-mono text-[#888]">Loading benchmark...</span>
+            <span className="text-[12px] font-mono text-[#888]">Loading benchmark...</span>
           </div>
         )}
       </div>
@@ -948,7 +948,7 @@ export default function PortfolioView() {
       {/* ── Refresh Status Flash ── */}
       {refreshStatus && (
         <div
-          className={`text-[11px] font-mono px-4 py-2 rounded-lg border animate-in fade-in ${
+          className={`text-[12px] font-mono px-4 py-2 rounded-lg border animate-in fade-in ${
             refreshStatus.type === 'success'
               ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
               : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
@@ -962,20 +962,20 @@ export default function PortfolioView() {
       <div className="flex items-center gap-2 flex-wrap">
         <button
           onClick={() => setShowAddModal(true)}
-          className="px-3 py-1 text-[11px] rounded font-mono transition-colors bg-emerald-600 text-white hover:bg-emerald-700 flex items-center gap-1"
+          className="px-3 py-1 text-[12px] rounded font-mono transition-colors bg-emerald-600 text-white hover:bg-emerald-700 flex items-center gap-1"
         >
           <Plus size={14} /> Add Stock
         </button>
         <button
           onClick={handleRefresh}
           disabled={refreshing}
-          className="px-3 py-1 text-[11px] rounded font-mono transition-colors bg-[#ffffff0a] text-[#888] hover:text-white disabled:opacity-50"
+          className="px-3 py-1 text-[12px] rounded font-mono transition-colors bg-[#ffffff0a] text-[#888] hover:text-white disabled:opacity-50"
         >
           {refreshing ? '\u23F3 Refreshing...' : '\u27F3 Refresh'}
         </button>
         <button
           onClick={() => setShowFundamentals(!showFundamentals)}
-          className={`px-3 py-1 text-[11px] rounded font-mono transition-colors ${
+          className={`px-3 py-1 text-[12px] rounded font-mono transition-colors ${
             showFundamentals ? 'bg-blue-600 text-white' : 'bg-[#ffffff0a] text-[#888] hover:text-white'
           }`}
         >
@@ -991,7 +991,7 @@ export default function PortfolioView() {
             }
           }}
           disabled={liveLoading}
-          className={`px-3 py-1 text-[11px] rounded font-mono transition-colors disabled:opacity-50 ${
+          className={`px-3 py-1 text-[12px] rounded font-mono transition-colors disabled:opacity-50 ${
             showLivePrices ? 'bg-green-600 text-white' : 'bg-[#ffffff0a] text-[#888] hover:text-white'
           }`}
         >
@@ -1014,7 +1014,7 @@ export default function PortfolioView() {
             setShowIndustry(!showIndustry);
           }}
           disabled={industryLoading}
-          className={`px-3 py-1 text-[11px] rounded font-mono transition-colors ${
+          className={`px-3 py-1 text-[12px] rounded font-mono transition-colors ${
             showIndustry ? 'bg-purple-600 text-white' : 'bg-[#ffffff0a] text-[#888] hover:text-white'
           }`}
         >
@@ -1060,7 +1060,7 @@ export default function PortfolioView() {
             a.href = url; a.download = `portfolio_${new Date().toISOString().slice(0,10)}.csv`; a.click();
             URL.revokeObjectURL(url);
           }}
-          className="px-3 py-1 text-[11px] rounded font-mono transition-colors bg-[#ffffff0a] text-[#888] hover:text-white"
+          className="px-3 py-1 text-[12px] rounded font-mono transition-colors bg-[#ffffff0a] text-[#888] hover:text-white"
         >
           {'\uD83D\uDCCB'} Export CSV
         </button>
@@ -1068,7 +1068,7 @@ export default function PortfolioView() {
 
       {/* ── Live Price Disclaimer ── */}
       {showLivePrices && (
-        <div className="text-[10px] font-mono text-[#888] bg-emerald-500/5 border border-emerald-500/20 rounded px-3 py-1.5 flex items-center gap-2">
+        <div className="text-[12px] font-mono text-[#888] bg-emerald-500/5 border border-emerald-500/20 rounded px-3 py-1.5 flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-green-500 inline-block animate-pulse" />
           Live ({liveSource === 'cache' ? 'cached' : 'yfinance'}) via Yahoo Finance. 15-minute delayed. For reference only.
         </div>
@@ -1078,7 +1078,7 @@ export default function PortfolioView() {
       <div className="bg-[#1a1c24] rounded-lg border border-[#ffffff1a] overflow-hidden">
         <div className="px-4 py-2 border-b border-[#ffffff1a] flex items-center justify-between">
           <h3 className="text-xs font-semibold text-[#fafafa]">Holdings</h3>
-          <span className="text-[10px] text-[#888] font-mono">{sortedHoldings.length} positions</span>
+          <span className="text-[12px] text-[#888] font-mono">{sortedHoldings.length} positions</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left">
@@ -1232,7 +1232,7 @@ export default function PortfolioView() {
                   <td className={`${tdClass} text-right`}>
                     <button
                       onClick={() => setDeleteConfirm(h.symbol)}
-                      className="text-[#555] hover:text-red-400 transition-colors"
+                      className="text-[#888] hover:text-red-400 transition-colors"
                       title={`Remove ${h.symbol}`}
                     >
                       <Trash2 size={12} />
@@ -1255,14 +1255,14 @@ export default function PortfolioView() {
           <div className="flex flex-col gap-2">
             {allocationData.map((s, i) => (
               <div key={s.sector} className="flex items-center gap-3">
-                <span className="text-[11px] font-mono text-[#fafafa] w-24 shrink-0 truncate">{s.sector}</span>
+                <span className="text-[12px] font-mono text-[#fafafa] w-24 shrink-0 truncate">{s.sector}</span>
                   <div className="flex-1 h-5 bg-[#ffffff0a] rounded-full overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all duration-500 ${SECTOR_COLORS[s.sector] || SECTOR_COLORS['Unknown'] || 'bg-gray-600'}`}
                       style={{ width: `${Math.max(s.weight_pct, 2)}%` }}
                     />
                   </div>
-                <span className="text-[11px] font-mono text-[#888] w-32 text-right shrink-0">
+                <span className="text-[12px] font-mono text-[#888] w-32 text-right shrink-0">
                   {s.weight_pct.toFixed(1)}% ({formatIndianDec(s.total_value)})
                 </span>
               </div>
@@ -1281,7 +1281,7 @@ export default function PortfolioView() {
             <div className="flex items-center gap-2">
               <span className="text-sm">{'\uD83D\uDCE1'}</span>
               <h3 className="text-sm font-semibold text-[#fafafa]">Scanner Signals on Your Holdings</h3>
-              <span className="text-[10px] text-[#888] bg-[#ffffff0a] px-2 py-0.5 rounded-full">
+              <span className="text-[12px] text-[#888] bg-[#ffffff0a] px-2 py-0.5 rounded-full">
                 {resolveSignals.length} stocks flagged
               </span>
             </div>
@@ -1293,7 +1293,7 @@ export default function PortfolioView() {
           {signalsExpanded && (
             <div className="border-t border-[#ffffff0a] px-4 py-3 space-y-3">
               {/* Summary bar */}
-              <div className="flex items-center gap-4 text-[11px] font-mono text-[#888] mb-2">
+              <div className="flex items-center gap-4 text-[12px] font-mono text-[#888] mb-2">
                 <span>{'\uD83D\uDFE2'} {resolveSignals.filter(s => s.highestSeverity === 'bullish').length} bullish</span>
                 <span>{'\uD83D\uDFE1'} {resolveSignals.filter(s => s.highestSeverity === 'neutral').length} neutral</span>
                 <span>{'\uD83D\uDD35'} {resolveSignals.filter(s => s.highestSeverity === 'info').length} informational</span>
@@ -1318,7 +1318,7 @@ export default function PortfolioView() {
                       >
                         {item.symbol}
                       </span>
-                      <span className="text-[10px] text-[#888]">
+                      <span className="text-[12px] text-[#888]">
                         {item.signalCount} signal{item.signalCount > 1 ? 's' : ''}
                         {item.signalCount >= 3 ? ' \u2014 Highest conviction' : ''}
                       </span>
@@ -1329,7 +1329,7 @@ export default function PortfolioView() {
                         setAddForm({ symbol: item.symbol, qty: '', price: '', category: 'NSE EQ' });
                         setShowAddModal(true);
                       }}
-                      className="text-[10px] text-[#888] hover:text-white bg-[#ffffff0a] hover:bg-[#ffffff1a] px-2 py-0.5 rounded transition-colors"
+                      className="text-[12px] text-[#888] hover:text-white bg-[#ffffff0a] hover:bg-[#ffffff1a] px-2 py-0.5 rounded transition-colors"
                       title="Add to portfolio"
                     >
                       + Add
@@ -1344,7 +1344,7 @@ export default function PortfolioView() {
                         <div className="flex-1">
                           <span className="text-[#ccc] font-medium">{signal.label}</span>
                           {signal.grade ? (
-                            <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                            <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[12px] font-bold border ${
                               signal.grade === 'A' ? 'bg-green-500/20 text-green-400 border-green-500/30' :
                               signal.grade === 'B' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
                               'bg-[#ffffff0a] text-[#aaa] border-[#ffffff1a]'
@@ -1360,7 +1360,7 @@ export default function PortfolioView() {
 
                   {/* Consolidated suggestion */}
                   {item.signals.length > 0 && (
-                    <div className="mt-2 ml-4 text-[10px] text-[#888] italic">
+                    <div className="mt-2 ml-4 text-[12px] text-[#888] italic">
                       {'\u2192'} SUGGESTION: {(() => {
                         const bestSignal = item.signals.reduce((best, s) => {
                           const order = { bullish: 3, neutral: 2, info: 1, bearish: 0 };
@@ -1380,7 +1380,7 @@ export default function PortfolioView() {
                 const unflagged = data.holdings.filter(h => !flaggedSymbols.has(h.symbol));
                 if (unflagged.length > 0) {
                   return (
-                    <div className="text-[10px] text-[#555] mt-2 pt-2 border-t border-[#ffffff05]">
+                    <div className="text-[12px] text-[#888] mt-2 pt-2 border-t border-[#ffffff05]">
                       {'\uD83D\uDFE2'} {unflagged.length} stock{unflagged.length > 1 ? 's' : ''} with no active signals \u2014 {unflagged.map(h => h.symbol).join(', ')}
                     </div>
                   );
@@ -1399,17 +1399,17 @@ export default function PortfolioView() {
           className="w-full px-4 py-2.5 flex items-center justify-between text-xs font-semibold text-[#fafafa] hover:bg-[#ffffff05] transition-colors"
         >
           <span>Risk Metrics</span>
-          <span className="text-[#888] text-[11px] font-mono">{riskExpanded ? '\u25B2' : '\u25BC'}</span>
+          <span className="text-[#888] text-[12px] font-mono">{riskExpanded ? '\u25B2' : '\u25BC'}</span>
         </button>
         {riskExpanded && (
-          <div className="px-4 pb-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-[11px] font-mono">
+          <div className="px-4 pb-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-[12px] font-mono">
             <div className="bg-[#0e1117] rounded-lg p-3 border border-[#ffffff0a]">
               <div className="text-[#888] mb-1">Concentration</div>
               <div className="text-[#fafafa] font-semibold">
                 Top 3 holdings = {risk.concentration.top3_pct.toFixed(1)}% of portfolio
               </div>
               {risk.concentration.holdings.slice(0, 3).map((h: any) => (
-                <div key={h.symbol} className="text-[10px] text-[#888] mt-0.5">
+                <div key={h.symbol} className="text-[12px] text-[#888] mt-0.5">
                   {h.symbol}: {h.pct.toFixed(1)}%
                 </div>
               ))}
@@ -1419,10 +1419,10 @@ export default function PortfolioView() {
               <div className={`font-semibold ${risk.drawdown.drawdown_pct < 0 ? 'text-red-400' : 'text-green-400'}`}>
                 {risk.drawdown.drawdown_pct.toFixed(1)}% from peak
               </div>
-              <div className="text-[10px] text-[#888] mt-0.5">
+              <div className="text-[12px] text-[#888] mt-0.5">
                 Peak: {formatIndianDec(risk.drawdown.peak_value)} on {risk.drawdown.peak_date || 'N/A'}
               </div>
-              <div className="text-[10px] text-[#888]">
+              <div className="text-[12px] text-[#888]">
                 {risk.drawdown.days_from_peak > 0 ? `${risk.drawdown.days_from_peak} days since peak` : 'At peak'}
               </div>
             </div>
@@ -1431,19 +1431,19 @@ export default function PortfolioView() {
               <div className="text-[#fafafa] font-semibold">
                 {risk.diversification_score}/100
               </div>
-              <div className="text-[10px] text-[#888] mt-0.5">{risk.diversification_rating}</div>
+              <div className="text-[12px] text-[#888] mt-0.5">{risk.diversification_rating}</div>
             </div>
           </div>
         )}
       </div>
 
       {/* ── Data Freshness Footer ── */}
-      <div className="text-[10px] font-mono text-[#555] text-center py-3 border-t border-[#ffffff0a] flex items-center justify-center gap-3">
+      <div className="text-[12px] font-mono text-[#888] text-center py-3 border-t border-[#ffffff0a] flex items-center justify-center gap-3">
         <span>Prices as of: {freshness.prices_from || 'N/A'} (EOD) | Fundamentals: {freshness.fundamentals_cached || 'N/A'}</span>
         <button
           onClick={handleRefresh}
           disabled={refreshing}
-          className="px-2 py-0.5 bg-[#ffffff0a] border border-[#ffffff1a] rounded text-[10px] text-cyan-400 hover:text-white hover:bg-[#ffffff15] transition-colors disabled:opacity-50"
+          className="px-2 py-0.5 bg-[#ffffff0a] border border-[#ffffff1a] rounded text-[12px] text-cyan-400 hover:text-white hover:bg-[#ffffff15] transition-colors disabled:opacity-50"
         >
           {refreshing ? '⟳ Refreshing...' : '[Refresh now]'}
         </button>
@@ -1455,8 +1455,8 @@ export default function PortfolioView() {
 function SummaryCard({ label, value, color, small }: { label: string; value: string; color: string; small?: boolean }) {
   return (
     <div className="bg-[#1a1c24] rounded-lg border border-[#ffffff1a] p-3 flex flex-col gap-1">
-      <span className="text-[10px] font-mono text-[#888] uppercase tracking-wider">{label}</span>
-      <span className={`${small ? 'text-[11px]' : 'text-sm'} font-semibold font-mono ${color}`}>{value}</span>
+      <span className="text-[12px] font-mono text-[#888] uppercase tracking-wider">{label}</span>
+      <span className={`${small ? 'text-[12px]' : 'text-sm'} font-semibold font-mono ${color}`}>{value}</span>
     </div>
   );
 }

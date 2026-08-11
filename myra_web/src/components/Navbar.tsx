@@ -147,8 +147,8 @@ export default function Navbar({ tabs }: NavbarProps) {
               key={tab.id}
               to={tab.path}
               className={({ isActive }) =>
-                `px-2 py-1 text-[11px] font-mono whitespace-nowrap transition-colors inline-flex items-center gap-1 ${
-                  isActive ? 'text-cyan-400' : 'text-[#888] hover:text-white'
+                `px-2 py-1 text-[12px] font-mono whitespace-nowrap transition-colors inline-flex items-center gap-1 ${
+                  isActive ? 'text-cyan-400' : 'text-[#aaa] hover:text-white'
                 }`
               }
             >
@@ -194,8 +194,8 @@ export default function Navbar({ tabs }: NavbarProps) {
           }}
           aria-haspopup="true"
           aria-expanded={openDropdown === catKey}
-          className={`px-2 py-1 text-[11px] font-mono whitespace-nowrap transition-colors flex items-center gap-1 ${
-            isActive ? 'text-cyan-400' : 'text-[#888] hover:text-white'
+          className={`px-2 py-1 text-[12px] font-mono whitespace-nowrap transition-colors flex items-center gap-1 ${
+            isActive ? 'text-cyan-400' : 'text-[#aaa] hover:text-white'
           }`}
         >
           {CATEGORY_LABELS[catKey] || catKey} ▾
@@ -215,7 +215,7 @@ export default function Navbar({ tabs }: NavbarProps) {
                     value={dropdownFilter}
                     onChange={e => setDropdownFilter(e.target.value)}
                     onMouseDown={e => e.stopPropagation()}
-                    className="text-[11px] font-mono bg-[#12141a] border border-[#ffffff1a] rounded px-2 py-1 w-full focus:border-cyan-500/40 text-[#ccc] outline-none placeholder:text-[#555]"
+                    className="text-[12px] font-mono bg-[#12141a] border border-[#ffffff1a] rounded px-2 py-1 w-full focus:border-cyan-500/40 text-[#ccc] outline-none placeholder:text-[#888]"
                   />
                 </div>
                 {dropdownFilter.trim() ? (
@@ -230,7 +230,7 @@ export default function Navbar({ tabs }: NavbarProps) {
                             to={tab.path}
                             onClick={() => { setOpenDropdown(null); setDropdownFilter(''); }}
                             className={({ isActive }) =>
-                              `block break-inside-avoid px-3 py-1.5 text-[11px] font-mono transition-colors flex items-center gap-2 ${
+                              `block break-inside-avoid px-3 py-1.5 text-[12px] font-mono transition-colors flex items-center gap-2 ${
                                 isActive
                                   ? 'text-cyan-400 bg-cyan-500/10'
                                   : 'text-[#888] hover:text-white hover:bg-[#ffffff0a]'
@@ -243,7 +243,7 @@ export default function Navbar({ tabs }: NavbarProps) {
                         ))}
                       </div>
                     ) : (
-                      <div className="px-3 py-2 text-[11px] text-[#555]">No scanners match</div>
+                      <div className="px-3 py-2 text-[12px] text-[#888]">No scanners match</div>
                     );
                   })()
                 ) : (
@@ -264,14 +264,14 @@ export default function Navbar({ tabs }: NavbarProps) {
                       if (!items || items.length === 0) continue;
                       elements.push(
                         <div key={`g-${g}`} className="break-inside-avoid mb-1">
-                          <div className="px-3 pt-2 pb-1 text-[9px] uppercase tracking-wider text-[#555]">{g}</div>
+                          <div className="px-3 pt-2 pb-1 text-[12px] uppercase tracking-wider text-[#888]">{g}</div>
                           {items.map(tab => (
                             <NavLink
                               key={tab.id}
                               to={tab.path}
                               onClick={() => { setOpenDropdown(null); setDropdownFilter(''); }}
                               className={({ isActive }) =>
-                                `block px-3 py-1.5 text-[11px] font-mono transition-colors flex items-center gap-2 ${
+                                `block px-3 py-1.5 text-[12px] font-mono transition-colors flex items-center gap-2 ${
                                   isActive
                                     ? 'text-cyan-400 bg-cyan-500/10'
                                     : 'text-[#888] hover:text-white hover:bg-[#ffffff0a]'
@@ -288,14 +288,14 @@ export default function Navbar({ tabs }: NavbarProps) {
                     if (other.length > 0) {
                       elements.push(
                         <div key="g-Other" className="break-inside-avoid mb-1">
-                          <div className="px-3 pt-2 pb-1 text-[9px] uppercase tracking-wider text-[#555]">Other</div>
+                          <div className="px-3 pt-2 pb-1 text-[12px] uppercase tracking-wider text-[#888]">Other</div>
                           {other.map(tab => (
                             <NavLink
                               key={tab.id}
                               to={tab.path}
                               onClick={() => { setOpenDropdown(null); setDropdownFilter(''); }}
                               className={({ isActive }) =>
-                                `block px-3 py-1.5 text-[11px] font-mono transition-colors flex items-center gap-2 ${
+                                `block px-3 py-1.5 text-[12px] font-mono transition-colors flex items-center gap-2 ${
                                   isActive
                                     ? 'text-cyan-400 bg-cyan-500/10'
                                     : 'text-[#888] hover:text-white hover:bg-[#ffffff0a]'
@@ -324,7 +324,7 @@ export default function Navbar({ tabs }: NavbarProps) {
                   to={tab.path}
                   onClick={() => { setOpenDropdown(null); setDropdownFilter(''); }}
                   className={({ isActive }) =>
-                    `block px-3 py-1.5 text-[11px] font-mono transition-colors flex items-center gap-2 ${
+                    `block px-3 py-1.5 text-[12px] font-mono transition-colors flex items-center gap-2 ${
                       isActive
                         ? 'text-cyan-400 bg-cyan-500/10'
                         : 'text-[#888] hover:text-white hover:bg-[#ffffff0a]'
@@ -354,7 +354,7 @@ export default function Navbar({ tabs }: NavbarProps) {
               <button
                 ref={moreBtnRef}
                 onClick={() => setMoreOpen(o => !o)}
-                className="px-2 py-1 text-[11px] font-mono text-[#888] hover:text-white transition-colors whitespace-nowrap"
+                className="px-2 py-1 text-[12px] font-mono text-[#aaa] hover:text-white transition-colors whitespace-nowrap"
                 title="More tabs"
               >
                 More ▾
@@ -376,7 +376,7 @@ export default function Navbar({ tabs }: NavbarProps) {
                       to={tab.path}
                       onClick={() => setMoreOpen(false)}
                       className={({ isActive }) =>
-                        `block px-3 py-1.5 text-[11px] font-mono transition-colors ${
+                        `block px-3 py-1.5 text-[12px] font-mono transition-colors ${
                           isActive
                             ? 'text-cyan-400 bg-cyan-500/10'
                             : 'text-[#888] hover:text-white hover:bg-[#ffffff0a]'

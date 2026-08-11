@@ -196,7 +196,7 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
               <AlertTriangle size={14} />
               <span>ENVIRONMENT: SIMULATED / DEMO MODE ACTIVE</span>
             </div>
-            <span className="text-[10px] text-yellow-500/60 uppercase tracking-widest font-mono">Mock Data Provided by Librarian Fallback</span>
+            <span className="text-[12px] text-yellow-500/60 uppercase tracking-widest font-mono">Mock Data Provided by Librarian Fallback</span>
           </motion.div>
         )}
       </AnimatePresence>
@@ -228,7 +228,7 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
           <div className="w-40">
             <label className="block text-xs font-mono text-[#888] uppercase mb-1">Start Date</label>
             <div className="relative">
-              <Calendar size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555]" />
+              <Calendar size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#888]" />
               <input 
                 type="date" 
                 value={startDate}
@@ -241,7 +241,7 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
           <div className="w-40">
             <label className="block text-xs font-mono text-[#888] uppercase mb-1">End Date</label>
             <div className="relative">
-              <Calendar size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555]" />
+              <Calendar size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#888]" />
               <input 
                 type="date" 
                 value={endDate}
@@ -269,7 +269,7 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
               ))}
             </div>
             <div className="h-[400px] bg-[#ffffff05] border border-[#ffffff0a] rounded animate-pulse border-dashed flex items-center justify-center">
-              <div className="text-[#333] font-mono text-xs uppercase tracking-tighter">Initializing Scrutiny Layer...</div>
+              <div className="text-[#888] font-mono text-xs uppercase tracking-tighter">Initializing Scrutiny Layer...</div>
             </div>
           </div>
         )}
@@ -282,19 +282,19 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
                 <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity"><Package size={100} /></div>
                 <span className="text-[#888] text-xs font-mono mb-1 flex items-center gap-1.5"><Package size={12}/> AGGREGATE DELIVERY %</span>
                 <span className="text-2xl font-bold text-green-400">{summaryStats.avgDelPct}%</span>
-                <span className="text-[10px] text-[#666] mt-1 font-mono">Total Qty: {summaryStats.totalDel.toLocaleString()}</span>
+                <span className="text-[12px] text-[#888] mt-1 font-mono">Total Qty: {summaryStats.totalDel.toLocaleString()}</span>
               </div>
               <div className="bg-[#1a1c24] border border-fuchsia-500/30 rounded p-4 flex flex-col justify-center relative overflow-hidden group">
                 <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity"><TrendingUp size={100} /></div>
                 <span className="text-[#888] text-xs font-mono mb-1 flex items-center gap-1.5"><TrendingUp size={12}/> HIGH DELIVERY SPIKE</span>
                 <span className="text-2xl font-bold text-fuchsia-400">{summaryStats.highestDel.delivery_pct}%</span>
-                <span className="text-[10px] text-[#666] mt-1 font-mono">Recorded on: {summaryStats.highestDel.date}</span>
+                <span className="text-[12px] text-[#888] mt-1 font-mono">Recorded on: {summaryStats.highestDel.date}</span>
               </div>
               <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col justify-center relative overflow-hidden group">
                 <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity"><BarChart size={100} /></div>
                 <span className="text-[#888] text-xs font-mono mb-1 flex items-center gap-1.5"><Activity size={12}/> AVERAGE DAILY VOLUME</span>
                 <span className="text-2xl font-bold text-[#fafafa]">{summaryStats.avgDailyVol.toLocaleString()}</span>
-                <span className="text-[10px] text-[#666] mt-1 font-mono">Across {data.length} trading days</span>
+                <span className="text-[12px] text-[#888] mt-1 font-mono">Across {data.length} trading days</span>
               </div>
             </div>
 
@@ -309,19 +309,19 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
                   className="w-full px-4 py-3 flex items-center justify-between text-sm font-mono text-[#ccc] hover:text-white"
                 >
                   <span>📊 Fundamental Snapshot</span>
-                  <span className="text-[10px] text-[#666]">{showFunda ? '▲' : '▼'}</span>
+                  <span className="text-[12px] text-[#888]">{showFunda ? '▲' : '▼'}</span>
                 </button>
                 {showFunda && (
                   <div className="px-4 pb-4">
                     {fundaLoading ? (
-                      <div className="text-xs text-[#666] font-mono animate-pulse py-4 text-center">
+                      <div className="text-xs text-[#888] font-mono animate-pulse py-4 text-center">
                         Fetching live fundamentals...
                       </div>
                     ) : fundaData ? (
                       <div className="space-y-4">
                         {/* Source badge */}
                         <div className="flex justify-end">
-                          <span className={`text-[9px] px-2 py-0.5 rounded-full font-mono ${
+                          <span className={`text-[12px] px-2 py-0.5 rounded-full font-mono ${
                             fundaData.source === 'live'
                               ? 'bg-green-500/10 text-green-400 border border-green-500/20'
                               : 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
@@ -332,7 +332,7 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
 
                         {/* Valuation Row */}
                         <div>
-                          <h4 className="text-[10px] font-mono text-[#666] uppercase tracking-wider mb-2">Valuation</h4>
+                          <h4 className="text-[12px] font-mono text-[#888] uppercase tracking-wider mb-2">Valuation</h4>
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                             <MetricCard label="PE Ratio" value={fundaData.fundamentals?.pe || fundaData.key_metrics?.pe} />
                             <MetricCard label="PB Ratio" value={fundaData.fundamentals?.pb} />
@@ -343,7 +343,7 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
 
                         {/* Profitability Row */}
                         <div>
-                          <h4 className="text-[10px] font-mono text-[#666] uppercase tracking-wider mb-2">Profitability</h4>
+                          <h4 className="text-[12px] font-mono text-[#888] uppercase tracking-wider mb-2">Profitability</h4>
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                             <MetricCard label="ROE" value={fundaData.fundamentals?.roe || fundaData.key_metrics?.roe} suffix="%" />
                             <MetricCard label="ROCE" value={fundaData.key_metrics?.roce} suffix="%" />
@@ -355,10 +355,10 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
                         {/* Shareholding Row */}
                         {fundaData.shareholding && (
                           <div>
-                            <h4 className="text-[10px] font-mono text-[#666] uppercase tracking-wider mb-2">
+                            <h4 className="text-[12px] font-mono text-[#888] uppercase tracking-wider mb-2">
                               Shareholding
                               {fundaData.shareholding.period_end && (
-                                <span className="ml-2 text-[#555]">as of {fundaData.shareholding.period_end}</span>
+                                <span className="ml-2 text-[#888]">as of {fundaData.shareholding.period_end}</span>
                               )}
                             </h4>
                             <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
@@ -374,7 +374,7 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
 
                         {/* Financial Health Row */}
                         <div>
-                          <h4 className="text-[10px] font-mono text-[#666] uppercase tracking-wider mb-2">Financial Health</h4>
+                          <h4 className="text-[12px] font-mono text-[#888] uppercase tracking-wider mb-2">Financial Health</h4>
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                             <MetricCard label="Debt/Equity" value={fundaData.fundamentals?.debt_equity} />
                             <MetricCard label="Current Ratio" value={fundaData.fundamentals?.current_ratio} />
@@ -385,7 +385,7 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
 
                         {/* Growth Row */}
                         <div>
-                          <h4 className="text-[10px] font-mono text-[#666] uppercase tracking-wider mb-2">Growth</h4>
+                          <h4 className="text-[12px] font-mono text-[#888] uppercase tracking-wider mb-2">Growth</h4>
                           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                             <MetricCard label="Revenue Growth" value={fundaData.fundamentals?.revenue_growth ? fundaData.fundamentals.revenue_growth * 100 : null} suffix="%" color />
                             <MetricCard label="Earnings Growth" value={fundaData.fundamentals?.earnings_growth ? fundaData.fundamentals.earnings_growth * 100 : null} suffix="%" color />
@@ -396,10 +396,10 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
                         {/* Social Sentiment Row */}
                         {sentimentData && (
                           <div>
-                            <h4 className="text-[10px] font-mono text-[#666] uppercase tracking-wider mb-2">Social Sentiment</h4>
+                            <h4 className="text-[12px] font-mono text-[#888] uppercase tracking-wider mb-2">Social Sentiment</h4>
                             <div className="bg-[#1a1c24] border border-[#ffffff0a] p-3 rounded">
                               <div className="flex items-center gap-4">
-                                <div className="text-[10px] text-[#888] font-mono uppercase w-32 shrink-0">Score: {sentimentData.score}</div>
+                                <div className="text-[12px] text-[#888] font-mono uppercase w-32 shrink-0">Score: {sentimentData.score}</div>
                                 <div className="flex-1 bg-[#ffffff0a] h-1.5 rounded relative overflow-hidden flex items-center">
                                   <div className="absolute left-1/2 top-0 bottom-0 w-px bg-[#444] z-10"></div>
                                   {sentimentData.score > 0 ? (
@@ -413,7 +413,7 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
                                 </div>
                               </div>
                               {sentimentData.sources && (
-                                <div className="mt-3 pt-2 border-t border-[#ffffff0a] text-[9px] font-mono text-[#666] flex flex-wrap gap-3">
+                                <div className="mt-3 pt-2 border-t border-[#ffffff0a] text-[12px] font-mono text-[#888] flex flex-wrap gap-3">
                                   {Object.entries(sentimentData.sources).map(([src, details]: [string, any]) => (
                                     <span key={src}>
                                       {src.replace('_', ' ').toUpperCase()}: {details.mentions || 0} mentions
@@ -428,24 +428,24 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
                         {/* Pros/Cons */}
                         {fundaData.pros_cons && (fundaData.pros_cons.pros.length > 0 || fundaData.pros_cons.cons.length > 0) && (
                           <div>
-                            <h4 className="text-[10px] font-mono text-[#666] uppercase tracking-wider mb-2">screener.in Insights</h4>
+                            <h4 className="text-[12px] font-mono text-[#888] uppercase tracking-wider mb-2">screener.in Insights</h4>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                               <div className="bg-[#0a1a0a] border border-green-500/20 rounded p-2">
-                                <p className="text-[10px] text-green-400 font-mono mb-1">PROS</p>
+                                <p className="text-[12px] text-green-400 font-mono mb-1">PROS</p>
                                 {fundaData.pros_cons.pros.length > 0
                                   ? fundaData.pros_cons.pros.map((p: string, i: number) => (
-                                      <p key={i} className="text-[11px] text-green-300/80 leading-relaxed">• {p}</p>
+                                      <p key={i} className="text-[12px] text-green-300/80 leading-relaxed">• {p}</p>
                                     ))
-                                  : <p className="text-[11px] text-[#666]">None listed</p>
+                                  : <p className="text-[12px] text-[#888]">None listed</p>
                                 }
                               </div>
                               <div className="bg-[#1a0a0a] border border-red-500/20 rounded p-2">
-                                <p className="text-[10px] text-red-400 font-mono mb-1">CONS</p>
+                                <p className="text-[12px] text-red-400 font-mono mb-1">CONS</p>
                                 {fundaData.pros_cons.cons.length > 0
                                   ? fundaData.pros_cons.cons.map((c: string, i: number) => (
-                                      <p key={i} className="text-[11px] text-red-300/80 leading-relaxed">• {c}</p>
+                                      <p key={i} className="text-[12px] text-red-300/80 leading-relaxed">• {c}</p>
                                     ))
-                                  : <p className="text-[11px] text-[#666]">None listed</p>
+                                  : <p className="text-[12px] text-[#888]">None listed</p>
                                 }
                               </div>
                             </div>
@@ -453,7 +453,7 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
                         )}
                       </div>
                     ) : (
-                      <div className="text-xs text-[#666] font-mono py-4 text-center">
+                      <div className="text-xs text-[#888] font-mono py-4 text-center">
                         No fundamental data available.
                       </div>
                     )}
@@ -554,7 +554,7 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
                         <tr key={idx} className="border-b border-[#ffffff0a] hover:bg-[#ffffff05]">
                           <td className="py-2 px-2 text-[#888]">{row.date}</td>
                           <td className="py-2 px-2 text-right">{row.close.toFixed(2)}</td>
-                          <td className="py-2 px-2 text-right text-[#666]">{row.volume.toLocaleString()}</td>
+                          <td className="py-2 px-2 text-right text-[#888]">{row.volume.toLocaleString()}</td>
                           <td className="py-2 px-2 text-right text-green-400 font-medium">{row.delivery_qty.toLocaleString()}</td>
                           <td className="py-2 px-4 text-right">
                              <span className={`px-2 py-0.5 rounded ${row.delivery_pct > 50 ? 'bg-fuchsia-500/20 text-fuchsia-400 font-bold' : row.delivery_pct < 30 ? 'bg-red-500/10 text-red-500' : 'text-[#888]'}`}>
@@ -572,7 +572,7 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
         )}
 
         {!data && !loading && (
-          <div className="flex-1 border border-[#ffffff0a] rounded flex items-center justify-center flex-col text-[#666] bg-[#0e1117] min-h-[300px]">
+          <div className="flex-1 border border-[#ffffff0a] rounded flex items-center justify-center flex-col text-[#888] bg-[#0e1117] min-h-[300px]">
             <Search size={32} className="mb-3 opacity-20" />
             <p className="text-sm font-mono">Enter a ticker and date range to query the technical sidecar.</p>
           </div>
@@ -593,7 +593,7 @@ function MetricCard({ label, value, suffix = '', isString = false, color = false
   if (value === null || value === undefined || value === '') {
     return (
       <div className="bg-[#1a1c24] border border-[#ffffff0a] p-3 rounded">
-        <div className="text-[10px] text-[#888] font-mono uppercase flex items-center gap-1">
+        <div className="text-[12px] text-[#888] font-mono uppercase flex items-center gap-1">
           {label}
           {tooltip && (
             <span title={tooltip}>
@@ -601,7 +601,7 @@ function MetricCard({ label, value, suffix = '', isString = false, color = false
             </span>
           )}
         </div>
-        <div className="text-sm font-bold text-[#555]">—</div>
+        <div className="text-sm font-bold text-[#888]">—</div>
       </div>
     );
   }
@@ -614,7 +614,7 @@ function MetricCard({ label, value, suffix = '', isString = false, color = false
 
   return (
     <div className="bg-[#1a1c24] border border-[#ffffff0a] p-3 rounded">
-      <div className="text-[10px] text-[#888] font-mono uppercase flex items-center gap-1">
+      <div className="text-[12px] text-[#888] font-mono uppercase flex items-center gap-1">
         {label}
         {tooltip && (
           <span title={tooltip}>

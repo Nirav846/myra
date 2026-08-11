@@ -136,11 +136,11 @@ export default function BacktestPanel({ lib, symbol, entryPrice, stopLossPrice, 
                 <div className="flex items-center gap-2">
                     <span className="text-xs font-mono text-[#888]">Backtest</span>
                     <span className="text-sm font-bold text-[#fafafa]">{symbol}</span>
-                    <span className="text-[10px] font-mono text-[#666]">
+                    <span className="text-[12px] font-mono text-[#888]">
                         del ≥{minDeliveryChange}{deliveryMetric === 'Pct' ? 'pp' : '%'} over {detectedBaseLength}b base
                     </span>
                 </div>
-                <button onClick={onClose} className="text-[#666] hover:text-white transition-colors" title="Close panel">
+                <button onClick={onClose} className="text-[#888] hover:text-white transition-colors" title="Close panel">
                     <X size={14} />
                 </button>
             </div>
@@ -161,40 +161,40 @@ export default function BacktestPanel({ lib, symbol, entryPrice, stopLossPrice, 
                         {stats && (
                             <div className="grid grid-cols-6 gap-3 mb-2">
                                 <div className="bg-[#2a2c34] border border-[#ffffff1a] rounded p-2.5 text-center">
-                                    <div className="text-[10px] text-[#888] font-mono">Sample Size</div>
+                                    <div className="text-[12px] text-[#888] font-mono">Sample Size</div>
                                     <div className="text-lg font-semibold text-[#fafafa]">{stats.count}</div>
                                 </div>
                                 <div className="bg-[#2a2c34] border border-[#ffffff1a] rounded p-2.5 text-center">
-                                    <div className="text-[10px] text-[#888] font-mono">Win Rate (21d)</div>
+                                    <div className="text-[12px] text-[#888] font-mono">Win Rate (21d)</div>
                                     <div className={`text-lg font-semibold ${stats.winRate >= 60 ? 'text-green-400' : stats.winRate >= 40 ? 'text-yellow-400' : 'text-red-400'}`}>
                                         {stats.winRate.toFixed(0)}%
                                     </div>
                                 </div>
                                 <div className="bg-[#2a2c34] border border-[#ffffff1a] rounded p-2.5 text-center">
-                                    <div className="text-[10px] text-[#888] font-mono">Median 21d</div>
+                                    <div className="text-[12px] text-[#888] font-mono">Median 21d</div>
                                     <div className={`text-lg font-semibold ${stats.median >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                                         {stats.median > 0 ? '+' : ''}{stats.median.toFixed(1)}%
                                     </div>
                                 </div>
                                 <div className="bg-[#2a2c34] border border-[#ffffff1a] rounded p-2.5 text-center">
-                                    <div className="text-[10px] text-[#888] font-mono">Mean 21d</div>
+                                    <div className="text-[12px] text-[#888] font-mono">Mean 21d</div>
                                     <div className={`text-lg font-semibold ${stats.mean >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                                         {stats.mean > 0 ? '+' : ''}{stats.mean.toFixed(1)}%
                                     </div>
                                 </div>
                                 <div className="bg-[#2a2c34] border border-[#ffffff1a] rounded p-2.5 text-center">
-                                    <div className="text-[10px] text-[#888] font-mono">Best 21d</div>
+                                    <div className="text-[12px] text-[#888] font-mono">Best 21d</div>
                                     <div className="text-lg font-semibold text-green-400">+{stats.best.toFixed(1)}%</div>
                                 </div>
                                 <div className="bg-[#2a2c34] border border-[#ffffff1a] rounded p-2.5 text-center">
-                                    <div className="text-[10px] text-[#888] font-mono">Worst 21d</div>
+                                    <div className="text-[12px] text-[#888] font-mono">Worst 21d</div>
                                     <div className="text-lg font-semibold text-red-400">{stats.worst.toFixed(1)}%</div>
                                 </div>
                             </div>
                         )}
 
                         {stats && stats.skew !== 'none' && (
-                            <div className="mb-3 px-3 py-1.5 bg-[#ffffff08] border border-[#ffffff1a] rounded text-[10px] text-[#aaa] font-mono text-center">
+                            <div className="mb-3 px-3 py-1.5 bg-[#ffffff08] border border-[#ffffff1a] rounded text-[12px] text-[#aaa] font-mono text-center">
                                 {stats.skew === 'positive'
                                     ? 'Distribution skewed positive (few large losses drag mean below median)'
                                     : 'Distribution skewed negative (few large wins push mean above median)'}
@@ -202,7 +202,7 @@ export default function BacktestPanel({ lib, symbol, entryPrice, stopLossPrice, 
                         )}
 
                         {insufficient && (
-                            <div className="mb-3 px-3 py-2 bg-yellow-500/10 border border-yellow-500/30 rounded text-[11px] text-yellow-400 font-mono text-center">
+                            <div className="mb-3 px-3 py-2 bg-yellow-500/10 border border-yellow-500/30 rounded text-[12px] text-yellow-400 font-mono text-center">
                                 Insufficient historical instances (n={stats!.count}) — results not statistically meaningful
                             </div>
                         )}
@@ -211,12 +211,12 @@ export default function BacktestPanel({ lib, symbol, entryPrice, stopLossPrice, 
                             <table className="w-full text-left border-collapse">
                                 <thead className="sticky top-0 bg-[#1a1c24] z-10">
                                     <tr className="border-b border-[#ffffff1a]">
-                                        <th className="px-3 py-2 text-[10px] font-medium uppercase text-[#888] font-mono whitespace-nowrap">Date</th>
-                                        <th className="px-3 py-2 text-[10px] font-medium uppercase text-[#888] font-mono whitespace-nowrap text-right">Entry</th>
-                                        <th className="px-3 py-2 text-[10px] font-medium uppercase text-[#888] font-mono whitespace-nowrap text-right">Del Change</th>
-                                        <th className="px-3 py-2 text-[10px] font-medium uppercase text-[#888] font-mono whitespace-nowrap text-right">+5d</th>
-                                        <th className="px-3 py-2 text-[10px] font-medium uppercase text-[#888] font-mono whitespace-nowrap text-right">+10d</th>
-                                        <th className="px-3 py-2 text-[10px] font-medium uppercase text-[#888] font-mono whitespace-nowrap text-right">+21d</th>
+                                        <th className="px-3 py-2 text-[12px] font-medium uppercase text-[#888] font-mono whitespace-nowrap">Date</th>
+                                        <th className="px-3 py-2 text-[12px] font-medium uppercase text-[#888] font-mono whitespace-nowrap text-right">Entry</th>
+                                        <th className="px-3 py-2 text-[12px] font-medium uppercase text-[#888] font-mono whitespace-nowrap text-right">Del Change</th>
+                                        <th className="px-3 py-2 text-[12px] font-medium uppercase text-[#888] font-mono whitespace-nowrap text-right">+5d</th>
+                                        <th className="px-3 py-2 text-[12px] font-medium uppercase text-[#888] font-mono whitespace-nowrap text-right">+10d</th>
+                                        <th className="px-3 py-2 text-[12px] font-medium uppercase text-[#888] font-mono whitespace-nowrap text-right">+21d</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -230,7 +230,7 @@ export default function BacktestPanel({ lib, symbol, entryPrice, stopLossPrice, 
                                                 </span>
                                             </td>
                                             {[inst.ret_5d, inst.ret_10d, inst.ret_21d].map((ret, ci) => (
-                                                <td key={ci} className={`px-3 py-2 text-xs font-mono whitespace-nowrap text-right ${ret === null ? 'text-[#444]' : ret >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                                <td key={ci} className={`px-3 py-2 text-xs font-mono whitespace-nowrap text-right ${ret === null ? 'text-[#888]' : ret >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                                                     {ret === null ? '\u2014' : `${ret > 0 ? '+' : ''}${ret.toFixed(1)}%`}
                                                 </td>
                                             ))}

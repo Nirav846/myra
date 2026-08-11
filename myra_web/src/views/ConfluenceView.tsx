@@ -152,7 +152,7 @@ export default function ConfluenceView() {
   };
 
   const SortIndicator = ({ col }: { col: SortKey }) => (
-    <span className="ml-1 text-[10px] opacity-50">
+    <span className="ml-1 text-[12px] opacity-50">
       {sortKey === col ? (sortAsc ? '▲' : '▼') : ''}
     </span>
   );
@@ -164,7 +164,7 @@ export default function ConfluenceView() {
         <div>
           <h2 className="text-lg font-bold flex items-center gap-2">
             <span>Confluence</span>
-            <span className="text-[#555] text-sm font-normal">Scanner Consensus</span>
+            <span className="text-[#888] text-sm font-normal">Scanner Consensus</span>
           </h2>
           <p className="text-xs text-[#888] mt-0.5 font-mono">
             {data
@@ -174,7 +174,7 @@ export default function ConfluenceView() {
         </div>
         <div className="flex items-center gap-3">
           {data && (
-            <span className="text-[10px] text-[#555] font-mono">
+            <span className="text-[12px] text-[#888] font-mono">
               Updated {relativeTime(data.generated_at)}
             </span>
           )}
@@ -210,33 +210,33 @@ export default function ConfluenceView() {
             <thead className="sticky top-0 z-10 bg-[#1a1c24] border-b border-[#ffffff1a]">
               <tr>
                 <th
-                  className="text-left px-3 py-2 text-[10px] text-[#888] uppercase tracking-wider cursor-pointer hover:text-white select-none"
+                  className="text-left px-3 py-2 text-[12px] text-[#888] uppercase tracking-wider cursor-pointer hover:text-white select-none"
                   onClick={() => toggleSort('symbol')}
                 >
                   Symbol <SortIndicator col="symbol" />
                 </th>
                 <th
-                  className="text-left px-3 py-2 text-[10px] text-[#888] uppercase tracking-wider cursor-pointer hover:text-white select-none"
+                  className="text-left px-3 py-2 text-[12px] text-[#888] uppercase tracking-wider cursor-pointer hover:text-white select-none"
                   onClick={() => toggleSort('sector')}
                 >
                   Sector <SortIndicator col="sector" />
                 </th>
                 <th
-                  className="text-center px-3 py-2 text-[10px] text-[#888] uppercase tracking-wider cursor-pointer hover:text-white select-none"
+                  className="text-center px-3 py-2 text-[12px] text-[#888] uppercase tracking-wider cursor-pointer hover:text-white select-none"
                   onClick={() => toggleSort('scanner_count')}
                 >
                   # Scanners <SortIndicator col="scanner_count" />
                 </th>
-                <th className="text-left px-3 py-2 text-[10px] text-[#888] uppercase tracking-wider">
+                <th className="text-left px-3 py-2 text-[12px] text-[#888] uppercase tracking-wider">
                   Scanners
                 </th>
                 <th
-                  className="text-center px-3 py-2 text-[10px] text-[#888] uppercase tracking-wider cursor-pointer hover:text-white select-none"
+                  className="text-center px-3 py-2 text-[12px] text-[#888] uppercase tracking-wider cursor-pointer hover:text-white select-none"
                   onClick={() => toggleSort('best_grade')}
                 >
                   Best Grade <SortIndicator col="best_grade" />
                 </th>
-                <th className="text-left px-3 py-2 text-[10px] text-[#888] uppercase tracking-wider">
+                <th className="text-left px-3 py-2 text-[12px] text-[#888] uppercase tracking-wider">
                   Links
                 </th>
               </tr>
@@ -251,7 +251,7 @@ export default function ConfluenceView() {
                   <td className="px-3 py-2 text-[#aaa]">{row.sector || '—'}</td>
                   <td className="px-3 py-2 text-center">
                     <span
-                      className={`inline-flex items-center justify-center min-w-[20px] px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                      className={`inline-flex items-center justify-center min-w-[20px] px-1.5 py-0.5 rounded text-[12px] font-bold ${
                         row.scanner_count >= 4
                           ? 'bg-green-500/20 text-green-400 border border-green-500/30'
                           : row.scanner_count >= 3
@@ -267,7 +267,7 @@ export default function ConfluenceView() {
                       {row.scanners.map((name) => (
                         <span
                           key={name}
-                          className={`inline-block px-1.5 py-0.5 rounded text-[9px] border ${
+                          className={`inline-block px-1.5 py-0.5 rounded text-[12px] border ${
                             SCANNER_COLORS[name] || DEFAULT_SCANNER_COLOR
                           }`}
                         >
@@ -279,7 +279,7 @@ export default function ConfluenceView() {
                   <td className="px-3 py-2 text-center">
                     {row.best_grade ? (
                       <span
-                        className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${
+                        className={`inline-block px-2 py-0.5 rounded text-[12px] font-bold border ${
                           GRADE_COLORS[row.best_grade.toUpperCase()] ||
                           'bg-[#ffffff0a] text-[#aaa] border-[#ffffff1a]'
                         }`}
@@ -287,7 +287,7 @@ export default function ConfluenceView() {
                         {row.best_grade}
                       </span>
                     ) : (
-                      <span className="text-[#555]">—</span>
+                      <span className="text-[#888]">—</span>
                     )}
                   </td>
                   <td className="px-3 py-2">

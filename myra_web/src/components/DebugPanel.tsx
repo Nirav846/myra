@@ -86,13 +86,13 @@ export function DebugPanel() {
       
       <div className="flex-1 overflow-y-auto p-2 space-y-2">
         {events.length === 0 ? (
-          <div className="text-[#555] text-center mt-10">Waiting for queries...</div>
+          <div className="text-[#888] text-center mt-10">Waiting for queries...</div>
         ) : (
           events.map((ev) => (
             <div key={ev.id} className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-2">
               <div className="flex justify-between items-start mb-1">
                 <div className="flex items-center gap-2">
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] uppercase font-bold
+                  <span className={`px-1.5 py-0.5 rounded text-[12px] uppercase font-bold
                     ${ev.type === 'request' ? 'bg-blue-500/20 text-blue-400' : 
                       ev.type === 'response' ? 'bg-green-500/20 text-green-400' : 
                       'bg-red-500/20 text-red-400'}
@@ -101,15 +101,15 @@ export function DebugPanel() {
                   </span>
                   <span className="text-[#888]">{ev.database}</span>
                 </div>
-                <span className="text-[#555]">{new Date(ev.timestamp).toLocaleTimeString()}</span>
+                <span className="text-[#888]">{new Date(ev.timestamp).toLocaleTimeString()}</span>
               </div>
               
-              <div className="text-[#ccc] mt-1 break-all bg-[#0e1117] p-1.5 rounded text-[10px] border border-[#ffffff0a]">
+              <div className="text-[#ccc] mt-1 break-all bg-[#0e1117] p-1.5 rounded text-[12px] border border-[#ffffff0a]">
                 {ev.query}
               </div>
               
               {(ev.duration !== undefined || ev.error) && (
-                <div className="flex justify-between items-center mt-1.5 text-[10px]">
+                <div className="flex justify-between items-center mt-1.5 text-[12px]">
                   {ev.duration !== undefined && (
                     <span className="text-[#888]">Took {(ev.duration).toFixed(1)}ms</span>
                   )}

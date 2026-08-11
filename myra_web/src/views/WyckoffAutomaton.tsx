@@ -137,7 +137,7 @@ function springGradeBadge(grade: string | undefined): { label: string; color: st
   if (grade === 'A+') return { label: 'A+', color: 'bg-green-500/20 text-green-400 border-green-500/30' };
   if (grade === 'B') return { label: 'B', color: 'bg-amber-500/20 text-amber-400 border-amber-500/30' };
   if (grade === 'C') return { label: 'C', color: 'bg-[#ffffff1a] text-[#888] border-[#ffffff1a]' };
-  return { label: '—', color: 'bg-[#ffffff0a] text-[#666] border-[#ffffff1a]' };
+  return { label: '—', color: 'bg-[#ffffff0a] text-[#888] border-[#ffffff1a]' };
 }
 
 const EVENT_TYPES = ['All', 'SC', 'AR', 'ST', 'Spring', 'SOS'];
@@ -425,7 +425,7 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
           </button>
           <button
             onClick={() => fetch(`${API_BASE}/cache/wyckoff`, { method: 'DELETE' })}
-            className="text-[10px] text-[#888] hover:text-red-400 transition-colors"
+            className="text-[12px] text-[#888] hover:text-red-400 transition-colors"
             title="Clear cached scan results"
           >
             Clear cache
@@ -441,7 +441,7 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
         >
           <BookOpen size={14} className="text-purple-400" />
           <span className="font-semibold text-[#fafafa]">Wyckoff 101</span>
-          <span className="text-[10px] text-[#666]">— A beginner's guide to Wyckoff Accumulation</span>
+          <span className="text-[12px] text-[#888]">— A beginner's guide to Wyckoff Accumulation</span>
           <ChevronRight size={14} className={`ml-auto transition-transform ${guideOpen ? 'rotate-90' : ''}`} />
         </button>
         {guideOpen && (
@@ -520,12 +520,12 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
              scanStatus.scan_status === 'error' ? 'Scan failed' :
              scanStatus.message}
           </span>
-          <span className="ml-auto text-[#666]">{scanStatus.message}</span>
+          <span className="ml-auto text-[#888]">{scanStatus.message}</span>
         </div>
       )}
 
       {scanDate && scanStatus?.scan_status === 'completed' && scanStatus.scanned_date && scanStatus.scanned_date !== scanDate && (
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-[11px] font-mono text-cyan-400 bg-cyan-500/5 border border-cyan-500/20">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-[12px] font-mono text-cyan-400 bg-cyan-500/5 border border-cyan-500/20">
           <Info size={12} aria-hidden="true" />
           <span>Selected date is a holiday or weekend — adjusted to {scanStatus.scanned_date} (previous trading day)</span>
         </div>
@@ -540,10 +540,10 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
           <MarketCapRangeFilter onChange={setMcapRange} />
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono">Watchlist</div>
+          <div className="text-[12px] text-[#888] font-mono">Watchlist</div>
           <button
             onClick={() => setWatchlistOnly(o => !o)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[12px] font-mono transition-colors ${
               watchlistOnly
                 ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
                 : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
@@ -556,25 +556,25 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
           </button>
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono">Event</div>
+          <div className="text-[12px] text-[#888] font-mono">Event</div>
           <select className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none font-mono" value={eventFilter} onChange={(e) => setEventFilter(e.target.value)}>
             {EVENT_TYPES.map((t) => <option key={t} value={t}>{t === 'All' ? 'All Events' : t + ' — ' + (EVENT_META[t]?.desc ?? '').slice(0, 50) + '...'}</option>)}
           </select>
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono">Phase</div>
+          <div className="text-[12px] text-[#888] font-mono">Phase</div>
           <select className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none font-mono" value={phaseFilter} onChange={(e) => setPhaseFilter(e.target.value)}>
             {PHASE_TYPES.map((t) => <option key={t} value={t}>{t === 'All' ? 'All Phases' : t}</option>)}
           </select>
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono">Sector</div>
+          <div className="text-[12px] text-[#888] font-mono">Sector</div>
           <select className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none font-mono" value={sectorFilter} onChange={(e) => setSectorFilter(e.target.value)}>
             {sectors.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
         <div className="flex flex-col gap-1 w-24">
-          <div className="text-[10px] text-[#888] font-mono">Max Days</div>
+          <div className="text-[12px] text-[#888] font-mono">Max Days</div>
           <select className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none font-mono" value={maxDaysFilter} onChange={(e) => setMaxDaysFilter(Number(e.target.value))}>
             <option value={999}>All Days</option>
             <option value={5}>≤ 5 Days</option>
@@ -584,7 +584,7 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
           </select>
         </div>
         <div className="flex flex-col gap-1 w-28">
-          <div className="flex justify-between text-[10px] text-[#888] font-mono items-center">
+          <div className="flex justify-between text-[12px] text-[#888] font-mono items-center">
             <Tooltip content="Minimum event quality score. Higher = more textbook Wyckoff event. Grade A (75+) = near-perfect delivery/volume setup.">
               <span>Min Quality</span>
             </Tooltip>
@@ -612,25 +612,25 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
           {/* Stats */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Total Signals</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Total Signals</div>
               <div className="text-2xl font-bold text-[#fafafa]">{filteredData.length}</div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg Quality</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Avg Quality</div>
               <div className="text-2xl font-bold text-purple-400">
                 {filteredData.length > 0 ? filteredData.reduce((s, d) => s + d.event_quality, 0) / filteredData.length : 0}
               </div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Phase D (Breakout)</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Phase D (Breakout)</div>
               <div className="text-2xl font-bold text-green-400">{stats.phaseD}</div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Spring Detected</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Spring Detected</div>
               <div className="text-2xl font-bold text-purple-400">{stats.springCount}</div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Recent (≤5d)</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Recent (≤5d)</div>
               <div className="text-2xl font-bold text-green-400">{stats.recent}</div>
             </div>
           </div>
@@ -638,15 +638,15 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
           {/* Grade A Panel */}
           {gradeA.length > 0 && (
             <div className="bg-green-500/5 border border-green-500/20 rounded p-3">
-              <div className="text-[10px] text-green-400 font-mono uppercase tracking-wider mb-2 flex items-center gap-2">
+              <div className="text-[12px] text-green-400 font-mono uppercase tracking-wider mb-2 flex items-center gap-2">
                 <span>Grade A Signals</span>
-                <span className="text-[#666]">— textbook Wyckoff events with quality ≥ 75</span>
+                <span className="text-[#888]">— textbook Wyckoff events with quality ≥ 75</span>
               </div>
               <div className="flex flex-wrap gap-2">
                 {gradeA.slice(0, 12).map(d => {
                   const em = EVENT_META[d.wyckoff_event];
                   return (
-                    <div key={d.symbol} className="flex items-center gap-1.5 px-2 py-1 rounded border text-[11px] font-mono border-green-500/20 bg-[#1a1c24]">
+                    <div key={d.symbol} className="flex items-center gap-1.5 px-2 py-1 rounded border text-[12px] font-mono border-green-500/20 bg-[#1a1c24]">
                       <StarButton symbol={d.symbol} size={10} />
                       <span className="text-white font-bold">{d.symbol}</span>
                       <span className="text-[#888]">{d.sector ?? ''}</span>
@@ -730,7 +730,7 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={20} className="px-4 py-8 text-center text-[#666]">No signals match current filters.</td>
+                      <td colSpan={20} className="px-4 py-8 text-center text-[#888]">No signals match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((c, index) => {
@@ -753,24 +753,24 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
                               </button>
                             </div>
                           </td>
-                          <td className="px-3 py-3 text-[#888] text-[11px] max-w-[120px] truncate" title={c.sector ?? ''}>{c.sector ?? '—'}</td>
+                          <td className="px-3 py-3 text-[#888] text-[12px] max-w-[120px] truncate" title={c.sector ?? ''}>{c.sector ?? '—'}</td>
                           <td className={`px-3 py-3 text-right ${springScoreColor(c.spring_score)}`}>{c.spring_score != null ? c.spring_score.toFixed(1) : '—'}</td>
                           <td className="px-3 py-3 text-center">
                             <Tooltip content={`Spring setup grade: A+ ≥ 65, B ≥ 50, C ≥ 35. Only C+ Springs are included.`}>
-                              <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border ${sg.color}`}>{sg.label}</span>
+                              <span className={`inline-block px-1.5 py-0.5 rounded text-[12px] font-bold border ${sg.color}`}>{sg.label}</span>
                             </Tooltip>
                           </td>
                           <td className="px-3 py-3 text-right text-[#ccc]">{c.close?.toFixed(2) ?? '—'}</td>
                           <td className="px-3 py-3 text-center">
                             <Tooltip content={em?.desc ?? ''}>
-                              <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${em?.color ?? 'bg-[#ffffff1a] text-[#888]'}`}>
+                              <span className={`inline-block px-2 py-0.5 rounded text-[12px] font-bold border ${em?.color ?? 'bg-[#ffffff1a] text-[#888]'}`}>
                                 {c.wyckoff_event}
                               </span>
                             </Tooltip>
                           </td>
                           <td className="px-3 py-3">
                             <Tooltip content={pm?.desc ?? ''}>
-                              <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${pm?.color ?? 'bg-[#ffffff1a] text-[#888]'}`}>
+                              <span className={`inline-block px-2 py-0.5 rounded text-[12px] font-bold border ${pm?.color ?? 'bg-[#ffffff1a] text-[#888]'}`}>
                                 {c.phase}
                               </span>
                             </Tooltip>
@@ -786,16 +786,16 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
                           </td>
                           <td className="px-3 py-3 text-center">
                             {c.equal_low_zone ? (
-                              <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-500/10 text-green-400 border border-green-500/30">YES</span>
+                              <span className="inline-block px-1.5 py-0.5 rounded text-[12px] font-bold bg-green-500/10 text-green-400 border border-green-500/30">YES</span>
                             ) : (
-                              <span className="text-[#666]">—</span>
+                              <span className="text-[#888]">—</span>
                             )}
                           </td>
                           <td className="px-3 py-3 text-center">
                             {c.two_candle_confirm ? (
-                              <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-500/10 text-green-400 border border-green-500/30">YES</span>
+                              <span className="inline-block px-1.5 py-0.5 rounded text-[12px] font-bold bg-green-500/10 text-green-400 border border-green-500/30">YES</span>
                             ) : (
-                              <span className="text-[#666]">—</span>
+                              <span className="text-[#888]">—</span>
                             )}
                           </td>
                           <td className="px-3 py-3 text-right text-[#ccc]">{c.market_cap_cr?.toFixed(0) ?? '—'}</td>
@@ -816,7 +816,7 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
                           </td>
                           <td className="px-3 py-3 text-center">
                             <Tooltip content={`Quality score: ${c.event_quality}/100. ${g.label === 'A' ? 'Textbook event — high conviction.' : g.label === 'B' ? 'Good event — above average.' : g.label === 'C' ? 'Marginal — needs confirmation.' : 'Weak — unreliable event.'}`}>
-                              <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${g.color}`}>{g.label}</span>
+                              <span className={`inline-block px-1.5 py-0.5 rounded text-[12px] font-bold ${g.color}`}>{g.label}</span>
                             </Tooltip>
                           </td>
                         </tr>
@@ -843,10 +843,10 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
       {/* Idle / Empty State */}
       {isIdle && candidates.length === 0 && !isScanning && !error && (
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center text-[#666] font-mono flex flex-col items-center gap-2 max-w-md">
+          <div className="text-center text-[#888] font-mono flex flex-col items-center gap-2 max-w-md">
             <Box size={40} className="opacity-20 mb-2" />
             <p className="text-sm text-[#888]">Click <span className="text-purple-400 font-semibold">Scan</span> to find Wyckoff accumulation patterns.</p>
-            <p className="text-[10px] leading-relaxed">
+            <p className="text-[12px] leading-relaxed">
               The Automaton detects institutional accumulation by identifying Wyckoff events
               (SC, AR, ST, Spring, SOS) and classifying them into four phases.
               Stocks with multiple high-quality events in Phase C or D are closest to breakout.

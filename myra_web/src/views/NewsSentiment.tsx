@@ -137,19 +137,19 @@ export default function NewsSentimentView() {
             }>
               🤖 AI: {aiOpinion.signal}
             </span>
-            <span className="text-[10px] text-[#666]">{(aiOpinion.confidence * 100).toFixed(0)}%</span>
-            {aiOpinion.cached && <span className="text-[10px] text-[#666]">📦 cached</span>}
+            <span className="text-[12px] text-[#888]">{(aiOpinion.confidence * 100).toFixed(0)}%</span>
+            {aiOpinion.cached && <span className="text-[12px] text-[#888]">📦 cached</span>}
           </div>
-          <div className="text-[10px] text-[#666]">
+          <div className="text-[12px] text-[#888]">
             {aiOpinion.source === 'gemini' ? 'Gemini · 24h cache' : '⚙️ Degraded (no API key or LLM unavailable)'}
           </div>
-          <p className="text-[11px] text-[#aaa] mt-1">{aiOpinion.reason}</p>
+          <p className="text-[12px] text-[#aaa] mt-1">{aiOpinion.reason}</p>
           {aiOpinion.summary && (
             <details className="mt-1">
-              <summary className="text-[10px] text-[#666] cursor-pointer hover:text-[#aaa]">
+              <summary className="text-[12px] text-[#888] cursor-pointer hover:text-[#aaa]">
                 Show data the model evaluated
               </summary>
-              <pre className="text-[10px] font-mono text-[#888] whitespace-pre-wrap mt-1 p-2 bg-[#ffffff05] rounded">
+              <pre className="text-[12px] font-mono text-[#888] whitespace-pre-wrap mt-1 p-2 bg-[#ffffff05] rounded">
                 {aiOpinion.summary}
               </pre>
             </details>
@@ -161,13 +161,13 @@ export default function NewsSentimentView() {
 
       {news.length > 0 && (
         <>
-          <div className="flex items-center gap-3 text-[11px]">
+          <div className="flex items-center gap-3 text-[12px]">
             <span className="text-green-400">📈 {posCount} positive</span>
             <span className="text-red-400">📉 {negCount} negative</span>
             <span className="text-[#888]">➖ {neuCount} neutral</span>
-            <span className="text-[#666]">·</span>
+            <span className="text-[#888]">·</span>
             <span className="text-[#888]">{cached ? '📦 Cached (≤6h)' : '🆕 Live'}</span>
-            <span className="text-[#666]">·</span>
+            <span className="text-[#888]">·</span>
             <span className="text-[#888]">{news.length} articles</span>
           </div>
           <div className="space-y-2">
@@ -183,16 +183,16 @@ export default function NewsSentimentView() {
                       item.headline
                     )}
                   </p>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[10px] text-[#888]">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[12px] text-[#888]">
                     {item.company_name && item.company_name.toUpperCase() !== ticker.trim().toUpperCase() && (
                       <span className="text-cyan-400/80">{item.company_name}</span>
                     )}
                     <span>{item.source || 'GDELT'}</span>
-                    {item.domain && <span className="text-[#666]">{item.domain}</span>}
+                    {item.domain && <span className="text-[#888]">{item.domain}</span>}
                     <span>{item.date ? new Date(item.date).toLocaleDateString('en-IN', {day:'numeric', month:'short', year:'numeric'}) : ''}</span>
-                    {item.language && item.language !== 'English' && <span className="text-[#666]">🌐 {item.language}</span>}
+                    {item.language && item.language !== 'English' && <span className="text-[#888]">🌐 {item.language}</span>}
                     {item.tone != null && (
-                      <span className={item.tone > 0 ? 'text-green-500' : item.tone < 0 ? 'text-red-500' : 'text-[#666]'}>
+                      <span className={item.tone > 0 ? 'text-green-500' : item.tone < 0 ? 'text-red-500' : 'text-[#888]'}>
                         Tone: {item.tone > 0 ? '+' : ''}{item.tone.toFixed(1)}
                       </span>
                     )}
@@ -202,7 +202,7 @@ export default function NewsSentimentView() {
                   <span className={item.sentiment === 'positive' ? 'text-green-400' : item.sentiment === 'negative' ? 'text-red-400' : 'text-[#888]'}>
                     {item.sentiment === 'positive' ? '📈' : item.sentiment === 'negative' ? '📉' : '➖'} {item.sentiment}
                   </span>
-                  <span className="text-[10px] text-[#666]">{(item.confidence * 100).toFixed(0)}%</span>
+                  <span className="text-[12px] text-[#888]">{(item.confidence * 100).toFixed(0)}%</span>
                 </div>
               </div>
             ))}
@@ -214,7 +214,7 @@ export default function NewsSentimentView() {
         <div className="text-center text-[#888] py-12">
           <p className="text-3xl mb-2">🔍</p>
           <p className="text-sm">Enter a ticker to see recent news with AI sentiment</p>
-          <p className="text-[10px] mt-1">Powered by GDELT + Groww + FinBERT · Cached for 6 hours</p>
+          <p className="text-[12px] mt-1">Powered by GDELT + Groww + FinBERT · Cached for 6 hours</p>
         </div>
       )}
     </div>

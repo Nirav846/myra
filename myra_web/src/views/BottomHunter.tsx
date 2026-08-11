@@ -299,7 +299,7 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
             onClick={() => {
               fetch(`${API_BASE}/cache/bottom-hunter`, { method: 'DELETE' }).then(() => fetchScanStatus()).catch(() => {});
             }}
-            className="text-[10px] text-[#888] hover:text-red-400 transition-colors"
+            className="text-[12px] text-[#888] hover:text-red-400 transition-colors"
             title="Clear cached scan results"
           >
             Clear cache
@@ -315,7 +315,7 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
         >
           <BookOpen size={14} className="text-blue-400" />
           <span className="font-semibold text-[#fafafa]">How to use Bottom Hunter</span>
-          <span className="text-[10px] text-[#666]">- A guide to delivery-absorption signals</span>
+          <span className="text-[12px] text-[#888]">- A guide to delivery-absorption signals</span>
           <ChevronRight size={14} className={`ml-auto transition-transform ${guideOpen ? 'rotate-90' : ''}`} />
         </button>
         {guideOpen && (
@@ -373,12 +373,12 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
              scanStatus.scan_status === 'error' ? 'Scan failed' :
              scanStatus.message}
           </span>
-          <span className="ml-auto text-[#666]">{scanStatus.message}</span>
+          <span className="ml-auto text-[#888]">{scanStatus.message}</span>
         </div>
       )}
 
       {scanDate && scanStatus?.scan_status === 'completed' && scanStatus.scanned_date && scanStatus.scanned_date !== scanDate && (
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-[11px] font-mono text-blue-400 bg-blue-500/5 border border-blue-500/20">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-[12px] font-mono text-blue-400 bg-blue-500/5 border border-blue-500/20">
           <Info size={12} aria-hidden="true" />
           <span>Selected date is a holiday or weekend — adjusted to {scanStatus.scanned_date} (previous trading day)</span>
         </div>
@@ -399,10 +399,10 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
           <MarketCapRangeFilter onChange={setMcapRange} />
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono">Watchlist</div>
+          <div className="text-[12px] text-[#888] font-mono">Watchlist</div>
           <button
             onClick={() => setWatchlistOnly(o => !o)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[12px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 ${
               watchlistOnly
                 ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
                 : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
@@ -415,7 +415,7 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
           </button>
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono">Tier</div>
+          <div className="text-[12px] text-[#888] font-mono">Tier</div>
           <select
             value={tierFilter}
             onChange={e => setTierFilter(e.target.value)}
@@ -427,7 +427,7 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
           </select>
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono" id="sector-filter-label">Sector</div>
+          <div className="text-[12px] text-[#888] font-mono" id="sector-filter-label">Sector</div>
           <select
             value={sectorFilter}
             onChange={e => setSectorFilter(e.target.value)}
@@ -444,16 +444,16 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
       <div className="flex items-center gap-2">
         <div className="flex items-center gap-1">
           <button onClick={() => setTimeframe('daily')}
-            className={`px-2 py-1 text-[10px] rounded ${timeframe === 'daily' ? 'bg-blue-600 text-white' : 'bg-[#ffffff0a] text-[#888]'}`}>
+            className={`px-2 py-1 text-[12px] rounded ${timeframe === 'daily' ? 'bg-blue-600 text-white' : 'bg-[#ffffff0a] text-[#888]'}`}>
             Daily
           </button>
           <button onClick={() => setTimeframe('weekly')}
-            className={`px-2 py-1 text-[10px] rounded ${timeframe === 'weekly' ? 'bg-blue-600 text-white' : 'bg-[#ffffff0a] text-[#888]'}`}>
+            className={`px-2 py-1 text-[12px] rounded ${timeframe === 'weekly' ? 'bg-blue-600 text-white' : 'bg-[#ffffff0a] text-[#888]'}`}>
             Weekly
           </button>
         </div>
         {timeframe === 'weekly' && (
-          <span className="text-[10px] font-mono text-[#888]">
+          <span className="text-[12px] font-mono text-[#888]">
             Weekly mode — uses 8-week delivery absorption window. Experimental: based on limited backtest (8 trades). For long-term screening.
           </span>
         )}
@@ -461,20 +461,20 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
 
       {(scanStatus?.scan_status === 'completed' || (isIdle && candidates.length > 0)) && !isScanning && (
         <>
-          <div className="text-[10px] font-mono text-[#888]">
+          <div className="text-[12px] font-mono text-[#888]">
             Results: <span className="text-blue-400 capitalize">{timeframe}</span>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Candidates</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Candidates</div>
               <div className="text-2xl font-bold text-[#fafafa]">{filteredData.length}</div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">High Tier</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">High Tier</div>
               <div className="text-2xl font-bold text-green-400">{filteredData.filter(d => d.tier === 'HIGH').length}</div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg Absorption</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Avg Absorption</div>
               <div className="text-2xl font-bold text-blue-400">
                 {filteredData.length > 0
                   ? (filteredData.reduce((s, d) => s + d.delivery_absorption, 0) / filteredData.length).toFixed(2)
@@ -482,7 +482,7 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
               </div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg Score</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Avg Score</div>
               <div className="text-2xl font-bold text-purple-400">
                 {filteredData.length > 0
                   ? (filteredData.reduce((s, d) => s + d.score, 0) / filteredData.length).toFixed(0)
@@ -493,9 +493,9 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
 
           {filteredData.filter(d => d.tier === 'HIGH').length > 0 && (
             <div className="bg-green-500/5 border border-green-500/20 rounded p-3">
-              <div className="text-[10px] text-green-400 font-mono uppercase tracking-wider mb-2 flex items-center gap-2">
+              <div className="text-[12px] text-green-400 font-mono uppercase tracking-wider mb-2 flex items-center gap-2">
                 <span>High Tier Candidates</span>
-                <span className="text-[#666]">— top 20% by delivery absorption percentile</span>
+                <span className="text-[#888]">— top 20% by delivery absorption percentile</span>
               </div>
               <div className="flex flex-wrap gap-2">
                 {filteredData
@@ -503,7 +503,7 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
                   .slice(0, 12)
                   .map(d => (
                     <div key={d.symbol}
-                      className="flex items-center gap-1.5 px-2 py-1 rounded border text-[11px] font-mono border-green-500/20 bg-[#1a1c24]"
+                      className="flex items-center gap-1.5 px-2 py-1 rounded border text-[12px] font-mono border-green-500/20 bg-[#1a1c24]"
                     >
                       <StarButton symbol={d.symbol} size={10} />
                       <span className="text-white font-bold">{d.symbol}</span>
@@ -580,7 +580,7 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={16} className="px-4 py-8 text-center text-[#666]">No candidates match current filters.</td>
+                      <td colSpan={16} className="px-4 py-8 text-center text-[#888]">No candidates match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((row, index) => (
@@ -598,17 +598,17 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
                             </button>
                           </div>
                         </td>
-                        <td className="px-3 py-3 text-[#888] text-[11px] max-w-[120px] truncate" title={row.sector ?? ''}>
+                        <td className="px-3 py-3 text-[#888] text-[12px] max-w-[120px] truncate" title={row.sector ?? ''}>
                           {row.sector ?? '—'}
                         </td>
                         <td className="px-3 py-3 text-center">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${SECTOR_MOM_COLORS[row.sector_mom_tier ?? ''] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
+                          <span className={`px-2 py-0.5 rounded text-[12px] font-bold border ${SECTOR_MOM_COLORS[row.sector_mom_tier ?? ''] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
                             {row.sector_mom_tier ?? '—'}
                           </span>
                         </td>
                         <td className="px-3 py-3 text-center">
                           {row.quality_score != null ? (
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                            <span className={`px-2 py-0.5 rounded text-[12px] font-bold border ${
                               row.quality_score >= 70 ? 'bg-green-500/20 text-green-400 border-green-500/30' :
                               row.quality_score >= 40 ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' :
                               'bg-red-500/20 text-red-400 border-red-500/30'
@@ -637,10 +637,10 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
                             {row.pct_above_52w_low.toFixed(2)}%
                           </span>
                         </td>
-                        <td className="px-3 py-3 text-[#ccc] text-[11px]">{row.entry_signal ?? '—'}</td>
+                        <td className="px-3 py-3 text-[#ccc] text-[12px]">{row.entry_signal ?? '—'}</td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.adtv_cr.toFixed(2)}</td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.sl_price != null ? row.sl_price.toFixed(2) : '—'}</td>
-                        <td className="px-3 py-3 text-[#888] text-[11px]">{row.sl_type ?? '—'}</td>
+                        <td className="px-3 py-3 text-[#888] text-[12px]">{row.sl_type ?? '—'}</td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.swing_low_20d != null ? row.swing_low_20d.toFixed(2) : '—'}</td>
                         <td className="px-3 py-3 text-right">
                           <span className={
@@ -652,17 +652,17 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
                           </span>
                         </td>
                         <td className="px-3 py-3 text-center">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${TIER_COLORS[row.tier] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
+                          <span className={`px-2 py-0.5 rounded text-[12px] font-bold border ${TIER_COLORS[row.tier] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
                             {row.tier}
                           </span>
                         </td>
                         <td className="px-3 py-3 text-center">
                           {row.delivery_spike_conf === true ? (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-green-500/10 text-green-400 border-green-500/30">
+                            <span className="px-2 py-0.5 rounded text-[12px] font-bold border bg-green-500/10 text-green-400 border-green-500/30">
                               YES
                             </span>
                           ) : (
-                            <span className="text-[#666]">—</span>
+                            <span className="text-[#888]">—</span>
                           )}
                         </td>
                       </tr>
@@ -688,7 +688,7 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
 
       {isIdle && candidates.length === 0 && !isScanning && !error && (
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center text-[#666] font-mono flex flex-col items-center gap-2">
+          <div className="text-center text-[#888] font-mono flex flex-col items-center gap-2">
             <Target size={32} className="opacity-30" aria-hidden="true" />
             <p>Click Scan to find stocks with strong delivery absorption near 52-week lows.</p>
           </div>

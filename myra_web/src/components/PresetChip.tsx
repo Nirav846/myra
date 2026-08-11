@@ -48,7 +48,7 @@ export default function PresetChip({ module, currentConfig, onLoad, accentColor 
     return (
         <div className="flex flex-col gap-2 p-3 bg-[#0e1117] border border-[#ffffff0a] rounded-lg">
             <div className="flex items-center justify-between">
-                <label className="text-[10px] text-[#888] font-mono uppercase">Strategy Presets</label>
+                <label className="text-[12px] text-[#888] font-mono uppercase">Strategy Presets</label>
             </div>
             <div className="flex flex-wrap gap-2 items-center">
                 {presets.map(p => {
@@ -69,7 +69,7 @@ export default function PresetChip({ module, currentConfig, onLoad, accentColor 
                             key={p.id}
                             onClick={() => handleLoad(p)}
                             title={p.description || p.name}
-                            className={`px-3 py-1.5 rounded-full text-[10px] font-mono whitespace-nowrap transition-colors border ${activeClasses}`}
+                            className={`px-3 py-1.5 rounded-full text-[12px] font-mono whitespace-nowrap transition-colors border ${activeClasses}`}
                         >
                             {p.name}
                         </button>
@@ -78,7 +78,7 @@ export default function PresetChip({ module, currentConfig, onLoad, accentColor 
                 {!isSaving ? (
                     <button 
                         onClick={() => setIsSaving(true)}
-                        className="px-2 py-1.5 rounded-full text-[10px] font-mono whitespace-nowrap transition-colors border border-[#ffffff1a] bg-[#1a1c24] text-[#888] hover:text-[#fff] flex items-center gap-1"
+                        className="px-2 py-1.5 rounded-full text-[12px] font-mono whitespace-nowrap transition-colors border border-[#ffffff1a] bg-[#1a1c24] text-[#888] hover:text-[#fff] flex items-center gap-1"
                     >
                         <Plus size={10} /> Save Current
                     </button>
@@ -91,12 +91,12 @@ export default function PresetChip({ module, currentConfig, onLoad, accentColor 
                             placeholder="Preset name..."
                             autoFocus
                             onKeyDown={e => e.key === 'Enter' && handleSave()}
-                            className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-[10px] text-[#fafafa] outline-none"
+                            className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-[12px] text-[#fafafa] outline-none"
                         />
                         <button onClick={handleSave} className="p-1 bg-green-500/20 text-green-400 rounded hover:bg-green-500/30">
                             <Save size={12} />
                         </button>
-                        <button onClick={() => setIsSaving(false)} className="p-1 bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 text-[10px]">
+                        <button onClick={() => setIsSaving(false)} className="p-1 bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 text-[12px]">
                             ✕
                         </button>
                     </div>

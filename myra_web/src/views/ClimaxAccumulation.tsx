@@ -220,7 +220,7 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
         <div className="flex items-center gap-2">
           <HistoricalScanDatePicker selectedDate={scanDate} onSelect={setScanDate} />
           <div className="flex flex-col gap-1">
-            <label htmlFor="min-adtv-input" className="text-[10px] text-[#888] font-mono">Min ADTV (₹ Cr)</label>
+            <label htmlFor="min-adtv-input" className="text-[12px] text-[#888] font-mono">Min ADTV (₹ Cr)</label>
             <input
               id="min-adtv-input"
               type="number"
@@ -249,7 +249,7 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
             onClick={() => {
               fetch(`${API_BASE}/cache/climax-accumulation`, { method: 'DELETE' }).then(() => fetchScanStatus()).catch(() => {});
             }}
-            className="text-[10px] text-[#888] hover:text-red-400 transition-colors"
+            className="text-[12px] text-[#888] hover:text-red-400 transition-colors"
             title="Clear cached scan results"
           >
             Clear cache
@@ -284,12 +284,12 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
              scanStatus.scan_status === 'error' ? 'Scan failed' :
              scanStatus.message}
           </span>
-          <span className="ml-auto text-[#666]">{scanStatus.message}</span>
+          <span className="ml-auto text-[#888]">{scanStatus.message}</span>
         </div>
       )}
 
       {scanDate && scanStatus?.scan_status === 'completed' && scanStatus.scanned_date && scanStatus.scanned_date !== scanDate && (
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-[11px] font-mono text-purple-400 bg-purple-500/5 border border-purple-500/20">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-[12px] font-mono text-purple-400 bg-purple-500/5 border border-purple-500/20">
           <Info size={12} aria-hidden="true" />
           <span>Selected date is a holiday or weekend — adjusted to {scanStatus.scanned_date} (previous trading day)</span>
         </div>
@@ -304,7 +304,7 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
 
       {/* Info Banner */}
       <div className="bg-purple-500/5 border border-purple-500/20 rounded p-3">
-        <div className="flex items-start gap-2 text-[11px] font-mono text-purple-300">
+        <div className="flex items-start gap-2 text-[12px] font-mono text-purple-300">
           <Info size={14} className="shrink-0 mt-0.5" aria-hidden="true" />
           <div>
             <span className="font-semibold text-purple-400">Climax Accumulation Scanner:</span>{' '}
@@ -330,15 +330,15 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Candidates</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Candidates</div>
               <div className="text-2xl font-bold text-[#fafafa]">{filteredData.length}</div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Second Chance</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Second Chance</div>
               <div className="text-2xl font-bold text-green-400">{filteredData.filter(d => d.second_chance).length}</div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg Dist%</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Avg Dist%</div>
               <div className="text-2xl font-bold text-purple-400">
                 {filteredData.length > 0
                   ? (filteredData.reduce((s, d) => s + d.dist_pct, 0) / filteredData.length).toFixed(1) + '%'
@@ -346,7 +346,7 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
               </div>
             </div>
             <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg Base Days</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Avg Base Days</div>
               <div className="text-2xl font-bold text-cyan-400">
                 {filteredData.length > 0
                   ? (filteredData.reduce((s, d) => s + d.base_days, 0) / filteredData.length).toFixed(0)
@@ -410,7 +410,7 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={13} className="px-4 py-8 text-center text-[#666]">No climax accumulation setups match current filters.</td>
+                      <td colSpan={13} className="px-4 py-8 text-center text-[#888]">No climax accumulation setups match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((row, index) => (
@@ -424,7 +424,7 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
                             {row.symbol}
                           </button>
                         </td>
-                        <td className="px-3 py-3 text-[#888] text-[11px] max-w-[120px] truncate" title={row.sector ?? ''}>
+                        <td className="px-3 py-3 text-[#888] text-[12px] max-w-[120px] truncate" title={row.sector ?? ''}>
                           {row.sector ?? '—'}
                         </td>
                         <td className="px-3 py-3 text-[#ccc]">{row.climax_date}</td>
@@ -454,7 +454,7 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
                         </td>
                         <td className="px-3 py-3 text-center">
                           {row.second_chance ? (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-green-500/20 text-green-400 border-green-500/30">
+                            <span className="px-2 py-0.5 rounded text-[12px] font-bold border bg-green-500/20 text-green-400 border-green-500/30">
                               YES — Shakeout Recovered
                             </span>
                           ) : null}
@@ -485,10 +485,10 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
 
       {isIdle && candidates.length === 0 && !isScanning && !error && (
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center text-[#666] font-mono flex flex-col items-center gap-2">
+          <div className="text-center text-[#888] font-mono flex flex-col items-center gap-2">
             <Box size={32} className="opacity-30" aria-hidden="true" />
             <p>Click Scan to detect climax accumulation setups.</p>
-            <p className="text-[10px]">High-volume distribution events followed by tight consolidation with rising delivery.</p>
+            <p className="text-[12px]">High-volume distribution events followed by tight consolidation with rising delivery.</p>
           </div>
         </div>
       )}

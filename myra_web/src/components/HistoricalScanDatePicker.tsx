@@ -46,12 +46,12 @@ export function HistoricalScanDatePicker({ selectedDate, onSelect }: Props) {
   return (
     <div className="flex items-center gap-1.5 relative">
       {selectedDate && (
-        <div className="flex items-center gap-1 px-2 py-1 bg-[#1a1c24] border border-[#ffffff1a] rounded text-[11px] font-mono text-[#ccc]">
+        <div className="flex items-center gap-1 px-2 py-1 bg-[#1a1c24] border border-[#ffffff1a] rounded text-[12px] font-mono text-[#ccc]">
           <Calendar size={11} className="text-violet-400" aria-hidden="true" />
           <span>{selectedDate}</span>
           <button
             onClick={() => onSelect('')}
-            className="text-[#666] hover:text-[#aaa] transition-colors focus-visible:outline-none rounded"
+            className="text-[#888] hover:text-[#aaa] transition-colors focus-visible:outline-none rounded"
             aria-label="Clear scan date"
           >
             <XCircle size={11} aria-hidden="true" />
@@ -62,7 +62,7 @@ export function HistoricalScanDatePicker({ selectedDate, onSelect }: Props) {
       <Tooltip content="Time-travel the scan to any past trading day. Weekend/holidays auto-adjust to the nearest previous trading day.">
         <button
           onClick={() => setOpen(o => !o)}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded border text-[11px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 ${
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded border text-[12px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 ${
             selectedDate
               ? 'bg-violet-500/15 border-violet-500/30 text-violet-300'
               : open
@@ -82,7 +82,7 @@ export function HistoricalScanDatePicker({ selectedDate, onSelect }: Props) {
           ref={popoverRef}
           className="absolute right-0 top-full mt-2 z-50 bg-[#1a1c24] border border-[#ffffff1a] rounded-lg shadow-xl p-3 flex flex-col gap-2 min-w-[220px]"
         >
-          <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">
+          <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">
             Scan as of date
           </div>
           <input
@@ -97,13 +97,13 @@ export function HistoricalScanDatePicker({ selectedDate, onSelect }: Props) {
             <button
               onClick={handleScan}
               disabled={!draft}
-              className="flex-1 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 disabled:opacity-40 text-white rounded text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
+              className="flex-1 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 disabled:opacity-40 text-white rounded text-[12px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
             >
               Scan
             </button>
             <button
               onClick={handleClear}
-              className="px-3 py-1.5 bg-[#ffffff0a] hover:bg-[#ffffff15] border border-[#ffffff1a] rounded text-[11px] text-[#aaa] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50"
+              className="px-3 py-1.5 bg-[#ffffff0a] hover:bg-[#ffffff15] border border-[#ffffff1a] rounded text-[12px] text-[#aaa] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50"
             >
               Clear
             </button>

@@ -129,11 +129,11 @@ export default function FVGScannerView({ lib }: { lib: Librarian }) {
         <span className="text-xs font-semibold uppercase tracking-wider text-[#fafafa]">FVG Scanner (Technical)</span>
         <div className="flex gap-2 items-center">
           {isDemo && (
-             <span className="text-[10px] bg-yellow-500/20 text-yellow-500 px-2 py-1 rounded font-mono border border-yellow-500/30">
+             <span className="text-[12px] bg-yellow-500/20 text-yellow-500 px-2 py-1 rounded font-mono border border-yellow-500/30">
                ⚠️ SIMULATED DATA
              </span>
           )}
-          <span className="text-[10px] font-mono text-[#666]">SQL: _tech_conn.execute()</span>
+          <span className="text-[12px] font-mono text-[#888]">SQL: _tech_conn.execute()</span>
         </div>
       </div>
 
@@ -142,25 +142,25 @@ export default function FVGScannerView({ lib }: { lib: Librarian }) {
           <div className="flex items-center gap-4 flex-wrap">
             <div className="flex items-center gap-2">
                <Settings2 size={14} className="text-[#888]" />
-               <span className="text-[11px] text-[#888] font-mono">Exhaustion Threshold:</span>
+               <span className="text-[12px] text-[#888] font-mono">Exhaustion Threshold:</span>
                <input 
                  type="number"
                  value={exhaustionThreshold}
                  onChange={(e) => setExhaustionThreshold(Number(e.target.value))}
                  className="w-16 bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] focus:outline-none"
                />
-               <span className="text-[11px] text-[#888] font-mono">%</span>
+               <span className="text-[12px] text-[#888] font-mono">%</span>
             </div>
           </div>
           <div className="flex items-center gap-3 w-full md:w-auto">
             {errorMsg && (
-              <span className="text-[10px] text-red-400 bg-red-400/10 px-2 py-1 rounded border border-red-400/20 flex items-center gap-1">
+              <span className="text-[12px] text-red-400 bg-red-400/10 px-2 py-1 rounded border border-red-400/20 flex items-center gap-1">
                 <AlertTriangle size={10} /> {errorMsg}
               </span>
             )}
             <button
               onClick={() => setWatchlistOnly(o => !o)}
-              className={`flex items-center gap-1.5 px-2 py-1.5 rounded border text-[11px] font-mono transition-colors ${
+              className={`flex items-center gap-1.5 px-2 py-1.5 rounded border text-[12px] font-mono transition-colors ${
                 watchlistOnly
                   ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
                   : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
@@ -181,7 +181,7 @@ export default function FVGScannerView({ lib }: { lib: Librarian }) {
         </div>
 
         {lastRefreshed && (
-          <div className="text-[10px] text-[#666] font-mono mb-2">
+          <div className="text-[12px] text-[#888] font-mono mb-2">
             Last update: {lastRefreshed.toLocaleTimeString()}
           </div>
         )}
@@ -231,7 +231,7 @@ export default function FVGScannerView({ lib }: { lib: Librarian }) {
             </tbody>
           </table>
             {(!dataLoaded || apiData.length === 0) && !isRefreshing && (
-              <div className="w-full py-8 text-center text-[#666] text-xs font-mono">No Active FVGs Found.</div>
+              <div className="w-full py-8 text-center text-[#888] text-xs font-mono">No Active FVGs Found.</div>
             )}
           </ScrollableTable>
         </div>

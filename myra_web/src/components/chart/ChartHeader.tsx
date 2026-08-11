@@ -52,8 +52,8 @@ export const ChartHeader: React.FC<ChartHeaderProps> = ({
     const priceColor = isBullish ? 'text-green-400' : 'text-red-400';
 
     return (
-        <div className="absolute top-2 left-10 right-10 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px] z-10 pointer-events-none select-none items-center">
-            <span className="text-[11px] font-bold text-cyan-400">{symbol}</span>
+        <div className="absolute top-2 left-10 right-10 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[12px] z-10 pointer-events-none select-none items-center">
+            <span className="text-[12px] font-bold text-cyan-400">{symbol}</span>
             <span className="text-[#888]">{dates[lastIdx] || ''}</span>
             
             <div className="flex gap-1.5 ml-1">

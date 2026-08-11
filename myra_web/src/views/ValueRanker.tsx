@@ -330,8 +330,8 @@ export default function ValueRankerView({ lib }: { lib: Librarian }) {
           Value Ranker (Graham+)
         </span>
         <div className="flex gap-4 items-center">
-            {lastRefreshed && <span className="text-[10px] text-[#888] font-mono">Last refreshed: {lastRefreshed.toLocaleTimeString()}</span>}
-            <span className="text-[10px] font-mono text-[#666]">Module: _val_conn.fundamentals</span>
+            {lastRefreshed && <span className="text-[12px] text-[#888] font-mono">Last refreshed: {lastRefreshed.toLocaleTimeString()}</span>}
+            <span className="text-[12px] font-mono text-[#888]">Module: _val_conn.fundamentals</span>
         </div>
       </div>
 
@@ -354,43 +354,43 @@ export default function ValueRankerView({ lib }: { lib: Librarian }) {
             <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mt-2">
                 <div className="flex flex-col">
                    <div className="flex justify-between items-center mb-1">
-                      <label className="text-[10px] text-[#888] font-mono uppercase">Graham Margin</label>
-                      <span className="text-[10px] text-green-400 font-mono">{weights.graham}</span>
+                      <label className="text-[12px] text-[#888] font-mono uppercase">Graham Margin</label>
+                      <span className="text-[12px] text-green-400 font-mono">{weights.graham}</span>
                    </div>
                    <input type="range" min="0" max="100" value={weights.graham} onChange={(e) => setWeight('graham', Number(e.target.value))} className="w-full accent-green-500" />
                 </div>
                 <div className="flex flex-col">
                    <div className="flex justify-between items-center mb-1">
-                      <label className="text-[10px] text-[#888] font-mono uppercase">Earnings Yield</label>
-                      <span className="text-[10px] text-green-400 font-mono">{weights.earningsYield}</span>
+                      <label className="text-[12px] text-[#888] font-mono uppercase">Earnings Yield</label>
+                      <span className="text-[12px] text-green-400 font-mono">{weights.earningsYield}</span>
                    </div>
                    <input type="range" min="0" max="100" value={weights.earningsYield} onChange={(e) => setWeight('earningsYield', Number(e.target.value))} className="w-full accent-green-500" />
                 </div>
                 <div className="flex flex-col">
                    <div className="flex justify-between items-center mb-1">
-                      <label className="text-[10px] text-[#888] font-mono uppercase">ROE</label>
-                      <span className="text-[10px] text-green-400 font-mono">{weights.roe}</span>
+                      <label className="text-[12px] text-[#888] font-mono uppercase">ROE</label>
+                      <span className="text-[12px] text-green-400 font-mono">{weights.roe}</span>
                    </div>
                    <input type="range" min="0" max="100" value={weights.roe} onChange={(e) => setWeight('roe', Number(e.target.value))} className="w-full accent-green-500" />
                 </div>
                 <div className="flex flex-col">
                    <div className="flex justify-between items-center mb-1">
-                      <label className="text-[10px] text-[#888] font-mono uppercase">Debt/Equity (Inv)</label>
-                      <span className="text-[10px] text-green-400 font-mono">{weights.debtEquity}</span>
+                      <label className="text-[12px] text-[#888] font-mono uppercase">Debt/Equity (Inv)</label>
+                      <span className="text-[12px] text-green-400 font-mono">{weights.debtEquity}</span>
                    </div>
                    <input type="range" min="0" max="100" value={weights.debtEquity} onChange={(e) => setWeight('debtEquity', Number(e.target.value))} className="w-full accent-green-500" />
                 </div>
                 <div className="flex flex-col">
                    <div className="flex justify-between items-center mb-1">
-                      <label className="text-[10px] text-[#888] font-mono uppercase">Dividend Yield</label>
-                      <span className="text-[10px] text-green-400 font-mono">{weights.dividendYield}</span>
+                      <label className="text-[12px] text-[#888] font-mono uppercase">Dividend Yield</label>
+                      <span className="text-[12px] text-green-400 font-mono">{weights.dividendYield}</span>
                    </div>
                    <input type="range" min="0" max="100" value={weights.dividendYield} onChange={(e) => setWeight('dividendYield', Number(e.target.value))} className="w-full accent-green-500" />
                 </div>
                 <div className="flex flex-col">
                    <div className="flex justify-between items-center mb-1">
-                      <label className="text-[10px] text-[#888] font-mono uppercase">Net Margin</label>
-                      <span className="text-[10px] text-green-400 font-mono">{weights.netMargin}</span>
+                      <label className="text-[12px] text-[#888] font-mono uppercase">Net Margin</label>
+                      <span className="text-[12px] text-green-400 font-mono">{weights.netMargin}</span>
                    </div>
                    <input type="range" min="0" max="100" value={weights.netMargin} onChange={(e) => setWeight('netMargin', Number(e.target.value))} className="w-full accent-green-500" />
                 </div>
@@ -399,18 +399,18 @@ export default function ValueRankerView({ lib }: { lib: Librarian }) {
             <div className="flex flex-col md:flex-row gap-4 justify-between items-end mt-2 pt-4 border-t border-[#ffffff1a]">
                 <div className="flex gap-4 flex-wrap">
                     <div className="flex flex-col">
-                      <label className="text-[10px] text-[#888] font-mono uppercase mb-1">Min Score</label>
+                      <label className="text-[12px] text-[#888] font-mono uppercase mb-1">Min Score</label>
                       <div className="flex items-center gap-2">
                         <input type="range" min="0" max="100" value={minScore} onChange={e => setMinScore(Number(e.target.value))} className="w-24 accent-green-500" />
-                        <span className="text-[10px] font-mono w-6">{minScore}</span>
+                        <span className="text-[12px] font-mono w-6">{minScore}</span>
                       </div>
                     </div>
                     <div className="flex flex-col">
-                      <label className="text-[10px] text-[#888] font-mono uppercase mb-1">Max PE</label>
+                      <label className="text-[12px] text-[#888] font-mono uppercase mb-1">Max PE</label>
                       <input type="number" value={maxPE} onChange={e => setMaxPE(Number(e.target.value))} className="w-20 bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] font-mono focus:border-green-500 outline-none" />
                     </div>
                     <div className="flex flex-col">
-                      <label className="text-[10px] text-[#888] font-mono uppercase mb-1">Sector</label>
+                      <label className="text-[12px] text-[#888] font-mono uppercase mb-1">Sector</label>
                       <select value={filterSector} onChange={e => setFilterSector(e.target.value)} className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] font-mono focus:border-green-500 outline-none">
                         <option value="All">All Sectors</option>
                         <option value="Technology">Technology</option>
@@ -422,7 +422,7 @@ export default function ValueRankerView({ lib }: { lib: Librarian }) {
                       </select>
                     </div>
                     <div className="flex flex-col">
-                      <label className="text-[10px] text-[#888] font-mono uppercase mb-1">Market Cap</label>
+                      <label className="text-[12px] text-[#888] font-mono uppercase mb-1">Market Cap</label>
                       <select value={filterMcap} onChange={e => setFilterMcap(e.target.value)} className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] font-mono focus:border-green-500 outline-none">
                         <option value="All">All</option>
                         <option value="Large Cap (N100)">Large Cap (N100)</option>
@@ -438,7 +438,7 @@ export default function ValueRankerView({ lib }: { lib: Librarian }) {
                     <div className="flex flex-col self-end">
                       <button
                         onClick={() => setWatchlistOnly(o => !o)}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors h-[32px] ${
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[12px] font-mono transition-colors h-[32px] ${
                           watchlistOnly
                             ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
                             : 'bg-[#1a1c24] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
@@ -449,7 +449,7 @@ export default function ValueRankerView({ lib }: { lib: Librarian }) {
                       </button>
                     </div>
                     {errorMsg && <span className="text-xs text-red-400 font-mono px-2 py-1 bg-red-400/10 rounded">{errorMsg}</span>}
-                    {isDemo && <span className="text-[10px] bg-yellow-500/20 text-yellow-500 px-2 py-1 rounded font-mono">⚠️ DEMO MODE</span>}
+                    {isDemo && <span className="text-[12px] bg-yellow-500/20 text-yellow-500 px-2 py-1 rounded font-mono">⚠️ DEMO MODE</span>}
                     {isRefreshing && <span className="text-xs text-green-400 font-mono animate-pulse">Scanning...</span>}
                 </div>
             </div>
@@ -461,18 +461,18 @@ export default function ValueRankerView({ lib }: { lib: Librarian }) {
               <div key={topDog.symbol} onClick={() => window.open(`/#/chart?symbol=${encodeURIComponent(topDog.symbol)}`, '_blank')} className="bg-[#12141a] border border-[#ffffff1a] p-3 rounded-lg flex items-center justify-between hover:border-green-500/50 cursor-pointer group transition-colors shadow-sm">
                  <div>
                    <h3 className="font-bold text-white text-sm group-hover:text-green-400 inline-flex items-center gap-2">
-                       <span className="text-green-500 opacity-50 px-1 py-0.5 bg-green-500/10 rounded text-[10px]">#{i+1}</span>
+                       <span className="text-green-500 opacity-50 px-1 py-0.5 bg-green-500/10 rounded text-[12px]">#{i+1}</span>
                        <StarButton symbol={topDog.symbol} size={11} />
                        {topDog.symbol}
                    </h3>
-                   <div className="text-[10px] text-[#888] mt-1 space-x-2 font-mono">
+                   <div className="text-[12px] text-[#888] mt-1 space-x-2 font-mono">
                      <span>Margin: {topDog.grahamMargin.toFixed(1)}%</span>
                      <span>PE: {(topDog.price/topDog.eps).toFixed(1)}</span>
                    </div>
                  </div>
                  <div className="text-right">
                    <div className="text-sm font-semibold text-white">{topDog.score.toFixed(1)}</div>
-                   <div className="text-[10px] text-[#666] font-mono">Score</div>
+                   <div className="text-[12px] text-[#888] font-mono">Score</div>
                  </div>
               </div>
             ))}
@@ -532,7 +532,7 @@ export default function ValueRankerView({ lib }: { lib: Librarian }) {
                 </tbody>
               </table>
             {dataLoaded && displayData.length === 0 && (
-              <div className="w-full py-12 text-center text-[#666] text-xs font-mono flex flex-col items-center">
+              <div className="w-full py-12 text-center text-[#888] text-xs font-mono flex flex-col items-center">
                   <Target size={24} className="mb-2 opacity-30" />
                   No stocks pass the current filters
               </div>

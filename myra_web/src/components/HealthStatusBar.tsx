@@ -139,17 +139,17 @@ export default function HealthStatusBar() {
         </span>
         {data.days_behind !== null && data.days_behind > 0 && (
           <span
-            className={`px-1 py-0.5 rounded text-[10px] leading-none ${daysColor(data.days_behind)} bg-current/10`}
+            className={`px-1 py-0.5 rounded text-[12px] leading-none ${daysColor(data.days_behind)} bg-current/10`}
           >
             {data.days_behind}d behind
           </span>
         )}
         {data.ohlcv_symbols_today !== null && (
-          <span className="text-[#666]">({data.ohlcv_symbols_today} sym)</span>
+          <span className="text-[#888]">({data.ohlcv_symbols_today} sym)</span>
         )}
       </span>
 
-      <span className="text-[#333]">|</span>
+      <span className="text-[#888]">|</span>
 
       {/* Enrichment */}
       <span className="flex items-center gap-1 shrink-0">
@@ -163,7 +163,7 @@ export default function HealthStatusBar() {
         </span>
       </span>
 
-      <span className="text-[#333]">|</span>
+      <span className="text-[#888]">|</span>
 
       {/* Fundamentals Coverage */}
       <span className="flex items-center gap-2 shrink-0">
@@ -173,7 +173,7 @@ export default function HealthStatusBar() {
         <span className={pctColor(ffPct)}>{ffPct}%</span>
       </span>
 
-      <span className="text-[#333]">|</span>
+      <span className="text-[#888]">|</span>
 
       {/* Backups */}
       <span className="flex items-center gap-1.5 shrink-0">
@@ -185,7 +185,7 @@ export default function HealthStatusBar() {
         </span>
       </span>
 
-      <span className="text-[#333]">|</span>
+      <span className="text-[#888]">|</span>
 
       {/* Scanner Counts (collapsible) */}
       <button
@@ -197,7 +197,7 @@ export default function HealthStatusBar() {
       </button>
 
       {showScanners && (
-        <div className="absolute top-full left-0 mt-0 bg-[#0e1117] border border-[#ffffff1a] rounded-b-lg p-2 shadow-lg grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] z-50">
+        <div className="absolute top-full left-0 mt-0 bg-[#0e1117] border border-[#ffffff1a] rounded-b-lg p-2 shadow-lg grid grid-cols-2 gap-x-4 gap-y-1 text-[12px] z-50">
           {Object.entries(data.scanner_cache_counts || {}).map(([name, count]) => (
             <span key={name} className="flex justify-between gap-3 whitespace-nowrap">
               <span className="text-[#888]">{name.replace(/_/g, ' ')}:</span>

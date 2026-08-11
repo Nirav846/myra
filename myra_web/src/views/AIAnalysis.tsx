@@ -60,7 +60,7 @@ export default function AIAnalysisView({ lib }: { lib: Librarian }) {
       <div className="p-4 space-y-4">
         <div className="flex items-end gap-3">
           <div className="w-64 relative z-10 flex flex-col gap-1">
-             <label className="text-[10px] text-[#888] uppercase mb-1 font-semibold font-mono tracking-wider ml-1">
+             <label className="text-[12px] text-[#888] uppercase mb-1 font-semibold font-mono tracking-wider ml-1">
                Target Ticker
              </label>
              <SymbolSearch 
@@ -97,7 +97,7 @@ export default function AIAnalysisView({ lib }: { lib: Librarian }) {
             {/* Header info */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 bg-[#ffffff05] p-3 rounded border border-[#ffffff0a]">
               <div className="bg-[#1a1c24] border border-[#ffffff0a] p-3 rounded">
-                <div className="text-[10px] text-[#888] font-mono uppercase">Consensus</div>
+                <div className="text-[12px] text-[#888] font-mono uppercase">Consensus</div>
                 <div className={`text-lg font-bold ${
                   result.consensus === 'BUY' || result.consensus === 'BULLISH' ? 'text-green-400' :
                   result.consensus === 'SELL' || result.consensus === 'BEARISH' ? 'text-red-400' : 'text-yellow-400'
@@ -106,7 +106,7 @@ export default function AIAnalysisView({ lib }: { lib: Librarian }) {
                 </div>
               </div>
               <div className="bg-[#1a1c24] border border-[#ffffff0a] p-3 rounded">
-                <div className="text-[10px] text-[#888] font-mono uppercase">Confidence Score</div>
+                <div className="text-[12px] text-[#888] font-mono uppercase">Confidence Score</div>
                 <div className="text-lg font-bold text-[#fafafa]">{result.score}%</div>
               </div>
             </div>
@@ -114,14 +114,14 @@ export default function AIAnalysisView({ lib }: { lib: Librarian }) {
             {/* Summary */}
             {result.summary && (
               <div className="bg-[#0e1117] p-4 rounded border border-[#ffffff0a] font-mono text-xs text-[#ccc] leading-relaxed">
-                <div className="text-[10px] text-[#888] mb-2 font-semibold">SUMMARY</div>
+                <div className="text-[12px] text-[#888] mb-2 font-semibold">SUMMARY</div>
                 {result.summary}
               </div>
             )}
 
             {/* Agents */}
             <div className="space-y-2">
-              <div className="text-[10px] text-[#888] font-mono uppercase font-semibold mt-4 mb-2">Agent Reasoning</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase font-semibold mt-4 mb-2">Agent Reasoning</div>
               {result.agents?.map((agent, i) => (
                 <div key={agent.name || i} className="border border-[#ffffff0a] rounded bg-[#0e1117] overflow-hidden">
                   <button
@@ -132,7 +132,7 @@ export default function AIAnalysisView({ lib }: { lib: Librarian }) {
                        {expandedAgents[agent.name] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                        <span className="font-semibold text-white">{agent.name}</span>
                     </div>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                    <span className={`px-2 py-0.5 rounded text-[12px] font-bold ${
                        agent.signal === 'BULLISH' || agent.signal === 'BUY' ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
                        agent.signal === 'BEARISH' || agent.signal === 'SELL' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
                        'bg-gray-500/10 text-gray-400 border border-gray-500/20'
@@ -144,8 +144,8 @@ export default function AIAnalysisView({ lib }: { lib: Librarian }) {
                     <div className="px-4 pb-4 pt-1 border-t border-[#ffffff0a]">
                       <ul className="space-y-2">
                         {agent.reasoning?.map((reason, idx) => (
-                           <li key={idx} className="text-[11px] font-mono text-[#aaa] leading-relaxed flex gap-2">
-                             <span className="text-[#666] shrink-0">•</span>
+                           <li key={idx} className="text-[12px] font-mono text-[#aaa] leading-relaxed flex gap-2">
+                             <span className="text-[#888] shrink-0">•</span>
                              <span>{reason}</span>
                            </li>
                         ))}

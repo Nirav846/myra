@@ -292,7 +292,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
           </button>
           <button
             onClick={() => fetch(`${API_BASE}/cache/trigger`, { method: 'DELETE' })}
-            className="text-[10px] text-[#888] hover:text-red-400 transition-colors"
+            className="text-[12px] text-[#888] hover:text-red-400 transition-colors"
             title="Clear cached scan results"
           >
             Clear cache
@@ -309,7 +309,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
           <div className="flex items-center gap-2">
             <BookOpen size={14} className="text-orange-400" />
             <span className="text-sm font-semibold text-[#fafafa]">How does The Trigger work?</span>
-            <span className="text-[10px] text-orange-400 bg-orange-500/15 border border-orange-500/30 px-2 py-0.5 rounded font-mono">
+            <span className="text-[12px] text-orange-400 bg-orange-500/15 border border-orange-500/30 px-2 py-0.5 rounded font-mono">
               NEW? START HERE
             </span>
           </div>
@@ -372,19 +372,19 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
                     </span>
                     <span className={`text-sm font-bold ${item.color}`}>{item.title}</span>
                   </div>
-                  <div className="text-[11px] text-[#ccc] font-semibold mb-1">{item.subtitle} · {item.metric}</div>
-                  <p className="text-[10px] text-[#aaa] leading-relaxed mb-2">{item.what}</p>
-                  <p className="text-[10px] text-[#888]"><strong className="text-[#ccc]">Pass condition:</strong> {item.good}</p>
+                  <div className="text-[12px] text-[#ccc] font-semibold mb-1">{item.subtitle} · {item.metric}</div>
+                  <p className="text-[12px] text-[#aaa] leading-relaxed mb-2">{item.what}</p>
+                  <p className="text-[12px] text-[#888]"><strong className="text-[#ccc]">Pass condition:</strong> {item.good}</p>
                 </div>
               ))}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="p-3 bg-[#0e1117] border border-orange-500/20 rounded text-[11px] text-[#888] leading-relaxed">
+              <div className="p-3 bg-[#0e1117] border border-orange-500/20 rounded text-[12px] text-[#888] leading-relaxed">
                 <strong className="text-orange-400">Defense Bars</strong> — days when the stock opened lower
                 but recovered strongly on high delivery. Someone defended the price. ≥3 bars = very strong floor.
               </div>
-              <div className="p-3 bg-[#0e1117] border border-green-500/20 rounded text-[11px] text-[#888] leading-relaxed">
+              <div className="p-3 bg-[#0e1117] border border-green-500/20 rounded text-[12px] text-[#888] leading-relaxed">
                 <strong className="text-green-400">Breakout Prox%</strong> — how close to the top of the
                 20-session base the price is right now. 80%+ = price is near the breakout point.
                 Combine with high score for best setups.
@@ -421,12 +421,12 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
              scanStatus.scan_status === 'error' ? 'Scan failed' :
              scanStatus.message}
           </span>
-          <span className="ml-auto text-[#666]">{scanStatus.message}</span>
+          <span className="ml-auto text-[#888]">{scanStatus.message}</span>
         </div>
       )}
 
       {scanDate && scanStatus?.scan_status === 'completed' && scanStatus.scanned_date && scanStatus.scanned_date !== scanDate && (
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-[11px] font-mono text-cyan-400 bg-cyan-500/5 border border-cyan-500/20">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-[12px] font-mono text-cyan-400 bg-cyan-500/5 border border-cyan-500/20">
           <Info size={12} aria-hidden="true" />
           <span>Selected date is a holiday or weekend — adjusted to {scanStatus.scanned_date} (previous trading day)</span>
         </div>
@@ -447,10 +447,10 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
           <MarketCapRangeFilter onChange={setMcapRange} />
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono">Watchlist</div>
+          <div className="text-[12px] text-[#888] font-mono">Watchlist</div>
           <button
             onClick={() => setWatchlistOnly(o => !o)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[12px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 ${
               watchlistOnly
                 ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
                 : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
@@ -463,7 +463,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
           </button>
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono">Sector</div>
+          <div className="text-[12px] text-[#888] font-mono">Sector</div>
           <select
             value={sectorFilter}
             onChange={e => setSectorFilter(e.target.value)}
@@ -476,7 +476,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
           </select>
         </div>
         <div className="flex flex-col gap-1 w-32">
-          <div className="text-[10px] text-[#888] font-mono" id="trigger-score-filter-label">Min Trigger Score</div>
+          <div className="text-[12px] text-[#888] font-mono" id="trigger-score-filter-label">Min Trigger Score</div>
           <select
             value={minTriggerScoreFilter}
             onChange={e => setMinTriggerScoreFilter(Number(e.target.value))}
@@ -489,16 +489,16 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
           </select>
         </div>
         <div className="flex flex-col gap-1 w-28">
-          <div className="text-[10px] text-[#888] font-mono">Min Defense Bars</div>
+          <div className="text-[12px] text-[#888] font-mono">Min Defense Bars</div>
           <div className="flex gap-1">
             {[0, 1, 2, 3].map(n => (
               <button
                 key={n}
                 onClick={() => setMinDefenseBarsFilter(n)}
-                className={`px-2 py-1 rounded border text-[10px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
+                className={`px-2 py-1 rounded border text-[12px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
                   minDefenseBarsFilter === n
                     ? 'bg-orange-500/20 border-orange-500/40 text-orange-400'
-                    : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#666] hover:text-[#aaa]'
+                    : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-[#aaa]'
                 }`}
                 aria-pressed={minDefenseBarsFilter === n}
               >
@@ -508,16 +508,16 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
           </div>
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono">Min Base Days</div>
+          <div className="text-[12px] text-[#888] font-mono">Min Base Days</div>
           <div className="flex gap-1">
             {[0, 5, 10, 15].map(n => (
               <button
                 key={n}
                 onClick={() => setMinBaseDurationFilter(n)}
-                className={`px-2 py-1 rounded border text-[10px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
+                className={`px-2 py-1 rounded border text-[12px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
                   minBaseDurationFilter === n
                     ? 'bg-orange-500/20 border-orange-500/40 text-orange-400'
-                    : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#666] hover:text-[#aaa]'
+                    : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-[#aaa]'
                 }`}
                 aria-pressed={minBaseDurationFilter === n}
               >
@@ -527,16 +527,16 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
           </div>
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono">Grade</div>
+          <div className="text-[12px] text-[#888] font-mono">Grade</div>
           <div className="flex gap-1">
             {['All', 'A', 'B', 'C', 'D'].map(g => (
               <button
                 key={g}
                 onClick={() => setGradeFilter(g)}
-                className={`px-2 py-1 rounded border text-[10px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
+                className={`px-2 py-1 rounded border text-[12px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
                   gradeFilter === g
                     ? 'bg-orange-500/20 border-orange-500/40 text-orange-400'
-                    : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#666] hover:text-[#aaa]'
+                    : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-[#aaa]'
                 }`}
                 aria-pressed={gradeFilter === g}
               >
@@ -546,7 +546,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
           </div>
         </div>
         <div className="flex flex-col gap-1">
-          <div className="flex justify-between text-[10px] text-[#888] font-mono">
+          <div className="flex justify-between text-[12px] text-[#888] font-mono">
             <span>Min Float Util%</span>
             <span className="text-orange-400">{minFloatUtilPct.toFixed(1)}%</span>
           </div>
@@ -555,7 +555,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
             className="w-full accent-orange-500" />
         </div>
         <div className="flex flex-col gap-1">
-          <div className="flex justify-between text-[10px] text-[#888] font-mono">
+          <div className="flex justify-between text-[12px] text-[#888] font-mono">
             <span>Vol Pinch Ratio</span>
             <span className="text-orange-400">{volPinchRatio.toFixed(2)}</span>
           </div>
@@ -564,7 +564,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
             className="w-full accent-orange-500" />
         </div>
         <div className="flex flex-col gap-1">
-          <div className="flex justify-between text-[10px] text-[#888] font-mono">
+          <div className="flex justify-between text-[12px] text-[#888] font-mono">
             <span>Min Smart Float Ratio</span>
             <span className="text-orange-400">{minSmartFloatRatio.toFixed(2)}</span>
           </div>
@@ -573,7 +573,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
             className="w-full accent-orange-500" />
         </div>
         <div className="flex flex-col gap-1">
-          <div className="flex justify-between text-[10px] text-[#888] font-mono">
+          <div className="flex justify-between text-[12px] text-[#888] font-mono">
             <span>Max Price Range%</span>
             <span className="text-orange-400">{priceRangeMax.toFixed(1)}</span>
           </div>
@@ -586,9 +586,9 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
       {/* ── PERFORMANCE STATS ── */}
       <details className="bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden group">
         <summary className="flex items-center gap-2 px-4 py-2.5 text-xs font-mono text-[#888] cursor-pointer hover:bg-[#ffffff05] transition-colors select-none list-none [&::-webkit-details-marker]:hidden">
-          <span className="text-[10px] text-cyan-400 bg-cyan-500/10 border border-cyan-500/30 px-2 py-0.5 rounded font-bold">BACKTEST</span>
+          <span className="text-[12px] text-cyan-400 bg-cyan-500/10 border border-cyan-500/30 px-2 py-0.5 rounded font-bold">BACKTEST</span>
           <span className="font-semibold">Performance Stats</span>
-          <span className="ml-auto text-[10px] opacity-50 group-open:rotate-180 transition-transform">▼</span>
+          <span className="ml-auto text-[12px] opacity-50 group-open:rotate-180 transition-transform">▼</span>
         </summary>
         <div className="px-4 pb-4 border-t border-[#ffffff0a]">
           <p className="text-xs text-[#888] mt-3 mb-3 leading-relaxed font-mono">
@@ -596,23 +596,23 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
           </p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
             <div className="bg-[#0e1117] border border-[#ffffff1a] rounded p-3 text-center">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Win Rate</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Win Rate</div>
               <div className="text-xl font-bold text-green-400">34.7%</div>
             </div>
             <div className="bg-[#0e1117] border border-[#ffffff1a] rounded p-3 text-center">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg +60d Return</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Avg +60d Return</div>
               <div className="text-xl font-bold text-red-400">–7.25%</div>
             </div>
             <div className="bg-[#0e1117] border border-[#ffffff1a] rounded p-3 text-center">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Median Return</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Median Return</div>
               <div className="text-xl font-bold text-red-400">–6.07%</div>
             </div>
             <div className="bg-[#0e1117] border border-[#ffffff1a] rounded p-3 text-center">
-              <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Best / Worst</div>
+              <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Best / Worst</div>
               <div className="text-xl font-bold text-[#fafafa]">+45.2% / –89.8%</div>
             </div>
           </div>
-          <p className="text-[10px] text-[#666] font-mono italic">
+          <p className="text-[12px] text-[#888] font-mono italic">
             This is a screening tool — combine with fundamental analysis.
           </p>
         </div>
@@ -623,19 +623,19 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Tooltip content="Total stocks where all 3 gates passed simultaneously right now">
               <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3 cursor-help">
-                <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Triggers Ready</div>
+                <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Triggers Ready</div>
                 <div className="text-2xl font-bold text-[#fafafa]">{filteredData.length}</div>
               </div>
             </Tooltip>
             <Tooltip content="Trigger Score ≥75 — all three gates strong, plus meaningful defense bars and breakout proximity. Act on these first.">
               <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3 cursor-help">
-                <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Grade A</div>
+                <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Grade A</div>
                 <div className="text-2xl font-bold text-orange-400">{filteredData.filter(d => d.grade === 'A').length}</div>
               </div>
             </Tooltip>
             <Tooltip content="Average Float Utilisation% across current results. Higher = more supply consumed from the market.">
               <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3 cursor-help">
-                <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg Float Util%</div>
+                <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Avg Float Util%</div>
                 <div className="text-2xl font-bold text-red-400">
                   {filteredData.length > 0
                     ? (filteredData.reduce((s, d) => s + (d.float_util_pct ?? 0), 0) / filteredData.length).toFixed(1) + '%'
@@ -645,7 +645,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
             </Tooltip>
             <Tooltip content="Average base duration in sessions. Longer base = more patient, deliberate accumulation. >10 sessions is strong.">
               <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3 cursor-help">
-                <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg Base Days</div>
+                <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Avg Base Days</div>
                 <div className="text-2xl font-bold text-cyan-400">
                   {filteredData.length > 0
                     ? (filteredData.reduce((s, d) => s + (d.base_duration ?? 0), 0) / filteredData.length).toFixed(0)
@@ -657,9 +657,9 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
 
           {filteredData.filter(d => d.grade === 'A').length > 0 && (
             <div className="bg-orange-500/5 border border-orange-500/20 rounded p-3">
-              <div className="text-[10px] text-orange-400 font-mono uppercase tracking-wider mb-2 flex items-center gap-2">
+              <div className="text-[12px] text-orange-400 font-mono uppercase tracking-wider mb-2 flex items-center gap-2">
                 <span>Grade A Triggers</span>
-                <span className="text-[#666]">— highest conviction setups passing all three gates</span>
+                <span className="text-[#888]">— highest conviction setups passing all three gates</span>
               </div>
               <div className="flex flex-wrap gap-2">
                 {filteredData
@@ -667,7 +667,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
                   .slice(0, 12)
                   .map(d => (
                     <div key={d.symbol}
-                      className="flex items-center gap-1.5 px-2 py-1 rounded border text-[11px] font-mono border-orange-500/20 bg-[#1a1c24]"
+                      className="flex items-center gap-1.5 px-2 py-1 rounded border text-[12px] font-mono border-orange-500/20 bg-[#1a1c24]"
                     >
                       <StarButton symbol={d.symbol} size={10} />
                       <span className="text-white font-bold">{d.symbol}</span>
@@ -788,7 +788,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={14} className="px-4 py-8 text-center text-[#666]">No triggers ready — all three gates must pass simultaneously.</td>
+                      <td colSpan={14} className="px-4 py-8 text-center text-[#888]">No triggers ready — all three gates must pass simultaneously.</td>
                     </tr>
                   ) : (
                     filteredData.map((row, index) => (
@@ -806,7 +806,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
                             </button>
                           </div>
                         </td>
-                        <td className="px-3 py-3 text-[#888] text-[11px] max-w-[120px] truncate" title={row.sector ?? ''}>{row.sector ?? '—'}</td>
+                        <td className="px-3 py-3 text-[#888] text-[12px] max-w-[120px] truncate" title={row.sector ?? ''}>{row.sector ?? '—'}</td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.market_cap_cr.toFixed(0)}</td>
                         <td className="px-3 py-3 text-right">
                           <span className={row.float_util_pct >= 25 ? 'text-red-400' : row.float_util_pct >= 15 ? 'text-orange-400' : row.float_util_pct >= 12 ? 'text-amber-400' : 'text-[#888]'}>{row.float_util_pct.toFixed(1)}%</span>
@@ -827,7 +827,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
                           <span className={(row.breakout_prox ?? 0) > 0.70 ? 'text-green-400' : (row.breakout_prox ?? 0) > 0.50 ? 'text-amber-400' : 'text-[#888]'}>{((row.breakout_prox ?? 0) * 100).toFixed(0)}%</span>
                         </td>
                         <td className="px-3 py-3 text-right font-mono">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${GRADE_COLORS[row.grade] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
+                          <span className={`px-2 py-0.5 rounded text-[12px] font-bold border ${GRADE_COLORS[row.grade] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
                             {row.trigger_score.toFixed(0)} · {row.grade}
                           </span>
                         </td>
@@ -859,10 +859,10 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
 
       {isIdle && candidates.length === 0 && !isScanning && !error && (
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center text-[#666] font-mono flex flex-col items-center gap-2">
+          <div className="text-center text-[#888] font-mono flex flex-col items-center gap-2">
             <Zap size={32} className="opacity-30" aria-hidden="true" />
             <p>Click Scan to detect stocks ready for breakout.</p>
-            <p className="text-[10px]">All three gates must pass: supply absorbed, sellers exhausted, volume pinched.</p>
+            <p className="text-[12px]">All three gates must pass: supply absorbed, sellers exhausted, volume pinched.</p>
           </div>
         </div>
       )}

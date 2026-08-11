@@ -290,7 +290,7 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
           </button>
           <button
             onClick={() => fetch(`${API_BASE}/cache/invisible-hand`, { method: 'DELETE' })}
-            className="text-[10px] text-[#888] hover:text-red-400 transition-colors"
+            className="text-[12px] text-[#888] hover:text-red-400 transition-colors"
             title="Clear cached scan results"
           >
             Clear cache
@@ -307,7 +307,7 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
           <div className="flex items-center gap-2">
             <BookOpen size={14} className="text-violet-400" />
             <span className="text-sm font-semibold text-[#fafafa]">What is the Invisible Hand Scanner?</span>
-            <span className="text-[10px] text-violet-400 bg-violet-500/15 border border-violet-500/30 px-2 py-0.5 rounded font-mono">
+            <span className="text-[12px] text-violet-400 bg-violet-500/15 border border-violet-500/30 px-2 py-0.5 rounded font-mono">
               NEW? START HERE
             </span>
           </div>
@@ -369,14 +369,14 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
               ].map(item => (
                 <div key={item.abbr} className={`rounded border ${item.border} ${item.bg} p-3`}>
                   <div className={`text-sm font-bold ${item.color} mb-1`}>{item.abbr}</div>
-                  <div className="text-[11px] text-[#fafafa] font-semibold mb-2">{item.full}</div>
-                  <p className="text-[10px] text-[#aaa] leading-relaxed mb-2">{item.what}</p>
-                  <p className="text-[10px] text-[#888]"><strong className="text-[#ccc]">What's good:</strong> {item.good}</p>
+                  <div className="text-[12px] text-[#fafafa] font-semibold mb-2">{item.full}</div>
+                  <p className="text-[12px] text-[#aaa] leading-relaxed mb-2">{item.what}</p>
+                  <p className="text-[12px] text-[#888]"><strong className="text-[#ccc]">What's good:</strong> {item.good}</p>
                 </div>
               ))}
             </div>
 
-            <div className="mt-3 p-3 bg-[#0e1117] border border-violet-500/20 rounded text-[11px] text-[#888] leading-relaxed">
+            <div className="mt-3 p-3 bg-[#0e1117] border border-violet-500/20 rounded text-[12px] text-[#888] leading-relaxed">
               <strong className="text-violet-400">IH Score (0–100)</strong> is the composite of all four signals.
               <strong className="text-[#fafafa]"> Grade A (75+) = all four signals firing simultaneously.</strong>
               These are the setups worth investigating first. Typical time-to-move: 2–6 weeks after detection.
@@ -412,12 +412,12 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
              scanStatus.scan_status === 'error' ? 'Scan failed' :
              scanStatus.message}
           </span>
-          <span className="ml-auto text-[#666]">{scanStatus.message}</span>
+          <span className="ml-auto text-[#888]">{scanStatus.message}</span>
         </div>
       )}
 
       {scanDate && scanStatus?.scan_status === 'completed' && scanStatus.scanned_date && scanStatus.scanned_date !== scanDate && (
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-[11px] font-mono text-cyan-400 bg-cyan-500/5 border border-cyan-500/20">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-[12px] font-mono text-cyan-400 bg-cyan-500/5 border border-cyan-500/20">
           <Info size={12} aria-hidden="true" />
           <span>Selected date is a holiday or weekend — adjusted to {scanStatus.scanned_date} (previous trading day)</span>
         </div>
@@ -438,10 +438,10 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
           <MarketCapRangeFilter onChange={setMcapRange} />
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono">Watchlist</div>
+          <div className="text-[12px] text-[#888] font-mono">Watchlist</div>
           <button
             onClick={() => setWatchlistOnly(o => !o)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[12px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 ${
               watchlistOnly
                 ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
                 : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-yellow-400'
@@ -454,7 +454,7 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
           </button>
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono">Sector</div>
+          <div className="text-[12px] text-[#888] font-mono">Sector</div>
           <select
             value={sectorFilter}
             onChange={e => setSectorFilter(e.target.value)}
@@ -467,7 +467,7 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
           </select>
         </div>
         <div className="flex flex-col gap-1 w-32">
-          <div className="text-[10px] text-[#888] font-mono" id="ih-score-filter-label">Min IH Score</div>
+          <div className="text-[12px] text-[#888] font-mono" id="ih-score-filter-label">Min IH Score</div>
           <select
             value={minIhScoreFilter}
             onChange={e => setMinIhScoreFilter(Number(e.target.value))}
@@ -480,16 +480,16 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
           </select>
         </div>
         <div className="flex flex-col gap-1 w-28">
-          <div className="text-[10px] text-[#888] font-mono">Min QCD</div>
+          <div className="text-[12px] text-[#888] font-mono">Min QCD</div>
           <div className="flex gap-1">
             {[0, 4, 6, 8].map(n => (
               <button
                 key={n}
                 onClick={() => setMinQcdFilter(n)}
-                className={`px-2 py-1 rounded border text-[10px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 ${
+                className={`px-2 py-1 rounded border text-[12px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 ${
                   minQcdFilter === n
                     ? 'bg-violet-500/20 border-violet-500/40 text-violet-400'
-                    : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#666] hover:text-[#aaa]'
+                    : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-[#aaa]'
                 }`}
                 aria-pressed={minQcdFilter === n}
               >
@@ -499,16 +499,16 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
           </div>
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-[#888] font-mono">Grade</div>
+          <div className="text-[12px] text-[#888] font-mono">Grade</div>
           <div className="flex gap-1">
             {['All', 'A', 'B', 'C', 'D'].map(g => (
               <button
                 key={g}
                 onClick={() => setGradeFilter(g)}
-                className={`px-2 py-1 rounded border text-[10px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 ${
+                className={`px-2 py-1 rounded border text-[12px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 ${
                   gradeFilter === g
                     ? 'bg-violet-500/20 border-violet-500/40 text-violet-400'
-                    : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#666] hover:text-[#aaa]'
+                    : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-[#aaa]'
                 }`}
                 aria-pressed={gradeFilter === g}
               >
@@ -524,19 +524,19 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Tooltip content="Total stocks passing all IH filters right now">
               <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3 cursor-help">
-                <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Candidates</div>
+                <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Candidates</div>
                 <div className="text-2xl font-bold text-[#fafafa]">{filteredData.length}</div>
               </div>
             </Tooltip>
             <Tooltip content="Stocks where the IH Score is 75+. All four signals are firing together. Investigate these first.">
               <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3 cursor-help">
-                <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Grade A</div>
+                <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Grade A</div>
                 <div className="text-2xl font-bold text-violet-400">{filteredData.filter(d => d.grade === 'A').length}</div>
               </div>
             </Tooltip>
             <Tooltip content="Average Delivery Efficiency Ratio in this scan. >1.5× means the cohort is absorbing 50% more capital per % price move than their own historical baseline.">
               <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3 cursor-help">
-                <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg DER Ratio</div>
+                <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Avg DER Ratio</div>
                 <div className="text-2xl font-bold text-cyan-400">
                   {filteredData.length > 0
                     ? (filteredData.reduce((s, d) => s + (d.der_ratio ?? 0), 0) / filteredData.length).toFixed(2) + '×'
@@ -546,7 +546,7 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
             </Tooltip>
             <Tooltip content="Average Down-Day Absorption Score. Shows how much of this universe was being bought on its own bad days. >55% is exceptional.">
               <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3 cursor-help">
-                <div className="text-[10px] text-[#888] font-mono uppercase tracking-wider">Avg DDAS%</div>
+                <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Avg DDAS%</div>
                 <div className="text-2xl font-bold text-amber-400">
                   {filteredData.length > 0
                     ? (filteredData.reduce((s, d) => s + (d.ddas ?? 0), 0) / filteredData.length).toFixed(1) + '%'
@@ -558,9 +558,9 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
 
           {filteredData.filter(d => d.grade === 'A').length > 0 && (
             <div className="bg-violet-500/5 border border-violet-500/20 rounded p-3">
-              <div className="text-[10px] text-violet-400 font-mono uppercase tracking-wider mb-2 flex items-center gap-2">
+              <div className="text-[12px] text-violet-400 font-mono uppercase tracking-wider mb-2 flex items-center gap-2">
                 <span>Grade A Flips</span>
-                <span className="text-[#666]">— highest conviction invisible hand setups</span>
+                <span className="text-[#888]">— highest conviction invisible hand setups</span>
               </div>
               <div className="flex flex-wrap gap-2">
                 {filteredData
@@ -568,7 +568,7 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
                   .slice(0, 12)
                   .map(d => (
                     <div key={d.symbol}
-                      className="flex items-center gap-1.5 px-2 py-1 rounded border text-[11px] font-mono border-violet-500/20 bg-[#1a1c24]"
+                      className="flex items-center gap-1.5 px-2 py-1 rounded border text-[12px] font-mono border-violet-500/20 bg-[#1a1c24]"
                     >
                       <StarButton symbol={d.symbol} size={10} />
                       <span className="text-white font-bold">{d.symbol}</span>
@@ -686,7 +686,7 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={16} className="px-4 py-8 text-center text-[#666]">No invisible hand setups match current filters.</td>
+                      <td colSpan={16} className="px-4 py-8 text-center text-[#888]">No invisible hand setups match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((row, index) => (
@@ -704,15 +704,15 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
                             </button>
                           </div>
                         </td>
-                        <td className="px-3 py-3 text-[#888] text-[11px] max-w-[120px] truncate" title={row.sector ?? ''}>{row.sector ?? '—'}</td>
+                        <td className="px-3 py-3 text-[#888] text-[12px] max-w-[120px] truncate" title={row.sector ?? ''}>{row.sector ?? '—'}</td>
                         <td className="px-3 py-3 text-center">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${SECTOR_MOM_COLORS[row.sector_mom_tier ?? ''] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
+                          <span className={`px-2 py-0.5 rounded text-[12px] font-bold border ${SECTOR_MOM_COLORS[row.sector_mom_tier ?? ''] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
                             {row.sector_mom_tier ?? '—'}
                           </span>
                         </td>
                         <td className="px-3 py-3 text-center">
                           {row.quality_score != null ? (
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                            <span className={`px-2 py-0.5 rounded text-[12px] font-bold border ${
                               row.quality_score >= 70 ? 'bg-green-500/20 text-green-400 border-green-500/30' :
                               row.quality_score >= 40 ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' :
                               'bg-red-500/20 text-red-400 border-red-500/30'
@@ -740,7 +740,7 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
                           <span className={row.qcd >= 8 ? 'text-green-400' : row.qcd >= 5 ? 'text-amber-400' : 'text-[#888]'}>{row.qcd}</span>
                         </td>
                         <td className="px-3 py-3 text-right font-mono">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${GRADE_COLORS[row.grade] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
+                          <span className={`px-2 py-0.5 rounded text-[12px] font-bold border ${GRADE_COLORS[row.grade] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
                             {row.ih_score.toFixed(0)} · {row.grade}
                           </span>
                         </td>
@@ -772,10 +772,10 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
 
       {isIdle && candidates.length === 0 && !isScanning && !error && (
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center text-[#666] font-mono flex flex-col items-center gap-2">
+          <div className="text-center text-[#888] font-mono flex flex-col items-center gap-2">
             <Eye size={32} className="opacity-30" aria-hidden="true" />
             <p>Click Scan to detect invisible hand accumulation.</p>
-            <p className="text-[10px]">Systematic buyers loading up when price is flat or falling with high delivery.</p>
+            <p className="text-[12px]">Systematic buyers loading up when price is flat or falling with high delivery.</p>
           </div>
         </div>
       )}
