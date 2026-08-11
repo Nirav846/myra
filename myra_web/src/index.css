@@ -151,3 +151,29 @@ body {
   height: 100%;
   animation: indeterminate 1.5s ease-in-out infinite;
 }
+
+/* ---------------------------------------------------------------------------
+ * Accessibility floor (Sprint 1 — type scale)
+ * Minimum readable UI type is 12px. Tailwind arbitrary-size utilities below
+ * 12px are lifted to the floor so no rendered text falls under it.
+ * Unlayered author CSS beats Tailwind's @layer utilities in the cascade.
+ * ------------------------------------------------------------------------- */
+.text-\[8px\],
+.text-\[9px\],
+.text-\[10px\],
+.text-\[11px\] {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Respect users who request reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -12,15 +12,18 @@ export function StarButton({ symbol, size = 12 }: StarButtonProps) {
 
   return (
     <button
+      type="button"
       onClick={(e) => { e.stopPropagation(); toggle(symbol); }}
-      className={`transition-colors shrink-0 ${
+      aria-pressed={watched}
+      aria-label={watched ? `Remove ${symbol} from watchlist` : `Add ${symbol} to watchlist`}
+      title={watched ? 'Remove from watchlist' : 'Add to watchlist'}
+      className={`inline-flex items-center justify-center w-6 h-6 rounded transition-colors shrink-0 ${
         watched
           ? 'text-yellow-400 hover:text-yellow-300'
-          : 'text-[#444] hover:text-yellow-400'
+          : 'text-[#888] hover:text-yellow-400'
       }`}
-      title={watched ? 'Remove from watchlist' : 'Add to watchlist'}
     >
-      <Star size={size} fill={watched ? 'currentColor' : 'none'} />
+      <Star size={size} fill={watched ? 'currentColor' : 'none'} aria-hidden="true" />
     </button>
   );
 }

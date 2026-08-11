@@ -350,10 +350,10 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
       </div>
 
       {/* Color-coding legend */}
-      <div className="flex flex-wrap gap-4 text-[10px] font-mono text-[#888] px-1">
-        <span>🟢 Deep discount (≥20%) | 🟡 Moderate (10-20%) | ⚪ Shallow (&lt;10%)</span>
-        <span>DelAbs: 🟢 ≥3% | 🟡 ≥0% | 🔴 &lt;0%</span>
-        <span>Score: 🟢 ≥20 | 🟡 ≥10</span>
+      <div className="flex flex-wrap gap-4 text-[10px] font-mono text-[#888] px-1" aria-label="Color legend: deep discount shown in green, moderate in yellow, shallow in white. Delivery absorption: green positive, yellow neutral, red negative. Score: green high, yellow medium.">
+        <span aria-hidden="true">🟢</span> Deep discount (≥20%) <span aria-hidden="true">| 🟡</span> Moderate (10-20%) <span aria-hidden="true">| ⚪</span> Shallow (&lt;10%)
+        <span aria-hidden="true">| DelAbs:</span> <span aria-hidden="true">🟢</span> ≥3% <span aria-hidden="true">| 🟡</span> ≥0% <span aria-hidden="true">| 🔴</span> &lt;0%
+        <span aria-hidden="true">| Score:</span> <span aria-hidden="true">🟢</span> ≥20 <span aria-hidden="true">| 🟡</span> ≥10
       </div>
 
       <header className="flex justify-between items-center bg-[#1a1c24] border border-[#ffffff1a] rounded p-4">

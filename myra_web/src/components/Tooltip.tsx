@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useId } from 'react';
 import { HelpCircle } from 'lucide-react';
 
 interface TooltipProps {
@@ -14,6 +14,7 @@ export function Tooltip({ content, good, bad, example, children, showIcon = true
   const [visible, setVisible] = useState(false);
   const [pos, setPos] = useState<'top' | 'bottom'>('top');
   const ref = useRef<HTMLDivElement>(null);
+  const id = useId();
 
   useEffect(() => {
     if (visible && ref.current) {
@@ -25,36 +26,45 @@ export function Tooltip({ content, good, bad, example, children, showIcon = true
   return (
     <div
       ref={ref}
-      className="relative inline-flex items-center gap-1"
+      tabIndex={0}
+      aria-describedby={id}
+      className="relative inline-flex items-center gap-1 rounded-sm"
       onMouseEnter={() => setVisible(true)}
       onMouseLeave={() => setVisible(false)}
+      onFocus={() => setVisible(true)}
+      onBlur={() => setVisible(false)}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') setVisible(false);
+      }}
     >
       {children}
       {showIcon && (
-        <HelpCircle size={11} className="text-[#555] hover:text-cyan-400 cursor-help shrink-0 transition-colors" />
+        <HelpCircle size={12} className="text-[#888] hover:text-cyan-400 cursor-help shrink-0 transition-colors" aria-hidden="true" />
       )}
       {visible && (
         <div
-          className={`absolute z-50 w-64 bg-[#0e1117] border border-[#ffffff20] rounded-lg shadow-2xl p-3 text-left pointer-events-none
+          id={id}
+          role="tooltip"
+          className={`absolute z-50 w-64 max-w-[calc(100vw-1rem)] bg-[#0e1117] border border-[#ffffff20] rounded-lg shadow-2xl p-3 text-left pointer-events-none
             ${pos === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'}
             left-1/2 -translate-x-1/2`}
         >
-          <p className="text-[11px] text-[#ddd] font-sans leading-relaxed">{content}</p>
+          <p className="text-[12px] text-[#ddd] font-sans leading-relaxed">{content}</p>
           {good && (
             <div className="mt-2 flex items-start gap-1.5">
-              <span className="text-green-400 text-[10px] font-bold shrink-0 mt-0.5">✓ Good:</span>
-              <span className="text-[10px] text-green-300/80">{good}</span>
+              <span className="text-green-400 text-[12px] font-bold shrink-0 mt-0.5">✓ Good:</span>
+              <span className="text-[12px] text-green-300/80">{good}</span>
             </div>
           )}
           {bad && (
             <div className="mt-1 flex items-start gap-1.5">
-              <span className="text-red-400 text-[10px] font-bold shrink-0 mt-0.5">✗ Watch:</span>
-              <span className="text-[10px] text-red-300/80">{bad}</span>
+              <span className="text-red-400 text-[12px] font-bold shrink-0 mt-0.5">✗ Watch:</span>
+              <span className="text-[12px] text-red-300/80">{bad}</span>
             </div>
           )}
           {example && (
             <div className="mt-2 pt-2 border-t border-[#ffffff10]">
-              <span className="text-[9px] text-[#666] italic">{example}</span>
+              <span className="text-[12px] text-[#aaa] italic">{example}</span>
             </div>
           )}
           <div
