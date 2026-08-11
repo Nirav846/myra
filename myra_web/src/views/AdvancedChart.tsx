@@ -1230,7 +1230,7 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
       }
 
       const safeSymbol = symbol.replace(/[^A-Z0-9&\-]/g, '').substring(0, 20);
-      const query = 'SELECT *, delivery as delivery_final, volume as volume_final FROM technical_data WHERE symbol = ? AND date >= ? AND date <= ? ORDER BY date ASC';
+      const query = 'SELECT date, open, high, low, close, volume, delivery, trades, vwap, delivery_pct, delivery_ratio, delivery_qty, stock_return, market_return, delivery_divergence_score, volatility_compression_score, relative_volume_score, nifty_outperformance_score, trend_alignment, delivery_ma_60, sma_50, high_52w, low_52w, bullish_fvg, bearish_fvg, fvg_top, fvg_bottom, fvg_boundary, fvg_freshness, swing_high, swing_low, liquidity_distance, htf_bullish, htf_bearish, mtf_bullish, mtf_bearish, delivery as delivery_final, volume as volume_final FROM technical_data WHERE symbol = ? AND date >= ? AND date <= ? ORDER BY date ASC';
       const result = await lib.executeQuery('_tech_conn', query, [safeSymbol, qStart, qEnd], 10000);
       
       if (signal.aborted) return;

@@ -367,7 +367,11 @@ def _run_query(db_path: str, query: str, params: list):
         except Exception:
             rows = []
 
-        if not query.lstrip().upper().startswith(("SELECT", "PRAGMA", "WITH", "EXPLAIN")):
+        if (
+            not query.lstrip()
+            .upper()
+            .startswith(("SELECT", "PRAGMA", "WITH", "EXPLAIN"))
+        ):
             conn.commit()
 
         rowcount = cursor.rowcount
@@ -490,9 +494,13 @@ async def force_fundamentals_sync():
     """Trigger a full fundamentals sync (Morningstar + NSE) NOW (async)."""
     try:
         tid = _spawn_task("fundamentals_sync", _task_fundamentals_sync)
-        return JSONResponse(status_code=202, content={"status": "started", "task_id": tid})
+        return JSONResponse(
+            status_code=202, content={"status": "started", "task_id": tid}
+        )
     except Exception as e:
-        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+        return JSONResponse(
+            status_code=500, content={"status": "error", "message": str(e)}
+        )
 
 
 @app.post("/api/tools/sync/etf")
@@ -500,9 +508,13 @@ async def force_etf_sync():
     """Trigger ETF blocklist sync NOW (async)."""
     try:
         tid = _spawn_task("etf_sync", _task_etf_sync)
-        return JSONResponse(status_code=202, content={"status": "started", "task_id": tid})
+        return JSONResponse(
+            status_code=202, content={"status": "started", "task_id": tid}
+        )
     except Exception as e:
-        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+        return JSONResponse(
+            status_code=500, content={"status": "error", "message": str(e)}
+        )
 
 
 @app.post("/api/tools/sync/index")
@@ -510,9 +522,13 @@ async def force_index_sync():
     """Trigger NIFTY index constituents sync NOW (async)."""
     try:
         tid = _spawn_task("index_sync", _task_index_sync)
-        return JSONResponse(status_code=202, content={"status": "started", "task_id": tid})
+        return JSONResponse(
+            status_code=202, content={"status": "started", "task_id": tid}
+        )
     except Exception as e:
-        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+        return JSONResponse(
+            status_code=500, content={"status": "error", "message": str(e)}
+        )
 
 
 @app.post("/api/tools/ingest")
@@ -520,9 +536,13 @@ async def force_daily_ingest():
     """Trigger daily bhavcopy ingest NOW (async)."""
     try:
         tid = _spawn_task("daily_ingest", _task_daily_ingest, force=True)
-        return JSONResponse(status_code=202, content={"status": "started", "task_id": tid})
+        return JSONResponse(
+            status_code=202, content={"status": "started", "task_id": tid}
+        )
     except Exception as e:
-        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+        return JSONResponse(
+            status_code=500, content={"status": "error", "message": str(e)}
+        )
 
 
 @app.post("/api/tools/db-doctor")
@@ -615,14 +635,21 @@ async def get_system_info():
 @app.post("/api/portfolio/refresh")
 async def refresh_portfolio():
     """Trigger a manual refresh of portfolio prices and fundamentals (async)."""
+
     def _run():
         from myra_app.portfolio_db import auto_refresh_portfolio
+
         return auto_refresh_portfolio()
+
     try:
         tid = _spawn_task("portfolio_refresh", _run)
-        return JSONResponse(status_code=202, content={"status": "started", "task_id": tid})
+        return JSONResponse(
+            status_code=202, content={"status": "started", "task_id": tid}
+        )
     except Exception as e:
-        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+        return JSONResponse(
+            status_code=500, content={"status": "error", "message": str(e)}
+        )
 
 
 @app.get("/api/portfolio/live-prices")
@@ -1494,13 +1521,18 @@ async def ml_status():
 @app.post("/api/ml/train")
 async def ml_train(config: dict = None):
     """Train a new model (async). Optionally pass a config dict to override defaults."""
+
     def _run():
         from myra_app.ml_trainer import MLTrainer
+
         trainer = MLTrainer(config)
         return trainer.train()
+
     try:
         tid = _spawn_task("ml_train", _run)
-        return JSONResponse(status_code=202, content={"status": "started", "task_id": tid})
+        return JSONResponse(
+            status_code=202, content={"status": "started", "task_id": tid}
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1508,10 +1540,13 @@ async def ml_train(config: dict = None):
 @app.get("/api/ml/predict")
 async def ml_predict():
     """Return today's predictions for all symbols."""
+
     def _run():
         from myra_app.ml_trainer import MLTrainer
+
         trainer = MLTrainer()
         return trainer.predict_today()
+
     return await asyncio.to_thread(_run)
 
 
@@ -4496,3 +4531,29 @@ async def get_ai_opinion(ticker: str):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/chart/{symbol}")
+async def get_chart(symbol: str, limit: int = 500):
+    """Return OHLCV data for a symbol, ordered ascending by date."""
+    db_path = get_db_path("technical")
+    if not db_path or not os.path.exists(db_path):
+        raise HTTPException(status_code=500, detail="Technical database not found")
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            "SELECT date, open, high, low, close, volume "
+            "FROM technical_data WHERE symbol = ? ORDER BY date DESC LIMIT ?",
+            (symbol.upper(), limit),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    if not rows:
+        raise HTTPException(status_code=404, detail="Symbol not found")
+
+    # Reverse to ascending date order
+    data = [dict(r) for r in reversed(rows)]
+    return {"symbol": symbol.upper(), "data": data}
