@@ -2496,6 +2496,17 @@ _dcb_scan_state: dict = {
 _dcb_scan_lock = threading.Lock()
 _DCB_CACHE = os.path.join(MODELS_DIR, "dcb_bargain_cache.json")
 
+# ---- tier rank helper (module-level for testability) ----
+_TIER_RANK_MAP = {"HIGH": 0, "MOD": 1, "LOW": 2}
+
+
+def _apply_tier_rank(candidates: list[dict]) -> list[dict]:
+    """Add numeric ``tier_rank`` (0=HIGH, 1=MOD, 2=LOW) to every candidate dict."""
+    for c in candidates:
+        if "tier_rank" not in c:
+            c["tier_rank"] = _TIER_RANK_MAP.get(c.get("tier"), 2)
+    return candidates
+
 
 def _save_dcb_cache():
     import json as _json
@@ -2543,6 +2554,25 @@ async def pcr_status():
         return {"status": "error", "snapshots": [], "message": str(exc)}
 
 
+@app.get("/api/dcb-bargain/defaults")
+async def dcb_bargain_defaults():
+    """Return backend default parameter values for the DCB Bargain scanner."""
+    return {
+        "min_mcap": 200,
+        "max_mcap": 50000,
+        "dcb_window": 120,
+        "min_discount_pct": 15.0,
+        "max_discount_pct": 60.0,
+        "min_del_abs": -2.0,
+        "min_adtv_cr": 1.0,
+        "min_high_del_days": 10,
+        "sanity_mult": 5.0,
+        "timeframe": "daily",
+        "min_ff_mcap": 0.0,
+        "exclude_circuits": True,
+    }
+
+
 @app.get("/api/dcb-bargain/status")
 async def dcb_bargain_status():
     import copy
@@ -2553,6 +2583,7 @@ async def dcb_bargain_status():
     if state["scan_status"] == "idle":
         cache = _load_dcb_cache()
         if cache and cache.get("candidates") is not None:
+            _apply_tier_rank(cache["candidates"])
             return {
                 "scan_status": "idle",
                 "last_scan": cache.get("last_scan"),
@@ -2654,6 +2685,7 @@ async def dcb_bargain_scan(payload: dict = Body(default={})):
             _dcb_scan_state["message"] = "Finalising results..."
 
             candidates = _df_to_safe_records(df)
+            _apply_tier_rank(candidates)
 
             _dcb_scan_state.update(
                 {

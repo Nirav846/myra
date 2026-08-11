@@ -41,6 +41,7 @@ interface Candidate {
   dcb_disc_max?: number | null;
   score: number;
   tier: string;
+  tier_rank?: number;
   timeframe?: string;
 }
 
@@ -72,6 +73,7 @@ function relativeTime(dateStr: string | null | undefined): string {
   }
 }
 
+/** Offline fallback values — used when /api/dcb-bargain/defaults is unreachable. */
 const ADVANCED_DEFAULTS = {
   min_discount_pct: 15,
   max_discount_pct: 60,
@@ -80,6 +82,17 @@ const ADVANCED_DEFAULTS = {
   min_high_del_days: 10,
   sanity_mult: 5,
   min_ff_mcap: 0,
+};
+
+const DEFAULTS_FALLBACK = {
+  min_discount_pct: 15.0,
+  max_discount_pct: 60.0,
+  min_del_abs: -2.0,
+  min_adtv_cr: 1.0,
+  min_high_del_days: 10,
+  sanity_mult: 5.0,
+  min_ff_mcap: 0.0,
+  exclude_circuits: true,
 };
 
 export default function DCBBargainView({ lib }: { lib: Librarian }) {
@@ -139,8 +152,8 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
     if (sectorFilter !== 'All') data = data.filter(d => d.sector === sectorFilter);
     if (tierFilter !== 'All') data = data.filter(d => d.tier === tierFilter);
     data.sort((a, b) => {
-      const av = (a as any)[sortCol] ?? 0;
-      const bv = (b as any)[sortCol] ?? 0;
+      const av = sortCol === 'tier' ? (a as any).tier_rank ?? 2 : (a as any)[sortCol] ?? 0;
+      const bv = sortCol === 'tier' ? (b as any).tier_rank ?? 2 : (b as any)[sortCol] ?? 0;
       if (typeof av === 'number' && typeof bv === 'number') {
         return sortAsc ? av - bv : bv - av;
       }
@@ -241,6 +254,21 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
   useEffect(() => {
     mountedRef.current = true;
     fetchScanStatus();
+    // Fetch backend defaults on first mount
+    fetch(`${API_BASE}/dcb-bargain/defaults`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!mountedRef.current || !d) return;
+        setMinDiscountPct(d.min_discount_pct ?? DEFAULTS_FALLBACK.min_discount_pct);
+        setMaxDiscountPct(d.max_discount_pct ?? DEFAULTS_FALLBACK.max_discount_pct);
+        setMinDelAbs(d.min_del_abs ?? DEFAULTS_FALLBACK.min_del_abs);
+        setMinAdtvCr(d.min_adtv_cr ?? DEFAULTS_FALLBACK.min_adtv_cr);
+        setMinHighDelDays(d.min_high_del_days ?? DEFAULTS_FALLBACK.min_high_del_days);
+        setSanityMult(d.sanity_mult ?? DEFAULTS_FALLBACK.sanity_mult);
+        setMinFfMcap(d.min_ff_mcap ?? DEFAULTS_FALLBACK.min_ff_mcap);
+        setExcludeCircuits(d.exclude_circuits ?? DEFAULTS_FALLBACK.exclude_circuits);
+      })
+      .catch(() => {}); // keep current defaults on failure
     return () => {
       mountedRef.current = false;
       clearPolling();
