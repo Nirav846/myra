@@ -609,7 +609,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
         <div className="bg-emerald-500/10 border border-emerald-500/30 rounded p-3" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100} aria-label="Scan progress">
           <div className="flex items-center gap-2 text-xs font-mono text-emerald-300 mb-2">
             <RefreshCw size={14} className="animate-spin" aria-hidden="true" />
-            <span>{scanStatus?.message || 'Scanning...'}</span>
+            <span role="status" aria-live="polite">{scanStatus?.message || 'Scanning...'}</span>
             <span className="ml-auto">{progressPct}%</span>
           </div>
           <div className="w-full h-1.5 bg-[#ffffff1a] rounded-full overflow-hidden">
@@ -702,49 +702,49 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
               >
                 <thead className="sticky top-0 z-20 text-[#888]">
                   <tr style={{ boxShadow: '0 1px 0 0 rgba(255,255,255,0.08), 0 2px 4px 0 rgba(0,0,0,0.4)' }}>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500/50" onClick={() => handleSort('symbol')} scope="col" aria-sort={sortCol === 'symbol' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500/50" onClick={() => handleSort('symbol')} scope="col" aria-sort={sortCol === 'symbol' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       Symbol <SortIcon column="symbol" />
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500/50" onClick={() => handleSort('sector')} scope="col" aria-sort={sortCol === 'sector' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500/50" onClick={() => handleSort('sector')} scope="col" aria-sort={sortCol === 'sector' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       Sector <SortIcon column="sector" />
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('discount_pct')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('discount_pct')} scope="col">
                       <Tooltip content="Discount % — how far current price is below the DCB. Higher = more margin of safety.">Discount% <SortIcon column="discount_pct" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('depth')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('depth')} scope="col">
                       <Tooltip content="Depth — DEEP (&gt;20%), MID (10-20%), SHALLOW (&lt;10%).">Depth <SortIcon column="depth" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('spike_deep')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('spike_deep')} scope="col">
                       <Tooltip content="Spike+Deep — today's delivery spike with deep discount. Highest-conviction signal.">Spike+Deep <SortIcon column="spike_deep" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('is_lower_circuit')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('is_lower_circuit')} scope="col">
                       <Tooltip content="Lower circuit — close pinned at the low with a 5%+ drop. Delivery data may be distorted.">Circuit <SortIcon column="is_lower_circuit" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('circuit_days_last_5')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('circuit_days_last_5')} scope="col">
                       <Tooltip content="Circuit days in the last 5 sessions. ≥3 = sustained circuit lock.">Ckt Days <SortIcon column="circuit_days_last_5" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('close')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('close')} scope="col">
                       Close <SortIcon column="close" />
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('dcb')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('dcb')} scope="col">
                       <Tooltip content="Delivery Cost Basis — weighted average price at which high-delivery buyers accumulated.">DCB <SortIcon column="dcb" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('del_abs')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('del_abs')} scope="col">
                       <Tooltip content="Delivery Absorption — net institutional buying pressure. Positive = institutions still accumulating.">DelAbs <SortIcon column="del_abs" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('adtv_cr')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('adtv_cr')} scope="col">
                       <Tooltip content="Average daily traded value in ₹ Cr (last 20 days).">ADTV <SortIcon column="adtv_cr" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('free_float_mcap_cr')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('free_float_mcap_cr')} scope="col">
                       <Tooltip content="Free-float market capitalization in ₹ Cr.">FF MCap <SortIcon column="free_float_mcap_cr" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('dcb_disc_median')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('dcb_disc_median')} scope="col">
                       <Tooltip content="DCB Range (1Y) — historical min, median, max discount% over the past year.">DCB Range <SortIcon column="dcb_disc_median" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('score')} scope="col" aria-sort={sortCol === 'score' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('score')} scope="col" aria-sort={sortCol === 'score' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip content="Composite score combining discount%, delivery absorption, and accumulation strength.">Score <SortIcon column="score" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('tier')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('tier')} scope="col">
                       Tier <SortIcon column="tier" />
                     </th>
                   </tr>
@@ -757,7 +757,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                   ) : (
                     filteredData.map((row, index) => (
                       <tr key={row.symbol} role="row" aria-rowindex={index + 1} className="hover:bg-[#ffffff05] transition-colors">
-                        <td className="px-3 py-3 font-bold" scope="row">
+                        <td className="px-3 py-3 font-bold" role="rowheader">
                           <div className="flex items-center gap-1.5">
                             <StarButton symbol={row.symbol} size={11} />
                             <button

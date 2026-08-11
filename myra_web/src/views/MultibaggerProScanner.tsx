@@ -412,7 +412,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
         <div className="bg-cyan-500/10 border border-cyan-500/30 rounded p-3" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100} aria-label="Scan progress">
           <div className="flex items-center gap-2 text-xs font-mono text-cyan-300 mb-2">
             <RefreshCw size={14} className="animate-spin" aria-hidden="true" />
-            <span>{scanStatus?.message || 'Scanning...'}</span>
+            <span role="status" aria-live="polite">{scanStatus?.message || 'Scanning...'}</span>
             <span className="ml-auto">{progressPct}%</span>
           </div>
           <div className="w-full h-1.5 bg-[#ffffff1a] rounded-full overflow-hidden">
@@ -803,22 +803,22 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                 <thead className="sticky top-0 z-20 text-[#888]">
                   <tr style={{ boxShadow: '0 1px 0 0 rgba(255,255,255,0.08), 0 2px 4px 0 rgba(0,0,0,0.4)' }}>
                     {/* ── CORE (always visible) ── */}
-                    <th className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('symbol')} scope="col" aria-sort={sortCol === 'symbol' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    <th role="columnheader" className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('symbol')} scope="col" aria-sort={sortCol === 'symbol' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip content="Stock ticker symbol. ⚠ means equal lows detected — a liquidity trap likely exists below the base." showIcon={false}>
                         Symbol <SortIcon column="symbol" />
                       </Tooltip>
                     </th>
-                    {isVisible('sector') && <th className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider" scope="col">
+                    {isVisible('sector') && <th role="columnheader" className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider" scope="col">
                       <Tooltip content="Business sector the company operates in. Useful for avoiding concentration — don't put all picks in one sector." showIcon={false}>Sector</Tooltip>
                     </th>}
-                    {isVisible('entry_type') && <th className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center" scope="col">
+                    {isVisible('entry_type') && <th role="columnheader" className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center" scope="col">
                       <Tooltip
                         content="How to enter this stock. Each type has different risk-reward."
                         good="⚡ Liq Grab = best entry, stock swept stops then recovered. 🎯 Cheat = enter inside the base at lower end. 🚀 Breakout = enter above resistance."
                         bad="Breakout entries have worst R:R and highest fakeout risk."
                       >Entry Type</Tooltip>
                     </th>}
-                    {isVisible('composite_score') && <th className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('composite_score')} scope="col" aria-sort={sortCol === 'composite_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    {isVisible('composite_score') && <th role="columnheader" className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('composite_score')} scope="col" aria-sort={sortCol === 'composite_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip
                         content="Accumulation Score (0–100). Combines delivery absorption, base tightness, volume character, and delivery trend into one number."
                         good="Above 70: strong accumulation evidence. Above 85: exceptional setup."
@@ -826,35 +826,35 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                         example="Score 80 = stock scoring well on all 4 dimensions simultaneously."
                       >Score <SortIcon column="composite_score" /></Tooltip>
                     </th>}
-                    {isVisible('grade') && <th className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('grade')} scope="col" aria-sort={sortCol === 'grade' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    {isVisible('grade') && <th role="columnheader" className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('grade')} scope="col" aria-sort={sortCol === 'grade' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip
                         content="Overall grade based on score. A=80+, B=60–79, C=40–59, D=below 40."
                         good="Focus on A and B grade only. C grade requires strong conviction from fundamentals."
                         bad="D grade: avoid."
                       >Grade <SortIcon column="grade" /></Tooltip>
                     </th>}
-                    {isVisible('entry') && <th className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right" scope="col">
+                    {isVisible('entry') && <th role="columnheader" className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right" scope="col">
                       <Tooltip
                         content="Recommended buy price. For Breakout: just above the base ceiling. For Cheat: current price (enter now). For Liq Grab: close of the sweep candle."
                         good="The earlier you enter (Cheat/LiqGrab), the better your risk-reward."
                         example="Entry 150 with SL 140 means you risk ₹10 per share."
                       >Entry</Tooltip>
                     </th>}
-                    {isVisible('sl') && <th className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right" scope="col">
+                    {isVisible('sl') && <th role="columnheader" className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right" scope="col">
                       <Tooltip
                         content="Stop Loss — the price where you exit if the setup fails. Placed below the base structure with buffer for minor stop hunts."
                         bad="If price closes below SL on meaningful volume, the accumulation thesis is broken — exit without hesitation."
                         example="SL 140 means if stock drops below ₹140, sell and protect capital."
                       >SL</Tooltip>
                     </th>}
-                    {isVisible('max_upside_pct') && <th className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('max_upside_pct')} scope="col" aria-sort={sortCol === 'max_upside_pct' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    {isVisible('max_upside_pct') && <th role="columnheader" className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('max_upside_pct')} scope="col" aria-sort={sortCol === 'max_upside_pct' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip
                         content="Maximum potential upside % from entry to the final target (T3 for Grade A/B, T2 otherwise)."
                         good="Above 40%: meaningful multibagger potential. Above 100%: true multibagger territory."
                         bad="Below 20%: risk-reward not worth it for a 1+ month holding."
                       >Upside% <SortIcon column="max_upside_pct" /></Tooltip>
                     </th>}
-                    {isVisible('status') && <th className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center" scope="col">
+                    {isVisible('status') && <th role="columnheader" className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center" scope="col">
                       <Tooltip
                         content="Current setup status. 'In Base' = still consolidating, wait. 'Breakout Pending' = near resistance. 'Triggered' = breakout confirmed with volume."
                         good="'In Base' with Cheat/LiqGrab entry type = best time to enter."
@@ -863,7 +863,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                     </th>}
 
                     {/* ── SIGNALS (toggleable) ── */}
-                    {isVisible('dar_median') && <th className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5 border-l border-cyan-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('dar_median')} scope="col" aria-sort={sortCol === 'dar_median' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    {isVisible('dar_median') && <th role="columnheader" className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5 border-l border-cyan-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('dar_median')} scope="col" aria-sort={sortCol === 'dar_median' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip
                         content="Delivery Absorption Rate — what % of the company's free-float market cap is being bought and held each day. Normalised so small companies and large companies are comparable."
                         good="Above target threshold (auto-set by mcap): genuine accumulation happening."
@@ -871,75 +871,75 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                         example="DAR 0.5% means 0.5% of the tradeable float changes hands as delivery daily — unusually high."
                       >DAR% (Absorption) <SortIcon column="dar_median" /></Tooltip>
                     </th>}
-                    {isVisible('volume_ratio') && <th className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('volume_ratio')} scope="col" aria-sort={sortCol === 'volume_ratio' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    {isVisible('volume_ratio') && <th role="columnheader" className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('volume_ratio')} scope="col" aria-sort={sortCol === 'volume_ratio' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip
                         content="Volume Character — median volume on up-days divided by median volume on down-days within the base. Above 1.0 means more shares traded on green days than red days."
                         good="Above 1.5: strong accumulation signature. Buyers are more active than sellers."
                         bad="Below 0.8: sellers are more active — potential distribution, not accumulation."
                       >Vol Ratio (Character) <SortIcon column="volume_ratio" /></Tooltip>
                     </th>}
-                    {isVisible('vol_dry_up') && <th className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('vol_dry_up')} scope="col" aria-sort={sortCol === 'vol_dry_up' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    {isVisible('vol_dry_up') && <th role="columnheader" className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('vol_dry_up')} scope="col" aria-sort={sortCol === 'vol_dry_up' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip
                         content="Volume Dry-Up — last 5 days volume vs full base average. Below 1.0 means volume is shrinking, which happens when supply is exhausted and the float is locked up."
                         good="Below 0.7: volume compression (green). Float is locked — small buying pressure will move price."
                         bad="Above 1.2: volume expanding inside base (orange) — could be distribution."
                       >Dry-Up (Vol Compress) <SortIcon column="vol_dry_up" /></Tooltip>
                     </th>}
-                    {isVisible('rs_score') && <th className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('rs_score')} scope="col" aria-sort={sortCol === 'rs_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    {isVisible('rs_score') && <th role="columnheader" className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('rs_score')} scope="col" aria-sort={sortCol === 'rs_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip
                         content="Relative Strength — how the stock performed vs Nifty 50 during the base period. Positive = stock held up or outperformed while market consolidated."
                         good="Above 0.3: stock is stronger than the market — institutional support likely."
                         bad="Below -0.3: underperforming even when it should be recovering — weak setup."
                       >RS (Vs Nifty) <SortIcon column="rs_score" /></Tooltip>
                     </th>}
-                    {isVisible('wk52_pos') && <th className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('wk52_pos')} scope="col" aria-sort={sortCol === 'wk52_pos' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    {isVisible('wk52_pos') && <th role="columnheader" className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('wk52_pos')} scope="col" aria-sort={sortCol === 'wk52_pos' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip
                         content="Where the stock sits within its 52-week high-low range. 0% = at 52W low, 100% = at 52W high."
                         good="25–60%: corrected from highs but not broken — ideal accumulation zone."
                         bad="Above 75%: near 52W high — limited room before facing resistance. Below 15%: may be a falling knife."
                       >52W Position <SortIcon column="wk52_pos" /></Tooltip>
                     </th>}
-                    {isVisible('market_cap_cr') && <th className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('market_cap_cr')} scope="col" aria-sort={sortCol === 'market_cap_cr' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    {isVisible('market_cap_cr') && <th role="columnheader" className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-cyan-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('market_cap_cr')} scope="col" aria-sort={sortCol === 'market_cap_cr' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       MCap Cr <SortIcon column="market_cap_cr" />
                     </th>}
 
                     {/* ── TRADE LEVELS (toggleable) ── */}
-                    {isVisible('close') && <th className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right bg-purple-500/5 border-l border-purple-500/20" scope="col">
+                    {isVisible('close') && <th role="columnheader" className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right bg-purple-500/5 border-l border-purple-500/20" scope="col">
                       <Tooltip content="Current market price of the stock. Compare with Entry to see how far you are from the recommended entry point.">Close (CMP)</Tooltip>
                     </th>}
-                    {isVisible('cheat_entry') && <th className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right bg-purple-500/5" scope="col">
+                    {isVisible('cheat_entry') && <th role="columnheader" className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right bg-purple-500/5" scope="col">
                       <Tooltip
                         content="Alternative entry for Breakout-type setups. For Breakout stocks: enter at the 38.2% level inside the base for better risk-reward. For Cheat/LiqGrab: not applicable."
                         good="Cheat/Retest entry gives 2-3x better risk-reward than waiting for the breakout."
                       >Cheat/Retest <SortIcon column="cheat_entry" /></Tooltip>
                     </th>}
-                    {isVisible('sl_pct') && <th className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-purple-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('sl_pct')} scope="col" aria-sort={sortCol === 'sl_pct' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    {isVisible('sl_pct') && <th role="columnheader" className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-purple-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('sl_pct')} scope="col" aria-sort={sortCol === 'sl_pct' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip
                         content="Stop Loss as a % of entry price. Lower is better — it means you risk less capital to participate in the setup."
                         good="Below 5%: tight stop, excellent risk control."
                         bad="Above 12%: wide stop — size your position smaller to keep total risk manageable."
                       >SL% (Risk) <SortIcon column="sl_pct" /></Tooltip>
                     </th>}
-                    {isVisible('buffer_to_sl_pct') && <th className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-purple-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('buffer_to_sl_pct')} scope="col" aria-sort={sortCol === 'buffer_to_sl_pct' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    {isVisible('buffer_to_sl_pct') && <th role="columnheader" className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-purple-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('buffer_to_sl_pct')} scope="col" aria-sort={sortCol === 'buffer_to_sl_pct' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip
                         content="Buffer to SL — how much space exists between current entry price and the stop loss. Higher = safer, less chance of being stopped on normal volatility."
                         good="Above 8%: enough room for normal price swings."
                         bad="Below 4% (red): dangerously close to SL — one bad day stops you out. Avoid entering. Wait for price to move up or for a confirmed liquidity grab."
                       >Buffer to SL <SortIcon column="buffer_to_sl_pct" /></Tooltip>
                     </th>}
-                    {isVisible('t1') && <th className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right bg-purple-500/5" scope="col">
+                    {isVisible('t1') && <th role="columnheader" className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right bg-purple-500/5" scope="col">
                       <Tooltip content="Target 1 — conservative exit. Take partial profits here (suggest 30% of position). Equivalent to 1× your risk amount above entry.">T1 (Conservative)</Tooltip>
                     </th>}
-                    {isVisible('t2') && <th className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right bg-purple-500/5" scope="col">
+                    {isVisible('t2') && <th role="columnheader" className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right bg-purple-500/5" scope="col">
                       <Tooltip content="Target 2 — primary exit. Take bulk of position here (suggest 50%). Equivalent to 2.5× your risk amount above entry.">T2 (Primary)</Tooltip>
                     </th>}
-                    {isVisible('t3') && <th className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right bg-purple-500/5" scope="col">
+                    {isVisible('t3') && <th role="columnheader" className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right bg-purple-500/5" scope="col">
                       <Tooltip
                         content="Target 3 — multibagger exit. Only for Grade A and B setups. Let 20% of position ride here. Equivalent to 5× your risk amount above entry."
                         good="Only available for Grade A/B. This is the 'let it run' target for genuine multibaggers."
                       >T3 (Multibagger)</Tooltip>
                     </th>}
-                    {isVisible('dist_to_bo_pct') && <th className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-purple-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('dist_to_bo_pct')} scope="col" aria-sort={sortCol === 'dist_to_bo_pct' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    {isVisible('dist_to_bo_pct') && <th role="columnheader" className="px-4 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white bg-purple-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('dist_to_bo_pct')} scope="col" aria-sort={sortCol === 'dist_to_bo_pct' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip
                         content="Distance to Breakout — how far the current price is from the base ceiling (breakout level). Lower = closer to triggering."
                         good="Below 3%: breakout imminent — watch closely."
@@ -957,7 +957,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                     filteredData.map((row, index) => (
                       <tr key={row.symbol} role="row" aria-rowindex={index + 1} className={`hover:bg-[#ffffff05] transition-colors ${row.liq_grab ? 'border-l-2 border-emerald-500/50' : (row.buffer_to_sl_pct ?? 99) < 4 ? 'border-l-2 border-red-500/40 opacity-60' : ''}`}>
                         {/* ── CORE ── */}
-                        <td className="px-4 py-3 font-bold" scope="row">
+                        <td className="px-4 py-3 font-bold" role="rowheader">
                           <div className="flex items-center gap-1.5">
                             <StarButton symbol={row.symbol} size={11} />
                             <button

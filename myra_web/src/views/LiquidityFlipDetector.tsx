@@ -344,7 +344,7 @@ export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
         <div className="bg-cyan-500/10 border border-cyan-500/30 rounded p-3" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100} aria-label="Scan progress">
           <div className="flex items-center gap-2 text-xs font-mono text-cyan-300 mb-2">
             <RefreshCw size={14} className="animate-spin" aria-hidden="true" />
-            <span>{scanStatus?.message || 'Scanning...'}</span>
+            <span role="status" aria-live="polite">{scanStatus?.message || 'Scanning...'}</span>
             <span className="ml-auto">{progressPct}%</span>
           </div>
           <div className="w-full h-1.5 bg-[#ffffff1a] rounded-full overflow-hidden">
@@ -540,52 +540,52 @@ export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
               >
                 <thead className="sticky top-0 z-20 text-[#888]">
                   <tr style={{ boxShadow: '0 1px 0 0 rgba(255,255,255,0.08), 0 2px 4px 0 rgba(0,0,0,0.4)' }}>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('symbol')} scope="col" aria-sort={sortCol === 'symbol' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('symbol')} scope="col" aria-sort={sortCol === 'symbol' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       Symbol <SortIcon column="symbol" />
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('sector')} scope="col" aria-sort={sortCol === 'sector' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('sector')} scope="col" aria-sort={sortCol === 'sector' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       Sector <SortIcon column="sector" />
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('market_cap_cr')} scope="col" aria-sort={sortCol === 'market_cap_cr' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('market_cap_cr')} scope="col" aria-sort={sortCol === 'market_cap_cr' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       MCap (₹ Cr) <SortIcon column="market_cap_cr" />
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('confidence')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('confidence')} scope="col">
                       <Tooltip content="Confidence based on flip type, SMA-200 trend, and 52-week position." good="High: strong flip, above SMA-200, 30-90% range" bad="Low: weak setup">Conf <SortIcon column="confidence" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('prior_del_pct')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('prior_del_pct')} scope="col">
                       <Tooltip content="Average delivery% over the prior 75 days (baseline churn level). Lower = more noise." good="<35: churning (good setup)" bad="≥45: not a flip">Prior Del% <SortIcon column="prior_del_pct" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('current_del_pct')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('current_del_pct')} scope="col">
                       <Tooltip content="Average delivery% over the last 5 sessions. >55% = genuine conviction." good=">55: strong" bad="<45: weak">Curr Del% <SortIcon column="current_del_pct" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('del_jump_pp')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('del_jump_pp')} scope="col">
                       <Tooltip content="Current Del% minus Prior Del%. Higher = more dramatic flip from noise to conviction." good=">20: dramatic flip" bad="<10: marginal">Jump(pp) <SortIcon column="del_jump_pp" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('del50_days')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('del50_days')} scope="col">
                       <Tooltip content="Number of days (out of last 5) where delivery% > 50%. 5/5 = maximum conviction." good="5: perfect" bad="<3: inconsistent">Del50 Days <SortIcon column="del50_days" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('avg_del_value_cr')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('avg_del_value_cr')} scope="col">
                       <Tooltip content="Average daily delivery value in ₹ Cr. Higher = stronger institutional participation." good=">15: institutional" bad="<15: retail-driven">Del Val (₹ Cr) <SortIcon column="avg_del_value_cr" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('flip_consistency')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('flip_consistency')} scope="col">
                       <Tooltip content="% of recent window days with delivery > 50%. Higher = more persistent conviction.">Consistency% <SortIcon column="flip_consistency" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('sma_200')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('sma_200')} scope="col">
                       <Tooltip content="Price vs SMA-200. Above = uptrend, Below = downtrend (penalised).">SMA-200 <SortIcon column="sma_200" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('flip_type')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('flip_type')} scope="col">
                       Flip Type <SortIcon column="flip_type" />
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('prior_vol_rank')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('prior_vol_rank')} scope="col">
                       <Tooltip content="Volume rank vs universe median. >1.5 = high volume churner — more meaningful when flip occurs.">Vol Rank <SortIcon column="prior_vol_rank" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('close')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('close')} scope="col">
                       Close <SortIcon column="close" />
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('wk52_pos')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('wk52_pos')} scope="col">
                       <Tooltip content="Position within 52-week range. <90% means the stock hasn't already run its full course." good="<80: room to run" bad="≥90: already exhausted">52W Pos% <SortIcon column="wk52_pos" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('flip_score')} scope="col" aria-sort={sortCol === 'flip_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500/50" onClick={() => handleSort('flip_score')} scope="col" aria-sort={sortCol === 'flip_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       Score <SortIcon column="flip_score" />
                     </th>
                   </tr>
@@ -598,7 +598,7 @@ export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
                   ) : (
                     filteredData.map((row, index) => (
                       <tr key={row.symbol} role="row" aria-rowindex={index + 1} className="hover:bg-[#ffffff05] transition-colors">
-                        <td className="px-3 py-3 font-bold" scope="row">
+                        <td className="px-3 py-3 font-bold" role="rowheader">
                           <div className="flex items-center gap-1.5">
                             <StarButton symbol={row.symbol} size={11} />
                             <button

@@ -287,7 +287,7 @@ export default function OperatorFingerprintScannerView({ lib }: { lib: Librarian
         <div className="bg-fuchsia-500/10 border border-fuchsia-500/30 rounded p-3" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100} aria-label="Scan progress">
           <div className="flex items-center gap-2 text-xs font-mono text-fuchsia-300 mb-2">
             <RefreshCw size={14} className="animate-spin" aria-hidden="true" />
-            <span>{scanStatus?.message || 'Scanning...'}</span>
+            <span role="status" aria-live="polite">{scanStatus?.message || 'Scanning...'}</span>
             <span className="ml-auto">{progressPct}%</span>
           </div>
           <div className="w-full h-1.5 bg-[#ffffff1a] rounded-full overflow-hidden">
@@ -483,34 +483,34 @@ export default function OperatorFingerprintScannerView({ lib }: { lib: Librarian
               >
                 <thead className="sticky top-0 z-20 text-[#888]">
                   <tr style={{ boxShadow: '0 1px 0 0 rgba(255,255,255,0.08), 0 2px 4px 0 rgba(0,0,0,0.4)' }}>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white" onClick={() => handleSort('symbol')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white" onClick={() => handleSort('symbol')} scope="col">
                       Symbol <SortIcon column="symbol" />
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white" onClick={() => handleSort('sector')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white" onClick={() => handleSort('sector')} scope="col">
                       Sector <SortIcon column="sector" />
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('market_cap_cr')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('market_cap_cr')} scope="col">
                       MCap (₹ Cr) <SortIcon column="market_cap_cr" />
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('compression_ratio')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('compression_ratio')} scope="col">
                       <Tooltip content="ATR compression ratio (recent / older). <0.65 = highly compressed (good), <0.80 = compressing." good="<0.65: tight coil" bad="≥0.80: not compressing">Comp Ratio <SortIcon column="compression_ratio" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('delivery_drift')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('delivery_drift')} scope="col">
                       <Tooltip content="Linear slope of delivery% over last 20 sessions. Positive = delivery drifting up (accumulation)." good=">0.3: strong drift" bad="≤0: declining">Del Drift <SortIcon column="delivery_drift" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('quiet_accum_days')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('quiet_accum_days')} scope="col">
                       <Tooltip content="Quiet accumulation days (last 20). Days where delivery > average AND price change < 1.5% — operators accumulating stealthily.">Quiet Days <SortIcon column="quiet_accum_days" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('volume_staircase')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('volume_staircase')} scope="col">
                       Staircase <SortIcon column="volume_staircase" />
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('base_duration_days')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('base_duration_days')} scope="col">
                       <Tooltip content="Number of sessions where recent ATR < older ATR (how long the coil has been forming).">Base Dur <SortIcon column="base_duration_days" /></Tooltip>
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('close')} scope="col">
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('close')} scope="col">
                       Close <SortIcon column="close" />
                     </th>
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-fuchsia-500/50" onClick={() => handleSort('coil_tension_score')} scope="col" aria-sort={sortCol === 'coil_tension_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-fuchsia-500/50" onClick={() => handleSort('coil_tension_score')} scope="col" aria-sort={sortCol === 'coil_tension_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       Tension Score <SortIcon column="coil_tension_score" />
                     </th>
                   </tr>
@@ -523,7 +523,7 @@ export default function OperatorFingerprintScannerView({ lib }: { lib: Librarian
                   ) : (
                     filteredData.map((row, index) => (
                       <tr key={row.symbol} role="row" aria-rowindex={index + 1} className="hover:bg-[#ffffff05] transition-colors">
-                        <td className="px-3 py-3 font-bold" scope="row">
+                        <td className="px-3 py-3 font-bold" role="rowheader">
                           <div className="flex items-center gap-1.5">
                             <StarButton symbol={row.symbol} size={11} />
                             <button

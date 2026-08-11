@@ -290,7 +290,7 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
         <div className="bg-cyan-500/10 border border-cyan-500/30 rounded p-3">
           <div className="flex items-center gap-2 text-xs font-mono text-cyan-300 mb-2">
             <RefreshCw size={14} className="animate-spin" />
-            <span>{scanStatus?.message || 'Scanning...'}</span>
+            <span role="status" aria-live="polite">{scanStatus?.message || 'Scanning...'}</span>
             <span className="ml-auto">{progressPct}%</span>
           </div>
           <div className="w-full h-1.5 bg-[#ffffff1a] rounded-full overflow-hidden">

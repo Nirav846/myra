@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { API_BASE } from '../config';
 import { TrendingUp, Plus, Edit, Trash2, X, Check, Loader2, AlertTriangle, ChevronDown } from 'lucide-react';
+import Modal from '../components/Modal';
 
 interface SignalDefinition {
   key: string;
@@ -754,96 +755,89 @@ export default function PortfolioView() {
       </div>
 
       {/* ── Add Stock Modal ── */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-40 bg-black/80 flex items-center justify-center">
-          <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded-lg p-6 max-w-md w-full mx-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-[#fafafa]">Add / Append Stock</h3>
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="text-[#888] hover:text-white"
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <div className="flex flex-col gap-3">
-              <input
-                type="text"
-                placeholder="Symbol (e.g., INFY)"
-                value={addForm.symbol}
-                onChange={(e) => setAddForm({ ...addForm, symbol: e.target.value.toUpperCase() })}
-                className="px-3 py-2 text-[12px] rounded bg-[#0e1117] border border-[#ffffff1a] text-[#fafafa] placeholder-[#888]"
-              />
-              <input
-                type="number"
-                placeholder="Quantity"
-                value={addForm.qty}
-                onChange={(e) => setAddForm({ ...addForm, qty: e.target.value })}
-                className="px-3 py-2 text-[12px] rounded bg-[#0e1117] border border-[#ffffff1a] text-[#fafafa] placeholder-[#888]"
-              />
-              <input
-                type="number"
-                placeholder="Buy Price"
-                value={addForm.price}
-                onChange={(e) => setAddForm({ ...addForm, price: e.target.value })}
-                step="0.01"
-                className="px-3 py-2 text-[12px] rounded bg-[#0e1117] border border-[#ffffff1a] text-[#fafafa] placeholder-[#888]"
-              />
-              <select
-                value={addForm.category}
-                onChange={(e) => setAddForm({ ...addForm, category: e.target.value })}
-                className="px-3 py-2 text-[12px] rounded bg-[#0e1117] border border-[#ffffff1a] text-[#fafafa]"
-              >
-                <option>NSE EQ</option>
-                <option>NSE FO</option>
-                <option>BSE EQ</option>
-              </select>
-              <div className="flex gap-2 mt-2">
-                <button
-                  onClick={handleAddStock}
-                  disabled={adding}
-                  className="flex-1 px-3 py-2 text-[12px] rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-1"
-                >
-                  {adding ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-                  Add
-                </button>
-                <button
-                  onClick={() => setShowAddModal(false)}
-                  className="flex-1 px-3 py-2 text-[12px] rounded bg-[#ffffff0a] text-[#888] hover:text-white"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
+      <Modal
+        open={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        title="Add / Append Stock"
+      >
+        <div className="flex flex-col gap-3">
+          <input
+            type="text"
+            placeholder="Symbol (e.g., INFY)"
+            value={addForm.symbol}
+            onChange={(e) => setAddForm({ ...addForm, symbol: e.target.value.toUpperCase() })}
+            className="px-3 py-2 text-[12px] rounded bg-[#0e1117] border border-[#ffffff1a] text-[#fafafa] placeholder-[#888] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#888]"
+          />
+          <input
+            type="number"
+            placeholder="Quantity"
+            value={addForm.qty}
+            onChange={(e) => setAddForm({ ...addForm, qty: e.target.value })}
+            className="px-3 py-2 text-[12px] rounded bg-[#0e1117] border border-[#ffffff1a] text-[#fafafa] placeholder-[#888] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#888]"
+          />
+          <input
+            type="number"
+            placeholder="Buy Price"
+            value={addForm.price}
+            onChange={(e) => setAddForm({ ...addForm, price: e.target.value })}
+            step="0.01"
+            className="px-3 py-2 text-[12px] rounded bg-[#0e1117] border border-[#ffffff1a] text-[#fafafa] placeholder-[#888] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#888]"
+          />
+          <select
+            value={addForm.category}
+            onChange={(e) => setAddForm({ ...addForm, category: e.target.value })}
+            className="px-3 py-2 text-[12px] rounded bg-[#0e1117] border border-[#ffffff1a] text-[#fafafa] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#888]"
+          >
+            <option>NSE EQ</option>
+            <option>NSE FO</option>
+            <option>BSE EQ</option>
+          </select>
+          <div className="flex gap-2 mt-2">
+            <button
+              onClick={handleAddStock}
+              disabled={adding}
+              className="flex-1 px-3 py-2 text-[12px] rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+            >
+              {adding ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+              Add
+            </button>
+            <button
+              onClick={() => setShowAddModal(false)}
+              className="flex-1 px-3 py-2 text-[12px] rounded bg-[#ffffff0a] text-[#888] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#888]"
+            >
+              Cancel
+            </button>
           </div>
         </div>
-      )}
+      </Modal>
 
       {/* ── Delete Confirmation Modal ── */}
-      {deleteConfirm && (
-        <div className="fixed inset-0 z-40 bg-black/80 flex items-center justify-center">
-          <div className="bg-[#1a1c24] border border-red-500/30 rounded-lg p-6 max-w-sm w-full mx-4">
-            <h3 className="text-sm font-semibold text-red-400 mb-3">Remove from Portfolio?</h3>
-            <p className="text-[12px] text-[#888] mb-4">
-              Remove <span className="text-white font-bold">{deleteConfirm}</span> from your portfolio. This cannot be undone.
-            </p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => handleDeleteHolding(deleteConfirm)}
-                className="flex-1 px-3 py-2 text-[12px] rounded bg-red-600 text-white hover:bg-red-700 flex items-center justify-center gap-1"
-              >
-                <Trash2 size={12} /> Remove
-              </button>
-              <button
-                onClick={() => setDeleteConfirm(null)}
-                className="flex-1 px-3 py-2 text-[12px] rounded bg-[#ffffff0a] text-[#888] hover:text-white"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
+      <Modal
+        open={!!deleteConfirm}
+        onClose={() => setDeleteConfirm(null)}
+        title="Remove from Portfolio?"
+        maxWidth="max-w-sm"
+        accentBorder="border-red-500/30"
+        titleClass="text-red-400"
+      >
+        <p className="text-[12px] text-[#888] mb-4">
+          Remove <span className="text-white font-bold">{deleteConfirm}</span> from your portfolio. This cannot be undone.
+        </p>
+        <div className="flex gap-2">
+          <button
+            onClick={() => handleDeleteHolding(deleteConfirm)}
+            className="flex-1 px-3 py-2 text-[12px] rounded bg-red-600 text-white hover:bg-red-700 flex items-center justify-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+          >
+            <Trash2 size={12} /> Remove
+          </button>
+          <button
+            onClick={() => setDeleteConfirm(null)}
+            className="flex-1 px-3 py-2 text-[12px] rounded bg-[#ffffff0a] text-[#888] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#888]"
+          >
+            Cancel
+          </button>
         </div>
-      )}
+      </Modal>
       {/* ── Alerts Banner ── */}
       {hasAlerts && (
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">

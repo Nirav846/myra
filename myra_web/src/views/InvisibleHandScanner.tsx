@@ -389,7 +389,7 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
         <div className="bg-violet-500/10 border border-violet-500/30 rounded p-3" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100} aria-label="Scan progress">
           <div className="flex items-center gap-2 text-xs font-mono text-violet-300 mb-2">
             <RefreshCw size={14} className="animate-spin" aria-hidden="true" />
-            <span>{scanStatus?.message || 'Scanning...'}</span>
+            <span role="status" aria-live="polite">{scanStatus?.message || 'Scanning...'}</span>
             <span className="ml-auto">{progressPct}%</span>
           </div>
           <div className="w-full h-1.5 bg-[#ffffff1a] rounded-full overflow-hidden">
@@ -593,88 +593,88 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
                 <thead className="sticky top-0 z-20 text-[#888]">
                   <tr style={{ boxShadow: '0 1px 0 0 rgba(255,255,255,0.08), 0 2px 4px 0 rgba(0,0,0,0.4)' }}>
 
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white select-none"
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white select-none"
                         aria-sort={sortCol === 'symbol' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('symbol'); } }} onClick={() => handleSort('symbol')} scope="col">
                       Symbol <SortIcon column="symbol" />
                     </th>
 
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white select-none"
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white select-none"
                         aria-sort={sortCol === 'sector' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('sector'); } }} onClick={() => handleSort('sector')} scope="col">
                       Sector <SortIcon column="sector" />
                     </th>
 
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white select-none"
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white select-none"
                         aria-sort={sortCol === 'sector_mom_tier' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('sector_mom_tier'); } }} onClick={() => handleSort('sector_mom_tier')} scope="col">
                       Sector Mom <SortIcon column="sector_mom_tier" />
                     </th>
 
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white select-none"
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white select-none"
                         aria-sort={sortCol === 'quality_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('quality_score'); } }} onClick={() => handleSort('quality_score')} scope="col">
                       <Tooltip content="Three-factor quality score (0-100): net margin (40%), promoter holding (30%), earnings yield 1/PE (30%). Cross-sectionally ranked within the scan universe.">
                         Quality Score <SortIcon column="quality_score" />
                       </Tooltip>
                     </th>
 
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
                         aria-sort={sortCol === 'market_cap_cr' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('market_cap_cr'); } }} onClick={() => handleSort('market_cap_cr')} scope="col">
                       MCap (₹Cr) <SortIcon column="market_cap_cr" />
                     </th>
 
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
                         aria-sort={sortCol === 'der_ratio' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('der_ratio'); } }} onClick={() => handleSort('der_ratio')} scope="col">
                       <Tooltip content="Delivery Efficiency Ratio — ₹Cr absorbed ÷ price drift%. High = stock absorbed in size without price moving. Compared to this stock's own 60-day baseline.">
                         DER Ratio <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="der_ratio" />
                       </Tooltip>
                     </th>
 
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
                         aria-sort={sortCol === 'ddas' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('ddas'); } }} onClick={() => handleSort('ddas')} scope="col">
                       <Tooltip content="Down-Day Absorption Score — mean delivery% on sessions when THIS stock's price fell. High = someone was absorbing every dip. Not Nifty RS — this is specific to this stock's own bad days.">
                         DDAS% <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="ddas" />
                       </Tooltip>
                     </th>
 
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
                         aria-sort={sortCol === 'mean_del_pct' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('mean_del_pct'); } }} onClick={() => handleSort('mean_del_pct')} scope="col">
                       <Tooltip content="Average delivery% over the last 20 sessions. >55% = sustained high delivery. The baseline that DCS uses.">
                         Mean Del% <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="mean_del_pct" />
                       </Tooltip>
                     </th>
 
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
                         aria-sort={sortCol === 'dcs_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('dcs_score'); } }} onClick={() => handleSort('dcs_score')} scope="col">
                       <Tooltip content="Delivery Consistency Score — mean delivery ÷ (1 + std deviation/10). Distinguishes systematic daily loading from one-off block deals. High = delivery is regular, not spikey.">
                         DCS <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="dcs_score" />
                       </Tooltip>
                     </th>
 
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
                         aria-sort={sortCol === 'qcd' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('qcd'); } }} onClick={() => handleSort('qcd')} scope="col">
                       <Tooltip content="Quiet Conviction Days — sessions where delivery >50% AND price moved <1.5% AND volume was near average. The purest signal: someone loaded stock when nobody was watching.">
                         QCD <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="qcd" />
                       </Tooltip>
                     </th>
 
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
                         aria-sort={sortCol === 'ih_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('ih_score'); } }} onClick={() => handleSort('ih_score')} scope="col">
                       <Tooltip content="Invisible Hand Score (0–100) — composite of DER(35%) + DDAS(30%) + DCS(20%) + QCD(15%). Grade A = 75+.">
                         IH Score <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="ih_score" />
                       </Tooltip>
                     </th>
 
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
                         aria-sort={sortCol === 'base_duration' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('base_duration'); } }} onClick={() => handleSort('base_duration')} scope="col">
                       <Tooltip content="How many consecutive recent sessions the stock has been 'in the base' — daily high-low range < 3% of close. Longer base = more patient accumulation.">
                         Base Days <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="base_duration" />
                       </Tooltip>
                     </th>
 
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
                         aria-sort={sortCol === 'close' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('close'); } }} onClick={() => handleSort('close')} scope="col">
                       Price (₹) <SortIcon column="close" />
                     </th>
 
-                    <th className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white select-none"
                         aria-sort={sortCol === 'wk52_pos' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('wk52_pos'); } }} onClick={() => handleSort('wk52_pos')} scope="col">
                       <Tooltip content="Where the current price sits in the 52-week range. 0% = at the 52-week low, 100% = at the high. <75% = room to move up. >88% = already near highs (excluded by scanner).">
                         52W Position <Info size={10} className="inline mb-0.5 opacity-40" /> <SortIcon column="wk52_pos" />
@@ -691,7 +691,7 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
                   ) : (
                     filteredData.map((row, index) => (
                       <tr key={row.symbol} role="row" aria-rowindex={index + 1} className="hover:bg-[#ffffff05] transition-colors">
-                        <td className="px-3 py-3 font-bold" scope="row">
+                        <td className="px-3 py-3 font-bold" role="rowheader">
                           <div className="flex items-center gap-1.5">
                             <StarButton symbol={row.symbol} size={11} />
                             <button

@@ -288,7 +288,7 @@ export default function FiiDiiScannerView({ lib }: { lib: Librarian }) {
                     </h3>
                     <div className="flex gap-2 items-center">
                         {errorMsg && (
-                            <span className="text-[12px] bg-red-500/20 text-red-500 px-2 py-1 rounded font-mono border border-red-500/30 flex items-center gap-1">
+                            <span role="status" aria-live="polite" className="text-[12px] bg-red-500/20 text-red-500 px-2 py-1 rounded font-mono border border-red-500/30 flex items-center gap-1">
                                 <AlertTriangle size={10} /> {errorMsg}
                             </span>
                         )}
@@ -401,7 +401,7 @@ export default function FiiDiiScannerView({ lib }: { lib: Librarian }) {
             {/* Table */}
             <div className="flex-1 min-h-0 overflow-hidden rounded">
                 {isLoading ? (
-                    <div className="p-8 text-center text-[#888] font-mono text-xs flex flex-col items-center justify-center h-64 gap-4">
+                    <div role="status" aria-live="polite" className="p-8 text-center text-[#888] font-mono text-xs flex flex-col items-center justify-center h-64 gap-4">
                         <RefreshCw className="animate-spin text-blue-500/50" size={24} />
                         Syncing institutional activity...
                     </div>

@@ -348,7 +348,7 @@ export default function MultibaggerMatrixView({ lib }: { lib: Librarian }) {
         </h3>
         <div className="flex gap-2 items-center">
           {errorMsg && (
-             <span className="text-[12px] bg-red-500/20 text-red-500 px-2 py-1 rounded font-mono border border-red-500/30 flex items-center gap-1">
+             <span role="status" aria-live="polite" className="text-[12px] bg-red-500/20 text-red-500 px-2 py-1 rounded font-mono border border-red-500/30 flex items-center gap-1">
                <AlertTriangle size={10} /> {errorMsg}
              </span>
           )}
@@ -470,7 +470,7 @@ export default function MultibaggerMatrixView({ lib }: { lib: Librarian }) {
                   </div>
                </div>
             </div>
-            {isLoading && <div className="text-xs text-orange-400 font-mono mt-4 animate-pulse flex items-center justify-center">Recalculating Tensor Matrix...</div>}
+            {isLoading && <div role="status" aria-live="polite" className="text-xs text-orange-400 font-mono mt-4 animate-pulse flex items-center justify-center">Recalculating Tensor Matrix...</div>}
           </div>
         </div>
 
