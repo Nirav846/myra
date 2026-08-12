@@ -4,6 +4,7 @@ No database access, no network — pure numpy/pandas only.
 """
 
 import math
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -769,3 +770,140 @@ def test_circuit_lock_false_fewer_than_3():
     df["volume"] = volumes
     # Only 2 consecutive circuit days (indices 1 and 2), so streak < 3
     assert scanner._is_likely_circuit_lock(df, 2) is False
+
+
+# ---------------------------------------------------------------------------
+# Free-float filter tests (Fix 4: skip-NULL / missing / measured)
+# ---------------------------------------------------------------------------
+
+
+def _make_valid_tech_rows(n: int = 200) -> list[tuple]:
+    """Build n rows of valid OHLCV+delivery tuples as scan() expects from _get_tech_data.
+    Alternating up/down bars so del_abs is near zero (passes min_del_abs=-2).
+    High-delivery on even bars to ensure enough above-average days.
+    Steep price drift so DCB >> close (discount > 15%)."""
+    from datetime import date, timedelta
+
+    start = date(2024, 6, 1)
+    rows = []
+    for i in range(n):
+        close = 100.0 - i * 0.20  # drift: discount ~16% in [15,60] window
+        # Alternate up (close > open) and down (close < open)
+        if i % 2 == 0:
+            open_ = close - 1.0  # up day
+        else:
+            open_ = close + 1.0  # down day
+        high = max(open_, close) + 0.5
+        low = min(open_, close) - 0.5
+        volume = 500000
+        # High delivery on even bars, low on odd
+        del_pct = 45.0 if i % 2 == 0 else 10.0
+        delivery = int(volume * del_pct / 100)
+        d = start + timedelta(days=i)
+        date_str = d.isoformat()
+        rows.append((date_str, open_, high, low, close, volume, delivery, del_pct))
+    return rows
+
+
+def test_free_float_skip_when_null_ff_pct_and_min_ff_mcap_positive():
+    """When min_ff_mcap > 0 and ff_pct is None -> symbol is skipped (not included)."""
+    scanner = DCBBargainScanner(min_ff_mcap=600.0)
+    tech_rows = _make_valid_tech_rows()
+
+    with (
+        patch.object(scanner, "_get_universe", return_value=[("TEST", 10000, None)]),
+        patch.object(scanner, "_get_tech_data", return_value=tech_rows),
+        patch(
+            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe", return_value=None
+        ),
+    ):
+        result = scanner.scan(as_on_date="2025-06-15")
+    assert len(result) == 0
+
+
+def test_free_float_missing_path_when_min_ff_mcap_zero():
+    """When min_ff_mcap <= 0 -> candidate included with ff_data_quality='missing', free_float_mcap_cr=None."""
+    scanner = DCBBargainScanner(min_ff_mcap=0.0)
+    tech_rows = _make_valid_tech_rows()
+
+    with (
+        patch.object(scanner, "_get_universe", return_value=[("TEST", 10000, None)]),
+        patch.object(scanner, "_get_tech_data", return_value=tech_rows),
+        patch(
+            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe", return_value=None
+        ),
+    ):
+        result = scanner.scan(as_on_date="2025-06-15")
+
+    assert len(result) == 1
+    row = result.iloc[0]
+    assert row["ff_data_quality"] == "missing"
+    assert row["free_float_mcap_cr"] is None
+    assert row["symbol"] == "TEST"
+
+
+def test_free_float_measured_path_includes_candidate():
+    """When min_ff_mcap > 0 and ff_pct is provided -> ff_data_quality='measured', value computed."""
+    scanner = DCBBargainScanner(
+        min_ff_mcap=0.01
+    )  # tiny threshold so test data qualifies
+    tech_rows = _make_valid_tech_rows()
+    # mcap is raw from fundamentals (not Cr). Universe query divides by 1e7 for Cr filter.
+    # free_float_mcap_cr = (mcap * ff_pct / 100) / 1e7
+    # Use mcap=10_000_000 raw = 1 Cr market cap, ff_pct=25% -> ff_mcap=0.25 Cr > 0.01
+    mcap_raw = 10_000_000
+    ff_pct = 25.0
+    expected_ff_mcap_cr = (mcap_raw * ff_pct / 100.0) / 1e7  # 0.25
+    with (
+        patch.object(
+            scanner, "_get_universe", return_value=[("TEST", mcap_raw, ff_pct)]
+        ),
+        patch.object(scanner, "_get_tech_data", return_value=tech_rows),
+        patch(
+            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe", return_value=None
+        ),
+    ):
+        result = scanner.scan(as_on_date="2025-06-15")
+
+    assert len(result) == 1
+    row = result.iloc[0]
+    assert row["ff_data_quality"] == "measured"
+    assert row["free_float_mcap_cr"] == pytest.approx(expected_ff_mcap_cr, abs=0.001)
+
+
+def test_free_float_measured_path_skips_below_threshold():
+    """When min_ff_mcap > 0 and computed ff mcap < threshold -> candidate skipped."""
+    scanner = DCBBargainScanner(min_ff_mcap=100.0)  # high threshold
+    tech_rows = _make_valid_tech_rows()
+    # mcap=10_000_000 raw = 1 Cr, ff_pct=25% -> free_float_mcap_cr=0.25 < 100 -> skip
+    with (
+        patch.object(
+            scanner, "_get_universe", return_value=[("TEST", 10_000_000, 25.0)]
+        ),
+        patch.object(scanner, "_get_tech_data", return_value=tech_rows),
+        patch(
+            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe", return_value=None
+        ),
+    ):
+        result = scanner.scan(as_on_date="2025-06-15")
+    assert len(result) == 0
+
+
+def test_free_float_round_none_not_type_error():
+    """Regression: round(None, 2) used to raise TypeError in min_ff_mcap=0 path.
+    With the guard, free_float_mcap_cr=None passes through cleanly."""
+    scanner = DCBBargainScanner(min_ff_mcap=0.0)
+    tech_rows = _make_valid_tech_rows()
+
+    with (
+        patch.object(scanner, "_get_universe", return_value=[("TEST", 10000, None)]),
+        patch.object(scanner, "_get_tech_data", return_value=tech_rows),
+        patch(
+            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe", return_value=None
+        ),
+    ):
+        # This must NOT raise TypeError from round(None, 2)
+        result = scanner.scan(as_on_date="2025-06-15")
+
+    assert len(result) == 1
+    assert result.iloc[0]["free_float_mcap_cr"] is None

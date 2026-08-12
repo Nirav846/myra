@@ -560,7 +560,9 @@ class DCBBargainScanner:
                         "del_abs": round(del_abs, 2),
                         "adtv_cr": round(adtv_cr, 2),
                         "high_del_days": high_del_days,
-                        "free_float_mcap_cr": round(free_float_mcap_cr, 2),
+                        "free_float_mcap_cr": round(free_float_mcap_cr, 2)
+                        if free_float_mcap_cr is not None
+                        else None,
                         "ff_data_quality": ff_data_quality,
                         "spike_deep": spike_deep,
                         "is_lower_circuit": is_lower_circuit,
