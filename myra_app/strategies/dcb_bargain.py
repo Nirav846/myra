@@ -26,7 +26,7 @@ class DCBBargainScanner:
         min_mcap=200,
         max_mcap=50000,
         dcb_window=120,
-        min_discount_pct=15.0,
+        min_discount_pct=18.0,
         max_discount_pct=60.0,
         min_del_abs=-2.0,
         min_adtv_cr=1.0,
