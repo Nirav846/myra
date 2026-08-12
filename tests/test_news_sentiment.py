@@ -10,6 +10,8 @@ from unittest.mock import MagicMock, patch, PropertyMock
 
 import pytest
 
+pytest.importorskip("transformers")
+
 import myra_app.news_sentiment as ns
 
 
@@ -38,7 +40,14 @@ def _groww_item(
     cta_entry = {}
     if include_cta:
         cta_entry = {"ctaText": company, "ctaUrl": cta_url, "meta": meta}
-    return {"data": {"title": title, "body": body, "publishedAt": published_at, "cta": [cta_entry]}}
+    return {
+        "data": {
+            "title": title,
+            "body": body,
+            "publishedAt": published_at,
+            "cta": [cta_entry],
+        }
+    }
 
 
 def _fake_response(status_code=200, json_data=None):
@@ -93,7 +102,14 @@ class TestFetchGrowwNews:
     @patch("myra_app.news_sentiment.requests.get")
     def test_missing_cta_skips_item(self, mock_get, mock_sleep):
         """Item with no cta array → skipped without crash."""
-        item_no_cta = {"data": {"title": "Some news", "body": "", "publishedAt": "2025-01-01T00:00:00", "cta": []}}
+        item_no_cta = {
+            "data": {
+                "title": "Some news",
+                "body": "",
+                "publishedAt": "2025-01-01T00:00:00",
+                "cta": [],
+            }
+        }
         mock_get.return_value = _fake_response(200, {"feed": [item_no_cta]})
         result = ns.fetch_groww_news("RELIANCE")
         assert result == []
@@ -223,7 +239,9 @@ class TestGrowwFallback:
         assert result[0]["company_name"] == "Reliance Industries"
         mock_groww.assert_called_once_with("RELIANCE")
 
-    @patch("myra_app.news_sentiment._classify_sentiment", return_value=("positive", 0.8))
+    @patch(
+        "myra_app.news_sentiment._classify_sentiment", return_value=("positive", 0.8)
+    )
     @patch("myra_app.news_sentiment._store_news")
     @patch("myra_app.news_sentiment._get_cached_news", return_value=None)
     @patch("myra_app.news_sentiment.fetch_groww_news")
@@ -247,13 +265,63 @@ class TestGrowwFallback:
     ):
         """GDELT returns 1 article, Groww returns 2 → combined = 3."""
         mock_gdelt.side_effect = [
-            [{"headline": "GDELT art", "url": "", "source": "GDELT", "date": "2025-12-10", "language": "", "tone": None, "domain": ""}],
-            [{"headline": "GDELT art", "url": "", "source": "GDELT", "date": "2025-12-10", "language": "", "tone": None, "domain": ""}],
-            [{"headline": "GDELT art", "url": "", "source": "GDELT", "date": "2025-12-10", "language": "", "tone": None, "domain": ""}],
+            [
+                {
+                    "headline": "GDELT art",
+                    "url": "",
+                    "source": "GDELT",
+                    "date": "2025-12-10",
+                    "language": "",
+                    "tone": None,
+                    "domain": "",
+                }
+            ],
+            [
+                {
+                    "headline": "GDELT art",
+                    "url": "",
+                    "source": "GDELT",
+                    "date": "2025-12-10",
+                    "language": "",
+                    "tone": None,
+                    "domain": "",
+                }
+            ],
+            [
+                {
+                    "headline": "GDELT art",
+                    "url": "",
+                    "source": "GDELT",
+                    "date": "2025-12-10",
+                    "language": "",
+                    "tone": None,
+                    "domain": "",
+                }
+            ],
         ]
         mock_groww.return_value = [
-            {"headline": "Groww art 1", "company_name": "Co", "source": "GROWW", "date": "2025-12-11", "url": "", "domain": "groww.in", "language": "English", "tone": None, "nse_script": "X"},
-            {"headline": "Groww art 2", "company_name": "Co", "source": "GROWW", "date": "2025-12-11", "url": "", "domain": "groww.in", "language": "English", "tone": None, "nse_script": "X"},
+            {
+                "headline": "Groww art 1",
+                "company_name": "Co",
+                "source": "GROWW",
+                "date": "2025-12-11",
+                "url": "",
+                "domain": "groww.in",
+                "language": "English",
+                "tone": None,
+                "nse_script": "X",
+            },
+            {
+                "headline": "Groww art 2",
+                "company_name": "Co",
+                "source": "GROWW",
+                "date": "2025-12-11",
+                "url": "",
+                "domain": "groww.in",
+                "language": "English",
+                "tone": None,
+                "nse_script": "X",
+            },
         ]
         result = ns.get_ticker_news("X", refresh=True)
         headlines = [r["headline"] for r in result]
@@ -284,12 +352,52 @@ class TestDeduplication:
         # Actually to test dedup we need both sources to return the same headline
         # Let's use a scenario where GDELT has 1 article and Groww has the same
         mock_gdelt.side_effect = [
-            [{"headline": "Same headline", "url": "gdelt-url", "source": "GDELT", "date": "2025-12-10", "language": "", "tone": None, "domain": ""}],
-            [{"headline": "Same headline", "url": "gdelt-url", "source": "GDELT", "date": "2025-12-10", "language": "", "tone": None, "domain": ""}],
-            [{"headline": "Same headline", "url": "gdelt-url", "source": "GDELT", "date": "2025-12-10", "language": "", "tone": None, "domain": ""}],
+            [
+                {
+                    "headline": "Same headline",
+                    "url": "gdelt-url",
+                    "source": "GDELT",
+                    "date": "2025-12-10",
+                    "language": "",
+                    "tone": None,
+                    "domain": "",
+                }
+            ],
+            [
+                {
+                    "headline": "Same headline",
+                    "url": "gdelt-url",
+                    "source": "GDELT",
+                    "date": "2025-12-10",
+                    "language": "",
+                    "tone": None,
+                    "domain": "",
+                }
+            ],
+            [
+                {
+                    "headline": "Same headline",
+                    "url": "gdelt-url",
+                    "source": "GDELT",
+                    "date": "2025-12-10",
+                    "language": "",
+                    "tone": None,
+                    "domain": "",
+                }
+            ],
         ]
         mock_groww.return_value = [
-            {"headline": "Same headline", "company_name": "Co", "source": "GROWW", "date": "2025-12-11", "url": "groww-url", "domain": "groww.in", "language": "English", "tone": None, "nse_script": "X"},
+            {
+                "headline": "Same headline",
+                "company_name": "Co",
+                "source": "GROWW",
+                "date": "2025-12-11",
+                "url": "groww-url",
+                "domain": "groww.in",
+                "language": "English",
+                "tone": None,
+                "nse_script": "X",
+            },
         ]
         result = ns.get_ticker_news("X", refresh=True)
         matching = [r for r in result if r["headline"] == "Same headline"]
@@ -307,8 +415,28 @@ class TestDeduplication:
     ):
         """Different headlines → both appear in results."""
         mock_groww.return_value = [
-            {"headline": "Headline A", "company_name": "", "source": "GROWW", "date": "2025-12-11", "url": "", "domain": "groww.in", "language": "English", "tone": None, "nse_script": "X"},
-            {"headline": "Headline B", "company_name": "", "source": "GROWW", "date": "2025-12-11", "url": "", "domain": "groww.in", "language": "English", "tone": None, "nse_script": "X"},
+            {
+                "headline": "Headline A",
+                "company_name": "",
+                "source": "GROWW",
+                "date": "2025-12-11",
+                "url": "",
+                "domain": "groww.in",
+                "language": "English",
+                "tone": None,
+                "nse_script": "X",
+            },
+            {
+                "headline": "Headline B",
+                "company_name": "",
+                "source": "GROWW",
+                "date": "2025-12-11",
+                "url": "",
+                "domain": "groww.in",
+                "language": "English",
+                "tone": None,
+                "nse_script": "X",
+            },
         ]
         result = ns.get_ticker_news("X", refresh=True)
         headlines = [r["headline"] for r in result]
@@ -439,4 +567,6 @@ class TestExtractSource:
         assert ns._extract_source_from_body(None) == "GROWW"
 
     def test_source_with_extra_colon(self):
-        assert ns._extract_source_from_body("Source: Economic: Times") == "Economic: Times"
+        assert (
+            ns._extract_source_from_body("Source: Economic: Times") == "Economic: Times"
+        )
