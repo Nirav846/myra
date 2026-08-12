@@ -20,3 +20,5 @@ xgboost
 yfinance
 urllib3
 python-dotenv
+fastapi>=0.100.0
+httpx>=0.27.0
