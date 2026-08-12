@@ -377,7 +377,7 @@ def test_default_params():
     assert scanner.min_mcap == 200
     assert scanner.max_mcap == 50000
     assert scanner.dcb_window == 120
-    assert scanner.min_discount_pct == 18.0
+    assert scanner.min_discount_pct == 15.0
     assert scanner.max_discount_pct == 60.0
     assert scanner.min_del_abs == -2.0
     assert scanner.min_adtv_cr == 1.0
@@ -787,7 +787,7 @@ def _make_valid_tech_rows(n: int = 200) -> list[tuple]:
     start = date(2024, 6, 1)
     rows = []
     for i in range(n):
-        close = 100.0 - i * 0.25  # drift: discount ~22% in [18,60] window
+        close = 100.0 - i * 0.20  # drift: discount ~16% in [15,60] window
         # Alternate up (close > open) and down (close < open)
         if i % 2 == 0:
             open_ = close - 1.0  # up day

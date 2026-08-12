@@ -26,7 +26,9 @@ class DCBBargainScanner:
         min_mcap=200,
         max_mcap=50000,
         dcb_window=120,
-        min_discount_pct=18.0,
+        # min_discount = 15% is backtest-validated (511 symbols, 19 dates, cost-adj)
+        # yields +18.2% net 60d, 77.8% win rate (n=54)
+        min_discount_pct=15.0,
         max_discount_pct=60.0,
         min_del_abs=-2.0,
         min_adtv_cr=1.0,
