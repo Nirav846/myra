@@ -59,7 +59,7 @@ class DCBBargainScanner:
                 """
                 SELECT f.symbol,
                        COALESCE(f.market_cap, 0) AS mcap,
-                       COALESCE(f.free_float_pct, 40.0) AS ff_pct
+                       f.free_float_pct AS ff_pct
                 FROM fundamentals f
                 INNER JOIN (
                     SELECT symbol, MAX(date) as max_date
@@ -198,8 +198,29 @@ class DCBBargainScanner:
         return weekly.reset_index()
 
     @staticmethod
-    def _compute_depth_tag(discount_pct: float) -> str:
-        """Return DEEP / MID / SHALLOW based on discount percentage."""
+    def _tier_from_score(score: float) -> str:
+        """Fallback tier assignment: HIGH >= 20, MOD >= 10, else LOW."""
+        if score >= 20:
+            return "HIGH"
+        elif score >= 10:
+            return "MOD"
+        return "LOW"
+
+    @staticmethod
+    def _compute_depth_tag(
+        discount_pct: float, values: list[float] | None = None
+    ) -> str:
+        """Return DEEP / MID / SHALLOW based on discount percentage.
+        If >= 5 historical values provided, uses stock-specific percentile ranking.
+        Otherwise falls back to universal thresholds (>20 DEEP, >10 MID)."""
+        if values and len(values) >= 5:
+            arr = np.array(values)
+            rank = float((arr <= discount_pct).mean()) * 100
+            if rank > 80:
+                return "DEEP"
+            elif rank >= 50:
+                return "MID"
+            return "SHALLOW"
         if discount_pct > 20:
             return "DEEP"
         elif discount_pct > 10:
@@ -221,6 +242,43 @@ class DCBBargainScanner:
         return is_pinned and is_significant_drop
 
     @staticmethod
+    def _is_likely_circuit_lock(df: pd.DataFrame, idx: int) -> bool:
+        """Detect likely circuit-lock: >= 3 consecutive lower-circuit days
+        with volume < 20% of the 20-day pre-streak average.
+        Uses .values numpy slicing (no .iloc in loop — perf guard safe)."""
+        if idx < 2:
+            return False
+        closes = df["close"].values.astype(float)
+        lows = df["low"].values.astype(float)
+        volumes = df["volume"].values.astype(float)
+
+        # Walk back to find the start of the trailing lower-circuit streak
+        streak = 0
+        i = idx
+        while i >= 1:
+            close_i = closes[i]
+            low_i = lows[i]
+            prev_close_i = closes[i - 1]
+            is_pinned = close_i <= low_i * 1.01
+            is_drop = close_i < prev_close_i * 0.95
+            if is_pinned and is_drop:
+                streak += 1
+                i -= 1
+            else:
+                break
+
+        if streak < 3:
+            return False
+
+        first_idx = i + 1  # first circuit day in the streak
+        avg_circuit_vol = float(volumes[first_idx : idx + 1].mean())
+        pre_start = max(0, first_idx - 20)
+        avg_pre_vol = (
+            float(volumes[pre_start:first_idx].mean()) if pre_start < first_idx else 0.0
+        )
+        return avg_pre_vol > 0 and avg_circuit_vol < 0.2 * avg_pre_vol
+
+    @staticmethod
     def _check_spike_deep(df_daily: pd.DataFrame, discount_pct: float) -> bool:
         """Return True if today's delivery_pct >= 1.3x 50-day avg AND
         close_loc >= 0.6 AND discount_pct > 20. Uses daily frame."""
@@ -239,13 +297,13 @@ class DCBBargainScanner:
             clr = (close - low) / (high - low)
         return clr >= 0.6 and discount_pct > 20
 
-    def _compute_depth_history(
-        self, df_daily: pd.DataFrame
-    ) -> tuple[float | None, float | None, float | None]:
-        """Compute 1-year DCB discount range (min, median, max) from historical cutoffs.
+    def _compute_depth_history(self, df_daily: pd.DataFrame) -> dict:
+        """Compute 1-year DCB discount range from historical cutoffs.
+        Returns dict with 'values' list, 'min', 'median', 'max'.
         Uses the daily frame with strided windows for efficiency."""
+        empty = {"values": [], "min": None, "median": None, "max": None}
         if len(df_daily) < self.dcb_window + 20:
-            return None, None, None
+            return empty
 
         closes_all = df_daily["close"].values.astype(float)
         del_all = df_daily["delivery_pct"].values.astype(float)
@@ -286,14 +344,15 @@ class DCBBargainScanner:
                 discount_pcts.append(disc)
 
         if len(discount_pcts) < 3:
-            return None, None, None
+            return empty
 
         arr = np.array(discount_pcts)
-        return (
-            self._sanitize_float(float(np.min(arr))),
-            self._sanitize_float(float(np.median(arr))),
-            self._sanitize_float(float(np.max(arr))),
-        )
+        return {
+            "values": discount_pcts,
+            "min": self._sanitize_float(float(np.min(arr))),
+            "median": self._sanitize_float(float(np.median(arr))),
+            "max": self._sanitize_float(float(np.max(arr))),
+        }
 
     def scan(self, as_on_date: str | None = None) -> pd.DataFrame:
         rows = self._get_universe()
@@ -323,8 +382,8 @@ class DCBBargainScanner:
                     """
                 ).fetchall()
                 _sector_map = {r[0].strip(): r[1] for r in _sec_rows}
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("DCB sector map load failed: %s", e)
 
         if as_on_date is None:
             as_on_date = date.today().isoformat()
@@ -374,9 +433,20 @@ class DCBBargainScanner:
                     continue
 
                 # Free-float filter
-                free_float_mcap_cr = (mcap * ff_pct / 100.0) / 1e7
-                if free_float_mcap_cr < self.min_ff_mcap:
+                if self.min_ff_mcap > 0 and ff_pct is None:
+                    logger.debug(
+                        "Skipping %s: free_float_pct missing, cannot apply FF filter",
+                        symbol,
+                    )
                     continue
+                if self.min_ff_mcap <= 0:
+                    ff_data_quality = "missing"
+                    free_float_mcap_cr = None
+                else:
+                    ff_data_quality = "measured"
+                    free_float_mcap_cr = (mcap * ff_pct / 100.0) / 1e7
+                    if free_float_mcap_cr < self.min_ff_mcap:
+                        continue
 
                 # Weekly aggregation if needed
                 if is_weekly:
@@ -444,22 +514,19 @@ class DCBBargainScanner:
                 if del_abs < self.min_del_abs:
                     continue
 
-                # Depth tag
-                depth = self._compute_depth_tag(discount_pct)
+                # Depth history (1-year DCB discount range) — compute BEFORE depth tag
+                depth_hist = self._compute_depth_history(df)
+                discount_values = depth_hist["values"]
+
+                # Depth tag (stock-specific if enough history, else universal)
+                depth = self._compute_depth_tag(discount_pct, discount_values)
+                depth_basis = "historical" if len(discount_values) >= 5 else "universal"
 
                 # Spike+Deep (uses daily frame)
                 spike_deep = self._check_spike_deep(df, discount_pct)
 
-                # Score and tier
+                # Score (tier assigned after pool pass)
                 score = discount_pct * 0.6 + del_abs * 0.4
-                tier = "HIGH" if score >= 20 else ("MOD" if score >= 10 else "LOW")
-
-                # Depth history (1-year DCB discount range)
-                (
-                    dcb_disc_min,
-                    dcb_disc_median,
-                    dcb_disc_max,
-                ) = self._compute_depth_history(df)
 
                 # Lower-circuit detection (uses daily df)
                 is_lower_circuit = self._is_lower_circuit(df, len(df) - 1)
@@ -469,6 +536,18 @@ class DCBBargainScanner:
                     if self._is_lower_circuit(df, ci):
                         circuit_days_last_5 += 1
 
+                # Circuit streak: consecutive lower-circuit days ending at last row
+                circuit_streak = 0
+                last_idx = len(df) - 1
+                for ci in range(last_idx, 0, -1):
+                    if self._is_lower_circuit(df, ci):
+                        circuit_streak += 1
+                    else:
+                        break
+
+                # Circuit lock detection
+                is_circuit_lock = self._is_likely_circuit_lock(df, last_idx)
+
                 candidates.append(
                     {
                         "symbol": symbol,
@@ -477,22 +556,27 @@ class DCBBargainScanner:
                         "dcb": round(dcb, 2),
                         "discount_pct": round(discount_pct, 2),
                         "depth": depth,
+                        "depth_basis": depth_basis,
                         "del_abs": round(del_abs, 2),
                         "adtv_cr": round(adtv_cr, 2),
                         "high_del_days": high_del_days,
                         "free_float_mcap_cr": round(free_float_mcap_cr, 2),
+                        "ff_data_quality": ff_data_quality,
                         "spike_deep": spike_deep,
                         "is_lower_circuit": is_lower_circuit,
                         "circuit_days_last_5": circuit_days_last_5,
-                        "dcb_disc_min": dcb_disc_min,
-                        "dcb_disc_median": dcb_disc_median,
-                        "dcb_disc_max": dcb_disc_max,
+                        "circuit_streak": circuit_streak,
+                        "is_circuit_lock": is_circuit_lock,
+                        "dcb_disc_min": depth_hist["min"],
+                        "dcb_disc_median": depth_hist["median"],
+                        "dcb_disc_max": depth_hist["max"],
                         "score": round(score, 2),
-                        "tier": tier,
+                        "tier": "LOW",  # placeholder, reassigned below
                         "timeframe": self.timeframe,
                     }
                 )
-            except Exception:
+            except Exception as e:
+                logger.warning("DCB scan failed for %s: %s", symbol, e)
                 continue
 
         # Sanitize float fields
@@ -508,6 +592,7 @@ class DCBBargainScanner:
             "dcb_disc_median",
             "dcb_disc_max",
             "circuit_days_last_5",
+            "circuit_streak",
         ]
         for c in candidates:
             for f in float_fields:
@@ -515,5 +600,22 @@ class DCBBargainScanner:
                     c[f] = self._sanitize_float(c[f])
 
         candidates.sort(key=lambda x: x["score"], reverse=True)
-        logger.info("DCB Bargain scan complete: %d candidates found", len(candidates))
+
+        # Dynamic tier assignment: percentile-based when pool >= 10, else fallback
+        n = len(candidates)
+        if n >= 10:
+            high_cut = math.ceil(0.2 * n)
+            mod_cut = math.ceil(0.5 * n)
+            for i, c in enumerate(candidates):
+                if i < high_cut:
+                    c["tier"] = "HIGH"
+                elif i < mod_cut:
+                    c["tier"] = "MOD"
+                else:
+                    c["tier"] = "LOW"
+        else:
+            for c in candidates:
+                c["tier"] = self._tier_from_score(c["score"])
+
+        logger.info("DCB Bargain scan complete: %d candidates found", n)
         return pd.DataFrame(candidates)

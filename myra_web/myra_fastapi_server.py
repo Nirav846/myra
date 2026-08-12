@@ -2713,8 +2713,14 @@ async def dcb_bargain_scan(payload: dict = Body(default={})):
 
             df = scanner.scan(as_on_date=scan_date)
 
-            if exclude_circuits and "is_lower_circuit" in df.columns:
-                df = df[~df["is_lower_circuit"].fillna(False)].reset_index(drop=True)
+            if exclude_circuits:
+                col = (
+                    "is_circuit_lock"
+                    if "is_circuit_lock" in df.columns
+                    else "is_lower_circuit"
+                )
+                if col in df.columns:
+                    df = df[~df[col].fillna(False)].reset_index(drop=True)
 
             _dcb_scan_state["progress"] = 95
             _dcb_scan_state["message"] = "Finalising results..."
