@@ -25,6 +25,7 @@ if _ROOT not in sys.path:
 from myra_app.constants import DB_DIR
 from myra_app.librarian_core import LibrarianCore
 from myra_app.utils.index_sync import sync_index_constituents
+from myra_app.db.enrichers.corporate_actions_enricher import enrich_corporate_actions
 
 logger = logging.getLogger(__name__)
 
@@ -375,6 +376,14 @@ def _task_daily_ingest(force: bool = False):
                         )
                 except Exception as e:
                     logger.debug(f"[MYRA BG] Portfolio refresh not available: {e}")
+                # Enrich corporate actions data (splits, dividends) based on latest bhavcopy
+                try:
+                    logger.info("[MYRA BG] Starting corporate actions enrichment...")
+                    enrich_corporate_actions()
+                    logger.info("[MYRA BG] Corporate actions enrichment completed.")
+                except Exception as e:
+                    logger.error(f"[MYRA BG] Corporate actions enrichment failed: {e}")
+
             else:
                 logger.info(
                     "[MYRA BG] Ingestion succeeded but no new rows - DB is already up to date."

@@ -4,6 +4,8 @@ import sys
 import signal
 import time
 import logging
+from myra_app.db.enrichers.corporate_actions_enricher import enrich_corporate_actions
+
 
 def main():
     # Anchor project root
@@ -16,12 +18,17 @@ def main():
         datefmt="%Y-%m-%d %H:%M:%S",
     )
     logger = logging.getLogger("pipeline")
+    if "--enrich-ca" in sys.argv:
+        logger.info("Running corporate actions enricher for manual backfill...")
+        enrich_corporate_actions(force=True, days_back=365)
+        logger.info("Corporate actions enricher completed.")
 
     logger.info("Starting MYRA data pipeline (headless, crash‑safe)…")
 
     # Import the orchestrator module and start all background tasks
     import myra_app.background_orchestrator as orch
-    orch.start()   # launches all daemon threads (ingest, syncs, watchdog)
+
+    orch.start()  # launches all daemon threads (ingest, syncs, watchdog)
 
     # Access the shutdown event that the orchestrator uses internally
     shutdown_event = orch._shutdown_event
@@ -35,7 +42,7 @@ def main():
         logger.info("Pipeline stopped cleanly.")
         sys.exit(0)
 
-    signal.signal(signal.SIGINT, handle_exit)   # Ctrl+C
+    signal.signal(signal.SIGINT, handle_exit)  # Ctrl+C
     signal.signal(signal.SIGTERM, handle_exit)  # kill (non‑forced)
 
     # Keep alive until shutdown event is set
@@ -46,6 +53,7 @@ def main():
         pass
     finally:
         handle_exit()
+
 
 if __name__ == "__main__":
     main()
