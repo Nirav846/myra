@@ -29,8 +29,11 @@ def _get_session():
     """Get a requests session with NSE cookies."""
     session = requests.Session()
     session.headers.update(HEADERS)
-    # First hit the main page to set cookies
-    session.get(NSE_BASE, timeout=10)
+    # First hit the reference page to set cookies
+    session.get(
+        "https://www.nseindia.com/companies-listing/corporate-filings-actions",
+        timeout=10,
+    )
     return session
 
 
@@ -40,8 +43,8 @@ def fetch_corporate_actions(from_date: str, to_date: str):
     Returns list of dicts.
     """
     session = _get_session()
-    url = f"{NSE_BASE}/api/corporate-actions"
-    params = {"from": from_date, "to": to_date}
+    url = "https://www.nseindia.com/api/corporates-corporateActions"
+    params = {"index": "equities", "from_date": from_date, "to_date": to_date}
     resp = session.get(url, params=params, timeout=30)
     if resp.status_code != 200:
         logger.error(f"NSE API returned {resp.status_code}: {resp.text[:200]}")
