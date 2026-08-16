@@ -15,3 +15,9 @@ DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 CACHE_DIR = os.path.join(PROJECT_ROOT, ".jules", "cache")
 LOGS_DIR = os.path.join(PROJECT_ROOT, "logs")
 MODELS_DIR = os.path.join(PROJECT_ROOT, "models")
+
+# Feature flags
+# When False, the Screener.in fundamentals enricher only runs when invoked
+# explicitly with force=True (e.g. `python run_pipeline.py --enrich-screener`).
+# Set to True to re-enable automatic weekly runs via the background orchestrator.
+SCREENER_ENRICH_AUTO_ENABLED = False

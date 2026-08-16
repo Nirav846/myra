@@ -14,7 +14,7 @@ import re
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 
-from myra_app.constants import DB_DIR
+from myra_app.constants import DB_DIR, SCREENER_ENRICH_AUTO_ENABLED
 from bs4 import BeautifulSoup  # requires beautifulsoup4
 
 logger = logging.getLogger(__name__)
@@ -126,6 +126,9 @@ def enrich_screener_fundamentals(force: bool = False):
     If force=True, update all symbols regardless of cache.
     Otherwise, skip symbols updated within CACHE_DAYS.
     """
+    if not force and not SCREENER_ENRICH_AUTO_ENABLED:
+        logger.info("Screener enricher auto-run disabled. Use force=True to override.")
+        return
     db_path = os.path.join(DB_DIR, "myra_valuation.db")
     conn = sqlite3.connect(db_path)
     _ensure_table(conn)

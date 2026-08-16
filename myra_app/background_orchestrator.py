@@ -831,7 +831,9 @@ def _task_screener_enrich():
                     logger.info(
                         "[MYRA BG] Running weekly Screener.in fundamentals enrichment..."
                     )
-                    enrich_screener_fundamentals(force=False)
+                    # Auto-run disabled via SCREENER_ENRICH_AUTO_ENABLED=False;
+                    # manual backfill still available with `--enrich-screener`.
+                    # enrich_screener_fundamentals(force=False)
                     _mark_task_run("screener_enrich")
                     logger.info("[MYRA BG] Weekly Screener.in enrichment complete.")
 
