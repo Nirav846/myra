@@ -204,3 +204,31 @@
 ### Test results
 - Full suite: 311 passed, 1 pre-existing failure (`test_dcb_parity`) — zero new regressions.
 - All 8 health endpoints smoke-tested → 200 via TestClient.
+
+## Phase 7 — 2026-08-16: Extract scanners router with shared factory pattern
+
+### Files added
+- `myra_web/routes/scanners.py` — 27 scanner-related endpoints + cache-clear via factory
+
+### Files modified
+- `myra_web/myra_fastapi_server.py` — deleted entire scanner block (state dicts, locks, cache save/load, 26 endpoints, cache-clear), added scanners router import + include. File shrank from 2656 to ~400 lines.
+
+### Factory pattern
+- `register_scanner(name, ...)` creates state/lock/cache in a closure and registers `GET /{name}/status` + `POST /{name}/scan` via `router.add_api_route`.
+- 11 standard scanners registered with config: invisible-hand, trigger, liquidity-flip, dcb-bargain, operator-fingerprint, float-exhaustion, seasonal-delivery, darvas, wyckoff, bottom-hunter, climax-accumulation.
+- launchpad + multibagger keep custom explicit endpoints (in-memory predictions / global result, no cache file).
+- dcb-bargain has a `status_post_process` (tier-rank cached candidates) + `post_process` (circuit filter on records, mirroring original df-level column selection).
+
+### Observations
+1. **Tuple-return quirk (pre-existing)**: eturn {"detail": "..."}, 409 does NOT produce a 409 in this FastAPI version — TestClient shows 200 with body [{"detail": "..."}, 409]. The ORIGINAL code had the identical expression, so behavior is faithfully preserved (not a regression). Candidate for future fix (HTTPException or JSONResponse with status 409), but that would be a behavior change — deferred.
+2. **Scanners use raw 	hreading.Thread, not _spawn_task** — the original never used _spawn_task for scans (no task_tracker registration). Factory mirrors that. A _spawn_task import was initially added then removed to avoid changing behavior.
+3. **launchpad/multibagger escape the factory** — launchpad state has predictions (not candidates), no cache file, no progress; multibagger uses a global with no lock. Forcing them into the factory would have added more special cases than it saved.
+4. **cache-clear endpoint moved here ahead of Phase 9** — it mutates scanner state dicts directly, so it had to move with them. Phase 9's planned cache router is now effectively done (confluence-only remains for Phase 9).
+5. **status cached-response variance**: darvas/wyckoff/climax have no `bear_market` key; bottom-hunter returns `"scanned_date": None` instead; dcb applies tier rank. Handled via `status_extra`/`status_post_process` config.
+6. **progress-attr variance**: seasonal-delivery wraps `_get_all_tech_data` (w/ kwargs) instead of `_get_tech_data` (positional) — handled via `progress_attr` + `tracked_kwargs`.
+7. **result-mode variance**: trigger + float-exhaustion return list-of-dicts (inline NaN sanitize), all others return DataFrames (`_df_to_safe_records`) — handled via `result_mode="list"|"df"`.
+8. Tests: `test_dcb_defaults.py` (hits /api/dcb-bargain/defaults + /status, imports _apply_tier_rank from server) and `test_market_mood.py` (hits /api/pcr/status — kept in server) both pass.
+
+### Test results
+- Full suite: 311 passed, 1 pre-existing failure (`test_dcb_parity`) — zero new regressions.
+- Smoke: all 13 status endpoints 200; all 13 scan endpoints registered (POST-only, GET->405); dcb scan ran live (184 symbols, progress 10%, scanning); dcb defaults 200; cache-clear 200; pcr 200; confluence 200.
