@@ -119,3 +119,49 @@
 - **Baseline**: 311 passed, 1 pre-existing failure (`test_bulk_loader.py::TestScannerBulkParity::test_dcb_parity` — KeyError 'symbol')
 - **Post-refactor**: 311 passed, 1 pre-existing failure (same) — zero new regressions
 - `tests/test_task_offload.py` (all 4 tests including `test_ml_predict_returns_200_with_payload`): PASSED
+
+---
+
+## Phase 4 — 2026-08-16: Extract tools router (sync, ingest, execute, refresh-industry)
+
+### Files created
+- `myra_web/security.py` — `MYRA_API_SECRET` + `verify_myra_auth` extracted as single source of truth. Required to break a circular import: `tools.py` uses `Depends(verify_myra_auth)` at decoration time, so it cannot import from the server (which imports the tools router during its own module load). Both the server and tools.py import the SAME function object from this module.
+- `myra_web/routes/tools.py` — 6 tool endpoints (`/api/tools/execute`, `/api/tools/sync/fundamentals`, `/api/tools/sync/etf`, `/api/tools/sync/index`, `/api/tools/ingest`, `/api/tools/db-doctor`) + `ToolRequest` model + local `tool_map` dict + `_BASE_DIR` computed as `dirname(dirname(__file__))` to match the server's `BASE_DIR`. Also contains `portfolio_tools_router` (prefix `/api/portfolio`) with the `refresh-industry` endpoint.
+
+### Files modified
+- `myra_web/myra_fastapi_server.py` — deleted `MYRA_API_SECRET` definition and `verify_myra_auth` definition (replaced with re-export `from myra_web.security import MYRA_API_SECRET, verify_myra_auth`). Deleted `ToolRequest` class, `execute_tool`, `force_fundamentals_sync`, `force_etf_sync`, `force_index_sync`, `force_daily_ingest`, `run_db_doctor` (~110 lines). Deleted `refresh_portfolio_industry` (~17 lines). Added router imports + `include_router` calls for `tools_router` and `portfolio_tools_router`.
+- `refactor_learning.md` — Phase 4 section appended.
+
+### Endpoint count moved
+| Router | Endpoints | Source lines removed |
+|--------|-----------|---------------------|
+| tools (prefix /api/tools) | 6 | 444–554 (~110 lines) |
+| portfolio_tools (prefix /api/portfolio) | 1 | 3256–3272 (~17 lines) |
+
+### Key observations
+
+1. **Auth object identity is critical**: `tests/test_chart_endpoint.py`, `test_dcb_defaults.py`, `test_query_endpoint.py`, `test_task_offload.py` all do `from myra_fastapi_server import verify_myra_auth` and set `app.dependency_overrides[verify_myra_auth] = ...`. The `dependency_overrides` dict keys on the **function object**. If `verify_myra_auth` were defined in both the server and tools.py, they'd be different objects and the overrides wouldn't work. Solved by having a single definition in `myra_web/security.py` and re-exporting from the server.
+
+2. **Circular import prevention**: `tools.py` uses `Depends(verify_myra_auth)` at decoration time (module import). If it imported from `myra_fastapi_server`, the server imports the tools router during its own module load → circular import. The shared `myra_web/security.py` module breaks this cycle.
+
+3. **`_task_*` imports are guarded**: These functions are NOT defined in the server — they're imported from `myra_app.background_orchestrator` (lines 49-59). `tools.py` does its own guarded import with the same `try/except ImportError` pattern. The server's import block is kept because `/api/tools/status` (still in server, moves in Phase 6) uses `_get_last_run`.
+
+4. **`_BASE_DIR` resolution**: Server's `BASE_DIR = os.path.dirname(os.path.abspath(__file__))` resolves to `myra_web/`. In `tools.py`, `os.path.dirname(os.path.dirname(os.path.abspath(__file__)))` (two dirname calls from `myra_web/routes/tools.py`) yields the same `myra_web/` path. Script execution behavior is identical.
+
+5. **Only `/api/tools/execute` is auth-protected**: The sync/ingest/db-doctor endpoints have no auth dependency — this is the original behavior, preserved exactly.
+
+6. **`portfolio_tools_router` uses separate prefix**: The refresh-industry endpoint lives on a separate router with `prefix="/api/portfolio"` inside `tools.py`. This avoids `@router.post("/../portfolio/refresh-industry")` hacks and keeps the route path clean.
+
+### Test results
+- **Baseline**: 311 passed, 1 pre-existing failure (`test_bulk_loader.py::TestScannerBulkParity::test_dcb_parity` — KeyError 'symbol')
+- **Post-refactor**: 311 passed, 1 pre-existing failure (same) — zero new regressions
+- `tests/test_chart_endpoint.py` (all 9 tests including 3 temp-DB monkeypatch tests): PASSED
+- `tests/test_dcb_defaults.py` (all 12 tests): PASSED
+- `tests/test_query_endpoint.py` (all 15 tests): PASSED
+- `tests/test_task_offload.py` (all 4 tests): PASSED
+
+### Smoke-test results
+- `POST /api/tools/sync/fundamentals` with auth header → 202 `{"status": "started", "task_id": 1404}`
+- `POST /api/tools/execute` with invalid tool_id → 400 `{"detail": "Tool mapping not found"}`
+- `POST /api/tools/execute` without auth → 401 Unauthorized
+- All 7 routes: GET returns 405 (POST-only), proving registration

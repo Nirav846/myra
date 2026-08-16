@@ -17,12 +17,7 @@ from typing import List, Optional
 from myra_app.constants import DB_DIR, MODELS_DIR
 from myra_app.librarian_core import LibrarianCore
 
-MYRA_API_SECRET = os.environ.get("MYRA_API_SECRET", "myra-local-dev-2026")
-
-
-async def verify_myra_auth(x_myra_auth: str = Header(None)):
-    if x_myra_auth != MYRA_API_SECRET:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+from myra_web.security import MYRA_API_SECRET, verify_myra_auth
 
 
 logger = logging.getLogger(__name__)
@@ -97,6 +92,12 @@ app.include_router(finstack_router)
 from myra_web.routes.ml import router as ml_router
 
 app.include_router(ml_router)
+
+from myra_web.routes.tools import router as tools_router
+from myra_web.routes.tools import portfolio_tools_router
+
+app.include_router(tools_router)
+app.include_router(portfolio_tools_router)
 
 
 # Use the expected folder structure: Myra\myra_web (this project) side-by-side with Myra\myra_app
@@ -440,118 +441,7 @@ async def execute_query(req: QueryRequest, _=Depends(verify_myra_auth)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-class ToolRequest(BaseModel):
-    tool_id: str
-
-
-@app.post("/api/tools/execute")
-def execute_tool(req: ToolRequest, _=Depends(verify_myra_auth)):
-    """
-    Hooks the React UI 'Execute' buttons directly into your local Python scripts.
-    """
-    tool_map = {
-        "force_sync": "tools/force_sync.py",
-        "force_backfill": "tools/force_backfill.py",
-        "train_aeon": "research/train_aeon.py",
-        "repair_indicators": "tools/repair_calculated_indicators.py",
-    }
-
-    script_path = tool_map.get(req.tool_id)
-    if not script_path:
-        raise HTTPException(status_code=400, detail="Tool mapping not found")
-
-    full_script_path = os.path.join(BASE_DIR, script_path.replace("/", os.sep))
-
-    if not os.path.exists(full_script_path):
-        raise HTTPException(
-            status_code=404, detail=f"Script not found at {full_script_path}"
-        )
-
-    try:
-        # Run the Python script synchronously, capturing output
-        # For long-running scripts >1 minute, you would typically use Celery or BackgroundTasks here
-        result = subprocess.run(
-            ["python", full_script_path], capture_output=True, text=True, timeout=120
-        )
-
-        combined_logs = result.stdout + "\n" + result.stderr
-        return {
-            "success": result.returncode == 0,
-            "logs": combined_logs.strip() or "Script executed silently.",
-        }
-    except subprocess.TimeoutExpired:
-        return {"success": False, "logs": "Execution timed out after 120 seconds."}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 # Note: Parquet Route (/api/parquet) could be added here using pandas/pyarrow to serve DataLakeView
-
-
-@app.post("/api/tools/sync/fundamentals")
-async def force_fundamentals_sync():
-    """Trigger a full fundamentals sync (Morningstar + NSE) NOW (async)."""
-    try:
-        tid = _spawn_task("fundamentals_sync", _task_fundamentals_sync)
-        return JSONResponse(
-            status_code=202, content={"status": "started", "task_id": tid}
-        )
-    except Exception as e:
-        return JSONResponse(
-            status_code=500, content={"status": "error", "message": str(e)}
-        )
-
-
-@app.post("/api/tools/sync/etf")
-async def force_etf_sync():
-    """Trigger ETF blocklist sync NOW (async)."""
-    try:
-        tid = _spawn_task("etf_sync", _task_etf_sync)
-        return JSONResponse(
-            status_code=202, content={"status": "started", "task_id": tid}
-        )
-    except Exception as e:
-        return JSONResponse(
-            status_code=500, content={"status": "error", "message": str(e)}
-        )
-
-
-@app.post("/api/tools/sync/index")
-async def force_index_sync():
-    """Trigger NIFTY index constituents sync NOW (async)."""
-    try:
-        tid = _spawn_task("index_sync", _task_index_sync)
-        return JSONResponse(
-            status_code=202, content={"status": "started", "task_id": tid}
-        )
-    except Exception as e:
-        return JSONResponse(
-            status_code=500, content={"status": "error", "message": str(e)}
-        )
-
-
-@app.post("/api/tools/ingest")
-async def force_daily_ingest():
-    """Trigger daily bhavcopy ingest NOW (async)."""
-    try:
-        tid = _spawn_task("daily_ingest", _task_daily_ingest, force=True)
-        return JSONResponse(
-            status_code=202, content={"status": "started", "task_id": tid}
-        )
-    except Exception as e:
-        return JSONResponse(
-            status_code=500, content={"status": "error", "message": str(e)}
-        )
-
-
-@app.post("/api/tools/db-doctor")
-async def run_db_doctor():
-    """Run DB Doctor health check NOW."""
-    try:
-        _task_db_doctor()
-        return {"success": True, "message": "DB Doctor completed"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/market-breadth")
@@ -3251,25 +3141,6 @@ async def wyckoff_scan(payload: dict = Body(default={})):
 
     threading.Thread(target=_run, daemon=True).start()
     return {"status": "started"}
-
-
-@app.post("/api/portfolio/refresh-industry")
-async def refresh_portfolio_industry():
-    """Force refresh industry data for all holdings from yfinance."""
-    try:
-        from myra_app.portfolio_db import get_all_holdings, refresh_industry_cache
-
-        holdings = get_all_holdings()
-        symbols = [h["symbol"] for h in holdings]
-        results = refresh_industry_cache(symbols)
-        count = sum(1 for r in results.values() if r.get("industry"))
-        return {
-            "status": "ok",
-            "message": f"Refreshed industry data for {count}/{len(symbols)} symbols",
-            "count": count,
-        }
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
 
 
 # ---- Multibagger Pro Scanner ----
