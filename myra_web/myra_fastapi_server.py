@@ -33,6 +33,11 @@ _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
 from pipeline_dashboard import router as pipeline_router
 from myra_web.routes.fundamentals import router as fundamentals_router
 from myra_web.routes.full_fundamentals import router as full_fundamentals_router
+from myra_web.routes.sentiment import router as sentiment_router
+from myra_web.routes.ai_opinion import router as ai_opinion_router
+from myra_web.routes.chart import router as chart_router
+from myra_web.routes.search import router as search_router
+from myra_web.routes.finstack import router as finstack_router
 from myra_web.utils import (
     _GRADE_RANK,
     _SCANNER_CACHE_MAP,
@@ -78,9 +83,6 @@ def _spawn_task(name, fn, *args, **kwargs):
     return tid
 
 
-_finstack_cache = {}
-CACHE_TTL = 300  # 5 minutes
-
 app = FastAPI(title="MYRA v3.2 API Bridge")
 
 # Allow the React frontend to communicate with this local API
@@ -102,6 +104,11 @@ async def global_exception_handler(request, exc):
 
 app.include_router(fundamentals_router)
 app.include_router(full_fundamentals_router)
+app.include_router(sentiment_router)
+app.include_router(ai_opinion_router)
+app.include_router(chart_router)
+app.include_router(search_router)
+app.include_router(finstack_router)
 
 
 # Use the expected folder structure: Myra\myra_web (this project) side-by-side with Myra\myra_app
@@ -1791,187 +1798,6 @@ async def factor_importance():
     fd = FactorDiscovery()
     result = fd.discover_factors()
     return result
-
-
-@app.get("/api/search/symbols")
-async def search_symbols(q: str = Query(..., min_length=1)):
-    from myra_app.librarian import Librarian
-
-    lib = Librarian(read_only=True)
-    return lib.search_symbols(q)
-
-
-def _validate_finstack(result: dict) -> dict:
-    if "error" in result:
-        raise HTTPException(status_code=500, detail=result["error"])
-    if "_raw" in result:
-        raise HTTPException(
-            status_code=502, detail="FinStack MCP returned non-JSON response"
-        )
-    return result
-
-
-@app.get("/api/finstack/nifty-outlook")
-async def finstack_nifty_outlook():
-    cache_key = "nifty_outlook"
-    now = time.time()
-    if (
-        cache_key in _finstack_cache
-        and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL
-    ):
-        return _finstack_cache[cache_key]["data"]
-    from myra_app.utils.finstack_bridge import get_nifty_outlook
-
-    try:
-        data = await get_nifty_outlook()
-        _finstack_cache[cache_key] = {"ts": now, "data": data}
-        return data
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/finstack/fii-retail-divergence")
-async def finstack_fii_retail_divergence(symbol: str = "RELIANCE"):
-    cache_key = f"fii_divergence:{symbol}"
-    now = time.time()
-    if (
-        cache_key in _finstack_cache
-        and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL
-    ):
-        return _finstack_cache[cache_key]["data"]
-    from myra_app.utils.finstack_bridge import get_fii_retail_divergence
-
-    try:
-        data = await get_fii_retail_divergence(symbol)
-        _finstack_cache[cache_key] = {"ts": now, "data": data}
-        return data
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# @app.get("/api/finstack/sebi-alerts")
-# async def finstack_sebi_alerts():
-#     from myra_app.utils.finstack_bridge import get_sebi_alerts
-#     result = await get_sebi_alerts()
-#     return _validate_finstack(result)
-
-
-@app.get("/api/finstack/morning-brief")
-async def finstack_morning_brief():
-    cache_key = "morning_brief"
-    now = time.time()
-    if (
-        cache_key in _finstack_cache
-        and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL
-    ):
-        return _finstack_cache[cache_key]["data"]
-    from myra_app.utils.finstack_bridge import get_morning_brief
-
-    try:
-        data = await get_morning_brief()
-        _finstack_cache[cache_key] = {"ts": now, "data": data}
-        return data
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# @app.get("/api/finstack/scan-pledge-risks")
-# async def finstack_scan_pledge_risks():
-#     from myra_app.utils.finstack_bridge import scan_pledge_risks
-#     result = await scan_pledge_risks()
-#     return _validate_finstack(result)
-
-
-# ── Missing routes wired up ─────────────────────────────────────────────
-
-
-@app.get("/api/finstack/stock-brief/{symbol}")
-async def finstack_stock_brief(symbol: str):
-    from myra_app.utils.finstack_bridge import get_stock_brief
-
-    result = await get_stock_brief(symbol)
-    return _validate_finstack(result)
-
-
-@app.get("/api/finstack/stock-brief")
-async def stock_brief(
-    symbol: str = Query(..., description="Stock symbol, e.g., RELIANCE")
-):
-    cache_key = f"stock_brief:{symbol}"
-    now = time.time()
-    if (
-        cache_key in _finstack_cache
-        and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL
-    ):
-        return _finstack_cache[cache_key]["data"]
-    from myra_app.utils.finstack_bridge import get_stock_brief
-
-    try:
-        data = await get_stock_brief(symbol=symbol.upper())
-        _finstack_cache[cache_key] = {"ts": now, "data": data}
-        return data
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/finstack/social-sentiment/{symbol}")
-async def finstack_social_sentiment(symbol: str):
-    from myra_app.utils.finstack_bridge import get_social_sentiment
-
-    result = await get_social_sentiment(symbol)
-    return _validate_finstack(result)
-
-
-@app.get("/api/finstack/pledge-alert/{symbol}")
-async def finstack_pledge_alert(symbol: str):
-    from myra_app.utils.finstack_bridge import get_pledge_alert
-
-    result = await get_pledge_alert(symbol)
-    return _validate_finstack(result)
-
-
-@app.get("/api/finstack/unusual-activity")
-async def unusual_activity(
-    symbol: str = Query(..., description="Stock symbol, e.g., RELIANCE")
-):
-    cache_key = f"unusual_activity:{symbol}"
-    now = time.time()
-    if (
-        cache_key in _finstack_cache
-        and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL
-    ):
-        return _finstack_cache[cache_key]["data"]
-    from myra_app.utils.finstack_bridge import detect_unusual_activity
-
-    try:
-        data = await detect_unusual_activity(symbol=symbol.upper())
-        _finstack_cache[cache_key] = {"ts": now, "data": data}
-        return data
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/finstack/stock-timeline")
-async def finstack_stock_timeline(symbol: str = ""):
-    if not symbol:
-        raise HTTPException(
-            status_code=400, detail="query parameter 'symbol' is required"
-        )
-    cache_key = f"stock_timeline:{symbol}"
-    now = time.time()
-    if (
-        cache_key in _finstack_cache
-        and (now - _finstack_cache[cache_key]["ts"]) < CACHE_TTL
-    ):
-        return _finstack_cache[cache_key]["data"]
-    from myra_app.utils.finstack_bridge import get_stock_timeline
-
-    try:
-        data = await get_stock_timeline(symbol)
-        _finstack_cache[cache_key] = {"ts": now, "data": data}
-        return data
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 # --- Invisible Hand Scanner State ---
@@ -4288,82 +4114,3 @@ async def confluence_endpoint():
     except Exception as e:
         logger.error("Confluence report failed: %s", e, exc_info=True)
         return JSONResponse(status_code=500, content={"error": str(e)})
-
-
-@app.get("/api/sentiment/{ticker}")
-async def get_news_sentiment(ticker: str, refresh: bool = False):
-    """Get news headlines with FinBERT sentiment for a given NSE ticker.
-    Results are cached for 6 hours. Use ?refresh=true to force fresh fetch."""
-    try:
-        from myra_app.news_sentiment import get_ticker_news
-
-        news = get_ticker_news(ticker, refresh=refresh)
-        return {
-            "ticker": ticker.upper(),
-            "count": len(news),
-            "news": news,
-            "cached": not refresh,
-            "status": "success",
-        }
-    except Exception as e:
-        return {
-            "ticker": ticker.upper(),
-            "error": str(e),
-            "news": [],
-            "status": "error",
-        }
-
-
-@app.get("/api/ai-opinion/{ticker}")
-async def get_ai_opinion(ticker: str):
-    """On-demand Gemini LLM second opinion for a stock.
-
-    Returns a BUY/SELL/HOLD signal with rationale, confidence, and the
-    technical summary the model evaluated.  Results are cached for 24 h
-    by the underlying module (rate-limit-safe, no per-candidate loops).
-    """
-    try:
-        from myra_app.ai_second_opinion import (
-            build_technical_summary,
-            get_ai_second_opinion,
-        )
-
-        summary = build_technical_summary(ticker.upper())
-        opinion = get_ai_second_opinion(ticker.upper(), summary)
-        return {
-            "ticker": ticker.upper(),
-            "signal": opinion["signal"],
-            "reason": opinion["reason"],
-            "confidence": opinion["confidence"],
-            "source": opinion["source"],
-            "cached": opinion["cached"],
-            "summary": summary,
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/chart/{symbol}")
-async def get_chart(symbol: str, limit: int = 500):
-    """Return OHLCV data for a symbol, ordered ascending by date."""
-    db_path = get_db_path("technical")
-    if not db_path or not os.path.exists(db_path):
-        raise HTTPException(status_code=500, detail="Technical database not found")
-
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    try:
-        rows = conn.execute(
-            "SELECT date, open, high, low, close, volume "
-            "FROM technical_data WHERE symbol = ? ORDER BY date DESC LIMIT ?",
-            (symbol.upper(), limit),
-        ).fetchall()
-    finally:
-        conn.close()
-
-    if not rows:
-        raise HTTPException(status_code=404, detail="Symbol not found")
-
-    # Reverse to ascending date order
-    data = [dict(r) for r in reversed(rows)]
-    return {"symbol": symbol.upper(), "data": data}
