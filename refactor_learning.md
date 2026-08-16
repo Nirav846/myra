@@ -268,3 +268,30 @@
 ### Test results
 - Smoke: GET /api/confluence → 200 (423 symbols, generated_at present).
 - Full suite follows (expect 311 passed + pre-existing test_dcb_parity failure).
+
+## Phase 10 — 2026-08-16: Final cleanup
+
+### Files added
+- `myra_web/routes/pipeline.py` — GET /api/pipeline/status + /api/pipeline/events (task_tracker-backed)
+
+### Files modified
+- `myra_web/myra_fastapi_server.py` — reduced to pure wiring: app creation, CORS, global exception handler, 15 `app.include_router(...)` calls + 4 test-compat re-exports. 302 lines -> 77 lines.
+- `myra_web/utils.py` — added `get_db_path` (moved from server; server re-exports it so `test_chart_endpoint.py`'s monkeypatch of `myra_fastapi_server.get_db_path` still works).
+- `myra_web/routes/fundamentals.py` — added `GET /live/{symbol}` endpoint (URL preserved at /api/fundamentals/live/{symbol}; NOT full_fundamentals which has a different prefix).
+- `myra_web/routes/health.py` — added `GET /pcr/status` (read-only system status fits here).
+
+### Final state
+- Server: 77 lines, zero endpoint definitions. All endpoints live in 15 routers:
+  fundamentals, full_fundamentals, sentiment, ai_opinion, chart, search, finstack, ml, tools (+portfolio_tools), portfolio, health, scanners, query, confluence, pipeline.
+- Total refactor: 4,571-line monolith -> 77-line wiring file.
+
+### Observations
+1. **User plan said "full_fundamentals router" for live endpoint — wrong target**: full_fundamentals has prefix `/api/full-fundamentals`; placing live there yields `/api/full-fundamentals/live/{symbol}` (breaks frontend URL). fundamentals.py has prefix `/api/fundamentals` -> correct home. Deviation logged.
+2. **get_db_path in utils, NOT removed**: `test_chart_endpoint.py` monkeypatches `myra_fastapi_server.get_db_path` and chart.py lazy-imports `from myra_fastapi_server import get_db_path` at request time — the server re-export keeps both working. The function definition now lives in utils (single source).
+3. **Dead code removed from server**: `pipeline_dashboard` import (was never included), `_task_*`/`_get_last_run` guarded import (consumers in tools.py/health.py), unused stdlib imports, `BASE_DIR`/`DB_DIR` redefinition (constants module is the source now).
+4. **Re-exports kept for tests**: `verify_myra_auth` + `MYRA_API_SECRET` (4 test modules use dependency_overrides), `_apply_tier_rank` (test_dcb_defaults), `_spawn_task` (test_task_offload), `get_db_path` (test_chart_endpoint monkeypatch), `_run_query` (test_query_endpoint). All no-qa'd with `# noqa: E402`.
+5. **Room for further improvement**: `_run_query` could live in a non-router module (e.g., `myra_web/db.py`) since it's a pure executor, not a route; scanner duplication is reduced but launchpad/multibagger remain custom.
+
+### Test results
+- Full suite: 311 passed, 1 pre-existing failure (`test_dcb_parity`) — zero new regressions.
+- Smoke (21 checks): health, pipeline/status+events, fundamentals/live, fundamentals, 3 scanner statuses, confluence, pcr, chart, search, portfolio+benchmark, ml/status, latest-trading-day, tools/status, query (200/400/401), tools/execute 400 — all pass.
