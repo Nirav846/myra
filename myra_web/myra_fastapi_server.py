@@ -111,6 +111,10 @@ from myra_web.routes.query import router as query_router, _run_query
 
 app.include_router(query_router)
 
+from myra_web.routes.confluence import router as confluence_router
+
+app.include_router(confluence_router)
+
 
 # Use the expected folder structure: Myra\myra_web (this project) side-by-side with Myra\myra_app
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -296,18 +300,3 @@ async def pcr_status():
     except Exception as exc:
         logger.warning("pcr_status failed: %s", exc)
         return {"status": "error", "snapshots": [], "message": str(exc)}
-
-
-# ---------------------------------------------------------------------------
-# Scanner Confluence endpoint
-# ---------------------------------------------------------------------------
-
-
-@app.get("/api/confluence")
-async def confluence_endpoint():
-    """Return an aggregated view of symbols flagged by 2+ scanners."""
-    try:
-        return build_confluence_report()
-    except Exception as e:
-        logger.error("Confluence report failed: %s", e, exc_info=True)
-        return JSONResponse(status_code=500, content={"error": str(e)})

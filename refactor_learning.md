@@ -251,3 +251,20 @@
 ### Test results
 - Full suite: 311 passed, 1 pre-existing failure (`test_dcb_parity`) — zero new regressions.
 - `tests/test_query_endpoint.py` all pass (imports _run_query from server namespace).
+
+## Phase 9 — 2026-08-16: Extract confluence router
+
+### Files added
+- `myra_web/routes/confluence.py` — GET /api/confluence (thin wrapper over `build_confluence_report`)
+
+### Files modified
+- `myra_web/myra_fastapi_server.py` — removed confluence endpoint (10 lines), added confluence router import + include.
+
+### Observations
+1. **Trivial move**: the endpoint is a thin wrapper — `build_confluence_report()` was already extracted to `utils.py` in Phase 1, so no helper movement needed. Router imports it from `myra_web.utils`.
+2. **Server re-export kept**: the `build_confluence_report` name remains in the server's utils re-export block (line 48) for namespace stability; no test imports it from the server, so it could be trimmed in Phase 10.
+3. Cache-clear already moved to scanners.py in Phase 7 — nothing else to do for this phase.
+
+### Test results
+- Smoke: GET /api/confluence → 200 (423 symbols, generated_at present).
+- Full suite follows (expect 311 passed + pre-existing test_dcb_parity failure).
