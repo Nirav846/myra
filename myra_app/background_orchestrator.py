@@ -1018,6 +1018,32 @@ def _ensure_calendar_db():
         logger.warning(f"[MYRA BG] Failed to initialize calendar database: {e}")
 
 
+def _ensure_network_cache_db():
+    """Create/verify the optional network cache DB on startup.
+
+    Used for HTTP response caching. Kept minimal so audits/backups stop
+    warning about the missing sidecar.
+    """
+    try:
+        cache_db_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["network_cache"])
+        os.makedirs(os.path.dirname(cache_db_path), exist_ok=True)
+        conn = sqlite3.connect(cache_db_path)
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS cache (
+                key TEXT PRIMARY KEY,
+                value BLOB,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """
+        )
+        conn.commit()
+        conn.close()
+        logger.info(f"[MYRA BG] Network cache database verified at {cache_db_path}")
+    except Exception as e:
+        logger.warning(f"[MYRA BG] Failed to initialize network cache database: {e}")
+
+
 def start():
     """
     Call this from myra.py on startup.
@@ -1027,6 +1053,7 @@ def start():
 
     _ensure_sync_log_table()
     _ensure_calendar_db()
+    _ensure_network_cache_db()
 
     logger.info("[MYRA BG] Running startup DB health check (synchronous)...")
     _task_db_doctor()
