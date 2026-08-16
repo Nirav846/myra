@@ -44,6 +44,7 @@ import ClimaxAccumulationView from './views/ClimaxAccumulation';
 import ConfluenceView from './views/ConfluenceView';
 import DCBBargainView from './views/DCBBargain';
 import NewsSentimentView from './views/NewsSentiment';
+import FundamentalsView from './views/FundamentalsView';
 import { AlertCircle, Settings as SettingsIcon, SlidersHorizontal, BrainCircuit, Rocket, Database, RotateCw, Eye, Zap } from 'lucide-react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 
@@ -70,6 +71,7 @@ const TABS = [
   { id: 'Leaderboard', path: '/leaderboard', icon: '📊', category: 'scanners', group: 'Overview' },
   { id: 'FVG Scanner', path: '/fvg-scanner', icon: '📡', category: 'scanners', group: 'Price Action' },
   { id: 'Technical Chart', path: '/chart', icon: '📈', category: 'analysis' },
+  { id: 'Fundamentals', path: '/fundamentals', icon: '📋', category: 'analysis' },
   { id: 'Delivery Volume Profile', path: '/inst-dom', icon: '🧱', category: 'analysis' },
   { id: 'Multibagger Matrix', path: '/multibagger-matrix', icon: '🚀', category: 'analysis' },
   { id: 'Value Ranker', path: '/value-ranker', icon: '🎯', category: 'analysis' },
@@ -247,6 +249,7 @@ export default function App() {
                 <Route path="/fvg-scanner" element={<FVGScannerView lib={librarian} />} />
                 <Route path="/historical-search" element={<HistoricalSearchView lib={librarian} />} />
                 <Route path="/chart" element={<AdvancedChartView lib={librarian} activeSymbol={globalSelectedTicker} />} />
+                <Route path="/fundamentals" element={<FundamentalsView lib={librarian} />} />
                 <Route path="/sector-flow" element={<SectorFlowView lib={librarian} />} />
                 <Route path="/reversion-engine" element={<ReversionEngineView lib={librarian} />} />
                 <Route path="/ghost-simulator" element={<GhostSimulatorView lib={librarian} />} />

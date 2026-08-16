@@ -31,6 +31,7 @@ import sys as _sys, os as _os
 
 _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
 from pipeline_dashboard import router as pipeline_router
+from myra_web.routes.fundamentals import router as fundamentals_router
 
 try:
     from myra_app.background_orchestrator import (
@@ -84,6 +85,9 @@ async def global_exception_handler(request, exc):
     return JSONResponse(
         status_code=500, content={"detail": f"Internal server error: {exc}"}
     )
+
+
+app.include_router(fundamentals_router)
 
 
 # Use the expected folder structure: Myra\myra_web (this project) side-by-side with Myra\myra_app
