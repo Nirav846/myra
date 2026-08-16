@@ -218,3 +218,11 @@ def build_confluence_report() -> dict:
         "generated_at": datetime.now(IST).isoformat(),
         "symbols": symbols_out,
     }
+
+
+def get_db_path(db_key: str):
+    """Safely construct the path to a specific SQLite sidecar."""
+    filename = LibrarianCore.DB_MAP.get(db_key)
+    if not filename:
+        return None
+    return os.path.join(DB_DIR, filename)

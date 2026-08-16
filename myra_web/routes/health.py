@@ -7,6 +7,7 @@ Read-only endpoints for system status, health checks, and metadata.
 
 import datetime
 import json
+import logging
 import os
 import sqlite3
 
@@ -15,6 +16,8 @@ from fastapi.responses import JSONResponse
 from myra_app.constants import DB_DIR, MODELS_DIR
 from myra_app.librarian_core import LibrarianCore
 from myra_web.utils import _get_latest_trading_day_before
+
+logger = logging.getLogger(__name__)
 
 try:
     from myra_app.background_orchestrator import _get_last_run
@@ -338,3 +341,18 @@ async def get_pipeline_status():
             _get_last_run("db_doctor") if "_get_last_run" in globals() else "Never"
         ),
     }
+
+
+@router.get("/pcr/status")
+async def pcr_status():
+    """Read-only status of PCR snapshots stored in myra_options.db."""
+    try:
+        from myra_app.options_chain import get_all_pcr_snapshots
+
+        snapshots = get_all_pcr_snapshots()
+        if not snapshots:
+            return {"status": "ok", "snapshots": [], "message": "no snapshots yet"}
+        return {"status": "ok", "snapshots": snapshots}
+    except Exception as exc:
+        logger.warning("pcr_status failed: %s", exc)
+        return {"status": "error", "snapshots": [], "message": str(exc)}

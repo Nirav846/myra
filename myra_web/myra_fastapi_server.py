@@ -1,31 +1,18 @@
-import asyncio
-import json
+"""
+MYRA API Bridge — application wiring only.
+
+All endpoints live in per-domain routers under ``myra_web/routes/``.
+This file only creates the FastAPI app, middleware, exception handling,
+and includes the routers. Names re-exported at the bottom are kept so
+existing tests (which import from ``myra_fastapi_server``) keep working.
+"""
+
 import logging
-import os
-import re
-import sqlite3
-import threading
-import subprocess
-import time
-import math
-from datetime import datetime
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Body, Request
+
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-from typing import List, Optional
-from myra_app.constants import DB_DIR, MODELS_DIR
-from myra_app.librarian_core import LibrarianCore
 
-from myra_web.security import MYRA_API_SECRET, verify_myra_auth
-
-
-logger = logging.getLogger(__name__)
-
-import sys as _sys, os as _os
-
-_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
-from pipeline_dashboard import router as pipeline_router
 from myra_web.routes.fundamentals import router as fundamentals_router
 from myra_web.routes.full_fundamentals import router as full_fundamentals_router
 from myra_web.routes.sentiment import router as sentiment_router
@@ -33,36 +20,17 @@ from myra_web.routes.ai_opinion import router as ai_opinion_router
 from myra_web.routes.chart import router as chart_router
 from myra_web.routes.search import router as search_router
 from myra_web.routes.finstack import router as finstack_router
+from myra_web.routes.ml import router as ml_router
+from myra_web.routes.tools import router as tools_router
+from myra_web.routes.tools import portfolio_tools_router
 from myra_web.routes.portfolio import router as portfolio_router
 from myra_web.routes.health import router as health_router
-from myra_web.utils import (
-    _GRADE_RANK,
-    _SCANNER_CACHE_MAP,
-    _SCANNER_ROUTES,
-    _TIER_RANK,
-    _apply_tier_rank,
-    _best_grade,
-    _df_to_safe_records,
-    _get_latest_trading_day_before,
-    _grade_rank,
-    build_confluence_report,
-)
+from myra_web.routes.scanners import router as scanners_router
+from myra_web.routes.query import router as query_router
+from myra_web.routes.confluence import router as confluence_router
+from myra_web.routes.pipeline import router as pipeline_router
 
-try:
-    from myra_app.background_orchestrator import (
-        _task_fundamentals_sync,
-        _task_etf_sync,
-        _task_index_sync,
-        _task_daily_ingest,
-        _task_db_doctor,
-        _get_last_run,
-    )
-except ImportError:
-    pass
-
-
-from myra_web.background import _spawn_task  # re-export for backward compat
-
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="MYRA v3.2 API Bridge")
 
@@ -90,213 +58,21 @@ app.include_router(ai_opinion_router)
 app.include_router(chart_router)
 app.include_router(search_router)
 app.include_router(finstack_router)
-
-from myra_web.routes.ml import router as ml_router
-
 app.include_router(ml_router)
-
-from myra_web.routes.tools import router as tools_router
-from myra_web.routes.tools import portfolio_tools_router
-
 app.include_router(tools_router)
 app.include_router(portfolio_tools_router)
 app.include_router(portfolio_router)
 app.include_router(health_router)
-
-from myra_web.routes.scanners import router as scanners_router
-
 app.include_router(scanners_router)
-
-from myra_web.routes.query import router as query_router, _run_query
-
 app.include_router(query_router)
-
-from myra_web.routes.confluence import router as confluence_router
-
 app.include_router(confluence_router)
+app.include_router(pipeline_router)
 
 
-# Use the expected folder structure: Myra\myra_web (this project) side-by-side with Myra\myra_app
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "myra_app", "db"))
-
-
-def get_db_path(db_key: str):
-    """Safely construct the path to a specific SQLite sidecar."""
-    filename = LibrarianCore.DB_MAP.get(db_key)
-    if not filename:
-        return None
-    return os.path.join(DB_DIR, filename)
-
-
-@app.get("/api/pipeline/status")
-async def pipeline_status():
-    """Return background pipeline task statuses."""
-    try:
-        from myra_app.task_tracker import list_tasks
-
-        tasks = list_tasks(limit=50)
-        return {"tasks": tasks, "status": "ok"}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-
-@app.get("/api/pipeline/events")
-async def pipeline_events():
-    """Return recent pipeline events (last 50 task updates)."""
-    try:
-        from myra_app.task_tracker import list_tasks
-
-        tasks = list_tasks(limit=50)
-        events = []
-        for t in tasks:
-            if t.get("message"):
-                events.append(
-                    {
-                        "time": t.get("updated_at") or t.get("started_at"),
-                        "task": t.get("name"),
-                        "message": t.get("message"),
-                        "status": t.get("status"),
-                    }
-                )
-        return {"events": events, "status": "ok"}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-
-# Note: Parquet Route (/api/parquet) could be added here using pandas/pyarrow to serve DataLakeView
-
-
-@app.get("/api/fundamentals/live/{symbol}")
-async def get_live_fundamentals(symbol: str):
-    import json, subprocess, sqlite3, os
-    from myra_app.constants import DB_DIR, MODELS_DIR
-    from myra_app.librarian_core import LibrarianCore
-
-    result = {
-        "symbol": symbol.upper(),
-        "source": "db",
-        "fundamentals": {},
-        "shareholding": None,
-        "key_metrics": {},
-        "pros_cons": {"pros": [], "cons": [], "about": ""},
-        "ratios": {},
-        "peer_comparison": [],
-    }
-
-    val_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["valuation"])
-    if os.path.exists(val_path):
-        conn = sqlite3.connect(val_path)
-        conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT * FROM fundamentals WHERE symbol = ?",
-            (symbol.upper(),),
-        ).fetchone()
-        if row:
-            funda = dict(row)
-            merged = {
-                "symbol": funda.get("symbol"),
-                "sector": funda.get("sector"),
-                "pe": funda.get("pe") or funda.get("peRatio"),
-                "pb": funda.get("priceToBook"),
-                "ps": funda.get("priceToSales"),
-                "roe": funda.get("roe") or funda.get("returnOnEquity"),
-                "eps": funda.get("eps") or funda.get("earningsPerShare"),
-                "book_value": funda.get("book_value") or funda.get("bookValuePerShare"),
-                "market_cap": funda.get("market_cap") or funda.get("marketCap"),
-                "net_margin": funda.get("net_margin") or funda.get("netMargin"),
-                "operating_margin": funda.get("operatingMargin"),
-                "gross_margin": funda.get("grossMargin"),
-                "debt_equity": funda.get("debt_to_equity") or funda.get("debtToEquity"),
-                "current_ratio": funda.get("currentRatio"),
-                "quick_ratio": funda.get("quickRatio"),
-                "dividend_yield": funda.get("dividend_yield")
-                or funda.get("dividendYield"),
-                "free_cash_flow_yield": funda.get("freeCashFlowYield"),
-                "revenue_growth": funda.get("revenueGrowth"),
-                "earnings_growth": funda.get("earningsGrowth"),
-                "payout_ratio": funda.get("payoutRatio"),
-                "beta": funda.get("beta"),
-                "source": funda.get("source_ms") or funda.get("source_nse"),
-                "date": funda.get("date") or funda.get("last_updated"),
-            }
-            result["fundamentals"] = merged
-        conn.close()
-
-    try:
-        import os as _os
-
-        proc = subprocess.run(
-            ["screener", symbol.upper(), "all"],
-            capture_output=True,
-            text=True,
-            timeout=25,
-            encoding="utf-8",
-            errors="replace",
-            env={**_os.environ, "PYTHONIOENCODING": "utf-8"},
-        )
-        if proc.returncode == 0:
-            data = json.loads(proc.stdout)
-
-            sh = data.get("sections", {}).get("shareholding", {})
-            latest_sh = sh.get("latest", {})
-            if latest_sh:
-                result["shareholding"] = {
-                    "promoter_pct": latest_sh.get("Promoters"),
-                    "fii_pct": latest_sh.get("FIIs"),
-                    "dii_pct": latest_sh.get("DIIs"),
-                    "public_pct": latest_sh.get("Public"),
-                    "government_pct": latest_sh.get("Government"),
-                    "period_end": (
-                        sh.get("headers", [None])[-1] if sh.get("headers") else None
-                    ),
-                }
-
-            pc = data.get("sections", {}).get("pros_cons", {})
-            km = pc.get("key_metrics", {})
-            if km:
-                result["key_metrics"] = {
-                    "market_cap": km.get("Market Cap"),
-                    "current_price": km.get("Current Price"),
-                    "high_low": km.get("High / Low"),
-                    "pe": km.get("Stock P/E"),
-                    "book_value": km.get("Book Value"),
-                    "dividend_yield": km.get("Dividend Yield"),
-                    "roce": km.get("ROCE"),
-                    "roe": km.get("ROE"),
-                    "face_value": km.get("Face Value"),
-                }
-            result["pros_cons"] = {
-                "pros": pc.get("pros", []),
-                "cons": pc.get("cons", []),
-                "about": pc.get("about", ""),
-            }
-
-            ratios = data.get("sections", {}).get("ratios", {})
-            if ratios:
-                result["ratios"] = ratios
-
-            peers = data.get("sections", {}).get("peer_comparison", {})
-            if peers:
-                result["peer_comparison"] = peers.get("peers", [])
-
-            result["source"] = "live"
-    except Exception:
-        pass
-
-    return result
-
-
-@app.get("/api/pcr/status")
-async def pcr_status():
-    """Read-only status of PCR snapshots stored in myra_options.db."""
-    try:
-        from myra_app.options_chain import get_all_pcr_snapshots
-
-        snapshots = get_all_pcr_snapshots()
-        if not snapshots:
-            return {"status": "ok", "snapshots": [], "message": "no snapshots yet"}
-        return {"status": "ok", "snapshots": snapshots}
-    except Exception as exc:
-        logger.warning("pcr_status failed: %s", exc)
-        return {"status": "error", "snapshots": [], "message": str(exc)}
+# ---------------------------------------------------------------------------
+# Backward-compatible re-exports (used by the existing test suite).
+# ---------------------------------------------------------------------------
+from myra_web.security import MYRA_API_SECRET, verify_myra_auth  # noqa: E402
+from myra_web.utils import _apply_tier_rank, get_db_path  # noqa: E402
+from myra_web.background import _spawn_task  # noqa: E402
+from myra_web.routes.query import _run_query  # noqa: E402
