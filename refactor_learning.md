@@ -165,3 +165,42 @@
 - `POST /api/tools/execute` with invalid tool_id → 400 `{"detail": "Tool mapping not found"}`
 - `POST /api/tools/execute` without auth → 401 Unauthorized
 - All 7 routes: GET returns 405 (POST-only), proving registration
+
+## Phase 5 — 2026-08-16: Extract portfolio router
+
+### Files added
+- `myra_web/routes/portfolio.py` — 7 endpoints moved (GET /api/portfolio summary, POST /refresh, GET /live-prices, GET /benchmark, POST/PUT/DELETE /holdings)
+
+### Files modified
+- `myra_web/myra_fastapi_server.py` — removed 7 portfolio endpoints (702 lines), added portfolio router import + `app.include_router(portfolio_router)`
+
+### Observations
+1. **`get_portfolio` is the largest endpoint (~320 lines)** — contains `compute_myra_quality_score`, `FUNDA_FIELDS` list, industry enrichment, freshness computation. Candidate for later extraction into a service module.
+2. **Live-price caching** uses SQLite table `live_price_cache` in the portfolio DB with 5-min TTL; yfinance fetch loop has 0.2s sleep between symbols.
+3. **Write endpoints (holdings CRUD) have NO auth dependency** — existing behavior preserved. Security improvement candidate: add `Depends(verify_myra_auth)` to write endpoints.
+4. **No tests directly reference portfolio endpoints** (grep found none) — low risk.
+5. `_spawn_task` imported from `myra_web.background` (extracted Phase 3).
+
+### Test results
+- Baseline: 311 passed, 1 pre-existing failure (`test_dcb_parity`). Post-refactor identical.
+- Spot checks: `GET /api/portfolio` → 200 (17 holdings), `GET /api/portfolio/benchmark` → 200, `POST /api/portfolio/refresh` → 202 with task_id, `POST /api/portfolio/holdings` → 200 (created).
+
+## Phase 6 — 2026-08-16: Extract health and system router
+
+### Files added
+- `myra_web/routes/health.py` — 8 read-only endpoints: /api/health, /api/data-health, /api/market-breadth, /api/db-size, /api/system-info, /api/logs/recent, /api/latest-trading-day, /api/tools/status
+
+### Files modified
+- `myra_web/myra_fastapi_server.py` — removed the 8 endpoints, added health router import + include
+
+### Observations
+1. **`/api/tools/status` now lives in health.py** (semantically a health/system endpoint) and imports `_get_last_run` directly from `myra_app.background_orchestrator` with its own `try/except ImportError` guard + a fallback stub returning "Never" (equivalent behavior to the original `globals()` guard).
+2. **Server's `_task_*`/`_get_last_run` import block is now dead** (all consumers moved to tools.py in Phase 4 / health.py in Phase 6). Left in place for Phase 10 final cleanup — harmless unused names.
+3. **`import datetime` pitfall**: health.py imports the `datetime` module; endpoint code calls `datetime.datetime.now()` (not `datetime.now()`), unlike the server which imported `from datetime import datetime`. Fixed in the router — the original server used the class import.
+4. **`health_check` kept as sync `def`** (not `async def`) matching the original — FastAPI handles sync endpoints in a threadpool.
+5. Original `data_health` had a truncated-looking query that was actually a copy artifact — fixed to the canonical `SELECT COUNT(*) FROM fundamentals WHERE free_float_pct IS NOT NULL`.
+6. **`psutil` is optional** — system-info returns `{"error": "psutil not installed"}` if missing (original behavior preserved).
+
+### Test results
+- Full suite: 311 passed, 1 pre-existing failure (`test_dcb_parity`) — zero new regressions.
+- All 8 health endpoints smoke-tested → 200 via TestClient.
