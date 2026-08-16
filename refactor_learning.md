@@ -232,3 +232,22 @@
 ### Test results
 - Full suite: 311 passed, 1 pre-existing failure (`test_dcb_parity`) — zero new regressions.
 - Smoke: all 13 status endpoints 200; all 13 scan endpoints registered (POST-only, GET->405); dcb scan ran live (184 symbols, progress 10%, scanning); dcb defaults 200; cache-clear 200; pcr 200; confluence 200.
+
+## Phase 8 — 2026-08-16: Extract query router
+
+### Files added
+- `myra_web/routes/query.py` — POST /api/query + `QueryRequest` + `_run_query` executor
+
+### Files modified
+- `myra_web/myra_fastapi_server.py` — removed query block (~90 lines), added query router import + include, re-exported `_run_query` from the router module for test compatibility.
+
+### Observations
+1. **`_run_query` re-export required**: `tests/test_query_endpoint.py:31` does `from myra_fastapi_server import app, _run_query`. The server now imports it from the router: `from myra_web.routes.query import router as query_router, _run_query` — keeps the test working without touching it.
+2. **Auth object identity preserved**: query.py imports `verify_myra_auth` from `myra_web.security` (same function object the server re-exports). `test_query_endpoint.py`'s `app.dependency_overrides[verify_myra_auth]` still works. Verified `verify_myra_auth is security.verify_myra_auth` → True.
+3. **Endpoint safety rules are inline** (not separate helpers): frontend→canonical mapping dict, SELECT * regex rejection (technical/valuation only), auto `LIMIT 5000` for read prefixes, 10 MB response guard — all copied verbatim.
+4. **No remaining server dependencies**: `QueryRequest`, `_run_query`, `execute_query` fully removed from the server. `get_db_path` still in server (used by chart.py lazy import + health.py) — candidate for utils.py in Phase 10 cleanup.
+5. Smoke: valid query 200 (3 rows), SELECT * → 400, no auth → 401, unknown db → 400.
+
+### Test results
+- Full suite: 311 passed, 1 pre-existing failure (`test_dcb_parity`) — zero new regressions.
+- `tests/test_query_endpoint.py` all pass (imports _run_query from server namespace).
