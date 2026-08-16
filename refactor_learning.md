@@ -75,3 +75,47 @@
 - `GET /api/chart/HDFCBANK?limit=3` → 200, 3 OHLCV rows
 - `GET /api/search/symbols?q=REL` → 200
 - Sentiment/AI-opinion/finstack: best-effort only (hit external services, not reliable for CI)
+
+---
+
+## Phase 3 — 2026-08-16: Extract ML router and background task helper
+
+### Files created
+- `myra_web/background.py` — `_spawn_task` extracted verbatim; name kept with underscore because `test_task_offload.py` imports it from the `myra_fastapi_server` namespace and calls it directly.
+- `myra_web/routes/ml.py` — 12 endpoints moved verbatim (prefix `/api/ml`, tags `["ml"]`). Imports `_spawn_task` from `myra_web.background` directly (no circular dependency).
+
+### Files modified
+- `myra_web/myra_fastapi_server.py` — deleted local `_spawn_task` definition (17 lines) and all 12 `@app.*(/api/ml/...)` endpoints (~297 lines). Added re-export `from myra_web.background import _spawn_task` and router import/include `from myra_web.routes.ml import router as ml_router` + `app.include_router(ml_router)`.
+
+### Endpoint count moved
+| Router | Endpoints | Source lines removed |
+|--------|-----------|---------------------|
+| ml | 12 | 1505–1800 (304 lines removed) |
+
+### Key observations
+
+1. **`_spawn_task` re-export pattern**: The test file `tests/test_task_offload.py` does `from myra_fastapi_server import app, _spawn_task` and CALLS `_spawn_task(...)` directly. The server must keep the name `_spawn_task` (with underscore) bound in its module namespace. Solved via `from myra_web.background import _spawn_task` at module level in the server — Python re-exports it as `myra_fastapi_server._spawn_task`.
+
+2. **ML endpoints use relative `models/...` paths** (not `MODELS_DIR`) — left as-is. These paths are relative to the CWD when the server starts, not to the module file. This is the original behavior.
+
+3. **`ml_predict` uses `asyncio.to_thread`**; **`ml_train` uses `_spawn_task`** — both patterns preserved exactly.
+
+4. **`predict_launchpad` is a large inline block** (~135 lines) with lazy imports of `sqlite3`, `pandas`, `numpy`, `joblib`, and `LibrarianCore`. Candidate for later extraction into the `LaunchpadPredictor` module (scope improvement, not in this phase).
+
+5. **Router routes are nested inside `_IncludedRouter`** objects — `app.routes` doesn't flatten them into a single list. This is Starlette 1.6.0 behavior. Routes ARE registered and respond correctly via TestClient.
+
+6. **No `__init__.py` needed** — `myra_web` remains a namespace package; `myra_web.routes.ml` imports work via namespace package mechanics.
+
+### Smoke-test results
+- `GET /api/ml/status` → 200 (model exists, returns metadata)
+- `GET /api/ml/config` → 200 (returns current config or defaults)
+- `GET /api/ml/launchpad/status` → 200 (returns `{"exists": False}` or metadata)
+- `GET /api/ml/predict` → 200 (returns prediction payload, may include XGBoost warning)
+- `GET /api/ml/train` → 405 (POST-only, proves registration)
+- `GET /api/ml/launchpad/label` → 405 (POST-only, proves registration)
+- `GET /api/ml/launchpad/train` → 405 (POST-only, proves registration)
+
+### Test results
+- **Baseline**: 311 passed, 1 pre-existing failure (`test_bulk_loader.py::TestScannerBulkParity::test_dcb_parity` — KeyError 'symbol')
+- **Post-refactor**: 311 passed, 1 pre-existing failure (same) — zero new regressions
+- `tests/test_task_offload.py` (all 4 tests including `test_ml_predict_returns_200_with_payload`): PASSED
