@@ -812,6 +812,43 @@ def _task_db_backup():
         unregister(tid)
 
 
+# ─── Task 9: Weekly Screener.in Fundamentals Enrichment ───────────────────────
+
+
+def _task_screener_enrich():
+    """Runs Screener.in fundamentals enrichment weekly (PBV, ROCE)."""
+    from myra_app.task_tracker import register, unregister
+
+    tid = register("Screener enrich", task_type="indefinite")
+    try:
+        while not _shutdown_event.is_set():
+            try:
+                if _is_task_due("screener_enrich", interval_days=7):
+                    from myra_app.db.enrichers.screener_enricher import (
+                        enrich_screener_fundamentals,
+                    )
+
+                    logger.info(
+                        "[MYRA BG] Running weekly Screener.in fundamentals enrichment..."
+                    )
+                    enrich_screener_fundamentals(force=False)
+                    _mark_task_run("screener_enrich")
+                    logger.info("[MYRA BG] Weekly Screener.in enrichment complete.")
+
+                # Check again in 30 minutes
+                for _ in range(30):  # 30 * 60 = 1800 seconds total
+                    if _shutdown_event.wait(60):
+                        return
+            except Exception as e:
+                logger.error(f"[MYRA BG] Weekly Screener enrichment failed: {e}")
+                # Check again in 30 minutes
+                for _ in range(30):  # 30 * 60 = 1800 seconds total
+                    if _shutdown_event.wait(60):
+                        return
+    finally:
+        unregister(tid)
+
+
 # ─── Public entry point ───────────────────────────────────────────────────────
 
 
@@ -970,6 +1007,7 @@ def _launch_background_threads():
         ("fundamentals-daily", _task_fundamentals_daily),
         ("institutional-sync", _task_institutional_sync),
         ("db-backup", _task_db_backup),
+        ("screener-enrich", _task_screener_enrich),
     ]
     threads = [
         threading.Thread(target=fn, name=f"myra-bg-{name}", daemon=True)

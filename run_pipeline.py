@@ -5,6 +5,7 @@ import signal
 import time
 import logging
 from myra_app.db.enrichers.corporate_actions_enricher import enrich_corporate_actions
+from myra_app.db.enrichers.screener_enricher import enrich_screener_fundamentals
 
 
 def main():
@@ -22,6 +23,11 @@ def main():
         logger.info("Running corporate actions enricher for manual backfill...")
         enrich_corporate_actions(force=True, days_back=365)
         logger.info("Corporate actions enricher completed.")
+
+    if "--enrich-screener" in sys.argv:
+        logger.info("Running Screener.in fundamentals enricher...")
+        enrich_screener_fundamentals(force=True)
+        logger.info("Screener.in fundamentals enricher completed.")
 
     logger.info("Starting MYRA data pipeline (headless, crash‑safe)…")
 
