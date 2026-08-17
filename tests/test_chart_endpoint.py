@@ -117,9 +117,39 @@ class TestChartNotFound:
     """Unknown symbol should return 404."""
 
     def test_unknown_symbol_404(self):
-        resp = client.get("/api/chart/ZZZZNONEXISTENT")
-        assert resp.status_code == 404
-        assert "Symbol not found" in resp.json()["detail"]
+        """Create a temp DB with correct schema so the endpoint reaches the symbol check."""
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.execute(
+                "CREATE TABLE technical_data ("
+                "symbol TEXT, date TEXT, open REAL, high REAL, low REAL, "
+                "close REAL, volume INTEGER)"
+            )
+            conn.commit()
+            conn.close()
+
+            from myra_fastapi_server import get_db_path
+
+            original = get_db_path
+
+            def fake_get_db_path(key):
+                if key == "technical":
+                    return db_path
+                return original(key)
+
+            import myra_fastapi_server
+
+            myra_fastapi_server.get_db_path = fake_get_db_path
+            try:
+                resp = client.get("/api/chart/ZZZZNONEXISTENT")
+                assert resp.status_code == 404
+                assert "Symbol not found" in resp.json()["detail"]
+            finally:
+                myra_fastapi_server.get_db_path = original
+        finally:
+            os.unlink(db_path)
 
 
 # ===================================================================
