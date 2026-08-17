@@ -200,6 +200,96 @@ def generate_insights(data: dict) -> list:
         else:
             add("growth", "Earnings growing", f"Earnings growth is {eg * 100:.1f}% YoY.", "green")
 
+    # ------------------------------------------------------------------ #
+    # 9–13. Trend-based insights from Screener.in time-series data
+    # ------------------------------------------------------------------ #
+    _TREND_METRICS = {
+        "price_to_book": ("PBV", False),   # valuation: lower = better
+        "pe":            ("PE",  False),   # valuation: lower = better
+        "roce":          ("ROCE", True),   # efficiency: higher = better
+        "roe":           ("ROE",  True),   # efficiency: higher = better
+        "market_cap_to_sales": ("P/S", False),  # valuation: lower = better
+    }
+
+    for ts_key, (label, higher_is_better) in _TREND_METRICS.items():
+        series = timeseries.get(ts_key)
+        if not series or len(series) < 3:
+            continue
+
+        # Sort by date ascending (should already be, but be safe)
+        try:
+            sorted_pts = sorted(
+                [p for p in series if p.get("date") and p.get("value") is not None],
+                key=lambda p: p["date"],
+            )
+        except Exception:
+            continue
+        if len(sorted_pts) < 3:
+            continue
+
+        latest_date_str = sorted_pts[-1]["date"]
+        try:
+            from datetime import date as _date
+            latest_dt = datetime.fromisoformat(latest_date_str.replace("Z", "")).date()
+        except Exception:
+            continue
+
+        for window_years in (5, 3):
+            cutoff = latest_dt.replace(year=latest_dt.year - window_years)
+            window = [p for p in sorted_pts if datetime.fromisoformat(p["date"].replace("Z", "")).date() >= cutoff]
+            if len(window) < 2:
+                continue
+
+            start_val = window[0]["value"]
+            end_val = window[-1]["value"]
+            if start_val is None or end_val is None or start_val == 0:
+                continue
+
+            pct_change = ((end_val - start_val) / abs(start_val)) * 100
+            abs_change = abs(pct_change)
+            actual_years = window_years if len(window) >= window_years else len(window)
+
+            # Determine direction text and severity
+            if higher_is_better:
+                improving = pct_change > 0
+                if pct_change > 0:
+                    direction = "improved"
+                elif pct_change < 0:
+                    direction = "declined"
+                else:
+                    direction = "remained stable"
+            else:
+                improving = pct_change < 0
+                if pct_change < 0:
+                    direction = "declined"
+                elif pct_change > 0:
+                    direction = "increased"
+                else:
+                    direction = "remained stable"
+
+            if abs_change < 5:
+                severity = "yellow"
+                direction = "remained stable"
+            elif improving:
+                severity = "green"
+            else:
+                severity = "red"
+
+            if abs_change < 5:
+                detail = f"{label} has {direction} from {start_val:.1f} to {end_val:.1f} over {actual_years} years."
+            else:
+                detail = (
+                    f"{label} has {direction} from {start_val:.1f} to {end_val:.1f} "
+                    f"over {actual_years} years ({pct_change:+.1f}% change)."
+                )
+
+            add(
+                f"trend_{ts_key}_{window_years}yr",
+                f"{label} {actual_years}-year trend",
+                detail,
+                severity,
+            )
+
     return insights
 
 
