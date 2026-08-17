@@ -396,6 +396,9 @@ def fetch_yfinance_data(symbol: str) -> dict:
         data["analyst_count"] = g("numberOfAnalystOpinions")
         data["target_mean_price"] = g("targetMeanPrice")
         data["current_price"] = g("currentPrice", "regularMarketPrice")
+        data["trailing_eps"] = g("trailingEps")
+        data["book_value"] = g("bookValue")
+        data["current_ratio"] = g("currentRatio")
         data["total_debt"] = g("totalDebt")
         data["total_cash"] = g("totalCash")
         try:

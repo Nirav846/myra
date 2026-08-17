@@ -6,6 +6,7 @@ Accepts ?refresh=true to bypass the 1-hour cache.
 
 import json
 import logging
+import math
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, HTTPException
@@ -59,6 +60,90 @@ def _normalize_dividend_yield(v):
     if v > 1:
         return round(v, 2)
     return round(v * 100, 2)
+
+
+# --------------------------------------------------------------------------- #
+# Graham Number + Defensive Criteria
+# --------------------------------------------------------------------------- #
+
+def compute_graham_metrics(data: dict) -> dict:
+    """Compute Graham Number and Defensive Criteria from combined fundamentals.
+
+    Returns a dict with:
+        graham_number   – conservative intrinsic value (₹) or None
+        current_price   – latest close (₹) or None
+        margin_of_safety – percentage or None
+        defensive       – dict of individual criterion results + overall pass/fail
+    """
+    ydata = data.get("yfinance", {}) or {}
+    snapshot = data.get("snapshot", {}) or {}
+
+    eps = ydata.get("trailing_eps")
+    book_value = ydata.get("book_value")
+    close = ydata.get("current_price") or snapshot.get("current_price")
+    pe = ydata.get("pe") or snapshot.get("pe")
+    pb = ydata.get("price_to_book")
+    current_ratio = ydata.get("current_ratio")
+    de_raw = ydata.get("debt_to_equity")
+
+    # Normalise D/E (yfinance returns percentage for Indian tickers)
+    de = None
+    if de_raw is not None:
+        de = de_raw / 100 if de_raw > 5 else de_raw
+
+    result = {
+        "graham_number": None,
+        "current_price": close,
+        "margin_of_safety": None,
+        "defensive": None,
+    }
+
+    # --- Graham Number ---
+    if eps is not None and book_value is not None and eps > 0 and book_value > 0:
+        gn = math.sqrt(22.5 * eps * book_value)
+        result["graham_number"] = round(gn, 2)
+        if close is not None and close > 0:
+            result["margin_of_safety"] = round(((gn - close) / close) * 100, 2)
+
+    # --- Defensive Criteria ---
+    if pe is not None and pb is not None:
+        checks = {}
+        failures = []
+
+        pe_ok = pe < 15
+        checks["pe_under_15"] = pe_ok
+        if not pe_ok:
+            failures.append(f"P/E {pe:.1f} exceeds 15")
+
+        pb_ok = pb < 1.5
+        checks["pb_under_1_5"] = pb_ok
+        if not pb_ok:
+            failures.append(f"P/B {pb:.1f} exceeds 1.5")
+
+        pe_x_pb = pe * pb
+        pepb_ok = pe_x_pb < 22.5
+        checks["pe_x_pb_under_22_5"] = pepb_ok
+        if not pepb_ok:
+            failures.append(f"P/E×P/B {pe_x_pb:.1f} exceeds 22.5")
+
+        # Optional harder criteria (only evaluated when data is present)
+        if current_ratio is not None:
+            cr_ok = current_ratio > 2
+            checks["current_ratio_above_2"] = cr_ok
+            if not cr_ok:
+                failures.append(f"Current ratio {current_ratio:.2f} below 2")
+
+        if de is not None:
+            de_ok = de < 1
+            checks["debt_equity_under_1"] = de_ok
+            if not de_ok:
+                failures.append(f"D/E {de:.2f} exceeds 1")
+
+        checks["pass"] = len(failures) == 0
+        checks["failures"] = failures
+        result["defensive"] = checks
+
+    return result
 
 
 # --------------------------------------------------------------------------- #
@@ -288,6 +373,46 @@ def generate_insights(data: dict) -> list:
                 f"{label} {actual_years}-year trend",
                 detail,
                 severity,
+            )
+
+    # ------------------------------------------------------------------ #
+    # 14–15. Graham Number + Defensive Criteria
+    # ------------------------------------------------------------------ #
+    graham = compute_graham_metrics(data)
+    gn = graham.get("graham_number")
+    close = graham.get("current_price")
+    mos = graham.get("margin_of_safety")
+
+    if gn is not None and close is not None and close > 0:
+        if mos is not None and mos > 10:
+            g_sev = "green"
+        elif mos is not None and mos > 0:
+            g_sev = "yellow"
+        else:
+            g_sev = "red"
+        add(
+            "graham_number",
+            "Graham fair value",
+            f"Graham Number: \u20b9{gn:,.0f}; current: \u20b9{close:,.0f} \u2192 {mos:+.1f}% margin of safety.",
+            g_sev,
+        )
+
+    defn = graham.get("defensive")
+    if defn is not None:
+        if defn.get("pass"):
+            add(
+                "graham_defensive",
+                "Passes Graham Defensive Criteria",
+                "P/E < 15, P/B < 1.5, P/E\u00d7P/B < 22.5 \u2014 all criteria met.",
+                "green",
+            )
+        else:
+            reason = "; ".join(defn.get("failures", []))
+            add(
+                "graham_defensive",
+                "Fails Graham Defensive Criteria",
+                reason + ".",
+                "red",
             )
 
     return insights
