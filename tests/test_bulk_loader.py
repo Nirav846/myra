@@ -104,7 +104,11 @@ def _scanner_parity(scanner, module):
 
     def _syms(res):
         if isinstance(res, pd.DataFrame):
+            if res.empty or "symbol" not in res.columns:
+                return []
             return res["symbol"].tolist()
+        if not res:
+            return []
         return [c["symbol"] for c in res]
 
     return _syms(bulk_result), _syms(db_result)
@@ -147,4 +151,5 @@ class TestScannerBulkParity:
         bulk, db = _scanner_parity(
             DCBBargainScanner(min_mcap=1500, max_mcap=2500, dcb_window=120), mod
         )
+        # Both paths should produce the same result (even if both are empty)
         assert bulk == db

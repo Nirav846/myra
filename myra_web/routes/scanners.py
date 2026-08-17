@@ -394,6 +394,7 @@ def _dcb_parse(payload: dict):
         )
     min_ff_mcap = float(payload.get("min_ff_mcap", 600.0))
     exclude_circuits = bool(payload.get("exclude_circuits", True))
+    corporate_actions_exclude_days = int(payload.get("corporate_actions_exclude_days", 0))
     raw_date = payload.get("scan_date", "")
     if raw_date and str(raw_date).strip():
         scan_date = _get_latest_trading_day_before(str(raw_date).strip())
@@ -413,6 +414,7 @@ def _dcb_parse(payload: dict):
             "timeframe": timeframe,
             "min_ff_mcap": min_ff_mcap,
             "exclude_circuits": exclude_circuits,
+            "corporate_actions_exclude_days": corporate_actions_exclude_days,
         },
         scan_date,
     )
@@ -422,7 +424,8 @@ def _dcb_build(kwargs, scan_date):
     from myra_app.strategies.dcb_bargain import DCBBargainScanner
 
     exclude_circuits = kwargs.pop("exclude_circuits")
-    scanner = DCBBargainScanner(**kwargs)
+    ca_exclude_days = kwargs.pop("corporate_actions_exclude_days", 0)
+    scanner = DCBBargainScanner(**kwargs, corporate_actions_exclude_days=ca_exclude_days)
     scanner._exclude_circuits = exclude_circuits
     return scanner
 
@@ -480,6 +483,7 @@ async def dcb_bargain_defaults():
         "timeframe": "daily",
         "min_ff_mcap": 600.0,
         "exclude_circuits": True,
+        "corporate_actions_exclude_days": 60,
     }
 
 

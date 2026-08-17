@@ -122,6 +122,8 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
   const [sanityMult, setSanityMult] = useState(ADVANCED_DEFAULTS.sanity_mult);
   const [minFfMcap, setMinFfMcap] = useState(ADVANCED_DEFAULTS.min_ff_mcap);
   const [excludeCircuits, setExcludeCircuits] = useState(true);
+  const [caExcludeEnabled, setCaExcludeEnabled] = useState(true);
+  const [caExcludeDays, setCaExcludeDays] = useState(60);
 
   const [sortCol, setSortCol] = useState<string>('score');
   const [sortAsc, setSortAsc] = useState(false);
@@ -230,6 +232,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
           timeframe,
           min_ff_mcap: minFfMcap,
           exclude_circuits: excludeCircuits,
+          corporate_actions_exclude_days: caExcludeEnabled ? caExcludeDays : 0,
           ...(scanDate.trim() && { scan_date: scanDate }),
         }),
       });
@@ -248,7 +251,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
         setIsScanning(false);
       }
     }
-  }, [fetchScanStatus, clearPolling, mcapRange, scanDate, dcbWindow, minDiscountPct, maxDiscountPct, minDelAbs, minAdtvCr, minHighDelDays, sanityMult, timeframe, minFfMcap, excludeCircuits]);
+  }, [fetchScanStatus, clearPolling, mcapRange, scanDate, dcbWindow, minDiscountPct, maxDiscountPct, minDelAbs, minAdtvCr, minHighDelDays, sanityMult, timeframe, minFfMcap, excludeCircuits, caExcludeEnabled, caExcludeDays]);
   startScanRef.current = startScan;
 
   useEffect(() => {
@@ -267,6 +270,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
         setSanityMult(d.sanity_mult ?? DEFAULTS_FALLBACK.sanity_mult);
         setMinFfMcap(d.min_ff_mcap ?? DEFAULTS_FALLBACK.min_ff_mcap);
         setExcludeCircuits(d.exclude_circuits ?? DEFAULTS_FALLBACK.exclude_circuits);
+        setCaExcludeDays(d.corporate_actions_exclude_days ?? 60);
       })
       .catch(() => {}); // keep current defaults on failure
     return () => {
@@ -292,6 +296,8 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
     setSanityMult(ADVANCED_DEFAULTS.sanity_mult);
     setMinFfMcap(ADVANCED_DEFAULTS.min_ff_mcap);
     setExcludeCircuits(true);
+    setCaExcludeEnabled(true);
+    setCaExcludeDays(60);
   };
 
   const handleCSV = () => {
@@ -580,7 +586,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                   aria-label="Minimum free-float market cap in crore rupees"
                 />
               </div>
-              <div className="flex flex-col gap-1 justify-end">
+               <div className="flex flex-col gap-1 justify-end">
                 <label className="flex items-center gap-2 text-[12px] text-[#888]">
                   <input
                     type="checkbox"
@@ -590,6 +596,29 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                   />
                   Exclude circuit‑locked stocks
                 </label>
+              </div>
+              <div className="flex flex-col gap-1 justify-end">
+                <label className="flex items-center gap-2 text-[12px] text-[#888]">
+                  <input
+                    type="checkbox"
+                    checked={caExcludeEnabled}
+                    onChange={e => { setCaExcludeEnabled(e.target.checked); clearCacheOnParamChange(); }}
+                    className="accent-emerald-500"
+                  />
+                  Exclude recent corp. actions
+                </label>
+                {caExcludeEnabled && (
+                  <input
+                    type="number"
+                    min={0}
+                    max={365}
+                    value={caExcludeDays}
+                    onChange={e => { setCaExcludeDays(Number(e.target.value) || 60); clearCacheOnParamChange(); }}
+                    className="w-20 px-2 py-1 bg-[#ffffff0a] border border-[#ffffff1a] rounded text-[12px] text-[#fafafa] font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50"
+                    title="Days to look back for bonus/split/rights"
+                  />
+                )}
+                {caExcludeEnabled && <span className="text-[10px] text-[#666]">days</span>}
               </div>
               <div className="flex flex-col gap-1 justify-end">
                 <button
