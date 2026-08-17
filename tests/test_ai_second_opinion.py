@@ -143,7 +143,10 @@ class TestGetAiSecondOpinion:
         mock_resp.json.return_value = _FAKE_RESPONSE
         mock_resp.raise_for_status = MagicMock()
 
-        with patch("myra_app.ai_second_opinion.requests.post", return_value=mock_resp):
+        with (
+            patch("myra_app.ai_second_opinion._GEMINI_API_KEY", "fake-key"),
+            patch("myra_app.ai_second_opinion.requests.post", return_value=mock_resp),
+        ):
             result = get_ai_second_opinion("RELIANCE", "Ticker: RELIANCE\nClose: 2500")
 
         assert result["signal"] == "BUY"
