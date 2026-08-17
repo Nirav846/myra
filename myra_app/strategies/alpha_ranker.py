@@ -60,6 +60,6 @@ class Strategy:
                         ),
                     },
                 }
-        except:
+        except Exception:
             pass
         return {"signal": False}

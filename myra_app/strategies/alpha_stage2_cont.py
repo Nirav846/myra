@@ -44,5 +44,5 @@ class Stage2Scanner:
                     ),
                 },
             }
-        except:
+        except Exception:
             return {"signal": False}

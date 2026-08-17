@@ -38,5 +38,5 @@ class DeliveryClusterScanner:
                     "Tightness": f"{round(p_range*100, 1)}%",
                 },
             }
-        except:
+        except Exception:
             return {"signal": False}

@@ -57,7 +57,7 @@ def run(df: pd.DataFrame, funda: dict = None) -> dict:
                     datetime.now() - model_data.get("timestamp", datetime.min)
                 ).days < 3:
                     needs_training = False
-            except:
+            except Exception:
                 pass
 
         if needs_training:

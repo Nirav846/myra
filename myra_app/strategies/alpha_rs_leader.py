@@ -42,5 +42,5 @@ class RSLeadershipScanner:
                     "Uptrend": "Confirmed",
                 },
             }
-        except:
+        except Exception:
             return {"signal": False}

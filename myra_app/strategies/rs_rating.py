@@ -45,6 +45,6 @@ def run(df: pd.DataFrame, funda: dict) -> dict:
                     "MCap": funda.get("MCap", "N/A"),
                 },
             }
-    except:
+    except Exception:
         pass
     return {"signal": False}

@@ -38,5 +38,5 @@ class Strategy:
                     "Absorption": f"{round(d_pct)}%",
                 },
             }
-        except:
+        except Exception:
             return {"signal": False}

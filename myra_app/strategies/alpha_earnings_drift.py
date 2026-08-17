@@ -47,5 +47,5 @@ class EarningsDriftScanner:
                     "Holding": "Strong",
                 },
             }
-        except:
+        except Exception:
             return {"signal": False}

@@ -21,7 +21,7 @@ class VolatilityAdjustedSizer:
 
             qty = risk_amount / atr
             return int(qty)
-        except:
+        except Exception:
             return 0
 
 
@@ -39,5 +39,5 @@ class KellySizer:
             kelly = win_rate - ((1 - win_rate) / ratio)
             # Standard "Half-Kelly" for safety
             return max(round(kelly * 0.5 * 100, 2), 0.0)
-        except:
+        except Exception:
             return 0.0

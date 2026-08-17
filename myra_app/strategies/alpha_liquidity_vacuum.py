@@ -37,6 +37,6 @@ class LiquidityVacuumScanner:
                         "Breakout_Vol": round(v.iloc[-1] / avg_vol_60, 1),
                     },
                 }
-        except:
+        except Exception:
             pass
         return {"signal": False}

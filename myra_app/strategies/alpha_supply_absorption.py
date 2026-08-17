@@ -41,5 +41,5 @@ class SupplyAbsorptionScanner:
                     "MA_Floor": "Respected",
                 },
             }
-        except:
+        except Exception:
             return {"signal": False}

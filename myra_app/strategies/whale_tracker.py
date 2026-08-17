@@ -76,7 +76,7 @@ def run(df: pd.DataFrame, funda: dict) -> dict:
                     committee = m_data.get("model")
                     scaler = m_data.get("scaler")
                     needs_training = False
-            except:
+            except Exception:
                 pass
 
         if needs_training:

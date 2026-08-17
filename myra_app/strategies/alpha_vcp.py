@@ -53,5 +53,5 @@ class VCPScanner:
                     "ATR_Cont": round(atr5 / atr20, 2),
                 },
             }
-        except:
+        except Exception:
             return {"signal": False}
