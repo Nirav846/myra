@@ -1,1323 +1,581 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { GitCompare, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, ArrowUpDown, BarChart2 } from 'lucide-react';
-import { useSettings } from '../lib/SettingsContext';
-import { resolveBucket } from '../lib/bucketUtils';
-import { useHealthStatus } from '../hooks/useHealthStatus';
-import PresetChip from '../components/PresetChip';
-import { DivergenceConfig } from '../lib/scannerPresets';
+import { GitCompare, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, ArrowUpDown, ArrowUpRight } from 'lucide-react';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
-import { fetchMarketCapMap, fetchFreeFloatMcapMap } from '../lib/marketCapCache';
-import { useDebouncedCallback } from 'use-debounce';
-import BacktestPanel from './BacktestPanel';
+import { fetchMarketCapMap } from '../lib/marketCapCache';
+import { useWatchlist } from '../lib/WatchlistContext';
+import { API_BASE } from '../config';
 import ScrollableTable from '../components/ScrollableTable';
+import { HistoricalScanDatePicker } from '../components/HistoricalScanDatePicker';
 
-interface ScannerData {
-    symbol: string;
-    sector: string;
-    bucket: string;
-    priceChangePct: number;
-    deliveryChangePct: number;
-    relativeVolume: number;
-    relativeStrength: number;
-    position52W: number;
-    score: number;
-    consecutiveHighDeliveryDays: number;
-    latestDeliveryPct: number;
-    signalBadge: string;
-    detectedBaseLength: number;
-    triggerPrice: number;
-    stopLossPrice: number;
-    targetPrice: number;
-    riskReward: number;
-    latestClose: number;
-    baseTightness: number;
-    dar: number;
-    alreadyTriggered: boolean;
-    nearEarnings: boolean;
+/* ------------------------------------------------------------------ */
+/*  Types                                                              */
+/* ------------------------------------------------------------------ */
+
+interface Candidate {
+  symbol: string;
+  close: number;
+  low_in_window: number;
+  price_dist_pct: number;
+  latest_del_pct: number;
+  delivery_change: number;
+  divergence_strength: number;
+  price_lookback: number;
+  delivery_period: number;
+  delivery_threshold: number;
+  adtv_cr: number | null;
+  score: number;
+  divergence_type: string;
+  horizon: string;
 }
 
-interface RawData {
-    ticker: string;
-    latest_close: number;
-    latest_vwap: number;
-    latest_typical: number;
-    past_close: number;
-    past_vwap: number;
-    past_typical: number;
-    latest_delivery_qty: number;
-    past_delivery_qty: number;
-    latest_delivery_pct: number;
-    past_delivery_pct: number;
-    avg_volume: number;
-    latest_volume: number;
-    consecutiveHighDeliveryDays: number;
-    detected_base_length: number;
-    base_high_5: number;
-    base_low_5: number;
-    base_high_10: number;
-    base_low_10: number;
-    base_high_21: number;
-    base_low_21: number;
-    base_high_45: number;
-    base_low_45: number;
-    atr_14: number;
-    high_52w: number;
-    low_52w: number;
+interface ScanStatus {
+  scan_status: string;
+  last_scan: string | null;
+  progress: number;
+  message: string;
+  candidates: Candidate[];
+  scanned_date?: string | null;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Defaults                                                           */
+/* ------------------------------------------------------------------ */
+
+const DEFAULTS = {
+  price_lookback: 20,
+  delivery_period: 10,
+  delivery_threshold: 1.0,
+  min_mcap: 200,
+  max_mcap: 50000,
+  min_abs_delivery_pct: 0.0,
+  min_adtv_cr: 0.0,
+};
+
+const HORIZON_PRESETS: Record<string, { price_lookback: number; delivery_period: number; delivery_threshold: number }> = {
+  '60d':  { price_lookback: 20, delivery_period: 10, delivery_threshold: 1.0 },
+  '120d': { price_lookback: 10, delivery_period: 5,  delivery_threshold: 0.0 },
+  '180d': { price_lookback: 10, delivery_period: 5,  delivery_threshold: 1.0 },
+};
+
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                            */
+/* ------------------------------------------------------------------ */
+
+function relativeTime(dateStr: string | null | undefined): string {
+  if (!dateStr) return 'Never';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return 'Never';
+    const diffMs = Date.now() - d.getTime();
+    if (diffMs < 0) return 'Just now';
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return 'Just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  } catch {
+    return dateStr || 'Never';
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Component                                                          */
+/* ------------------------------------------------------------------ */
 
 export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Librarian }) {
-    const { settings } = useSettings();
-    const { isConnected } = useHealthStatus();
+  const { isWatched } = useWatchlist();
+  const [watchlistOnly, setWatchlistOnly] = useState(false);
 
-    const [isLoading, setIsLoading] = useState(false);
-    const [isDemo, setIsDemo] = useState(false);
-    const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-    const [rawData, setRawData] = useState<RawData[]>([]);
-    const [metadataMap, setMetadataMap] = useState<Map<string, { sector: string, bucket: string }>>(new Map());
-    const [metadataLoaded, setMetadataLoaded] = useState(false);
+  // Scanner parameters
+  const [horizon, setHorizon] = useState<string | null>('60d');
+  const [priceLookback, setPriceLookback] = useState(DEFAULTS.price_lookback);
+  const [deliveryPeriod, setDeliveryPeriod] = useState(DEFAULTS.delivery_period);
+  const [deliveryThreshold, setDeliveryThreshold] = useState(DEFAULTS.delivery_threshold);
+  const [mcapRange, setMcapRange] = useState<{ min: number; max: number } | null>(null);
+  const [minAbsDeliveryPct, setMinAbsDeliveryPct] = useState(DEFAULTS.min_abs_delivery_pct);
+  const [minAdtvCr, setMinAdtvCr] = useState(DEFAULTS.min_adtv_cr);
+  const [scanDate, setScanDate] = useState('');
 
-    // Fetch controls
-    const [lookbackBars, setLookbackBars] = useState(10);
-    
-    // UI Controls for filtering and scoring
-    const [priceMetric, setPriceMetric] = useState<'Close' | 'VWAP' | 'Typical'>('Close');
-    const [deliveryMetric, setDeliveryMetric] = useState<'Pct' | 'Qty'>('Pct');
-    const [priceDirection, setPriceDirection] = useState<'Falling' | 'Rising'>('Falling');
-    
-    // Sliders
-    const [minPriceChange, setMinPriceChange] = useState(-2);
-    const [minDeliveryChange, setMinDeliveryChange] = useState(5);
-    const [minRelativeVolume, setMinRelativeVolume] = useState(0);
-    const [minScore, setMinScore] = useState(50);
-    const [scoreWeighting, setScoreWeighting] = useState<'Balanced' | 'Price' | 'Delivery'>('Balanced');
+  // Filtering / display
+  const [sortCol, setSortCol] = useState<string>('score');
+  const [sortAsc, setSortAsc] = useState(false);
+  const [minScore, setMinScore] = useState(0);
+  const [minDeliveryChange, setMinDeliveryChange] = useState(0);
+  const [filtersVisible, setFiltersVisible] = useState(() => localStorage.getItem('pdd_filters_visible') !== 'false');
 
-    // Debounced display states for smooth slider UX
-    const [minPriceChangeDisplay, setMinPriceChangeDisplay] = useState(minPriceChange);
-    const setMinPriceChangeDebounced = useDebouncedCallback(setMinPriceChange, 100);
-    const [minDeliveryChangeDisplay, setMinDeliveryChangeDisplay] = useState(minDeliveryChange);
-    const setMinDeliveryChangeDebounced = useDebouncedCallback(setMinDeliveryChange, 100);
-    const [minRelativeVolumeDisplay, setMinRelativeVolumeDisplay] = useState(minRelativeVolume);
-    const setMinRelativeVolumeDebounced = useDebouncedCallback(setMinRelativeVolume, 100);
-    const [minScoreDisplay, setMinScoreDisplay] = useState(minScore);
-    const setMinScoreDebounced = useDebouncedCallback(setMinScore, 100);
+  const mountedRef = useRef(true);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startScanRef = useRef<(() => void) | null>(null);
+  const mcapMapRef = useRef<Map<string, number>>(new Map());
 
-    // Filtering controls
-    const [minAbsDeliveryPct, setMinAbsDeliveryPct] = useState(0);
-    const [minConsecutiveDays, setMinConsecutiveDays] = useState(0);
-    const [minRR, setMinRR] = useState(0);
-    const [minDAR, setMinDAR] = useState(0);
-    const [filterSector, setFilterSector] = useState('All');
-    const [filterMcap, setFilterMcap] = useState('All');
-    const [mcapRange, setMcapRange] = useState<{ min: number; max: number } | null>(null);
-    const mcapMapRef = useRef<Map<string, number>>(new Map());
-    const ffMcapMapRef = useRef<Map<string, number>>(new Map());
-    useEffect(() => {
-        fetchMarketCapMap().then(m => mcapMapRef.current = m);
-        fetchFreeFloatMcapMap().then(m => { ffMcapMapRef.current = m;  });
-    }, []);
+  useEffect(() => { fetchMarketCapMap().then(m => mcapMapRef.current = m); }, []);
 
-    const [earningsProximitySet, setEarningsProximitySet] = useState<Set<string>>(new Set());
-    const [hideNearEarnings, setHideNearEarnings] = useState(false);
+  const candidates = scanStatus?.candidates ?? [];
 
-    const [watchlist, setWatchlist] = useState<Set<string>>(() => {
-        try {
-            const stored = localStorage.getItem('divergence_watchlist');
-            return stored ? new Set(JSON.parse(stored)) : new Set();
-        } catch { return new Set(); }
+  // Apply horizon preset
+  const applyHorizon = useCallback((h: string | null) => {
+    setHorizon(h);
+    if (h && HORIZON_PRESETS[h]) {
+      const p = HORIZON_PRESETS[h];
+      setPriceLookback(p.price_lookback);
+      setDeliveryPeriod(p.delivery_period);
+      setDeliveryThreshold(p.delivery_threshold);
+    }
+  }, []);
+
+  // Sorting
+  const handleSort = (col: string) => {
+    if (sortCol === col) setSortAsc(s => !s);
+    else { setSortCol(col); setSortAsc(false); }
+  };
+
+  const SortIcon = ({ column }: { column: string }) => {
+    if (sortCol !== column) return <ArrowUpDown size={10} className="inline ml-1 opacity-30" />;
+    return sortAsc
+      ? <ChevronUp size={10} className="inline ml-1 text-orange-400" />
+      : <ChevronDown size={10} className="inline ml-1 text-orange-400" />;
+  };
+
+  // Filter + sort
+  const filteredData = useMemo(() => {
+    let data = [...candidates];
+    if (mcapRange) {
+      const map = mcapMapRef.current;
+      data = data.filter(d => {
+        const mcap = map.get(d.symbol);
+        return mcap !== undefined && mcap >= mcapRange.min && mcap <= mcapRange.max;
+      });
+    }
+    if (watchlistOnly) data = data.filter(d => isWatched(d.symbol));
+    if (minScore > 0) data = data.filter(d => d.score >= minScore);
+    if (minDeliveryChange > 0) data = data.filter(d => d.delivery_change >= minDeliveryChange);
+
+    data.sort((a, b) => {
+      const av = (a as any)[sortCol] ?? 0;
+      const bv = (b as any)[sortCol] ?? 0;
+      if (typeof av === 'number' && typeof bv === 'number') {
+        return sortAsc ? av - bv : bv - av;
+      }
+      return String(av).localeCompare(String(bv)) * (sortAsc ? 1 : -1);
     });
-    const [showWatchlistOnly, setShowWatchlistOnly] = useState(false);
-    const [showNewOnly, setShowNewOnly] = useState(false);
-    const [previousSymbols, setPreviousSymbols] = useState<Set<string>>(new Set());
-    const [newSymbols, setNewSymbols] = useState<Set<string>>(new Set());
-    const toggleWatchlist = useCallback((symbol: string) => {
-        setWatchlist(prev => {
-            const next = new Set(prev);
-            next.has(symbol) ? next.delete(symbol) : next.add(symbol);
-            localStorage.setItem('divergence_watchlist', JSON.stringify(Array.from(next)));
-            return next;
-        });
-    }, []);
+    return data;
+  }, [candidates, mcapRange, watchlistOnly, minScore, minDeliveryChange, isWatched, sortCol, sortAsc]);
 
-    const [niftyChangePct, setNiftyChangePct] = useState(0);
-    const [filterRSNegative, setFilterRSNegative] = useState(false);
-    const [maxPosition52W, setMaxPosition52W] = useState(100);
-    const [filtersVisible, setFiltersVisible] = useState(() => localStorage.getItem('pdd_filters_visible') !== 'false');
-    const [backtestSymbol, setBacktestSymbol] = useState<string | null>(null);
-    const [sortConfig, setSortConfig] = useState<{ key: keyof ScannerData, direction: 'asc' | 'desc' } | null>({ key: 'score', direction: 'desc' });
-
-    // Fetch Metadata Once
-    useEffect(() => {
-        let active = true;
-        const fetchMeta = async () => {
-            try {
-                if (!lib.isConnectedToLocalRepo || settings.mockDataMode) {
-                    if (active) setMetadataLoaded(true);
-                    return;
-                }
-                const symbolsResult = await lib.executeQuery('_meta_conn', 'SELECT symbol as ticker, sector, in_nifty500 FROM symbols_master LIMIT 10000', {}, 12000);
-                const indexResult = await lib.executeQuery('_meta_conn', 'SELECT symbol, index_name FROM index_constituents LIMIT 5000', {}, 12000);
-                
-                const indicesMap = new Map<string, string[]>();
-                if (indexResult && Array.isArray(indexResult)) {
-                    indexResult.forEach((row: any) => {
-                        if (indicesMap.has(row.symbol)) {
-                            indicesMap.get(row.symbol)!.push(row.index_name);
-                        } else {
-                            indicesMap.set(row.symbol, [row.index_name]);
-                        }
-                    });
-                }
-                const metaMap = new Map<string, { sector: string, bucket: string }>();
-                if (symbolsResult) {
-                    for (const m of symbolsResult) {
-                        const indices = indicesMap.get(m.ticker) || [];
-                        const bucket = resolveBucket(indices, m.in_nifty500);
-                        metaMap.set(m.ticker, {
-                            sector: m.sector || 'Unknown',
-                            bucket: bucket
-                        });
-                    }
-                }
-                if (active) {
-                    setEarningsProximitySet(new Set());
-                    setMetadataMap(metaMap);
-                    setMetadataLoaded(true);
-                }
-            } catch (e) {
-                console.error(e);
-                if (active) {
-                    setEarningsProximitySet(new Set());
-                    setMetadataLoaded(true);
-                }
-            }
-        };
-        fetchMeta();
-        return () => { active = false; };
-    }, [lib, settings.mockDataMode]);
-
-    const fetchData = useCallback(async () => {
-        if (!metadataLoaded) return;
-        setIsLoading(true);
-        setErrorMsg(null);
-
-        const mockMode = !lib.isConnectedToLocalRepo || settings.mockDataMode;
-        
-        try {
-            if (mockMode) {
-                setIsDemo(true);
-                generateMockData();
-                setIsLoading(false);
-                return;
-            }
-            setIsDemo(false);
-
-            const safeBars = Math.max(3, Math.min(252, Math.floor(Number(lookbackBars) || 10)));
-
-            /* Note: Computing AVG(volume) inside the windowed subquery can be heavy for large datasets. Consider optimizing with a separate CTE if performance degrades. */
-            const query = `
-    WITH     baseline AS (
-        SELECT symbol,
-               AVG(volume) AS avg_volume_20d
-        FROM (
-            SELECT symbol, volume,
-                   ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
-            FROM technical_data
-            WHERE date >= date('now', '-60 days')
-        )
-        WHERE rn BETWEEN 2 AND 21
-        GROUP BY symbol
-    ),
-    windowed AS (
-        SELECT symbol, close, vwap, high, low, volume, delivery,
-               ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn_desc
-        FROM technical_data
-        WHERE date >= date('now', '-400 days')
-    ),
-    streaks AS (
-        SELECT symbol,
-               CASE WHEN MAX(CASE WHEN rn_desc = 1 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
-               THEN 1 ELSE 0 END
-               +
-               CASE WHEN MAX(CASE WHEN rn_desc = 1 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
-                AND  MAX(CASE WHEN rn_desc = 2 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
-               THEN 1 ELSE 0 END
-               +
-               CASE WHEN MAX(CASE WHEN rn_desc = 1 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
-                AND  MAX(CASE WHEN rn_desc = 2 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
-                AND  MAX(CASE WHEN rn_desc = 3 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
-               THEN 1 ELSE 0 END
-               +
-               CASE WHEN MAX(CASE WHEN rn_desc = 1 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
-                AND  MAX(CASE WHEN rn_desc = 2 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
-                AND  MAX(CASE WHEN rn_desc = 3 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
-                AND  MAX(CASE WHEN rn_desc = 4 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
-               THEN 1 ELSE 0 END
-               +
-               CASE WHEN MAX(CASE WHEN rn_desc = 1 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
-                AND  MAX(CASE WHEN rn_desc = 2 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
-                AND  MAX(CASE WHEN rn_desc = 3 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
-                AND  MAX(CASE WHEN rn_desc = 4 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
-                AND  MAX(CASE WHEN rn_desc = 5 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) >= 40
-               THEN 1 ELSE 0 END
-               AS consecutive_streak
-        FROM windowed
-        WHERE rn_desc <= 5
-        GROUP BY symbol
-    ),
-    multiframe AS (
-        SELECT symbol,
-               MAX(CASE WHEN rn_desc = 1  THEN close END) AS c1,
-               MAX(CASE WHEN rn_desc = 5  THEN close END) AS c5,
-               MAX(CASE WHEN rn_desc = 10 THEN close END) AS c10,
-               MAX(CASE WHEN rn_desc = 21 THEN close END) AS c21,
-               MAX(CASE WHEN rn_desc = 45 THEN close END) AS c45,
-               MAX(CASE WHEN rn_desc = 1  THEN (delivery * 100.0 / NULLIF(volume, 0)) END) AS d1,
-               MAX(CASE WHEN rn_desc = 5  THEN (delivery * 100.0 / NULLIF(volume, 0)) END) AS d5,
-               MAX(CASE WHEN rn_desc = 10 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) AS d10,
-               MAX(CASE WHEN rn_desc = 21 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) AS d21,
-               MAX(CASE WHEN rn_desc = 45 THEN (delivery * 100.0 / NULLIF(volume, 0)) END) AS d45
-        FROM windowed
-        WHERE rn_desc <= 45
-        GROUP BY symbol
-    ),
-    atr_data AS (
-        SELECT symbol,
-               AVG(high - low) AS atr_14
-        FROM (
-            SELECT symbol, high, low,
-                   ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
-            FROM technical_data
-            WHERE date >= date('now', '-30 days')
-        )
-        WHERE rn BETWEEN 1 AND 14
-        GROUP BY symbol
-    )
-    SELECT
-        w.symbol AS ticker,
-        MAX(CASE WHEN w.rn_desc = 1 THEN w.close END)                              AS latest_close,
-        MAX(CASE WHEN w.rn_desc = 1 THEN w.vwap END)                               AS latest_vwap,
-        MAX(CASE WHEN w.rn_desc = 1 THEN (w.high + w.low + w.close) / 3 END)       AS latest_typical,
-        MAX(CASE WHEN w.rn_desc = ? THEN w.close END)                              AS past_close,
-        MAX(CASE WHEN w.rn_desc = ? THEN w.vwap END)                               AS past_vwap,
-        MAX(CASE WHEN w.rn_desc = ? THEN (w.high + w.low + w.close) / 3 END)       AS past_typical,
-        MAX(CASE WHEN w.rn_desc = 1 THEN w.delivery END)                           AS latest_delivery_qty,
-        MAX(CASE WHEN w.rn_desc = ? THEN w.delivery END)                           AS past_delivery_qty,
-        MAX(CASE WHEN w.rn_desc = 1 THEN (w.delivery * 100.0 / NULLIF(w.volume, 0)) END)  AS latest_delivery_pct,
-        MAX(CASE WHEN w.rn_desc = ? THEN (w.delivery * 100.0 / NULLIF(w.volume, 0)) END)  AS past_delivery_pct,
-        COALESCE(b.avg_volume_20d, AVG(w.volume)) AS avg_volume,
-        MAX(CASE WHEN w.rn_desc = 1 THEN w.volume END)                             AS latest_volume,
-        MAX(CASE WHEN w.rn_desc <= 5  THEN w.high END) AS base_high_5,
-        MIN(CASE WHEN w.rn_desc <= 5  THEN w.low  END) AS base_low_5,
-        MAX(CASE WHEN w.rn_desc <= 10 THEN w.high END) AS base_high_10,
-        MIN(CASE WHEN w.rn_desc <= 10 THEN w.low  END) AS base_low_10,
-        MAX(CASE WHEN w.rn_desc <= 21 THEN w.high END) AS base_high_21,
-        MIN(CASE WHEN w.rn_desc <= 21 THEN w.low  END) AS base_low_21,
-        MAX(CASE WHEN w.rn_desc <= 45 THEN w.high END) AS base_high_45_w,
-        MIN(CASE WHEN w.rn_desc <= 45 THEN w.low  END) AS base_low_45_w,
-        COALESCE(a.atr_14, (MAX(w.high) - MIN(w.low)) / 10.0) AS atr_14,
-        MAX(CASE WHEN w.rn_desc <= 252 THEN w.high END) AS high_52w,
-        MIN(CASE WHEN w.rn_desc <= 252 THEN w.low  END) AS low_52w,
-        COALESCE(s.consecutive_streak, 0) AS consecutive_high_delivery_days,
-        ROUND(
-            CASE 
-                WHEN (mf.d1 - mf.d5)  / (ABS((mf.c1 - mf.c5)  / NULLIF(mf.c5,  0) * 100) + 0.5) >
-                     (mf.d1 - mf.d10) / (ABS((mf.c1 - mf.c10) / NULLIF(mf.c10, 0) * 100) + 0.5)
-                 AND (mf.d1 - mf.d5)  / (ABS((mf.c1 - mf.c5)  / NULLIF(mf.c5,  0) * 100) + 0.5) >
-                     (mf.d1 - mf.d21) / (ABS((mf.c1 - mf.c21) / NULLIF(mf.c21, 0) * 100) + 0.5)
-                 AND (mf.d1 - mf.d5)  / (ABS((mf.c1 - mf.c5)  / NULLIF(mf.c5,  0) * 100) + 0.5) >
-                     (mf.d1 - mf.d45) / (ABS((mf.c1 - mf.c45) / NULLIF(mf.c45, 0) * 100) + 0.5)
-                THEN 5
-                WHEN (mf.d1 - mf.d10) / (ABS((mf.c1 - mf.c10) / NULLIF(mf.c10, 0) * 100) + 0.5) >
-                     (mf.d1 - mf.d21) / (ABS((mf.c1 - mf.c21) / NULLIF(mf.c21, 0) * 100) + 0.5)
-                 AND (mf.d1 - mf.d10) / (ABS((mf.c1 - mf.c10) / NULLIF(mf.c10, 0) * 100) + 0.5) >
-                     (mf.d1 - mf.d45) / (ABS((mf.c1 - mf.c45) / NULLIF(mf.c45, 0) * 100) + 0.5)
-                THEN 10
-                WHEN (mf.d1 - mf.d21) / (ABS((mf.c1 - mf.c21) / NULLIF(mf.c21, 0) * 100) + 0.5)  >
-                     (mf.d1 - mf.d45) / (ABS((mf.c1 - mf.c45) / NULLIF(mf.c45, 0) * 100) + 0.5)
-                THEN 21
-                ELSE 45
-            END
-        , 0) AS detected_base_length
-    FROM windowed w
-    LEFT JOIN baseline b ON w.symbol = b.symbol
-    LEFT JOIN streaks s ON w.symbol = s.symbol
-    LEFT JOIN multiframe mf ON w.symbol = mf.symbol
-    LEFT JOIN atr_data a ON w.symbol = a.symbol
-    WHERE w.rn_desc <= 252
-    GROUP BY w.symbol
-`;
-            
-            const results = await lib.executeQuery('_tech_conn', query, [safeBars, safeBars, safeBars, safeBars, safeBars], 60000);
-
-            const niftyQuery = `
-                SELECT
-                    MAX(CASE WHEN rn_desc = 1 THEN close END) AS nifty_latest,
-                    MAX(CASE WHEN rn_desc = ? THEN close END) AS nifty_past
-                FROM (
-                    SELECT close,
-                           ROW_NUMBER() OVER (ORDER BY date DESC) AS rn_desc
-                    FROM benchmarks
-                    WHERE symbol = '^NSEI'
-                )
-                WHERE rn_desc <= ?
-            `;
-            const niftyResult = await lib.executeQuery(
-                '_meta_conn', niftyQuery, [safeBars, safeBars], 5000
-            ).catch(() => null);
-            const niftyChange = niftyResult?.[0]
-                ? ((niftyResult[0].nifty_latest - niftyResult[0].nifty_past)
-                   / niftyResult[0].nifty_past) * 100
-                : 0;
-            setNiftyChangePct(parseFloat(niftyChange.toFixed(2)));
-            
-            if (results && results.length > 0) {
-                setIsDemo(false);
-                setRawData(results.map((r: any) => ({
-                    ticker: r.ticker,
-                    latest_close: Number(r.latest_close) || 0,
-                    latest_vwap: Number(r.latest_vwap) || 0,
-                    latest_typical: Number(r.latest_typical) || 0,
-                    past_close: Number(r.past_close) || 0,
-                    past_vwap: Number(r.past_vwap) || 0,
-                    past_typical: Number(r.past_typical) || 0,
-                    latest_delivery_qty: Number(r.latest_delivery_qty) || 0,
-                    past_delivery_qty: Number(r.past_delivery_qty) || 0,
-                    latest_delivery_pct: Number(r.latest_delivery_pct) || 0,
-                    past_delivery_pct: Number(r.past_delivery_pct) || 0,
-                    avg_volume: Number(r.avg_volume) || 0,
-                    latest_volume: Number(r.latest_volume) || 0,
-                    base_high_5: Number(r.base_high_5) || 0,
-                    base_low_5: Number(r.base_low_5) || 0,
-                    base_high_10: Number(r.base_high_10) || 0,
-                    base_low_10: Number(r.base_low_10) || 0,
-                    base_high_21: Number(r.base_high_21) || 0,
-                    base_low_21: Number(r.base_low_21) || 0,
-                    base_high_45: Number(r.base_high_45_w) || 0,
-                    base_low_45: Number(r.base_low_45_w) || 0,
-                    atr_14: Number(r.atr_14) || 0,
-                    high_52w: Number(r.high_52w) || 0,
-                    low_52w: Number(r.low_52w) || 0,
-                    consecutiveHighDeliveryDays: Number(r.consecutive_high_delivery_days) || 0,
-                    detected_base_length: Number(r.detected_base_length) || 0
-                })));
-            } else {
-                setRawData([]);
-            }
-        } catch (e: any) {
-            console.error(e);
-            setErrorMsg(e.message || 'Database unavailable - generating mock data.');
-            setIsDemo(true);
-            generateMockData();
-        } finally {
-            setIsLoading(false);
-        }
-    // Suppressed because generateMockData operates primarily on constants and the linter falsely requires it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [lookbackBars, metadataLoaded, settings.mockDataMode, lib]);
-
-    const generateMockData = () => {
-        const mock: RawData[] = [];
-        const tickers = ['RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'INFY', 'ITC', 'SBIN', 'LARSEN', 'BAJFINANCE', 'BHARTIARTL', 'MARUTI', 'ASIANPAINT', 'TITAN', 'M&M', 'SUNPHARMA', 'TATASTEEL', 'KOTAKBANK', 'HUL', 'WIPRO', 'ONGC'];
-        tickers.forEach(t => {
-            const basePrice = Math.random() * 3000 + 100;
-            const priceChange = (Math.random() * 0.2) - 0.1; // -10% to +10%
-            const pastPrice = basePrice * (1 - priceChange);
-            
-            const baseDel = Math.random() * 40 + 20; // 20% to 60%
-            const delChange = (Math.random() * 20) - 5; // -5% to +15%
-            const pastDel = Math.max(0, baseDel - delChange);
-
-            mock.push({
-                ticker: t,
-                latest_close: basePrice,
-                latest_vwap: basePrice * 1.01,
-                latest_typical: basePrice * 0.99,
-                past_close: pastPrice,
-                past_vwap: pastPrice * 1.01,
-                past_typical: pastPrice * 0.99,
-                latest_delivery_qty: baseDel * 10000,
-                past_delivery_qty: pastDel * 10000,
-                latest_delivery_pct: baseDel,
-                past_delivery_pct: pastDel,
-                avg_volume: 1000000,
-                latest_volume: 1000000 * (1 + (Math.random() * 3)),
-                base_high_5: basePrice * 1.03,
-                base_low_5: basePrice * 0.97,
-                base_high_10: basePrice * 1.05,
-                base_low_10: basePrice * 0.95,
-                base_high_21: basePrice * 1.07,
-                base_low_21: basePrice * 0.93,
-                base_high_45: basePrice * 1.10,
-                base_low_45: basePrice * 0.88,
-                atr_14: basePrice * 0.015,
-                high_52w: basePrice * 1.25,
-                low_52w: basePrice * 0.75,
-                consecutiveHighDeliveryDays: Math.floor(Math.random() * 6),
-                detected_base_length: [5, 10, 21, 45][Math.floor(Math.random() * 4)]
-            });
-        });
-        setRawData(mock);
+  // Summaries
+  const summaries = useMemo(() => {
+    if (filteredData.length === 0) return { avgScore: 0, avgDelChange: 0, avgDist: 0 };
+    const sumScore = filteredData.reduce((a, v) => a + v.score, 0);
+    const sumDel = filteredData.reduce((a, v) => a + v.delivery_change, 0);
+    const sumDist = filteredData.reduce((a, v) => a + v.price_dist_pct, 0);
+    return {
+      avgScore: Math.round(sumScore / filteredData.length),
+      avgDelChange: sumDel / filteredData.length,
+      avgDist: sumDist / filteredData.length,
     };
+  }, [filteredData]);
 
-    useEffect(() => {
-        if (metadataLoaded) {
-            fetchData();
+  // Clear polling
+  const clearPolling = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }, []);
+
+  // Fetch scan status
+  const fetchScanStatus = useCallback(async () => {
+    if (!mountedRef.current) return;
+    try {
+      const res = await fetch(`${API_BASE}/delivery-divergence/status`);
+      if (!mountedRef.current) return;
+      if (res.ok) {
+        const data: ScanStatus = await res.json();
+        if (!mountedRef.current) return;
+        setScanStatus(data);
+        setError(null);
+
+        if (data.scan_status === 'completed' || data.scan_status === 'error') {
+          clearPolling();
+          setIsScanning(false);
+        } else if (data.scan_status === 'scanning' && !pollTimerRef.current) {
+          pollTimerRef.current = setInterval(fetchScanStatus, 2000);
+          setIsScanning(true);
         }
-    }, [fetchData, metadataLoaded]);
+      }
+    } catch (e: any) {
+      if (mountedRef.current) {
+        setError(e.message || 'Error connecting to backend');
+      }
+    }
+  }, [clearPolling]);
 
-    const uniqueSectors = useMemo(() => {
-        const s = new Set<string>();
-        for (const meta of metadataMap.values()) {
-            if (meta.sector) s.add(meta.sector);
-        }
-        return Array.from(s).sort();
-    }, [metadataMap]);
+  // Start scan
+  const startScan = useCallback(async () => {
+    if (!mountedRef.current) return;
+    setIsScanning(true);
+    setError(null);
+    clearPolling();
 
-    // Enrich raw data with computed metrics (no filtering — expensive, depends only on metric choices)
-    const enrichedData = useMemo(() => {
-        const results: ScannerData[] = [];
+    try {
+      const body: Record<string, any> = {};
+      if (horizon) body.horizon = horizon;
+      else {
+        body.price_lookback = priceLookback;
+        body.delivery_period = deliveryPeriod;
+        body.delivery_threshold = deliveryThreshold;
+      }
+      if (mcapRange) {
+        body.min_mcap = mcapRange.min;
+        body.max_mcap = mcapRange.max;
+      }
+      if (minAbsDeliveryPct > 0) body.min_abs_delivery_pct = minAbsDeliveryPct;
+      if (minAdtvCr > 0) body.min_adtv_cr = minAdtvCr;
+      if (scanDate.trim()) body.scan_date = scanDate;
 
-        rawData.forEach(d => {
-            let pChange = 0;
-            switch(priceMetric) {
-                case 'Close': pChange = d.past_close ? ((d.latest_close - d.past_close) / d.past_close) * 100 : 0; break;
-                case 'VWAP':
-                    const vwapLatest = d.latest_vwap || d.latest_close;
-                    const vwapPast   = d.past_vwap || d.past_close;
-                    pChange = vwapPast ? ((vwapLatest - vwapPast) / vwapPast) * 100 : 0;
-                    break;
-                case 'Typical': pChange = d.past_typical ? ((d.latest_typical - d.past_typical) / d.past_typical) * 100 : 0; break;
-            }
+      const res = await fetch(`${API_BASE}/delivery-divergence/scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!mountedRef.current) return;
+      if (res.ok) {
+        await fetchScanStatus();
+        pollTimerRef.current = setInterval(fetchScanStatus, 2000);
+      } else {
+        const err = await res.json().catch(() => ({ detail: 'Failed to start scan' }));
+        setError(err.detail || 'Failed to start scan');
+        setIsScanning(false);
+      }
+    } catch (e: any) {
+      if (mountedRef.current) {
+        setError(e.message || 'Error starting scan');
+        setIsScanning(false);
+      }
+    }
+  }, [fetchScanStatus, clearPolling, fetchScanStatus, horizon, priceLookback, deliveryPeriod, deliveryThreshold, mcapRange, minAbsDeliveryPct, minAdtvCr, scanDate]);
+  startScanRef.current = startScan;
 
-            let dChange = 0;
-            if (deliveryMetric === 'Pct') {
-                dChange = d.latest_delivery_pct - d.past_delivery_pct;
-            } else {
-                dChange = d.past_delivery_qty ? ((d.latest_delivery_qty - d.past_delivery_qty) / d.past_delivery_qty) * 100 : 0;
-            }
+  // Clear cache
+  const clearCache = useCallback(async () => {
+    try {
+      await fetch(`${API_BASE}/cache/delivery-divergence`, { method: 'DELETE' });
+      setScanStatus(null);
+    } catch { /* ignore */ }
+  }, []);
 
-            const rVol = d.avg_volume > 0 ? d.latest_volume / d.avg_volume : 0;
+  // Export CSV
+  const handleCSV = useCallback(() => {
+    if (filteredData.length === 0) return;
+    const headers = ['Symbol', 'Close', 'Low(window)', 'PriceDist%', 'Del%', 'DelChange', 'Strength', 'Score', 'Horizon', 'LB', 'DP', 'Thr'];
+    const rows = filteredData.map(d => [
+      d.symbol, d.close, d.low_in_window, d.price_dist_pct, d.latest_del_pct,
+      d.delivery_change, d.divergence_strength, d.score, d.horizon,
+      d.price_lookback, d.delivery_period, d.delivery_threshold,
+    ]);
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `divergence_scan_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [filteredData]);
 
-            const deliveryValueCr = (d.latest_delivery_qty * (d.latest_vwap || d.latest_close)) / 1e7;
-            const ffMcapCr = (ffMcapMapRef.current.get(d.ticker) ?? mcapMapRef.current.get(d.ticker) ?? 0) / 1e7;
-            const dar = ffMcapCr > 0 ? parseFloat(((deliveryValueCr / ffMcapCr) * 100).toFixed(4)) : 0;
+  // Mount
+  useEffect(() => {
+    mountedRef.current = true;
+    fetchScanStatus();
+    return () => { mountedRef.current = false; clearPolling(); };
+  }, [fetchScanStatus, clearPolling]);
 
-            const relativeStrength = parseFloat((pChange - niftyChangePct).toFixed(2));
-            const high52w = d.high_52w || d.latest_close;
-            const low52w = d.low_52w || d.latest_close;
-            const position52W = high52w > low52w
-                ? parseFloat(((d.latest_close - low52w) / (high52w - low52w) * 100).toFixed(1))
-                : 50;
-            const nearEarnings = earningsProximitySet.has(d.ticker);
+  const isStale = scanStatus?.last_scan && (Date.now() - new Date(scanStatus.last_scan).getTime() > 30 * 60 * 1000);
 
-            const meta = metadataMap.get(d.ticker) || { sector: 'Unknown', bucket: 'Deep Frontier' };
+  return (
+    <main className="bg-[#1e2028] border border-[#ffffff1a] rounded flex flex-col shadow-xl overflow-hidden flex-1 min-h-0 min-h-[600px]" aria-label="Price-Delivery Divergence Scanner">
+      {/* Header */}
+      <header className="px-6 py-4 border-b border-[#ffffff1a] flex justify-between items-center bg-[#1a1c24]">
+        <div className="flex items-center gap-3">
+          <GitCompare size={20} className="text-orange-400" aria-hidden="true" />
+          <h1 className="font-semibold text-[#fafafa] flex items-center gap-2 text-base">
+            Price-Delivery Divergence
+          </h1>
+          <span className="text-[12px] text-[#888] font-mono">Backend Scanner</span>
+          {error && (
+            <span className="text-[12px] bg-red-500/20 text-red-500 px-2 py-1 rounded font-mono border border-red-500/30 flex items-center gap-1" role="alert">
+              <AlertTriangle size={10} aria-hidden="true" /> {error}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-[12px] text-[#888] font-mono">
+            {scanStatus?.last_scan ? `Last: ${relativeTime(scanStatus.last_scan)}` : 'Never scanned'}
+            {isStale && <span className="text-yellow-500 ml-1">(stale)</span>}
+          </span>
+          <HistoricalScanDatePicker value={scanDate} onChange={setScanDate} />
+          <button
+            onClick={clearCache}
+            className="bg-[#2a2c34] hover:bg-[#3a3c44] text-[#aaa] hover:text-white px-2 py-1 rounded border border-[#ffffff1a] transition-all text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50"
+          >
+            Clear cache
+          </button>
+          <button
+            onClick={handleCSV}
+            disabled={filteredData.length === 0}
+            className="bg-[#2a2c34] hover:bg-[#3a3c44] text-[#aaa] hover:text-white px-2 py-1 rounded border border-[#ffffff1a] transition-all flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50"
+          >
+            <span>↓ CSV</span>
+          </button>
+          <button
+            onClick={startScan}
+            disabled={isScanning}
+            className="bg-[#2a2c34] hover:bg-[#3a3c44] text-[#aaa] hover:text-white px-3 py-1.5 rounded border border-[#ffffff1a] transition-all flex items-center gap-1.5 disabled:opacity-50 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50"
+          >
+            <RefreshCw size={12} className={isScanning ? "animate-spin" : ""} aria-hidden="true" />
+            {isScanning ? `Scanning... ${scanStatus?.progress ?? 0}%` : 'Scan'}
+          </button>
+          <button
+            onClick={() => { const n = !filtersVisible; setFiltersVisible(n); localStorage.setItem('pdd_filters_visible', String(n)); }}
+            className={`px-2.5 py-1 rounded text-[12px] font-mono border transition-all flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
+              filtersVisible
+                ? 'bg-[#2a2c34] border-[#ffffff3a] text-[#ccc]'
+                : 'bg-[#2a2c34] border-[#ffffff1a] text-[#888]'
+            }`}
+            title="Toggle filter controls"
+          >
+            Filters <ChevronDown size={12} className={`transition-transform ${filtersVisible ? '' : '-rotate-90'}`} aria-hidden="true" />
+          </button>
+        </div>
+      </header>
 
-            // Trigger / SL / Target / R:R
-            const latestClose = d.latest_close;
-            const baseLen = d.detected_base_length;
-            const baseHigh = baseLen === 5  ? d.base_high_5  :
-                             baseLen === 10 ? d.base_high_10 :
-                             baseLen === 21 ? d.base_high_21 :
-                                               d.base_high_45;
-            const baseLow  = baseLen === 5  ? d.base_low_5   :
-                             baseLen === 10 ? d.base_low_10  :
-                             baseLen === 21 ? d.base_low_21  :
-                                               d.base_low_45;
-
-            const baseMidpoint = (baseHigh + baseLow) / 2;
-            const baseRangePct = baseMidpoint > 0
-                ? ((baseHigh - baseLow) / baseMidpoint) * 100
-                : 0;
-            const baseTightness = Math.round(Math.max(0, Math.min(100,
-                100 - (baseRangePct / 20 * 100)
-            )));
-
-            const atrBuffer = d.atr_14 > 0 ? d.atr_14 : latestClose * 0.005;
-
-            const triggerPrice  = parseFloat((baseHigh + atrBuffer).toFixed(2));
-            const stopLossPrice = parseFloat((baseLow  - atrBuffer).toFixed(2));
-            const risk  = triggerPrice - stopLossPrice;
-            let targetPrice: number, riskReward: number;
-            if (priceDirection === 'Falling') {
-                targetPrice = parseFloat((triggerPrice + risk * 2).toFixed(2));
-                riskReward = (latestClose > stopLossPrice && risk > 0)
-                    ? parseFloat(((targetPrice - latestClose) / (latestClose - stopLossPrice)).toFixed(2))
-                    : 0;
-            } else {
-                targetPrice = parseFloat((triggerPrice - risk * 2).toFixed(2));
-                riskReward = (latestClose < triggerPrice && risk > 0)
-                    ? parseFloat(((latestClose - targetPrice) / (triggerPrice - latestClose)).toFixed(2))
-                    : 0;
-            }
-
-            const alreadyTriggered = priceDirection === 'Falling'
-                ? latestClose >= triggerPrice
-                : latestClose <= triggerPrice;
-
-            // Score components
-            const score_p = Math.max(0, Math.min(100, Math.log1p(Math.abs(pChange)) / Math.log1p(15) * 100));
-            const score_d = deliveryMetric === 'Pct'
-              ? Math.max(0, Math.min(100, dChange / 30 * 100))
-              : Math.max(0, Math.min(100, dChange / 200 * 100));
-            const score_v = Math.max(0, Math.min(100, rVol / 2 * 100));
-
-            let wP = 0.35, wD = 0.35, wV = 0.15, wT = 0.15;
-            if (scoreWeighting === 'Price')    { wP = 0.45; wD = 0.25; wV = 0.15; wT = 0.15; }
-            if (scoreWeighting === 'Delivery') { wP = 0.25; wD = 0.45; wV = 0.15; wT = 0.15; }
-
-            const score_dar_bonus = dar > 0 ? Math.round(Math.min(10, (dar / 2) * 10)) : 0;
-            const score = Math.round(wP * score_p + wD * score_d + wV * score_v + wT * baseTightness) + score_dar_bonus;
-
-            let signalBadge: string;
-            if (score >= 80 && dar >= 1) signalBadge = 'A';
-            else if (score >= 60) signalBadge = 'B';
-            else if (score >= 40) signalBadge = 'C';
-            else signalBadge = 'D';
-
-            results.push({
-                symbol: d.ticker,
-                sector: meta.sector,
-                bucket: meta.bucket,
-                priceChangePct: pChange,
-                deliveryChangePct: dChange,
-                relativeVolume: rVol,
-                relativeStrength,
-                position52W,
-                score,
-                consecutiveHighDeliveryDays: d.consecutiveHighDeliveryDays,
-                detectedBaseLength: d.detected_base_length,
-                triggerPrice,
-                stopLossPrice,
-                targetPrice,
-                riskReward,
-                latestClose,
-                baseTightness,
-                dar,
-                alreadyTriggered,
-                nearEarnings,
-                latestDeliveryPct: d.latest_delivery_pct,
-                signalBadge
-            });
-        });
-
-        return results;
-    }, [rawData, priceMetric, deliveryMetric, priceDirection, niftyChangePct, earningsProximitySet, metadataMap, scoreWeighting]);
-
-    // Filter enriched data by slider/button controls (cheap — runs on every slider change)
-    const filteredData = useMemo(() => {
-        return enrichedData.filter(d => {
-            if (priceDirection === 'Falling' && d.priceChangePct > minPriceChange) return false;
-            if (priceDirection === 'Rising' && d.priceChangePct < minPriceChange) return false;
-            if (priceDirection === 'Falling' && d.deliveryChangePct < minDeliveryChange) return false;
-            if (priceDirection === 'Rising' && d.deliveryChangePct > minDeliveryChange) return false;
-            if (d.latestDeliveryPct < minAbsDeliveryPct) return false;
-            if (minConsecutiveDays > 0 && d.consecutiveHighDeliveryDays < minConsecutiveDays) return false;
-            if (d.relativeVolume < minRelativeVolume) return false;
-            if (minDAR > 0 && d.dar < minDAR) return false;
-            if (d.score < minScore) return false;
-            if (d.riskReward < minRR) return false;
-            if (filterSector !== 'All' && d.sector !== filterSector) return false;
-            if (filterMcap !== 'All' && d.bucket !== filterMcap) return false;
-            if (mcapRange) {
-                const mcap = mcapMapRef.current.get(d.symbol);
-                if (mcap === undefined || mcap < mcapRange.min || mcap > mcapRange.max) return false;
-            }
-            if (filterRSNegative && d.relativeStrength >= 0) return false;
-            if (d.position52W > maxPosition52W) return false;
-            if (showWatchlistOnly && !watchlist.has(d.symbol)) return false;
-            if (hideNearEarnings && d.nearEarnings) return false;
-            return true;
-        });
-    }, [enrichedData, priceDirection, minPriceChange, minDeliveryChange, minAbsDeliveryPct, minConsecutiveDays, minRelativeVolume, minDAR, minScore, minRR, filterSector, filterMcap, mcapRange, filterRSNegative, maxPosition52W, showWatchlistOnly, watchlist, hideNearEarnings]);
-
-    useEffect(() => {
-        if (filteredData.length === 0) return;
-        const currentSymbols = new Set(filteredData.map(d => d.symbol));
-        const stored = sessionStorage.getItem('prev_divergence_scan');
-        const prevSymbols: Set<string> = stored
-            ? new Set(JSON.parse(stored))
-            : new Set();
-        const newOnes = new Set<string>();
-        currentSymbols.forEach(s => {
-            if (!prevSymbols.has(s)) newOnes.add(s);
-        });
-        setNewSymbols(newOnes);
-        setPreviousSymbols(prevSymbols);
-        sessionStorage.setItem('prev_divergence_scan', JSON.stringify(Array.from(currentSymbols)));
-    }, [filteredData]);
-
-    const sortedData = useMemo(() => {
-        let data = showNewOnly
-            ? filteredData.filter(d => newSymbols.has(d.symbol))
-            : filteredData;
-        if (!sortConfig) return data;
-        return [...data].sort((a, b) => {
-            const aVal = a[sortConfig.key];
-            const bVal = b[sortConfig.key];
-            if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
-            if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
-            return 0;
-        });
-    }, [filteredData, sortConfig, showNewOnly, newSymbols]);
-
-    const handleSort = (key: keyof ScannerData) => {
-        setSortConfig(prev => {
-            if (!prev) return { key, direction: 'desc' };
-            return {
-                key,
-                direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc'
-            };
-        });
-    };
-
-    const SortIcon = ({ column }: { column: keyof ScannerData }) => {
-        if (sortConfig?.key !== column) return <ArrowUpDown size={10} className="inline ml-1 opacity-30" />;
-        return sortConfig.direction === 'asc' 
-            ? <ChevronUp size={10} className="inline ml-1 text-orange-400" /> 
-            : <ChevronDown size={10} className="inline ml-1 text-orange-400" />;
-    };
-
-    const exportCSV = useCallback(() => {
-        if (sortedData.length === 0) return;
-        const headers = ['Symbol', 'Sector', 'Bucket', 'Price Change%', 'RS vs N50', 'Del Change', 'DAR %', 'Consec Days', 'Base', 'Tightness', '52W Pos', 'Rel Vol', 'Score', 'Signal', 'Trigger', 'SL', 'R:R'];
-        const rows = sortedData.map(d => [
-            d.symbol,
-            d.sector,
-            d.bucket,
-            d.priceChangePct.toFixed(2),
-            d.relativeStrength.toFixed(2),
-            d.deliveryChangePct.toFixed(1),
-            d.dar.toFixed(4),
-            d.consecutiveHighDeliveryDays,
-            `${d.detectedBaseLength}d`,
-            d.baseTightness,
-            d.position52W.toFixed(1),
-            d.relativeVolume.toFixed(2),
-            d.score,
-            d.signalBadge,
-            d.triggerPrice.toFixed(2),
-            d.stopLossPrice.toFixed(2),
-            d.riskReward.toFixed(2)
-        ]);
-        const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `divergence_scan_${new Date().toISOString().slice(0, 10)}.csv`;
-        a.click();
-        URL.revokeObjectURL(url);
-    }, [sortedData]);
-
-    const summaries = useMemo(() => {
-        if (filteredData.length === 0) return { avgScore: 0, avgDel: 0, avgRR: 0, avgDAR: 0 };
-        const sumScore = filteredData.reduce((acc, v) => acc + v.score, 0);
-        const sumDel = filteredData.reduce((acc, v) => acc + v.deliveryChangePct, 0);
-        const sumRR = filteredData.reduce((acc, v) => acc + v.riskReward, 0);
-        const validDAR = filteredData.filter(v => v.dar > 0);
-        const avgDAR = validDAR.length > 0
-            ? parseFloat((validDAR.reduce((a, v) => a + v.dar, 0) / validDAR.length).toFixed(3))
-            : 0;
-        return {
-            avgScore: Math.round(sumScore / filteredData.length),
-            avgDel: sumDel / filteredData.length,
-            avgRR: sumRR / filteredData.length,
-            avgDAR
-        };
-    }, [filteredData]);
-
-    return (
-        <main className="bg-[#1e2028] border border-[#ffffff1a] rounded flex flex-col shadow-xl overflow-hidden flex-1 min-h-0 min-h-[600px]" aria-label="Price-Delivery Divergence Scanner">
-            {/* Header */}
-            <header className="px-6 py-4 border-b border-[#ffffff1a] flex justify-between items-center bg-[#1a1c24]">
-                <div className="flex items-center gap-3">
-                    <GitCompare size={20} className="text-orange-400" aria-hidden="true" />
-                    <h1 className="font-semibold text-[#fafafa] flex items-center gap-2 text-base">
-                        Price-Delivery Divergence
-                    </h1>
-                    <div className="flex gap-2 items-center">
-                        {errorMsg && (
-                            <span className="text-[12px] bg-red-500/20 text-red-500 px-2 py-1 rounded font-mono border border-red-500/30 flex items-center gap-1" role="alert">
-                                <AlertTriangle size={10} aria-hidden="true" /> {errorMsg}
-                            </span>
-                        )}
-                        {isDemo && !isConnected && (
-                            <span className="text-[12px] bg-yellow-500/20 text-yellow-500 px-2 py-1 rounded font-mono border border-yellow-500/30" role="status">
-                                ⚠️ SIMULATED PIPELINE
-                            </span>
-                        )}
-                    </div>
-                </div>
-                <div className="flex items-center gap-3">
-                    <span className="text-[12px] text-[#888] font-mono">Dynamic Accumulation Logic</span>
-                    <button
-                        onClick={exportCSV}
-                        disabled={sortedData.length === 0}
-                        className="bg-[#2a2c34] hover:bg-[#3a3c44] text-[#aaa] hover:text-white px-2 py-1 rounded border border-[#ffffff1a] transition-all flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50"
-                        aria-label="Export data as CSV"
-                    >
-                        <span className="text-xs">↓ CSV</span>
-                    </button>
-                    <button 
-                        onClick={fetchData} 
-                        className="bg-[#2a2c34] hover:bg-[#3a3c44] text-[#aaa] hover:text-white px-2 py-1 rounded border border-[#ffffff1a] transition-all flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50"
-                        disabled={isLoading}
-                        aria-label={isLoading ? 'Syncing, please wait' : 'Sync database'}
-                    >
-                        <RefreshCw size={12} className={isLoading ? "animate-spin" : ""} aria-hidden="true" />
-                        <span className="text-xs">Sync DB</span>
-                    </button>
-                    <button
-                        onClick={() => { const n = !filtersVisible; setFiltersVisible(n); localStorage.setItem('pdd_filters_visible', String(n)); }}
-                        className={`px-2.5 py-1 rounded text-[12px] font-mono border transition-all flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
-                            filtersVisible
-                                ? 'bg-[#2a2c34] border-[#ffffff3a] text-[#ccc]'
-                                : 'bg-[#2a2c34] border-[#ffffff1a] text-[#888]'
-                        }`}
-                        title="Toggle filter controls"
-                        aria-label="Toggle filter controls"
-                        aria-expanded={filtersVisible}
-                    >
-                        Filters <ChevronDown size={12} className={`transition-transform ${filtersVisible ? '' : '-rotate-90'}`} aria-hidden="true" />
-                    </button>
-                </div>
-            </header>
-
-            {/* Settings Panel */}
-            {filtersVisible && (
-                <section className="bg-[#15171d] border-b border-[#ffffff1a] p-4 flex flex-col gap-4" aria-label="Filter settings">
-                    <PresetChip
-                        module="PriceDeliveryDivergence"
-                        currentConfig={{
-                            lookbackBars, priceMetric, deliveryMetric, priceDirection,
-                            minPriceChange, minDeliveryChange, minRelativeVolume, minScore,
-                            scoreWeighting, filterSector, filterMcap, minAbsDeliveryPct,
-                            minConsecutiveDays, minRR, minDAR, maxPosition52W, filterRSNegative
-                        }}
-                        onLoad={(config) => {
-                            const c = config as DivergenceConfig;
-                            setLookbackBars(c.lookbackBars);
-                            setPriceMetric(c.priceMetric);
-                            setDeliveryMetric(c.deliveryMetric);
-                            setPriceDirection(c.priceDirection);
-                            setMinPriceChange(c.minPriceChange);
-                            setMinDeliveryChange(c.minDeliveryChange);
-                            setMinRelativeVolume(c.minRelativeVolume);
-                            setMinScore(c.minScore);
-                            setScoreWeighting(c.scoreWeighting);
-                            setFilterSector(c.filterSector);
-                            setFilterMcap(c.filterMcap);
-                            setMinAbsDeliveryPct(c.minAbsDeliveryPct ?? 0);
-                            setMinConsecutiveDays(c.minConsecutiveDays ?? 0);
-                            setMinRR(c.minRR ?? 0);
-                            setMinDAR(c.minDAR ?? 0);
-                            setMaxPosition52W(c.maxPosition52W ?? 100);
-                            setFilterRSNegative(c.filterRSNegative ?? false);
-                        }}
-                    />
-                    <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-9 gap-4 items-end">
-                        <div className="flex flex-col">
-                           <label className="text-[12px] text-[#888] font-mono mb-1 text-nowrap" id="lookback-label">Lookback Period</label>
-                           <select value={lookbackBars} onChange={(e) => setLookbackBars(Number(e.target.value))} className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] focus:border-orange-500 outline-none w-full focus-visible:ring-2 focus-visible:ring-orange-500/50" aria-labelledby="lookback-label">
-                               <option value={5}>1 Week</option>
-                               <option value={10}>2 Weeks</option>
-                               <option value={21}>1 Month</option>
-                               <option value={63}>1 Quarter</option>
-                               <option value={126}>6 Months</option>
-                               <option value={252}>1 Year</option>
-                           </select>
-                        </div>
-                        <div className="flex flex-col">
-                           <label className="text-[12px] text-[#888] font-mono mb-1" id="price-metric-label">Price Metric</label>
-                           <select value={priceMetric} onChange={(e) => setPriceMetric(e.target.value as 'Close' | 'VWAP' | 'Typical')} className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] focus:border-orange-500 outline-none w-full focus-visible:ring-2 focus-visible:ring-orange-500/50" aria-labelledby="price-metric-label">
-                               <option value="Close">Close</option>
-                               <option value="VWAP">VWAP</option>
-                               <option value="Typical">Typical Price</option>
-                           </select>
-                        </div>
-                        <div className="flex flex-col">
-                           <label className="text-[12px] text-[#888] font-mono mb-1 text-nowrap" id="delivery-metric-label">Delivery Metric</label>
-                           <select value={deliveryMetric} onChange={(e) => setDeliveryMetric(e.target.value as 'Pct' | 'Qty')} className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] focus:border-orange-500 outline-none w-full focus-visible:ring-2 focus-visible:ring-orange-500/50" aria-labelledby="delivery-metric-label">
-                               <option value="Pct">Delivery %</option>
-                               <option value="Qty">Delivery Qty</option>
-                           </select>
-                        </div>
-                        <div className="flex flex-col">
-                           <label className="text-[12px] text-[#888] font-mono mb-1 text-nowrap" id="price-action-label">Price Action</label>
-                           <select value={priceDirection} onChange={(e) => {
-                               const dir = e.target.value as 'Falling' | 'Rising';
-                               setPriceDirection(dir);
-                               if (dir === 'Rising' && minPriceChange < 0) setMinPriceChange(Math.abs(minPriceChange));
-                               if (dir === 'Falling' && minPriceChange > 0) setMinPriceChange(-Math.abs(minPriceChange));
-                           }} className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] focus:border-orange-500 outline-none w-full focus-visible:ring-2 focus-visible:ring-orange-500/50" aria-labelledby="price-action-label">
-                               <option value="Falling">Falling</option>
-                               <option value="Rising">Rising</option>
-                           </select>
-                        </div>
-                        
-                        <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
-                           <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
-                                <label id="min-price-label">Min Price {priceDirection === 'Rising' ? 'Increase' : 'Decline'} %</label>
-                                <span className="text-orange-400">{minPriceChangeDisplay}%</span>
-                            </div>
-                             <input type="range" min={priceDirection === 'Rising' ? 0 : -30} max={priceDirection === 'Rising' ? 30 : 0} value={minPriceChangeDisplay} onChange={(e) => { const v = Number(e.target.value); setMinPriceChangeDisplay(v); setMinPriceChangeDebounced(v); }} className="w-full accent-orange-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50" aria-labelledby="min-price-label" />
-                        </div>
-                        
-                        <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
-                           <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
-                                <label id="min-del-label">Min Del Change {deliveryMetric === 'Pct' ? 'pp' : '%'}</label>
-                                <span className="text-orange-400">{minDeliveryChangeDisplay}%</span>
-                            </div>
-                            <input type="range" min="-10" max="50" value={minDeliveryChangeDisplay} onChange={(e) => { const v = Number(e.target.value); setMinDeliveryChangeDisplay(v); setMinDeliveryChangeDebounced(v); }} className="w-full accent-orange-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50" aria-labelledby="min-del-label" />
-                        </div>
-
-                        <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
-                            <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
-                                <label id="min-abs-del-label">Min Abs Delivery %</label>
-                                <span className="text-orange-400">{minAbsDeliveryPct}%</span>
-                            </div>
-                            <input type="range" min="0" max="80" step="1" value={minAbsDeliveryPct} onChange={(e) => setMinAbsDeliveryPct(Number(e.target.value))} className="w-full accent-orange-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50" aria-labelledby="min-abs-del-label" />
-                        </div>
-
-                        <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
-                            <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
-                                <label id="min-consec-label">Min Consec. Sessions ≥40% Del</label>
-                                <span className="text-orange-400">{minConsecutiveDays === 0 ? 'Off' : `${minConsecutiveDays}+`}</span>
-                            </div>
-                            <input type="range" min="0" max="5" step="1" value={minConsecutiveDays} onChange={(e) => setMinConsecutiveDays(Number(e.target.value))} className="w-full accent-orange-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50" aria-labelledby="min-consec-label" />
-                        </div>
-
-                        <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
-                            <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
-                                <label id="min-rr-label">Min R:R Ratio</label>
-                                <span className="text-orange-400">{minRR === 0 ? 'Off' : minRR.toFixed(1)}</span>
-                            </div>
-                            <input type="range" min="0" max="5" step="0.5" value={minRR} onChange={(e) => setMinRR(Number(e.target.value))} className="w-full accent-orange-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50" aria-labelledby="min-rr-label" />
-                        </div>
-
-                        <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
-                            <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
-                                <label id="max-52w-label">Max 52W Position %</label>
-                                <span className="text-orange-400">{maxPosition52W === 100 ? 'All' : `<${maxPosition52W}%`}</span>
-                            </div>
-                            <input type="range" min="10" max="100" step="5" value={maxPosition52W} onChange={(e) => setMaxPosition52W(Number(e.target.value))} className="w-full accent-orange-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50" aria-labelledby="max-52w-label" />
-                        </div>
-
-                        <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
-                            <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
-                                <label id="rs-label">RS vs N50</label>
-                            </div>
-                            <button
-                                onClick={() => setFilterRSNegative(prev => !prev)}
-                                className={`text-[12px] px-2 py-1 rounded border transition-colors font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
-                                    filterRSNegative
-                                        ? 'bg-orange-500/20 border-orange-500/50 text-orange-400'
-                                        : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888]'
-                                }`}
-                                aria-pressed={filterRSNegative}
-                                aria-label={filterRSNegative ? 'Show all stocks' : 'Filter negative RS only'}
-                            >
-                                {filterRSNegative ? 'Negative Only' : 'All Stocks'}
-                            </button>
-                        </div>
-
-                        <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
-                            <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
-                                <label id="results-zone-label">Results Zone</label>
-                            </div>
-                            <button
-                                onClick={() => setHideNearEarnings(f => !f)}
-                                className={`text-[12px] px-2 py-1 rounded border transition-colors font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
-                                    hideNearEarnings
-                                        ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400'
-                                        : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888]'
-                                }`}
-                                aria-pressed={hideNearEarnings}
-                                aria-label={hideNearEarnings ? 'Show all results' : 'Hide results zone'}
-                            >
-                                {hideNearEarnings ? 'Hide Results-Zone' : 'Show All'}
-                            </button>
-                        </div>
-
-                        <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
-                            <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
-                                <label id="watchlist-label">Watchlist</label>
-                            </div>
-                            <button
-                                onClick={() => setShowWatchlistOnly(f => !f)}
-                                className={`text-[12px] px-2 py-1 rounded border transition-colors font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
-                                    showWatchlistOnly
-                                        ? 'bg-orange-500/20 border-orange-500/50 text-orange-400'
-                                        : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888]'
-                                }`}
-                                aria-pressed={showWatchlistOnly}
-                                aria-label={showWatchlistOnly ? 'Show all symbols' : 'Show watchlist only'}
-                            >
-                                ★ {watchlist.size}
-                            </button>
-                        </div>
-
-                        <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
-                            <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
-                                <label id="new-signals-label">New Signals</label>
-                            </div>
-                            <button
-                                onClick={() => setShowNewOnly(f => !f)}
-                                className={`text-[12px] px-2 py-1 rounded border transition-colors font-mono flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
-                                    showNewOnly
-                                        ? 'bg-orange-500/20 border-orange-500/50 text-orange-400'
-                                        : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888]'
-                                }`}
-                                aria-pressed={showNewOnly}
-                                aria-label={showNewOnly ? 'Show all symbols' : 'Show new signals only'}
-                            >
-                                <span className={showNewOnly ? 'animate-pulse' : ''}>●</span>
-                                New ({newSymbols.size})
-                            </button>
-                        </div>
-
-                        <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
-                            <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
-                                <label id="min-rel-vol-label">Min Rel Volume</label>
-                                <span className="text-orange-400">{minRelativeVolumeDisplay}x</span>
-                            </div>
-                            <input type="range" min="0" max="5" step="0.1" value={minRelativeVolumeDisplay} onChange={(e) => { const v = Number(e.target.value); setMinRelativeVolumeDisplay(v); setMinRelativeVolumeDebounced(v); }} className="w-full accent-orange-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50" aria-labelledby="min-rel-vol-label" />
-                        </div>
-
-                        <div className="flex flex-col col-span-1 md:col-span-2 lg:col-span-1">
-                            <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
-                                <label id="min-dar-label">Min DAR %</label>
-                                <span className="text-orange-400">
-                                    {minDAR === 0 ? 'Off' : `≥${minDAR}%`}
-                                </span>
-                            </div>
-                            <input
-                                type="range" min="0" max="5" step="0.1"
-                                value={minDAR}
-                                onChange={(e) => setMinDAR(Number(e.target.value))}
-                                className="w-full accent-orange-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50"
-                                aria-labelledby="min-dar-label"
-                            />
-                        </div>
-
-                        <div className="flex flex-col">
-                           <label className="text-[12px] text-[#888] font-mono mb-1 text-nowrap" id="weighting-label">Score Weighting</label>
-                           <select value={scoreWeighting} onChange={(e) => setScoreWeighting(e.target.value as 'Balanced' | 'Price' | 'Delivery')} className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] focus:border-orange-500 outline-none w-full focus-visible:ring-2 focus-visible:ring-orange-500/50" aria-labelledby="weighting-label">
-                               <option value="Balanced">Balanced</option>
-                               <option value="Price">Price-heavy</option>
-                               <option value="Delivery">Delivery-heavy</option>
-                           </select>
-                        </div>
-                        <div className="flex flex-col">
-                           <div className="flex justify-between text-[12px] text-[#888] font-mono mb-0.5">
-                                <label id="min-score-label">Min Score</label>
-                                <span className="text-orange-400">{minScoreDisplay}</span>
-                            </div>
-                            <input type="range" min="0" max="100" value={minScoreDisplay} onChange={(e) => { const v = Number(e.target.value); setMinScoreDisplay(v); setMinScoreDebounced(v); }} className="w-full accent-orange-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50" aria-labelledby="min-score-label" />
-                        </div>
-                    </div>
-                </section>
-            )}
-
-            {/* Summaries & Filters Row */}
-            <section className="grid grid-cols-1 md:grid-cols-[1fr_min-content] gap-4 p-4 border-b border-[#ffffff1a] bg-[#1a1c24]" aria-label="Summary statistics" role="status" aria-live="polite">
-                <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
-                    <div className="bg-[#2a2c34] border border-[#ffffff1a] rounded p-3 flex flex-col justify-center">
-                        <span className="text-xs text-[#888] font-mono mb-1">Divergence Signals</span>
-                        <div className="flex items-end gap-2">
-                            <span className="text-2xl text-orange-400 font-semibold">{filteredData.length}</span>
-                            {newSymbols.size > 0 && (
-                                <span className="text-sm text-orange-400/70 font-mono mb-0.5">+{newSymbols.size} new</span>
-                            )}
-                        </div>
-                    </div>
-                    <div className="bg-[#2a2c34] border border-[#ffffff1a] rounded p-3 flex flex-col justify-center">
-                        <span className="text-xs text-[#888] font-mono mb-1">Average Score</span>
-                        <span className="text-2xl text-[#fafafa] font-semibold">{summaries.avgScore}</span>
-                    </div>
-                    <div className="bg-[#2a2c34] border border-[#ffffff1a] rounded p-3 flex flex-col justify-center">
-                        <span className="text-xs text-[#888] font-mono mb-1">Avg Delivery Change</span>
-                        <span className="text-2xl text-[#fafafa] font-semibold">{summaries.avgDel > 0 ? '+' : ''}{summaries.avgDel.toFixed(1)}%</span>
-                    </div>
-                    <div className="bg-[#2a2c34] border border-[#ffffff1a] rounded p-3 flex flex-col justify-center">
-                        <span className="text-xs text-[#888] font-mono mb-1">Avg DAR</span>
-                        <span className={`text-2xl font-semibold ${
-                            summaries.avgDAR >= 2   ? 'text-orange-400' :
-                            summaries.avgDAR >= 0.5 ? 'text-green-400' : 'text-[#fafafa]'
-                        }`}>
-                            {summaries.avgDAR > 0 ? `${summaries.avgDAR.toFixed(2)}%` : '—'}
-                        </span>
-                    </div>
-                    <div className="bg-[#2a2c34] border border-[#ffffff1a] rounded p-3 flex flex-col justify-center">
-                        <span className="text-xs text-[#888] font-mono mb-1">Avg R:R Ratio</span>
-                        <span className={`text-2xl font-semibold ${summaries.avgRR >= 2 ? 'text-green-400' : summaries.avgRR >= 1 ? 'text-yellow-400' : 'text-[#888]'}`}>{summaries.avgRR.toFixed(2)}</span>
-                    </div>
-                </div>
-                <div className="flex flex-wrap gap-3 items-end">
-                      <div className="flex flex-col">
-                         <label className="text-[12px] text-[#888] font-mono mb-1">Sector Filter</label>
-                         <select value={filterSector} onChange={(e) => setFilterSector(e.target.value)} className="bg-[#2a2c34] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] focus:border-orange-500 outline-none w-full">
-                             <option value="All">All Sectors</option>
-                             {uniqueSectors.map(s => <option key={s} value={s}>{s}</option>)}
-                         </select>
-                      </div>
-                      <div className="flex flex-col">
-                         <label className="text-[12px] text-[#888] font-mono mb-1">Mcap Filter</label>
-                         <select value={filterMcap} onChange={(e) => setFilterMcap(e.target.value)} className="bg-[#2a2c34] border border-[#ffffff1a] rounded px-2 py-1 text-xs text-[#fafafa] focus:border-orange-500 outline-none w-full">
-                             <option value="All">All Caps</option>
-                             <option value="Large Cap (N50)">Large Cap (N50)</option>
-                             <option value="Large Cap (N100)">Large Cap (N100)</option>
-                             <option value="Nifty Small Cap 250">Small Cap (N250)</option>
-                             <option value="Broader Market (N500)">Broader Market (N500)</option>
-                             <option value="Deep Frontier">Deep Frontier</option>
-                         </select>
-                      </div>
-                      <div className="max-w-[280px] flex-shrink-0">
-                          <MarketCapRangeFilter onChange={setMcapRange} />
-                       </div>
-                 </div>
-             </section>
-
-            {/* Table */}
-            <div className="flex-1 min-h-0 overflow-hidden rounded">
-                {isLoading ? (
-                    <div className="p-8 text-center text-[#888] font-mono text-xs flex flex-col items-center justify-center h-64 gap-4" role="status" aria-live="polite">
-                        <RefreshCw className="animate-spin text-orange-500/50" size={24} aria-hidden="true" />
-                        Syncing prices & delivery...
-                    </div>
-                ) : (
-                    <ScrollableTable>
-                        <table className="w-full min-w-max whitespace-nowrap text-left border-collapse">
-                            <thead className="sticky top-0 bg-[#1a1c24] z-10 shadow-sm border-b border-[#ffffff1a]">
-                            <tr className="bg-[#1a1c24] border-b border-[#ffffff1a]">
-                                <th colSpan={17} className="p-1 text-[12px] text-[#888] font-mono text-left" scope="colgroup">
-                                    <span className="text-[#888]">Nifty50</span>{' '}
-                                    <span className={niftyChangePct >= 0 ? 'text-green-400' : 'text-red-400'}>
-                                        {niftyChangePct >= 0 ? '+' : ''}{niftyChangePct.toFixed(2)}%
-                                    </span>
-                                </th>
-                            </tr>
-                            <tr>
-                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'symbol' ? 'text-white' : ''}`} onClick={() => handleSort('symbol')} scope="col" aria-sort={sortConfig?.key === 'symbol' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                                    Symbol <SortIcon column="symbol" />
-                                </th>
-                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'sector' ? 'text-white' : ''}`} onClick={() => handleSort('sector')} scope="col" aria-sort={sortConfig?.key === 'sector' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                                    Sector <SortIcon column="sector" />
-                                </th>
-                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'bucket' ? 'text-white' : ''}`} onClick={() => handleSort('bucket')} scope="col" aria-sort={sortConfig?.key === 'bucket' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                                    Bucket <SortIcon column="bucket" />
-                                </th>
-                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'priceChangePct' ? 'text-white' : ''}`} onClick={() => handleSort('priceChangePct')} scope="col" aria-sort={sortConfig?.key === 'priceChangePct' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                                    Price Change % <SortIcon column="priceChangePct" />
-                                </th>
-                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'relativeStrength' ? 'text-white' : ''}`} onClick={() => handleSort('relativeStrength')} scope="col" aria-sort={sortConfig?.key === 'relativeStrength' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                                    RS vs N50 <SortIcon column="relativeStrength" />
-                                </th>
-                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'deliveryChangePct' ? 'text-white' : ''}`} onClick={() => handleSort('deliveryChangePct')} scope="col" aria-sort={sortConfig?.key === 'deliveryChangePct' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                                    Del Change <SortIcon column="deliveryChangePct" />
-                                </th>
-                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'dar' ? 'text-white' : ''}`} onClick={() => handleSort('dar')} scope="col" aria-sort={sortConfig?.key === 'dar' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                                    DAR % <SortIcon column="dar" />
-                                </th>
-                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'consecutiveHighDeliveryDays' ? 'text-white' : ''}`} onClick={() => handleSort('consecutiveHighDeliveryDays')} scope="col" aria-sort={sortConfig?.key === 'consecutiveHighDeliveryDays' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                                    Consec. Days <SortIcon column="consecutiveHighDeliveryDays" />
-                                </th>
-                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'detectedBaseLength' ? 'text-white' : ''}`} onClick={() => handleSort('detectedBaseLength')} scope="col" aria-sort={sortConfig?.key === 'detectedBaseLength' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                                    Base <SortIcon column="detectedBaseLength" />
-                                </th>
-                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'baseTightness' ? 'text-white' : ''}`} onClick={() => handleSort('baseTightness')} scope="col" aria-sort={sortConfig?.key === 'baseTightness' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                                    Tightness <SortIcon column="baseTightness" />
-                                </th>
-                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'position52W' ? 'text-white' : ''}`} onClick={() => handleSort('position52W')} scope="col" aria-sort={sortConfig?.key === 'position52W' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                                    52W Pos <SortIcon column="position52W" />
-                                </th>
-                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'relativeVolume' ? 'text-white' : ''}`} onClick={() => handleSort('relativeVolume')} scope="col" aria-sort={sortConfig?.key === 'relativeVolume' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                                    Rel Volume <SortIcon column="relativeVolume" />
-                                </th>
-                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'score' ? 'text-white' : ''}`} onClick={() => handleSort('score')} scope="col" aria-sort={sortConfig?.key === 'score' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                                    Score <SortIcon column="score" />
-                                </th>
-                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'signalBadge' ? 'text-white' : ''}`} onClick={() => handleSort('signalBadge')} scope="col" aria-sort={sortConfig?.key === 'signalBadge' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                                    Signal <SortIcon column="signalBadge" />
-                                </th>
-                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'triggerPrice' ? 'text-white' : ''}`} onClick={() => handleSort('triggerPrice')} scope="col" aria-sort={sortConfig?.key === 'triggerPrice' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                                    Trigger <SortIcon column="triggerPrice" />
-                                </th>
-                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'stopLossPrice' ? 'text-white' : ''}`} onClick={() => handleSort('stopLossPrice')} scope="col" aria-sort={sortConfig?.key === 'stopLossPrice' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                                    SL <SortIcon column="stopLossPrice" />
-                                </th>
-                                <th className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50 ${sortConfig?.key === 'riskReward' ? 'text-white' : ''}`} onClick={() => handleSort('riskReward')} scope="col" aria-sort={sortConfig?.key === 'riskReward' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                                    R:R <SortIcon column="riskReward" />
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {sortedData.length === 0 ? (
-                                <tr>
-                                        <td colSpan={17} className="p-8 text-center text-[#888] font-mono text-xs">
-                                        No divergence signals match your strict criteria.
-                                    </td>
-                                </tr>
-                            ) : (
-                                (() => {
-                                    const MAX_ROWS = 500;
-                                    const displayData = sortedData.slice(0, MAX_ROWS);
-                                    const overflow = sortedData.length > MAX_ROWS;
-                                    return (
-                                        <>
-                                            {overflow && (
-                                                <tr>
-                                                    <td colSpan={17} className="px-3 py-1.5 text-[12px] text-center text-yellow-500 font-mono bg-yellow-500/5 border-b border-yellow-500/20" role="status">
-                                                        Showing top {MAX_ROWS} of {sortedData.length} signals — tighten filters to see all
-                                                    </td>
-                                                </tr>
-                                            )}
-                                            {displayData.map(d => (
-                                                <tr key={d.symbol} className="border-b border-[#ffffff0a] hover:bg-[#ffffff05] transition-colors group">
-                                                    <td className="p-3 whitespace-nowrap" scope="row">
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); toggleWatchlist(d.symbol); }}
-                                                            className={`transition-colors mr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 ${
-                                                                watchlist.has(d.symbol)
-                                                                    ? 'text-orange-400' : 'text-[#888] hover:text-[#888]'
-                                                            }`}
-                                                            title={watchlist.has(d.symbol) ? 'Remove from watchlist' : 'Add to watchlist'}
-                                                            aria-label={watchlist.has(d.symbol) ? `Remove ${d.symbol} from watchlist` : `Add ${d.symbol} to watchlist`}
-                                                        >
-                                                            ★
-                                                        </button>
-                                                        <span 
-                                                            onClick={() => window.open(`/#/chart?symbol=${encodeURIComponent(d.symbol)}`, '_blank')}
-                                                            className="font-bold text-[#fafafa] cursor-pointer hover:text-orange-400 hover:underline inline-flex items-center gap-1 transition-colors"
-                                                        >
-                                                            {d.symbol}
-                                                        </span>
-                                                        {d.alreadyTriggered && priceDirection === 'Falling' && (
-                                                            <span className="text-[12px] bg-green-500/20 text-green-400 px-1 rounded border border-green-500/30 font-mono ml-1">
-                                                                TRIGGERED
-                                                            </span>
-                                                        )}
-                                                        {d.alreadyTriggered && priceDirection === 'Rising' && (
-                                                            <span className="text-[12px] bg-yellow-500/20 text-yellow-400 px-1 rounded border border-yellow-500/30 font-mono ml-1">
-                                                                STILL RUNNING
-                                                            </span>
-                                                        )}
-                                                        {d.nearEarnings && (
-                                                            <span className="text-[12px] bg-yellow-500/20 text-yellow-400 px-1 rounded border border-yellow-500/30 font-mono ml-1" title="Quarterly results due within 10 days — delivery signal may be noise">
-                                                                ⚠ RESULTS
-                                                            </span>
-                                                        )}
-                                                        {newSymbols.has(d.symbol) && (
-                                                            <span className="text-[12px] bg-orange-500/20 text-orange-400 px-1 rounded border border-orange-500/30 font-mono ml-1 animate-pulse">
-                                                                NEW
-                                                            </span>
-                                                        )}
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); setBacktestSymbol(d.symbol); }}
-                                                            className="opacity-0 group-hover:opacity-100 transition-opacity text-[#888] hover:text-orange-400 ml-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50"
-                                                            title="Backtest this symbol"
-                                                            aria-label={`Backtest ${d.symbol}`}
-                                                        >
-                                                            <BarChart2 size={12} aria-hidden="true" />
-                                                        </button>
-                                                    </td>
-                                                    <td className="p-3 text-[#ccc] text-sm whitespace-nowrap">{d.sector}</td>
-                                                    <td className="p-3 text-[#888] text-xs font-mono whitespace-nowrap">{d.bucket}</td>
-                                                    <td className="p-3 text-sm font-mono whitespace-nowrap text-right"><span className={d.priceChangePct >= 0 ? "text-green-400" : "text-red-400"}>{d.priceChangePct > 0 ? "+" : ""}{d.priceChangePct.toFixed(2)}%</span></td>
-                                                    <td className={`p-3 text-sm font-mono whitespace-nowrap text-right ${d.relativeStrength >= 0 ? 'text-[#22c55e]' : 'text-[#ef4444]'}`}>{d.relativeStrength >= 0 ? '+' : ''}{d.relativeStrength.toFixed(2)}%</td>
-                                                    <td className="p-3 text-sm font-mono whitespace-nowrap text-right"><span className={d.deliveryChangePct >= 0 ? "text-green-400" : "text-red-400"}>{d.deliveryChangePct > 0 ? "+" : ""}{d.deliveryChangePct.toFixed(1)}%</span></td>
-                                                    <td className="p-3 text-xs font-mono whitespace-nowrap text-right">
-                                                        <span className={
-                                                            d.dar >= 2   ? 'text-orange-400 font-bold' :
-                                                            d.dar >= 0.5 ? 'text-green-400' :
-                                                            d.dar >= 0.1 ? 'text-[#fafafa]' :
-                                                            d.dar > 0    ? 'text-[#888]' : 'text-[#888]'
-                                                        }>
-                                                            {d.dar > 0 ? `${d.dar.toFixed(2)}%` : '—'}
-                                                        </span>
-                                                    </td>
-                                                    <td className="p-3 text-sm font-mono whitespace-nowrap text-right">
-                                                        <span className={
-                                                            d.consecutiveHighDeliveryDays >= 3 ? 'text-orange-400 font-bold' :
-                                                            d.consecutiveHighDeliveryDays >= 1 ? 'text-[#fafafa]' : 'text-[#888]'
-                                                        }>
-                                                            {d.consecutiveHighDeliveryDays > 0 ? `${d.consecutiveHighDeliveryDays}d` : '—'}
-                                                        </span>
-                                                    </td>
-                                                    <td className="p-3 text-xs font-mono whitespace-nowrap text-right">
-                                                        <span className={`
-                                                            ${d.detectedBaseLength === 45 ? 'text-orange-400 font-bold' : 
-                                                              d.detectedBaseLength === 21 ? 'text-yellow-400' : 'text-[#888]'}
-                                                        `}>
-                                                            {d.detectedBaseLength}d
-                                                        </span>
-                                                    </td>
-                                                    <td className="p-3 text-xs font-mono whitespace-nowrap text-right">
-                                                        <span className={
-                                                            d.baseTightness >= 75 ? 'text-green-400 font-bold' :
-                                                            d.baseTightness >= 50 ? 'text-[#fafafa]' : 'text-[#888]'
-                                                        }>
-                                                            {d.baseTightness}
-                                                        </span>
-                                                    </td>
-                                                    <td className="p-3 text-xs font-mono whitespace-nowrap text-right text-[#888]">{d.position52W.toFixed(1)}%</td>
-                                                    <td className="p-3 text-sm font-mono whitespace-nowrap text-right"><span className={d.relativeVolume > 1.5 ? "text-orange-400" : "text-[#aaa]"}>{d.relativeVolume.toFixed(2)}x</span></td>
-                                                    <td className="p-3 w-48">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className={`text-sm font-mono w-8 text-right font-semibold ${d.score >= 80 ? 'text-orange-400' : d.score >= 50 ? 'text-[#fafafa]' : 'text-[#888]'}`}>
-                                                                {d.score}
-                                                            </span>
-                                                            <div className="flex-1 h-1.5 bg-[#ffffff1a] rounded overflow-hidden">
-                                                                <div className={`h-full bg-orange-500 rounded ${d.score >= 80 ? 'shadow-[0_0_8px_rgba(249,115,22,0.5)]' : ''}`} style={{ width: `${Math.max(0, Math.min(100, d.score))}%` }} />
-                                                            </div>
-                                                        </div>
-                                                    </td>
-                                                    <td className="p-3 whitespace-nowrap">
-                                                        <span className={`text-[12px] font-bold px-1.5 py-0.5 rounded font-mono ${
-                                                            d.signalBadge === 'A' ? 'bg-green-500/20 text-green-400 border border-green-500/30' :
-                                                            d.signalBadge === 'B' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' :
-                                                            d.signalBadge === 'C' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' :
-                                                            'bg-red-500/20 text-red-400 border border-red-500/30'
-                                                        }`}>
-                                                            {d.signalBadge}
-                                                        </span>
-                                                    </td>
-                                                    <td className="p-3 text-sm font-mono whitespace-nowrap text-right text-[#fafafa]">{d.triggerPrice.toFixed(2)}</td>
-                                                    <td className="p-3 text-sm font-mono whitespace-nowrap text-right text-red-400">{d.stopLossPrice.toFixed(2)}</td>
-                                                    <td className="p-3 text-sm font-mono whitespace-nowrap text-right">
-                                                        <span className={d.riskReward >= 2 ? 'text-green-400 font-bold' : d.riskReward >= 1 ? 'text-yellow-400' : 'text-[#888]'}>
-                                                            {d.riskReward.toFixed(2)}
-                                                        </span>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </>
-                                    );
-                                })()
-                            )}
-                        </tbody>
-                    </table>
-                    </ScrollableTable>
-                )}
+      {/* Filter Panel */}
+      {filtersVisible && (
+        <section className="bg-[#15171d] border-b border-[#ffffff1a] p-4 flex flex-col gap-4" aria-label="Scanner parameters">
+          <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-8 gap-4 items-end">
+            {/* Horizon presets */}
+            <div className="flex flex-col">
+              <label className="text-[12px] text-[#888] font-mono mb-1">Horizon (backtested)</label>
+              <div className="flex gap-1">
+                {['60d', '120d', '180d'].map(h => (
+                  <button key={h} onClick={() => applyHorizon(h)}
+                    className={`px-2 py-1 text-[12px] rounded font-mono transition-colors ${
+                      horizon === h ? 'bg-orange-600 text-white' : 'bg-[#ffffff0a] text-[#888] hover:text-white'
+                    }`}>
+                    {h}
+                  </button>
+                ))}
+                <button onClick={() => applyHorizon(null)}
+                  className={`px-2 py-1 text-[12px] rounded font-mono transition-colors ${
+                    horizon === null ? 'bg-orange-600 text-white' : 'bg-[#ffffff0a] text-[#888] hover:text-white'
+                  }`}>
+                  Custom
+                </button>
+              </div>
             </div>
-            {backtestSymbol && (() => {
-                const row = sortedData.find(d => d.symbol === backtestSymbol);
-                if (!row) return null;
-                return (
-                    <BacktestPanel
-                        lib={lib}
-                        symbol={row.symbol}
-                        entryPrice={row.triggerPrice}
-                        stopLossPrice={row.stopLossPrice}
-                        detectedBaseLength={row.detectedBaseLength}
-                        minDeliveryChange={minDeliveryChange}
-                        deliveryMetric={deliveryMetric}
-                        onClose={() => setBacktestSymbol(null)}
-                    />
-                );
-            })()}
-        </main>
-    );
+
+            {/* Price lookback */}
+            <div className="flex flex-col">
+              <label className="text-[12px] text-[#888] font-mono mb-1">Price Lookback (days)</label>
+              <input type="number" min={3} max={60} value={priceLookback}
+                disabled={horizon !== null}
+                onChange={e => setPriceLookback(Number(e.target.value))}
+                className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] font-mono focus:border-orange-500 outline-none w-24 disabled:opacity-40"
+              />
+            </div>
+
+            {/* Delivery period */}
+            <div className="flex flex-col">
+              <label className="text-[12px] text-[#888] font-mono mb-1">Delivery Period (days)</label>
+              <input type="number" min={2} max={30} value={deliveryPeriod}
+                disabled={horizon !== null}
+                onChange={e => setDeliveryPeriod(Number(e.target.value))}
+                className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] font-mono focus:border-orange-500 outline-none w-24 disabled:opacity-40"
+              />
+            </div>
+
+            {/* Delivery threshold */}
+            <div className="flex flex-col">
+              <label className="text-[12px] text-[#888] font-mono mb-1">Del Threshold (%)</label>
+              <input type="number" min={0} max={20} step={0.5} value={deliveryThreshold}
+                disabled={horizon !== null}
+                onChange={e => setDeliveryThreshold(Number(e.target.value))}
+                className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] font-mono focus:border-orange-500 outline-none w-24 disabled:opacity-40"
+              />
+            </div>
+
+            {/* Market cap */}
+            <div className="max-w-[220px] flex-shrink-0">
+              <MarketCapRangeFilter onChange={setMcapRange} />
+            </div>
+
+            {/* Min abs delivery */}
+            <div className="flex flex-col">
+              <label className="text-[12px] text-[#888] font-mono mb-1">Min Del %</label>
+              <input type="number" min={0} max={80} step={1} value={minAbsDeliveryPct}
+                onChange={e => setMinAbsDeliveryPct(Number(e.target.value))}
+                className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] font-mono focus:border-orange-500 outline-none w-24"
+              />
+            </div>
+
+            {/* Min ADTV */}
+            <div className="flex flex-col">
+              <label className="text-[12px] text-[#888] font-mono mb-1">Min ADTV (₹ Cr)</label>
+              <input type="number" min={0} max={100} step={0.5} value={minAdtvCr}
+                onChange={e => setMinAdtvCr(Number(e.target.value))}
+                className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] font-mono focus:border-orange-500 outline-none w-24"
+              />
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Summaries + display filters */}
+      <section className="grid grid-cols-1 md:grid-cols-[1fr_min-content] gap-4 p-4 border-b border-[#ffffff1a] bg-[#1a1c24]" role="status" aria-live="polite">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+          <div className="bg-[#2a2c34] border border-[#ffffff1a] rounded p-3 flex flex-col justify-center">
+            <span className="text-xs text-[#888] font-mono mb-1">Divergence Signals</span>
+            <span className="text-2xl text-orange-400 font-semibold">{filteredData.length}</span>
+          </div>
+          <div className="bg-[#2a2c34] border border-[#ffffff1a] rounded p-3 flex flex-col justify-center">
+            <span className="text-xs text-[#888] font-mono mb-1">Avg Score</span>
+            <span className="text-2xl text-[#fafafa] font-semibold">{summaries.avgScore}</span>
+          </div>
+          <div className="bg-[#2a2c34] border border-[#ffffff1a] rounded p-3 flex flex-col justify-center">
+            <span className="text-xs text-[#888] font-mono mb-1">Avg Del Change</span>
+            <span className="text-2xl text-[#fafafa] font-semibold">{summaries.avgDelChange > 0 ? '+' : ''}{summaries.avgDelChange.toFixed(1)}pp</span>
+          </div>
+          <div className="bg-[#2a2c34] border border-[#ffffff1a] rounded p-3 flex flex-col justify-center">
+            <span className="text-xs text-[#888] font-mono mb-1">Avg Price Dist</span>
+            <span className="text-2xl text-[#fafafa] font-semibold">{summaries.avgDist.toFixed(1)}%</span>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-3 items-end">
+          <div className="flex flex-col">
+            <label className="text-[12px] text-[#888] font-mono mb-1">Min Score</label>
+            <input type="range" min={0} max={50} value={minScore}
+              onChange={e => setMinScore(Number(e.target.value))}
+              className="w-24 accent-orange-500" />
+            <span className="text-[12px] text-orange-400 font-mono text-center">{minScore || 'Off'}</span>
+          </div>
+          <div className="flex flex-col">
+            <label className="text-[12px] text-[#888] font-mono mb-1">Min Del Change</label>
+            <input type="range" min={0} max={20} value={minDeliveryChange}
+              onChange={e => setMinDeliveryChange(Number(e.target.value))}
+              className="w-24 accent-orange-500" />
+            <span className="text-[12px] text-orange-400 font-mono text-center">{minDeliveryChange ? `≥${minDeliveryChange}pp` : 'Off'}</span>
+          </div>
+          <button
+            onClick={() => setWatchlistOnly(f => !f)}
+            className={`text-[12px] px-2 py-1 rounded border transition-colors font-mono ${
+              watchlistOnly ? 'bg-orange-500/20 border-orange-500/50 text-orange-400' : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888]'
+            }`}
+          >
+            ★ Watchlist
+          </button>
+        </div>
+      </section>
+
+      {/* Table */}
+      <div className="flex-1 min-h-0 overflow-hidden rounded">
+        {isScanning && scanStatus?.progress !== undefined && scanStatus.progress < 100 ? (
+          <div className="p-8 text-center text-[#888] font-mono text-xs flex flex-col items-center justify-center h-64 gap-4" role="status">
+            <RefreshCw className="animate-spin text-orange-500/50" size={24} />
+            <div>{scanStatus.message || 'Scanning...'}</div>
+            <div className="w-48 h-2 bg-[#ffffff1a] rounded overflow-hidden">
+              <div className="h-full bg-orange-500 rounded transition-all" style={{ width: `${scanStatus.progress}%` }} />
+            </div>
+          </div>
+        ) : (
+          <ScrollableTable>
+            <table className="w-full min-w-max whitespace-nowrap text-left border-collapse">
+              <thead className="sticky top-0 bg-[#1a1c24] z-10 shadow-sm border-b border-[#ffffff1a]">
+                <tr>
+                  {([
+                    ['symbol', 'Symbol'],
+                    ['close', 'Close'],
+                    ['low_in_window', 'Low'],
+                    ['price_dist_pct', 'Dist%'],
+                    ['latest_del_pct', 'Del%'],
+                    ['delivery_change', 'Del Chg'],
+                    ['divergence_strength', 'Strength'],
+                    ['score', 'Score'],
+                    ['horizon', 'Horizon'],
+                    ['price_lookback', 'LB'],
+                    ['delivery_period', 'DP'],
+                    ['delivery_threshold', 'Thr'],
+                  ] as [string, string][]).map(([col, label]) => (
+                    <th key={col}
+                      className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap${['close','low_in_window','price_dist_pct','latest_del_pct','delivery_change','divergence_strength','score'].includes(col) ? ' text-right' : ''}`}
+                      onClick={() => handleSort(col)}
+                      scope="col"
+                    >
+                      {label} <SortIcon column={col} />
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredData.length === 0 ? (
+                  <tr>
+                    <td colSpan={12} className="p-8 text-center text-[#888] font-mono text-xs">
+                      {scanStatus ? 'No divergence signals match your filters.' : 'Click Scan to find divergence signals.'}
+                    </td>
+                  </tr>
+                ) : (
+                  filteredData.slice(0, 500).map(d => (
+                    <tr key={d.symbol} className="border-b border-[#ffffff0a] hover:bg-[#ffffff05] transition-colors group">
+                      <td className="p-3 whitespace-nowrap" scope="row">
+                        <span
+                          onClick={() => window.open(`/#/chart?symbol=${encodeURIComponent(d.symbol)}`, '_blank')}
+                          className="font-bold text-[#fafafa] cursor-pointer hover:text-orange-400 hover:underline inline-flex items-center gap-1 transition-colors"
+                        >
+                          {d.symbol}
+                          <ArrowUpRight size={10} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </span>
+                      </td>
+                      <td className="p-3 text-sm font-mono whitespace-nowrap text-right text-[#fafafa]">{d.close.toFixed(2)}</td>
+                      <td className="p-3 text-sm font-mono whitespace-nowrap text-right text-[#888]">{d.low_in_window.toFixed(2)}</td>
+                      <td className="p-3 text-sm font-mono whitespace-nowrap text-right">
+                        <span className={d.price_dist_pct <= 1 ? 'text-green-400 font-bold' : d.price_dist_pct <= 3 ? 'text-yellow-400' : 'text-[#888]'}>
+                          {d.price_dist_pct.toFixed(1)}%
+                        </span>
+                      </td>
+                      <td className="p-3 text-sm font-mono whitespace-nowrap text-right text-[#fafafa]">{d.latest_del_pct.toFixed(1)}%</td>
+                      <td className="p-3 text-sm font-mono whitespace-nowrap text-right">
+                        <span className={d.delivery_change >= 0 ? 'text-green-400' : 'text-red-400'}>
+                          {d.delivery_change > 0 ? '+' : ''}{d.delivery_change.toFixed(1)}
+                        </span>
+                      </td>
+                      <td className="p-3 text-sm font-mono whitespace-nowrap text-right text-[#fafafa]">{d.divergence_strength.toFixed(2)}</td>
+                      <td className="p-3 w-36">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-sm font-mono w-8 text-right font-semibold ${d.score >= 15 ? 'text-orange-400' : d.score >= 8 ? 'text-[#fafafa]' : 'text-[#888]'}`}>
+                            {d.score.toFixed(1)}
+                          </span>
+                          <div className="flex-1 h-1.5 bg-[#ffffff1a] rounded overflow-hidden">
+                            <div className="h-full bg-orange-500 rounded" style={{ width: `${Math.min(100, d.score * 4)}%` }} />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-3 text-xs font-mono whitespace-nowrap text-[#888]">{d.horizon}</td>
+                      <td className="p-3 text-xs font-mono whitespace-nowrap text-right text-[#888]">{d.price_lookback}d</td>
+                      <td className="p-3 text-xs font-mono whitespace-nowrap text-right text-[#888]">{d.delivery_period}d</td>
+                      <td className="p-3 text-xs font-mono whitespace-nowrap text-right text-[#888]">{d.delivery_threshold}%</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </ScrollableTable>
+        )}
+      </div>
+    </main>
+  );
 }

@@ -794,6 +794,86 @@ register_scanner(
 
 
 # ---------------------------------------------------------------------------
+# Delivery Divergence Scanner
+# ---------------------------------------------------------------------------
+def _dd_parse(payload: dict):
+    price_lookback = int(payload.get("price_lookback", 20))
+    delivery_period = int(payload.get("delivery_period", 10))
+    delivery_threshold = float(payload.get("delivery_threshold", 1.0))
+    min_mcap = float(payload.get("min_mcap", 200))
+    max_mcap = float(payload.get("max_mcap", 50000))
+    horizon = payload.get("horizon", None)
+    if horizon and horizon not in ("60d", "120d", "180d"):
+        horizon = None
+    min_abs_delivery_pct = float(payload.get("min_abs_delivery_pct", 0.0))
+    min_adtv_cr = float(payload.get("min_adtv_cr", 0.0))
+    raw_date = payload.get("scan_date", "")
+    if raw_date and str(raw_date).strip():
+        scan_date = _get_latest_trading_day_before(str(raw_date).strip())
+    else:
+        scan_date = None
+    return (
+        {
+            "price_lookback": price_lookback,
+            "delivery_period": delivery_period,
+            "delivery_threshold": delivery_threshold,
+            "min_mcap": min_mcap,
+            "max_mcap": max_mcap,
+            "horizon": horizon,
+            "min_abs_delivery_pct": min_abs_delivery_pct,
+            "min_adtv_cr": min_adtv_cr,
+        },
+        scan_date,
+    )
+
+
+def _dd_build(kwargs, scan_date):
+    from myra_app.strategies.delivery_divergence_scanner import DeliveryDivergenceScanner
+
+    return DeliveryDivergenceScanner(**kwargs)
+
+
+register_scanner(
+    "delivery-divergence",
+    state_template={
+        "scan_status": "idle",
+        "last_scan": None,
+        "progress": 0,
+        "message": "Idle — click Scan to start",
+        "candidates": [],
+        "scanned_date": None,
+    },
+    cache_file="delivery_divergence_cache.json",
+    parse_payload=_dd_parse,
+    build_scanner=_dd_build,
+    result_mode="df",
+    status_extra="scanned_date",
+    init_message="Initialising Delivery Divergence scanner...",
+    label="Delivery Divergence",
+)
+
+
+@router.get("/delivery-divergence/defaults")
+async def delivery_divergence_defaults():
+    """Return backend default parameter values for the Delivery Divergence scanner."""
+    return {
+        "price_lookback": 20,
+        "delivery_period": 10,
+        "delivery_threshold": 1.0,
+        "min_mcap": 200,
+        "max_mcap": 50000,
+        "horizon": None,
+        "min_abs_delivery_pct": 0.0,
+        "min_adtv_cr": 0.0,
+        "horizon_presets": {
+            "60d": {"price_lookback": 20, "delivery_period": 10, "delivery_threshold": 1.0},
+            "120d": {"price_lookback": 10, "delivery_period": 5, "delivery_threshold": 0.0},
+            "180d": {"price_lookback": 10, "delivery_period": 5, "delivery_threshold": 1.0},
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
 # Launchpad Scanner (custom: in-memory predictions, no cache file)
 # ---------------------------------------------------------------------------
 
@@ -1121,6 +1201,7 @@ _ALLOWED_CACHE_CLEAR = {
     "bottom-hunter",
     "climax-accumulation",
     "dcb-bargain",
+    "delivery-divergence",
 }
 
 
