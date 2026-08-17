@@ -73,15 +73,11 @@ async def execute_query(req: QueryRequest, _=Depends(verify_myra_auth)):
     if not db_file:
         raise HTTPException(status_code=400, detail=f"Unknown database: {req.db}")
 
-    db_path = os.path.join(DB_DIR, db_file)
-    if not os.path.exists(db_path):
-        raise HTTPException(
-            status_code=400, detail=f"Database file not found: {db_file}"
-        )
-
     sql = req.query
 
     # --- Reject SELECT * on wide tables (technical_data, fundamentals) ---
+    # Must happen BEFORE the DB existence check so the query is rejected
+    # regardless of whether the database file exists on this machine.
     if canonical_key in ("technical", "valuation"):
         if re.search(r"^\s*select\s+\*", sql, re.IGNORECASE | re.MULTILINE):
             raise HTTPException(
@@ -89,6 +85,12 @@ async def execute_query(req: QueryRequest, _=Depends(verify_myra_auth)):
                 detail="SELECT * is not allowed on wide tables (technical_data, fundamentals). "
                 "List columns explicitly or add a LIMIT.",
             )
+
+    db_path = os.path.join(DB_DIR, db_file)
+    if not os.path.exists(db_path):
+        raise HTTPException(
+            status_code=400, detail=f"Database file not found: {db_file}"
+        )
 
     # --- Enforce LIMIT cap for read queries ---
     _read_prefixes = ("SELECT", "PRAGMA", "WITH", "EXPLAIN")
