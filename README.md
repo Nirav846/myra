@@ -3,7 +3,7 @@
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://python.org)
 [![React 19](https://img.shields.io/badge/react-19-61dafb.svg)](https://react.dev)
 [![SQLite](https://img.shields.io/badge/sqlite-wal%20mode-003b57.svg)](https://sqlite.org)
-[![Tests](https://img.shields.io/badge/tests-85%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-312%20passing-brightgreen.svg)](tests/)
 [![CI](https://github.com/Nirav846/myra/actions/workflows/ci.yml/badge.svg)](https://github.com/Nirav846/myra/actions)
 
 MYRA is a comprehensive stock screening and analysis platform for the National Stock Exchange (NSE) of India. It combines daily automated data ingestion, Smart Money Concepts (SMC) enrichment, institutional tracking, a suite of quantitative scanners, ML-based breakout prediction, and an interactive React frontend — all running locally with SQLite.
@@ -59,7 +59,7 @@ myra_technical.db (enriched)                   │
 - **Automated daily backups** — All 8 databases backed up daily with rotation; WAL checkpoints before copy.
 - **Background orchestration** — Daemon threads for DB Doctor audit, stale-database catch-up, and scheduled pipeline tasks.
 - **Interactive frontend** — React 19 + TypeScript with Plotly charts, sector flow analysis, leaderboards, and preset scanner controls.
-- **85-test suite + CI** — pytest suite covers core scoring functions; GitHub Actions runs on every push/PR.
+- **312-test suite + CI** — pytest suite covers core scoring functions; GitHub Actions runs on every push/PR.
 
 ## Tech Stack
 
@@ -156,7 +156,7 @@ myra/
 │   ├── enrich_history.py         # Batch enrichment backfill
 │   ├── db_doctor.py              # Schema/data quality audit
 │   └── ...
-├── tests/                        # 85-test pytest suite
+├── tests/                        # 312-test pytest suite
 ├── docs/                         # Documentation
 │   └── screenshots/              # Screenshot images (add your own)
 ├── models/                       # Trained ML models + scanner caches
@@ -310,7 +310,7 @@ All 8 SQLite databases reside in `myra_app/db/` and are referenced exclusively v
 # Run the full test suite
 pytest tests/ -v
 
-# Expected output: 85 passed
+# Expected output: 312 passed
 
 # Verify Python syntax (enforced for PRs)
 python -c "import ast; ast.parse(open('myra_app/strategies/trigger_scanner.py').read()); print('OK')"
@@ -320,7 +320,7 @@ The CI pipeline (`.github/workflows/ci.yml`) runs on every push/PR to `main`:
 - Ubuntu latest
 - Python 3.12
 - `pip install -r requirements.txt`
-- `pytest tests/ -v` (85 tests)
+- `pytest tests/ -v` (312 tests)
 
 ## Screenshots
 
