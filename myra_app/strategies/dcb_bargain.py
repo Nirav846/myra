@@ -112,11 +112,12 @@ class DCBBargainScanner:
                         (symbol, min_date),
                     ).fetchall()
             except sqlite3.OperationalError:
+                # Fallback for older DBs without delivery_pct column
                 if max_date:
                     rows = conn.execute(
                         """
                         SELECT date, open, high, low, close, volume, delivery,
-                               delivery_pct
+                               NULL AS delivery_pct
                         FROM technical_data
                         WHERE symbol = ? AND date >= ? AND date <= ?
                         ORDER BY date ASC
@@ -127,7 +128,7 @@ class DCBBargainScanner:
                     rows = conn.execute(
                         """
                         SELECT date, open, high, low, close, volume, delivery,
-                               delivery_pct
+                               NULL AS delivery_pct
                         FROM technical_data
                         WHERE symbol = ? AND date >= ?
                         ORDER BY date ASC
