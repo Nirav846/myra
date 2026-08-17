@@ -230,6 +230,7 @@ def _ih_parse(payload: dict):
     window = int(payload.get("window", 20))
     hist_window = int(payload.get("hist_window", 60))
     min_ih_score = int(payload.get("min_ih_score", 35))
+    corporate_actions_exclude_days = int(payload.get("corporate_actions_exclude_days", 0))
     raw_date = payload.get("scan_date", "")
     if raw_date and str(raw_date).strip():
         effective_date = _get_latest_trading_day_before(str(raw_date).strip())
@@ -245,6 +246,7 @@ def _ih_parse(payload: dict):
             "hist_window": hist_window,
             "min_ih_score": min_ih_score,
             "target_date": effective_date,
+            "corporate_actions_exclude_days": corporate_actions_exclude_days,
         },
         effective_date,
     )

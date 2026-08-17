@@ -31,6 +31,7 @@ class InvisibleHandScanner:
         hist_window=60,
         min_ih_score=35,
         target_date: Optional[str] = None,
+        corporate_actions_exclude_days: int = 0,
     ):
         self.min_mcap = min_mcap
         self.max_mcap = max_mcap
@@ -38,6 +39,7 @@ class InvisibleHandScanner:
         self.hist_window = hist_window
         self.min_ih_score = min_ih_score
         self.target_date = target_date
+        self.corporate_actions_exclude_days = corporate_actions_exclude_days
 
     def _db_path(self, key: str) -> str:
         return os.path.join(DB_DIR, LibrarianCore.DB_MAP[key])
@@ -587,4 +589,40 @@ class InvisibleHandScanner:
         logger.info(
             "Invisible Hand scan complete: %d candidates found", len(candidates)
         )
+
+        # Corporate action filter
+        candidates = self._filter_corporate_actions(candidates, as_on_date)
+
         return pd.DataFrame(candidates)
+
+    def _filter_corporate_actions(self, candidates: list[dict], as_on_date: str) -> list[dict]:
+        """Remove symbols with bonus/split/rights in the last N days."""
+        if self.corporate_actions_exclude_days <= 0 or not candidates:
+            return candidates
+        try:
+            inst_db = self._db_path("institutional")
+            if not os.path.exists(inst_db):
+                return candidates
+            cutoff = (
+                pd.Timestamp(as_on_date) - pd.Timedelta(days=self.corporate_actions_exclude_days)
+            ).strftime("%Y-%m-%d")
+            syms = [c["symbol"] for c in candidates]
+            placeholders = ",".join("?" for _ in syms)
+            with sqlite3.connect(inst_db) as conn:
+                rows = conn.execute(
+                    f"""
+                    SELECT DISTINCT symbol FROM corporate_actions
+                    WHERE symbol IN ({placeholders})
+                      AND action_type IN ('Bonus', 'Split', 'Rights', 'Bonus Issue',
+                                          'Stock Split', 'Rights Issue')
+                      AND ex_date >= ?
+                    """,
+                    (*syms, cutoff),
+                ).fetchall()
+            excluded = {r[0] for r in rows}
+            if excluded:
+                logger.info("CA filter: excluding %d symbols with recent actions", len(excluded))
+            return [c for c in candidates if c["symbol"] not in excluded]
+        except Exception as e:
+            logger.warning("CA filter failed: %s", e)
+            return candidates
