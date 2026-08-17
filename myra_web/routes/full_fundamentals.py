@@ -290,6 +290,74 @@ def compute_piotroski_score(data: dict) -> dict:
 
 
 # --------------------------------------------------------------------------- #
+# Two-Stage DCF Intrinsic Value
+# --------------------------------------------------------------------------- #
+
+def compute_dcf(data: dict) -> dict:
+    """Two-stage Discounted Cash Flow model.
+
+    Projects free cash flows for 5 years at a growth rate, then applies
+    a Gordon-growth terminal value.  Returns
+    ``{fair_value, margin_of_safety, discount_rate, terminal_growth}``
+    or ``None`` when inputs are insufficient.
+    """
+    ydata = data.get("yfinance", {}) or {}
+    snapshot = data.get("snapshot", {}) or {}
+
+    fcf = ydata.get("free_cashflow")
+    shares = ydata.get("shares_outstanding")
+    total_debt = ydata.get("total_debt")
+    total_cash = ydata.get("total_cash")
+    close = ydata.get("current_price") or snapshot.get("current_price")
+
+    if not all(v is not None and v > 0 for v in (fcf, shares)):
+        return None
+    if close is None or close <= 0:
+        return None
+
+    # Growth rate: prefer revenue growth, fall back to earnings growth, else 5%
+    growth = ydata.get("revenue_growth") or ydata.get("earnings_growth")
+    if growth is None or growth <= 0:
+        growth = 0.05
+    # Cap growth at 25% (conservative)
+    growth = min(growth, 0.25)
+
+    wacc = 0.10          # 10% discount rate for Indian equities
+    terminal_g = 0.03    # 3% perpetual growth
+    horizon = 5          # high-growth years
+
+    # Project FCFs for the horizon
+    projected = []
+    current_fcf = fcf
+    for _ in range(horizon):
+        current_fcf *= 1 + growth
+        projected.append(current_fcf)
+
+    # Terminal value (Gordon Growth)
+    terminal_value = projected[-1] * (1 + terminal_g) / (wacc - terminal_g)
+
+    # Discount all cash flows to present value
+    pv = 0.0
+    for i, cf in enumerate(projected, start=1):
+        pv += cf / (1 + wacc) ** i
+    pv += terminal_value / (1 + wacc) ** horizon
+
+    # Add net cash to get equity value
+    net_cash = (total_cash or 0) - (total_debt or 0)
+    equity_value = pv + net_cash
+
+    fair_value = equity_value / shares
+    margin_of_safety = ((fair_value - close) / close) * 100
+
+    return {
+        "fair_value": round(fair_value, 2),
+        "margin_of_safety": round(margin_of_safety, 2),
+        "discount_rate": wacc,
+        "terminal_growth": terminal_g,
+    }
+
+
+# --------------------------------------------------------------------------- #
 # Insights
 # --------------------------------------------------------------------------- #
 
@@ -587,6 +655,29 @@ def generate_insights(data: dict) -> list:
             detail_str,
             p_sev,
         )
+
+    # ------------------------------------------------------------------ #
+    # 17. DCF Intrinsic Value
+    # ------------------------------------------------------------------ #
+    dcf = compute_dcf(data)
+    if dcf is not None:
+        fv = dcf["fair_value"]
+        mos = dcf["margin_of_safety"]
+        close_d = ydata.get("current_price") or snapshot.get("current_price")
+        if close_d and close_d > 0:
+            label = "undervalued" if mos > 0 else "overvalued"
+            if mos > 10:
+                d_sev = "green"
+            elif mos > 0:
+                d_sev = "yellow"
+            else:
+                d_sev = "red"
+            add(
+                "dcf",
+                "DCF fair value",
+                f"DCF intrinsic value: \u20b9{fv:,.0f}; current: \u20b9{close_d:,.0f} \u2192 {mos:+.1f}% {label}.",
+                d_sev,
+            )
 
     return insights
 

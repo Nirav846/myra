@@ -404,6 +404,8 @@ def fetch_yfinance_data(symbol: str) -> dict:
         data["current_ratio"] = g("currentRatio")
         data["total_debt"] = g("totalDebt")
         data["total_cash"] = g("totalCash")
+        data["free_cashflow"] = g("freeCashflow")
+        data["shares_outstanding"] = g("sharesOutstanding", "impliedSharesOutstanding")
         try:
             recs = ticker.recommendations
             if recs is not None and len(recs) > 0:
