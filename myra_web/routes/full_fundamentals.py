@@ -147,6 +147,149 @@ def compute_graham_metrics(data: dict) -> dict:
 
 
 # --------------------------------------------------------------------------- #
+# Piotroski F-Score (6-criterion simplified)
+# --------------------------------------------------------------------------- #
+
+def compute_piotroski_score(data: dict) -> dict:
+    """Compute a simplified Piotroski F-Score from available data.
+
+    Uses ``ticker.info`` for point-in-time criteria (ROA, CFO, earnings
+    quality) and ``ticker.financials`` / ``ticker.balance_sheet`` for the
+    YoY-change criteria (current ratio, leverage, gross margin) so both
+    years are measured on the same basis.
+
+    Returns ``{score, max_score, classification, criteria}`` where *criteria*
+    is a list of ``{name, met, detail}`` dicts.  Returns ``None`` when not
+    enough data is available.
+    """
+    ydata = data.get("yfinance", {}) or {}
+    symbol = data.get("symbol")
+    if not symbol:
+        return None
+
+    try:
+        import yfinance as _yf
+        ticker = _yf.Ticker(symbol.strip().upper() + ".NS")
+    except Exception:
+        return None
+
+    # ---- point-in-time values from ticker.info (already fetched) ----
+    roa = ydata.get("roa")            # returnOnAssets (fraction)
+    cfo = ydata.get("operating_cashflow")
+    net_income = ydata.get("net_income")
+
+    # ---- annual financials + balance sheet for YoY changes ----
+    fin = None
+    bs = None
+    try:
+        fin = ticker.financials
+    except Exception:
+        pass
+    try:
+        bs = ticker.balance_sheet
+    except Exception:
+        pass
+
+    def _col(df, idx_label, col_pos=0):
+        """Safely extract a scalar from a yfinance DataFrame."""
+        if df is None:
+            return None
+        try:
+            row = df.loc[idx_label]
+            if len(row) <= col_pos:
+                return None
+            v = row.iloc[col_pos]
+            if v is None or (hasattr(v, "isna") and v.isna()):
+                return None
+            return float(v)
+        except Exception:
+            return None
+
+    # Current year (index 0) and prior year (index 1) from balance sheet
+    cr_now_bs = _col(bs, "Current Ratio", 0)
+    cr_prev = _col(bs, "Current Ratio", 1)
+
+    de_now_raw = _col(bs, "Total Debt", 0)
+    ta_now = _col(bs, "Total Assets", 0)
+    de_prev_raw = _col(bs, "Total Debt", 1)
+    ta_prev = _col(bs, "Total Assets", 1)
+
+    de_now = (de_now_raw / ta_now) if de_now_raw and ta_now and ta_now != 0 else None
+    de_prev = (de_prev_raw / ta_prev) if de_prev_raw and ta_prev and ta_prev != 0 else None
+
+    # Current year and prior year gross margin from financials
+    gm_now_raw = _col(fin, "Gross Profit", 0)
+    rev_now = _col(fin, "Total Revenue", 0)
+    gm_now = (gm_now_raw / rev_now) if gm_now_raw and rev_now and rev_now != 0 else None
+
+    gm_prev_raw = _col(fin, "Gross Profit", 1)
+    rev_prev = _col(fin, "Total Revenue", 1)
+    gm_prev = (gm_prev_raw / rev_prev) if gm_prev_raw and rev_prev and rev_prev != 0 else None
+
+    # Fall back to ticker.info for current-year values not on balance sheet
+    if cr_now_bs is None:
+        cr_now_bs = ydata.get("current_ratio")
+    if gm_now is None:
+        gm_now = ydata.get("grossMargins")
+
+    # ---- evaluate 6 criteria ----
+    criteria = []
+    score = 0
+
+    def _check(name, met, detail):
+        nonlocal score
+        criteria.append({"name": name, "met": met, "detail": detail})
+        if met:
+            score += 1
+
+    # 1. ROA > 0
+    if roa is not None:
+        _check("ROA positive", roa > 0, f"ROA = {roa * 100:.1f}%")
+
+    # 2. CFO > 0
+    if cfo is not None:
+        _check("CFO positive", cfo > 0, f"CFO = {cfo / 1e7:,.0f} Cr")
+
+    # 3. CFO > Net Income (quality of earnings)
+    if cfo is not None and net_income is not None:
+        _check("CFO > Net Income", cfo > net_income,
+               f"CFO {cfo / 1e7:,.0f} Cr vs NI {net_income / 1e7:,.0f} Cr")
+
+    # 4. Current Ratio improving (YoY)
+    if cr_now_bs is not None and cr_prev is not None:
+        _check("Current ratio improving", cr_now_bs > cr_prev,
+               f"{cr_prev:.2f} -> {cr_now_bs:.2f}")
+
+    # 5. Leverage declining (D/E YoY)
+    if de_now is not None and de_prev is not None:
+        _check("Leverage declining", de_now < de_prev,
+               f"D/E {de_prev:.2f} -> {de_now:.2f}")
+
+    # 6. Gross Margin improving (YoY)
+    if gm_now is not None and gm_prev is not None:
+        _check("Gross margin improving", gm_now > gm_prev,
+               f"{gm_prev * 100:.1f}% -> {gm_now * 100:.1f}%")
+
+    max_score = len(criteria)
+    if max_score == 0:
+        return None
+
+    if score >= 5:
+        classification = "Strong"
+    elif score >= 3:
+        classification = "Moderate"
+    else:
+        classification = "Weak"
+
+    return {
+        "score": score,
+        "max_score": max_score,
+        "classification": classification,
+        "criteria": criteria,
+    }
+
+
+# --------------------------------------------------------------------------- #
 # Insights
 # --------------------------------------------------------------------------- #
 
@@ -414,6 +557,36 @@ def generate_insights(data: dict) -> list:
                 reason + ".",
                 "red",
             )
+
+    # ------------------------------------------------------------------ #
+    # 16. Piotroski F-Score
+    # ------------------------------------------------------------------ #
+    piotroski = compute_piotroski_score(data)
+    if piotroski is not None:
+        sc = piotroski["score"]
+        mx = piotroski["max_score"]
+        cls = piotroski["classification"]
+        met = [c["name"] for c in piotroski["criteria"] if c.get("met")]
+        unmet = [c["detail"] for c in piotroski["criteria"] if not c.get("met")]
+        parts = []
+        if met:
+            parts.append("Pass: " + ", ".join(met))
+        if unmet:
+            parts.append("Fail: " + "; ".join(unmet))
+        detail_str = " | ".join(parts) if parts else f"{sc}/{mx}"
+
+        if sc >= 5:
+            p_sev = "green"
+        elif sc >= 3:
+            p_sev = "yellow"
+        else:
+            p_sev = "red"
+        add(
+            "piotroski",
+            f"Piotroski F-Score: {sc}/{mx} \u2014 {cls}",
+            detail_str,
+            p_sev,
+        )
 
     return insights
 
