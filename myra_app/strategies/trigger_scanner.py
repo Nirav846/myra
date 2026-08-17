@@ -1,5 +1,6 @@
 import logging
 import math
+from myra_app.strategies.scanner_utils import sanitize_float
 import sqlite3
 import os
 import numpy as np
@@ -105,14 +106,7 @@ class TriggerScanner:
 
     @staticmethod
     def _sanitize_float(value):
-        if value is None:
-            return None
-        try:
-            if math.isnan(value) or math.isinf(value):
-                return None
-        except TypeError:
-            pass
-        return value
+        return sanitize_float(value)
 
     def scan(self, as_on_date: str | None = None) -> list[dict]:
         rows = self._get_universe()
