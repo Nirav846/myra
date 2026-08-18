@@ -29,6 +29,7 @@ from myra_web.routes.scanners import router as scanners_router
 from myra_web.routes.query import router as query_router
 from myra_web.routes.confluence import router as confluence_router
 from myra_web.routes.pipeline import router as pipeline_router
+from myra_web.routes.rrg import router as rrg_router
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,7 @@ app.include_router(scanners_router)
 app.include_router(query_router)
 app.include_router(confluence_router)
 app.include_router(pipeline_router)
+app.include_router(rrg_router)
 
 
 # ---------------------------------------------------------------------------
