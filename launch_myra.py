@@ -28,6 +28,12 @@ LOG_DIR = PROJECT_ROOT / "logs" / "launcher"
 PID_FILE = LOG_DIR / "pids.json"
 CREATE_NEW_PROCESS_GROUP = 0x00000200
 
+# Use venv Python directly — run_fastapi.py calls os.execv() which kills
+# the original process and breaks PID tracking. By passing the venv
+# executable, we skip that re-launch.
+VENV_PYTHON = PROJECT_ROOT / "pkscreener_env" / "Scripts" / "python.exe"
+PYTHON_EXE = str(VENV_PYTHON) if VENV_PYTHON.exists() else sys.executable
+
 # ── Logging ──────────────────────────────────────────────────────────────────
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -134,7 +140,7 @@ def main() -> None:
 
     # 3. Start backend
     backend = start_process(
-        [sys.executable, "run_fastapi.py"],
+        [PYTHON_EXE, "run_fastapi.py"],
         PROJECT_ROOT,
         "backend.log",
     )
@@ -148,7 +154,7 @@ def main() -> None:
 
     # 5. Start pipeline
     pipeline = start_process(
-        [sys.executable, "run_pipeline.py"],
+        [PYTHON_EXE, "run_pipeline.py"],
         PROJECT_ROOT,
         "pipeline.log",
     )
