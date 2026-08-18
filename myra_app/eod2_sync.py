@@ -26,10 +26,13 @@ from myra_app.constants import DB_DIR, PROJECT_ROOT
 logger = logging.getLogger(__name__)
 
 # ── Candidate locations for the eod2_data/daily/ folder ──────────────────────
+# BhavDesk syncs NSE data daily into the eod2 submodule.  That is the preferred
+# source (most recent, auto-updated).  The standalone eod2_data/ folder is a
+# legacy fallback.
 _EOD2_DAILY_CANDIDATES = [
-    os.path.join(PROJECT_ROOT, "eod2_data", "daily"),
-    os.path.join(PROJECT_ROOT, "src", "eod2_data", "daily"),
-    r"D:\01screener\Myra\eod2_data\daily",
+    os.path.join(PROJECT_ROOT, "eod2", "src", "eod2_data", "daily"),   # BhavDesk (primary)
+    os.path.join(PROJECT_ROOT, "eod2_data", "daily"),                   # legacy fallback
+    r"D:\01screener\Myra\eod2\src\eod2_data\daily",                    # hard-coded fallback
 ]
 
 
@@ -37,6 +40,7 @@ def _find_eod2_daily() -> str | None:
     """Return the first existing eod2_data/daily/ path, or ``None``."""
     for p in _EOD2_DAILY_CANDIDATES:
         if os.path.isdir(p):
+            logger.info(f"[EOD2] Using data source: {p}")
             return p
     return None
 
