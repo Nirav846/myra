@@ -36,11 +36,19 @@ const QUADRANT_COLORS: Record<string, string> = {
   Improving: '#3b82f6',
 };
 
+const QUADRANT_DESCRIPTIONS: Record<string, string> = {
+  Leading: 'Outperforming, still accelerating',
+  Weakening: 'Outperforming, but momentum fading',
+  Lagging: 'Underperforming, momentum weak',
+  Improving: 'Underperforming, but momentum turning up',
+};
+
 const TRAIL_OPACITY = 0.4;
 const MAX_SECTORS = 25;
 const TIMEFRAMES = ['weekly', 'daily'] as const;
 const TRAIL_OPTIONS = [4, 8, 12, 16, 20];
 const STORAGE_KEY = 'rrg_selected_sectors';
+const EXPLAINER_DISMISSED_KEY = 'rrg_explainer_dismissed';
 
 const DEFAULT_SECTORS = [
   'nifty bank', 'nifty it', 'nifty pharma', 'nifty auto',
@@ -90,6 +98,9 @@ export default function RRGView() {
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const [sectorSearch, setSectorSearch] = useState('');
   const [sectorCapWarning, setSectorCapWarning] = useState(false);
+  const [showExplainer, setShowExplainer] = useState(() => {
+    try { return localStorage.getItem(EXPLAINER_DISMISSED_KEY) !== 'true'; } catch { return true; }
+  });
 
   const abortRef = useRef<AbortController | null>(null);
   const forceRefreshRef = useRef(false);
@@ -229,6 +240,11 @@ export default function RRGView() {
     });
   };
 
+  const dismissExplainer = () => {
+    setShowExplainer(false);
+    try { localStorage.setItem(EXPLAINER_DISMISSED_KEY, 'true'); } catch { /* noop */ }
+  };
+
   // ── Plotly traces ──────────────────────────────────────────────────────
   const { traces, layout } = useMemo(() => {
     if (!rrgData || rrgData.current.length === 0) return { traces: [] as Data[], layout: {} as Partial<Layout> };
@@ -245,7 +261,7 @@ export default function RRGView() {
 
     const plotTraces: Data[] = [];
 
-    // Trails (lines)
+    // Trails (lines) + start-point marker so direction is readable
     for (const sector of rrgData.current) {
       const pts = rrgData.trails[sector.id];
       if (!pts || pts.length === 0) continue;
@@ -256,6 +272,22 @@ export default function RRGView() {
         type: 'scatter',
         line: { color: QUADRANT_COLORS[sector.quadrant] || '#888', width: 2 },
         opacity: TRAIL_OPACITY,
+        showlegend: false,
+        hoverinfo: 'skip',
+      });
+      // Oldest point of the trail — small hollow marker, "trail starts here"
+      const start = pts[0];
+      plotTraces.push({
+        x: [start[0]],
+        y: [start[1]],
+        mode: 'markers',
+        type: 'scatter',
+        marker: {
+          color: 'rgba(0,0,0,0)',
+          size: 6,
+          line: { color: QUADRANT_COLORS[sector.quadrant] || '#888', width: 1.5 },
+        },
+        opacity: TRAIL_OPACITY + 0.2,
         showlegend: false,
         hoverinfo: 'skip',
       });
@@ -286,7 +318,9 @@ export default function RRGView() {
       plot_bgcolor: 'transparent',
       font: { color: '#ccc', size: 12 },
       xaxis: {
-        title: 'RS-Ratio (Z-score)',
+        title: {
+          text: 'Underperforming ← → Outperforming<br><span style="font-size:10px;color:#666">RS-Ratio (Z-score)</span>',
+        },
         zeroline: true,
         zerolinecolor: '#555',
         zerolinewidth: 1,
@@ -294,7 +328,9 @@ export default function RRGView() {
         range: [xMin, xMax],
       },
       yaxis: {
-        title: 'RS-Momentum (Z-score)',
+        title: {
+          text: 'Losing steam ← → Gaining steam<br><span style="font-size:10px;color:#666">RS-Momentum (Z-score)</span>',
+        },
         zeroline: true,
         zerolinecolor: '#555',
         zerolinewidth: 1,
@@ -348,6 +384,32 @@ export default function RRGView() {
         </button>
       </div>
 
+      {/* Explainer panel */}
+      {showExplainer ? (
+        <div className="bg-[#ffffff05] border border-[#ffffff1a] rounded-lg p-3 text-xs text-[#aaa] shrink-0 relative">
+          <button
+            onClick={dismissExplainer}
+            className="absolute top-2 right-2 text-[#666] hover:text-white text-[10px]"
+          >
+            Dismiss
+          </button>
+          <div className="font-medium text-[#ccc] mb-1">How to read this chart</div>
+          <ul className="space-y-0.5 list-disc list-inside">
+            <li><span className="text-[#ccc]">Left/right</span> — whether a sector is beating or lagging the benchmark right now.</li>
+            <li><span className="text-[#ccc]">Up/down</span> — whether that outperformance (or underperformance) is getting stronger or weaker.</li>
+            <li><span className="text-[#ccc]">Trail</span> — the path each sector took to get here. Small hollow circle = where it started; solid dot = now.</li>
+            <li>Sectors typically rotate <span className="text-[#ccc]">Improving → Leading → Weakening → Lagging</span> and back around — watch for a sector crossing from one quadrant into the next.</li>
+          </ul>
+        </div>
+      ) : (
+        <button
+          onClick={() => setShowExplainer(true)}
+          className="self-start text-[10px] text-[#666] hover:text-white shrink-0 underline"
+        >
+          What am I looking at?
+        </button>
+      )}
+
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-3 shrink-0">
         <div className="flex items-center gap-1">
@@ -368,7 +430,7 @@ export default function RRGView() {
         </div>
 
         <div className="flex items-center gap-1">
-          <span className="text-xs text-[#888] mr-1">Trail:</span>
+          <span className="text-xs text-[#888] mr-1">Trail ({timeframe === 'weekly' ? 'weeks' : 'days'}):</span>
           <select
             value={trail}
             onChange={(e) => setTrail(Number(e.target.value))}
@@ -541,12 +603,14 @@ export default function RRGView() {
       </div>
 
       {/* Quadrant legend */}
-      <div className="flex items-center gap-4 shrink-0 text-xs text-[#888]">
-        <span>Quadrants:</span>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 shrink-0 text-xs">
         {Object.entries(QUADRANT_COLORS).map(([q, c]) => (
-          <div key={q} className="flex items-center gap-1">
-            <span className="w-3 h-3 rounded-full" style={{ backgroundColor: c }} />
-            {q}
+          <div key={q} className="flex items-start gap-2 px-2 py-1.5 bg-[#ffffff05] border border-[#ffffff0f] rounded">
+            <span className="w-2.5 h-2.5 rounded-full mt-0.5 shrink-0" style={{ backgroundColor: c }} />
+            <div>
+              <div className="text-[#ccc] font-medium">{q}</div>
+              <div className="text-[#777] text-[10px] leading-tight">{QUADRANT_DESCRIPTIONS[q]}</div>
+            </div>
           </div>
         ))}
       </div>
