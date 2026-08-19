@@ -40,6 +40,8 @@ def get_rrg(
         sector_list = None
         if sectors:
             sector_list = [s.strip() for s in sectors.split(",") if s.strip()]
+        if not sector_list:
+            raise ValueError("At least one sector is required")
 
         result = get_rrg_cached(
             benchmark_id=benchmark,

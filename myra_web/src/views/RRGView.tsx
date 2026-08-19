@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Plot from 'react-plotly.js';
-import { RefreshCw, Loader2, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
+import type { Data, Layout } from 'plotly.js';
+import { RefreshCw, Loader2, AlertTriangle, ChevronDown, ChevronUp, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { API_BASE } from '../config';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -36,7 +37,7 @@ const QUADRANT_COLORS: Record<string, string> = {
 };
 
 const TRAIL_OPACITY = 0.4;
-
+const MAX_SECTORS = 25;
 const TIMEFRAMES = ['weekly', 'daily'] as const;
 const TRAIL_OPTIONS = [4, 8, 12, 16, 20];
 const STORAGE_KEY = 'rrg_selected_sectors';
@@ -64,6 +65,15 @@ function saveSectors(ids: string[]) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(ids)); } catch { /* noop */ }
 }
 
+/** Compute dynamic axis range from all x/y values with padding. */
+function computeRange(values: number[]): [number, number] {
+  if (values.length === 0) return [-3.5, 3.5];
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const pad = Math.max(0.5, (max - min) * 0.15);
+  return [Math.floor((min - pad) * 10) / 10, Math.ceil((max + pad) * 10) / 10];
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 export default function RRGView() {
   const [indices, setIndices] = useState<IndexEntry[]>([]);
@@ -78,8 +88,11 @@ export default function RRGView() {
   const [selectedSectors, setSelectedSectors] = useState<Set<string>>(new Set());
   const [showSectorPanel, setShowSectorPanel] = useState(true);
   const [sectorSearch, setSectorSearch] = useState('');
+  const [sectorCapWarning, setSectorCapWarning] = useState(false);
 
-  // Fetch indices on mount
+  const abortRef = useRef<AbortController | null>(null);
+
+  // ── Fetch indices on mount ──────────────────────────────────────────────
   useEffect(() => {
     let active = true;
     const load = async () => {
@@ -94,7 +107,7 @@ export default function RRGView() {
         // Try localStorage first, fall back to defaults
         const saved = loadSavedSectors();
         if (saved) {
-          const valid = saved.filter((s) => available.has(s));
+          const valid = saved.filter((s) => available.has(s) && s !== benchmark);
           if (valid.length > 0) { setSelectedSectors(new Set(valid)); return; }
         }
         const defaults = DEFAULT_SECTORS.filter((s) => available.has(s) && s !== benchmark);
@@ -105,25 +118,33 @@ export default function RRGView() {
     };
     load();
     return () => { active = false; };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch RRG data
+  // ── Fetch RRG data (with AbortController) ──────────────────────────────
   const fetchRRG = useCallback(async () => {
     if (indices.length === 0) return;
+    // Guard: need at least one sector
+    const sectorList = Array.from(selectedSectors).filter((s) => s !== benchmark);
+    if (sectorList.length === 0) {
+      setRrgData(null);
+      return;
+    }
+
+    // Cancel previous in-flight request
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setLoading(true);
     setError(null);
     try {
-      const sectorList = Array.from(selectedSectors)
-        .filter((s) => s !== benchmark)
-        .join(',');
       const params = new URLSearchParams({
         timeframe,
         trail: String(trail),
         benchmark,
+        sectors: sectorList.join(','),
       });
-      if (sectorList) params.set('sectors', sectorList);
-
-      const res = await fetch(`${API_BASE}/rrg/?${params}`);
+      const res = await fetch(`${API_BASE}/rrg/?${params}`, { signal: controller.signal });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.detail || `HTTP ${res.status}`);
@@ -131,6 +152,7 @@ export default function RRGView() {
       const data: RRGData = await res.json();
       setRrgData(data);
     } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
       setError(`RRG fetch failed: ${e}`);
     } finally {
       setLoading(false);
@@ -139,9 +161,10 @@ export default function RRGView() {
 
   useEffect(() => {
     fetchRRG();
+    return () => { abortRef.current?.abort(); };
   }, [fetchRRG]);
 
-  // Filter indices for sector panel
+  // ── Derived state ──────────────────────────────────────────────────────
   const filteredIndices = useMemo(() => {
     const q = sectorSearch.toLowerCase();
     return indices.filter(
@@ -149,25 +172,68 @@ export default function RRGView() {
     );
   }, [indices, sectorSearch, benchmark]);
 
-  // Toggle sector
+  const hasSectors = useMemo(() => {
+    return Array.from(selectedSectors).some((s) => s !== benchmark);
+  }, [selectedSectors, benchmark]);
+
+  // ── Sector management ──────────────────────────────────────────────────
   const toggleSector = (id: string) => {
     setSelectedSectors((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      // Enforce cap
+      const sectorCount = Array.from(next).filter((s) => s !== benchmark).length;
+      setSectorCapWarning(sectorCount > MAX_SECTORS);
       saveSectors(Array.from(next));
       return next;
     });
   };
 
-  // Select / deselect all
-  const selectAll = () => { const all = new Set(indices.map((i) => i.id)); setSelectedSectors(all); saveSectors(Array.from(all)); };
-  const deselectAll = () => { const none = new Set([benchmark]); setSelectedSectors(none); saveSectors(Array.from(none)); };
+  const selectAll = () => {
+    const candidates = indices.filter((i) => i.id !== benchmark).slice(0, MAX_SECTORS);
+    const all = new Set(candidates.map((i) => i.id));
+    setSelectedSectors(all);
+    setSectorCapWarning(indices.length - 1 > MAX_SECTORS);
+    saveSectors(Array.from(all));
+  };
 
-  // ── Plotly traces ────────────────────────────────────────────────────────
+  const deselectAll = () => {
+    const empty = new Set<string>();
+    setSelectedSectors(empty);
+    setSectorCapWarning(false);
+    saveSectors([]);
+  };
+
+  // ── Benchmark switch: remove old from selection ────────────────────────
+  const handleBenchmarkChange = (newBench: string) => {
+    setBenchmark((oldBench) => {
+      // Remove new benchmark from selectedSectors
+      setSelectedSectors((prev) => {
+        const next = new Set(prev);
+        next.delete(newBench);
+        saveSectors(Array.from(next));
+        return next;
+      });
+      return newBench;
+    });
+  };
+
+  // ── Plotly traces ──────────────────────────────────────────────────────
   const { traces, layout } = useMemo(() => {
-    if (!rrgData) return { traces: [], layout: {} };
-    const plotTraces: any[] = [];
+    if (!rrgData || rrgData.current.length === 0) return { traces: [] as Data[], layout: {} as Layout };
+
+    // Collect all x/y for dynamic range
+    const allX: number[] = [];
+    const allY: number[] = [];
+    for (const pt of rrgData.current) { allX.push(pt.x); allY.push(pt.y); }
+    for (const pts of Object.values(rrgData.trails)) {
+      for (const p of pts) { allX.push(p[0]); allY.push(p[1]); }
+    }
+    const [xMin, xMax] = computeRange(allX);
+    const [yMin, yMax] = computeRange(allY);
+
+    const plotTraces: Data[] = [];
 
     // Trails (lines)
     for (const sector of rrgData.current) {
@@ -185,8 +251,7 @@ export default function RRGView() {
       });
     }
 
-    // Current positions (dots)
-    const colorMap = QUADRANT_COLORS;
+    // Current positions (dots) — one trace per quadrant for legend
     for (const q of ['Leading', 'Weakening', 'Lagging', 'Improving']) {
       const pts = rrgData.current.filter((c) => c.quadrant === q);
       if (pts.length === 0) continue;
@@ -195,9 +260,9 @@ export default function RRGView() {
         y: pts.map((p) => p.y),
         mode: 'markers+text',
         type: 'scatter',
-        marker: { color: colorMap[q], size: 12, line: { color: '#fff', width: 1 } },
+        marker: { color: QUADRANT_COLORS[q], size: 12, line: { color: '#fff', width: 1 } },
         text: pts.map((p) => p.label),
-        textposition: 'top center',
+        textposition: 'top center' as const,
         textfont: { size: 10, color: '#ccc' },
         name: q,
         customdata: pts.map((p) => [p.label, p.quadrant, p.x, p.y]),
@@ -206,7 +271,7 @@ export default function RRGView() {
       });
     }
 
-    const plotLayout: any = {
+    const plotLayout: Partial<Layout> = {
       paper_bgcolor: 'transparent',
       plot_bgcolor: 'transparent',
       font: { color: '#ccc', size: 12 },
@@ -216,7 +281,7 @@ export default function RRGView() {
         zerolinecolor: '#555',
         zerolinewidth: 1,
         gridcolor: '#222',
-        range: [-3.5, 3.5],
+        range: [xMin, xMax],
       },
       yaxis: {
         title: 'RS-Momentum (Z-score)',
@@ -224,7 +289,7 @@ export default function RRGView() {
         zerolinecolor: '#555',
         zerolinewidth: 1,
         gridcolor: '#222',
-        range: [-3.5, 3.5],
+        range: [yMin, yMax],
       },
       legend: {
         orientation: 'h',
@@ -236,21 +301,22 @@ export default function RRGView() {
       margin: { l: 60, r: 20, t: 40, b: 60 },
       hovermode: 'closest',
       shapes: [
-        // Quadrant background shading
-        { type: 'rect', x0: 0, x1: 3.5, y0: 0, y1: 3.5, fillcolor: 'rgba(34,197,94,0.04)', line: { width: 0 } },
-        { type: 'rect', x0: 0, x1: 3.5, y0: -3.5, y1: 0, fillcolor: 'rgba(245,158,11,0.04)', line: { width: 0 } },
-        { type: 'rect', x0: -3.5, x1: 0, y0: -3.5, y1: 0, fillcolor: 'rgba(239,68,68,0.04)', line: { width: 0 } },
-        { type: 'rect', x0: -3.5, x1: 0, y0: 0, y1: 3.5, fillcolor: 'rgba(59,130,246,0.04)', line: { width: 0 } },
-        // Quadrant labels
-        { type: 'text', x: 2.2, y: 3.2, text: 'LEADING', showarrow: false, font: { size: 14, color: 'rgba(34,197,94,0.35)' } },
-        { type: 'text', x: 2.2, y: -3.2, text: 'WEAKENING', showarrow: false, font: { size: 14, color: 'rgba(245,158,11,0.35)' } },
-        { type: 'text', x: -2.2, y: -3.2, text: 'LAGGING', showarrow: false, font: { size: 14, color: 'rgba(239,68,68,0.35)' } },
-        { type: 'text', x: -2.2, y: 3.2, text: 'IMPROVING', showarrow: false, font: { size: 14, color: 'rgba(59,130,246,0.35)' } },
+        { type: 'rect', x0: 0, x1: xMax, y0: 0, y1: yMax, fillcolor: 'rgba(34,197,94,0.04)', line: { width: 0 } },
+        { type: 'rect', x0: 0, x1: xMax, y0: yMin, y1: 0, fillcolor: 'rgba(245,158,11,0.04)', line: { width: 0 } },
+        { type: 'rect', x0: xMin, x1: 0, y0: yMin, y1: 0, fillcolor: 'rgba(239,68,68,0.04)', line: { width: 0 } },
+        { type: 'rect', x0: xMin, x1: 0, y0: 0, y1: yMax, fillcolor: 'rgba(59,130,246,0.04)', line: { width: 0 } },
+        { type: 'text', x: xMax * 0.65, y: yMax * 0.9, text: 'LEADING', showarrow: false, font: { size: 14, color: 'rgba(34,197,94,0.35)' } },
+        { type: 'text', x: xMax * 0.65, y: yMin * 0.9, text: 'WEAKENING', showarrow: false, font: { size: 14, color: 'rgba(245,158,11,0.35)' } },
+        { type: 'text', x: xMin * 0.65, y: yMin * 0.9, text: 'LAGGING', showarrow: false, font: { size: 14, color: 'rgba(239,68,68,0.35)' } },
+        { type: 'text', x: xMin * 0.65, y: yMax * 0.9, text: 'IMPROVING', showarrow: false, font: { size: 14, color: 'rgba(59,130,246,0.35)' } },
       ],
     };
 
-    return { traces: plotTraces, layout: plotLayout };
+    return { traces: plotTraces, layout: plotLayout as Layout };
   }, [rrgData]);
+
+  const totalSectors = indices.length - 1; // exclude benchmark from count
+  const selectedCount = Array.from(selectedSectors).filter((s) => s !== benchmark).length;
 
   return (
     <div className="flex flex-col h-full gap-4 p-4 overflow-y-auto">
@@ -264,7 +330,7 @@ export default function RRGView() {
         </div>
         <button
           onClick={fetchRRG}
-          disabled={loading}
+          disabled={loading || !hasSectors}
           className="flex items-center gap-2 px-3 py-1.5 text-xs bg-[#ffffff0a] border border-[#ffffff1a] rounded font-mono text-[#888] hover:text-white transition-colors disabled:opacity-50"
         >
           {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
@@ -274,7 +340,6 @@ export default function RRGView() {
 
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-3 shrink-0">
-        {/* Timeframe */}
         <div className="flex items-center gap-1">
           <span className="text-xs text-[#888] mr-1">Timeframe:</span>
           {TIMEFRAMES.map((tf) => (
@@ -292,7 +357,6 @@ export default function RRGView() {
           ))}
         </div>
 
-        {/* Trail */}
         <div className="flex items-center gap-1">
           <span className="text-xs text-[#888] mr-1">Trail:</span>
           <select
@@ -306,12 +370,11 @@ export default function RRGView() {
           </select>
         </div>
 
-        {/* Benchmark */}
         <div className="flex items-center gap-1">
           <span className="text-xs text-[#888] mr-1">Benchmark:</span>
           <select
             value={benchmark}
-            onChange={(e) => setBenchmark(e.target.value)}
+            onChange={(e) => handleBenchmarkChange(e.target.value)}
             className="bg-[#ffffff0a] border border-[#ffffff1a] text-xs text-[#ccc] rounded px-2 py-1 font-mono max-w-[200px]"
           >
             {indices.map((i) => (
@@ -320,6 +383,13 @@ export default function RRGView() {
           </select>
         </div>
       </div>
+
+      {/* Sector cap warning */}
+      {sectorCapWarning && (
+        <div className="bg-amber-950/40 border border-amber-500/50 p-2 rounded-lg text-xs text-amber-400 shrink-0">
+          Showing max {MAX_SECTORS} sectors for readability. Deselect some to add others.
+        </div>
+      )}
 
       {/* Error */}
       {error && (
@@ -337,13 +407,14 @@ export default function RRGView() {
             <div className="flex items-center justify-center h-full text-[#888]">
               <Loader2 size={24} className="animate-spin mr-2" /> Loading RRG data...
             </div>
+          ) : !hasSectors ? (
+            <div className="flex items-center justify-center h-full text-[#888]">
+              Select at least one sector to display.
+            </div>
           ) : rrgData ? (
             <Plot
               data={traces}
-              layout={{
-                ...layout,
-                autosize: true,
-              }}
+              layout={{ ...layout, autosize: true }}
               config={{ responsive: true, displayModeBar: false, scrollZoom: true }}
               style={{ width: '100%', height: '100%' }}
               useResizeHandler
@@ -355,14 +426,20 @@ export default function RRGView() {
           )}
         </div>
 
-        {/* Sector panel */}
-        <div className="w-64 shrink-0 flex flex-col">
+        {/* Sector panel — responsive: hidden on small screens, toggle on medium+ */}
+        <div className={`${showSectorPanel ? 'w-64' : 'w-10'} shrink-0 flex flex-col transition-all duration-200 hidden md:flex`}>
           <button
             onClick={() => setShowSectorPanel(!showSectorPanel)}
             className="flex items-center justify-between px-3 py-2 bg-[#ffffff0a] border border-[#ffffff1a] rounded-t text-xs font-mono text-[#ccc]"
           >
-            <span>Sectors ({selectedSectors.size - 1}/{indices.length - 1})</span>
-            {showSectorPanel ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            {showSectorPanel ? (
+              <>
+                <span>Sectors ({selectedCount}/{totalSectors})</span>
+                <ChevronUp size={14} />
+              </>
+            ) : (
+              <PanelRightOpen size={14} />
+            )}
           </button>
           {showSectorPanel && (
             <div className="flex flex-col flex-1 border border-t-0 border-[#ffffff1a] rounded-b overflow-hidden">
