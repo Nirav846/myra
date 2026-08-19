@@ -240,7 +240,6 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
       if (!mountedRef.current) return;
       if (res.ok) {
         await fetchScanStatus();
-        pollTimerRef.current = setInterval(fetchScanStatus, 2000);
       } else {
         const err = await res.json().catch(() => ({ detail: 'Failed to start scan' }));
         setError(err.detail || 'Failed to start scan');
@@ -263,21 +262,26 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
     };
   }, [fetchScanStatus, clearPolling]);
 
-  const isStale = scanStatus?.last_scan && (Date.now() - new Date(scanStatus.last_scan).getTime() > 30 * 60 * 1000);
+  const isStale = !scanDate && scanStatus?.last_scan && (Date.now() - new Date(scanStatus.last_scan).getTime() > 30 * 60 * 1000);
 
   const handleCSV = () => {
     if (filteredData.length === 0) return;
+    const escapeCSV = (val: string) => val.includes(',') ? `"${val}"` : val;
     const headers = [
-      'Symbol', 'Sector', 'Market Cap Cr', 'Tier', 'Box Age', 'Box Range %', 'DAR (Box)',
-      'SAR', 'SAR_z', 'FTC', 'RS', 'Breakout DAR', 'AM', 'Entry', 'SL', 'T1', 'T2',
+      'Symbol', 'Sector', 'Market Cap Cr', 'Tier', 'Box Age', 'Box Range %',
+      'Ceiling', 'Floor', 'Dist to Ceiling %', 'Touches Ceiling', 'Touches Floor',
+      'DAR (Box)', 'SAR', 'SAR_z', 'FTC', 'RS', 'Breakout DAR', 'AM',
+      'Entry', 'SL', 'T1', 'T2',
       'Status', 'Failure Reason', 'Composite Score', 'Grade',
     ];
     const rows = filteredData.map(r => [
       r.symbol, r.sector ?? '', r.market_cap_cr, r.tier, r.box_age_days, r.box_range_pct,
+      r.ceiling_price?.toFixed(2) ?? '', r.floor_price?.toFixed(2) ?? '',
+      r.dist_to_ceiling_pct?.toFixed(1) ?? '', r.touches_ceiling, r.touches_floor,
       r.dar_box_median, r.sar, r.sar_z, r.ftc, r.rs_mean,
       r.breakout_dar, r.am,
       r.entry ?? '', r.sl ?? '', r.t1 ?? '', r.t2 ?? '',
-      r.status, r.failure_reason ?? '',
+      r.status, escapeCSV(r.failure_reason ?? ''),
       r.composite_score, r.grade,
     ].join(','));
     const csv = [headers.join(','), ...rows].join('\n');
@@ -579,7 +583,7 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
               </div>
               <div className="flex flex-wrap gap-2">
                 {filteredData
-                  .filter(d => d.grade === 'A' && d.status !== 'Invalidated')
+                  .filter(d => d.grade === 'A' && (d.status === 'In Box' || d.status === 'Breakout Pending' || d.status === 'Triggered'))
                   .slice(0, 12)
                   .map(d => (
                     <div key={d.symbol}
@@ -613,7 +617,7 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
                 role="grid"
                 aria-label="Darvas Box Pro Scanner results"
                 aria-rowcount={filteredData.length}
-                aria-colcount={19}
+                aria-colcount={22}
               >
                 <thead className="sticky top-0 z-20 text-[#888]">
                   <tr style={{ boxShadow: '0 1px 0 0 rgba(255,255,255,0.08), 0 2px 4px 0 rgba(0,0,0,0.4)' }}>
@@ -678,19 +682,25 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
                       </Tooltip>
                     </th>
                     <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('entry')} scope="col" aria-sort={sortCol === 'entry' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      Entry <SortIcon column="entry" />
+                      <Tooltip content="Entry price: 0.5% above the box ceiling on a confirmed breakout close above ceiling." good="Wait for a close above ceiling — do not chase intraday spikes." bad="Entry = null when box is not yet ready to trigger.">Entry <SortIcon column="entry" /></Tooltip>
                     </th>
                     <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('sl')} scope="col" aria-sort={sortCol === 'sl' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      SL <SortIcon column="sl" />
+                      <Tooltip content="Stop Loss: 0.5% below the box floor. Exit immediately if price closes below this level." good="Tight SL = low risk. Large box = wider SL, position size accordingly." bad="SL = null when box is not yet ready to trigger.">SL <SortIcon column="sl" /></Tooltip>
                     </th>
                     <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('t1')} scope="col" aria-sort={sortCol === 't1' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      T1 <SortIcon column="t1" />
+                      <Tooltip content="Target 1: conservative profit target, typically 1:1 risk-reward from entry. Book partial position here." good="T1 hit = take 50% off the table, move SL to breakeven." bad="T1 = null when not enough data to project.">T1 <SortIcon column="t1" /></Tooltip>
                     </th>
                     <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('t2')} scope="col" aria-sort={sortCol === 't2' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      T2 <SortIcon column="t2" />
+                      <Tooltip content="Target 2: extended profit target, typically 2:1 risk-reward. Trail remaining position." good="T2 hit = trail with ATR or moving average." bad="T2 = null when not enough data to project.">T2 <SortIcon column="t2" /></Tooltip>
                     </th>
                     <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('status')} scope="col" aria-sort={sortCol === 'status' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      Status <SortIcon column="status" />
+                      <Tooltip
+                        content="Box lifecycle status. Only actionable statuses trigger entry signals."
+                        good="In Box = forming, Breakout Pending = near ceiling, Triggered = entered"
+                        bad="Failed Validation = DAR criteria not met, Invalidated = box broken, Low Volume = insufficient liquidity"
+                      >
+                        Status <SortIcon column="status" />
+                      </Tooltip>
                     </th>
                     <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('composite_score')} scope="col" aria-sort={sortCol === 'composite_score' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       Score <SortIcon column="composite_score" />
