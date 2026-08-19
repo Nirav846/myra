@@ -87,6 +87,7 @@ export default function RRGView() {
   const [benchmark, setBenchmark] = useState('nifty 50');
   const [selectedSectors, setSelectedSectors] = useState<Set<string>>(new Set());
   const [showSectorPanel, setShowSectorPanel] = useState(true);
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const [sectorSearch, setSectorSearch] = useState('');
   const [sectorCapWarning, setSectorCapWarning] = useState(false);
 
@@ -180,11 +181,18 @@ export default function RRGView() {
   const toggleSector = (id: string) => {
     setSelectedSectors((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      // Enforce cap
-      const sectorCount = Array.from(next).filter((s) => s !== benchmark).length;
-      setSectorCapWarning(sectorCount > MAX_SECTORS);
+      if (next.has(id)) {
+        next.delete(id);
+        setSectorCapWarning(false);
+      } else {
+        // Enforce cap: block if at limit
+        const currentCount = Array.from(next).filter((s) => s !== benchmark).length;
+        if (currentCount >= MAX_SECTORS) {
+          setSectorCapWarning(true);
+          return prev; // don't add
+        }
+        next.add(id);
+      }
       saveSectors(Array.from(next));
       return next;
     });
@@ -205,23 +213,20 @@ export default function RRGView() {
     saveSectors([]);
   };
 
-  // ── Benchmark switch: remove old from selection ────────────────────────
+  // ── Benchmark switch: remove new from selection ────────────────────────
   const handleBenchmarkChange = (newBench: string) => {
-    setBenchmark((oldBench) => {
-      // Remove new benchmark from selectedSectors
-      setSelectedSectors((prev) => {
-        const next = new Set(prev);
-        next.delete(newBench);
-        saveSectors(Array.from(next));
-        return next;
-      });
-      return newBench;
+    setBenchmark(newBench);
+    setSelectedSectors((prev) => {
+      const next = new Set(prev);
+      next.delete(newBench);
+      saveSectors(Array.from(next));
+      return next;
     });
   };
 
   // ── Plotly traces ──────────────────────────────────────────────────────
   const { traces, layout } = useMemo(() => {
-    if (!rrgData || rrgData.current.length === 0) return { traces: [] as Data[], layout: {} as Layout };
+    if (!rrgData || rrgData.current.length === 0) return { traces: [] as Data[], layout: {} as Partial<Layout> };
 
     // Collect all x/y for dynamic range
     const allX: number[] = [];
@@ -312,7 +317,7 @@ export default function RRGView() {
       ],
     };
 
-    return { traces: plotTraces, layout: plotLayout as Layout };
+    return { traces: plotTraces, layout: plotLayout };
   }, [rrgData]);
 
   const totalSectors = indices.length - 1; // exclude benchmark from count
@@ -387,7 +392,7 @@ export default function RRGView() {
       {/* Sector cap warning */}
       {sectorCapWarning && (
         <div className="bg-amber-950/40 border border-amber-500/50 p-2 rounded-lg text-xs text-amber-400 shrink-0">
-          Showing max {MAX_SECTORS} sectors for readability. Deselect some to add others.
+          Max {MAX_SECTORS} sectors. Deselect some to add others.
         </div>
       )}
 
@@ -426,8 +431,8 @@ export default function RRGView() {
           )}
         </div>
 
-        {/* Sector panel — responsive: hidden on small screens, toggle on medium+ */}
-        <div className={`${showSectorPanel ? 'w-64' : 'w-10'} shrink-0 flex flex-col transition-all duration-200 hidden md:flex`}>
+        {/* Sector panel — desktop sidebar */}
+        <div className={`${showSectorPanel ? 'w-64' : 'w-10'} shrink-0 flex-col transition-all duration-200 hidden md:flex`}>
           <button
             onClick={() => setShowSectorPanel(!showSectorPanel)}
             className="flex items-center justify-between px-3 py-2 bg-[#ffffff0a] border border-[#ffffff1a] rounded-t text-xs font-mono text-[#ccc]"
@@ -476,6 +481,58 @@ export default function RRGView() {
             </div>
           )}
         </div>
+
+        {/* Mobile: floating sector toggle + overlay drawer */}
+        <button
+          onClick={() => setMobilePanelOpen(true)}
+          className="md:hidden fixed bottom-20 right-4 z-30 bg-indigo-600 text-white p-3 rounded-full shadow-lg"
+          title="Select sectors"
+        >
+          <PanelRightOpen size={20} />
+        </button>
+        {mobilePanelOpen && (
+          <div className="md:hidden fixed inset-0 z-40 flex">
+            <div className="absolute inset-0 bg-black/60" onClick={() => setMobilePanelOpen(false)} />
+            <div className="ml-auto w-72 h-full bg-[#0e1117] border-l border-[#ffffff1a] flex flex-col relative z-50">
+              <div className="flex items-center justify-between px-3 py-2 border-b border-[#ffffff1a]">
+                <span className="text-xs font-mono text-[#ccc]">Sectors ({selectedCount}/{totalSectors})</span>
+                <button onClick={() => setMobilePanelOpen(false)} className="text-[#888] hover:text-white">
+                  <PanelRightClose size={16} />
+                </button>
+              </div>
+              <div className="p-2 border-b border-[#ffffff1a]">
+                <input
+                  type="text"
+                  value={sectorSearch}
+                  onChange={(e) => setSectorSearch(e.target.value)}
+                  placeholder="Search sectors..."
+                  className="w-full bg-[#ffffff0a] border border-[#ffffff1a] text-xs text-[#ccc] rounded px-2 py-1 font-mono"
+                />
+                <div className="flex gap-1 mt-1">
+                  <button onClick={selectAll} className="text-[10px] text-indigo-400 hover:text-indigo-300">All</button>
+                  <span className="text-[#555]">|</span>
+                  <button onClick={deselectAll} className="text-[10px] text-indigo-400 hover:text-indigo-300">None</button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                {filteredIndices.map((i) => (
+                  <label
+                    key={i.id}
+                    className="flex items-center gap-2 px-2 py-1 text-xs text-[#ccc] hover:bg-[#ffffff0a] cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedSectors.has(i.id)}
+                      onChange={() => toggleSector(i.id)}
+                      className="accent-indigo-500"
+                    />
+                    <span className="truncate">{i.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Quadrant legend */}
