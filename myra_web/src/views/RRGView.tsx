@@ -39,6 +39,30 @@ const TRAIL_OPACITY = 0.4;
 
 const TIMEFRAMES = ['weekly', 'daily'] as const;
 const TRAIL_OPTIONS = [4, 8, 12, 16, 20];
+const STORAGE_KEY = 'rrg_selected_sectors';
+
+const DEFAULT_SECTORS = [
+  'nifty bank', 'nifty it', 'nifty pharma', 'nifty auto',
+  'nifty metal', 'nifty realty', 'nifty fmcg', 'nifty energy',
+  'nifty financial services', 'nifty private bank', 'nifty psu bank',
+  'nifty midcap 50', 'nifty midcap 100', 'nifty midcap 150',
+  'nifty smallcap 50', 'nifty smallcap 100', 'nifty smallcap 250',
+  'nifty next 50', 'nifty next 100', 'nifty 500', 'nifty 200',
+  'nifty 100',
+];
+
+function loadSavedSectors(): string[] | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) && arr.length > 0 ? arr : null;
+  } catch { return null; }
+}
+
+function saveSectors(ids: string[]) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(ids)); } catch { /* noop */ }
+}
 
 // ── Component ────────────────────────────────────────────────────────────────
 export default function RRGView() {
@@ -66,17 +90,13 @@ export default function RRGView() {
         if (!active) return;
         const idx = data.indices as IndexEntry[];
         setIndices(idx);
-        // Default: major sector indices (not all 195 — too crowded)
-        const DEFAULT_SECTORS = [
-          'nifty bank', 'nifty it', 'nifty pharma', 'nifty auto',
-          'nifty metal', 'nifty realty', 'nifty fmcg', 'nifty energy',
-          'nifty financial services', 'nifty private bank', 'nifty psu bank',
-          'nifty midcap 50', 'nifty midcap 100', 'nifty midcap 150',
-          'nifty smallcap 50', 'nifty smallcap 100', 'nifty smallcap 250',
-          'nifty next 50', 'nifty next 100', 'nifty 500', 'nifty 200',
-          'nifty 100',
-        ];
         const available = new Set(idx.map((i) => i.id));
+        // Try localStorage first, fall back to defaults
+        const saved = loadSavedSectors();
+        if (saved) {
+          const valid = saved.filter((s) => available.has(s));
+          if (valid.length > 0) { setSelectedSectors(new Set(valid)); return; }
+        }
         const defaults = DEFAULT_SECTORS.filter((s) => available.has(s) && s !== benchmark);
         setSelectedSectors(new Set(defaults.length > 0 ? defaults : idx.filter((i) => i.id !== benchmark).slice(0, 20).map((i) => i.id)));
       } catch (e) {
@@ -135,13 +155,14 @@ export default function RRGView() {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      saveSectors(Array.from(next));
       return next;
     });
   };
 
   // Select / deselect all
-  const selectAll = () => setSelectedSectors(new Set(indices.map((i) => i.id)));
-  const deselectAll = () => setSelectedSectors(new Set([benchmark]));
+  const selectAll = () => { const all = new Set(indices.map((i) => i.id)); setSelectedSectors(all); saveSectors(Array.from(all)); };
+  const deselectAll = () => { const none = new Set([benchmark]); setSelectedSectors(none); saveSectors(Array.from(none)); };
 
   // ── Plotly traces ────────────────────────────────────────────────────────
   const { traces, layout } = useMemo(() => {
@@ -312,7 +333,7 @@ export default function RRGView() {
       <div className="flex gap-4 flex-1 min-h-0">
         {/* Chart */}
         <div className="flex-1 bg-[#ffffff05] border border-[#ffffff1a] rounded-lg p-2 min-h-[500px]">
-          {loading && !rrgData ? (
+          {loading ? (
             <div className="flex items-center justify-center h-full text-[#888]">
               <Loader2 size={24} className="animate-spin mr-2" /> Loading RRG data...
             </div>
@@ -323,7 +344,7 @@ export default function RRGView() {
                 ...layout,
                 autosize: true,
               }}
-              config={{ responsive: true, displayModeBar: false }}
+              config={{ responsive: true, displayModeBar: false, scrollZoom: true }}
               style={{ width: '100%', height: '100%' }}
               useResizeHandler
             />
