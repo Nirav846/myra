@@ -538,4 +538,4 @@ class TestAiOpinionEndpoint:
             resp = client.get("/api/ai-opinion/WIPRO")
 
         assert resp.status_code == 500
-        assert "boom" in resp.json()["detail"]
+        assert resp.json()["detail"] == "Internal server error"

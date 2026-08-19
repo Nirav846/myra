@@ -24,4 +24,4 @@ async def confluence_endpoint():
         return build_confluence_report()
     except Exception as e:
         logger.error("Confluence report failed: %s", e, exc_info=True)
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Internal server error"})

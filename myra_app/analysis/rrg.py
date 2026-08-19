@@ -76,7 +76,9 @@ def _is_index_file(stem: str) -> bool:
 
 def _load_csv(index_id: str) -> Optional[pd.DataFrame]:
     """Load a CSV from DATA_FOLDER, return DataFrame or None."""
-    path = Path(DATA_FOLDER) / f"{index_id}.csv"
+    # Sanitize index_id to prevent path traversal (CodeQL)
+    safe_id = Path(index_id).name
+    path = Path(DATA_FOLDER) / f"{safe_id}.csv"
     if not path.exists():
         logger.warning("CSV not found: %s", path)
         return None

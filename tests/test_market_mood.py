@@ -223,4 +223,4 @@ def test_pcr_status_exception_returns_error(client):
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "error"
-    assert "DB corrupt" in body["message"]
+    assert body["message"] == "Internal server error"

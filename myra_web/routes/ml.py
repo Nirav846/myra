@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 
 from fastapi import APIRouter, HTTPException
@@ -7,6 +8,8 @@ from fastapi.responses import JSONResponse
 
 from myra_app.constants import DB_DIR
 from myra_web.background import _spawn_task
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ml", tags=["ml"])
 
@@ -35,7 +38,8 @@ async def ml_status():
             }
         return {"exists": True, "message": "Model exists but metadata not found."}
     except Exception as e:
-        return {"exists": False, "error": str(e)}
+        logger.exception("ml_status failed")
+        return {"exists": False, "error": "Internal server error"}
 
 
 @router.post("/train")
@@ -54,7 +58,8 @@ async def ml_train(config: dict = None):
             status_code=202, content={"status": "started", "task_id": tid}
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("ml_train failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/predict")
@@ -279,7 +284,8 @@ async def predict_launchpad():
 
         return {"predictions": results, "status": "ok"}
     except Exception as e:
-        return {"predictions": [], "status": "error", "message": str(e)}
+        logger.exception("predict_launchpad failed")
+        return {"predictions": [], "status": "error", "message": "Internal server error"}
 
 
 @router.get("/launchpad/status")

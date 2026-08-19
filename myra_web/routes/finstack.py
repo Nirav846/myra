@@ -1,6 +1,9 @@
+import logging
 import time
 
 from fastapi import APIRouter, HTTPException, Query
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/finstack", tags=["finstack"])
 
@@ -34,10 +37,8 @@ async def finstack_nifty_outlook():
         _finstack_cache[cache_key] = {"ts": now, "data": data}
         return data
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/fii-retail-divergence")
+        logger.exception("finstack_nifty_outlook failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 async def finstack_fii_retail_divergence(symbol: str = "RELIANCE"):
     cache_key = f"fii_divergence:{symbol}"
     now = time.time()
@@ -53,10 +54,8 @@ async def finstack_fii_retail_divergence(symbol: str = "RELIANCE"):
         _finstack_cache[cache_key] = {"ts": now, "data": data}
         return data
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# @router.get("/sebi-alerts")
+        logger.exception("finstack_fii_retail_divergence failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 # async def finstack_sebi_alerts():
 #     from myra_app.utils.finstack_bridge import get_sebi_alerts
 #     result = await get_sebi_alerts()
@@ -79,10 +78,8 @@ async def finstack_morning_brief():
         _finstack_cache[cache_key] = {"ts": now, "data": data}
         return data
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# @router.get("/scan-pledge-risks")
+        logger.exception("finstack_morning_brief failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 # async def finstack_scan_pledge_risks():
 #     from myra_app.utils.finstack_bridge import scan_pledge_risks
 #     result = await scan_pledge_risks()
@@ -115,10 +112,8 @@ async def stock_brief(
         _finstack_cache[cache_key] = {"ts": now, "data": data}
         return data
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/social-sentiment/{symbol}")
+        logger.exception("stock_brief failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 async def finstack_social_sentiment(symbol: str):
     from myra_app.utils.finstack_bridge import get_social_sentiment
 
@@ -152,10 +147,8 @@ async def unusual_activity(
         _finstack_cache[cache_key] = {"ts": now, "data": data}
         return data
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/stock-timeline")
+        logger.exception("unusual_activity failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 async def finstack_stock_timeline(symbol: str = ""):
     if not symbol:
         raise HTTPException(
@@ -175,4 +168,5 @@ async def finstack_stock_timeline(symbol: str = ""):
         _finstack_cache[cache_key] = {"ts": now, "data": data}
         return data
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("finstack_stock_timeline failed")
+        raise HTTPException(status_code=500, detail="Internal server error")

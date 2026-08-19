@@ -715,7 +715,7 @@ def get_full_fundamentals(symbol: str, refresh: bool = False):
         data = fetch_full_fundamentals(sym)
     except Exception as e:
         logger.exception("full fundamentals fetch failed for %s", sym)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch fundamentals for {sym}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
     has_data = bool(
         data.get("snapshot")

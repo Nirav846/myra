@@ -1,4 +1,7 @@
 from fastapi import APIRouter, HTTPException
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ai-opinion", tags=["ai_opinion"])
 
@@ -29,4 +32,5 @@ async def get_ai_opinion(ticker: str):
             "summary": summary,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_ai_opinion failed for %s", ticker)
+        raise HTTPException(status_code=500, detail="Internal server error")

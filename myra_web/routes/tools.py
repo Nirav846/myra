@@ -4,6 +4,7 @@ MYRA tools router — sync, ingest, execute, db-doctor, refresh-industry.
 Extracted from myra_fastapi_server.py (Phase 4 of monolith refactor).
 """
 
+import logging
 import os
 import subprocess
 
@@ -13,6 +14,8 @@ from pydantic import BaseModel
 
 from myra_web.background import _spawn_task
 from myra_web.security import verify_myra_auth
+
+logger = logging.getLogger(__name__)
 
 try:
     from myra_app.background_orchestrator import (
@@ -75,7 +78,8 @@ def execute_tool(req: ToolRequest, _=Depends(verify_myra_auth)):
     except subprocess.TimeoutExpired:
         return {"success": False, "logs": "Execution timed out after 120 seconds."}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("execute_tool failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/sync/fundamentals")
@@ -87,8 +91,9 @@ async def force_fundamentals_sync():
             status_code=202, content={"status": "started", "task_id": tid}
         )
     except Exception as e:
+        logger.exception("force_fundamentals_sync failed")
         return JSONResponse(
-            status_code=500, content={"status": "error", "message": str(e)}
+            status_code=500, content={"status": "error", "message": "Internal server error"}
         )
 
 
@@ -101,8 +106,9 @@ async def force_etf_sync():
             status_code=202, content={"status": "started", "task_id": tid}
         )
     except Exception as e:
+        logger.exception("force_etf_sync failed")
         return JSONResponse(
-            status_code=500, content={"status": "error", "message": str(e)}
+            status_code=500, content={"status": "error", "message": "Internal server error"}
         )
 
 
@@ -115,8 +121,9 @@ async def force_index_sync():
             status_code=202, content={"status": "started", "task_id": tid}
         )
     except Exception as e:
+        logger.exception("force_index_sync failed")
         return JSONResponse(
-            status_code=500, content={"status": "error", "message": str(e)}
+            status_code=500, content={"status": "error", "message": "Internal server error"}
         )
 
 
@@ -129,8 +136,9 @@ async def force_daily_ingest():
             status_code=202, content={"status": "started", "task_id": tid}
         )
     except Exception as e:
+        logger.exception("force_daily_ingest failed")
         return JSONResponse(
-            status_code=500, content={"status": "error", "message": str(e)}
+            status_code=500, content={"status": "error", "message": "Internal server error"}
         )
 
 
@@ -141,7 +149,8 @@ async def run_db_doctor():
         _task_db_doctor()
         return {"success": True, "message": "DB Doctor completed"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("run_db_doctor failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ---------------------------------------------------------------------------
@@ -167,4 +176,5 @@ async def refresh_portfolio_industry():
             "count": count,
         }
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        logger.exception("refresh_portfolio_industry failed")
+        return {"status": "error", "message": "Internal server error"}

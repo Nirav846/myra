@@ -1,4 +1,7 @@
 from fastapi import APIRouter
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/sentiment", tags=["sentiment"])
 
@@ -19,9 +22,10 @@ async def get_news_sentiment(ticker: str, refresh: bool = False):
             "status": "success",
         }
     except Exception as e:
+        logger.exception("Sentiment fetch failed for %s", ticker)
         return {
             "ticker": ticker.upper(),
-            "error": str(e),
+            "error": "Internal server error",
             "news": [],
             "status": "error",
         }

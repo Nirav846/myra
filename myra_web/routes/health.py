@@ -220,7 +220,8 @@ async def data_health():
                 result["scanner_cache_counts"][name] = 0
 
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        logger.exception("data_health failed")
+        return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
     return result
 
@@ -273,7 +274,8 @@ async def get_market_breadth():
                 "date": latest,
             }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_market_breadth failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/db-size")
@@ -355,4 +357,4 @@ async def pcr_status():
         return {"status": "ok", "snapshots": snapshots}
     except Exception as exc:
         logger.warning("pcr_status failed: %s", exc)
-        return {"status": "error", "snapshots": [], "message": str(exc)}
+        return {"status": "error", "snapshots": [], "message": "Internal server error"}

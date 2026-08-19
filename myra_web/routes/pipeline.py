@@ -7,6 +7,9 @@ Read-only background task status/events endpoints backed by
 """
 
 from fastapi import APIRouter
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
 
@@ -20,7 +23,8 @@ async def pipeline_status():
         tasks = list_tasks(limit=50)
         return {"tasks": tasks, "status": "ok"}
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        logger.exception("pipeline_status failed")
+        return {"status": "error", "message": "Internal server error"}
 
 
 @router.get("/events")
@@ -43,4 +47,5 @@ async def pipeline_events():
                 )
         return {"events": events, "status": "ok"}
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        logger.exception("pipeline_events failed")
+        return {"status": "error", "message": "Internal server error"}

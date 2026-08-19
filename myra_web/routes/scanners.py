@@ -204,7 +204,7 @@ def register_scanner(
                         {
                             "scan_status": "error",
                             "progress": 0,
-                            "message": str(e),
+                            "message": "Scan failed. Check server logs for details.",
                         }
                     )
 
@@ -1041,8 +1041,9 @@ async def launchpad_scan(payload: dict = Body(default={})):
                 }
             )
         except Exception as e:
+            logger.error("Launchpad scan failed: %s", e, exc_info=True)
             _launchpad_scan_state.update(
-                {"scan_status": "error", "message": str(e)}
+                {"scan_status": "error", "message": "Scan failed. Check server logs for details."}
             )
 
     threading.Thread(target=_run, daemon=True).start()
@@ -1167,9 +1168,10 @@ async def multibagger_scan(payload: dict = Body(default={})):
                 "message": f"Found {len(candidates)} candidates",
             }
         except Exception as e:
+            logger.error("Multibagger scan failed: %s", e, exc_info=True)
             _multibagger_result = {
                 "scan_status": "error",
-                "message": str(e),
+                "message": "Scan failed. Check server logs for details.",
                 "candidates": [],
             }
 

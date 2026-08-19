@@ -10,6 +10,7 @@ auto-appended LIMIT 5000 for read queries, 10 MB response guard.
 
 import asyncio
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -20,6 +21,8 @@ from pydantic import BaseModel
 from myra_app.constants import DB_DIR
 from myra_app.librarian_core import LibrarianCore
 from myra_web.security import verify_myra_auth
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["query"])
 
@@ -114,4 +117,5 @@ async def execute_query(req: QueryRequest, _=Depends(verify_myra_auth)):
     except HTTPException:
         raise
     except sqlite3.Error as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.exception("SQL query failed")
+        raise HTTPException(status_code=400, detail="Query execution failed")
