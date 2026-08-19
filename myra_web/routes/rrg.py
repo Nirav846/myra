@@ -70,8 +70,15 @@ def get_rrg(
         if not sector_list:
             raise HTTPException(status_code=400, detail="At least one sector is required")
 
-        # Guard: benchmark not in sectors
-        if benchmark in sector_list:
+        # Normalize for comparison
+        benchmark_low = benchmark.lower()
+        sector_list_low = [s.lower() for s in sector_list]
+
+        logger.debug("RRG request: benchmark=%s, sectors=%s, tf=%s, trail=%d, refresh=%s",
+                      benchmark, sector_list, timeframe, trail, refresh)
+
+        # Guard: benchmark not in sectors (case-insensitive)
+        if benchmark_low in sector_list_low:
             raise HTTPException(status_code=400, detail="Benchmark cannot be included in sectors")
 
         # Server-side sector cap

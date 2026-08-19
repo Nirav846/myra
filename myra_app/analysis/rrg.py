@@ -324,23 +324,32 @@ def get_rrg_cached(
     """Return RRG data, using cache when possible.
 
     If *refresh* is True, bypass the cache entirely and recompute.
+    The cache key includes benchmark, timeframe, trail, and the sector list
+    so that different sector selections are cached separately.
     """
+    # Build a stable cache key from the sector list
+    sector_key = tuple(sorted(sector_ids)) if sector_ids else None
+
     if not refresh:
         cached = _rrg_cache.get()
         if cached is not None:
-            # Check if params match
             meta = cached.get("meta", {})
+            cached_sectors = meta.get("sectors")
             if (
                 meta.get("benchmark") == benchmark_id
                 and meta.get("timeframe") == timeframe
                 and meta.get("trail") == trail
+                and cached_sectors == sector_key
             ):
                 return cached
 
     if sector_ids is None:
         indices = discover_indices()
         sector_ids = [idx["id"] for idx in indices]
+        sector_key = tuple(sorted(sector_ids))
 
     result = compute_rrg(benchmark_id, sector_ids, timeframe, trail)
+    # Store the sector key in meta so cache lookup can match it
+    result["meta"]["sectors"] = sector_key
     _rrg_cache.set(result)
     return result
