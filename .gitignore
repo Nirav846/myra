@@ -261,3 +261,18 @@ HELP.md
 *.temp
 Thumbs.db
 nse-mcp/
+# MYRA-specific ignores
+eod2/
+eod2_data/
+eod2_data_bak/
+eod2_data_old/
+myra_app/db/*.db
+myra_app/db/backups/
+models/
+data/
+logs/
+*.log
+*.tmp
+*.bak
+*.csv
+BhavDesk/

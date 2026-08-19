@@ -4,4 +4,4 @@
 
 Set WshShell = CreateObject("WScript.Shell")
 WshShell.CurrentDirectory = "D:\01screener\Myra"
-WshShell.Run "python -OO launch_myra.py", 0, False
+WshShell.Run "cmd /k ""D:\01screener\Myra\pkscreener_env\Scripts\python.exe"" -OO launch_myra.py", 1, False
