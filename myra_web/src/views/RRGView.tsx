@@ -66,9 +66,19 @@ export default function RRGView() {
         if (!active) return;
         const idx = data.indices as IndexEntry[];
         setIndices(idx);
-        // Select all except benchmark by default
-        const allIds = idx.map((i) => i.id);
-        setSelectedSectors(new Set(allIds));
+        // Default: major sector indices (not all 195 — too crowded)
+        const DEFAULT_SECTORS = [
+          'nifty bank', 'nifty it', 'nifty pharma', 'nifty auto',
+          'nifty metal', 'nifty realty', 'nifty fmcg', 'nifty energy',
+          'nifty financial services', 'nifty private bank', 'nifty psu bank',
+          'nifty midcap 50', 'nifty midcap 100', 'nifty midcap 150',
+          'nifty smallcap 50', 'nifty smallcap 100', 'nifty smallcap 250',
+          'nifty next 50', 'nifty next 100', 'nifty 500', 'nifty 200',
+          'nifty 100',
+        ];
+        const available = new Set(idx.map((i) => i.id));
+        const defaults = DEFAULT_SECTORS.filter((s) => available.has(s) && s !== benchmark);
+        setSelectedSectors(new Set(defaults.length > 0 ? defaults : idx.filter((i) => i.id !== benchmark).slice(0, 20).map((i) => i.id)));
       } catch (e) {
         if (active) setError(`Failed to load indices: ${e}`);
       }
