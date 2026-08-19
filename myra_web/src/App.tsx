@@ -43,6 +43,7 @@ import BottomHunterView from './views/BottomHunter';
 import ClimaxAccumulationView from './views/ClimaxAccumulation';
 import ConfluenceView from './views/ConfluenceView';
 import DCBBargainView from './views/DCBBargain';
+import RRGView from './views/RRGView';
 import NewsSentimentView from './views/NewsSentiment';
 import FundamentalsView from './views/FundamentalsView';
 import FullFundamentalsView from './views/FullFundamentalsView';
@@ -78,6 +79,7 @@ const TABS = [
   { id: 'Multibagger Matrix', path: '/multibagger-matrix', icon: '🚀', category: 'analysis' },
   { id: 'Value Ranker', path: '/value-ranker', icon: '🎯', category: 'analysis' },
   { id: 'News Sentiment', path: '/news-sentiment', icon: '📰', category: 'analysis' },
+  { id: 'RRG', path: '/rrg', icon: '🎯', category: 'analysis' },
   { id: 'Historical Search', path: '/historical-search', icon: '🔍', category: 'analysis' },
   { id: 'Data Sync', path: '/data-sync', icon: <Database size={18} />, category: 'data' },
   { id: 'Parquet Lake', path: '/parquet-lake', icon: '🌊', category: 'data' },
@@ -278,6 +280,7 @@ export default function App() {
                 <Route path="/dcb-bargain" element={<DCBBargainView lib={librarian} />} />
                 <Route path="/news-sentiment" element={<NewsSentimentView />} />
                 <Route path="/confluence" element={<ConfluenceView />} />
+                <Route path="/rrg" element={<RRGView />} />
 
                 {/* Fallback */}
                 <Route path="*" element={<Navigate to="/mission-control" replace />} />
