@@ -33,8 +33,8 @@ class DCBBargainScanner:
         max_discount_pct=60.0,
         min_del_abs=-2.0,
         min_adtv_cr=1.0,
-        min_high_del_days=10,
-        sanity_mult=5.0,
+        min_high_del_days=10,  # TODO: validate with backtest
+        sanity_mult=5.0,  # TODO: validate with backtest — DCB must be < 5x current close
         timeframe="daily",
         min_ff_mcap=600.0,
         corporate_actions_exclude_days=0,
@@ -198,10 +198,15 @@ class DCBBargainScanner:
 
     @staticmethod
     def _tier_from_score(score: float) -> str:
-        """Fallback tier assignment: HIGH >= 20, MOD >= 10, else LOW."""
-        if score >= 20:
+        """Fallback tier assignment when pool < 10 candidates.
+
+        Magic number thresholds (HIGH >= 20, MOD >= 10) are unvalidated
+        fallback values — actual tier cutoffs should be derived from
+        backtest performance when the candidate pool is large enough for
+        percentile-based assignment."""
+        if score >= 20:  # TODO: validate with backtest — unvalidated fallback threshold
             return "HIGH"
-        elif score >= 10:
+        elif score >= 10:  # TODO: validate with backtest — unvalidated fallback threshold
             return "MOD"
         return "LOW"
 
@@ -227,7 +232,14 @@ class DCBBargainScanner:
         return "SHALLOW"
 
     def _is_lower_circuit(self, df: pd.DataFrame, idx: int) -> bool:
-        """Check if the candle at idx was a lower-circuit day."""
+        """Check if the candle at idx was a lower-circuit day.
+
+        HEURISTIC: Uses a 5% price-drop threshold as a proxy for NSE circuit
+        bands, which are not currently available via API.  Actual circuit limits
+        vary by stock (typically 2%, 5%, 10%, or 20%) and are published by NSE
+        daily.  Replace this heuristic with real circuit-band data when
+        available (e.g. from NSE's daily bhavcopy or a dedicated API).
+        """
         if idx < 1:
             return False
         row = df.iloc[idx]
@@ -237,13 +249,20 @@ class DCBBargainScanner:
         prev_close = float(prev["close"])
         # Close pinned at the low (within 1%) AND dropped 5%+ from previous close
         is_pinned = close <= low * 1.01
-        is_significant_drop = close < prev_close * 0.95  # 5% drop
+        is_significant_drop = close < prev_close * 0.95  # TODO: validate with backtest — 5% is a heuristic; actual circuit bands vary by stock
         return is_pinned and is_significant_drop
 
     @staticmethod
     def _is_likely_circuit_lock(df: pd.DataFrame, idx: int) -> bool:
-        """Detect likely circuit-lock: >= 3 consecutive lower-circuit days
-        with volume < 20% of the 20-day pre-streak average.
+        """Detect likely circuit-lock: consecutive lower-circuit days with
+        severely reduced volume (lock-up symptom).
+
+        HEURISTIC: This method relies on the 5% drop threshold from
+        ``_is_lower_circuit`` to approximate NSE circuit bands.  The streak
+        length (3 days) and volume-collapse threshold (20%) are unvalidated
+        magic numbers — replace with real circuit-band data and proper
+        backtest validation when NSE circuit limits become available.
+
         Uses .values numpy slicing (no .iloc in loop — perf guard safe)."""
         if idx < 2:
             return False
@@ -259,14 +278,14 @@ class DCBBargainScanner:
             low_i = lows[i]
             prev_close_i = closes[i - 1]
             is_pinned = close_i <= low_i * 1.01
-            is_drop = close_i < prev_close_i * 0.95
+            is_drop = close_i < prev_close_i * 0.95  # TODO: validate with backtest — same 5% heuristic as _is_lower_circuit
             if is_pinned and is_drop:
                 streak += 1
                 i -= 1
             else:
                 break
 
-        if streak < 3:
+        if streak < 3:  # TODO: validate with backtest — 3-day minimum streak
             return False
 
         first_idx = i + 1  # first circuit day in the streak
@@ -275,26 +294,29 @@ class DCBBargainScanner:
         avg_pre_vol = (
             float(volumes[pre_start:first_idx].mean()) if pre_start < first_idx else 0.0
         )
-        return avg_pre_vol > 0 and avg_circuit_vol < 0.2 * avg_pre_vol
+        return avg_pre_vol > 0 and avg_circuit_vol < 0.2 * avg_pre_vol  # TODO: validate with backtest — 20% volume collapse threshold
 
     @staticmethod
     def _check_spike_deep(df_daily: pd.DataFrame, discount_pct: float) -> bool:
         """Return True if today's delivery_pct >= 1.3x 50-day avg AND
-        close_loc >= 0.6 AND discount_pct > 20. Uses daily frame."""
+        close_loc >= 0.6 AND discount_pct > 20. Uses daily frame.
+
+        Magic numbers: 1.3x delivery spike, 0.6 close location, 20% discount
+        threshold — all TODO: validate with backtest."""
         if len(df_daily) < 20:
             return False
         del_avg = df_daily["delivery_pct"].tail(50).mean()
         if pd.isna(del_avg) or del_avg <= 0:
             return False
         last = df_daily.iloc[-1]
-        if last["delivery_pct"] < 1.3 * del_avg:
+        if last["delivery_pct"] < 1.3 * del_avg:  # TODO: validate with backtest — 1.3x delivery spike threshold
             return False
         high, low, close = float(last["high"]), float(last["low"]), float(last["close"])
         if high == low:
             clr = 1.0 if close == high else 0.0
         else:
             clr = (close - low) / (high - low)
-        return clr >= 0.6 and discount_pct > 20
+        return clr >= 0.6 and discount_pct > 20  # TODO: validate with backtest — 0.6 close location, 20% discount threshold
 
     def _compute_depth_history(self, df_daily: pd.DataFrame) -> dict:
         """Compute 1-year DCB discount range from historical cutoffs.
@@ -525,7 +547,7 @@ class DCBBargainScanner:
                 spike_deep = self._check_spike_deep(df, discount_pct)
 
                 # Score (tier assigned after pool pass)
-                score = discount_pct * 0.6 + del_abs * 0.4
+                score = discount_pct * 0.6 + del_abs * 0.4  # TODO: validate with backtest — 60/40 weighting is unvalidated
 
                 # Lower-circuit detection (uses daily df)
                 is_lower_circuit = self._is_lower_circuit(df, len(df) - 1)
@@ -576,8 +598,8 @@ class DCBBargainScanner:
                         "timeframe": self.timeframe,
                     }
                 )
-            except Exception as e:
-                logger.warning("DCB scan failed for %s: %s", symbol, e)
+            except Exception:
+                logger.exception("DCB scan failed for %s", symbol)
                 continue
 
         # Sanitize float fields
@@ -626,7 +648,11 @@ class DCBBargainScanner:
         return pd.DataFrame(candidates)
 
     def _filter_corporate_actions(self, candidates: list[dict], as_on_date: str) -> list[dict]:
-        """Remove symbols with bonus/split/rights in the last N days."""
+        """Remove symbols with bonus/split/rights in the last N days.
+
+        Performs case-insensitive matching on action_type to handle
+        inconsistent casing in the corporate_actions table.
+        """
         if self.corporate_actions_exclude_days <= 0 or not candidates:
             return candidates
         try:
@@ -638,18 +664,29 @@ class DCBBargainScanner:
             ).strftime("%Y-%m-%d")
             syms = [c["symbol"] for c in candidates]
             placeholders = ",".join("?" for _ in syms)
+            # Filter list — lowercase for case-insensitive matching
+            exclude_types = {"bonus", "split", "rights", "bonus issue",
+                             "stock split", "rights issue"}
             with sqlite3.connect(inst_db) as conn:
                 rows = conn.execute(
                     f"""
-                    SELECT DISTINCT symbol FROM corporate_actions
+                    SELECT DISTINCT symbol, action_type FROM corporate_actions
                     WHERE symbol IN ({placeholders})
-                      AND action_type IN ('Bonus', 'Split', 'Rights', 'Bonus Issue',
-                                          'Stock Split', 'Rights Issue')
                       AND ex_date >= ?
                     """,
                     (*syms, cutoff),
                 ).fetchall()
-            excluded = {r[0] for r in rows}
+            # Case-insensitive matching: compare lowercased action_type
+            excluded: set[str] = set()
+            for symbol, action_type in rows:
+                if action_type and action_type.strip().lower() in exclude_types:
+                    excluded.add(symbol)
+                elif action_type:
+                    logger.warning(
+                        "CA filter: unrecognised action_type '%s' for %s — "
+                        "not excluded (add to filter list if needed)",
+                        action_type, symbol,
+                    )
             if excluded:
                 logger.info("CA filter: excluding %d symbols with recent actions", len(excluded))
             return [c for c in candidates if c["symbol"] not in excluded]

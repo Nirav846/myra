@@ -656,7 +656,12 @@ def test_lower_circuit_false_big_drop_but_not_pinned():
 
 
 def test_lower_circuit_false_exactly_5pct_drop():
-    """Close = exactly 0.95 * prev_close (not <) -> False."""
+    """HEURISTIC: Close = exactly 0.95 * prev_close (not <) -> False.
+
+    The 5% circuit-lock threshold is a heuristic proxy for NSE circuit bands,
+    which are not currently available via API.  Replace with real circuit-band
+    data when available.
+    """
     # prev_close=100, close=95.0 (exactly 5%, not less), low=94.5
     df = _make_circuit_df(
         closes=[100.0, 95.0],
