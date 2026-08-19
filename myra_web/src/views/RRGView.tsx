@@ -92,6 +92,7 @@ export default function RRGView() {
   const [sectorCapWarning, setSectorCapWarning] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
+  const forceRefreshRef = useRef(false);
 
   // ── Fetch indices on mount ──────────────────────────────────────────────
   useEffect(() => {
@@ -145,6 +146,10 @@ export default function RRGView() {
         benchmark,
         sectors: sectorList.join(','),
       });
+      if (forceRefreshRef.current) {
+        params.set('refresh', 'true');
+        forceRefreshRef.current = false;
+      }
       const res = await fetch(`${API_BASE}/rrg/?${params}`, { signal: controller.signal });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -334,7 +339,7 @@ export default function RRGView() {
           </p>
         </div>
         <button
-          onClick={fetchRRG}
+          onClick={() => { forceRefreshRef.current = true; fetchRRG(); }}
           disabled={loading || !hasSectors}
           className="flex items-center gap-2 px-3 py-1.5 text-xs bg-[#ffffff0a] border border-[#ffffff1a] rounded font-mono text-[#888] hover:text-white transition-colors disabled:opacity-50"
         >

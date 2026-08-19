@@ -319,18 +319,23 @@ def get_rrg_cached(
     sector_ids: Optional[List[str]],
     timeframe: str = "weekly",
     trail: int = 8,
+    refresh: bool = False,
 ) -> Dict:
-    """Return RRG data, using cache when possible."""
-    cached = _rrg_cache.get()
-    if cached is not None:
-        # Check if params match
-        meta = cached.get("meta", {})
-        if (
-            meta.get("benchmark") == benchmark_id
-            and meta.get("timeframe") == timeframe
-            and meta.get("trail") == trail
-        ):
-            return cached
+    """Return RRG data, using cache when possible.
+
+    If *refresh* is True, bypass the cache entirely and recompute.
+    """
+    if not refresh:
+        cached = _rrg_cache.get()
+        if cached is not None:
+            # Check if params match
+            meta = cached.get("meta", {})
+            if (
+                meta.get("benchmark") == benchmark_id
+                and meta.get("timeframe") == timeframe
+                and meta.get("trail") == trail
+            ):
+                return cached
 
     if sector_ids is None:
         indices = discover_indices()
