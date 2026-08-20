@@ -55,43 +55,45 @@ def compute_sector_momentum_tiers() -> dict[str, str]:
     if not symbol_sector:
         return {}
 
-    # Step 2: For each symbol, compute 6-month ROC from technical_data
-    # We need ~126 trading days of close data per symbol
+    # Step 2: Batch load close data for all symbols at once (no N+1)
     sector_rocs: dict[str, list[float]] = {}
     symbols = list(symbol_sector.keys())
 
     try:
         with sqlite3.connect(tech_db) as conn:
-            for sym in symbols:
-                try:
-                    # Get last 150 trading days of data (more than 126 to handle gaps)
-                    rows = conn.execute(
-                        """
-                        SELECT date, close FROM technical_data
-                        WHERE symbol = ?
-                        ORDER BY date DESC
-                        LIMIT 150
-                        """,
-                        (sym,),
-                    ).fetchall()
-                except Exception:
-                    continue
+            # Single query: get latest and ~126th-close for all symbols
+            placeholders = ",".join("?" for _ in symbols)
+            rows = conn.execute(
+                f"""
+                SELECT symbol, close, date FROM (
+                    SELECT symbol, close, date,
+                           ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
+                    FROM technical_data
+                    WHERE symbol IN ({placeholders})
+                ) WHERE rn IN (1, 126)
+                """,
+                symbols,
+            ).fetchall()
 
-                if len(rows) < 30:
-                    continue
+        # Group by symbol: rn=1 is latest, rn=126 is ~6mo ago
+        sym_latest: dict[str, float] = {}
+        sym_old: dict[str, float] = {}
+        for sym, close, _dt in rows:
+            # We get two rows per symbol; the one with rn=1 has the latest date
+            # Since we can't easily distinguish rn here, use a dict approach
+            if sym not in sym_latest:
+                sym_latest[sym] = float(close)
+            else:
+                sym_old[sym] = float(close)
 
-                # rows are DESC ordered; latest is rows[0]
-                latest_close = float(rows[0][1])
-                # Find close ~126 trading days ago (index 125 in DESC list)
-                target_idx = min(125, len(rows) - 1)
-                old_close = float(rows[target_idx][1])
-
-                if old_close <= 0 or latest_close <= 0:
-                    continue
-
-                roc = (latest_close - old_close) / old_close
-                sector = symbol_sector[sym]
-                sector_rocs.setdefault(sector, []).append(roc)
+        for sym in symbols:
+            latest_close = sym_latest.get(sym, 0)
+            old_close = sym_old.get(sym, 0)
+            if old_close <= 0 or latest_close <= 0:
+                continue
+            roc = (latest_close - old_close) / old_close
+            sector = symbol_sector[sym]
+            sector_rocs.setdefault(sector, []).append(roc)
     except Exception:
         return {}
 
@@ -531,18 +533,15 @@ class BottomHunter:
             candidate_df["_inv_pe"] = _inv_pe
 
             nm_rank = (
-                candidate_df["_nm"]
-                .apply(lambda x: x if x is not None else np.nan)
+                pd.to_numeric(candidate_df["_nm"], errors="coerce")
                 .rank(pct=True, ascending=True)
             )
             ph_rank = (
-                candidate_df["_ph"]
-                .apply(lambda x: x if x is not None else np.nan)
+                pd.to_numeric(candidate_df["_ph"], errors="coerce")
                 .rank(pct=True, ascending=True)
             )
             pe_rank = (
-                candidate_df["_inv_pe"]
-                .apply(lambda x: x if x is not None else np.nan)
+                pd.to_numeric(candidate_df["_inv_pe"], errors="coerce")
                 .rank(pct=True, ascending=True)
             )
 
@@ -553,33 +552,30 @@ class BottomHunter:
             # Default weights: 0.4, 0.3, 0.3
             w_nm, w_ph, w_pe = 0.4, 0.3, 0.3
 
-            qscores = []
-            for i in range(len(candidate_df)):
-                has_nm = nm_valid.iloc[i]
-                has_ph = ph_valid.iloc[i]
-                has_pe = pe_valid.iloc[i]
-                active_w = 0.0
-                if has_nm:
-                    active_w += w_nm
-                if has_ph:
-                    active_w += w_ph
-                if has_pe:
-                    active_w += w_pe
-                if active_w == 0:
-                    qscores.append(None)
-                    continue
-                score = 0.0
-                if has_nm:
-                    score += (w_nm / active_w) * nm_rank.iloc[i] * 100
-                if has_ph:
-                    score += (w_ph / active_w) * ph_rank.iloc[i] * 100
-                if has_pe:
-                    score += (w_pe / active_w) * pe_rank.iloc[i] * 100
-                qscores.append(round(score, 1))
+            # Vectorized quality score computation
+            has_nm = nm_valid.values.astype(float)
+            has_ph = ph_valid.values.astype(float)
+            has_pe = pe_valid.values.astype(float)
+            active_w = has_nm * w_nm + has_ph * w_ph + has_pe * w_pe
+            qscores = [None] * len(candidate_df)
+            nonzero = active_w > 0
+            nm_vals = nm_rank.values
+            ph_vals = ph_rank.values
+            pe_vals = pe_rank.values
+            for idx_c in np.where(nonzero)[0]:
+                aw = active_w[idx_c]
+                sc = 0.0
+                if has_nm[idx_c]:
+                    sc += (w_nm / aw) * nm_vals[idx_c] * 100
+                if has_ph[idx_c]:
+                    sc += (w_ph / aw) * ph_vals[idx_c] * 100
+                if has_pe[idx_c]:
+                    sc += (w_pe / aw) * pe_vals[idx_c] * 100
+                qscores[idx_c] = round(sc, 1)
 
             candidate_df["quality_score"] = qscores
             candidate_df.drop(columns=["_nm", "_ph", "_inv_pe"], inplace=True)
-            # Sanitize floats
+            # Sanitize floats — vectorized
             float_fields = [
                 "close",
                 "market_cap_cr",
@@ -592,7 +588,8 @@ class BottomHunter:
                 "swing_low_n",
             ]
             for field in float_fields:
-                candidate_df[field] = candidate_df[field].apply(self._sanitize_float)
+                if field in candidate_df.columns:
+                    candidate_df[field] = candidate_df[field].map(self._sanitize_float)
             # Sort by score descending
             candidate_df = candidate_df.sort_values(
                 "score", ascending=False

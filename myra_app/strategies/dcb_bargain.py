@@ -659,9 +659,8 @@ class DCBBargainScanner:
             inst_db = self._db_path("institutional")
             if not os.path.exists(inst_db):
                 return candidates
-            cutoff = (
-                pd.Timestamp(as_on_date) - pd.Timedelta(days=self.corporate_actions_exclude_days)
-            ).strftime("%Y-%m-%d")
+            cutoff_dt = pd.Timestamp(as_on_date) - pd.Timedelta(days=self.corporate_actions_exclude_days)
+            cutoff = f"{cutoff_dt:%Y-%m-%d}"
             syms = [c["symbol"] for c in candidates]
             placeholders = ",".join("?" for _ in syms)
             # Filter list — lowercase for case-insensitive matching

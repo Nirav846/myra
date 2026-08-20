@@ -356,46 +356,52 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
             # ── Begin atomic transaction ──────────────────────────────────
             conn.execute("BEGIN IMMEDIATE")
             try:
-                valid_rows = []
-                reject_rows = []
-                for _, row in df.iterrows():
-                    reject_reasons = validate_row(row)
-                    if reject_reasons:
-                        raw_values = {
-                            col: row[col]
-                            for col in [
-                                "symbol",
-                                "date",
-                                "open",
-                                "high",
-                                "low",
-                                "close",
-                                "volume",
-                                "delivery",
-                            ]
-                            if col in row
-                        }
+                # Vectorized validation — avoids per-row iterrows overhead
+                reject_mask = pd.Series(False, index=df.index)
+                reject_reasons_map: dict[int, list[str]] = {}
+                for col in ["open", "high", "low", "close"]:
+                    if col in df.columns:
+                        bad = pd.isna(df[col]) | (df[col].astype(float) <= 0)
+                        for idx in df.index[bad]:
+                            reject_reasons_map.setdefault(idx, []).append(f"{col} <= 0")
+                        reject_mask = reject_mask | bad
+                if "volume" in df.columns:
+                    bad_vol = pd.isna(df["volume"]) | (df["volume"].astype(float) <= 0)
+                    for idx in df.index[bad_vol]:
+                        reject_reasons_map.setdefault(idx, []).append("volume <= 0")
+                    reject_mask = reject_mask | bad_vol
+                if "delivery" in df.columns and "volume" in df.columns:
+                    d = df["delivery"].astype(float)
+                    v = df["volume"].astype(float)
+                    bad_del = (~pd.isna(d)) & (~pd.isna(v)) & ((d < 0) | (d > v))
+                    for idx in df.index[bad_del]:
+                        reject_reasons_map.setdefault(idx, []).append("delivery out of range [0, volume]")
+                    reject_mask = reject_mask | bad_del
+
+                reject_indices = list(reject_reasons_map.keys())
+                reject_df = df.loc[reject_indices] if reject_indices else pd.DataFrame()
+                valid_df = df.loc[~reject_mask]
+
+                # Log rejects
+                if not reject_df.empty:
+                    raw_cols = [c for c in ["symbol", "date", "open", "high", "low", "close", "volume", "delivery"] if c in df.columns]
+                    for _, row in reject_df.iterrows():
+                        raw_values = {col: row[col] for col in raw_cols}
                         cursor.execute(
                             "INSERT INTO ingestion_rejects (symbol, date, reason, raw_values) VALUES (?, ?, ?, ?)",
                             (
                                 row.get("symbol", ""),
                                 row.get("date", ""),
-                                "; ".join(reject_reasons),
+                                "; ".join(reject_reasons_map.get(row.name, [])),
                                 str(raw_values),
                             ),
                         )
-                        reject_rows.append(row)
-                    else:
-                        valid_rows.append(row)
-
-                if reject_rows:
                     print(
-                        f"  [REJECTED] {len(reject_rows)} invalid rows skipped and logged"
+                        f"  [REJECTED] {len(reject_df)} invalid rows skipped and logged"
                     )
 
-                df_to_insert = pd.DataFrame(valid_rows)
-                df_to_insert = df_to_insert[
-                    [c for c in df_to_insert.columns if c in valid_cols]
+                df_to_insert = valid_df[
+                    [c for c in valid_df.columns if c in valid_cols]
                 ]
 
                 if not df_to_insert.empty:

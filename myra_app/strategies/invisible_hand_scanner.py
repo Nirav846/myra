@@ -312,17 +312,17 @@ class InvisibleHandScanner:
             dcs_raw = mean_del / (1.0 + std_del / 10.0)
             dcs_score = min(100.0, max(0.0, dcs_raw / 40.0 * 100))
 
-            # Signal 4: Quiet Conviction Days (QCD)
+            # Signal 4: Quiet Conviction Days (QCD) — vectorized
             vols = curr_df["volume"].values.astype(float)
             avg_vol = float(np.nanmean(vols))
 
-            qcd = 0
-            for i in range(1, len(curr_df)):
-                dp = del_pcts[i]
-                ret = abs(returns[i])
-                vol = vols[i]
-                if dp > 50 and ret < 1.5 and 0.6 * avg_vol <= vol <= 1.4 * avg_vol:
-                    qcd += 1
+            qcd_mask = (
+                (del_pcts[1:] > 50)
+                & (np.abs(returns[1:]) < 1.5)
+                & (vols[1:] >= 0.6 * avg_vol)
+                & (vols[1:] <= 1.4 * avg_vol)
+            )
+            qcd = int(np.sum(qcd_mask))
 
             qcd_score = min(100.0, max(0.0, qcd / 12.0 * 100))
 
@@ -369,11 +369,13 @@ class InvisibleHandScanner:
                 cv = std_del / mean_del
                 consistency_score = max(0, (1.0 - cv) * 15.0)
 
-            # Enhancement 4: Down-Day Delivery Bonus (5 points max)
-            down_day_del_count = 0
-            for i in range(-min(10, len(curr_df)), 0):
-                if closes[i] < opens[i] and del_pcts[i] > mean_del:
-                    down_day_del_count += 1
+            # Enhancement 4: Down-Day Delivery Bonus (5 points max) — vectorized
+            n_tail = min(10, len(curr_df))
+            tail_closes = closes[-n_tail:]
+            tail_opens = opens[-n_tail:]
+            tail_del = del_pcts[-n_tail:]
+            down_mask_tail = (tail_closes < tail_opens) & (tail_del > mean_del)
+            down_day_del_count = int(np.sum(down_mask_tail))
             down_day_bonus = min(down_day_del_count, 5) * 1.0
 
             # Composite IH Score
@@ -416,19 +418,19 @@ class InvisibleHandScanner:
                 else 50.0
             )
 
-            # Base duration: consecutive sessions where daily range < 3% of close
+            # Base duration: consecutive sessions where daily range < 3% of close — vectorized
             base_duration = 0
-            for i in range(len(curr_df) - 1, -1, -1):
-                row = curr_df.iloc[i]
-                daily_range_pct = (
-                    (float(row["high"]) - float(row["low"])) / float(row["close"]) * 100
-                    if float(row["close"]) > 0
-                    else 99
-                )
-                if daily_range_pct < 3.0:
-                    base_duration += 1
-                else:
-                    break
+            if len(curr_df) > 0:
+                h_vals = curr_df["high"].values.astype(float)
+                l_vals = curr_df["low"].values.astype(float)
+                c_vals = curr_df["close"].values.astype(float)
+                range_pcts = np.where(c_vals > 0, (h_vals - l_vals) / c_vals * 100, 99.0)
+                # Count consecutive True from the end
+                for j in range(len(range_pcts) - 1, -1, -1):
+                    if range_pcts[j] < 3.0:
+                        base_duration += 1
+                    else:
+                        break
 
             # Filters before appending
             if der_ratio <= 1.2:
@@ -530,18 +532,15 @@ class InvisibleHandScanner:
             cand_df["_inv_pe"] = _inv_pe
 
             nm_rank = (
-                cand_df["_nm"]
-                .apply(lambda x: x if x is not None else np.nan)
+                pd.to_numeric(cand_df["_nm"], errors="coerce")
                 .rank(pct=True, ascending=True)
             )
             ph_rank = (
-                cand_df["_ph"]
-                .apply(lambda x: x if x is not None else np.nan)
+                pd.to_numeric(cand_df["_ph"], errors="coerce")
                 .rank(pct=True, ascending=True)
             )
             pe_rank = (
-                cand_df["_inv_pe"]
-                .apply(lambda x: x if x is not None else np.nan)
+                pd.to_numeric(cand_df["_inv_pe"], errors="coerce")
                 .rank(pct=True, ascending=True)
             )
 
@@ -552,29 +551,26 @@ class InvisibleHandScanner:
             # Default weights: 0.4, 0.3, 0.3
             w_nm, w_ph, w_pe = 0.4, 0.3, 0.3
 
-            qscores = []
-            for i in range(len(cand_df)):
-                has_nm = nm_valid.iloc[i]
-                has_ph = ph_valid.iloc[i]
-                has_pe = pe_valid.iloc[i]
-                active_w = 0.0
-                if has_nm:
-                    active_w += w_nm
-                if has_ph:
-                    active_w += w_ph
-                if has_pe:
-                    active_w += w_pe
-                if active_w == 0:
-                    qscores.append(None)
-                    continue
+            # Vectorized quality score computation
+            has_nm = nm_valid.values.astype(float)
+            has_ph = ph_valid.values.astype(float)
+            has_pe = pe_valid.values.astype(float)
+            active_w = has_nm * w_nm + has_ph * w_ph + has_pe * w_pe
+            qscores = [None] * len(cand_df)
+            nonzero = active_w > 0
+            nm_vals = nm_rank.values
+            ph_vals = ph_rank.values
+            pe_vals = pe_rank.values
+            for idx_c in np.where(nonzero)[0]:
+                aw = active_w[idx_c]
                 qscore = 0.0
-                if has_nm:
-                    qscore += (w_nm / active_w) * nm_rank.iloc[i] * 100
-                if has_ph:
-                    qscore += (w_ph / active_w) * ph_rank.iloc[i] * 100
-                if has_pe:
-                    qscore += (w_pe / active_w) * pe_rank.iloc[i] * 100
-                qscores.append(round(qscore, 1))
+                if has_nm[idx_c]:
+                    qscore += (w_nm / aw) * nm_vals[idx_c] * 100
+                if has_ph[idx_c]:
+                    qscore += (w_ph / aw) * ph_vals[idx_c] * 100
+                if has_pe[idx_c]:
+                    qscore += (w_pe / aw) * pe_vals[idx_c] * 100
+                qscores[idx_c] = round(qscore, 1)
 
             for idx_c, qs in enumerate(qscores):
                 candidates[idx_c]["quality_score"] = self._sanitize_float(qs)
@@ -597,9 +593,8 @@ class InvisibleHandScanner:
             inst_db = self._db_path("institutional")
             if not os.path.exists(inst_db):
                 return candidates
-            cutoff = (
-                pd.Timestamp(as_on_date) - pd.Timedelta(days=self.corporate_actions_exclude_days)
-            ).strftime("%Y-%m-%d")
+            cutoff_dt = pd.Timestamp(as_on_date) - pd.Timedelta(days=self.corporate_actions_exclude_days)
+            cutoff = f"{cutoff_dt:%Y-%m-%d}"
             syms = [c["symbol"] for c in candidates]
             placeholders = ",".join("?" for _ in syms)
             with sqlite3.connect(inst_db) as conn:

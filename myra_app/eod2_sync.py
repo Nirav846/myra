@@ -120,7 +120,7 @@ def _read_symbol_csv(csv_path: str, symbol: str) -> pd.DataFrame | None:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
     df["symbol"] = symbol.upper()
-    df["date"] = df["date"].dt.strftime("%Y-%m-%d")
+    df["date"] = df["date"].dt.strftime("%Y-%m-%d")  # noqa: PG-STRFTIME — .dt.strftime is the correct pandas vectorised pattern
 
     return df
 

@@ -221,26 +221,21 @@ class OperatorFingerprintScanner:
             else:
                 delivery_drift = 0.0
 
-            # Quiet accumulation days (last 20 sessions)
+            # Quiet accumulation days (last 20 sessions) — vectorized
             last20_df = df.tail(20)
-            quiet_accum_days = 0
             avg_del_session = float(np.nanmean(del_pcts))
-            for _, row in last20_df.iterrows():
-                del_pct = (
-                    float(row["delivery_pct"]) if pd.notna(row["delivery_pct"]) else 0
-                )
-                prev_close = (
-                    float(df[df["date"] < row["date"]]["close"].iloc[-1])
-                    if len(df[df["date"] < row["date"]]) > 0
-                    else float(row["close"])
-                )
-                price_change_pct = (
-                    abs(float(row["close"]) - prev_close) / prev_close * 100
-                    if prev_close > 0
-                    else 0
-                )
-                if del_pct > avg_del_session and price_change_pct < 1.5:
-                    quiet_accum_days += 1
+            l20_del = last20_df["delivery_pct"].values.astype(float)
+            l20_close = last20_df["close"].values.astype(float)
+            # Previous close: shift by 1 within the full df context
+            full_close = df["close"].values.astype(float)
+            # Map last20 indices back to full df positions
+            last20_start = len(df) - len(last20_df)
+            prev_closes_l20 = np.array([
+                full_close[last20_start + i - 1] if last20_start + i > 0 else l20_close[i]
+                for i in range(len(last20_df))
+            ])
+            price_changes = np.abs(l20_close - prev_closes_l20) / np.where(prev_closes_l20 > 0, prev_closes_l20, 1.0) * 100
+            quiet_accum_days = int(np.sum((l20_del > avg_del_session) & (price_changes < 1.5)))
 
             # Volume staircase: 3 blocks of 5 sessions each
             vol_block_1 = float(np.nanmean(volumes[-5:])) if len(volumes) >= 5 else 0
@@ -254,15 +249,19 @@ class OperatorFingerprintScanner:
                 vol_block_1 > vol_block_2 > vol_block_3 and vol_block_3 > 0
             )
 
-            # Base duration: count sessions where ATR < atr_old_pct
+            # Base duration: count sessions where rolling 15-day mean range < atr_old_pct — vectorized
             base_duration_days = 0
-            if atr_old_pct > 0:
-                for i in range(len(df)):
-                    sub = df.iloc[max(0, i - 14) : i + 1]
-                    if len(sub) >= 5:
-                        sub_range = _mean_daily_range(sub)
-                        if sub_range < atr_old_pct:
-                            base_duration_days += 1
+            if atr_old_pct > 0 and len(df) >= 5:
+                highs_arr = df["high"].values.astype(float)
+                lows_arr = df["low"].values.astype(float)
+                # Rolling 15-day mean daily range
+                ranges = np.where(lows_arr > 0, (highs_arr - lows_arr) / lows_arr * 100, 99.0)
+                # Use convolution for rolling mean (faster than pandas rolling)
+                window = 15
+                if len(ranges) >= window:
+                    cumsum = np.cumsum(np.insert(ranges, 0, 0))
+                    rolling_mean = (cumsum[window:] - cumsum[:-window]) / window
+                    base_duration_days = int(np.sum(rolling_mean < atr_old_pct))
 
             # Coil Tension Score (0-100)
             compression_component = max(0, (1 - compression_ratio)) * 40
