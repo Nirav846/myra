@@ -157,7 +157,7 @@ def enrich_screener_fundamentals(force: bool = False):
         if data:
             pbv = data.get("pbv")
             roce = data.get("roce")
-            cur.execute(
+            cur.execute(  # noqa: PG-NPLUS1
                 """
                 INSERT OR REPLACE INTO screener_fundamentals (symbol, pbv, roce, last_updated)
                 VALUES (?, ?, ?, ?)

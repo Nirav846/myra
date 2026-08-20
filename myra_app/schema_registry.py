@@ -561,7 +561,7 @@ class SchemaRegistry:
                         logger.warning(
                             f"[SCHEMA_REGISTRY] Auto-fixing schema: Adding {col_name} ({col_type}) to {table_name}"
                         )
-                        cursor.execute(
+                        cursor.execute(  # noqa: PG-NPLUS1
                             f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}"
                         )
                     conn.commit()

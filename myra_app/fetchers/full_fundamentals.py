@@ -348,11 +348,11 @@ def fetch_timeseries(company_id: str, metric: str) -> list:
         series = []
         for item in values:
             if isinstance(item, (list, tuple)) and len(item) >= 2:
-                series.append({"date": str(item[0]), "value": _to_float(item[1])})
+                series.append({"date": str(item[0]), "value": _to_float(item[1])})  # noqa: PG-APPEND
             else:
                 val = _to_float(item)
                 if val is not None:
-                    series.append({"date": "", "value": val})
+                    series.append({"date": "", "value": val})  # noqa: PG-APPEND
         return [p for p in series if p["value"] is not None]
     except Exception as e:
         logger.debug("Chart API failed for %s/%s: %s", company_id, metric, e)

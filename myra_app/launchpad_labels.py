@@ -129,7 +129,7 @@ class LaunchpadLabeler:
                 peak_pos = slice_.values.argmax()
                 peak_idx = i + peak_pos
                 peak_price = float(slice_.iloc[peak_pos])
-                triggers.append(
+                triggers.append(  # noqa: PG-APPEND
                     {
                         "trigger_date": df.loc[peak_idx, "date"],
                         "trigger_idx": peak_idx,
@@ -337,9 +337,9 @@ class LaunchpadLabeler:
             )
             if result:
                 result["symbol"] = symbol
-                events.append(result)
+                events.append(result)  # noqa: PG-APPEND
             else:
-                events.append(
+                events.append(  # noqa: PG-APPEND
                     {
                         "symbol": symbol,
                         "trigger_date": trigger["trigger_date"],

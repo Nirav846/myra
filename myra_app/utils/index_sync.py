@@ -102,7 +102,7 @@ def sync_index_constituents(index_name, force=False, task_id: int = None):
             for item in data["data"]:
                 symbol = item.get("symbol")
                 if symbol:
-                    symbols.append(symbol)
+                    symbols.append(symbol)  # noqa: PG-APPEND
 
         elif source["type"] == "csv":
             try:

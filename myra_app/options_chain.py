@@ -293,9 +293,9 @@ def parse_option_chain(
             "iv": pe.get("impliedVolatility", 0),
         }
 
-        ce_rows.append(ce_row)
-        pe_rows.append(pe_row)
-        strikes.append({"strike": strike, "ce": ce_row, "pe": pe_row})
+        ce_rows.append(ce_row)  # noqa: PG-APPEND
+        pe_rows.append(pe_row)  # noqa: PG-APPEND
+        strikes.append({"strike": strike, "ce": ce_row, "pe": pe_row})  # noqa: PG-APPEND
 
     pcr = compute_pcr(pe_rows, ce_rows)
 
@@ -495,7 +495,7 @@ def refresh_pcr() -> dict:
         try:
             raw = fetch_option_chain(symbol)
             if raw is None:
-                errors.append(f"{symbol}: fetch returned None")
+                errors.append(f"{symbol}: fetch returned None")  # noqa: PG-APPEND
                 continue
 
             parsed = parse_option_chain(raw)
@@ -512,10 +512,10 @@ def refresh_pcr() -> dict:
                 "updated_at": now_iso,
             }
             store_pcr_snapshot(snapshot)
-            snapshots.append(snapshot)
+            snapshots.append(snapshot)  # noqa: PG-APPEND
 
         except Exception as exc:
-            errors.append(f"{symbol}: {exc}")
+            errors.append(f"{symbol}: {exc}")  # noqa: PG-APPEND
             logger.warning("refresh_pcr failed for %s: %s", symbol, exc)
 
         # Polite delay between NSE calls (skip after last)

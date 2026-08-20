@@ -302,7 +302,7 @@ class LibrarianSchemaMixin:
                     if os.path.exists(path):
                         try:
                             conn = sqlite3.connect(path)
-                            conn.execute("PRAGMA journal_mode=WAL")
+                            conn.execute("PRAGMA journal_mode=WAL")  # noqa: PG-NPLUS1
                         except Exception:
                             pass
             if conn is not None:

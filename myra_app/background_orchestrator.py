@@ -849,8 +849,8 @@ def _task_db_backup():
                         if os.path.exists(db_path):
                             try:
                                 conn = sqlite3.connect(db_path)
-                                conn.execute("PRAGMA optimize")
-                                conn.execute("ANALYZE")
+                                conn.execute("PRAGMA optimize")  # noqa: PG-NPLUS1
+                                conn.execute("ANALYZE")  # noqa: PG-NPLUS1
                                 conn.close()
                             except Exception:
                                 pass

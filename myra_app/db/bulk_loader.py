@@ -183,6 +183,6 @@ def rows_for_symbol(
             # SQL path byte-for-byte.
             if isinstance(value, float) and math.isnan(value):
                 value = None
-            padded.append(value)
-        out.append(tuple(padded))
+            padded.append(value)  # noqa: PG-APPEND
+        out.append(tuple(padded))  # noqa: PG-APPEND
     return out

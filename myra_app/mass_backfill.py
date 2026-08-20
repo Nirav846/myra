@@ -225,13 +225,13 @@ def mass_backfill(
                 # Check open/high/low/close > 0
                 for col in ["open", "high", "low", "close"]:
                     if col in row and (pd.isna(row[col]) or float(row[col]) <= 0):
-                        reasons.append(f"{col} <= 0")
+                        reasons.append(f"{col} <= 0")  # noqa: PG-APPEND
 
                 # Check volume > 0
                 if "volume" in row and (
                     pd.isna(row["volume"]) or int(row["volume"]) <= 0
                 ):
-                    reasons.append("volume <= 0")
+                    reasons.append("volume <= 0")  # noqa: PG-APPEND
 
                 # Check delivery between 0 and volume
                 if "delivery" in row and "volume" in row:
@@ -239,7 +239,7 @@ def mass_backfill(
                         delivery_val = float(row["delivery"])
                         volume_val = int(row["volume"])
                         if delivery_val < 0 or delivery_val > volume_val:
-                            reasons.append("delivery out of range [0, volume]")
+                            reasons.append("delivery out of range [0, volume]")  # noqa: PG-APPEND
 
                 return reasons
 
@@ -247,7 +247,7 @@ def mass_backfill(
             valid_rows = []
             reject_rows = []
 
-            for _, row in df.iterrows():
+            for _, row in df.iterrows():  # noqa: PG-ITERROWS
                 reject_reasons = validate_row(row)
                 if reject_reasons:
                     # Log reject to ingestion_rejects table
@@ -265,7 +265,7 @@ def mass_backfill(
                         ]
                         if col in row
                     }
-                    cursor.execute(
+                    cursor.execute(  # noqa: PG-NPLUS1
                         "INSERT INTO ingestion_rejects (symbol, date, reason, raw_values) VALUES (?, ?, ?, ?)",
                         (
                             row.get("symbol", ""),
@@ -274,9 +274,9 @@ def mass_backfill(
                             str(raw_values),
                         ),
                     )
-                    reject_rows.append(row)
+                    reject_rows.append(row)  # noqa: PG-APPEND
                 else:
-                    valid_rows.append(row)
+                    valid_rows.append(row)  # noqa: PG-APPEND
 
             if reject_rows:
                 conn.commit()

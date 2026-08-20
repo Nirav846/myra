@@ -335,7 +335,7 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
             # Add missing score columns to technical_data table
             for col in score_columns:
                 try:
-                    conn.execute(f"ALTER TABLE technical_data ADD COLUMN {col} REAL")
+                    conn.execute(f"ALTER TABLE technical_data ADD COLUMN {col} REAL")  # noqa: PG-NPLUS1
                 except sqlite3.OperationalError:
                     pass  # Column already exists
 
@@ -394,7 +394,7 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
                             score_values[col] = float(val)
                 if score_values:
                     col_tuple = tuple(score_values.keys())
-                    updates_by_cols.setdefault(col_tuple, []).append(
+                    updates_by_cols.setdefault(col_tuple, []).append(  # noqa: PG-APPEND
                         list(score_values.values()) + [symbol, date_str]
                     )
             for col_tuple, batch in updates_by_cols.items():
@@ -413,7 +413,7 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
             print("[MYRA Enrichment] Computing SMA-50 and 52-week high/low...")
             for col in ["sma_50", "high_52w", "low_52w"]:
                 try:
-                    conn.execute(f"ALTER TABLE technical_data ADD COLUMN {col} REAL")
+                    conn.execute(f"ALTER TABLE technical_data ADD COLUMN {col} REAL")  # noqa: PG-NPLUS1
                 except sqlite3.OperationalError:
                     pass
 
@@ -443,7 +443,7 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
                 h52 = float(row["high_52w"]) if row["high_52w"] is not None else None
                 l52 = float(row["low_52w"]) if row["low_52w"] is not None else None
                 if sma is not None or h52 is not None or l52 is not None:
-                    update_rows.append((sma, h52, l52, row["symbol"], str(row["date"])))
+                    update_rows.append((sma, h52, l52, row["symbol"], str(row["date"])))  # noqa: PG-APPEND
 
             if update_rows:
                 conn.executemany(

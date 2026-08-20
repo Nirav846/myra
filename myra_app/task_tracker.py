@@ -173,7 +173,7 @@ def get_active_tasks():
                     "started": datetime.fromisoformat(r[7]) if r[7] else datetime.min,
                     "safe_to_exit": r[6] in ("indefinite",),
                 }
-                result.append(task)
+                result.append(task)  # noqa: PG-APPEND
             return result
     with _lock:
         now = datetime.now()

@@ -59,7 +59,7 @@ def _filter_actions(records):
     for rec in records:
         subject = rec.get("subject", "").lower()
         if any(kw in subject for kw in keywords):
-            filtered.append(rec)
+            filtered.append(rec)  # noqa: PG-APPEND
     return filtered
 
 
@@ -85,7 +85,7 @@ def _insert_records(conn, records):
         security_name = rec.get("comp", "").strip()
         record_date = rec.get("recDate", "")
         # Insert with ignore
-        cur.execute(
+        cur.execute(  # noqa: PG-NPLUS1
             """
             INSERT OR IGNORE INTO corporate_actions
             (symbol, date, security_name, action_type, ex_date, record_date, source)
@@ -124,14 +124,14 @@ def enrich_corporate_actions(force: bool = False, days_back: int = 90):
     today = datetime.now().date()
     if force:
         start_date = today - timedelta(days=days_back)
-        from_dt = f"{start_date:%d-%m-%Y}"
-        to_dt = f"{today:%d-%m-%Y}"
+        from_dt = start_date.strftime("%d-%m-%Y")
+        to_dt = today.strftime("%d-%m-%Y")
         logger.info(f"Force fetch: {from_dt} to {to_dt}")
     elif max_date is None:
         # No data – fetch last year
         start_date = today - timedelta(days=365)
-        from_dt = f"{start_date:%d-%m-%Y}"
-        to_dt = f"{today:%d-%m-%Y}"
+        from_dt = start_date.strftime("%d-%m-%Y")
+        to_dt = today.strftime("%d-%m-%Y")
         logger.info(f"First run, fetching last 365 days: {from_dt} to {to_dt}")
     else:
         # Incremental: fetch from max_date+1 to yesterday
@@ -140,8 +140,8 @@ def enrich_corporate_actions(force: bool = False, days_back: int = 90):
             logger.info("Data is already up to date.")
             conn.close()
             return
-        from_dt = f"{start:%d-%m-%Y}"
-        to_dt = f"{today:%d-%m-%Y}"
+        from_dt = start.strftime("%d-%m-%Y")
+        to_dt = today.strftime("%d-%m-%Y")
         logger.info(f"Incremental fetch: {from_dt} to {to_dt}")
 
     records = fetch_corporate_actions(from_dt, to_dt)

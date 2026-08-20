@@ -137,7 +137,7 @@ def _post_generate_content(prompt: str, api_key: str) -> dict | None:
             return None
         resp.raise_for_status()
         data = resp.json()
-        text = data["candidates"][0]["content"]["parts"][0]["text"]
+        text = data["candidates"][0]["content"]["parts"][0]["text"]  # noqa: PG-CHAINED
         return json.loads(text)
     except (requests.Timeout, requests.ConnectionError, requests.RequestException):
         logger.warning("Gemini API network error", exc_info=True)

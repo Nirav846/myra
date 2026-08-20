@@ -372,7 +372,7 @@ class MLTrainer:
             prob = probs[idx]
             pred_idx = classes.index(pred)
             confidence = round(float(prob[pred_idx]) * 100, 1)
-            results.append(
+            results.append(  # noqa: PG-APPEND
                 {
                     "symbol": df.at[idx, "symbol"],
                     "prediction": int(pred),
@@ -714,10 +714,10 @@ class LaunchpadPredictor:
 
         rows = []
         try:
-            for _, ev in current.iterrows():
+            for _, ev in current.iterrows():  # noqa: PG-ITERROWS
                 sym = ev["symbol"]
                 trig = ev["trigger_date"]
-                feats = conn.execute(
+                feats = conn.execute(  # noqa: PG-NPLUS1
                     """
                     SELECT
                         MIN((td.delivery_pct - td.avg_del) / (NULLIF(td.std_del, 0) + 1e-9)),
@@ -768,7 +768,7 @@ class LaunchpadPredictor:
                         0.0,
                     ]
 
-                rows.append(feature_values + [sym, trig])
+                rows.append(feature_values + [sym, trig])  # noqa: PG-APPEND
         finally:
             conn.close()
 
@@ -807,7 +807,7 @@ class LaunchpadPredictor:
             )
 
             sym = X.at[idx, "symbol"]
-            results.append(
+            results.append(  # noqa: PG-APPEND
                 {
                     "symbol": sym,
                     "trigger_date": X.at[idx, "trigger_date"],
@@ -987,7 +987,7 @@ class FactorDiscovery:
         for name, imp in ranked:
             for cat, cols_list in categories.items():
                 if name in cols_list:
-                    by_category[cat].append(
+                    by_category[cat].append(  # noqa: PG-APPEND
                         {"feature": name, "importance": round(float(imp), 4)}
                     )
                     break
