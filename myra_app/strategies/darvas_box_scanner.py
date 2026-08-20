@@ -5,6 +5,8 @@ import os
 import numpy as np
 import pandas as pd
 from datetime import date
+from myra_app.constants import DB_DIR
+from myra_app.librarian_core import LibrarianCore
 from myra_app.strategies.accumulation_base_scanner import AccumulationBaseScanner
 from myra_app.db.bulk_loader import load_ohlcv_for_universe
 
@@ -75,6 +77,45 @@ class DarvasBoxScanner(AccumulationBaseScanner):
         )
         self.bear_market = False
 
+    # --- Universe override (Blocker 1: include free_float_market_cap) --------
+
+    def _get_universe(self) -> list[tuple]:
+        val_db = self._db_path("valuation")
+        if not os.path.exists(val_db):
+            logger.warning("Valuation DB not found at %s", val_db)
+            return []
+        with sqlite3.connect(val_db) as conn:
+            rows = conn.execute(
+                """
+                SELECT f.symbol,
+                       COALESCE(f.market_cap, 0)             AS mcap,
+                       COALESCE(f.free_float_pct, 40.0)      AS ff_pct,
+                       COALESCE(f.free_float_market_cap, 0)   AS ff_mcap
+                FROM fundamentals f
+                INNER JOIN (
+                    SELECT symbol, MAX(date) as max_date
+                    FROM fundamentals
+                    WHERE COALESCE(market_cap, 0) > 0
+                    GROUP BY symbol
+                ) latest ON f.symbol = latest.symbol AND f.date = latest.max_date
+                WHERE COALESCE(f.market_cap, 0) / 1e7 BETWEEN ? AND ?
+                """,
+                (self.min_mcap, self.max_mcap),
+            ).fetchall()
+        return rows
+
+    # --- Grade helper (Blocker 5) --------------------------------------------
+
+    @staticmethod
+    def _compute_grade(score: float) -> str:
+        if score >= 75:
+            return "A"
+        if score >= 55:
+            return "B"
+        if score >= 40:
+            return "C"
+        return "D"
+
     # --- Box detection --------------------------------------------------------
 
     def _detect_box(self, df: pd.DataFrame) -> dict | None:
@@ -86,7 +127,16 @@ class DarvasBoxScanner(AccumulationBaseScanner):
         highs = df["high"].values.astype(float)
         lows = df["low"].values.astype(float)
 
-        high_52w = float(np.nanmax(highs))
+        high_52w_col = (
+            df["high_52w"].iloc[-1]
+            if "high_52w" in df.columns and pd.notna(df["high_52w"].iloc[-1])
+            else None
+        )
+        high_52w = (
+            float(high_52w_col)
+            if high_52w_col is not None and float(high_52w_col) > 0
+            else float(np.nanmax(highs))
+        )
         latest_close = float(closes[-1])
 
         # Prior-run check: within 5% of 52w high OR >=20% rally in last 60 days.
@@ -280,6 +330,7 @@ class DarvasBoxScanner(AccumulationBaseScanner):
             breakout_dar = (delivery * close_val) / ff_mcap * 100
 
         am = (breakout_dar / dar_box_median) if dar_box_median > 0 else 0.0
+        am = min(am, 5.0)
 
         return {
             "dar_box_median": float(dar_box_median),
@@ -363,9 +414,7 @@ class DarvasBoxScanner(AccumulationBaseScanner):
                 + score_ftc * 0.10
             )
 
-        grade = (
-            "A" if total >= 75 else "B" if total >= 55 else "C" if total >= 40 else "D"
-        )
+        grade = DarvasBoxScanner._compute_grade(total)
         return total, grade
 
     @staticmethod
@@ -447,7 +496,7 @@ class DarvasBoxScanner(AccumulationBaseScanner):
 
         candidates: list[dict] = []
 
-        for idx, (symbol, mcap, ff_pct) in enumerate(rows):
+        for idx, (symbol, mcap, ff_pct, ff_mcap_col) in enumerate(rows):
             symbol = symbol.strip()
             mcap_cr = mcap / 1e7
             tier = _tier_for_mcap(mcap_cr)
@@ -500,10 +549,12 @@ class DarvasBoxScanner(AccumulationBaseScanner):
             box = self._detect_box(df)
             if box is None:
                 continue
-            if box["box_age_days"] < th["min_box_age"]:
-                continue
 
-            ff_mcap = mcap * ff_pct / 100.0
+            ff_mcap = (
+                float(ff_mcap_col)
+                if ff_mcap_col and float(ff_mcap_col) > 0
+                else mcap * ff_pct / 100.0
+            )
             box_dar = self._compute_box_dar(
                 df,
                 box["box_start_idx"],
