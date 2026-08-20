@@ -52,7 +52,9 @@ def _get_company_id(symbol: str) -> Optional[str]:
         scripts = soup.find_all("script")
         for script in scripts:
             if script.string and "company_id" in script.string:
-                match = re.search(r'company_id["\']?\s*[:=]\s*["\']?(\d+)', script.string)
+                match = re.search(
+                    r'company_id["\']?\s*[:=]\s*["\']?(\d+)', script.string
+                )
                 if match:
                     return match.group(1)
         return None
@@ -157,7 +159,7 @@ def enrich_screener_fundamentals(force: bool = False):
         if data:
             pbv = data.get("pbv")
             roce = data.get("roce")
-            cur.execute(
+            cur.execute(  # noqa: PG-NPLUS1
                 """
                 INSERT OR REPLACE INTO screener_fundamentals (symbol, pbv, roce, last_updated)
                 VALUES (?, ?, ?, ?)

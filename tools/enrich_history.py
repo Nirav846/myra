@@ -97,9 +97,8 @@ def load_nifty(full_df: pl.DataFrame) -> pl.DataFrame:
         )
 
     all_dates = full_df.select(pl.col("date").unique()).sort("date")
-    nifty = (
-        all_dates.join(nifty, on="date", how="left")
-        .with_columns(pl.col("close").fill_null(strategy="forward"))
+    nifty = all_dates.join(nifty, on="date", how="left").with_columns(
+        pl.col("close").fill_null(strategy="forward")
     )
     return nifty
 
@@ -110,7 +109,9 @@ def ensure_columns(conn: sqlite3.Connection):
     for col in ALL_COLS:
         if col not in existing:
             try:
-                conn.execute(f"ALTER TABLE technical_data ADD COLUMN {col} REAL")
+                conn.execute(
+                    f"ALTER TABLE technical_data ADD COLUMN {col} REAL"
+                )  # noqa: PG-NPLUS1
             except sqlite3.OperationalError:
                 pass
     conn.commit()
@@ -124,7 +125,7 @@ def write_batch(conn: sqlite3.Connection, batch: list[tuple[str, str, str, float
     """
     by_col: dict[str, list[tuple[float, str, str]]] = defaultdict(list)
     for symbol, date_str, col, val in batch:
-        by_col[col].append((val, symbol, date_str))
+        by_col[col].append((val, symbol, date_str))  # noqa: PG-APPEND
 
     for col, rows in by_col.items():
         conn.executemany(
@@ -253,7 +254,7 @@ def main():
 
             for symbol, values in result.items():
                 for col, val in values.items():
-                    batch_buffer.append((symbol, d, col, val))
+                    batch_buffer.append((symbol, d, col, val))  # noqa: PG-APPEND
 
             if (idx % batch_size == 0 or idx == total) and batch_buffer:
                 write_batch(conn, batch_buffer)

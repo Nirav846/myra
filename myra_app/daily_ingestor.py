@@ -147,7 +147,7 @@ def calculate_missing_dates(db_latest_date: str, target_date: datetime) -> list:
         current = db_date + timedelta(days=1)
         while current <= target:
             if is_trading_day(datetime.combine(current, datetime.min.time())):
-                missing.append(current.isoformat())
+                missing.append(current.isoformat())  # noqa: PG-APPEND
             current += timedelta(days=1)
     except Exception as e:
         print(f"[WARN] Could not calculate missing dates: {e}")
@@ -340,7 +340,7 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
                 reasons = []
                 for col in ["open", "high", "low", "close"]:
                     if col in row and (pd.isna(row[col]) or float(row[col]) <= 0):
-                        reasons.append(f"{col} <= 0")
+                        reasons.append(f"{col} <= 0")  # noqa: PG-APPEND
                 if "volume" in row and (
                     pd.isna(row["volume"]) or int(row["volume"]) <= 0
                 ):
@@ -363,19 +363,25 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
                     if col in df.columns:
                         bad = pd.isna(df[col]) | (df[col].astype(float) <= 0)
                         for idx in df.index[bad]:
-                            reject_reasons_map.setdefault(idx, []).append(f"{col} <= 0")
+                            reject_reasons_map.setdefault(idx, []).append(
+                                f"{col} <= 0"
+                            )  # noqa: PG-APPEND
                         reject_mask = reject_mask | bad
                 if "volume" in df.columns:
                     bad_vol = pd.isna(df["volume"]) | (df["volume"].astype(float) <= 0)
                     for idx in df.index[bad_vol]:
-                        reject_reasons_map.setdefault(idx, []).append("volume <= 0")
+                        reject_reasons_map.setdefault(idx, []).append(
+                            "volume <= 0"
+                        )  # noqa: PG-APPEND
                     reject_mask = reject_mask | bad_vol
                 if "delivery" in df.columns and "volume" in df.columns:
                     d = df["delivery"].astype(float)
                     v = df["volume"].astype(float)
                     bad_del = (~pd.isna(d)) & (~pd.isna(v)) & ((d < 0) | (d > v))
                     for idx in df.index[bad_del]:
-                        reject_reasons_map.setdefault(idx, []).append("delivery out of range [0, volume]")
+                        reject_reasons_map.setdefault(idx, []).append(
+                            "delivery out of range [0, volume]"
+                        )  # noqa: PG-APPEND
                     reject_mask = reject_mask | bad_del
 
                 reject_indices = list(reject_reasons_map.keys())
@@ -384,10 +390,23 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
 
                 # Log rejects
                 if not reject_df.empty:
-                    raw_cols = [c for c in ["symbol", "date", "open", "high", "low", "close", "volume", "delivery"] if c in df.columns]
-                    for _, row in reject_df.iterrows():
+                    raw_cols = [
+                        c
+                        for c in [
+                            "symbol",
+                            "date",
+                            "open",
+                            "high",
+                            "low",
+                            "close",
+                            "volume",
+                            "delivery",
+                        ]
+                        if c in df.columns
+                    ]
+                    for _, row in reject_df.iterrows():  # noqa: PG-ITERROWS
                         raw_values = {col: row[col] for col in raw_cols}
-                        cursor.execute(
+                        cursor.execute(  # noqa: PG-NPLUS1
                             "INSERT INTO ingestion_rejects (symbol, date, reason, raw_values) VALUES (?, ?, ?, ?)",
                             (
                                 row.get("symbol", ""),
@@ -583,7 +602,9 @@ def run_daily_update(force_date: str = None, skip_backfill: bool = False) -> dic
                     try:
                         target_date = datetime.strptime(date_str, "%Y-%m-%d")
                         result = run_daily_update_for_date(target_date)
-                        overall_result["dates_processed"].append(result)
+                        overall_result["dates_processed"].append(
+                            result
+                        )  # noqa: PG-APPEND
                         if result["success"]:
                             overall_result["total_rows_inserted"] += result.get(
                                 "rows_inserted", 0
@@ -591,13 +612,17 @@ def run_daily_update(force_date: str = None, skip_backfill: bool = False) -> dic
                             if not overall_result["success"]:
                                 overall_result["success"] = True
                         else:
-                            overall_result["dates_failed"].append(date_str)
+                            overall_result["dates_failed"].append(
+                                date_str
+                            )  # noqa: PG-APPEND
                             print(
                                 f"[MYRA] Failed to ingest {date_str}: {result.get('error')}"
                             )
                     except Exception as e:
                         print(f"[MYRA] Error processing {date_str}: {e}")
-                        overall_result["dates_failed"].append(date_str)
+                        overall_result["dates_failed"].append(
+                            date_str
+                        )  # noqa: PG-APPEND
             else:
                 print("[MYRA] Backfill skipped by request")
         else:

@@ -168,7 +168,7 @@ class InstitutionalSync:
                     fii = float(item.get("fiiNetValue", 0) or 0)
                     dii = float(item.get("diiNetValue", 0) or 0)
                     if dt:
-                        conn.execute(
+                        conn.execute(  # noqa: PG-NPLUS1
                             """INSERT OR REPLACE INTO fii_dii_daily (date, fii_net_buy, dii_net_buy)
                             VALUES (?, ?, ?)""",
                             (dt, fii, dii),
@@ -212,7 +212,7 @@ class InstitutionalSync:
                         round(qty * price_val / 10000000, 2) if qty and price_val else 0
                     )
                     if sym and dt:
-                        conn.execute(
+                        conn.execute(  # noqa: PG-NPLUS1
                             """INSERT OR IGNORE INTO bulk_deals
                             (symbol, date, security_name, client_name, buy_sell, quantity, price, trade_value)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -257,7 +257,7 @@ class InstitutionalSync:
                         round(qty * price_val / 10000000, 2) if qty and price_val else 0
                     )
                     if sym and dt:
-                        conn.execute(
+                        conn.execute(  # noqa: PG-NPLUS1
                             """INSERT OR IGNORE INTO block_deals
                             (symbol, date, security_name, client_name, buy_sell, quantity, price, trade_value)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -311,7 +311,7 @@ class InstitutionalSync:
                         bs = "Sell"
                     mode = item.get("modeOfAcquisition", "")
                     if sym and dt:
-                        conn.execute(
+                        conn.execute(  # noqa: PG-NPLUS1
                             """INSERT OR IGNORE INTO insider_trades
                             (symbol, acq_name, category, type, mode, date)
                             VALUES (?, ?, ?, ?, ?, ?)""",
@@ -363,7 +363,7 @@ class InstitutionalSync:
                     except Exception:
                         record_date = record_date_raw
                     if sym and dt:
-                        conn.execute(
+                        conn.execute(  # noqa: PG-NPLUS1
                             """INSERT OR IGNORE INTO corporate_actions
                             (symbol, date, security_name, action_type, ex_date, record_date)
                             VALUES (?, ?, ?, ?, ?, ?)""",

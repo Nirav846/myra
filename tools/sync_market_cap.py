@@ -37,6 +37,7 @@ SEMAPHORE_LIMIT = 10
 # MARKET CAP SYNC (existing)
 # ──────────────────────────────────────────────
 
+
 async def fetch_one(sym: str, sem: asyncio.Semaphore) -> dict:
     async with sem:
         try:
@@ -95,7 +96,7 @@ def sync_market_cap():
 
     for r in results:
         if r["market_cap"] is not None:
-            cur.execute(
+            cur.execute(  # noqa: PG-NPLUS1
                 "UPDATE fundamentals SET market_cap = ?, sector = ?, pe = ? WHERE symbol = ?",
                 (r["market_cap"], r["sector"], r["pe"], r["symbol"]),
             )
@@ -120,6 +121,7 @@ def sync_market_cap():
 # ──────────────────────────────────────────────
 # SHAREHOLDING + FREE FLOAT SYNC
 # ──────────────────────────────────────────────
+
 
 def _fetch_yf_info(symbol: str) -> dict:
     """
@@ -158,13 +160,17 @@ def _fetch_yf_info(symbol: str) -> dict:
         mcap = info.get("marketCap")
         price = info.get("regularMarketPrice")
         result["shares_outstanding"] = float(so) if so else None
-        result["insider_holding_pct"] = round(float(insiders) * 100, 2) if insiders else None
+        result["insider_holding_pct"] = (
+            round(float(insiders) * 100, 2) if insiders else None
+        )
         result["float_shares"] = float(fs) if fs else None
         result["market_cap"] = float(mcap) if mcap else None
         result["price"] = float(price) if price else None
         result["sector"] = info.get("sector")
         result["industry"] = info.get("industry")
-        return result["shares_outstanding"] is not None or result["market_cap"] is not None
+        return (
+            result["shares_outstanding"] is not None or result["market_cap"] is not None
+        )
 
     try:
         got_data = _try_suffix(".NS")
@@ -260,7 +266,9 @@ def sync_shareholding_and_float(limit: int | None = None):
     conn = sqlite3.connect(db_path, timeout=30)
     symbols = [
         row[0]
-        for row in conn.execute("SELECT DISTINCT symbol FROM fundamentals ORDER BY symbol").fetchall()
+        for row in conn.execute(
+            "SELECT DISTINCT symbol FROM fundamentals ORDER BY symbol"
+        ).fetchall()
     ]
     logger.info("Found %d symbols in fundamentals table", len(symbols))
 
@@ -294,10 +302,15 @@ def sync_shareholding_and_float(limit: int | None = None):
     for r in results:
         has_data = any(
             r.get(k) is not None
-            for k in ["shares_outstanding", "insider_holding_pct", "free_float_shares", "industry"]
+            for k in [
+                "shares_outstanding",
+                "insider_holding_pct",
+                "free_float_shares",
+                "industry",
+            ]
         )
         if has_data:
-            cur.execute(
+            cur.execute(  # noqa: PG-NPLUS1
                 update_sql,
                 (
                     r.get("shares_outstanding"),

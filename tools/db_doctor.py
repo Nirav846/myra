@@ -191,12 +191,14 @@ class DbDoctor:
                     print("  [DRY RUN] Would create sync_log table")
                 else:
                     try:
-                        conn.execute("""
+                        conn.execute(
+                            """
                             CREATE TABLE sync_log (
                                 task_name TEXT PRIMARY KEY,
                                 last_run TEXT
                             )
-                        """)
+                        """
+                        )
                         conn.commit()
                         print("  [FIXED] Created sync_log table")
                         self.issues_fixed += 1
@@ -304,7 +306,8 @@ class DbDoctor:
                     )
                 else:
                     try:
-                        conn.execute("""
+                        conn.execute(
+                            """
                             CREATE TABLE fundamentals (
                                 symbol TEXT NOT NULL,
                                 date TEXT NOT NULL,
@@ -323,7 +326,8 @@ class DbDoctor:
                                 source_nse TEXT,
                                 PRIMARY KEY (symbol, date)
                             )
-                        """)
+                        """
+                        )
                         conn.commit()
                         print("  [FIXED] Created fundamentals table")
                         self.issues_fixed += 1
@@ -351,7 +355,7 @@ class DbDoctor:
                     try:
                         conn.execute("BEGIN")
                         for col, col_type in missing_cols.items():
-                            c.execute(
+                            c.execute(  # noqa: PG-NPLUS1
                                 f"ALTER TABLE fundamentals ADD COLUMN {col} {col_type}"
                             )
                             print(f"  [FIXED] Added column {col}")
@@ -437,11 +441,13 @@ class DbDoctor:
                     f"  [WARNING] Rows with NULL delivery_pct but valid delivery: {null_pct:,}"
                 )
                 if not self.dry_run:
-                    conn.execute("""
+                    conn.execute(
+                        """
                         UPDATE technical_data
                         SET delivery_pct = ROUND((delivery * 100.0 / volume), 2)
                         WHERE delivery IS NOT NULL AND volume > 0 AND delivery_pct IS NULL
-                    """)
+                    """
+                    )
                     conn.commit()
                     self.issues_fixed += 1
                     print(f"  [FIXED] Backfilled delivery_pct for {null_pct:,} rows")

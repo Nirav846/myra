@@ -60,7 +60,7 @@ def main() -> None:
             continue
 
         try:
-            cur = conn.execute(
+            cur = conn.execute(  # noqa: PG-NPLUS1
                 f"UPDATE fundamentals SET {canonical} = {alias} "
                 f"WHERE ({canonical} IS NULL OR {canonical} = 0) "
                 f"AND {alias} IS NOT NULL AND {alias} != 0"

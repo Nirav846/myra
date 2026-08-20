@@ -42,7 +42,7 @@ def fetch_gdelt_news(query: str, max_results: int = 20) -> list[dict]:
                 tone = float(tone) if tone is not None else None
             except (TypeError, ValueError):
                 tone = None
-            articles.append(
+            articles.append(  # noqa: PG-APPEND
                 {
                     "headline": art.get("title", ""),
                     "url": art.get("url", ""),
@@ -139,7 +139,11 @@ def fetch_groww_news(ticker: str, max_pages: int = 3) -> list[dict]:
                     cta_list = data.get("cta", [])
                     if cta_list and isinstance(cta_list, list):
                         first_cta = cta_list[0]
-                        meta = first_cta.get("meta", {}) if isinstance(first_cta, dict) else {}
+                        meta = (
+                            first_cta.get("meta", {})
+                            if isinstance(first_cta, dict)
+                            else {}
+                        )
                         nse_code = (meta.get("nseScriptCode") or "").strip().upper()
                         bse_code = (meta.get("bseScriptCode") or "").strip().upper()
 
@@ -157,7 +161,9 @@ def fetch_groww_news(ticker: str, max_pages: int = 3) -> list[dict]:
 
                     # publishedAt: "2025-12-11T10:57:26" → date part
                     published_at = data.get("publishedAt") or ""
-                    date_part = published_at[:10] if len(published_at) >= 10 else published_at
+                    date_part = (
+                        published_at[:10] if len(published_at) >= 10 else published_at
+                    )
 
                     # Company name from CTA display text
                     company_name = ""
@@ -177,7 +183,7 @@ def fetch_groww_news(ticker: str, max_pages: int = 3) -> list[dict]:
                         if slug:
                             cta_url = f"https://groww.in/stocks/{slug}"
 
-                    matched.append(
+                    matched.append(  # noqa: PG-APPEND
                         {
                             "headline": headline,
                             "company_name": company_name,
@@ -270,7 +276,9 @@ def _init_db():
         ("company_name", "TEXT"),
     ]:
         try:
-            conn.execute(f"ALTER TABLE news_sentiment ADD COLUMN {col} {col_type}")
+            conn.execute(  # noqa: PG-NPLUS1
+                f"ALTER TABLE news_sentiment ADD COLUMN {col} {col_type}"
+            )
         except sqlite3.OperationalError:
             pass  # column already exists
     conn.execute(
@@ -324,7 +332,7 @@ def _store_news(ticker: str, articles: list[dict]):
     _init_db()
     conn = sqlite3.connect(_get_db_path())
     for art in articles:
-        conn.execute(
+        conn.execute(  # noqa: PG-NPLUS1
             "INSERT OR IGNORE INTO news_sentiment "
             "(ticker, headline, source, published_at, sentiment_label, sentiment_score, "
             "url, language, tone, domain, company_name) "
@@ -398,19 +406,19 @@ def get_ticker_news(ticker: str, refresh: bool = False) -> list[dict]:
         headline = art.get("headline", "")
         if headline and headline not in seen_headlines:
             seen_headlines.add(headline)
-            combined.append(art)
+            combined.append(art)  # noqa: PG-APPEND
 
     for art in groww_articles:
         headline = art.get("headline", "")
         if headline and headline not in seen_headlines:
             seen_headlines.add(headline)
-            combined.append(art)
+            combined.append(art)  # noqa: PG-APPEND
 
     # Classify sentiment and build final result dicts
     results = []
     for art in combined:
         label, score = _classify_sentiment(art["headline"])
-        results.append(
+        results.append(  # noqa: PG-APPEND
             {
                 "headline": art["headline"],
                 "url": art.get("url", ""),

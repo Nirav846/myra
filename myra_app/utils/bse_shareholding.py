@@ -25,6 +25,7 @@ DB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 # NSE path (primary) — uses dalal library
 # ──────────────────────────────────────────────
 
+
 def fetch_nse_shareholding(symbol: str) -> dict | None:
     """
     Fetch promoter & public holding from NSE quarterly filings via dalal.
@@ -34,6 +35,7 @@ def fetch_nse_shareholding(symbol: str) -> dict | None:
     or None if not found.
     """
     import dalal
+
     try:
         rows = dalal.shareholding(symbol)
         if not rows:
@@ -57,6 +59,7 @@ def fetch_nse_shareholding(symbol: str) -> dict | None:
 # ──────────────────────────────────────────────
 # BSE path (fallback) — uses shpSecSummery_New
 # ──────────────────────────────────────────────
+
 
 def resolve_bse_scrip(symbol: str) -> str | None:
     """
@@ -207,7 +210,10 @@ def fetch_bse_shareholding(scripcode: str) -> dict | None:
             if not row:
                 continue
             first_cell = row[0].strip() if row else ""
-            if first_cell == "(A) Promoter & Promoter Group" or first_cell == "Promoter & Promoter Group":
+            if (
+                first_cell == "(A) Promoter & Promoter Group"
+                or first_cell == "Promoter & Promoter Group"
+            ):
                 if len(row) >= 5:
                     promoter_pct = _parse_pct(row[4])
             elif first_cell == "(B) Public" or first_cell == "Public":
@@ -254,6 +260,7 @@ def _parse_num(val: str) -> int | None:
 # ──────────────────────────────────────────────
 # Backfill orchestrator
 # ──────────────────────────────────────────────
+
 
 async def backfill_shareholding(max_symbols: int | None = None):
     """
@@ -321,7 +328,7 @@ async def backfill_shareholding(max_symbols: int | None = None):
             if public is None and promoter is not None:
                 public = round(100.0 - promoter, 2)
 
-            conn.execute(
+            conn.execute(  # noqa: PG-NPLUS1
                 """UPDATE fundamentals SET
                     promoter_holding_pct = COALESCE(?, promoter_holding_pct),
                     public_holding_pct = COALESCE(?, public_holding_pct)
@@ -336,7 +343,12 @@ async def backfill_shareholding(max_symbols: int | None = None):
             elapsed = time.time() - t0
             logger.info(
                 "[%d/%d] NSE=%d BSE=%d skipped=%d (%.1f sec)",
-                i + 1, len(symbols), updated_nse, updated_bse, skipped, elapsed,
+                i + 1,
+                len(symbols),
+                updated_nse,
+                updated_bse,
+                skipped,
+                elapsed,
             )
 
         await asyncio.sleep(0.3)  # rate-limit
@@ -347,7 +359,10 @@ async def backfill_shareholding(max_symbols: int | None = None):
     elapsed = time.time() - t0
     logger.info(
         "Backfill complete: %d NSE, %d BSE, %d skipped (%.1f sec)",
-        updated_nse, updated_bse, skipped, elapsed,
+        updated_nse,
+        updated_bse,
+        skipped,
+        elapsed,
     )
 
     print(f"\n{'='*60}")
@@ -368,6 +383,7 @@ def run_backfill(max_symbols: int | None = None):
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser(description="Backfill shareholding data")
     parser.add_argument("--limit", type=int, default=None, help="Limit symbols")
     args = parser.parse_args()

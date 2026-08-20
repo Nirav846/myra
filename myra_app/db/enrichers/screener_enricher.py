@@ -52,7 +52,9 @@ def _get_company_id(symbol: str) -> Optional[str]:
         scripts = soup.find_all("script")
         for script in scripts:
             if script.string and "company_id" in script.string:
-                match = re.search(r'company_id["\']?\s*[:=]\s*["\']?(\d+)', script.string)
+                match = re.search(
+                    r'company_id["\']?\s*[:=]\s*["\']?(\d+)', script.string
+                )
                 if match:
                     return match.group(1)
         return None

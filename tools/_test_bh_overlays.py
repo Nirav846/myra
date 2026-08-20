@@ -47,19 +47,20 @@ np.random.seed(42)
 TECH_DB = os.path.join(DB_DIR, LibrarianCore.DB_MAP["technical"])
 VAL_DB = os.path.join(DB_DIR, LibrarianCore.DB_MAP["valuation"])
 
-LOOKBACK_DAYS = 260          # same as BottomHunter default
-UNIVERSE_SAMPLE = 400        # target symbol count (300-500)
-N_DATES = 10                 # historical scan dates
-SPIKE_CONFIRM_WINDOW = 10    # max days to look for delivery spike
-SECOND_CHANCE_WINDOW = 20    # max days to wait for break-and-recover
-FWD_WINDOWS = [20, 40]       # forward return windows (trading days)
-SPIKE_DELIVERY_MULT = 1.3    # delivery_pct >= 1.3x rolling 50d mean
+LOOKBACK_DAYS = 260  # same as BottomHunter default
+UNIVERSE_SAMPLE = 400  # target symbol count (300-500)
+N_DATES = 10  # historical scan dates
+SPIKE_CONFIRM_WINDOW = 10  # max days to look for delivery spike
+SECOND_CHANCE_WINDOW = 20  # max days to wait for break-and-recover
+FWD_WINDOWS = [20, 40]  # forward return windows (trading days)
+SPIKE_DELIVERY_MULT = 1.3  # delivery_pct >= 1.3x rolling 50d mean
 SPIKE_PRICE_PERCENTILE = 0.6  # close in upper 60% of day's range
 
 
 # ---------------------------------------------------------------------------
 # Data helpers
 # ---------------------------------------------------------------------------
+
 
 def get_available_dates() -> list[str]:
     """Return all distinct dates in technical_data, sorted ascending."""
@@ -114,7 +115,16 @@ def fetch_symbol_df(symbol: str, min_date: str, max_date: str) -> pd.DataFrame |
         return None
     df = pd.DataFrame(
         rows,
-        columns=["date", "open", "high", "low", "close", "volume", "delivery", "delivery_pct"],
+        columns=[
+            "date",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "delivery",
+            "delivery_pct",
+        ],
     )
     for col in ["open", "high", "low", "close", "volume", "delivery", "delivery_pct"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -126,6 +136,7 @@ def fetch_symbol_df(symbol: str, min_date: str, max_date: str) -> pd.DataFrame |
 # ---------------------------------------------------------------------------
 # Bottom Hunter signal generation (simplified from scanner class)
 # ---------------------------------------------------------------------------
+
 
 def detect_bh_signals(df: pd.DataFrame) -> dict | None:
     """Detect a Bottom Hunter signal at the last row of df.
@@ -144,7 +155,9 @@ def detect_bh_signals(df: pd.DataFrame) -> dict | None:
     up_days = last_20[last_20["close"] > last_20["open"]]
     down_days = last_20[last_20["close"] < last_20["open"]]
     up_del_avg = float(up_days["delivery_pct"].mean()) if len(up_days) > 0 else 0.0
-    down_del_avg = float(down_days["delivery_pct"].mean()) if len(down_days) > 0 else 0.0
+    down_del_avg = (
+        float(down_days["delivery_pct"].mean()) if len(down_days) > 0 else 0.0
+    )
     delivery_absorption = up_del_avg - down_del_avg
 
     if delivery_absorption < 5.0:
@@ -159,15 +172,20 @@ def detect_bh_signals(df: pd.DataFrame) -> dict | None:
     latest_close = float(last_20["close"].iloc[-1])
     high_52w = float(df["high"].max())
     low_52w = float(df["low"].min())
-    pct_above_52w_low = ((latest_close - low_52w) / low_52w * 100) if low_52w > 0 else 0.0
+    pct_above_52w_low = (
+        ((latest_close - low_52w) / low_52w * 100) if low_52w > 0 else 0.0
+    )
 
     # ATR
     prev_close = last_20["close"].shift(1)
-    tr = pd.concat([
-        last_20["high"] - last_20["low"],
-        (last_20["high"] - prev_close).abs(),
-        (last_20["low"] - prev_close).abs(),
-    ], axis=1).max(axis=1)
+    tr = pd.concat(
+        [
+            last_20["high"] - last_20["low"],
+            (last_20["high"] - prev_close).abs(),
+            (last_20["low"] - prev_close).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
     atr_20d = float(tr.mean())
     swing_low_20d = float(last_20["low"].min())
 
@@ -191,6 +209,7 @@ def detect_bh_signals(df: pd.DataFrame) -> dict | None:
 # ---------------------------------------------------------------------------
 # Overlay logic
 # ---------------------------------------------------------------------------
+
 
 def apply_delivery_spike(
     df: pd.DataFrame, signal_idx: int, window: int = SPIKE_CONFIRM_WINDOW
@@ -263,7 +282,10 @@ def apply_second_chance(
 # Forward return measurement
 # ---------------------------------------------------------------------------
 
-def forward_return(df: pd.DataFrame, signal_idx: int, entry_price: float, days: int) -> float | None:
+
+def forward_return(
+    df: pd.DataFrame, signal_idx: int, entry_price: float, days: int
+) -> float | None:
     """Compute forward return from entry_price over `days` trading days."""
     target_idx = signal_idx + days
     if target_idx >= len(df):
@@ -277,6 +299,7 @@ def forward_return(df: pd.DataFrame, signal_idx: int, entry_price: float, days: 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main():
     logger.info("=== Bottom Hunter Overlay Backtest ===")
@@ -295,7 +318,8 @@ def main():
     if safe_end < N_DATES:
         logger.warning(
             "Not enough historical dates for %d scan points. Using %d dates.",
-            N_DATES, safe_end,
+            N_DATES,
+            safe_end,
         )
     step = max(1, safe_end // N_DATES) if safe_end > 0 else 1
     scan_dates = dates[::step][:N_DATES]
@@ -321,7 +345,11 @@ def main():
             return df_cache[symbol]
         # Fetch wide enough window for lookback + forward
         earliest = scan_dates[0] if scan_dates else dates[0]
-        earliest_idx = max(0, dates.index(earliest) - LOOKBACK_DAYS - 60) if earliest in dates else 0
+        earliest_idx = (
+            max(0, dates.index(earliest) - LOOKBACK_DAYS - 60)
+            if earliest in dates
+            else 0
+        )
         min_date = dates[earliest_idx]
         max_date = dates[-1]
         df = fetch_symbol_df(symbol, min_date, max_date)
@@ -357,22 +385,22 @@ def main():
 
             # Apply overlays using the full DataFrame from scan_idx
             spike_confirmed, spike_close = apply_delivery_spike(df, scan_idx)
-            second_chance = apply_second_chance(
-                df, scan_idx, sig["swing_low_20d"]
-            )
+            second_chance = apply_second_chance(df, scan_idx, sig["swing_low_20d"])
 
-            all_candidates.append({
-                "symbol": symbol,
-                "scan_date": scan_date,
-                "signal_idx": scan_idx,
-                "entry_close": sig["close"],
-                "sl_price": sig["sl_price"],
-                "swing_low_20d": sig["swing_low_20d"],
-                "delivery_absorption": sig["delivery_absorption"],
-                "spike_confirmed": spike_confirmed,
-                "spike_close": spike_close,
-                "second_chance": second_chance,
-            })
+            all_candidates.append(
+                {  # noqa: PG-APPEND
+                    "symbol": symbol,
+                    "scan_date": scan_date,
+                    "signal_idx": scan_idx,
+                    "entry_close": sig["close"],
+                    "sl_price": sig["sl_price"],
+                    "swing_low_20d": sig["swing_low_20d"],
+                    "delivery_absorption": sig["delivery_absorption"],
+                    "spike_confirmed": spike_confirmed,
+                    "spike_close": spike_close,
+                    "second_chance": second_chance,
+                }
+            )
             count += 1
         logger.info("  >> %d candidates on %s", count, scan_date)
 
@@ -431,7 +459,12 @@ def main():
                         row = df.iloc[idx]
                         dp = row.get("delivery_pct")
                         r50 = roll50.iloc[idx]
-                        if dp is None or r50 is None or math.isnan(dp) or math.isnan(r50):
+                        if (
+                            dp is None
+                            or r50 is None
+                            or math.isnan(dp)
+                            or math.isnan(r50)
+                        ):
                             continue
                         if dp < SPIKE_DELIVERY_MULT * r50:
                             continue
@@ -445,9 +478,9 @@ def main():
                             fwd20 = forward_return(df, idx, entry, 20)
                             fwd40 = forward_return(df, idx, entry, 40)
                             if fwd20 is not None:
-                                returns_20d.append(fwd20)
+                                returns_20d.append(fwd20)  # noqa: PG-APPEND
                             if fwd40 is not None:
-                                returns_40d.append(fwd40)
+                                returns_40d.append(fwd40)  # noqa: PG-APPEND
                             break
                     continue  # already measured from confirmation index
 
@@ -476,9 +509,9 @@ def main():
                                 fwd20 = forward_return(df, lowest_idx, lowest_close, 20)
                                 fwd40 = forward_return(df, lowest_idx, lowest_close, 40)
                                 if fwd20 is not None:
-                                    returns_20d.append(fwd20)
+                                    returns_20d.append(fwd20)  # noqa: PG-APPEND
                                 if fwd40 is not None:
-                                    returns_40d.append(fwd40)
+                                    returns_40d.append(fwd40)  # noqa: PG-APPEND
                                 entry_found = True
                                 break
                         if entry_found:
@@ -495,9 +528,9 @@ def main():
                 fwd20 = forward_return(df, signal_idx, entry, 20)
                 fwd40 = forward_return(df, signal_idx, entry, 40)
                 if fwd20 is not None:
-                    returns_20d.append(fwd20)
+                    returns_20d.append(fwd20)  # noqa: PG-APPEND
                 if fwd40 is not None:
-                    returns_40d.append(fwd40)
+                    returns_40d.append(fwd40)  # noqa: PG-APPEND
 
         if returns_20d or returns_40d:
             r20 = np.array(returns_20d) if returns_20d else np.array([])
@@ -524,16 +557,33 @@ def main():
     print(header)
     print("-" * 80)
 
-    for subset_name in ["Baseline", "Delivery-Spike", "Second-Chance", "Spike + Second-Chance"]:
+    for subset_name in [
+        "Baseline",
+        "Delivery-Spike",
+        "Second-Chance",
+        "Spike + Second-Chance",
+    ]:
         r = results.get(subset_name, {})
         count = r.get("count", 0)
         m20 = r.get("measured_20d", 0)
         m40 = r.get("measured_40d", 0)
-        mean20 = f"{r['mean_20d'] * 100:+.1f}%" if r.get("mean_20d") is not None else "N/A"
-        med20 = f"{r['median_20d'] * 100:+.1f}%" if r.get("median_20d") is not None else "N/A"
+        mean20 = (
+            f"{r['mean_20d'] * 100:+.1f}%" if r.get("mean_20d") is not None else "N/A"
+        )
+        med20 = (
+            f"{r['median_20d'] * 100:+.1f}%"
+            if r.get("median_20d") is not None
+            else "N/A"
+        )
         w20 = f"{r['win_20d'] * 100:.1f}%" if r.get("win_20d") is not None else "N/A"
-        mean40 = f"{r['mean_40d'] * 100:+.1f}%" if r.get("mean_40d") is not None else "N/A"
-        med40 = f"{r['median_40d'] * 100:+.1f}%" if r.get("median_40d") is not None else "N/A"
+        mean40 = (
+            f"{r['mean_40d'] * 100:+.1f}%" if r.get("mean_40d") is not None else "N/A"
+        )
+        med40 = (
+            f"{r['median_40d'] * 100:+.1f}%"
+            if r.get("median_40d") is not None
+            else "N/A"
+        )
         w40 = f"{r['win_40d'] * 100:.1f}%" if r.get("win_40d") is not None else "N/A"
         print(
             f"{subset_name:<24} {count:>6} {m20:>7} {mean20:>8} {med20:>8} {w20:>7} "

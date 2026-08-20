@@ -266,6 +266,8 @@ eod2/
 eod2_data/
 eod2_data_bak/
 eod2_data_old/
+eod2-old/
+eod2_data_bak2/
 myra_app/db/*.db
 myra_app/db/backups/
 models/
