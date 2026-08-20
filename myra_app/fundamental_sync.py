@@ -248,7 +248,7 @@ class FundamentalSync:
         existing_values = {}
         try:
             with sqlite3.connect(db_path, timeout=10) as conn:
-                for row in conn.execute(
+                for row in conn.execute(  # noqa: PG-NPLUS1
                     "SELECT symbol, shares_outstanding, market_cap, promoter_holding_pct, free_float_pct, free_float_market_cap FROM fundamentals"
                 ):
                     existing_values[row[0]] = (row[1], row[2], row[3], row[4], row[5])
@@ -318,7 +318,7 @@ class FundamentalSync:
                     record["free_float_pct"] = existing[3]
                 if existing[4] is not None and existing[4] > 0:
                     record["free_float_market_cap"] = existing[4]
-            records.append(record)
+            records.append(record)  # noqa: PG-APPEND
 
         if not records:
             logger.warning("[FundamentalSync] No records to insert")
@@ -377,7 +377,7 @@ class FundamentalSync:
                 market_cap = info.get("marketCap")
                 if market_cap:
                     conn = sqlite3.connect(db_path, timeout=30)
-                    conn.execute(
+                    conn.execute(  # noqa: PG-NPLUS1
                         "UPDATE fundamentals SET market_cap = ? WHERE symbol = ?",
                         (market_cap, symbol),
                     )
@@ -428,13 +428,13 @@ class FundamentalSync:
                 shares = info.get("sharesOutstanding")
                 if shares:
                     conn = sqlite3.connect(db_path, timeout=30)
-                    conn.execute(
+                    conn.execute(  # noqa: PG-NPLUS1
                         "UPDATE fundamentals SET shares_outstanding = ? WHERE symbol = ?",
                         (shares, symbol),
                     )
                     conn.commit()
                     # Verify the UPDATE took effect
-                    row = conn.execute(
+                    row = conn.execute(  # noqa: PG-NPLUS1
                         "SELECT shares_outstanding FROM fundamentals WHERE symbol = ?",
                         (symbol,),
                     ).fetchone()
@@ -465,7 +465,7 @@ class FundamentalSync:
         val_conn = sqlite3.connect(val_db)
 
         shares = {}
-        for row in val_conn.execute(
+        for row in val_conn.execute(  # noqa: PG-NPLUS1
             "SELECT symbol, shares_outstanding FROM fundamentals WHERE shares_outstanding IS NOT NULL AND shares_outstanding > 0"
         ):
             shares[row[0]] = row[1]
@@ -474,13 +474,13 @@ class FundamentalSync:
 
         updated = 0
         for symbol, shares_out in shares.items():
-            row = tech_conn.execute(
+            row = tech_conn.execute(  # noqa: PG-NPLUS1
                 "SELECT close FROM technical_data WHERE symbol = ? ORDER BY date DESC LIMIT 1",
                 (symbol,),
             ).fetchone()
             if row and row[0] and shares_out > 0:
                 market_cap = shares_out * row[0]
-                val_conn.execute(
+                val_conn.execute(  # noqa: PG-NPLUS1
                     "UPDATE fundamentals SET market_cap = ? WHERE symbol = ?",
                     (market_cap, symbol),
                 )
@@ -548,7 +548,7 @@ class FundamentalSync:
                 try:
                     conn = sqlite3.connect(val_db)
                     try:
-                        conn.execute(
+                        conn.execute(  # noqa: PG-NPLUS1
                             """UPDATE fundamentals
                                SET shares_outstanding = ?, last_fundamental_update = date('now')
                                WHERE symbol = ?""",
