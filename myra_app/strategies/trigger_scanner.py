@@ -417,7 +417,7 @@ class TriggerScanner:
                 else 50.0
             )
 
-            candidates.append(
+            candidates.append(  # noqa: PG-APPEND
                 {
                     "symbol": symbol,
                     "sector": _sector_map.get(symbol, "Unknown"),

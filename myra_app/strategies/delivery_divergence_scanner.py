@@ -289,7 +289,7 @@ class DeliveryDivergenceScanner:
                     + min(latest_del_pct, 100) * 0.2
                 )
 
-                candidates.append({
+                candidates.append({  # noqa: PG-APPEND
                     "symbol": symbol,
                     "close": round(close, 2),
                     "low_in_window": round(low_in_window, 2),

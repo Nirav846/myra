@@ -339,7 +339,7 @@ class DCBBargainScanner:
         month_step = 21
         for i in range(self.dcb_window, n, month_step):
             if i not in cutoff_indices:
-                cutoff_indices.append(i)
+                cutoff_indices.append(i)  # noqa: PG-APPEND
         cutoff_indices = sorted(set(cutoff_indices))
 
         discount_pcts = []
@@ -362,7 +362,7 @@ class DCBBargainScanner:
 
             disc = (dcb - close_at_cutoff) / dcb * 100
             if -50 < disc < 100:  # sanity bounds
-                discount_pcts.append(disc)
+                discount_pcts.append(disc)  # noqa: PG-APPEND
 
         if len(discount_pcts) < 3:
             return empty
@@ -569,7 +569,7 @@ class DCBBargainScanner:
                 # Circuit lock detection
                 is_circuit_lock = self._is_likely_circuit_lock(df, last_idx)
 
-                candidates.append(
+                candidates.append(  # noqa: PG-APPEND
                     {
                         "symbol": symbol,
                         "sector": _sector_map.get(symbol, "Unknown"),

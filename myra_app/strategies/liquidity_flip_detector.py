@@ -336,7 +336,7 @@ class LiquidityFlipDetector:
             else:
                 confidence = "Low"
 
-            candidates.append(
+            candidates.append(  # noqa: PG-APPEND
                 {
                     "symbol": symbol,
                     "sector": _sector_map.get(symbol, "Unknown"),

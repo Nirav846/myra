@@ -594,7 +594,7 @@ class DarvasBoxScanner(AccumulationBaseScanner):
                 is_pre_breakout=is_pre_breakout,
             )
 
-            candidates.append(
+            candidates.append(  # noqa: PG-APPEND
                 {
                     "symbol": symbol,
                     "sector": _sector_map.get(symbol, "Unknown"),

@@ -269,7 +269,7 @@ class SeasonalDeliveryHarvester:
 
             mcap_cr = mcap / 1e7
 
-            candidates.append(
+            candidates.append(  # noqa: PG-APPEND
                 {
                     "symbol": symbol,
                     "sector": _sector_map.get(symbol, "Unknown"),
