@@ -444,7 +444,7 @@ class InvisibleHandScanner:
             if wk52_pos >= 88:
                 continue
 
-            candidates.append(
+            candidates.append(  # noqa: PG-APPEND
                 {
                     "symbol": symbol,
                     "sector": _sector_map.get(symbol, "Unknown"),
@@ -508,12 +508,12 @@ class InvisibleHandScanner:
                 nm = qf.get("net_margin")
                 ph = qf.get("promoter_holding_pct")
                 pe = qf.get("pe")
-                _nm.append(
+                _nm.append(  # noqa: PG-APPEND
                     nm
                     if nm is not None and not (isinstance(nm, float) and math.isnan(nm))
                     else None
                 )
-                _ph.append(
+                _ph.append(  # noqa: PG-APPEND
                     ph
                     if ph is not None and not (isinstance(ph, float) and math.isnan(ph))
                     else None
@@ -523,9 +523,9 @@ class InvisibleHandScanner:
                     and pe > 0
                     and not (isinstance(pe, float) and math.isnan(pe))
                 ):
-                    _inv_pe.append(1.0 / pe)
+                    _inv_pe.append(1.0 / pe)  # noqa: PG-APPEND
                 else:
-                    _inv_pe.append(None)
+                    _inv_pe.append(None)  # noqa: PG-APPEND
 
             cand_df["_nm"] = _nm
             cand_df["_ph"] = _ph

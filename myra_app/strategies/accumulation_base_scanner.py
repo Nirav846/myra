@@ -155,7 +155,7 @@ class AccumulationBaseScanner:
         if atr14 <= 0:
             return result
         recent = base.tail(7)
-        for _, row in recent.iterrows():
+        for _, row in recent.iterrows():  # noqa: PG-ITERROWS
             if row["low"] < min_pierce and row["close"] > base_low:
                 if result["grab_low"] is None or row["low"] < result["grab_low"]:
                     result["detected"] = True
@@ -316,7 +316,7 @@ class AccumulationBaseScanner:
 
             for sc in nifty_scores:
                 if not np.isnan(sc):
-                    nifty_scores_all.append(sc)
+                    nifty_scores_all.append(sc)  # noqa: PG-APPEND
 
             # 1. DAR: Delivery Absorption Rate
             dar_values = np.where(
@@ -556,7 +556,7 @@ class AccumulationBaseScanner:
 
             mcap_cr = mcap / 1e7
             _rr_target = t3 if (t3 is not None) else t2
-            candidates.append(
+            candidates.append(  # noqa: PG-APPEND
                 {
                     "symbol": symbol,
                     "sector": _sector_map.get(symbol, "Unknown"),

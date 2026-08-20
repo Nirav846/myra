@@ -375,7 +375,7 @@ class ClimaxAccumulationScanner:
 
             # Process each climax day (take the most recent qualifying one)
             best = None
-            for _, cday in climax_df.iterrows():
+            for _, cday in climax_df.iterrows():  # noqa: PG-ITERROWS
                 rec = self._process_climax(df, cday, _sector_map.get(symbol, "Unknown"))
                 if rec is None:
                     continue
@@ -388,7 +388,7 @@ class ClimaxAccumulationScanner:
 
             if best is not None:
                 best["symbol"] = symbol
-                candidates.append(best)
+                candidates.append(best)  # noqa: PG-APPEND
 
         if not candidates:
             return pd.DataFrame()

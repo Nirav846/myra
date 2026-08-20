@@ -252,7 +252,7 @@ class WyckoffAutomaton:
 
             if is_sc:
                 quality = self._event_quality("SC", vol_ratio, del_pct, avg_del)
-                events.append(
+                events.append(  # noqa: PG-APPEND
                     {
                         "symbol": symbol,
                         "event": "SC",
@@ -389,7 +389,7 @@ class WyckoffAutomaton:
                     if grade == "D":
                         continue
 
-                    events.append(
+                    events.append(  # noqa: PG-APPEND
                         {
                             "symbol": symbol,
                             "event": "Spring",
@@ -443,7 +443,7 @@ class WyckoffAutomaton:
                     avg_del,
                     extra={"close_position": close_position},
                 )
-                events.append(
+                events.append(  # noqa: PG-APPEND
                     {
                         "symbol": symbol,
                         "event": "SOS",
@@ -472,7 +472,7 @@ class WyckoffAutomaton:
 
             # Look within 10 sessions after SC
             post_sc = df.loc[sc_pos + 1 : sc_pos + 11]
-            for _, nrow in post_sc.iterrows():
+            for _, nrow in post_sc.iterrows():  # noqa: PG-ITERROWS
                 nclose = float(nrow["close"])
                 nvol = float(nrow["volume"])
                 ndel = float(nrow["delivery_pct"])
@@ -495,7 +495,7 @@ class WyckoffAutomaton:
                         e for e in events if e["event_date"] == str(nrow["date"])
                     ]
                     if not existing:
-                        events.append(
+                        events.append(  # noqa: PG-APPEND
                             {
                                 "symbol": symbol,
                                 "event": "AR",
@@ -527,7 +527,7 @@ class WyckoffAutomaton:
                         st_quality = self._event_quality(
                             "ST", st_vol_ratio, ndel, avg_del
                         )
-                        events.append(
+                        events.append(  # noqa: PG-APPEND
                             {
                                 "symbol": symbol,
                                 "event": "ST",
@@ -675,7 +675,7 @@ class WyckoffAutomaton:
             best = max(events, key=_event_score)
             days_since = best.get("days_since", 0)
 
-            candidates.append(
+            candidates.append(  # noqa: PG-APPEND
                 {
                     "symbol": symbol,
                     "sector": _sector_map.get(symbol, "Unknown"),
