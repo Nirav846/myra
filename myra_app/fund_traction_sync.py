@@ -3,9 +3,32 @@ Fund Traction Sync
 Downloads monthly cross-fund-holdings-traction JSON from GitHub Pages
 and loads into myra_valuation.db.
 
-Table: fund_traction
-  - symbol, month, traction_score, number_of_funds, adds_new,
-    reduces_closes, sma_30, month_end_close, close_latest, pct_vs_sma
+Actual JSON structure (from GitHub Pages):
+{
+  "stocks": [
+    {
+      "stock_key": "NAME:torrent pharmaceuticals",
+      "name": "Torrent Pharmaceuticals Limited",
+      "nse": "", "bse": "", "sector": "",
+      "direction": "mixed",
+      "score": 492.65,
+      "fund_count": 17,
+      "new_entry_count": 13,
+      "breadth_exit": 1,
+      "breadth_hold": 1,
+      "funds": [...],
+      "entry_estimate": {
+        "nse": "TORNTPHARM",
+        "month": "2026-07",
+        "month_end_close": 5122.80,
+        "sma_30": 4826.40,
+        "close_latest": 4896.50,
+        "pct_vs_sma": 1.45,
+        ...
+      }
+    }, ...
+  ]
+}
 """
 
 import logging
@@ -25,6 +48,7 @@ _MONTH_MAP = {
     "may": "05", "june": "06", "july": "07", "august": "08",
     "september": "09", "october": "10", "november": "11", "december": "12",
 }
+_MONTH_NAMES = list(_MONTH_MAP.keys())
 
 # ── Table DDL ───────────────────────────────────────────────────────────────
 _CREATE_FUND_TRACTION = """
@@ -83,74 +107,149 @@ def _set_last_imported_month(conn: sqlite3.Connection, month: str) -> None:
     conn.commit()
 
 
-def _filename_to_month(filename: str) -> str | None:
-    """Convert a filename like 'june_traction.json' to 'YYYY-MM'.
-
-    Tries current year first, then previous year.
-    Returns None if the filename doesn't match the expected pattern.
-    """
-    name = filename.lower().replace(".json", "").replace("_traction", "").strip()
-    month_num = _MONTH_MAP.get(name)
-    if not month_num:
-        return None
-
-    current_year = date.today().year
-    # Try current year first, then previous year
-    return f"{current_year}-{month_num}"
-
-
 def _list_available_months(base_url: str) -> list[str]:
-    """Fetch the index page and extract available month filenames.
+    """Probe known month names with HEAD requests to find available JSONs.
 
-    Expects the GitHub Pages site to list files. Falls back to a
-    known set of month names if the index isn't parseable.
+    Generates candidate URLs for months from 2025-01 to current month,
+    sends HEAD requests, and returns the list of months that exist.
     """
-    try:
-        resp = requests.get(base_url, timeout=15)
-        resp.raise_for_status()
-    except Exception as e:
-        logger.warning(f"Could not fetch index from {base_url}: {e}")
-        return []
+    today = date.today()
+    candidates = []
 
-    # Try to extract .json filenames from the response
-    import re
-    # Match patterns like "june_traction.json" or "2026-06_traction.json"
-    json_files = re.findall(r'href="([^"]*traction\.json)"', resp.text, re.IGNORECASE)
-    if not json_files:
-        # Fallback: try to find any JSON files
-        json_files = re.findall(r'href="([^"]*\.json)"', resp.text, re.IGNORECASE)
+    # Generate months from 2025-01 to current month
+    for year in range(2025, today.year + 1):
+        end_month = 12 if year < today.year else today.month
+        for m in range(1, end_month + 1):
+            candidates.append(f"{year}-{m:02d}")  # noqa: PG-APPEND
 
-    months = []
-    for f in json_files:
-        fname = os.path.basename(f)
-        month = _filename_to_month(fname)
-        if month:
-            months.append(month)  # noqa: PG-APPEND
+    available = []
+    for month in candidates:
+        year, m = month.split("-")
+        month_name = _MONTH_NAMES[int(m) - 1]
+        url = f"{base_url}{month_name}_traction.json"
+        try:
+            r = requests.head(url, timeout=5)
+            if r.status_code == 200:
+                available.append(month)  # noqa: PG-APPEND
+                logger.debug(f"Found: {month} -> {url}")
+        except Exception:
+            pass  # network error — skip silently
 
-    return sorted(set(months))
+    return available
 
 
 def _download_and_parse(url: str) -> list[dict]:
-    """Download a JSON file and return the parsed list of dicts."""
+    """Download a JSON file and return the stocks list.
+
+    Handles both:
+    - Direct list: [{...}, ...]
+    - Dict with stocks key: {"stocks": [{...}, ...], ...}
+    """
     try:
         resp = requests.get(url, timeout=30)
         resp.raise_for_status()
         data = resp.json()
-        if isinstance(data, list):
-            return data
-        logger.warning(f"Expected JSON array from {url}, got {type(data).__name__}")
-        return []
     except Exception as e:
         logger.warning(f"Failed to download {url}: {e}")
         return []
+
+    # Extract stocks list from various structures
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for key in ("stocks", "topTraction", "data", "items"):
+            if key in data and isinstance(data[key], list):
+                return data[key]
+        logger.warning(
+            f"JSON from {url} is a dict but has no stocks/topTraction/data/items key. "
+            f"Keys found: {list(data.keys())}"
+        )
+        return []
+
+    logger.warning(f"Unexpected JSON type from {url}: {type(data).__name__}")
+    return []
+
+
+def _extract_symbol(stock: dict) -> str:
+    """Extract the NSE symbol from a stock entry.
+
+    Priority:
+    1. entry_estimate.nse (clean NSE symbol like "TORNTPHARM")
+    2. stock.nse (if non-empty)
+    3. stock_key parsed (strip "NAME:" prefix, uppercase)
+    4. stock.name (uppercase, spaces removed)
+    """
+    # Best source: entry_estimate.nse
+    entry = stock.get("entry_estimate") or {}
+    nse = str(entry.get("nse", "")).strip()
+    if nse:
+        return nse.upper()
+
+    # Fallback: stock-level nse field
+    nse_direct = str(stock.get("nse", "")).strip()
+    if nse_direct:
+        return nse_direct.upper()
+
+    # Fallback: parse stock_key "NAME:torrent pharmaceuticals"
+    stock_key = str(stock.get("stock_key", ""))
+    if stock_key.startswith("NAME:"):
+        name_part = stock_key[5:].strip()
+        if name_part:
+            return name_part.upper().replace(" ", "")
+
+    # Last resort: stock name
+    name = str(stock.get("name", "")).strip()
+    if name:
+        return name.upper().replace(" ", "").replace(".", "").replace(",", "")
+
+    return ""
+
+
+def _parse_stock(stock: dict, month: str) -> dict | None:
+    """Parse a stock entry into our schema. Returns None if symbol is empty."""
+    symbol = _extract_symbol(stock)
+    if not symbol:
+        return None
+
+    entry = stock.get("entry_estimate") or {}
+
+    # Robust field extraction with fallbacks
+    def _float(val, default=None):
+        if val is None:
+            return default
+        try:
+            return float(val)
+        except (ValueError, TypeError):
+            return default
+
+    def _int(val, default=None):
+        if val is None:
+            return default
+        try:
+            return int(val)
+        except (ValueError, TypeError):
+            return default
+
+    return {
+        "symbol": symbol,
+        "month": month,
+        "traction_score": _float(stock.get("score")),
+        "number_of_funds": _int(stock.get("fund_count")),
+        "adds_new": _int(stock.get("new_entry_count")),
+        "reduces_closes": _int(stock.get("breadth_exit")),
+        "sma_30": _float(entry.get("sma_30")),
+        "month_end_close": _float(entry.get("month_end_close")),
+        "close_latest": _float(entry.get("close_latest")),
+        "pct_vs_sma": _float(entry.get("pct_vs_sma")),
+    }
 
 
 def _insert_rows(conn: sqlite3.Connection, rows: list[dict], month: str) -> int:
     """Insert traction rows into the fund_traction table. Returns count inserted."""
     inserted = 0
-    for row in rows:  # noqa: PG-ITERROWS
-        symbol = str(row.get("symbol", "")).strip().upper()
-        if not symbol:
+    for stock in rows:  # noqa: PG-ITERROWS
+        parsed = _parse_stock(stock, month)
+        if not parsed:
             continue
 
         conn.execute(  # noqa: PG-NPLUS1
@@ -159,16 +258,16 @@ def _insert_rows(conn: sqlite3.Connection, rows: list[dict], month: str) -> int:
                 reduces_closes, sma_30, month_end_close, close_latest, pct_vs_sma)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                symbol,
-                month,
-                row.get("traction_score"),
-                row.get("number_of_funds"),
-                row.get("adds_new"),
-                row.get("reduces_closes"),
-                row.get("sma_30"),
-                row.get("month_end_close"),
-                row.get("close_latest"),
-                row.get("pct_vs_sma"),
+                parsed["symbol"],
+                parsed["month"],
+                parsed["traction_score"],
+                parsed["number_of_funds"],
+                parsed["adds_new"],
+                parsed["reduces_closes"],
+                parsed["sma_30"],
+                parsed["month_end_close"],
+                parsed["close_latest"],
+                parsed["pct_vs_sma"],
             ),
         )
         inserted += 1
@@ -200,12 +299,15 @@ def sync_fund_traction(force: bool = False) -> dict:
     try:
         _ensure_tables(conn)
 
-        # Get available months from the remote index
+        # Get available months by probing known URLs
+        logger.info("Fund traction: probing available months...")
         available = _list_available_months(TRACTION_BASE_URL)
         if not available:
             result["error"] = "No months found at remote URL or URL not configured"
             logger.warning("Fund traction: no months available at remote")
             return result
+
+        logger.info(f"Fund traction: found {len(available)} months: {available}")
 
         # Filter to only new months (unless force=True)
         last_imported = _get_last_imported_month(conn)
@@ -221,34 +323,20 @@ def sync_fund_traction(force: bool = False) -> dict:
         logger.info(f"Fund traction: syncing {len(available)} months: {available}")
 
         for month in available:
-            # Build the download URL
-            # Try both formats: "june_traction.json" and "2026-06_traction.json"
-            month_num = int(month.split("-")[1])
-            month_name = list(_MONTH_MAP.keys())[month_num - 1]
-            year = month.split("-")[0]
+            year, m = month.split("-")
+            month_name = _MONTH_NAMES[int(m) - 1]
+            url = f"{TRACTION_BASE_URL}{month_name}_traction.json"
 
-            # Try month_name format first, then numeric format
-            urls_to_try = [
-                f"{TRACTION_BASE_URL}{month_name}_traction.json",
-                f"{TRACTION_BASE_URL}{year}-{month_num:02d}_traction.json",
-                f"{TRACTION_BASE_URL}{month}_traction.json",
-            ]
-
-            rows = []
-            for url in urls_to_try:
-                rows = _download_and_parse(url)
-                if rows:
-                    break
-
-            if not rows:
-                logger.warning(f"Fund traction: no data for month {month}")
+            stocks = _download_and_parse(url)
+            if not stocks:
+                logger.warning(f"Fund traction: no data for month {month} at {url}")
                 continue
 
-            count = _insert_rows(conn, rows, month)
+            count = _insert_rows(conn, stocks, month)
             result["rows_inserted"] += count
             result["months_synced"] += 1
             result["last_month"] = month
-            logger.info(f"Fund traction: month {month} — {count} rows inserted")
+            logger.info(f"Fund traction: month {month} — {count} stocks inserted")
 
         # Update the last imported month
         if result["last_month"]:
