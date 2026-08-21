@@ -35,4 +35,4 @@ ENABLE_DAILY_INGEST = True
 # ─── Fund Traction Sync ─────────────────────────────────────────────────────
 # GitHub Pages base URL for cross-fund-holdings-traction monthly JSON files.
 # Replace <username> with the actual GitHub username before first run.
-TRACTION_BASE_URL = "https://<username>.github.io/cross-fund-holdings-traction/data/"
+TRACTION_BASE_URL = "https://nirav846.github.io/cross-fund-holdings-traction/data/"
