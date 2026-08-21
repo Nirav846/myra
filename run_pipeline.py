@@ -29,6 +29,13 @@ def main():
         enrich_screener_fundamentals(force=True)
         logger.info("Screener.in fundamentals enricher completed.")
 
+    if "--sync-fund-traction" in sys.argv:
+        logger.info("Running fund traction sync (manual)...")
+        from myra_app.fund_traction_sync import sync_fund_traction
+        result = sync_fund_traction(force=True)
+        logger.info(f"Fund traction sync complete: {result}")
+        return  # Exit after manual sync, don't start daemon
+
     logger.info("Starting MYRA data pipeline (headless, crash‑safe)…")
 
     # Import the orchestrator module and start all background tasks
