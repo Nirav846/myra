@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Librarian } from '../lib/Librarian';
 import { Box, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, ArrowUpDown, Download, X, List, LayoutGrid, Star } from 'lucide-react';
+import FundTractionButton from '../components/FundTractionButton';
 import { useDeliveryScanner, ScannerData, SummaryData } from '../hooks/useDeliveryScanner';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { useWatchlist } from '../lib/WatchlistContext';
@@ -321,6 +322,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                     )}
                     </div>
                     )}
+                    <FundTractionButton symbols={sortedData.map((c: any) => c.symbol)} />
                     <button
                         onClick={handleCSV}
                         disabled={viewMode === 'detail' ? sortedData.length === 0 : sortedSummary.length === 0}

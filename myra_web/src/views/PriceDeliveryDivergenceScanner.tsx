@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
 import { GitCompare, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, ArrowUpDown, ArrowUpRight } from 'lucide-react';
+import FundTractionButton from '../components/FundTractionButton';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
 import { useWatchlist } from '../lib/WatchlistContext';
@@ -326,6 +327,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
           >
             Clear cache
           </button>
+          <FundTractionButton symbols={filteredData.map(c => c.symbol)} />
           <button
             onClick={handleCSV}
             disabled={filteredData.length === 0}

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Librarian } from '../lib/Librarian';
 import { Building2, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, ArrowUpDown, Star } from 'lucide-react';
+import FundTractionButton from '../components/FundTractionButton';
 import { useSettings } from '../lib/SettingsContext';
 import { resolveBucket } from '../lib/bucketUtils';
 import { useHealthStatus } from '../hooks/useHealthStatus';
@@ -301,7 +302,8 @@ export default function FiiDiiScannerView({ lib }: { lib: Librarian }) {
                 </div>
                 <div className="flex items-center gap-3">
                     <span className="text-[12px] text-[#888] font-mono">Real-time Block/Bulk Monitor</span>
-                    <button 
+                    <FundTractionButton symbols={filteredData.map(c => c.symbol)} />
+                    <button
                         onClick={fetchData} 
                         className="bg-[#2a2c34] hover:bg-[#3a3c44] text-[#aaa] hover:text-white px-2 py-1 rounded border border-[#ffffff1a] transition-all flex items-center gap-1"
                         disabled={isLoading}

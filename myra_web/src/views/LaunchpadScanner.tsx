@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
 import { Rocket, Filter, AlertCircle, ArrowUpRight, RefreshCw, CheckCircle, Clock, AlertTriangle, XCircle, Star } from 'lucide-react';
+import FundTractionButton from '../components/FundTractionButton';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
 import { useWatchlist } from '../lib/WatchlistContext';
@@ -273,17 +274,20 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
             <p className="text-xs font-mono text-[#888]">Quantifying Breakout Mechanics</p>
           </div>
         </div>
-        <button
-          onClick={startScan}
-          disabled={isScanning}
-          className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded text-xs font-semibold flex items-center gap-2 transition-colors"
-        >
-          {isScanning ? (
-            <><RefreshCw size={14} className="animate-spin" /> Scanning...</>
-          ) : (
-            <><Rocket size={14} fill="currentColor" /> Scan</>
-          )}
-        </button>
+        <div className="flex items-center gap-2">
+          <FundTractionButton symbols={filteredData.map(c => c.symbol)} />
+          <button
+            onClick={startScan}
+            disabled={isScanning}
+            className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded text-xs font-semibold flex items-center gap-2 transition-colors"
+          >
+            {isScanning ? (
+              <><RefreshCw size={14} className="animate-spin" /> Scanning...</>
+            ) : (
+              <><Rocket size={14} fill="currentColor" /> Scan</>
+            )}
+          </button>
+        </div>
       </div>
 
       {isScanning && (

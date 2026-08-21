@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
 import { Box, AlertTriangle, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Info } from 'lucide-react';
+import FundTractionButton from '../components/FundTractionButton';
 import { API_BASE } from '../config';
 import { Tooltip } from '../components/Tooltip';
 import ScrollableTable from '../components/ScrollableTable';
@@ -469,7 +470,8 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
               </table>
             </ScrollableTable>
           </div>
-          <div className="flex justify-end">
+          <div className="flex justify-end items-center gap-2">
+            <FundTractionButton symbols={filteredData.map(c => c.symbol)} />
             <button
               onClick={handleCSV}
               disabled={filteredData.length === 0}
