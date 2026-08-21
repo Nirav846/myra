@@ -31,3 +31,8 @@ USE_EOD2_DATA = True
 # Master kill-switch for all ingestion.  Set to False before swapping databases
 # to guarantee no writes happen during the rename window.
 ENABLE_DAILY_INGEST = True
+
+# ─── Fund Traction Sync ─────────────────────────────────────────────────────
+# GitHub Pages base URL for cross-fund-holdings-traction monthly JSON files.
+# Replace <username> with the actual GitHub username before first run.
+TRACTION_BASE_URL = "https://<username>.github.io/cross-fund-holdings-traction/data/"
