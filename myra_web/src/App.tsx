@@ -44,6 +44,7 @@ import ClimaxAccumulationView from './views/ClimaxAccumulation';
 import ConfluenceView from './views/ConfluenceView';
 import DCBBargainView from './views/DCBBargain';
 import RRGView from './views/RRGView';
+import FundTractionReportView from './views/FundTractionReport';
 import NewsSentimentView from './views/NewsSentiment';
 import FundamentalsView from './views/FundamentalsView';
 import FullFundamentalsView from './views/FullFundamentalsView';
@@ -281,6 +282,7 @@ export default function App() {
                 <Route path="/news-sentiment" element={<NewsSentimentView />} />
                 <Route path="/confluence" element={<ConfluenceView />} />
                 <Route path="/rrg" element={<RRGView />} />
+                <Route path="/fund-traction-report" element={<FundTractionReportView />} />
 
                 {/* Fallback */}
                 <Route path="*" element={<Navigate to="/mission-control" replace />} />

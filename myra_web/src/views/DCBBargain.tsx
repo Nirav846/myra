@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
 import { Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ChevronRight, ArrowUpDown, Star, Info, Target, Settings2 } from 'lucide-react';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
+import FundTractionButton from '../components/FundTractionButton';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
 import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
@@ -884,7 +885,11 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
               </table>
             </ScrollableTable>
           </div>
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <FundTractionButton
+              symbols={filteredData.map(c => c.symbol)}
+              disabled={filteredData.length === 0}
+            />
             <button
               onClick={handleCSV}
               disabled={filteredData.length === 0}
