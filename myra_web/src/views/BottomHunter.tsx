@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
 import { Box, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ChevronRight, ArrowUpDown, Star, Info, Target, BookOpen } from 'lucide-react';
+import FundTractionButton from '../components/FundTractionButton';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
 import { useWatchlist } from '../lib/WatchlistContext';
@@ -672,7 +673,8 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
               </table>
             </ScrollableTable>
           </div>
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <FundTractionButton symbols={filteredData.map(c => c.symbol)} disabled={filteredData.length === 0} />
             <button
               onClick={handleCSV}
               disabled={filteredData.length === 0}

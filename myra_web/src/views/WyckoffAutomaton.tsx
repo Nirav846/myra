@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
 import { Box, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Star, BookOpen, ChevronRight, Info } from 'lucide-react';
+import FundTractionButton from '../components/FundTractionButton';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
 import { useWatchlist } from '../lib/WatchlistContext';
@@ -601,6 +602,7 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
             aria-label="Minimum quality score"
           />
         </div>
+        <FundTractionButton symbols={filteredData.map(c => c.symbol)} disabled={filteredData.length === 0} />
         <button onClick={exportCSV} disabled={filteredData.length === 0} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#ffffff0a] hover:bg-[#ffffff15] border border-[#ffffff1a] rounded text-xs text-[#ccc] transition-colors disabled:opacity-40">
           <Download size={12} /> CSV
         </button>
@@ -827,7 +829,8 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
               </table>
             </ScrollableTable>
           </div>
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <FundTractionButton symbols={filteredData.map(c => c.symbol)} disabled={filteredData.length === 0} />
             <button
               onClick={exportCSV}
               disabled={filteredData.length === 0}
