@@ -7,6 +7,7 @@ import { useSettings } from '../lib/SettingsContext';
 import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
 import ScrollableTable from '../components/ScrollableTable';
+import FundTractionButton from '../components/FundTractionButton';
 
 interface FVGRow {
   ticker: string;
@@ -169,6 +170,7 @@ export default function FVGScannerView({ lib }: { lib: Librarian }) {
               <Star size={11} fill={watchlistOnly ? 'currentColor' : 'none'} />
               Watchlist
             </button>
+            <FundTractionButton symbols={apiData.map((r: any) => r.ticker)} />
             <button 
               onClick={fetchData}
               disabled={isRefreshing}

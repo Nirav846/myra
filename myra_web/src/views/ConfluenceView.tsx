@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { RefreshCw, ExternalLink } from 'lucide-react';
 import { API_BASE } from '../config';
+import FundTractionButton from '../components/FundTractionButton';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -178,6 +179,7 @@ export default function ConfluenceView() {
               Updated {relativeTime(data.generated_at)}
             </span>
           )}
+          <FundTractionButton symbols={sorted.map((s: any) => s.symbol)} />
           <button
             onClick={fetchData}
             disabled={loading}

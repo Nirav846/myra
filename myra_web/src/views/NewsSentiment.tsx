@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { API_BASE } from '../config';
+import FundTractionButton from '../components/FundTractionButton';
 
 interface NewsItem {
   headline: string;
@@ -108,6 +109,7 @@ export default function NewsSentimentView() {
           title="Force refresh from news sources (GDELT + Groww)">
           🔄
         </button>
+        <FundTractionButton symbols={ticker.trim() ? [ticker.trim().toUpperCase()] : []} />
       </div>
 
       {/* AI Opinion button row */}
