@@ -6,7 +6,7 @@ import { API_BASE } from '../config';
 interface Stock {
   symbol: string; month: string; traction_score: number | null;
   fund_count: number | null; adds_new: number | null; reduces_closes: number | null;
-  net_adds: number | null;
+  net_adds: number | null; momentum: number | null; prev_month: string | null;
   sma_30: number | null; month_end_close: number | null; close_latest: number | null;
   pct_vs_sma: number | null; market_cap: number | null; sector: string | null;
   roe: number | null; net_margin: number | null; pe: number | null;
@@ -20,7 +20,7 @@ interface Summary {
   cap_distribution: { small: number; mid: number; large: number; unknown: number };
 }
 interface ScannerResponse { month: string | null; stocks: Stock[]; total: number; summary: Summary; }
-type SortKey = 'traction_score' | 'pct_vs_sma' | 'fund_count' | 'adds_new' | 'reduces_closes' | 'net_adds' | 'market_cap' | 'quality_score' | 'roe' | 'sector' | 'symbol';
+type SortKey = 'traction_score' | 'pct_vs_sma' | 'fund_count' | 'adds_new' | 'reduces_closes' | 'net_adds' | 'momentum' | 'market_cap' | 'quality_score' | 'roe' | 'sector' | 'symbol';
 
 const SECTORS = ['Healthcare','Financial Services','IT','Consumer Goods','Industrials','Energy','Chemicals','Automobile','Metals','Real Estate','Telecom','Power','Infrastructure','Media','Textiles'];
 
@@ -51,6 +51,12 @@ function ScoreBadge({ score }: { score: number | null }) {
   const c = score >= 200 ? 'text-green-400' : score >= 100 ? 'text-yellow-400' : 'text-[#ccc]';
   return <span className={`font-semibold ${c}`}>{fmt(score)}</span>;
 }
+function MomentumBadge({ m }: { m: number | null }) {
+  if (m == null) return <span className="text-[#555]">{DASH}</span>;
+  const c = m > 0 ? 'text-green-400' : m < 0 ? 'text-red-400' : 'text-yellow-400';
+  const I = m > 0 ? TrendingUp : m < 0 ? TrendingDown : Minus;
+  return <span className={`flex items-center gap-1 justify-end ${c}`}><I size={11} />{m >= 0 ? '+' : ''}{m.toFixed(1)}</span>;
+}
 
 export default function FundTractionScannerView() {
   const [data, setData] = useState<ScannerResponse | null>(null);
@@ -69,6 +75,7 @@ export default function FundTractionScannerView() {
   const [nifty500Only, setNifty500Only] = useState(false);
   const [minRoe, setMinRoe] = useState(0);
   const [minMargin, setMinMargin] = useState(0);
+  const [minMomentum, setMinMomentum] = useState(0);
   const [showQuality, setShowQuality] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('traction_score');
   const [sortAsc, setSortAsc] = useState(false);
@@ -95,10 +102,11 @@ export default function FundTractionScannerView() {
     if (nifty500Only) p.set('nifty500', '1');
     if (minRoe > 0) p.set('min_roe', String(minRoe));
     if (minMargin > 0) p.set('min_net_margin', String(minMargin));
+    if (minMomentum > 0) p.set('min_momentum', String(minMomentum));
     fetch(`${API_BASE}/fund-traction/scanner?${p}`)
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(setData).catch(e => setError(e.message)).finally(() => setLoading(false));
-  }, [month, limit, minScore, minFunds, minAdds, selectedSectors, mcapMin, mcapMax, nifty500Only, minRoe, minMargin]);
+  }, [month, limit, minScore, minFunds, minAdds, selectedSectors, mcapMin, mcapMax, nifty500Only, minRoe, minMargin, minMomentum]);
 
   useEffect(() => {
     fetch(`${API_BASE}/fund-traction/months`).then(r => r.json())
@@ -134,8 +142,8 @@ export default function FundTractionScannerView() {
 
   const handleCSV = () => {
     if (!sorted.length) return;
-    const h = ['Symbol','Score','vs SMA%','Funds','Adds','Reduces','Net Adds','Close','SMA30','MCap Cr','Sector','ROE','Net Margin','PE','Quality'];
-    const rows = sorted.map(s => [s.symbol, s.traction_score, s.pct_vs_sma, s.fund_count, s.adds_new,
+    const h = ['Symbol','Score','Momentum','vs SMA%','Funds','Adds','Reduces','Net Adds','Close','SMA30','MCap Cr','Sector','ROE','Net Margin','PE','Quality'];
+    const rows = sorted.map(s => [s.symbol, s.traction_score, s.momentum, s.pct_vs_sma, s.fund_count, s.adds_new,
       s.reduces_closes, (s.adds_new ?? 0) - (s.reduces_closes ?? 0), s.close_latest, s.sma_30,
       s.market_cap ? (s.market_cap/1e7).toFixed(0) : '',
       s.sector||'', s.roe, s.net_margin, s.pe, s.quality_score]);
@@ -232,6 +240,11 @@ export default function FundTractionScannerView() {
           <input type="number" value={minMargin||''} onChange={e => setMinMargin(Number(e.target.value)||0)}
             className="w-14 px-1.5 py-0.5 bg-[#ffffff0a] border border-[#ffffff1a] rounded text-xs text-white text-right focus:outline-none focus:ring-1 focus:ring-indigo-500/50" />
         </div>
+        <div className="flex items-center gap-1">
+          <label className="text-[10px] text-[#888]">Mom&ge;</label>
+          <input type="number" value={minMomentum||''} onChange={e => setMinMomentum(Number(e.target.value)||0)}
+            className="w-14 px-1.5 py-0.5 bg-[#ffffff0a] border border-[#ffffff1a] rounded text-xs text-white text-right focus:outline-none focus:ring-1 focus:ring-indigo-500/50" />
+        </div>
         {/* Nifty500 toggle */}
         <button onClick={() => setNifty500Only(!nifty500Only)}
           className={`px-2 py-0.5 rounded text-[10px] transition-colors ${nifty500Only ? 'bg-cyan-600 text-white' : 'bg-[#ffffff0a] text-[#888] hover:bg-[#ffffff15]'}`}>
@@ -295,6 +308,7 @@ export default function FundTractionScannerView() {
               <tr className="border-b border-[#ffffff1a] text-[#888] uppercase tracking-wider">
                 <Th k="symbol" label="Symbol" align="text-left" />
                 <Th k="traction_score" label="Score" align="text-right" />
+                <Th k="momentum" label="Mom." align="text-right" />
                 <Th k="pct_vs_sma" label="vs SMA" align="text-right" />
                 <Th k="fund_count" label="Funds" align="text-right" />
                 <Th k="adds_new" label="Adds" align="text-right" />
@@ -315,6 +329,7 @@ export default function FundTractionScannerView() {
                     <a href={`/#/chart?symbol=${s.symbol}`} target="_blank" rel="noopener noreferrer" className="hover:text-indigo-400 transition-colors">{s.symbol}</a>
                   </td>
                   <td className="px-2 py-1.5 text-right"><ScoreBadge score={s.traction_score} /></td>
+                  <td className="px-2 py-1.5 text-right"><MomentumBadge m={s.momentum} /></td>
                   <td className="px-2 py-1.5 text-right"><SmaBadge pct={s.pct_vs_sma} /></td>
                   <td className="px-2 py-1.5 text-right text-cyan-400">{fmtInt(s.fund_count)}</td>
                   <td className="px-2 py-1.5 text-right text-green-400">{fmtInt(s.adds_new)}</td>
@@ -336,7 +351,7 @@ export default function FundTractionScannerView() {
       {!loading && !error && data && sorted.length === 0 && (
         <div className="flex items-center justify-center h-48 text-[#555] flex-col gap-2">
           No stocks match the current filters.
-          <button onClick={() => { setMinScore(0); setMinFunds(0); setMinAdds(0); setSelectedSectors([]); setMcapMin(0); setMcapMax(0); setMcapPreset('all'); setNifty500Only(false); setMinRoe(0); setMinMargin(0); }}
+          <button onClick={() => { setMinScore(0); setMinFunds(0); setMinAdds(0); setSelectedSectors([]); setMcapMin(0); setMcapMax(0); setMcapPreset('all'); setNifty500Only(false); setMinRoe(0); setMinMargin(0); setMinMomentum(0); }}
             className="text-xs text-indigo-400 hover:text-indigo-300">Clear all filters</button>
         </div>
       )}

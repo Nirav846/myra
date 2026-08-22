@@ -116,6 +116,7 @@ def fund_traction_scanner(
     nifty500: int = Query(0, description="If 1, only include Nifty500 constituents"),
     min_roe: float = Query(0),
     min_net_margin: float = Query(0),
+    min_momentum: float = Query(0, description="Min month-over-month traction score change"),
 ):
     """Advanced fund traction scanner with fundamentals join."""
     db_path = _get_db_path()
@@ -180,12 +181,30 @@ def fund_traction_scanner(
 
         where = " AND ".join(c for c in conds if c != "1=1") if nifty500_join else " AND ".join(conds)
 
+        # Momentum subquery: get previous month's score for each symbol
+        momentum_sub = """
+            LEFT JOIN (
+                SELECT ft2.symbol,
+                       ft2.traction_score AS prev_score,
+                       ft2.month AS prev_month
+                FROM fund_traction ft2
+                INNER JOIN (
+                    SELECT symbol, MAX(month) AS prev_max
+                    FROM fund_traction
+                    WHERE month < ?
+                    GROUP BY symbol
+                ) pm ON ft2.symbol = pm.symbol AND ft2.month = pm.prev_max
+            ) prev ON prev.symbol = ft.symbol
+        """
+        params_with_prev = [target_month] + params  # prepend target_month for prev subquery
+
         query = f"""
             SELECT ft.symbol, ft.month, ft.traction_score, ft.number_of_funds,
                    ft.adds_new, ft.reduces_closes, ft.sma_30, ft.month_end_close,
                    ft.close_latest, ft.pct_vs_sma,
                    f.market_cap, f.sector, f.roe, f.net_margin, f.pe,
                    f.promoter_holding_pct, f.free_float_pct,
+                   prev.prev_score, prev.prev_month,
                    ROUND(
                        COALESCE(f.roe, 0) * 0.4
                        + COALESCE(f.net_margin, 0) * 0.3
@@ -193,34 +212,45 @@ def fund_traction_scanner(
                    ) AS quality_score
             FROM fund_traction ft
             LEFT JOIN fundamentals f ON ft.symbol = f.symbol
+            {momentum_sub}
             {nifty500_join}
             WHERE {where}
             ORDER BY ft.traction_score DESC
             LIMIT ?
         """
-        params.append(limit)
-        rows = conn.execute(query, params).fetchall()
+        params_with_prev.append(limit)
+        rows = conn.execute(query, params_with_prev).fetchall()
 
         count_q = f"""
             SELECT COUNT(*) as cnt FROM fund_traction ft
             LEFT JOIN fundamentals f ON ft.symbol = f.symbol
-            {nifty500_join}
+            {momentum_sub}
             WHERE {where}
         """
-        total = conn.execute(count_q, params[:-1]).fetchone()["cnt"]
+        total = conn.execute(count_q, params_with_prev[:-1]).fetchone()["cnt"]
 
         stocks = []
         for r in rows:
             adds = r["adds_new"]
             reduces = r["reduces_closes"]
+            score = _safe_float(r["traction_score"])
+            prev_score = _safe_float(r["prev_score"])
+            momentum = round(score - prev_score, 2) if score is not None and prev_score is not None else None
+
+            # Apply min_momentum filter (server-side since it's a post-compute field)
+            if min_momentum > 0 and (momentum is None or momentum < min_momentum):
+                continue
+
             stocks.append({
                 "symbol": r["symbol"],
                 "month": r["month"],
-                "traction_score": _safe_float(r["traction_score"]),
+                "traction_score": score,
                 "fund_count": r["number_of_funds"],
                 "adds_new": r["adds_new"],
                 "reduces_closes": r["reduces_closes"],
                 "net_adds": (adds or 0) - (reduces or 0),
+                "momentum": momentum,
+                "prev_month": r["prev_month"],
                 "sma_30": _safe_float(r["sma_30"]),
                 "month_end_close": _safe_float(r["month_end_close"]),
                 "close_latest": _safe_float(r["close_latest"]),
@@ -266,7 +296,7 @@ def fund_traction_scanner(
             "cap_distribution": cap_dist,
         }
 
-        return {"month": target_month, "stocks": stocks, "total": total, "summary": summary}
+        return {"month": target_month, "stocks": stocks, "total": len(stocks), "summary": summary}
 
     except Exception as e:
         logger.exception("Scanner query failed")
