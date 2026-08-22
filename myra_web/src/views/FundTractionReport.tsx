@@ -14,6 +14,7 @@ interface TractionData {
   month_end_close: number | null;
   close_latest: number | null;
   pct_vs_sma: number | null;
+  dcb_discount?: number | null;
 }
 
 interface BatchResponse {
@@ -21,7 +22,7 @@ interface BatchResponse {
   symbols: Record<string, TractionData | null>;
 }
 
-type SortKey = 'score' | 'pct_vs_sma' | 'fund_count' | 'adds' | 'reduces' | 'symbol';
+type SortKey = 'score' | 'pct_vs_sma' | 'fund_count' | 'adds' | 'reduces' | 'symbol' | 'dcb_discount';
 
 const SORT_LABELS: Record<SortKey, string> = {
   score: 'Traction Score',
@@ -30,6 +31,7 @@ const SORT_LABELS: Record<SortKey, string> = {
   adds: 'Adds',
   reduces: 'Reduces',
   symbol: 'Symbol',
+  dcb_discount: 'DCB Discount',
 };
 
 function formatNum(val: number | null, decimals = 1): string {
@@ -127,6 +129,10 @@ export default function FundTractionReportView() {
         case 'reduces':
           va = a.reduces_closes ?? 0;
           vb = b.reduces_closes ?? 0;
+          break;
+        case 'dcb_discount':
+          va = a.dcb_discount ?? -Infinity;
+          vb = b.dcb_discount ?? -Infinity;
           break;
         case 'symbol':
           return sortAsc
@@ -361,6 +367,9 @@ export default function FundTractionReportView() {
                 </th>
                 <th className="text-right px-3 py-2">Close</th>
                 <th className="text-right px-3 py-2">SMA 30</th>
+                <th className="text-right px-3 py-2 cursor-pointer hover:text-white transition-colors" onClick={() => toggleSort('dcb_discount')}>
+                  <span className="flex items-center gap-1 justify-end">DCB Disc {sortIndicator('dcb_discount')}</span>
+                </th>
                 <th className="text-center px-3 py-2">Month</th>
                 <th className="text-center px-3 py-2">Chart</th>
               </tr>
@@ -392,6 +401,19 @@ export default function FundTractionReportView() {
                   <td className="px-3 py-2 text-right text-[#888]">
                     {formatNum(d.sma_30, 2)}
                   </td>
+                  <td className="px-3 py-2 text-right">
+                    {d.dcb_discount != null ? (
+                      <span className={
+                        d.dcb_discount >= 15 ? 'text-green-400 font-semibold' :
+                        d.dcb_discount >= 5 ? 'text-yellow-400' :
+                        'text-[#888]'
+                      }>
+                        {d.dcb_discount.toFixed(1)}%
+                      </span>
+                    ) : (
+                      <span className="text-[#555]">—</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-center text-[#888]">
                     {d.month || '—'}
                   </td>
@@ -412,7 +434,7 @@ export default function FundTractionReportView() {
               {noDataSymbols.map(sym => (
                 <tr key={sym} className="border-b border-[#ffffff0a] hover:bg-[#ffffff05] opacity-50">
                   <td className="px-3 py-2 font-bold text-[#888]">{sym}</td>
-                  <td colSpan={9} className="px-3 py-2 text-[#555] italic">No traction data</td>
+                  <td colSpan={10} className="px-3 py-2 text-[#555] italic">No traction data</td>
                 </tr>
               ))}
             </tbody>
@@ -440,7 +462,7 @@ export default function FundTractionReportView() {
                   <td className="px-3 py-2 text-right text-red-400 font-semibold">
                     {summary.totalReduces.toLocaleString()}
                   </td>
-                  <td colSpan={4}></td>
+                  <td colSpan={5}></td>
                 </tr>
               </tfoot>
             )}

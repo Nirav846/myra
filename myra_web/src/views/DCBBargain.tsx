@@ -126,6 +126,9 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
   const [caExcludeEnabled, setCaExcludeEnabled] = useState(true);
   const [caExcludeDays, setCaExcludeDays] = useState(60);
 
+  const [tractionWindow, setTractionWindow] = useState(1);
+  const [tractionAggregation, setTractionAggregation] = useState<string>('latest');
+
   const [sortCol, setSortCol] = useState<string>('score');
   const [sortAsc, setSortAsc] = useState(false);
 
@@ -235,6 +238,8 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
           exclude_circuits: excludeCircuits,
           corporate_actions_exclude_days: caExcludeEnabled ? caExcludeDays : 0,
           min_traction_score: 30,
+          traction_window: tractionWindow,
+          traction_aggregation: tractionAggregation,
           ...(scanDate.trim() && { scan_date: scanDate }),
         }),
       });
@@ -253,7 +258,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
         setIsScanning(false);
       }
     }
-  }, [fetchScanStatus, clearPolling, mcapRange, scanDate, dcbWindow, minDiscountPct, maxDiscountPct, minDelAbs, minAdtvCr, minHighDelDays, sanityMult, timeframe, minFfMcap, excludeCircuits, caExcludeEnabled, caExcludeDays]);
+  }, [fetchScanStatus, clearPolling, mcapRange, scanDate, dcbWindow, minDiscountPct, maxDiscountPct, minDelAbs, minAdtvCr, minHighDelDays, sanityMult, timeframe, minFfMcap, excludeCircuits, caExcludeEnabled, caExcludeDays, tractionWindow, tractionAggregation]);
   startScanRef.current = startScan;
 
   useEffect(() => {
@@ -273,6 +278,8 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
         setMinFfMcap(d.min_ff_mcap ?? DEFAULTS_FALLBACK.min_ff_mcap);
         setExcludeCircuits(d.exclude_circuits ?? DEFAULTS_FALLBACK.exclude_circuits);
         setCaExcludeDays(d.corporate_actions_exclude_days ?? 60);
+        setTractionWindow(d.traction_window ?? 1);
+        setTractionAggregation(d.traction_aggregation ?? 'latest');
       })
       .catch(() => {}); // keep current defaults on failure
     return () => {
@@ -300,6 +307,8 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
     setExcludeCircuits(true);
     setCaExcludeEnabled(true);
     setCaExcludeDays(60);
+    setTractionWindow(1);
+    setTractionAggregation('latest');
   };
 
   const handleCSV = () => {
@@ -621,6 +630,37 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                   />
                 )}
                 {caExcludeEnabled && <span className="text-[10px] text-[#666]">days</span>}
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="traction-window" className="text-[12px] text-[#888] font-mono">
+                  <Tooltip content="Number of months of traction data to aggregate. Higher = smoother but delayed signal.">Traction Window</Tooltip>
+                </label>
+                <select
+                  id="traction-window"
+                  value={tractionWindow}
+                  onChange={e => { setTractionWindow(Number(e.target.value)); clearCacheOnParamChange(); }}
+                  className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] font-mono focus:border-emerald-500 outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50"
+                >
+                  {[1, 2, 3, 4, 6].map(n => (
+                    <option key={n} value={n}>{n} month{n > 1 ? 's' : ''}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="traction-agg" className="text-[12px] text-[#888] font-mono">
+                  <Tooltip content="How to combine traction scores across months. Max catches spikes, average smooths, momentum captures direction.">Traction Aggregation</Tooltip>
+                </label>
+                <select
+                  id="traction-agg"
+                  value={tractionAggregation}
+                  onChange={e => { setTractionAggregation(e.target.value); clearCacheOnParamChange(); }}
+                  className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] font-mono focus:border-emerald-500 outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50"
+                >
+                  <option value="latest">Latest</option>
+                  <option value="max">Max</option>
+                  <option value="average">Average</option>
+                  <option value="momentum">Momentum</option>
+                </select>
               </div>
               <div className="flex flex-col gap-1 justify-end">
                 <button

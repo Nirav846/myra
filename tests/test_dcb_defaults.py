@@ -52,6 +52,8 @@ EXPECTED_DEFAULTS = {
     "exclude_circuits": True,
     "corporate_actions_exclude_days": 60,
     "min_traction_score": 30,
+    "traction_window": 1,
+    "traction_aggregation": "latest",
 }
 
 

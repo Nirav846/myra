@@ -38,6 +38,8 @@ class DCBBargainScanner:
         timeframe="daily",
         min_ff_mcap=600.0,
         corporate_actions_exclude_days=0,
+        traction_window=1,
+        traction_aggregation="latest",
     ):
         self.min_mcap = min_mcap
         self.max_mcap = max_mcap
@@ -51,6 +53,8 @@ class DCBBargainScanner:
         self.timeframe = timeframe
         self.min_ff_mcap = min_ff_mcap
         self.corporate_actions_exclude_days = corporate_actions_exclude_days
+        self.traction_window = traction_window
+        self.traction_aggregation = traction_aggregation
 
     def _db_path(self, key: str) -> str:
         return os.path.join(DB_DIR, LibrarianCore.DB_MAP[key])

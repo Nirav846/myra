@@ -5,6 +5,7 @@ Fund Traction API endpoints.
 - /months: list of available months
 """
 
+import json
 import logging
 import os
 import sqlite3
@@ -13,7 +14,7 @@ from collections import Counter
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 
-from myra_app.constants import DB_DIR
+from myra_app.constants import DB_DIR, MODELS_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,25 @@ def _safe_float(val, default=None):
         return float(val)
     except (ValueError, TypeError):
         return default
+
+
+def _load_dcb_discounts() -> dict[str, float]:
+    """Load DCB discount_pct from the scanner cache. Returns {symbol: discount_pct}."""
+    cache_path = os.path.join(MODELS_DIR, "dcb_bargain_cache.json")
+    if not os.path.exists(cache_path):
+        return {}
+    try:
+        with open(cache_path) as f:
+            data = json.load(f)
+        candidates = data.get("candidates", [])
+        return {
+            c["symbol"]: c["discount_pct"]
+            for c in candidates
+            if c.get("discount_pct") is not None
+        }
+    except Exception as e:
+        logger.debug("DCB cache load for discounts failed: %s", e)
+        return {}
 
 
 @router.get("/batch")
@@ -72,6 +92,13 @@ def get_fund_traction_batch(
         """
         rows = conn.execute(query, symbol_list + symbol_list).fetchall()
         result_map = {r["symbol"]: dict(r) for r in rows}
+
+        # Enrich with DCB discount from scanner cache
+        dcb_map = _load_dcb_discounts()
+        for sym, entry in result_map.items():
+            if entry is not None and sym in dcb_map:
+                entry["dcb_discount"] = round(dcb_map[sym], 2)
+
         return {
             "latest_month": latest_month,
             "symbols": {s: result_map.get(s) for s in symbol_list},
