@@ -18,6 +18,9 @@ from myra_app.db.bulk_loader import (
 logger = logging.getLogger(__name__)
 
 
+_VALID_AGGREGATIONS = {"latest", "max", "average", "momentum"}
+
+
 class DCBBargainScanner:
     _bulk_data = None
     _BULK_COLUMNS = COLUMNS_8
@@ -38,6 +41,7 @@ class DCBBargainScanner:
         timeframe="daily",
         min_ff_mcap=600.0,
         corporate_actions_exclude_days=0,
+        min_traction_score=0.0,
         traction_window=1,
         traction_aggregation="latest",
     ):
@@ -53,7 +57,13 @@ class DCBBargainScanner:
         self.timeframe = timeframe
         self.min_ff_mcap = min_ff_mcap
         self.corporate_actions_exclude_days = corporate_actions_exclude_days
-        self.traction_window = traction_window
+        self.min_traction_score = float(min_traction_score)
+        self.traction_window = max(1, int(traction_window))
+        if traction_aggregation not in _VALID_AGGREGATIONS:
+            raise ValueError(
+                f"traction_aggregation must be one of {_VALID_AGGREGATIONS}, "
+                f"got {traction_aggregation!r}"
+            )
         self.traction_aggregation = traction_aggregation
 
     def _db_path(self, key: str) -> str:
@@ -649,7 +659,169 @@ class DCBBargainScanner:
         # Corporate action filter
         candidates = self._filter_corporate_actions(candidates, as_on_date)
 
+        # Traction filter (optional — only when min_traction_score > 0)
+        if self.min_traction_score > 0:
+            candidates = self._apply_traction_filter(candidates)
+
         return pd.DataFrame(candidates)
+
+    # ── traction helpers ─────────────────────────────────────────────────
+
+    def _get_available_months(self) -> list[str]:
+        """Return sorted list of all available traction months (ascending)."""
+        val_db = os.path.join(DB_DIR, "myra_valuation.db")
+        if not os.path.exists(val_db):
+            return []
+        with sqlite3.connect(val_db) as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT month FROM fund_traction ORDER BY month ASC"
+            ).fetchall()
+            return [r[0] for r in rows]
+
+    def _get_traction_months(self, latest_month: str | None = None) -> list[str]:
+        """Return up to `traction_window` months ending at `latest_month`."""
+        all_months = self._get_available_months()
+        if not all_months:
+            return []
+        if not latest_month:
+            latest_month = all_months[-1]
+        eligible = [m for m in all_months if m <= latest_month]
+        return eligible[-self.traction_window:]
+
+    def _get_traction_data_multi(
+        self, months: list[str]
+    ) -> dict[str, list[dict]]:
+        """Return {symbol: [{month, traction_score, ...}, ...]} for all rows
+        across the given months, sorted by month ascending per symbol."""
+        if not months:
+            return {}
+        val_db = os.path.join(DB_DIR, "myra_valuation.db")
+        if not os.path.exists(val_db):
+            return {}
+        with sqlite3.connect(val_db) as conn:
+            conn.row_factory = sqlite3.Row
+            ph = ",".join("?" for _ in months)
+            rows = conn.execute(
+                f"""SELECT symbol, month, traction_score, number_of_funds,
+                           adds_new, reduces_closes, pct_vs_sma,
+                           sma_30, month_end_close, close_latest
+                    FROM fund_traction
+                    WHERE month IN ({ph})
+                    ORDER BY symbol, month ASC""",
+                months,
+            ).fetchall()
+            result: dict[str, list[dict]] = {}
+            for r in rows:
+                d = dict(r)
+                result.setdefault(d["symbol"], []).append(d)
+            return result
+
+    @staticmethod
+    def _aggregate_scores(
+        records: list[dict], method: str
+    ) -> tuple[float | None, dict]:
+        """Compute an aggregated traction score from a list of monthly records
+        (sorted by month ascending).
+
+        Returns (aggregated_score, metadata_dict).
+        """
+        scores = [(r["month"], r.get("traction_score") or 0.0) for r in records]
+        meta: dict = {"months_used": len(scores), "months": [s[0] for s in scores]}
+
+        if not scores:
+            return None, meta
+
+        if method == "latest":
+            val = scores[-1][1]
+            meta["aggregation_detail"] = f"latest ({scores[-1][0]})"
+            return round(val, 2), meta
+
+        if method == "max":
+            best = max(scores, key=lambda x: x[1])
+            val = best[1]
+            meta["aggregation_detail"] = f"max {val:.1f} in {best[0]}"
+            return round(val, 2), meta
+
+        if method == "average":
+            vals = [s[1] for s in scores]
+            val = float(np.mean(vals))
+            meta["aggregation_detail"] = f"avg {val:.1f} over {len(vals)}mo"
+            return round(val, 2), meta
+
+        if method == "momentum":
+            if len(scores) < 2:
+                meta["aggregation_detail"] = "momentum: insufficient data"
+                return 0.0, meta
+            prev_score = scores[-2][1]
+            curr_score = scores[-1][1]
+            val = curr_score - prev_score
+            meta["aggregation_detail"] = (
+                f"momentum: {scores[-1][0]}({curr_score:.1f}) "
+                f"- {scores[-2][0]}({prev_score:.1f}) = {val:+.1f}"
+            )
+            return round(val, 2), meta
+
+        return None, meta
+
+    def _apply_traction_filter(self, candidates: list[dict]) -> list[dict]:
+        """Filter candidates by aggregated fund traction score.
+
+        Fetches the latest `traction_window` months of traction data,
+        aggregates per the configured method, and drops candidates
+        below `min_traction_score`.  Adds traction metadata fields
+        to each surviving candidate dict.
+        """
+        if not candidates:
+            return candidates
+
+        all_months = self._get_available_months()
+        if not all_months:
+            logger.info("DCB traction filter: no traction data available — skipping filter")
+            return candidates
+
+        latest_month = all_months[-1]
+        window_months = self._get_traction_months(latest_month)
+        logger.info(
+            "DCB traction filter: window=%d months=%s method=%s threshold=%.1f",
+            self.traction_window, window_months,
+            self.traction_aggregation, self.min_traction_score,
+        )
+
+        multi_data = self._get_traction_data_multi(window_months)
+        if not multi_data:
+            logger.info("DCB traction filter: no traction data for window — skipping filter")
+            return candidates
+
+        filtered: list[dict] = []
+        for c in candidates:
+            symbol = c["symbol"]
+            records = multi_data.get(symbol)
+            if not records:
+                continue
+
+            agg_score, agg_meta = self._aggregate_scores(
+                records, self.traction_aggregation
+            )
+            if agg_score is None:
+                continue
+
+            if agg_score < self.min_traction_score:
+                continue
+
+            # Attach traction metadata to candidate dict
+            c["traction_aggregated"] = agg_score
+            c["traction_method"] = self.traction_aggregation
+            c["traction_window_used"] = self.traction_window
+            c["traction_detail"] = agg_meta.get("aggregation_detail", "")
+            filtered.append(c)
+
+        n_before = len(candidates)
+        n_after = len(filtered)
+        logger.info(
+            "DCB traction filter: %d → %d candidates (threshold %.1f, method %s)",
+            n_before, n_after, self.min_traction_score, self.traction_aggregation,
+        )
+        return filtered
 
     def _filter_corporate_actions(self, candidates: list[dict], as_on_date: str) -> list[dict]:
         """Remove symbols with bonus/split/rights in the last N days.
