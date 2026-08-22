@@ -502,6 +502,8 @@ def _smb_parse(payload: dict):
     dcb_kwargs["min_traction_score"] = float(payload.get("min_traction_score", 30.0))
     dcb_kwargs["max_pct_vs_sma"] = float(payload.get("max_pct_vs_sma", 10.0))
     dcb_kwargs["filter_pct_vs_sma"] = bool(payload.get("filter_pct_vs_sma", True))
+    dcb_kwargs["traction_window"] = int(payload.get("traction_window", 3))
+    dcb_kwargs["traction_aggregation"] = str(payload.get("traction_aggregation", "max"))
     return dcb_kwargs, scan_date
 
 
@@ -512,11 +514,15 @@ def _smb_build(kwargs, scan_date):
     min_traction = kwargs.pop("min_traction_score", 30.0)
     max_pct = kwargs.pop("max_pct_vs_sma", 10.0)
     filter_pct = kwargs.pop("filter_pct_vs_sma", True)
+    traction_window = kwargs.pop("traction_window", 3)
+    traction_aggregation = kwargs.pop("traction_aggregation", "max")
     scanner = SmartMoneyBargainScanner(
         **kwargs,
         min_traction_score=min_traction,
         max_pct_vs_sma=max_pct,
         filter_pct_vs_sma=filter_pct,
+        traction_window=traction_window,
+        traction_aggregation=traction_aggregation,
         corporate_actions_exclude_days=ca_exclude_days,
     )
     scanner._exclude_circuits = exclude_circuits

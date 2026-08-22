@@ -20,6 +20,10 @@ interface Candidate {
   dcb: number;
   discount_pct: number;
   traction_score: number;
+  traction_aggregated?: number;
+  traction_method?: string;
+  traction_window?: number;
+  traction_detail?: string;
   fund_count?: number;
   adds_new?: number;
   reduces_closes?: number;
@@ -83,6 +87,8 @@ export default function SmartMoneyBargainView() {
   const [minTractionScore, setMinTractionScore] = useState(30);
   const [maxPctVsSma, setMaxPctVsSma] = useState(10);
   const [filterPctVsSma, setFilterPctVsSma] = useState(true);
+  const [tractionWindow, setTractionWindow] = useState(3);
+  const [tractionAggregation, setTractionAggregation] = useState<string>('max');
   const [showParams, setShowParams] = useState(false);
 
   useEffect(() => { fetchMarketCapMap().then(m => mcapMapRef.current = m); }, []);
@@ -168,6 +174,8 @@ export default function SmartMoneyBargainView() {
         min_traction_score: minTractionScore,
         max_pct_vs_sma: maxPctVsSma,
         filter_pct_vs_sma: filterPctVsSma,
+        traction_window: tractionWindow,
+        traction_aggregation: tractionAggregation,
       };
       await fetch(`${API_BASE}/smart-money-bargain/scan`, {
         method: 'POST',
@@ -181,7 +189,7 @@ export default function SmartMoneyBargainView() {
       setIsScanning(false);
       setError('Failed to start scan');
     }
-  }, [minDiscountPct, minTractionScore, maxPctVsSma, filterPctVsSma, fetchScanStatus]);
+  }, [minDiscountPct, minTractionScore, maxPctVsSma, filterPctVsSma, tractionWindow, tractionAggregation, fetchScanStatus]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -191,10 +199,12 @@ export default function SmartMoneyBargainView() {
 
   const exportCsv = () => {
     if (!filteredData.length) return;
-    const headers = ['Symbol', 'Sector', 'Close', 'DCB', 'Discount%', 'Traction', 'Funds', 'Adds', 'Reduces', 'Net Adds', '% vs SMA', 'Del Abs', 'ADTV Cr', 'Combined', 'Tier'];
+    const headers = ['Symbol', 'Sector', 'Close', 'DCB', 'Discount%', 'Traction Agg', 'Traction Latest', 'Method', 'Window', 'Funds', 'Adds', 'Reduces', 'Net Adds', '% vs SMA', 'Del Abs', 'ADTV Cr', 'Combined', 'Tier'];
     const rows = filteredData.map(r => [
       r.symbol, r.sector ?? '', r.close, r.dcb, r.discount_pct,
-      r.traction_score, r.fund_count ?? '', r.adds_new ?? '', r.reduces_closes ?? '',
+      r.traction_aggregated ?? r.traction_score ?? '', r.traction_score,
+      r.traction_method ?? '', r.traction_window ?? '',
+      r.fund_count ?? '', r.adds_new ?? '', r.reduces_closes ?? '',
       r.net_adds ?? '', r.pct_vs_sma_traction ?? r.pct_vs_sma ?? '', r.del_abs, r.adtv_cr,
       r.combined_score, r.tier,
     ]);
@@ -269,6 +279,25 @@ export default function SmartMoneyBargainView() {
               className="w-full mt-1 bg-[#ffffff0a] border border-[#ffffff14] rounded px-2 py-1 text-white text-sm" />
           </label>
           <label className="text-xs text-[#888]">
+            Traction Window (months)
+            <select value={tractionWindow} onChange={e => setTractionWindow(Number(e.target.value))}
+              className="w-full mt-1 bg-[#ffffff0a] border border-[#ffffff14] rounded px-2 py-1 text-white text-sm"
+              title="Number of months to look back for traction aggregation. Higher = smoother, lower = more responsive.">
+              {[1, 2, 3, 6, 12].map(w => <option key={w} value={w}>{w}</option>)}
+            </select>
+          </label>
+          <label className="text-xs text-[#888]">
+            Aggregation
+            <select value={tractionAggregation} onChange={e => setTractionAggregation(e.target.value)}
+              className="w-full mt-1 bg-[#ffffff0a] border border-[#ffffff14] rounded px-2 py-1 text-white text-sm"
+              title="How to combine multiple months: Max (best in window), Average (smoothed), Latest (most recent only), Momentum (change direction).">
+              <option value="max">Max</option>
+              <option value="average">Average</option>
+              <option value="latest">Latest</option>
+              <option value="momentum">Momentum</option>
+            </select>
+          </label>
+          <label className="text-xs text-[#888]">
             Max % vs SMA
             <input type="number" value={maxPctVsSma} onChange={e => setMaxPctVsSma(Number(e.target.value))}
               className="w-full mt-1 bg-[#ffffff0a] border border-[#ffffff14] rounded px-2 py-1 text-white text-sm" />
@@ -286,6 +315,9 @@ export default function SmartMoneyBargainView() {
           <span className="bg-[#ffffff0a] px-2 py-1 rounded">{stats.n} candidates</span>
           <span className="bg-[#ffffff0a] px-2 py-1 rounded">Avg discount: {stats.avgDisc}%</span>
           <span className="bg-[#ffffff0a] px-2 py-1 rounded">Avg traction: {stats.avgTraction}</span>
+          <span className="bg-[#ffffff0a] px-2 py-1 rounded" title={`Window: ${tractionWindow} months, Aggregation: ${tractionAggregation}`}>
+            {tractionWindow}mo / {tractionAggregation}
+          </span>
           <span className="bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded">Adds: {stats.totalAdds}</span>
           <span className="bg-red-500/10 text-red-400 px-2 py-1 rounded">Reduces: {stats.totalReduces}</span>
         </div>
@@ -326,7 +358,8 @@ export default function SmartMoneyBargainView() {
                   { key: 'close', label: 'Close' },
                   { key: 'discount_pct', label: 'DCB Disc%' },
                   { key: 'combined_score', label: 'Score' },
-                  { key: 'traction_score', label: 'Traction' },
+                  { key: 'traction_aggregated', label: `Traction (${tractionAggregation})` },
+                  { key: 'traction_score', label: 'Latest' },
                   { key: 'fund_count', label: 'Funds' },
                   { key: 'net_adds', label: 'Net Adds' },
                   { key: 'pct_vs_sma_traction', label: '% vs SMA' },
@@ -352,9 +385,13 @@ export default function SmartMoneyBargainView() {
                   <td className="px-2 py-1.5 text-red-400">{r.discount_pct?.toFixed(1)}%</td>
                   <td className="px-2 py-1.5 font-medium">{r.combined_score?.toFixed(1)}</td>
                   <td className="px-2 py-1.5">
-                    <span className={r.traction_score >= 60 ? 'text-green-400' : r.traction_score >= 40 ? 'text-amber-400' : 'text-[#888]'}>
-                      {r.traction_score?.toFixed(1)}
+                    <span className={r.traction_aggregated != null && r.traction_aggregated >= 60 ? 'text-green-400' : r.traction_aggregated != null && r.traction_aggregated >= 40 ? 'text-amber-400' : 'text-[#888]'}
+                      title={r.traction_detail || ''}>
+                      {r.traction_aggregated?.toFixed(1) ?? r.traction_score?.toFixed(1) ?? '-'}
                     </span>
+                  </td>
+                  <td className="px-2 py-1.5 text-[#888]">
+                    {r.traction_score?.toFixed(1)}
                   </td>
                   <td className="px-2 py-1.5 text-[#888]">{r.fund_count ?? '-'}</td>
                   <td className="px-2 py-1.5">
