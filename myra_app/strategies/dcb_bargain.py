@@ -678,6 +678,17 @@ class DCBBargainScanner:
             ).fetchall()
             return [r[0] for r in rows]
 
+    def _get_latest_traction_month(self) -> str | None:
+        """Return the latest available traction month from the DB, or None."""
+        val_db = os.path.join(DB_DIR, "myra_valuation.db")
+        if not os.path.exists(val_db):
+            return None
+        with sqlite3.connect(val_db) as conn:
+            row = conn.execute(
+                "SELECT MAX(month) FROM fund_traction"
+            ).fetchone()
+            return row[0] if row and row[0] else None
+
     def _get_traction_months(self, latest_month: str | None = None) -> list[str]:
         """Return up to `traction_window` months ending at `latest_month`."""
         all_months = self._get_available_months()
@@ -774,16 +785,18 @@ class DCBBargainScanner:
         if not candidates:
             return candidates
 
-        all_months = self._get_available_months()
-        if not all_months:
+        # Use MAX(month) directly — never assume the current calendar month
+        # has traction data.  Traction data lags by ~1 month (July data
+        # published in August, etc.).
+        latest_month = self._get_latest_traction_month()
+        if not latest_month:
             logger.info("DCB traction filter: no traction data available — skipping filter")
             return candidates
 
-        latest_month = all_months[-1]
         window_months = self._get_traction_months(latest_month)
         logger.info(
-            "DCB traction filter: window=%d months=%s method=%s threshold=%.1f",
-            self.traction_window, window_months,
+            "DCB traction filter: latest_month=%s window=%d months=%s method=%s threshold=%.1f",
+            latest_month, self.traction_window, window_months,
             self.traction_aggregation, self.min_traction_score,
         )
 

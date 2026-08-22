@@ -186,11 +186,10 @@ class SmartMoneyBargainScanner(DCBBargainScanner):
             return dcb_df
 
         # Step 2: determine traction months and fetch multi-month data
-        all_months = self._get_available_months()
-        if not all_months:
+        latest_month = self._get_latest_traction_month()
+        if not latest_month:
             logger.warning("Smart Money Bargain: no traction data available")
             return pd.DataFrame()
-        latest_month = all_months[-1]
         window_months = self._get_traction_months(latest_month)
         logger.info(
             "Smart Money Bargain: traction window=%d months=%s method=%s",
