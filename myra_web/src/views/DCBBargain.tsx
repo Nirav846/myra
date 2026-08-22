@@ -234,6 +234,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
           min_ff_mcap: minFfMcap,
           exclude_circuits: excludeCircuits,
           corporate_actions_exclude_days: caExcludeEnabled ? caExcludeDays : 0,
+          min_traction_score: 30,
           ...(scanDate.trim() && { scan_date: scanDate }),
         }),
       });

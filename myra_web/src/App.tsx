@@ -43,6 +43,7 @@ import BottomHunterView from './views/BottomHunter';
 import ClimaxAccumulationView from './views/ClimaxAccumulation';
 import ConfluenceView from './views/ConfluenceView';
 import DCBBargainView from './views/DCBBargain';
+import SmartMoneyBargainView from './views/SmartMoneyBargain';
 import RRGView from './views/RRGView';
 import FundTractionReportView from './views/FundTractionReport';
 import FundTractionScannerView from './views/FundTractionScanner';
@@ -57,6 +58,7 @@ const TABS = [
   { id: 'Portfolio', path: '/portfolio', icon: '💰', category: 'dashboard' },
   { id: 'Bottom Hunter', path: '/bottom-hunter', icon: '🎯', category: 'scanners', group: 'Price Action' },
   { id: 'DCB Bargain', path: '/dcb-bargain', icon: '🏷️', category: 'scanners', group: 'Institutional / Flow' },
+  { id: 'Smart Money Bargain', path: '/smart-money-bargain', icon: '🏦', category: 'scanners', group: 'Institutional / Flow' },
   { id: 'Consensus', path: '/confluence', icon: '🔗', category: 'scanners', group: 'Overview' },
   { id: 'Invisible Hand', path: '/invisible-hand', icon: <Eye size={16} />, category: 'scanners', group: 'Institutional / Flow' },
   { id: 'The Trigger', path: '/trigger', icon: <Zap size={16} />, category: 'scanners', group: 'Price Action' },
@@ -282,6 +284,7 @@ export default function App() {
                 <Route path="/bottom-hunter" element={<BottomHunterView lib={librarian} />} />
                 <Route path="/climax-accumulation" element={<ClimaxAccumulationView lib={librarian} />} />
                 <Route path="/dcb-bargain" element={<DCBBargainView lib={librarian} />} />
+                <Route path="/smart-money-bargain" element={<SmartMoneyBargainView />} />
                 <Route path="/news-sentiment" element={<NewsSentimentView />} />
                 <Route path="/confluence" element={<ConfluenceView />} />
                 <Route path="/rrg" element={<RRGView />} />

@@ -397,6 +397,8 @@ def _dcb_parse(payload: dict):
     min_ff_mcap = float(payload.get("min_ff_mcap", 600.0))
     exclude_circuits = bool(payload.get("exclude_circuits", True))
     corporate_actions_exclude_days = int(payload.get("corporate_actions_exclude_days", 0))
+    # Traction filter params (forwarded to Smart Money Bargain scanner when enabled)
+    min_traction_score = float(payload.get("min_traction_score", 30.0))
     raw_date = payload.get("scan_date", "")
     if raw_date and str(raw_date).strip():
         scan_date = _get_latest_trading_day_before(str(raw_date).strip())
@@ -417,6 +419,7 @@ def _dcb_parse(payload: dict):
             "min_ff_mcap": min_ff_mcap,
             "exclude_circuits": exclude_circuits,
             "corporate_actions_exclude_days": corporate_actions_exclude_days,
+            "min_traction_score": min_traction_score,
         },
         scan_date,
     )
@@ -486,7 +489,61 @@ async def dcb_bargain_defaults():
         "min_ff_mcap": 600.0,
         "exclude_circuits": True,
         "corporate_actions_exclude_days": 60,
+        "min_traction_score": 30,
     }
+
+
+# --- Smart Money Bargain (DCB + Traction) ---
+def _smb_parse(payload: dict):
+    """Parse Smart Money Bargain scan request — extends DCB params with traction filters."""
+    # Reuse DCB parse for base params
+    dcb_kwargs, scan_date = _dcb_parse(payload)
+    # Add traction-specific params
+    dcb_kwargs["min_traction_score"] = float(payload.get("min_traction_score", 30.0))
+    dcb_kwargs["max_pct_vs_sma"] = float(payload.get("max_pct_vs_sma", 10.0))
+    dcb_kwargs["filter_pct_vs_sma"] = bool(payload.get("filter_pct_vs_sma", True))
+    return dcb_kwargs, scan_date
+
+
+def _smb_build(kwargs, scan_date):
+    from myra_app.strategies.smart_money_bargain import SmartMoneyBargainScanner
+    exclude_circuits = kwargs.pop("exclude_circuits")
+    ca_exclude_days = kwargs.pop("corporate_actions_exclude_days", 0)
+    min_traction = kwargs.pop("min_traction_score", 30.0)
+    max_pct = kwargs.pop("max_pct_vs_sma", 10.0)
+    filter_pct = kwargs.pop("filter_pct_vs_sma", True)
+    scanner = SmartMoneyBargainScanner(
+        **kwargs,
+        min_traction_score=min_traction,
+        max_pct_vs_sma=max_pct,
+        filter_pct_vs_sma=filter_pct,
+        corporate_actions_exclude_days=ca_exclude_days,
+    )
+    scanner._exclude_circuits = exclude_circuits
+    return scanner
+
+
+register_scanner(
+    "smart-money-bargain",
+    state_template={
+        "scan_status": "idle",
+        "last_scan": None,
+        "progress": 0,
+        "message": "Idle — click Scan to start",
+        "candidates": [],
+        "bear_market": False,
+        "scanned_date": None,
+    },
+    cache_file="smart_money_bargain_cache.json",
+    parse_payload=_smb_parse,
+    build_scanner=_smb_build,
+    result_mode="df",
+    status_post_process=_apply_tier_rank,
+    post_process=_dcb_post,
+    tier_rank=True,
+    status_extra="bear_market",
+    label="Smart Money Bargain",
+)
 
 
 # --- Operator Fingerprint ---

@@ -51,6 +51,7 @@ EXPECTED_DEFAULTS = {
     "min_ff_mcap": 600.0,
     "exclude_circuits": True,
     "corporate_actions_exclude_days": 60,
+    "min_traction_score": 30,
 }
 
 
