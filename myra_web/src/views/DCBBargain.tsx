@@ -44,6 +44,8 @@ interface Candidate {
   tier: string;
   tier_rank?: number;
   timeframe?: string;
+  traction_aggregated?: number | null;
+  traction_detail?: string;
 }
 
 interface ScanStatus {
@@ -237,7 +239,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
           min_ff_mcap: minFfMcap,
           exclude_circuits: excludeCircuits,
           corporate_actions_exclude_days: caExcludeEnabled ? caExcludeDays : 0,
-          min_traction_score: 30,
+          min_traction_score: 0,
           traction_window: tractionWindow,
           traction_aggregation: tractionAggregation,
           ...(scanDate.trim() && { scan_date: scanDate }),
@@ -315,7 +317,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
     if (filteredData.length === 0) return;
     const headers = [
       'Symbol', 'Sector', 'Discount%', 'Depth', 'SpikeDeep', 'Circuit', 'CktDays', 'Close', 'DCB',
-      'DelAbs', 'ADTV', 'HiDelDays', 'FF MCap Cr', 'DCBRange', 'Score', 'Tier', 'Timeframe',
+      'DelAbs', 'ADTV', 'HiDelDays', 'FF MCap Cr', 'DCBRange', 'Score', 'Traction', 'Tier', 'Timeframe',
     ];
     const rows = filteredData.map(r => [
       r.symbol, r.sector ?? '',
@@ -329,7 +331,8 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
       r.dcb_disc_min != null && r.dcb_disc_median != null && r.dcb_disc_max != null
         ? `${r.dcb_disc_min.toFixed(1)}-${r.dcb_disc_median.toFixed(1)}-${r.dcb_disc_max.toFixed(1)}`
         : '',
-      r.score.toFixed(0), r.tier, r.timeframe ?? 'daily',
+      r.score.toFixed(0), r.traction_aggregated != null ? r.traction_aggregated.toFixed(1) : '',
+      r.tier, r.timeframe ?? 'daily',
     ].join(','));
     const csv = [headers.join(','), ...rows].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -769,7 +772,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                 role="grid"
                 aria-label="DCB Bargain results"
                 aria-rowcount={filteredData.length}
-                aria-colcount={15}
+                aria-colcount={16}
               >
                 <thead className="sticky top-0 z-20 text-[#888]">
                   <tr style={{ boxShadow: '0 1px 0 0 rgba(255,255,255,0.08), 0 2px 4px 0 rgba(0,0,0,0.4)' }}>
@@ -815,6 +818,9 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                     <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('score')} scope="col" aria-sort={sortCol === 'score' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip content="Composite score combining discount%, delivery absorption, and accumulation strength.">Score <SortIcon column="score" /></Tooltip>
                     </th>
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('traction_aggregated')} scope="col" aria-sort={sortCol === 'traction_aggregated' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                      <Tooltip content="Traction (agg) — aggregated fund traction score across recent months. ≥30 = strong institutional buying.">Traction <SortIcon column="traction_aggregated" /></Tooltip>
+                    </th>
                     <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('tier')} scope="col">
                       Tier <SortIcon column="tier" />
                     </th>
@@ -823,7 +829,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={15} className="px-4 py-8 text-center text-[#888]">No candidates match current filters.</td>
+                      <td colSpan={16} className="px-4 py-8 text-center text-[#888]">No candidates match current filters.</td>
                     </tr>
                   ) : (
                     filteredData.map((row, index) => (
@@ -914,10 +920,26 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                             {row.score.toFixed(0)}
                           </span>
                         </td>
+                        <td className="px-3 py-3 text-right">
+                          {row.traction_aggregated != null ? (
+                            <span className={
+                              row.traction_aggregated >= 30 ? 'text-green-400 font-semibold' :
+                              row.traction_aggregated >= 10 ? 'text-yellow-400' :
+                              'text-red-400'
+                            } title={row.traction_detail || undefined}>
+                              {row.traction_aggregated.toFixed(1)}
+                            </span>
+                          ) : (
+                            <span className="text-[#555]">—</span>
+                          )}
+                        </td>
                         <td className="px-3 py-3 text-center">
                           <span className={`px-2 py-0.5 rounded text-[12px] font-bold border ${TIER_COLORS[row.tier] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
                             {row.tier}
                           </span>
+                          {row.traction_aggregated != null && row.traction_aggregated >= 30 && (
+                            <span className="ml-1" title={`Traction: ${row.traction_aggregated.toFixed(1)} — strong institutional buying`}>🌟</span>
+                          )}
                         </td>
                       </tr>
                     ))

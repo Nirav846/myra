@@ -659,9 +659,17 @@ class DCBBargainScanner:
         # Corporate action filter
         candidates = self._filter_corporate_actions(candidates, as_on_date)
 
-        # Traction filter (optional — only when min_traction_score > 0)
+        # Traction enrichment — always attach traction data for display/sort.
+        # Only filter when min_traction_score > 0.
+        candidates = self._enrich_traction(candidates)
+
         if self.min_traction_score > 0:
-            candidates = self._apply_traction_filter(candidates)
+            before = len(candidates)
+            candidates = [c for c in candidates if (c.get("traction_aggregated") or 0) >= self.min_traction_score]
+            logger.info(
+                "DCB traction filter: %d → %d candidates (threshold %.1f)",
+                before, len(candidates), self.min_traction_score,
+            )
 
         return pd.DataFrame(candidates)
 
@@ -774,67 +782,54 @@ class DCBBargainScanner:
 
         return None, meta
 
-    def _apply_traction_filter(self, candidates: list[dict]) -> list[dict]:
-        """Filter candidates by aggregated fund traction score.
+    def _enrich_traction(self, candidates: list[dict]) -> list[dict]:
+        """Attach aggregated fund traction data to each candidate dict.
 
-        Fetches the latest `traction_window` months of traction data,
-        aggregates per the configured method, and drops candidates
-        below `min_traction_score`.  Adds traction metadata fields
-        to each surviving candidate dict.
+        Fetches the latest `traction_window` months of traction data and
+        aggregates per the configured method.  Sets ``traction_aggregated``
+        and ``traction_detail`` on every candidate that has traction data.
+        Candidates without traction data get ``traction_aggregated = None``.
         """
         if not candidates:
             return candidates
 
-        # Use MAX(month) directly — never assume the current calendar month
-        # has traction data.  Traction data lags by ~1 month (July data
-        # published in August, etc.).
         latest_month = self._get_latest_traction_month()
         if not latest_month:
-            logger.info("DCB traction filter: no traction data available — skipping filter")
+            logger.info("DCB traction enrich: no traction data available")
             return candidates
 
         window_months = self._get_traction_months(latest_month)
         logger.info(
-            "DCB traction filter: latest_month=%s window=%d months=%s method=%s threshold=%.1f",
+            "DCB traction enrich: latest_month=%s window=%d months=%s method=%s",
             latest_month, self.traction_window, window_months,
-            self.traction_aggregation, self.min_traction_score,
+            self.traction_aggregation,
         )
 
         multi_data = self._get_traction_data_multi(window_months)
         if not multi_data:
-            logger.info("DCB traction filter: no traction data for window — skipping filter")
+            logger.info("DCB traction enrich: no traction data for window")
             return candidates
 
-        filtered: list[dict] = []
+        enriched = 0
         for c in candidates:
-            symbol = c["symbol"]
-            records = multi_data.get(symbol)
+            records = multi_data.get(c["symbol"])
             if not records:
+                c["traction_aggregated"] = None
+                c["traction_detail"] = ""
                 continue
 
             agg_score, agg_meta = self._aggregate_scores(
                 records, self.traction_aggregation
             )
-            if agg_score is None:
-                continue
-
-            if agg_score < self.min_traction_score:
-                continue
-
-            # Attach traction metadata to candidate dict
             c["traction_aggregated"] = agg_score
             c["traction_method"] = self.traction_aggregation
             c["traction_window_used"] = self.traction_window
             c["traction_detail"] = agg_meta.get("aggregation_detail", "")
-            filtered.append(c)
+            if agg_score is not None:
+                enriched += 1
 
-        n_before = len(candidates)
-        n_after = len(filtered)
-        logger.info(
-            "DCB traction filter: %d → %d candidates (threshold %.1f, method %s)",
-            n_before, n_after, self.min_traction_score, self.traction_aggregation,
-        )
-        return filtered
+        logger.info("DCB traction enrich: %d/%d candidates have traction data", enriched, len(candidates))
+        return candidates
 
     def _filter_corporate_actions(self, candidates: list[dict], as_on_date: str) -> list[dict]:
         """Remove symbols with bonus/split/rights in the last N days.

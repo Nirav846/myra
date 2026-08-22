@@ -397,8 +397,8 @@ def _dcb_parse(payload: dict):
     min_ff_mcap = float(payload.get("min_ff_mcap", 600.0))
     exclude_circuits = bool(payload.get("exclude_circuits", True))
     corporate_actions_exclude_days = int(payload.get("corporate_actions_exclude_days", 0))
-    # Traction filter params (forwarded to Smart Money Bargain scanner when enabled)
-    min_traction_score = float(payload.get("min_traction_score", 30.0))
+    # Traction filter params (off by default for DCB — traction used as sort/highlight, not gate)
+    min_traction_score = float(payload.get("min_traction_score", 0.0))
     traction_window = int(payload.get("traction_window", 1))
     traction_aggregation = str(payload.get("traction_aggregation", "latest"))
     raw_date = payload.get("scan_date", "")
@@ -493,7 +493,7 @@ async def dcb_bargain_defaults():
         "min_ff_mcap": 600.0,
         "exclude_circuits": True,
         "corporate_actions_exclude_days": 60,
-        "min_traction_score": 30,
+        "min_traction_score": 0,
         "traction_window": 1,
         "traction_aggregation": "latest",
     }
