@@ -13,7 +13,7 @@ interface FundTractionButtonProps {
 export default function FundTractionButton({ symbols, disabled }: FundTractionButtonProps) {
   const handleClick = () => {
     if (!symbols.length) return;
-    const url = `/fund-traction-report?symbols=${symbols.join(',')}`;
+    const url = `/#/fund-traction-report?symbols=${symbols.join(',')}`;
     window.open(url, '_blank');
   };
 

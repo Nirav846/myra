@@ -397,7 +397,7 @@ export default function FundTractionReportView() {
                   </td>
                   <td className="px-3 py-2 text-center">
                     <a
-                      href={`/chart?symbol=${d.symbol}`}
+                        href={`/#/chart?symbol=${d.symbol}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-indigo-400 hover:text-indigo-300 transition-colors"

@@ -268,7 +268,7 @@ export default function FundTractionScannerView() {
               {sorted.map(s => (
                 <tr key={s.symbol} className="border-b border-[#ffffff0a] hover:bg-[#ffffff05]">
                   <td className="px-2 py-1.5 font-bold text-white">
-                    <a href={`/chart?symbol=${s.symbol}`} target="_blank" rel="noopener noreferrer" className="hover:text-indigo-400 transition-colors">{s.symbol}</a>
+                    <a href={`/#/chart?symbol=${s.symbol}`} target="_blank" rel="noopener noreferrer" className="hover:text-indigo-400 transition-colors">{s.symbol}</a>
                   </td>
                   <td className="px-2 py-1.5 text-right"><ScoreBadge score={s.traction_score} /></td>
                   <td className="px-2 py-1.5 text-right"><SmaBadge pct={s.pct_vs_sma} /></td>
