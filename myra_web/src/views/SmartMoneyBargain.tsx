@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Filter, RefreshCw, Download, ChevronUp, ChevronDown, ArrowUpDown, Settings2 } from 'lucide-react';
+import { Filter, RefreshCw, Download, ChevronUp, ChevronDown, ArrowUpDown, Settings2, Info, Zap, Target } from 'lucide-react';
 import FundTractionButton from '../components/FundTractionButton';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
 import { useWatchlist } from '../lib/WatchlistContext';
@@ -12,6 +12,21 @@ const TIER_COLORS: Record<string, string> = {
   MOD: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
   LOW: 'bg-[#ffffff0a] text-[#888] border-[#ffffff1a]',
 };
+
+interface Preset {
+  name: string;
+  discount: number;
+  traction: number;
+  label: string;
+}
+
+const PRESETS: Preset[] = [
+  { name: 'strict', discount: 15, traction: 30, label: 'Strict' },
+  { name: 'moderate', discount: 12, traction: 20, label: 'Moderate' },
+  { name: 'loose', discount: 10, traction: 10, label: 'Loose' },
+  { name: 'dcb-only', discount: 15, traction: 0, label: 'DCB Only' },
+  { name: 'traction-only', discount: 0, traction: 30, label: 'Traction Only' },
+];
 
 interface Candidate {
   symbol: string;
@@ -91,6 +106,19 @@ export default function SmartMoneyBargainView() {
   const [tractionAggregation, setTractionAggregation] = useState<string>('max');
   const [showParams, setShowParams] = useState(false);
 
+  type RowData = Candidate & { _matchStatus?: 'match' | 'near-miss'; _nearMissReason?: string };
+
+  // Presets and near-miss
+  const [activePreset, setActivePreset] = useState<string>(() => {
+    try { return localStorage.getItem('smart_money_preset') || 'strict'; } catch { return 'strict'; }
+  });
+  const [showNearMisses, setShowNearMisses] = useState<boolean>(() => {
+    try { return localStorage.getItem('smart_money_show_near_misses') === 'true'; } catch { return false; }
+  });
+
+  const activePresetDef = useMemo(() => PRESETS.find(p => p.name === activePreset) ?? PRESETS[0], [activePreset]);
+  const completedScan = scanStatus?.scan_status === 'completed';
+
   useEffect(() => { fetchMarketCapMap().then(m => mcapMapRef.current = m); }, []);
 
   const mountedRef = useRef(true);
@@ -103,8 +131,39 @@ export default function SmartMoneyBargainView() {
     return ['All', ...Array.from(sectors).filter(s => s !== 'Unknown').sort(), 'Unknown'];
   }, [candidates]);
 
-  const filteredData = useMemo(() => {
-    let data = [...candidates];
+  const classifiedData = useMemo((): RowData[] => {
+    if (!showNearMisses || !completedScan) return candidates.map(c => ({ ...c }));
+    const preset = activePresetDef;
+    const out: RowData[] = [];
+    // Backend scanned with loose params (discount>=10, traction>=10); re-classify locally.
+    for (const c of candidates) {
+      const discount = c.discount_pct ?? 0;
+      const traction = c.traction_aggregated ?? c.traction_score ?? 0;
+      const passesDiscount = discount >= preset.discount;
+      const passesTraction = traction >= preset.traction;
+      let status: 'match' | 'near-miss' | undefined;
+      let reason: string | undefined;
+      if (passesDiscount && passesTraction) {
+        status = 'match';
+      } else if (passesDiscount && traction >= 10 && traction < preset.traction) {
+        status = 'near-miss';
+        reason = 'Traction Low';
+      } else if (passesTraction && discount >= 10 && discount < preset.discount) {
+        status = 'near-miss';
+        reason = 'Discount Low';
+      }
+      if (!status) continue;
+      out.push({ ...c, _matchStatus: status, _nearMissReason: reason });
+    }
+    return out;
+  }, [candidates, showNearMisses, completedScan, activePresetDef]);
+
+  const matchCount = useMemo(() => classifiedData.filter(r => r._matchStatus === 'match').length, [classifiedData]);
+  const nearMissCount = useMemo(() => classifiedData.filter(r => r._matchStatus === 'near-miss').length, [classifiedData]);
+
+  const displayData = useMemo(() => {
+    const source: RowData[] = showNearMisses ? classifiedData : candidates;
+    let data: RowData[] = [...source];
     if (mcapRange) {
       const map = mcapMapRef.current;
       data = data.filter(d => {
@@ -124,7 +183,7 @@ export default function SmartMoneyBargainView() {
       return String(av).localeCompare(String(bv)) * (sortAsc ? 1 : -1);
     });
     return data;
-  }, [candidates, mcapRange, watchlistOnly, sectorFilter, tierFilter, isWatched, sortCol, sortAsc]);
+  }, [candidates, classifiedData, showNearMisses, mcapRange, watchlistOnly, sectorFilter, tierFilter, isWatched, sortCol, sortAsc]);
 
   const clearPolling = useCallback(() => {
     if (pollTimerRef.current) {
@@ -170,8 +229,8 @@ export default function SmartMoneyBargainView() {
     setError(null);
     try {
       const payload = {
-        min_discount_pct: minDiscountPct,
-        min_traction_score: minTractionScore,
+        min_discount_pct: showNearMisses ? 10 : minDiscountPct,
+        min_traction_score: showNearMisses ? 10 : minTractionScore,
         max_pct_vs_sma: maxPctVsSma,
         filter_pct_vs_sma: filterPctVsSma,
         traction_window: tractionWindow,
@@ -189,7 +248,22 @@ export default function SmartMoneyBargainView() {
       setIsScanning(false);
       setError('Failed to start scan');
     }
-  }, [minDiscountPct, minTractionScore, maxPctVsSma, filterPctVsSma, tractionWindow, tractionAggregation, fetchScanStatus]);
+  }, [showNearMisses, minDiscountPct, minTractionScore, maxPctVsSma, filterPctVsSma, tractionWindow, tractionAggregation, fetchScanStatus]);
+
+  const applyPreset = useCallback((p: Preset) => {
+    setActivePreset(p.name);
+    setMinDiscountPct(p.discount);
+    setMinTractionScore(p.traction);
+    try { localStorage.setItem('smart_money_preset', p.name); } catch { /* ignore */ }
+  }, []);
+
+  const toggleNearMisses = useCallback(() => {
+    setShowNearMisses(s => {
+      const next = !s;
+      try { localStorage.setItem('smart_money_show_near_misses', String(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -198,9 +272,9 @@ export default function SmartMoneyBargainView() {
   }, [fetchScanStatus, clearPolling]);
 
   const exportCsv = () => {
-    if (!filteredData.length) return;
+    if (!displayData.length) return;
     const headers = ['Symbol', 'Sector', 'Close', 'DCB', 'Discount%', 'Traction Agg', 'Traction Latest', 'Method', 'Window', 'Funds', 'Adds', 'Reduces', 'Net Adds', '% vs SMA', 'Del Abs', 'ADTV Cr', 'Combined', 'Tier'];
-    const rows = filteredData.map(r => [
+    const rows = displayData.map(r => [
       r.symbol, r.sector ?? '', r.close, r.dcb, r.discount_pct,
       r.traction_aggregated ?? r.traction_score ?? '', r.traction_score,
       r.traction_method ?? '', r.traction_window ?? '',
@@ -217,13 +291,13 @@ export default function SmartMoneyBargainView() {
   };
 
   const stats = useMemo(() => {
-    const n = filteredData.length;
-    const avgDisc = n ? (filteredData.reduce((s, r) => s + r.discount_pct, 0) / n).toFixed(1) : '0';
-    const avgTraction = n ? (filteredData.reduce((s, r) => s + r.traction_score, 0) / n).toFixed(1) : '0';
-    const totalAdds = filteredData.reduce((s, r) => s + (r.adds_new ?? 0), 0);
-    const totalReduces = filteredData.reduce((s, r) => s + (r.reduces_closes ?? 0), 0);
+    const n = displayData.length;
+    const avgDisc = n ? (displayData.reduce((s, r) => s + r.discount_pct, 0) / n).toFixed(1) : '0';
+    const avgTraction = n ? (displayData.reduce((s, r) => s + r.traction_score, 0) / n).toFixed(1) : '0';
+    const totalAdds = displayData.reduce((s, r) => s + (r.adds_new ?? 0), 0);
+    const totalReduces = displayData.reduce((s, r) => s + (r.reduces_closes ?? 0), 0);
     return { n, avgDisc, avgTraction, totalAdds, totalReduces };
-  }, [filteredData]);
+  }, [displayData]);
 
   return (
     <div className="p-4 space-y-4">
@@ -262,6 +336,55 @@ export default function SmartMoneyBargainView() {
           </div>
           <div className="w-full bg-[#ffffff0a] rounded-full h-1.5">
             <div className="bg-emerald-500 h-1.5 rounded-full transition-all" style={{ width: `${scanStatus.progress}%` }} />
+          </div>
+        </div>
+      )}
+
+      {/* Preset buttons + near-miss toggle */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <span className="text-[12px] text-[#888] font-mono mr-1">Presets:</span>
+        {PRESETS.map(p => (
+          <button
+            key={p.name}
+            onClick={() => applyPreset(p)}
+            className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
+              activePreset === p.name
+                ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+                : 'bg-[#ffffff0a] border-[#ffffff14] text-[#888] hover:text-white hover:border-[#ffffff30]'
+            }`}
+            aria-pressed={activePreset === p.name}
+          >
+            {p.label}
+            <span className="ml-1 text-[10px] opacity-60">
+              {p.discount > 0 ? `≥${p.discount}%` : ''}
+              {p.discount > 0 && p.traction > 0 ? ' + ' : ''}
+              {p.traction > 0 ? `≥${p.traction}` : ''}
+            </span>
+          </button>
+        ))}
+        <div className="ml-3 border-l border-[#ffffff14] pl-3 flex items-center gap-1.5">
+          <label className="flex items-center gap-1.5 text-[12px] text-[#888] cursor-pointer select-none">
+            <input type="checkbox" checked={showNearMisses} onChange={toggleNearMisses} className="rounded accent-emerald-500" />
+            <Zap size={12} className={showNearMisses ? 'text-amber-400' : 'text-[#555]'} />
+            Near Misses
+          </label>
+        </div>
+      </div>
+
+      {completedScan && !isScanning && (
+        <div className="bg-[#ffffff06] border border-[#ffffff14] rounded p-3 text-xs font-mono text-[#888] flex items-start gap-2">
+          <Info size={14} className="text-emerald-400 shrink-0 mt-0.5" />
+          <div>
+            <span className="text-white font-semibold">{activePresetDef.label}</span>
+            {' '}filter: discount ≥{activePresetDef.discount}%, traction ≥{activePresetDef.traction}.
+            {displayData.length === 0 ? (
+              <span> <span className="text-red-400">0 candidates found.</span> Try a looser preset for more results.</span>
+            ) : (
+              <span> <span className="text-emerald-400">{matchCount} match{matchCount !== 1 ? 'es' : ''}</span></span>
+            )}
+            {showNearMisses && nearMissCount > 0 && (
+              <span> + <span className="text-amber-400">{nearMissCount} near miss{nearMissCount !== 1 ? 'es' : ''}</span></span>
+            )}
           </div>
         </div>
       )}
@@ -347,13 +470,14 @@ export default function SmartMoneyBargainView() {
       )}
 
       {/* Results table */}
-      {filteredData.length > 0 ? (
+      {displayData.length > 0 ? (
         <ScrollableTable className="text-xs">
           <table className="w-full text-left">
             <thead>
               <tr className="text-[#888] border-b border-[#ffffff14]">
                 {[
                   { key: 'symbol', label: 'Symbol' },
+                  ...(showNearMisses ? [{ key: '_matchStatus', label: 'Status' }] : []),
                   { key: 'sector', label: 'Sector' },
                   { key: 'close', label: 'Close' },
                   { key: 'discount_pct', label: 'DCB Disc%' },
@@ -374,12 +498,31 @@ export default function SmartMoneyBargainView() {
               </tr>
             </thead>
             <tbody>
-              {filteredData.map((r, i) => (
-                <tr key={r.symbol} className="border-b border-[#ffffff08] hover:bg-[#ffffff08]">
+              {displayData.map((r, i) => (
+                <tr key={r.symbol} className={`border-b border-[#ffffff08] hover:bg-[#ffffff08] ${showNearMisses && r._matchStatus === 'near-miss' ? 'opacity-60' : ''}`}>
                   <td className="px-2 py-1.5 font-medium text-white flex items-center gap-1">
                     {r.symbol}
+                    {showNearMisses && r._matchStatus === 'near-miss' && (
+                      <span className="px-1 py-0.5 rounded text-[9px] bg-amber-500/20 text-amber-400 border border-amber-500/30 whitespace-nowrap">
+                        {r._nearMissReason}
+                      </span>
+                    )}
                     <FundTractionButton symbols={[r.symbol]} size="xs" />
                   </td>
+                  {showNearMisses && (
+                    <td className="px-2 py-1.5">
+                      {r._matchStatus === 'match' ? (
+                        <span className="flex items-center gap-1 text-green-400" title="Meets preset discount + traction thresholds">
+                          <Target size={11} className="shrink-0" /> Match
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-amber-400" title={r._nearMissReason}>
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                          {r._nearMissReason}
+                        </span>
+                      )}
+                    </td>
+                  )}
                   <td className="px-2 py-1.5 text-[#888]">{r.sector ?? '-'}</td>
                   <td className="px-2 py-1.5">{r.close?.toFixed(2)}</td>
                   <td className="px-2 py-1.5 text-red-400">{r.discount_pct?.toFixed(1)}%</td>
