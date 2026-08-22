@@ -113,6 +113,7 @@ def fund_traction_scanner(
     sector: str = Query(""),
     market_cap_min: float = Query(0),
     market_cap_max: float = Query(0),
+    nifty500: int = Query(0, description="If 1, only include Nifty500 constituents"),
     min_roe: float = Query(0),
     min_net_margin: float = Query(0),
 ):
@@ -167,7 +168,17 @@ def fund_traction_scanner(
             conds.append("f.net_margin >= ?")
             params.append(min_net_margin)
 
-        where = " AND ".join(conds)
+        # Nifty500 filter — join against index_constituents in myra_metadata.db
+        nifty500_join = ""
+        if nifty500:
+            meta_db = os.path.join(DB_DIR, "myra_metadata.db")
+            if os.path.exists(meta_db):
+                nifty500_join = "INNER JOIN index_constituents ic ON ic.symbol = ft.symbol AND ic.index_name = 'NIFTY 500'"
+                conds.append("1=1")  # placeholder removed below, just needs a valid condition
+            else:
+                logger.warning("Nifty500 filter requested but myra_metadata.db not found")
+
+        where = " AND ".join(c for c in conds if c != "1=1") if nifty500_join else " AND ".join(conds)
 
         query = f"""
             SELECT ft.symbol, ft.month, ft.traction_score, ft.number_of_funds,
@@ -182,6 +193,7 @@ def fund_traction_scanner(
                    ) AS quality_score
             FROM fund_traction ft
             LEFT JOIN fundamentals f ON ft.symbol = f.symbol
+            {nifty500_join}
             WHERE {where}
             ORDER BY ft.traction_score DESC
             LIMIT ?
@@ -192,12 +204,15 @@ def fund_traction_scanner(
         count_q = f"""
             SELECT COUNT(*) as cnt FROM fund_traction ft
             LEFT JOIN fundamentals f ON ft.symbol = f.symbol
+            {nifty500_join}
             WHERE {where}
         """
         total = conn.execute(count_q, params[:-1]).fetchone()["cnt"]
 
         stocks = []
         for r in rows:
+            adds = r["adds_new"]
+            reduces = r["reduces_closes"]
             stocks.append({
                 "symbol": r["symbol"],
                 "month": r["month"],
@@ -205,6 +220,7 @@ def fund_traction_scanner(
                 "fund_count": r["number_of_funds"],
                 "adds_new": r["adds_new"],
                 "reduces_closes": r["reduces_closes"],
+                "net_adds": (adds or 0) - (reduces or 0),
                 "sma_30": _safe_float(r["sma_30"]),
                 "month_end_close": _safe_float(r["month_end_close"]),
                 "close_latest": _safe_float(r["close_latest"]),
@@ -237,11 +253,15 @@ def fund_traction_scanner(
             else:
                 cap_dist["large"] += 1
 
+        total_adds = sum(s["adds_new"] or 0 for s in stocks)
+        total_reduces = sum(s["reduces_closes"] or 0 for s in stocks)
+
         summary = {
             "avg_score": round(sum(scores) / len(scores), 2) if scores else 0,
             "avg_fund_count": round(sum(fcounts) / len(fcounts), 1) if fcounts else 0,
-            "total_adds": sum(s["adds_new"] or 0 for s in stocks),
-            "total_reduces": sum(s["reduces_closes"] or 0 for s in stocks),
+            "total_adds": total_adds,
+            "total_reduces": total_reduces,
+            "total_net_adds": total_adds - total_reduces,
             "top_sectors": top_sectors,
             "cap_distribution": cap_dist,
         }
