@@ -110,16 +110,21 @@ def _set_last_imported_month(conn: sqlite3.Connection, month: str) -> None:
 def _list_available_months(base_url: str) -> list[str]:
     """Probe known month names with HEAD requests to find available JSONs.
 
-    Generates candidate URLs for months from 2025-01 to current month,
+    Generates candidate URLs for months from MIN_MONTH to current month,
     sends HEAD requests, and returns the list of months that exist.
     """
+    # Only sync months from 2026-04 onwards (pre-2026 data may be unreliable)
+    MIN_MONTH = "2026-04"
+
     today = date.today()
+    min_year, min_m = (int(x) for x in MIN_MONTH.split("-"))
     candidates = []
 
-    # Generate months from 2025-01 to current month
-    for year in range(2025, today.year + 1):
+    # Generate months from MIN_MONTH to current month
+    for year in range(min_year, today.year + 1):
+        start_m = min_m if year == min_year else 1
         end_month = 12 if year < today.year else today.month
-        for m in range(1, end_month + 1):
+        for m in range(start_m, end_month + 1):
             candidates.append(f"{year}-{m:02d}")  # noqa: PG-APPEND
 
     available = []
