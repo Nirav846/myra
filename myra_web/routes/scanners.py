@@ -1282,8 +1282,10 @@ async def clear_scanner_cache(scanner_name: str):
     if scanner_name not in _ALLOWED_CACHE_CLEAR:
         raise HTTPException(status_code=400, detail="Unknown scanner")
 
-    stem = scanner_name.replace("-", "_")
-    cache_path = os.path.join(MODELS_DIR, f"{stem}_cache.json")
+    # Sanitise scanner_name to prevent path traversal (CodeQL)
+    import re as _re
+    safe_stem = _re.sub(r"[^a-z0-9_]", "", scanner_name.replace("-", "_"))
+    cache_path = os.path.join(MODELS_DIR, f"{safe_stem}_cache.json")
     existed = os.path.exists(cache_path)
     if existed:
         os.remove(cache_path)

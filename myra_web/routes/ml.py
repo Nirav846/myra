@@ -308,8 +308,12 @@ async def launchpad_feature_importance():
 
 @router.get("/factor-importance")
 async def factor_importance():
-    from myra_app.ml_trainer import FactorDiscovery
+    try:
+        from myra_app.ml_trainer import FactorDiscovery
 
-    fd = FactorDiscovery()
-    result = fd.discover_factors()
-    return result
+        fd = FactorDiscovery()
+        result = fd.discover_factors()
+        return result
+    except Exception:
+        logger.exception("factor_importance failed")
+        return {"status": "error", "message": "Internal server error"}

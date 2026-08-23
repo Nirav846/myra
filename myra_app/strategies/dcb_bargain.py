@@ -676,26 +676,32 @@ class DCBBargainScanner:
     # ── traction helpers ─────────────────────────────────────────────────
 
     def _get_available_months(self) -> list[str]:
-        """Return sorted list of all available traction months (ascending)."""
+        """Return all available months in fund_traction, sorted ascending."""
         val_db = os.path.join(DB_DIR, "myra_valuation.db")
         if not os.path.exists(val_db):
             return []
-        with sqlite3.connect(val_db) as conn:
-            rows = conn.execute(
-                "SELECT DISTINCT month FROM fund_traction ORDER BY month ASC"
-            ).fetchall()
-            return [r[0] for r in rows]
+        try:
+            with sqlite3.connect(val_db) as conn:
+                rows = conn.execute(
+                    "SELECT DISTINCT month FROM fund_traction ORDER BY month ASC"
+                ).fetchall()
+                return [r[0] for r in rows]
+        except sqlite3.OperationalError:
+            return []
 
     def _get_latest_traction_month(self) -> str | None:
         """Return the latest available traction month from the DB, or None."""
         val_db = os.path.join(DB_DIR, "myra_valuation.db")
         if not os.path.exists(val_db):
             return None
-        with sqlite3.connect(val_db) as conn:
-            row = conn.execute(
-                "SELECT MAX(month) FROM fund_traction"
-            ).fetchone()
-            return row[0] if row and row[0] else None
+        try:
+            with sqlite3.connect(val_db) as conn:
+                row = conn.execute(
+                    "SELECT MAX(month) FROM fund_traction"
+                ).fetchone()
+                return row[0] if row and row[0] else None
+        except sqlite3.OperationalError:
+            return None
 
     def _get_traction_months(self, latest_month: str | None = None) -> list[str]:
         """Return up to `traction_window` months ending at `latest_month`."""

@@ -103,9 +103,9 @@ def get_fund_traction_batch(
             "latest_month": latest_month,
             "symbols": {s: result_map.get(s) for s in symbol_list},
         }
-    except Exception as e:
+    except Exception:
         logger.exception("Batch query failed")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Internal server error"})
     finally:
         conn.close()
 
@@ -325,8 +325,8 @@ def fund_traction_scanner(
 
         return {"month": target_month, "stocks": stocks, "total": len(stocks), "summary": summary}
 
-    except Exception as e:
+    except Exception:
         logger.exception("Scanner query failed")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Internal server error"})
     finally:
         conn.close()

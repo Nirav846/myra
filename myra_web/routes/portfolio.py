@@ -30,8 +30,9 @@ async def refresh_portfolio():
             status_code=202, content={"status": "started", "task_id": tid}
         )
     except Exception as e:
+        logger.exception("portfolio refresh failed")
         return JSONResponse(
-            status_code=500, content={"status": "error", "message": str(e)}
+            status_code=500, content={"status": "error", "message": "Internal server error"}
         )
 
 
@@ -44,13 +45,13 @@ async def get_live_prices():
 
     try:
         from myra_app.portfolio_db import get_all_holdings, get_db_path
-    except ImportError as e:
-        return {"status": "error", "message": f"portfolio_db not available: {e}"}
+    except ImportError:
+        return {"status": "error", "message": "portfolio module not available"}
 
     try:
         holdings = get_all_holdings()
-    except Exception as e:
-        return {"status": "error", "message": f"Failed to read holdings: {e}"}
+    except Exception:
+        return {"status": "error", "message": "Failed to read holdings"}
 
     if not holdings:
         return {"status": "ok", "prices": {}, "message": "No holdings in portfolio."}
@@ -136,8 +137,8 @@ async def get_live_prices():
                 "cached": False,
             }
             _time.sleep(0.2)
-        except Exception as e:
-            warnings.append(f"{sym}: {e}")
+        except Exception:
+            warnings.append(f"{sym}: price unavailable")
             continue
 
     # Cache results
@@ -189,13 +190,13 @@ async def get_portfolio():
             _get_portfolio_meta,
             get_db_path,
         )
-    except ImportError as e:
-        return {"status": "error", "message": f"portfolio_db not available: {e}"}
+    except ImportError:
+        return {"status": "error", "message": "portfolio module not available"}
 
     try:
         holdings = get_all_holdings()
-    except Exception as e:
-        return {"status": "error", "message": f"Failed to read holdings: {e}"}
+    except Exception:
+        return {"status": "error", "message": "Failed to read holdings"}
 
     if not holdings:
         return {
