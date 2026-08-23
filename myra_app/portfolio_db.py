@@ -802,21 +802,32 @@ def auto_refresh_portfolio() -> dict:
     try:
         conn = get_connection()
 
-        # Refresh prices from technical_data
+        # Refresh prices from technical_data — batch query instead of N+1
         if os.path.exists(tech_db):
             try:
                 tech_conn = sqlite3.connect(tech_db)
-                for sym in symbols:
-                    row = tech_conn.execute(  # noqa: PG-NPLUS1
-                        "SELECT close, date FROM technical_data WHERE symbol=? "
-                        "AND close IS NOT NULL ORDER BY date DESC LIMIT 2",
-                        (sym,),
-                    ).fetchall()
-                    if row:
-                        latest_close = row[0][0]
-                        latest_date = row[0][1]
-                        prev_close = row[1][0] if len(row) > 1 else None
-                        conn.execute(  # noqa: PG-NPLUS1
+                placeholders = ",".join("?" * len(symbols))
+                price_rows = tech_conn.execute(
+                    f"SELECT symbol, close, date FROM technical_data "
+                    f"WHERE symbol IN ({placeholders}) AND close IS NOT NULL "
+                    f"ORDER BY symbol, date DESC",
+                    symbols,
+                ).fetchall()
+
+                # Group by symbol, take top 2 per symbol
+                from itertools import groupby as _groupby
+
+                for sym, rows_group in _groupby(price_rows, key=lambda r: r[0]):
+                    latest_close, latest_date, prev_close = None, None, None
+                    for i, (_, close, date) in enumerate(rows_group):
+                        if i == 0:
+                            latest_close, latest_date = close, date
+                        elif i == 1:
+                            prev_close = close
+                        if i >= 1:
+                            break
+                    if latest_close is not None:
+                        conn.execute(  # noqa: PG-NPLUS1 — cache write after batch read
                             """INSERT OR REPLACE INTO price_cache
                                (symbol, latest_close, previous_close, latest_date, updated_at)
                                VALUES (?, ?, ?, ?, datetime('now','localtime'))""",
@@ -829,21 +840,25 @@ def auto_refresh_portfolio() -> dict:
         else:
             return {"error": "technical db not found"}
 
-        # Refresh fundamentals from valuation db
+        # Refresh fundamentals from valuation db — batch query instead of N+1
         if os.path.exists(val_db):
             try:
                 val_conn = sqlite3.connect(val_db)
+                placeholders = ",".join("?" * len(symbols))
+                funda_rows = val_conn.execute(
+                    f"SELECT symbol, pe, sector, market_cap FROM fundamentals "
+                    f"WHERE symbol IN ({placeholders})",
+                    symbols,
+                ).fetchall()
+                funda_map = {row[0]: row for row in funda_rows}
                 for sym in symbols:
-                    row = val_conn.execute(  # noqa: PG-NPLUS1
-                        "SELECT pe, sector, market_cap FROM fundamentals WHERE symbol=?",
-                        (sym,),
-                    ).fetchone()
+                    row = funda_map.get(sym)
                     if row:
-                        conn.execute(  # noqa: PG-NPLUS1
+                        conn.execute(  # noqa: PG-NPLUS1 — cache write after batch read
                             """INSERT OR REPLACE INTO fundamental_cache
                                (symbol, pe, sector, market_cap, fetched_at)
                                VALUES (?, ?, ?, ?, datetime('now','localtime'))""",
-                            (sym, row[0], row[1], row[2]),
+                            (sym, row[1], row[2], row[3]),
                         )
                         fundamentals_updated += 1
                 val_conn.close()

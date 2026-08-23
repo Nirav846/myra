@@ -473,18 +473,33 @@ class FundamentalSync:
         logger.info(f"[FundamentalSync] Computing market_cap for {len(shares)} symbols")
 
         updated = 0
-        for symbol, shares_out in shares.items():
-            row = tech_conn.execute(  # noqa: PG-NPLUS1
-                "SELECT close FROM technical_data WHERE symbol = ? ORDER BY date DESC LIMIT 1",
-                (symbol,),
-            ).fetchone()
-            if row and row[0] and shares_out > 0:
-                market_cap = shares_out * row[0]
-                val_conn.execute(  # noqa: PG-NPLUS1
-                    "UPDATE fundamentals SET market_cap = ? WHERE symbol = ?",
-                    (market_cap, symbol),
-                )
-                updated += 1
+
+        # Batch fetch latest close for all symbols at once instead of N+1
+        if shares:
+            placeholders = ",".join("?" * len(shares))
+            syms = list(shares.keys())
+            close_rows = tech_conn.execute(
+                f"SELECT symbol, close FROM technical_data "
+                f"WHERE symbol IN ({placeholders}) AND close IS NOT NULL "
+                f"ORDER BY symbol, date DESC",
+                syms,
+            ).fetchall()
+
+            # Keep only the latest close per symbol
+            latest_close: dict[str, float] = {}
+            for sym, close in close_rows:
+                if sym not in latest_close:
+                    latest_close[sym] = close
+
+            for symbol, shares_out in shares.items():
+                close_price = latest_close.get(symbol)
+                if close_price and shares_out > 0:
+                    market_cap = shares_out * close_price
+                    val_conn.execute(  # noqa: PG-NPLUS1 — update after batch read
+                        "UPDATE fundamentals SET market_cap = ? WHERE symbol = ?",
+                        (market_cap, symbol),
+                    )
+                    updated += 1
 
         val_conn.commit()
         tech_conn.close()
