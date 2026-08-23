@@ -75,6 +75,10 @@ CREATE TABLE IF NOT EXISTS sync_metadata (
 )
 """
 
+_CREATE_INDEX_FUND_TRACTION_MONTH = """
+CREATE INDEX IF NOT EXISTS idx_fund_traction_month ON fund_traction(month)
+"""
+
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -86,6 +90,7 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
     """Create fund_traction and sync_metadata tables if they don't exist."""
     conn.execute(_CREATE_FUND_TRACTION)
     conn.execute(_CREATE_SYNC_METADATA)
+    conn.execute(_CREATE_INDEX_FUND_TRACTION_MONTH)
     conn.commit()
 
 
