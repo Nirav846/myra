@@ -267,6 +267,61 @@ class DCBBargainScanner:
         return is_pinned and is_significant_drop
 
     @staticmethod
+    def _compute_circuit_indicators(df: pd.DataFrame) -> tuple[bool, int, int, bool]:
+        """Vectorised circuit detection for the entire daily DataFrame.
+
+        Returns (is_lower_circuit_today, circuit_days_last_5, circuit_streak,
+        is_circuit_lock).
+
+        Uses numpy arrays (no .iloc loops) for O(N) performance instead of
+        O(N*k) from repeated method calls.
+        """
+        n = len(df)
+        if n < 2:
+            return False, 0, 0, False
+
+        closes = df["close"].values.astype(float)
+        lows = df["low"].values.astype(float)
+        volumes = df["volume"].values.astype(float)
+
+        # Vectorised lower-circuit check for all rows >= 1
+        is_pinned = closes[1:] <= lows[1:] * 1.01
+        is_drop = closes[1:] < closes[:-1] * 0.95  # noqa: PG-NPLUS1
+        circuit_mask = np.zeros(n, dtype=bool)
+        circuit_mask[1:] = is_pinned & is_drop
+
+        # is_lower_circuit_today
+        is_lower_today = bool(circuit_mask[-1])
+
+        # circuit_days_last_5: sum of circuit days in last 5 rows
+        start = max(0, n - 5)
+        circuit_days_last_5 = int(circuit_mask[start:].sum())
+
+        # circuit_streak: consecutive circuit days ending at last row
+        streak = 0
+        for i in range(n - 1, 0, -1):
+            if circuit_mask[i]:
+                streak += 1
+            else:
+                break
+        circuit_streak = streak
+
+        # circuit lock: streak >= 3 and volume collapse
+        is_circuit_lock = False
+        if streak >= 3:
+            first_idx = n - streak
+            avg_circuit_vol = float(volumes[first_idx:].mean()) if streak > 0 else 0.0
+            pre_start = max(0, first_idx - 20)
+            avg_pre_vol = (
+                float(volumes[pre_start:first_idx].mean())
+                if pre_start < first_idx
+                else 0.0
+            )
+            is_circuit_lock = avg_pre_vol > 0 and avg_circuit_vol < 0.2 * avg_pre_vol  # noqa: PG-NPLUS1 — same 20% heuristic as _is_likely_circuit_lock
+
+        return is_lower_today, circuit_days_last_5, circuit_streak, is_circuit_lock
+
+    @staticmethod
     def _is_likely_circuit_lock(df: pd.DataFrame, idx: int) -> bool:
         """Detect likely circuit-lock: consecutive lower-circuit days with
         severely reduced volume (lock-up symptom).
@@ -563,25 +618,10 @@ class DCBBargainScanner:
                 # Score (tier assigned after pool pass)
                 score = discount_pct * 0.6 + del_abs * 0.4  # TODO: validate with backtest — 60/40 weighting is unvalidated
 
-                # Lower-circuit detection (uses daily df)
-                is_lower_circuit = self._is_lower_circuit(df, len(df) - 1)
-                circuit_days_last_5 = 0
-                start_idx = max(0, len(df) - 5)
-                for ci in range(start_idx, len(df)):
-                    if self._is_lower_circuit(df, ci):
-                        circuit_days_last_5 += 1
-
-                # Circuit streak: consecutive lower-circuit days ending at last row
-                circuit_streak = 0
-                last_idx = len(df) - 1
-                for ci in range(last_idx, 0, -1):
-                    if self._is_lower_circuit(df, ci):
-                        circuit_streak += 1
-                    else:
-                        break
-
-                # Circuit lock detection
-                is_circuit_lock = self._is_likely_circuit_lock(df, last_idx)
+                # Lower-circuit detection (vectorised — no per-row loop)
+                is_lower_circuit, circuit_days_last_5, circuit_streak, is_circuit_lock = (
+                    self._compute_circuit_indicators(df)
+                )
 
                 candidates.append(  # noqa: PG-APPEND
                     {
