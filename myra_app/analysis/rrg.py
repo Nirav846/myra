@@ -77,9 +77,13 @@ def _is_index_file(stem: str) -> bool:
 def _load_csv(index_id: str) -> Optional[pd.DataFrame]:
     """Load a CSV from DATA_FOLDER, return DataFrame or None."""
     # Sanitize index_id to prevent path traversal (CodeQL)
-    import re as _re
-    safe_id = _re.sub(r"[^a-zA-Z0-9_\-.]", "", Path(index_id).name)
-    path = Path(DATA_FOLDER) / f"{safe_id}.csv"
+    safe_id = Path(index_id).name
+    safe_id = "".join(c for c in safe_id if c.isalnum() or c in "-_.")
+    path = (Path(DATA_FOLDER) / f"{safe_id}.csv").resolve()
+    # Ensure resolved path stays within DATA_FOLDER
+    if not str(path).startswith(str(Path(DATA_FOLDER).resolve())):
+        logger.warning("Path traversal blocked: %s", index_id)
+        return None
     if not path.exists():
         logger.warning("CSV not found: %s", path)
         return None

@@ -16,6 +16,7 @@ import logging
 import os
 import threading
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import APIRouter, Body, HTTPException
 
@@ -1283,12 +1284,14 @@ async def clear_scanner_cache(scanner_name: str):
         raise HTTPException(status_code=400, detail="Unknown scanner")
 
     # Sanitise scanner_name to prevent path traversal (CodeQL)
-    import re as _re
-    safe_stem = _re.sub(r"[^a-z0-9_]", "", scanner_name.replace("-", "_"))
-    cache_path = os.path.join(MODELS_DIR, f"{safe_stem}_cache.json")
-    existed = os.path.exists(cache_path)
+    safe_stem = "".join(c for c in scanner_name.replace("-", "_") if c.isalnum() or c == "_")
+    cache_path = (Path(MODELS_DIR) / f"{safe_stem}_cache.json").resolve()
+    # Ensure resolved path stays within MODELS_DIR
+    if not str(cache_path).startswith(str(Path(MODELS_DIR).resolve())):
+        raise HTTPException(status_code=400, detail="Invalid scanner name")
+    existed = cache_path.exists()
     if existed:
-        os.remove(cache_path)
+        cache_path.unlink()
 
     reset = {
         "scan_status": "idle",
