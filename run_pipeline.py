@@ -36,6 +36,13 @@ def main():
         logger.info(f"Fund traction sync complete: {result}")
         return  # Exit after manual sync, don't start daemon
 
+    if "--sync-cross-buy" in sys.argv:
+        logger.info("Running cross-buy sync (manual)...")
+        from myra_app.cross_buy_processor import backfill_months
+        result = backfill_months()
+        logger.info(f"Cross-buy sync complete: {result}")
+        return  # Exit after manual sync
+
     logger.info("Starting MYRA data pipeline (headless, crash‑safe)…")
 
     # Import the orchestrator module and start all background tasks
