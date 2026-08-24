@@ -1126,6 +1126,61 @@ def _task_cross_buy_sync():
         unregister(tid)
 
 
+# ─── Task 12: Traction SMA Daily Update ──────────────────────────────────────
+
+
+def _task_update_traction_sma():
+    """Daily traction SMA/pct_vs_sma refresh from technical_data. Runs immediately if overdue."""
+    from myra_app.task_tracker import register, unregister
+
+    if _shutdown_event.is_set():
+        return
+
+    if _is_task_overdue("traction_sma_update", days=1):
+        tid = register("Traction SMA update", task_type="one-shot")
+        try:
+            logger.info("[MYRA BG] Traction SMA update overdue – running now...")
+            from myra_app.fund_traction_sync import update_traction_sma
+
+            result = update_traction_sma()
+            _mark_task_run("traction_sma_update")
+            logger.info(
+                f"[MYRA BG] Traction SMA update complete (catch-up). "
+                f"Month: {result['month']}, Updated: {result['updated']}, "
+                f"Skipped(no sma): {result['skipped_no_sma']}"
+            )
+        except Exception as e:
+            logger.error(f"[MYRA BG] Traction SMA update (catch-up) failed: {e}")
+        finally:
+            unregister(tid)
+
+    if _shutdown_event.is_set():
+        return
+
+    tid = register("Traction SMA update", task_type="indefinite")
+    try:
+        while not _shutdown_event.is_set():
+            try:
+                if _is_task_due("traction_sma_update", interval_days=1):
+                    from myra_app.fund_traction_sync import update_traction_sma
+
+                    logger.info("[MYRA BG] Traction SMA update due – running...")
+                    result = update_traction_sma()
+                    _mark_task_run("traction_sma_update")
+                    logger.info(
+                        f"[MYRA BG] Traction SMA update complete. "
+                        f"Month: {result['month']}, Updated: {result['updated']}, "
+                        f"Skipped(no sma): {result['skipped_no_sma']}"
+                    )
+            except Exception as e:
+                logger.error(f"[MYRA BG] Traction SMA update failed: {e}")
+            for _ in range(60):
+                if _shutdown_event.wait(1):
+                    return
+    finally:
+        unregister(tid)
+
+
 # ─── Public entry point ───────────────────────────────────────────────────────
 
 
@@ -1287,6 +1342,7 @@ def _launch_background_threads():
         ("screener-enrich", _task_screener_enrich),
         ("fund-traction-sync", _task_fund_traction_sync),
         ("cross-buy-sync", _task_cross_buy_sync),
+        ("traction-sma-update", _task_update_traction_sma),
     ]
     threads = [
         threading.Thread(target=fn, name=f"myra-bg-{name}", daemon=True)

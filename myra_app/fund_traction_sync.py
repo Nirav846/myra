@@ -44,9 +44,18 @@ logger = logging.getLogger(__name__)
 
 # ── Month name → ISO mapping ───────────────────────────────────────────────
 _MONTH_MAP = {
-    "january": "01", "february": "02", "march": "03", "april": "04",
-    "may": "05", "june": "06", "july": "07", "august": "08",
-    "september": "09", "october": "10", "november": "11", "december": "12",
+    "january": "01",
+    "february": "02",
+    "march": "03",
+    "april": "04",
+    "may": "05",
+    "june": "06",
+    "july": "07",
+    "august": "08",
+    "september": "09",
+    "october": "10",
+    "november": "11",
+    "december": "12",
 }
 _MONTH_NAMES = list(_MONTH_MAP.keys())
 
@@ -81,6 +90,7 @@ CREATE INDEX IF NOT EXISTS idx_fund_traction_month ON fund_traction(month)
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
+
 
 def _get_db_path() -> str:
     return os.path.join(DB_DIR, "myra_valuation.db")
@@ -287,6 +297,7 @@ def _insert_rows(conn: sqlite3.Connection, rows: list[dict], month: str) -> int:
 
 # ── Main sync function ──────────────────────────────────────────────────────
 
+
 def sync_fund_traction(force: bool = False) -> dict:
     """Sync fund traction data from GitHub Pages.
 
@@ -363,12 +374,156 @@ def sync_fund_traction(force: bool = False) -> dict:
         conn.close()
 
 
+# ── Traction SMA updater ────────────────────────────────────────────────────
+
+
+def update_traction_sma() -> dict:
+    """Recompute pct_vs_sma for the latest fund_traction month from raw closes.
+
+    ``technical_data`` has no sma_30 column, so the SMA is computed here using
+    the reference methodology (cross-fund-holdings-traction prices.py):
+      - mean of the last 30 available closes if >=30 closes exist;
+      - else mean of all available closes if >=15;
+      - else None (row skipped, existing pct_vs_sma preserved).
+
+    Batch implementation: one temp-table join against technical_data and one
+    bulk UPDATE transaction (no per-symbol queries).
+
+    Returns:
+        dict with keys: success, month, updated, skipped_no_sma, error
+    """
+    result = {
+        "success": False,
+        "month": None,
+        "updated": 0,
+        "skipped_no_sma": 0,
+        "error": None,
+    }
+
+    val_conn = None
+    tech_conn = None
+    try:
+        val_conn = sqlite3.connect(os.path.join(DB_DIR, "myra_valuation.db"))
+        tech_conn = sqlite3.connect(os.path.join(DB_DIR, "myra_technical.db"))
+
+        # 1. Latest traction month
+        row = val_conn.execute("SELECT MAX(month) FROM fund_traction").fetchone()
+        latest_month = row[0] if row else None
+        if not latest_month:
+            result["success"] = True
+            logger.info("Traction SMA update: no fund_traction rows, nothing to do")
+            return result
+        result["month"] = latest_month
+
+        # 2. Target symbols for that month
+        symbols = [
+            r[0]
+            for r in val_conn.execute(
+                "SELECT symbol FROM fund_traction WHERE month = ?", (latest_month,)
+            ).fetchall()
+        ]
+        if not symbols:
+            result["success"] = True
+            logger.info("Traction SMA update: no symbols for month %s", latest_month)
+            return result
+
+        # 3. Temp table + ONE batched window query (perf guard: no N+1)
+        tech_conn.execute(
+            "CREATE TEMP TABLE IF NOT EXISTS _ft_symbols (symbol TEXT PRIMARY KEY)"
+        )
+        tech_conn.execute("DELETE FROM _ft_symbols")
+        tech_conn.executemany(
+            "INSERT OR IGNORE INTO _ft_symbols (symbol) VALUES (?)",
+            [(s,) for s in symbols],
+        )
+        rows = tech_conn.execute(
+            """
+            SELECT symbol, date, close
+            FROM (
+                SELECT symbol, date, close,
+                       ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
+                FROM technical_data
+                WHERE symbol IN (SELECT symbol FROM _ft_symbols) AND close IS NOT NULL
+            )
+            WHERE rn <= 35
+            ORDER BY symbol, date ASC
+            """
+        ).fetchall()
+        logger.info(
+            "Traction SMA update: month=%s symbols=%d fetched_rows=%d",
+            latest_month,
+            len(symbols),
+            len(rows),
+        )
+
+        # Group fetched closes per symbol (rows already ordered by date ASC)
+        closes_by_symbol: dict[str, list[float]] = {}
+        for sym, _dt, close in rows:
+            if sym not in closes_by_symbol:
+                closes_by_symbol[sym] = []
+            closes_by_symbol[sym].append(close)  # noqa: PG-APPEND
+
+        # 4. Reference SMA methodology in Python
+        updates = []
+        skipped = 0
+        for sym in symbols:
+            closes = closes_by_symbol.get(sym, [])
+            n = len(closes)
+            if n >= 30:
+                window = closes[-30:]
+            elif n >= 15:
+                window = closes
+            else:
+                skipped += 1
+                continue
+            sma = sum(window) / len(window)
+            latest_close = closes[-1]
+            if sma and sma > 0 and latest_close:
+                pct = round((latest_close - sma) / sma * 100, 4)
+                updates.append((pct, sym, latest_month))  # noqa: PG-APPEND
+            else:
+                skipped += 1
+        result["skipped_no_sma"] = skipped
+
+        # 5. Bulk UPDATE in ONE transaction (NULL sma rows never touched)
+        val_conn.executemany(
+            "UPDATE fund_traction SET pct_vs_sma = ? WHERE symbol = ? AND month = ?",
+            updates,
+        )
+
+        # 6. Single commit + summary log
+        val_conn.commit()
+        result["updated"] = len(updates)
+        result["success"] = True
+        logger.info(
+            "Traction SMA update: month=%s updated=%d skipped(no sma)=%d",
+            latest_month,
+            result["updated"],
+            skipped,
+        )
+        return result
+
+    except Exception as e:
+        result["error"] = str(e)
+        logger.exception("Traction SMA update failed")
+        return result
+    finally:
+        if val_conn is not None:
+            val_conn.close()
+        if tech_conn is not None:
+            tech_conn.close()
+
+
 # ── CLI entry point ─────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import sys
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    force = "--force" in sys.argv
-    print(f"Running fund traction sync (force={force})...")
-    result = sync_fund_traction(force=force)
-    print(f"Result: {result}")
+    if "--update-sma" in sys.argv:
+        print("Running traction SMA update...")
+        print(f"Result: {update_traction_sma()}")
+    else:
+        force = "--force" in sys.argv
+        print(f"Running fund traction sync (force={force})...")
+        result = sync_fund_traction(force=force)
+        print(f"Result: {result}")
