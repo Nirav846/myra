@@ -34,24 +34,25 @@ from myra_app.constants import DB_DIR
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-RAW_HOLDINGS_DIR = Path(r"D:\01screener\Myra\cross-fund-holdings-traction\temp_holdings")
-NAME_TO_NSE_PATH = Path(r"D:\01screener\Myra\cross-fund-holdings-traction\config\name_to_nse.csv")
-TRACTION_SRC = Path(r"D:\01screener\Myra\cross-fund-holdings-traction\src")
-FUNDS_LIST_PATH = Path(
-    r"D:\01screener\Myra\cross-fund-holdings-traction\config\rupeevest_funds.txt"
-)
-DOWNLOAD_SCRIPT_PATH = (
-    REPO_ROOT / "cross-fund-holdings-traction" / "scripts" / "download_rupeevest_funds.py"
-)
+_TRACTION_DIR = REPO_ROOT / "cross-fund-holdings-traction"
+RAW_HOLDINGS_DIR = _TRACTION_DIR / "temp_holdings"
+NAME_TO_NSE_PATH = _TRACTION_DIR / "config" / "name_to_nse.csv"
+TRACTION_SRC = _TRACTION_DIR / "src"
+FUNDS_LIST_PATH = _TRACTION_DIR / "config" / "rupeevest_funds.txt"
+DOWNLOAD_SCRIPT_PATH = _TRACTION_DIR / "scripts" / "download_rupeevest_funds.py"
 KEEP_RAW = False
 DEFAULT_MONTHS: list[str] = ["2026-04", "2026-05", "2026-06", "2026-07"]
 DOWNLOAD_TIMEOUT_S = 600
 
+# mf_screener is pure stdlib and lives outside the package tree; add once.
+if str(TRACTION_SRC) not in sys.path:
+    sys.path.insert(0, str(TRACTION_SRC))
+
 VALUATION_DB_PATH = os.path.join(DB_DIR, "myra_valuation.db")
 
 # Market-cap thresholds (absolute rupees), precedent: myra_web/routes/fund_traction.py
-_SMALL_CAP_MAX = 5e10    # < Rs 5,000 Cr -> Small
-_MID_CAP_MAX = 2e11      # < Rs 20,000 Cr -> Mid
+_SMALL_CAP_MAX = 5e10  # < Rs 5,000 Cr -> Small
+_MID_CAP_MAX = 2e11  # < Rs 20,000 Cr -> Mid
 
 _IST_TZ = timezone(timedelta(hours=5, minutes=30))
 
@@ -72,7 +73,7 @@ _MARKET_CAP_CACHE: dict[str, float] | None = None
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS fund_cross_buy (
-    symbol TEXT PRIMARY KEY,
+    symbol TEXT,
     month TEXT,
     total_funds INTEGER,
     large_funds INTEGER,
@@ -82,9 +83,43 @@ CREATE TABLE IF NOT EXISTS fund_cross_buy (
     other_funds INTEGER,
     cross_buy_ratio REAL,
     signal_tag TEXT,
-    last_updated TEXT
+    last_updated TEXT,
+    PRIMARY KEY (symbol, month)
 )
 """
+
+
+def _ensure_table(conn: sqlite3.Connection) -> None:
+    """Create fund_cross_buy if absent; migrate legacy single-symbol PK.
+
+    The API serves month history, so the table needs composite PK
+    (symbol, month). An old table whose PK is not exactly (symbol, month)
+    – e.g. PK on symbol alone – would overwrite rows across months and keep
+    stale symbols from prior runs; it is dropped and recreated (data is fully
+    reproducible via backfill_months).
+
+    Args:
+        conn: Open sqlite3 connection to myra_valuation.db.
+    """
+    exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='fund_cross_buy'"
+    ).fetchone()
+    if exists is None:
+        conn.execute(_DDL)
+        return
+    pk_cols = [
+        info[1]
+        for info in conn.execute("PRAGMA table_info(fund_cross_buy)").fetchall()
+        if int(info[5] or 0) > 0
+    ]
+    if pk_cols != ["symbol", "month"]:
+        logger.warning(
+            "Legacy fund_cross_buy schema detected (PK=%s); dropping and recreating "
+            "with composite (symbol, month) PK. Data will be re-backfilled.",
+            pk_cols or "<none>",
+        )
+        conn.execute("DROP TABLE fund_cross_buy")
+        conn.execute(_DDL)
 
 
 def detect_available_months() -> list[str]:
@@ -101,9 +136,13 @@ def detect_available_months() -> list[str]:
                 months.add(month)
         if months:
             return sorted(months)
-        logger.warning("No month-tagged CSVs in %s; using default months.", RAW_HOLDINGS_DIR)
+        logger.warning(
+            "No month-tagged CSVs in %s; using default months.", RAW_HOLDINGS_DIR
+        )
     except OSError as exc:
-        logger.warning("Could not read %s (%s); using default months.", RAW_HOLDINGS_DIR, exc)
+        logger.warning(
+            "Could not read %s (%s); using default months.", RAW_HOLDINGS_DIR, exc
+        )
     return list(DEFAULT_MONTHS)
 
 
@@ -123,7 +162,9 @@ def download_holdings(month: str) -> bool:
         logger.warning("Funds list missing (%s); skipping download.", FUNDS_LIST_PATH)
         return False
     if not DOWNLOAD_SCRIPT_PATH.exists():
-        logger.warning("Downloader script missing (%s); skipping download.", DOWNLOAD_SCRIPT_PATH)
+        logger.warning(
+            "Downloader script missing (%s); skipping download.", DOWNLOAD_SCRIPT_PATH
+        )
         return False
     cmd = [
         sys.executable,
@@ -442,16 +483,22 @@ def process_month(month: str) -> dict:
 
     try:
         month_files = [
-            p for p in RAW_HOLDINGS_DIR.glob("*.csv") if _month_from_filename(p) == month
+            p
+            for p in RAW_HOLDINGS_DIR.glob("*.csv")
+            if _month_from_filename(p) == month
         ]
         if not month_files:
             logger.info("No CSVs for %s; attempting download...", month)
             download_holdings(month)
             month_files = [
-                p for p in RAW_HOLDINGS_DIR.glob("*.csv") if _month_from_filename(p) == month
+                p
+                for p in RAW_HOLDINGS_DIR.glob("*.csv")
+                if _month_from_filename(p) == month
             ]
         if not month_files:
-            logger.warning("No holdings CSVs for %s even after download attempt.", month)
+            logger.warning(
+                "No holdings CSVs for %s even after download attempt.", month
+            )
             return _fail({"reason": "no csvs"})
 
         # Load ONLY this month's rows through the existing parser.
@@ -459,7 +506,6 @@ def process_month(month: str) -> dict:
         try:
             for src in month_files:
                 shutil.copy2(src, Path(temp_dir) / src.name)
-            sys.path.insert(0, str(TRACTION_SRC))
             from mf_screener.load import load_holdings_from_folder
 
             rows = load_holdings_from_folder(Path(temp_dir))
@@ -559,7 +605,7 @@ def process_month(month: str) -> dict:
 
         conn = sqlite3.connect(VALUATION_DB_PATH, timeout=30)
         try:
-            conn.execute(_DDL)
+            _ensure_table(conn)
             conn.executemany(
                 "INSERT OR REPLACE INTO fund_cross_buy "
                 "(symbol, month, total_funds, large_funds, mid_funds, small_funds, "

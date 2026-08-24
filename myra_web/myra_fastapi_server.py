@@ -31,6 +31,7 @@ from myra_web.routes.confluence import router as confluence_router
 from myra_web.routes.pipeline import router as pipeline_router
 from myra_web.routes.rrg import router as rrg_router
 from myra_web.routes.fund_traction import router as fund_traction_router
+from myra_web.routes.cross_buy import router as cross_buy_router
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,7 @@ app.include_router(confluence_router)
 app.include_router(pipeline_router)
 app.include_router(rrg_router)
 app.include_router(fund_traction_router)
+app.include_router(cross_buy_router)
 
 
 # ---------------------------------------------------------------------------

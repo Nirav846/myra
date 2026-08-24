@@ -316,7 +316,9 @@ def _task_daily_ingest(force: bool = False):
     from myra_app import constants
 
     if not constants.ENABLE_DAILY_INGEST:
-        logger.info("[MYRA BG] Daily ingestion disabled by config (ENABLE_DAILY_INGEST=False).")
+        logger.info(
+            "[MYRA BG] Daily ingestion disabled by config (ENABLE_DAILY_INGEST=False)."
+        )
         return
 
     # Skip weekends (unless forced)
@@ -335,7 +337,9 @@ def _task_daily_ingest(force: bool = False):
     if constants.USE_EOD2_DATA:
         tid = register("EOD2 daily sync")
         try:
-            logger.info(f"[MYRA BG] {ist_now.date()} – starting EOD2 incremental sync...")
+            logger.info(
+                f"[MYRA BG] {ist_now.date()} – starting EOD2 incremental sync..."
+            )
             from myra_app.eod2_sync import sync_eod2_data
 
             sync_result = sync_eod2_data()
@@ -352,7 +356,9 @@ def _task_daily_ingest(force: bool = False):
                 _mark_ingested_today()
                 _mark_task_run("daily_ingest")
                 if inserted > 0:
-                    logger.info("[MYRA BG] EOD2 sync complete – running post-ingest hooks.")
+                    logger.info(
+                        "[MYRA BG] EOD2 sync complete – running post-ingest hooks."
+                    )
                     from myra_app.fundamental_sync import FundamentalSync
 
                     FundamentalSync()._compute_market_cap_from_prices()
@@ -362,18 +368,24 @@ def _task_daily_ingest(force: bool = False):
 
                         pr = auto_refresh_portfolio()
                         if pr.get("error"):
-                            logger.warning(f"[MYRA BG] Portfolio refresh skipped: {pr['error']}")
+                            logger.warning(
+                                f"[MYRA BG] Portfolio refresh skipped: {pr['error']}"
+                            )
                         else:
                             logger.info(
                                 f"[MYRA BG] Portfolio refreshed: {pr.get('prices_updated', 0)} prices"
                             )
                     except Exception as exc:
-                        logger.debug(f"[MYRA BG] Portfolio refresh not available: {exc}")
+                        logger.debug(
+                            f"[MYRA BG] Portfolio refresh not available: {exc}"
+                        )
 
                     try:
                         enrich_corporate_actions()
                     except Exception as exc:
-                        logger.error(f"[MYRA BG] Corporate actions enrichment failed: {exc}")
+                        logger.error(
+                            f"[MYRA BG] Corporate actions enrichment failed: {exc}"
+                        )
                 else:
                     logger.info("[MYRA BG] EOD2 sync: no new rows – DB is current.")
         except Exception as exc:
@@ -963,6 +975,71 @@ def _task_fund_traction_sync():
         unregister(tid)
 
 
+# ─── Task 11: Cross-buy Sync ──────────────────────────────────────────────────
+
+
+def _task_cross_buy_sync():
+    """Monthly mutual-fund cross-buy sync. Runs immediately if overdue."""
+    from myra_app.task_tracker import register, unregister
+
+    if _shutdown_event.is_set():
+        return
+
+    if _is_task_overdue("cross_buy_sync", days=30):
+        tid = register("Cross-buy sync", task_type="one-shot")
+        try:
+            logger.info("[MYRA BG] Cross-buy sync overdue – running now...")
+            from myra_app.cross_buy_processor import (
+                detect_available_months,
+                process_month,
+            )
+
+            months = detect_available_months()
+            if months:
+                result = process_month(months[-1])  # latest month
+                _mark_task_run("cross_buy_sync")
+                logger.info(f"[MYRA BG] Cross-buy sync complete: {result}")
+            else:
+                logger.info(
+                    "[MYRA BG] Cross-buy sync: no raw holdings months available, skipping"
+                )
+        except Exception as e:
+            logger.error(f"[MYRA BG] Cross-buy sync (catch-up) failed: {e}")
+        finally:
+            unregister(tid)
+
+    if _shutdown_event.is_set():
+        return
+
+    tid = register("Cross-buy sync", task_type="indefinite")
+    try:
+        while not _shutdown_event.is_set():
+            try:
+                if _is_task_due("cross_buy_sync", interval_days=30):
+                    from myra_app.cross_buy_processor import (
+                        detect_available_months,
+                        process_month,
+                    )
+
+                    logger.info("[MYRA BG] Cross-buy sync due – running...")
+                    months = detect_available_months()
+                    if months:
+                        result = process_month(months[-1])  # latest month
+                        _mark_task_run("cross_buy_sync")
+                        logger.info(f"[MYRA BG] Cross-buy sync complete: {result}")
+                    else:
+                        logger.info(
+                            "[MYRA BG] Cross-buy sync: no raw holdings months available, skipping"
+                        )
+            except Exception as e:
+                logger.error(f"[MYRA BG] Cross-buy sync failed: {e}")
+            for _ in range(60):
+                if _shutdown_event.wait(60):
+                    return
+    finally:
+        unregister(tid)
+
+
 # ─── Public entry point ───────────────────────────────────────────────────────
 
 
@@ -1123,6 +1200,7 @@ def _launch_background_threads():
         ("db-backup", _task_db_backup),
         ("screener-enrich", _task_screener_enrich),
         ("fund-traction-sync", _task_fund_traction_sync),
+        ("cross-buy-sync", _task_cross_buy_sync),
     ]
     threads = [
         threading.Thread(target=fn, name=f"myra-bg-{name}", daemon=True)

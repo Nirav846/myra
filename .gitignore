@@ -278,3 +278,6 @@ logs/
 *.bak
 *.csv
 BhavDesk/
+
+# Local sibling project — cross-buy raw holdings + mf_screener source (stays untracked)
+cross-fund-holdings-traction/

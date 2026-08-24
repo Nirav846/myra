@@ -47,6 +47,7 @@ import SmartMoneyBargainView from './views/SmartMoneyBargain';
 import RRGView from './views/RRGView';
 import FundTractionReportView from './views/FundTractionReport';
 import FundTractionScannerView from './views/FundTractionScanner';
+import CrossBuyScannerView from './views/CrossBuyScanner';
 import NewsSentimentView from './views/NewsSentiment';
 import FundamentalsView from './views/FundamentalsView';
 import FullFundamentalsView from './views/FullFundamentalsView';
@@ -75,6 +76,7 @@ const TABS = [
   { id: 'Launchpad Scanner', path: '/launchpad-scanner', icon: <Rocket size={18} />, category: 'scanners', group: 'ML / Momentum' },
   { id: 'FII/DII Scanner', path: '/fii-dii-scanner', icon: '🏢', category: 'scanners', group: 'Institutional / Flow' },
   { id: 'Fund Traction', path: '/fund-traction', icon: '💰', category: 'scanners', group: 'Institutional / Flow' },
+  { id: 'Cross-Buy', path: '/cross-buy', icon: '🤝', category: 'scanners', group: 'Institutional / Flow' },
   { id: 'Leaderboard', path: '/leaderboard', icon: '📊', category: 'scanners', group: 'Overview' },
   { id: 'FVG Scanner', path: '/fvg-scanner', icon: '📡', category: 'scanners', group: 'Price Action' },
   { id: 'Technical Chart', path: '/chart', icon: '📈', category: 'analysis' },
@@ -274,6 +276,7 @@ export default function App() {
                 <Route path="/inst-dom" element={<InstDOMView lib={librarian} />} />
                 <Route path="/fii-dii-scanner" element={<FiiDiiScannerView lib={librarian} />} />
                 <Route path="/fund-traction" element={<FundTractionScannerView />} />
+                <Route path="/cross-buy" element={<CrossBuyScannerView />} />
                 <Route path="/parquet-lake" element={<DataLakeView lib={librarian} />} />
                 <Route path="/invisible-hand" element={<InvisibleHandScannerView lib={librarian} />} />
                 <Route path="/trigger" element={<TriggerScannerView lib={librarian} />} />
