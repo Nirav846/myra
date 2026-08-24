@@ -28,6 +28,15 @@ from myra_app.constants import DB_DIR
 from myra_app.librarian_core import LibrarianCore
 from myra_app.utils.index_sync import sync_index_constituents
 from myra_app.db.enrichers.corporate_actions_enricher import enrich_corporate_actions
+from myra_app.utils.task_utils import (  # noqa: F401  (re-exported for external callers, e.g. myra_web/routes/health.py)
+    WEEKLY_INTERVAL_DAYS,
+    _ensure_sync_log_table,
+    _get_last_run,
+    _is_task_overdue,
+    _is_task_due,
+    _mark_task_run,
+    now_ist,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,21 +76,6 @@ def _get_metadata_connection(read_only: bool = True) -> LibrarianCore:
             f"[MYRA BG] Created new metadata connection for thread {thread_name} (read_only={read_only})"
         )
         return lib
-
-
-def _close_metadata_connection():
-    """Close the current thread's metadata connection if it exists."""
-    thread_name = threading.current_thread().name
-    with _pool_lock:
-        if thread_name in _connection_pool:
-            try:
-                _connection_pool[thread_name].close()
-                del _connection_pool[thread_name]
-                logger.debug(
-                    f"[MYRA BG] Closed metadata connection for thread {thread_name}"
-                )
-            except Exception as e:
-                logger.warning(f"[MYRA BG] Failed to close metadata connection: {e}")
 
 
 # ─── Shutdown handler ─────────────────────────────────────────────────────────
@@ -130,7 +124,7 @@ def _already_ingested_today() -> bool:
     try:
         from myra_app.daily_ingestor import get_db_latest_date
 
-        today = datetime.now(timezone.utc).astimezone(IST).date().isoformat()
+        today = now_ist().date().isoformat()
         db_latest = get_db_latest_date()
 
         if db_latest == today:
@@ -173,7 +167,7 @@ def _is_db_stale(days_threshold: int = 1) -> bool:
         db_latest = get_db_latest_date()
         if not db_latest:
             return True
-        ist_now = datetime.now(timezone.utc).astimezone(IST)
+        ist_now = now_ist()
         db_date = datetime.strptime(db_latest, "%Y-%m-%d").date()
         current_date = ist_now.date()
         days_behind = (current_date - db_date).days
@@ -186,7 +180,7 @@ def _is_db_stale(days_threshold: int = 1) -> bool:
 def _mark_ingested_today():
     # PERFORMANCE IMPROVEMENT: Reuse thread-local connection instead of creating/closing
     try:
-        today = datetime.now(timezone.utc).astimezone(IST).date().isoformat()
+        today = now_ist().date().isoformat()
         lib = _get_metadata_connection(read_only=False)
         lib.set_metadata("last_sync_date", today)
         logger.info(f"[MYRA BG] Marked ingestion date: {today}")
@@ -196,84 +190,12 @@ def _mark_ingested_today():
         )
         # Fallback to original method on error
         try:
-            today = datetime.now(timezone.utc).astimezone(IST).date().isoformat()
+            today = now_ist().date().isoformat()
             lib = LibrarianCore(read_only=False)
             lib.set_metadata("last_sync_date", today)
             lib.close()
         except Exception as e2:
             logger.warning(f"Could not mark ingestion date: {e2}")
-
-
-# ─── Sync Log Helpers ─────────────────────────────────────────────────────────
-
-WEEKLY_INTERVAL_DAYS = 7
-
-
-def _ensure_sync_log_table():
-    """Create sync_log table if it doesn't exist."""
-    try:
-        lib = _get_metadata_connection(read_only=False)
-        lib._meta_conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS sync_log (
-                task_name   TEXT PRIMARY KEY,
-                last_run    TEXT
-            )
-        """
-        )
-        lib._meta_conn.commit()
-    except Exception as e:
-        logger.warning(f"[MYRA BG] Failed to ensure sync_log table: {e}")
-
-
-def _is_task_due(task_name: str, interval_days: int = WEEKLY_INTERVAL_DAYS) -> bool:
-    """Check if task is due to run based on interval."""
-    last_run = _get_last_run(task_name)
-    if last_run is None:
-        return True
-    ist_now = datetime.now(timezone.utc).astimezone(IST)
-    days_since = (ist_now - last_run).days
-    return days_since >= interval_days
-
-
-def _get_last_run(task_name: str) -> datetime | None:
-    """Get last run timestamp for a task. Returns None if never run."""
-    try:
-        lib = _get_metadata_connection(read_only=True)
-        res = lib._meta_conn.execute(
-            "SELECT last_run FROM sync_log WHERE task_name = ?", (task_name,)
-        ).fetchone()
-        if res and res[0]:
-            return datetime.fromisoformat(res[0])
-    except Exception as e:
-        logger.debug(f"[MYRA BG] Failed to get last run for {task_name}: {e}")
-    return None
-
-
-def _is_task_overdue(task_name: str, days: int) -> bool:
-    """Check if task hasn't run in specified days (or never run)."""
-    last_run = _get_last_run(task_name)
-    if last_run is None:
-        return True
-    ist_now = datetime.now(timezone.utc).astimezone(IST)
-    days_since = (ist_now - last_run).days
-    return days_since >= days
-
-
-def _mark_task_run(task_name: str):
-    """Write current IST timestamp to sync_log for a task."""
-    try:
-        ist_now = datetime.now(timezone.utc).astimezone(IST)
-        timestamp = ist_now.isoformat()
-        lib = _get_metadata_connection(read_only=False)
-        lib._meta_conn.execute(
-            "INSERT OR REPLACE INTO sync_log (task_name, last_run) VALUES (?, ?)",
-            (task_name, timestamp),
-        )
-        lib._meta_conn.commit()
-        logger.info(f"[MYRA BG] Marked {task_name} last_run: {timestamp}")
-    except Exception as e:
-        logger.warning(f"[MYRA BG] Failed to mark task run for {task_name}: {e}")
 
 
 # ─── Task 1: DB Doctor ────────────────────────────────────────────────────────
@@ -312,7 +234,7 @@ def _task_daily_ingest(force: bool = False):
     if _shutdown_event.is_set():
         return
 
-    ist_now = datetime.now(timezone.utc).astimezone(IST)
+    ist_now = now_ist()
 
     # ── Master kill-switch ───────────────────────────────────────────────
     from myra_app import constants
@@ -487,7 +409,7 @@ def _task_watchdog():
 
     tid = register("Background sync watchdog", task_type="indefinite")
     try:
-        last_checked_date = datetime.now(timezone.utc).astimezone(IST).date()
+        last_checked_date = now_ist().date()
 
         while not _shutdown_event.is_set():
             _shutdown_event.wait(timeout=60)
@@ -495,7 +417,7 @@ def _task_watchdog():
                 break
 
             try:
-                ist_now = datetime.now(timezone.utc).astimezone(IST)
+                ist_now = now_ist()
                 today = ist_now.date().isoformat()
 
                 update(
@@ -504,7 +426,7 @@ def _task_watchdog():
                 )
 
                 if _is_db_stale(days_threshold=1):
-                    ist_now = datetime.now(timezone.utc).astimezone(IST)
+                    ist_now = now_ist()
                     last_attempt = _get_last_run("stale_catchup")
                     already_tried_today = (
                         last_attempt is not None
@@ -732,7 +654,7 @@ def _task_fundamentals_daily():
     try:
         while not _shutdown_event.is_set():
             try:
-                ist_now = datetime.now(timezone.utc).astimezone(IST)
+                ist_now = now_ist()
                 if not _is_task_overdue("fundamentals_daily", days=1):
                     for _ in range(30):
                         if _shutdown_event.wait(60):
