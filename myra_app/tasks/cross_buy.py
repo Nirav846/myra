@@ -1,4 +1,9 @@
-"""Task 11: Cross-buy Sync — monthly mutual-fund cross-buy analysis refresh."""
+"""Task 11: Cross-buy Sync — monthly mutual-fund cross-buy analysis refresh.
+
+Single unit of work: scheduling is owned by myra_app.tasks.executor.
+A failed CSV download returns quietly; the executor's mark_on_failure=True
+policy prevents retry storms (next attempt next 30-day cycle).
+"""
 
 import logging
 import subprocess
@@ -6,7 +11,7 @@ import sys
 from pathlib import Path
 
 from myra_app.tasks.context import TaskContext
-from myra_app.utils.task_utils import _is_task_due, _is_task_overdue, _mark_task_run
+from myra_app.utils.task_utils import _mark_task_run
 
 logger = logging.getLogger(__name__)
 
@@ -80,78 +85,38 @@ def _download_cross_buy_csvs() -> bool:
     return True
 
 
+class CrossBuyDownloadFailed(RuntimeError):
+    """Raised so the executor applies mark_on_failure (no retry storms)."""
+
+
 def run(ctx: TaskContext):
-    """Monthly mutual-fund cross-buy sync. Runs immediately if overdue."""
+    """Runs one mutual-fund cross-buy sync. Returns early on shutdown."""
     from myra_app.task_tracker import register, unregister
 
     if ctx.shutdown_event.is_set():
         return
 
-    if _is_task_overdue("cross_buy_sync", days=30):
-        tid = register("Cross-buy sync", task_type="one-shot")
-        try:
-            logger.info("[MYRA BG] Cross-buy sync overdue – running now...")
-            if not _download_cross_buy_csvs():
-                logger.warning(
-                    "[MYRA BG] Cross-buy sync skipped this run (download failed); "
-                    "will retry on next orchestrator start"
-                )
-                return
-            from myra_app.cross_buy_processor import (
-                detect_available_months,
-                process_month,
-            )
-
-            months = detect_available_months()
-            if months:
-                result = process_month(months[-1])  # latest month
-                _mark_task_run("cross_buy_sync")
-                logger.info(f"[MYRA BG] Cross-buy sync complete: {result}")
-            else:
-                logger.info(
-                    "[MYRA BG] Cross-buy sync: no raw holdings months available, skipping"
-                )
-        except Exception as e:
-            logger.error(f"[MYRA BG] Cross-buy sync (catch-up) failed: {e}")
-        finally:
-            unregister(tid)
-
-    if ctx.shutdown_event.is_set():
-        return
-
-    tid = register("Cross-buy sync", task_type="indefinite")
+    tid = register("Cross-buy sync", task_type="one-shot")
     try:
-        while not ctx.shutdown_event.is_set():
-            try:
-                if _is_task_due("cross_buy_sync", interval_days=30):
-                    logger.info("[MYRA BG] Cross-buy sync due – running...")
-                    if not _download_cross_buy_csvs():
-                        # Mark anyway so a dead downloader doesn't retry-storm
-                        # every poll cycle; next attempt is the next 30-day cycle.
-                        _mark_task_run("cross_buy_sync")
-                        logger.warning(
-                            "[MYRA BG] Cross-buy sync skipped (download failed); "
-                            "next attempt in 30 days"
-                        )
-                        continue
-                    from myra_app.cross_buy_processor import (
-                        detect_available_months,
-                        process_month,
-                    )
+        logger.info("[MYRA BG] Cross-buy sync running...")
+        if not _download_cross_buy_csvs():
+            # Signal failure to the executor — with mark_on_failure=True the
+            # task still gets marked, so the next attempt is the next cycle.
+            raise CrossBuyDownloadFailed("CSV download failed")
 
-                    months = detect_available_months()
-                    if months:
-                        result = process_month(months[-1])  # latest month
-                        _mark_task_run("cross_buy_sync")
-                        logger.info(f"[MYRA BG] Cross-buy sync complete: {result}")
-                    else:
-                        logger.info(
-                            "[MYRA BG] Cross-buy sync: no raw holdings months available, skipping"
-                        )
-            except Exception as e:
-                logger.error(f"[MYRA BG] Cross-buy sync failed: {e}")
-            for _ in range(60):
-                if ctx.shutdown_event.wait(60):
-                    return
+        from myra_app.cross_buy_processor import (
+            detect_available_months,
+            process_month,
+        )
+
+        months = detect_available_months()
+        if months:
+            result = process_month(months[-1])  # latest month
+            _mark_task_run("cross_buy_sync")
+            logger.info(f"[MYRA BG] Cross-buy sync complete: {result}")
+        else:
+            logger.info(
+                "[MYRA BG] Cross-buy sync: no raw holdings months available, skipping"
+            )
     finally:
         unregister(tid)

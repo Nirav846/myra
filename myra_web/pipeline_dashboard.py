@@ -86,7 +86,16 @@ class PipelineManager:
         },
     }
 
-    ORDER = ["ingest", "enrichment", "etf_sync", "index_sync", "fundamentals_sync", "market_cap_sync", "shares_outstanding_sync", "institutional_sync"]
+    ORDER = [
+        "ingest",
+        "enrichment",
+        "etf_sync",
+        "index_sync",
+        "fundamentals_sync",
+        "market_cap_sync",
+        "shares_outstanding_sync",
+        "institutional_sync",
+    ]
 
     TASK_TIMEOUTS = {
         "ingest": 600,
@@ -133,15 +142,24 @@ class PipelineManager:
         self._start_scheduler()
 
     def _resolve_task_funcs(self):
-        import myra_app.background_orchestrator as bg
+        # Phase 3: orchestrator wrappers removed — call task modules directly.
+        from functools import partial
 
-        self.TASKS["ingest"]["func"] = bg._task_daily_ingest
-        self.TASKS["etf_sync"]["func"] = bg._task_etf_sync
-        self.TASKS["index_sync"]["func"] = bg._task_index_sync
+        from myra_app.tasks.context import default_context
+        from myra_app.tasks.etf_sync import run as _run_etf_sync
+        from myra_app.tasks.index_sync import run as _run_index_sync
+        from myra_app.tasks.ingest import run as _run_daily_ingest
+
+        ctx = default_context()
+        self.TASKS["ingest"]["func"] = partial(_run_daily_ingest, ctx)
+        self.TASKS["etf_sync"]["func"] = partial(_run_etf_sync, ctx)
+        self.TASKS["index_sync"]["func"] = partial(_run_index_sync, ctx)
         self.TASKS["fundamentals_sync"]["func"] = self._run_fundamentals_sync
         self.TASKS["enrichment"]["func"] = self._run_enrichment
         self.TASKS["market_cap_sync"]["func"] = self._run_market_cap_sync
-        self.TASKS["shares_outstanding_sync"]["func"] = self._run_shares_outstanding_sync
+        self.TASKS["shares_outstanding_sync"][
+            "func"
+        ] = self._run_shares_outstanding_sync
         self.TASKS["institutional_sync"]["func"] = self._run_institutional_sync
 
     def _run_enrichment(self):
@@ -186,21 +204,41 @@ class PipelineManager:
         with self._lock:
             self._state["progress_pct"] = 10
             self._state["message"] = "Scanning for stale shares_outstanding..."
-        self._push_event({"type": "progress", "task_id": "shares_outstanding_sync", "progress_pct": 10})
+        self._push_event(
+            {
+                "type": "progress",
+                "task_id": "shares_outstanding_sync",
+                "progress_pct": 10,
+            }
+        )
 
         fs = FundamentalSync()
 
         with self._lock:
             self._state["progress_pct"] = 30
             self._state["message"] = "Refreshing stale shares from yfinance..."
-        self._push_event({"type": "progress", "task_id": "shares_outstanding_sync", "progress_pct": 30})
+        self._push_event(
+            {
+                "type": "progress",
+                "task_id": "shares_outstanding_sync",
+                "progress_pct": 30,
+            }
+        )
 
         result = fs._refresh_stale_shares_outstanding(cancel_event=self._cancel_event)
 
         with self._lock:
             self._state["progress_pct"] = 100
-            self._state["message"] = f"Shares refresh complete: {result.get('updated', 0)}/{result.get('total', 0)} updated"
-        self._push_event({"type": "progress", "task_id": "shares_outstanding_sync", "progress_pct": 100})
+            self._state[
+                "message"
+            ] = f"Shares refresh complete: {result.get('updated', 0)}/{result.get('total', 0)} updated"
+        self._push_event(
+            {
+                "type": "progress",
+                "task_id": "shares_outstanding_sync",
+                "progress_pct": 100,
+            }
+        )
 
         val_db = os.path.join(DB_DIR, "myra_valuation.db")
         try:
@@ -219,26 +257,36 @@ class PipelineManager:
         with self._lock:
             self._state["progress_pct"] = 10
             self._state["message"] = "Starting fundamentals sync..."
-        self._push_event({"type": "progress", "task_id": "fundamentals_sync", "progress_pct": 10})
+        self._push_event(
+            {"type": "progress", "task_id": "fundamentals_sync", "progress_pct": 10}
+        )
 
         sync = FundamentalSync()
 
         with self._lock:
             self._state["progress_pct"] = 30
             self._state["message"] = "Fetching Morningstar bulk data..."
-        self._push_event({"type": "progress", "task_id": "fundamentals_sync", "progress_pct": 30})
+        self._push_event(
+            {"type": "progress", "task_id": "fundamentals_sync", "progress_pct": 30}
+        )
         ms_data = sync._fetch_morningstar_bulk()
 
         with self._lock:
             self._state["progress_pct"] = 50
             self._state["message"] = "Getting NIFTY 500 symbols..."
-        self._push_event({"type": "progress", "task_id": "fundamentals_sync", "progress_pct": 50})
+        self._push_event(
+            {"type": "progress", "task_id": "fundamentals_sync", "progress_pct": 50}
+        )
         nifty_symbols = sync._get_nifty_500_symbols()
 
         with self._lock:
             self._state["progress_pct"] = 60
-            self._state["message"] = f"Fetching NSE data for {len(nifty_symbols) if nifty_symbols else 0} symbols..."
-        self._push_event({"type": "progress", "task_id": "fundamentals_sync", "progress_pct": 60})
+            self._state[
+                "message"
+            ] = f"Fetching NSE data for {len(nifty_symbols) if nifty_symbols else 0} symbols..."
+        self._push_event(
+            {"type": "progress", "task_id": "fundamentals_sync", "progress_pct": 60}
+        )
         if nifty_symbols:
             nse_data = sync._fetch_nse_all(nifty_symbols, self._cancel_event)
         else:
@@ -247,7 +295,9 @@ class PipelineManager:
         with self._lock:
             self._state["progress_pct"] = 85
             self._state["message"] = "Merging and inserting data..."
-        self._push_event({"type": "progress", "task_id": "fundamentals_sync", "progress_pct": 85})
+        self._push_event(
+            {"type": "progress", "task_id": "fundamentals_sync", "progress_pct": 85}
+        )
         today = datetime.now(IST).date().isoformat()
         sync._merge_and_insert(ms_data, nse_data, today)
         sync._log_summary()
@@ -255,7 +305,9 @@ class PipelineManager:
         with self._lock:
             self._state["progress_pct"] = 100
             self._state["message"] = "Fundamentals sync complete"
-        self._push_event({"type": "progress", "task_id": "fundamentals_sync", "progress_pct": 100})
+        self._push_event(
+            {"type": "progress", "task_id": "fundamentals_sync", "progress_pct": 100}
+        )
 
     def _run_institutional_sync(self):
         from myra_app.utils.institutional_sync import InstitutionalSync
@@ -263,35 +315,46 @@ class PipelineManager:
         with self._lock:
             self._state["progress_pct"] = 10
             self._state["message"] = "Starting institutional data sync..."
-        self._push_event({"type": "progress", "task_id": "institutional_sync", "progress_pct": 10})
+        self._push_event(
+            {"type": "progress", "task_id": "institutional_sync", "progress_pct": 10}
+        )
 
         syncer = InstitutionalSync()
 
         with self._lock:
             self._state["progress_pct"] = 30
             self._state["message"] = "Syncing insider trades..."
-        self._push_event({"type": "progress", "task_id": "institutional_sync", "progress_pct": 30})
+        self._push_event(
+            {"type": "progress", "task_id": "institutional_sync", "progress_pct": 30}
+        )
         syncer.sync_insider_trades()
 
         with self._lock:
             self._state["progress_pct"] = 60
             self._state["message"] = "Syncing bulk deals..."
-        self._push_event({"type": "progress", "task_id": "institutional_sync", "progress_pct": 60})
+        self._push_event(
+            {"type": "progress", "task_id": "institutional_sync", "progress_pct": 60}
+        )
         syncer.sync_bulk_deals()
 
         with self._lock:
             self._state["progress_pct"] = 80
             self._state["message"] = "Syncing block deals..."
-        self._push_event({"type": "progress", "task_id": "institutional_sync", "progress_pct": 80})
+        self._push_event(
+            {"type": "progress", "task_id": "institutional_sync", "progress_pct": 80}
+        )
         syncer.sync_block_deals()
 
         with self._lock:
             self._state["progress_pct"] = 100
             self._state["message"] = "Institutional sync complete"
-        self._push_event({"type": "progress", "task_id": "institutional_sync", "progress_pct": 100})
+        self._push_event(
+            {"type": "progress", "task_id": "institutional_sync", "progress_pct": 100}
+        )
 
     def _start_scheduler(self):
         """Background daemon thread that checks schedule config every 60s and triggers due tasks."""
+
         def _scheduler_loop():
             while not self._scheduler_shutdown.is_set():
                 try:
@@ -304,7 +367,9 @@ class PipelineManager:
                         break
                     time.sleep(1)
 
-        t = threading.Thread(target=_scheduler_loop, daemon=True, name="pipeline-scheduler")
+        t = threading.Thread(
+            target=_scheduler_loop, daemon=True, name="pipeline-scheduler"
+        )
         t.start()
 
     def _check_schedules(self):
@@ -350,12 +415,16 @@ class PipelineManager:
 
             logger.info(
                 "[SCHEDULER] Triggering scheduled task '%s' at %s IST",
-                task_key, ist_now.strftime("%H:%M"),
-            )
-            self.run_task(next(
-                (tid for tid, t in self.TASKS.items() if t["task_key"] == task_key),
                 task_key,
-            ), stop_on_fail=True)
+                ist_now.strftime("%H:%M"),
+            )
+            self.run_task(
+                next(
+                    (tid for tid, t in self.TASKS.items() if t["task_key"] == task_key),
+                    task_key,
+                ),
+                stop_on_fail=True,
+            )
 
     def _ensure_schema(self):
         try:
@@ -423,7 +492,9 @@ class PipelineManager:
         except Exception as e:
             logger.warning(f"Failed to persist state: {e}")
 
-    def _write_sync_log(self, task_key: str, status: str, error: str = None, progress: float = 0):
+    def _write_sync_log(
+        self, task_key: str, status: str, error: str = None, progress: float = 0
+    ):
         try:
             ist_now = datetime.now(IST).isoformat()
             lib = LibrarianCore(read_only=False)
@@ -509,7 +580,12 @@ class PipelineManager:
     def get_checks(self) -> dict:
         checks = {}
 
-        dirs = {"DB_DIR": DB_DIR, "DATA_DIR": DATA_DIR, "CACHE_DIR": CACHE_DIR, "LOGS_DIR": LOGS_DIR}
+        dirs = {
+            "DB_DIR": DB_DIR,
+            "DATA_DIR": DATA_DIR,
+            "CACHE_DIR": CACHE_DIR,
+            "LOGS_DIR": LOGS_DIR,
+        }
         for name, path in dirs.items():
             checks[name] = {"exists": os.path.isdir(path), "path": path}
 
@@ -520,6 +596,7 @@ class PipelineManager:
             if os.path.exists(path):
                 try:
                     import sqlite3
+
                     c = sqlite3.connect(path)
                     c.execute("SELECT 1")
                     c.close()
@@ -573,11 +650,13 @@ class PipelineManager:
                 break
             result = self._execute_task(tid)
             if stop_on_fail and result.get("status") in ("failed", "timeout"):
-                self._push_event({
-                    "type": "all_stopped",
-                    "task": tid,
-                    "reason": result.get("error", "Unknown error"),
-                })
+                self._push_event(
+                    {
+                        "type": "all_stopped",
+                        "task": tid,
+                        "reason": result.get("error", "Unknown error"),
+                    }
+                )
                 break
 
     def _on_timeout(self):
@@ -595,7 +674,9 @@ class PipelineManager:
             self._state["message"] = f"Running {cfg['name']}..."
             self._state["progress_pct"] = 0
         self._persist_state()
-        self._push_event({"type": "task_started", "task_id": task_key, "task_name": cfg["name"]})
+        self._push_event(
+            {"type": "task_started", "task_id": task_key, "task_name": cfg["name"]}
+        )
 
         timeout_sec = self.TASK_TIMEOUTS.get(task_id, 1800)
         timer = threading.Timer(timeout_sec, self._on_timeout)
@@ -626,12 +707,14 @@ class PipelineManager:
                 "progress_pct": 100 if status == "completed" else 0,
             }
 
-        self._push_event({
-            "type": "task_completed",
-            "task_id": task_key,
-            "status": status,
-            "error": error,
-        })
+        self._push_event(
+            {
+                "type": "task_completed",
+                "task_id": task_key,
+                "status": status,
+                "error": error,
+            }
+        )
 
         return {"status": status, "error": error}
 
@@ -742,6 +825,7 @@ def run_pipeline(req: RunRequest):
     # Auto-reset if the pipeline has been "running" for > 5 minutes (likely a crashed thread)
     if manager._state["status"] == "running" and manager._state.get("started_at"):
         from datetime import datetime
+
         started = datetime.fromisoformat(manager._state["started_at"])
         elapsed = (datetime.now(IST) - started).total_seconds()
         if elapsed > 300:  # 5 minutes

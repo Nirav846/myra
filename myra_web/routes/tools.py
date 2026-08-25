@@ -18,13 +18,29 @@ from myra_web.security import verify_myra_auth
 logger = logging.getLogger(__name__)
 
 try:
-    from myra_app.background_orchestrator import (
-        _task_fundamentals_sync,
-        _task_etf_sync,
-        _task_index_sync,
-        _task_daily_ingest,
-        _task_db_doctor,
-    )
+    # Phase 3: orchestrator wrappers removed — call task modules directly.
+    from myra_app.tasks.context import default_context
+    from myra_app.tasks.doctor import run as _run_db_doctor
+    from myra_app.tasks.etf_sync import run as _run_etf_sync
+    from myra_app.tasks.fundamentals import run as _run_fundamentals_sync
+    from myra_app.tasks.index_sync import run as _run_index_sync
+    from myra_app.tasks.ingest import run as _run_daily_ingest
+
+    def _task_fundamentals_sync():
+        return _run_fundamentals_sync(default_context())
+
+    def _task_etf_sync():
+        return _run_etf_sync(default_context())
+
+    def _task_index_sync():
+        return _run_index_sync(default_context())
+
+    def _task_daily_ingest(force: bool = False):
+        return _run_daily_ingest(default_context(), force=force)
+
+    def _task_db_doctor():
+        return _run_db_doctor(default_context())
+
 except ImportError:
     pass
 
@@ -93,7 +109,8 @@ async def force_fundamentals_sync():
     except Exception as e:
         logger.exception("force_fundamentals_sync failed")
         return JSONResponse(
-            status_code=500, content={"status": "error", "message": "Internal server error"}
+            status_code=500,
+            content={"status": "error", "message": "Internal server error"},
         )
 
 
@@ -108,7 +125,8 @@ async def force_etf_sync():
     except Exception as e:
         logger.exception("force_etf_sync failed")
         return JSONResponse(
-            status_code=500, content={"status": "error", "message": "Internal server error"}
+            status_code=500,
+            content={"status": "error", "message": "Internal server error"},
         )
 
 
@@ -123,7 +141,8 @@ async def force_index_sync():
     except Exception as e:
         logger.exception("force_index_sync failed")
         return JSONResponse(
-            status_code=500, content={"status": "error", "message": "Internal server error"}
+            status_code=500,
+            content={"status": "error", "message": "Internal server error"},
         )
 
 
@@ -138,7 +157,8 @@ async def force_daily_ingest():
     except Exception as e:
         logger.exception("force_daily_ingest failed")
         return JSONResponse(
-            status_code=500, content={"status": "error", "message": "Internal server error"}
+            status_code=500,
+            content={"status": "error", "message": "Internal server error"},
         )
 
 

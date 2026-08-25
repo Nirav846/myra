@@ -18,3 +18,27 @@ class TaskContext:
 
     shutdown_event: threading.Event
     logger: logging.Logger
+
+
+_default_context: TaskContext | None = None
+_default_context_lock = threading.Lock()
+
+
+def default_context() -> TaskContext:
+    """
+    Process-wide fallback context for manual (web-triggered) task runs.
+
+    The orchestrator passes its own context to scheduled threads; routes and
+    dashboards that invoke tasks directly use this shared instance. Its
+    shutdown event stays unset for the process lifetime — manual one-shot
+    runs are short-lived by construction.
+    """
+    global _default_context
+    if _default_context is None:
+        with _default_context_lock:
+            if _default_context is None:
+                _default_context = TaskContext(
+                    shutdown_event=threading.Event(),
+                    logger=logging.getLogger("myra.tasks"),
+                )
+    return _default_context

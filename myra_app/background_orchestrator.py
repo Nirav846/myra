@@ -113,101 +113,10 @@ def _graceful_shutdown(signum=None, frame=None):
 
 
 # ─── Thin task wrappers ───────────────────────────────────────────────────────
-# Task implementations live in myra_app/tasks/* (Phase 2 refactor). These
-# wrappers keep the historical _task_* names working for internal call sites,
-# the thread table in _launch_background_threads(), seeding code, and external
-# importers (myra_web routes, pipeline_dashboard).
-
-
-def _task_db_doctor():
-    """Delegate to myra_app.tasks.doctor."""
-    from myra_app.tasks.doctor import run
-
-    return run(_CTX)
-
-
-def _task_daily_ingest(force: bool = False):
-    """Delegate to myra_app.tasks.ingest."""
-    from myra_app.tasks.ingest import run
-
-    return run(_CTX, force=force)
-
-
-def _task_watchdog():
-    """Delegate to myra_app.tasks.watchdog."""
-    from myra_app.tasks.watchdog import run
-
-    return run(_CTX)
-
-
-def _task_etf_sync():
-    """Delegate to myra_app.tasks.etf_sync."""
-    from myra_app.tasks.etf_sync import run
-
-    return run(_CTX)
-
-
-def _task_index_sync():
-    """Delegate to myra_app.tasks.index_sync."""
-    from myra_app.tasks.index_sync import run
-
-    return run(_CTX)
-
-
-def _task_fundamentals_sync():
-    """Delegate to myra_app.tasks.fundamentals."""
-    from myra_app.tasks.fundamentals import run
-
-    return run(_CTX)
-
-
-def _task_fundamentals_daily():
-    """Delegate to myra_app.tasks.fundamentals.run_daily."""
-    from myra_app.tasks.fundamentals import run_daily
-
-    return run_daily(_CTX)
-
-
-def _task_institutional_sync():
-    """Delegate to myra_app.tasks.institutional."""
-    from myra_app.tasks.institutional import run
-
-    return run(_CTX)
-
-
-def _task_db_backup():
-    """Delegate to myra_app.tasks.db_backup."""
-    from myra_app.tasks.db_backup import run
-
-    return run(_CTX)
-
-
-def _task_screener_enrich():
-    """Delegate to myra_app.tasks.screener_enrich."""
-    from myra_app.tasks.screener_enrich import run
-
-    return run(_CTX)
-
-
-def _task_fund_traction_sync():
-    """Delegate to myra_app.tasks.fund_traction."""
-    from myra_app.tasks.fund_traction import run
-
-    return run(_CTX)
-
-
-def _task_cross_buy_sync():
-    """Delegate to myra_app.tasks.cross_buy."""
-    from myra_app.tasks.cross_buy import run
-
-    return run(_CTX)
-
-
-def _task_update_traction_sma():
-    """Delegate to myra_app.tasks.traction_sma."""
-    from myra_app.tasks.traction_sma import run
-
-    return run(_CTX)
+# Removed in Phase 3: task scheduling is declarative now. See
+# myra_app/tasks/registry.py (TASKS) and myra_app/tasks/executor.py
+# (run_periodic). Manual web-trigger entry points live in myra_web and call
+# myra_app.tasks.* directly via tasks.context.default_context().
 
 
 # ─── Public entry point ───────────────────────────────────────────────────────
@@ -358,44 +267,32 @@ def _run_seed_checks():
 
 
 def _launch_background_threads():
-    """Launch all background tasks as daemon threads."""
-    tasks = [
-        ("daily-ingest", _task_daily_ingest),
-        ("watchdog", _task_watchdog),
-        ("etf-sync", _task_etf_sync),
-        ("index-sync", _task_index_sync),
-        ("fundamentals-sync", _task_fundamentals_sync),
-        ("fundamentals-daily", _task_fundamentals_daily),
-        ("institutional-sync", _task_institutional_sync),
-        ("db-backup", _task_db_backup),
-        ("screener-enrich", _task_screener_enrich),
-        ("fund-traction-sync", _task_fund_traction_sync),
-        ("cross-buy-sync", _task_cross_buy_sync),
-        ("traction-sma-update", _task_update_traction_sma),
-    ]
-    threads = [
-        threading.Thread(target=fn, name=f"myra-bg-{name}", daemon=True)
-        for name, fn in tasks
-    ]
-    sync_task_names = {
-        "etf-sync",
-        "index-sync",
-        "fundamentals-sync",
-        "institutional-sync",
-        "fund-traction-sync",
-    }
-    stagger_seconds = 30
+    """Launch all background tasks as daemon threads from the TASKS registry."""
+    from myra_app.tasks.executor import STAGGER_SECONDS, run_periodic
+    from myra_app.tasks.registry import TASKS
+
+    threads: list[tuple[str, threading.Thread]] = []
+    prev_stagger = False
     with _task_lock:
-        for i, t in enumerate(threads):
+        for name, spec in TASKS.items():
+            if not spec.enabled:
+                logger.info(f"[MYRA BG] Task disabled, skipping: {name}")
+                prev_stagger = False
+                continue
+            t = threading.Thread(
+                target=run_periodic,
+                args=(name, spec, _CTX),
+                name=f"myra-bg-{name}",
+                daemon=True,
+            )
             t.start()
-            prev_name = tasks[i][0] if i > 0 else None
-            if prev_name in sync_task_names:
-                logger.info(
-                    f"[MYRA BG] Staggering next sync task by {stagger_seconds}s..."
-                )
-                _shutdown_event.wait(stagger_seconds)
-        _active_tasks.extend(threads)
-    for name, _ in tasks:
+            threads.append((name, t))
+            if prev_stagger and not _shutdown_event.is_set():
+                logger.info(f"[MYRA BG] Staggering next task by {STAGGER_SECONDS}s...")
+                _shutdown_event.wait(STAGGER_SECONDS)
+            prev_stagger = spec.stagger
+        _active_tasks.extend(t for _, t in threads)
+    for name, _ in threads:
         logger.info(f"[MYRA BG] Started task: {name}")
 
 
@@ -459,7 +356,9 @@ def start():
     _ensure_network_cache_db()
 
     logger.info("[MYRA BG] Running startup DB health check (synchronous)...")
-    _task_db_doctor()
+    from myra_app.tasks.doctor import run as _run_db_doctor
+
+    _run_db_doctor(_CTX)
 
     threading.Thread(target=_run_seed_checks, daemon=True).start()
 
@@ -478,7 +377,9 @@ def start():
     try:
         if _is_task_overdue("daily_ingest", days=1):
             logger.info("[MYRA BG] Daily ingest overdue – running catch-up now...")
-            _task_daily_ingest(force=True)
+            from myra_app.tasks.ingest import run as _run_daily_ingest
+
+            _run_daily_ingest(_CTX, force=True)
             _mark_task_run("stale_catchup")
     except Exception as e:
         logger.warning(f"[MYRA BG] Daily ingest catch-up failed: {e}")
