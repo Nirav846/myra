@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Filter, RefreshCw, Download, ChevronUp, ChevronDown, ArrowUpDown, Settings2, Info, Zap, Target } from 'lucide-react';
+import { Filter, RefreshCw, Download, ChevronUp, ChevronDown, ArrowUpDown, Settings2, Info, Zap, Target, Building2 } from 'lucide-react';
 import FundTractionButton from '../components/FundTractionButton';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
 import { useWatchlist } from '../lib/WatchlistContext';
@@ -104,6 +104,7 @@ export default function SmartMoneyBargainView() {
   const [filterPctVsSma, setFilterPctVsSma] = useState(true);
   const [tractionWindow, setTractionWindow] = useState(3);
   const [tractionAggregation, setTractionAggregation] = useState<string>('max');
+  const [restrictToHoldings, setRestrictToHoldings] = useState(false);
   const [showParams, setShowParams] = useState(false);
 
   type RowData = Candidate & { _matchStatus?: 'match' | 'near-miss'; _nearMissReason?: string };
@@ -235,6 +236,7 @@ export default function SmartMoneyBargainView() {
         filter_pct_vs_sma: filterPctVsSma,
         traction_window: tractionWindow,
         traction_aggregation: tractionAggregation,
+        restrict_to_holdings: restrictToHoldings,
       };
       await fetch(`${API_BASE}/smart-money-bargain/scan`, {
         method: 'POST',
@@ -248,7 +250,7 @@ export default function SmartMoneyBargainView() {
       setIsScanning(false);
       setError('Failed to start scan');
     }
-  }, [showNearMisses, minDiscountPct, minTractionScore, maxPctVsSma, filterPctVsSma, tractionWindow, tractionAggregation, fetchScanStatus]);
+  }, [showNearMisses, minDiscountPct, minTractionScore, maxPctVsSma, filterPctVsSma, tractionWindow, tractionAggregation, restrictToHoldings, fetchScanStatus]);
 
   const applyPreset = useCallback((p: Preset) => {
     setActivePreset(p.name);
@@ -461,6 +463,11 @@ export default function SmartMoneyBargainView() {
           <label className="flex items-center gap-1 text-[#888]">
             <input type="checkbox" checked={watchlistOnly} onChange={e => setWatchlistOnly(e.target.checked)} className="rounded" />
             Watchlist
+          </label>
+          <label className="flex items-center gap-1 text-[#888]" title="Restrict to symbols held by at least one mutual fund (latest month)">
+            <input type="checkbox" checked={restrictToHoldings} onChange={e => setRestrictToHoldings(e.target.checked)} className="rounded accent-emerald-500" />
+            <Building2 size={11} aria-hidden="true" />
+            MF-held
           </label>
           <button onClick={exportCsv} className="ml-auto px-2 py-1 rounded bg-[#ffffff0a] hover:bg-[#ffffff14] text-[#888]"
             title="Export CSV">

@@ -138,6 +138,7 @@ class BottomHunter:
         adtv_min_cr=1.0,
         lookback_days=260,
         timeframe: str = "daily",
+        restrict_to_holdings=False,
     ):
         self.min_mcap = min_mcap
         self.max_mcap = max_mcap
@@ -145,6 +146,7 @@ class BottomHunter:
         self.adtv_min_cr = adtv_min_cr
         self.lookback_days = lookback_days
         self.timeframe = timeframe if timeframe in ("daily", "weekly") else "daily"
+        self.restrict_to_holdings = bool(restrict_to_holdings)
 
     def _db_path(self, key: str) -> str:
         return os.path.join(DB_DIR, LibrarianCore.DB_MAP[key])
@@ -170,6 +172,26 @@ class BottomHunter:
                 """,
                 (self.min_mcap, self.max_mcap),
             ).fetchall()
+
+        if self.restrict_to_holdings:
+            from myra_app.utils.fund_utils import get_holding_symbols
+
+            holdings = get_holding_symbols()
+            if not holdings:
+                logger.warning(
+                    "restrict_to_holdings=True but no holding data — "
+                    "falling back to full universe (%d symbols)",
+                    len(rows),
+                )
+            else:
+                before = len(rows)
+                rows = [r for r in rows if r[0].strip() in holdings]
+                logger.info(
+                    "Holdings filter: %d → %d symbols (latest month)",
+                    before,
+                    len(rows),
+                )
+
         return rows
 
     def _get_tech_data(
@@ -532,17 +554,14 @@ class BottomHunter:
             candidate_df["_ph"] = _ph
             candidate_df["_inv_pe"] = _inv_pe
 
-            nm_rank = (
-                pd.to_numeric(candidate_df["_nm"], errors="coerce")
-                .rank(pct=True, ascending=True)
+            nm_rank = pd.to_numeric(candidate_df["_nm"], errors="coerce").rank(
+                pct=True, ascending=True
             )
-            ph_rank = (
-                pd.to_numeric(candidate_df["_ph"], errors="coerce")
-                .rank(pct=True, ascending=True)
+            ph_rank = pd.to_numeric(candidate_df["_ph"], errors="coerce").rank(
+                pct=True, ascending=True
             )
-            pe_rank = (
-                pd.to_numeric(candidate_df["_inv_pe"], errors="coerce")
-                .rank(pct=True, ascending=True)
+            pe_rank = pd.to_numeric(candidate_df["_inv_pe"], errors="coerce").rank(
+                pct=True, ascending=True
             )
 
             nm_valid = candidate_df["_nm"].notna()

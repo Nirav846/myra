@@ -21,7 +21,11 @@ from pathlib import Path
 from fastapi import APIRouter, Body, HTTPException
 
 from myra_app.constants import MODELS_DIR
-from myra_web.utils import _apply_tier_rank, _df_to_safe_records, _get_latest_trading_day_before
+from myra_web.utils import (
+    _apply_tier_rank,
+    _df_to_safe_records,
+    _get_latest_trading_day_before,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["scanners"])
@@ -224,6 +228,7 @@ def register_scanner(
 # Standard scanner registrations
 # ---------------------------------------------------------------------------
 
+
 # --- Invisible Hand ---
 def _ih_parse(payload: dict):
     min_mcap = int(payload.get("min_mcap", 200))
@@ -231,7 +236,9 @@ def _ih_parse(payload: dict):
     window = int(payload.get("window", 20))
     hist_window = int(payload.get("hist_window", 60))
     min_ih_score = int(payload.get("min_ih_score", 35))
-    corporate_actions_exclude_days = int(payload.get("corporate_actions_exclude_days", 0))
+    corporate_actions_exclude_days = int(
+        payload.get("corporate_actions_exclude_days", 0)
+    )
     raw_date = payload.get("scan_date", "")
     if raw_date and str(raw_date).strip():
         effective_date = _get_latest_trading_day_before(str(raw_date).strip())
@@ -278,6 +285,7 @@ register_scanner(
     status_extra="bear_market",
     label="Invisible Hand",
 )
+
 
 # --- The Trigger ---
 def _trigger_parse(payload: dict):
@@ -330,6 +338,7 @@ register_scanner(
     label="Trigger",
 )
 
+
 # --- Liquidity Flip Detector ---
 def _lf_parse(payload: dict):
     min_mcap = int(payload.get("min_mcap", 200))
@@ -379,6 +388,7 @@ register_scanner(
     label="Liquidity Flip",
 )
 
+
 # --- DCB Bargain ---
 def _dcb_parse(payload: dict):
     min_mcap = int(payload.get("min_mcap", 200))
@@ -397,7 +407,10 @@ def _dcb_parse(payload: dict):
         )
     min_ff_mcap = float(payload.get("min_ff_mcap", 600.0))
     exclude_circuits = bool(payload.get("exclude_circuits", True))
-    corporate_actions_exclude_days = int(payload.get("corporate_actions_exclude_days", 0))
+    corporate_actions_exclude_days = int(
+        payload.get("corporate_actions_exclude_days", 0)
+    )
+    restrict_to_holdings = bool(payload.get("restrict_to_holdings", False))
     # Traction filter params (off by default for DCB — traction used as sort/highlight, not gate)
     min_traction_score = float(payload.get("min_traction_score", 0.0))
     traction_window = int(payload.get("traction_window", 1))
@@ -422,6 +435,7 @@ def _dcb_parse(payload: dict):
             "min_ff_mcap": min_ff_mcap,
             "exclude_circuits": exclude_circuits,
             "corporate_actions_exclude_days": corporate_actions_exclude_days,
+            "restrict_to_holdings": restrict_to_holdings,
             "min_traction_score": min_traction_score,
             "traction_window": traction_window,
             "traction_aggregation": traction_aggregation,
@@ -435,7 +449,9 @@ def _dcb_build(kwargs, scan_date):
 
     exclude_circuits = kwargs.pop("exclude_circuits")
     ca_exclude_days = kwargs.pop("corporate_actions_exclude_days", 0)
-    scanner = DCBBargainScanner(**kwargs, corporate_actions_exclude_days=ca_exclude_days)
+    scanner = DCBBargainScanner(
+        **kwargs, corporate_actions_exclude_days=ca_exclude_days
+    )
     scanner._exclude_circuits = exclude_circuits
     return scanner
 
@@ -516,6 +532,7 @@ def _smb_parse(payload: dict):
 
 def _smb_build(kwargs, scan_date):
     from myra_app.strategies.smart_money_bargain import SmartMoneyBargainScanner
+
     exclude_circuits = kwargs.pop("exclude_circuits")
     ca_exclude_days = kwargs.pop("corporate_actions_exclude_days", 0)
     min_traction = kwargs.pop("min_traction_score", 30.0)
@@ -602,6 +619,7 @@ register_scanner(
     label="Operator Fingerprint",
 )
 
+
 # --- Float Exhaustion ---
 def _fe_parse(payload: dict):
     min_mcap = int(payload.get("min_mcap", 200))
@@ -641,6 +659,7 @@ register_scanner(
     status_extra="bear_market",
     label="Float Exhaustion",
 )
+
 
 # --- Seasonal Delivery Harvester ---
 def _sd_parse(payload: dict):
@@ -693,6 +712,7 @@ register_scanner(
     label="Seasonal Delivery",
 )
 
+
 # --- Darvas Box Pro ---
 def _darvas_parse(payload: dict):
     lookback = int(payload.get("lookback", 120))
@@ -736,6 +756,7 @@ register_scanner(
     label="Darvas Box",
 )
 
+
 # --- Wyckoff Automaton ---
 def _wy_parse(payload: dict):
     min_mcap = int(payload.get("min_mcap", 200))
@@ -774,6 +795,7 @@ register_scanner(
     label="Wyckoff",
 )
 
+
 # --- Bottom Hunter ---
 def _bh_parse(payload: dict):
     min_mcap = int(payload.get("min_mcap", 200))
@@ -784,6 +806,7 @@ def _bh_parse(payload: dict):
     timeframe = str(payload.get("timeframe", "daily")).strip().lower()
     if timeframe not in ("daily", "weekly"):
         timeframe = "daily"
+    restrict_to_holdings = bool(payload.get("restrict_to_holdings", False))
     raw_date = payload.get("scan_date", "")
     if raw_date and str(raw_date).strip():
         scan_date = _get_latest_trading_day_before(str(raw_date).strip())
@@ -797,6 +820,7 @@ def _bh_parse(payload: dict):
             "adtv_min_cr": adtv_min_cr,
             "lookback_days": lookback_days,
             "timeframe": timeframe,
+            "restrict_to_holdings": restrict_to_holdings,
         },
         scan_date,
     )
@@ -826,6 +850,7 @@ register_scanner(
     init_message="Initializing scanner...",
     label="Bottom Hunter",
 )
+
 
 # --- Climax Accumulation ---
 def _climax_parse(payload: dict):
@@ -898,7 +923,9 @@ def _dd_parse(payload: dict):
 
 
 def _dd_build(kwargs, scan_date):
-    from myra_app.strategies.delivery_divergence_scanner import DeliveryDivergenceScanner
+    from myra_app.strategies.delivery_divergence_scanner import (
+        DeliveryDivergenceScanner,
+    )
 
     return DeliveryDivergenceScanner(**kwargs)
 
@@ -936,9 +963,21 @@ async def delivery_divergence_defaults():
         "min_abs_delivery_pct": 0.0,
         "min_adtv_cr": 0.0,
         "horizon_presets": {
-            "60d": {"price_lookback": 20, "delivery_period": 10, "delivery_threshold": 1.0},
-            "120d": {"price_lookback": 10, "delivery_period": 5, "delivery_threshold": 0.0},
-            "180d": {"price_lookback": 10, "delivery_period": 5, "delivery_threshold": 1.0},
+            "60d": {
+                "price_lookback": 20,
+                "delivery_period": 10,
+                "delivery_threshold": 1.0,
+            },
+            "120d": {
+                "price_lookback": 10,
+                "delivery_period": 5,
+                "delivery_threshold": 0.0,
+            },
+            "180d": {
+                "price_lookback": 10,
+                "delivery_period": 5,
+                "delivery_threshold": 1.0,
+            },
         },
     }
 
@@ -1113,7 +1152,10 @@ async def launchpad_scan(payload: dict = Body(default={})):
         except Exception as e:
             logger.error("Launchpad scan failed: %s", e, exc_info=True)
             _launchpad_scan_state.update(
-                {"scan_status": "error", "message": "Scan failed. Check server logs for details."}
+                {
+                    "scan_status": "error",
+                    "message": "Scan failed. Check server logs for details.",
+                }
             )
 
     threading.Thread(target=_run, daemon=True).start()
@@ -1188,16 +1230,12 @@ async def multibagger_scan(payload: dict = Body(default={})):
             val_conn2 = sqlite3.connect(val_path)
             funda_cols = [
                 c[0]
-                for c in val_conn2.execute(
-                    "PRAGMA table_info(fundamentals)"
-                ).fetchall()
+                for c in val_conn2.execute("PRAGMA table_info(fundamentals)").fetchall()
             ]
 
             for i, sym in enumerate(symbols):
                 if i % 50 == 0:
-                    _multibagger_result["message"] = (
-                        f"Scanning {i+1}/{len(symbols)}..."
-                    )
+                    _multibagger_result["message"] = f"Scanning {i+1}/{len(symbols)}..."
 
                 df = pd.read_sql(
                     f"SELECT date, open, high, low, close, volume FROM technical_data WHERE symbol=? AND date >= date('now','-{lookback+30} days') ORDER BY date",
@@ -1284,7 +1322,9 @@ async def clear_scanner_cache(scanner_name: str):
         raise HTTPException(status_code=400, detail="Unknown scanner")
 
     # Sanitise scanner_name to prevent path traversal (CodeQL)
-    safe_stem = "".join(c for c in scanner_name.replace("-", "_") if c.isalnum() or c == "_")
+    safe_stem = "".join(
+        c for c in scanner_name.replace("-", "_") if c.isalnum() or c == "_"
+    )
     cache_path = (Path(MODELS_DIR) / f"{safe_stem}_cache.json").resolve()
     # Ensure resolved path stays within MODELS_DIR
     if not str(cache_path).startswith(str(Path(MODELS_DIR).resolve())):

@@ -44,6 +44,7 @@ class DCBBargainScanner:
         min_traction_score=0.0,
         traction_window=1,
         traction_aggregation="latest",
+        restrict_to_holdings=False,
     ):
         self.min_mcap = min_mcap
         self.max_mcap = max_mcap
@@ -65,6 +66,7 @@ class DCBBargainScanner:
                 f"got {traction_aggregation!r}"
             )
         self.traction_aggregation = traction_aggregation
+        self.restrict_to_holdings = bool(restrict_to_holdings)
 
     def _db_path(self, key: str) -> str:
         return os.path.join(DB_DIR, LibrarianCore.DB_MAP[key])
@@ -90,6 +92,26 @@ class DCBBargainScanner:
                 """,
                 (self.min_mcap, self.max_mcap),
             ).fetchall()
+
+        if self.restrict_to_holdings:
+            from myra_app.utils.fund_utils import get_holding_symbols
+
+            holdings = get_holding_symbols()
+            if not holdings:
+                logger.warning(
+                    "restrict_to_holdings=True but no holding data — "
+                    "falling back to full universe (%d symbols)",
+                    len(rows),
+                )
+            else:
+                before = len(rows)
+                rows = [r for r in rows if r[0].strip() in holdings]
+                logger.info(
+                    "Holdings filter: %d → %d symbols (latest month)",
+                    before,
+                    len(rows),
+                )
+
         return rows
 
     def _get_tech_data(
@@ -220,7 +242,9 @@ class DCBBargainScanner:
         percentile-based assignment."""
         if score >= 20:  # TODO: validate with backtest — unvalidated fallback threshold
             return "HIGH"
-        elif score >= 10:  # TODO: validate with backtest — unvalidated fallback threshold
+        elif (
+            score >= 10
+        ):  # TODO: validate with backtest — unvalidated fallback threshold
             return "MOD"
         return "LOW"
 
@@ -263,7 +287,9 @@ class DCBBargainScanner:
         prev_close = float(prev["close"])
         # Close pinned at the low (within 1%) AND dropped 5%+ from previous close
         is_pinned = close <= low * 1.01
-        is_significant_drop = close < prev_close * 0.95  # TODO: validate with backtest — 5% is a heuristic; actual circuit bands vary by stock
+        is_significant_drop = (
+            close < prev_close * 0.95
+        )  # TODO: validate with backtest — 5% is a heuristic; actual circuit bands vary by stock
         return is_pinned and is_significant_drop
 
     @staticmethod
@@ -317,7 +343,9 @@ class DCBBargainScanner:
                 if pre_start < first_idx
                 else 0.0
             )
-            is_circuit_lock = avg_pre_vol > 0 and avg_circuit_vol < 0.2 * avg_pre_vol  # noqa: PG-NPLUS1 — same 20% heuristic as _is_likely_circuit_lock
+            is_circuit_lock = (
+                avg_pre_vol > 0 and avg_circuit_vol < 0.2 * avg_pre_vol
+            )  # noqa: PG-NPLUS1 — same 20% heuristic as _is_likely_circuit_lock
 
         return is_lower_today, circuit_days_last_5, circuit_streak, is_circuit_lock
 
@@ -347,7 +375,9 @@ class DCBBargainScanner:
             low_i = lows[i]
             prev_close_i = closes[i - 1]
             is_pinned = close_i <= low_i * 1.01
-            is_drop = close_i < prev_close_i * 0.95  # TODO: validate with backtest — same 5% heuristic as _is_lower_circuit
+            is_drop = (
+                close_i < prev_close_i * 0.95
+            )  # TODO: validate with backtest — same 5% heuristic as _is_lower_circuit
             if is_pinned and is_drop:
                 streak += 1
                 i -= 1
@@ -363,7 +393,9 @@ class DCBBargainScanner:
         avg_pre_vol = (
             float(volumes[pre_start:first_idx].mean()) if pre_start < first_idx else 0.0
         )
-        return avg_pre_vol > 0 and avg_circuit_vol < 0.2 * avg_pre_vol  # TODO: validate with backtest — 20% volume collapse threshold
+        return (
+            avg_pre_vol > 0 and avg_circuit_vol < 0.2 * avg_pre_vol
+        )  # TODO: validate with backtest — 20% volume collapse threshold
 
     @staticmethod
     def _check_spike_deep(df_daily: pd.DataFrame, discount_pct: float) -> bool:
@@ -378,14 +410,18 @@ class DCBBargainScanner:
         if pd.isna(del_avg) or del_avg <= 0:
             return False
         last = df_daily.iloc[-1]
-        if last["delivery_pct"] < 1.3 * del_avg:  # TODO: validate with backtest — 1.3x delivery spike threshold
+        if (
+            last["delivery_pct"] < 1.3 * del_avg
+        ):  # TODO: validate with backtest — 1.3x delivery spike threshold
             return False
         high, low, close = float(last["high"]), float(last["low"]), float(last["close"])
         if high == low:
             clr = 1.0 if close == high else 0.0
         else:
             clr = (close - low) / (high - low)
-        return clr >= 0.6 and discount_pct > 20  # TODO: validate with backtest — 0.6 close location, 20% discount threshold
+        return (
+            clr >= 0.6 and discount_pct > 20
+        )  # TODO: validate with backtest — 0.6 close location, 20% discount threshold
 
     def _compute_depth_history(self, df_daily: pd.DataFrame) -> dict:
         """Compute 1-year DCB discount range from historical cutoffs.
@@ -616,12 +652,17 @@ class DCBBargainScanner:
                 spike_deep = self._check_spike_deep(df, discount_pct)
 
                 # Score (tier assigned after pool pass)
-                score = discount_pct * 0.6 + del_abs * 0.4  # TODO: validate with backtest — 60/40 weighting is unvalidated
+                score = (
+                    discount_pct * 0.6 + del_abs * 0.4
+                )  # TODO: validate with backtest — 60/40 weighting is unvalidated
 
                 # Lower-circuit detection (vectorised — no per-row loop)
-                is_lower_circuit, circuit_days_last_5, circuit_streak, is_circuit_lock = (
-                    self._compute_circuit_indicators(df)
-                )
+                (
+                    is_lower_circuit,
+                    circuit_days_last_5,
+                    circuit_streak,
+                    is_circuit_lock,
+                ) = self._compute_circuit_indicators(df)
 
                 candidates.append(  # noqa: PG-APPEND
                     {
@@ -705,10 +746,16 @@ class DCBBargainScanner:
 
         if self.min_traction_score > 0:
             before = len(candidates)
-            candidates = [c for c in candidates if (c.get("traction_aggregated") or 0) >= self.min_traction_score]
+            candidates = [
+                c
+                for c in candidates
+                if (c.get("traction_aggregated") or 0) >= self.min_traction_score
+            ]
             logger.info(
                 "DCB traction filter: %d → %d candidates (threshold %.1f)",
-                before, len(candidates), self.min_traction_score,
+                before,
+                len(candidates),
+                self.min_traction_score,
             )
 
         return pd.DataFrame(candidates)
@@ -736,9 +783,7 @@ class DCBBargainScanner:
             return None
         try:
             with sqlite3.connect(val_db) as conn:
-                row = conn.execute(
-                    "SELECT MAX(month) FROM fund_traction"
-                ).fetchone()
+                row = conn.execute("SELECT MAX(month) FROM fund_traction").fetchone()
                 return row[0] if row and row[0] else None
         except sqlite3.OperationalError:
             return None
@@ -751,11 +796,9 @@ class DCBBargainScanner:
         if not latest_month:
             latest_month = all_months[-1]
         eligible = [m for m in all_months if m <= latest_month]
-        return eligible[-self.traction_window:]
+        return eligible[-self.traction_window :]
 
-    def _get_traction_data_multi(
-        self, months: list[str]
-    ) -> dict[str, list[dict]]:
+    def _get_traction_data_multi(self, months: list[str]) -> dict[str, list[dict]]:
         """Return {symbol: [{month, traction_score, ...}, ...]} for all rows
         across the given months, sorted by month ascending per symbol."""
         if not months:
@@ -847,7 +890,9 @@ class DCBBargainScanner:
         window_months = self._get_traction_months(latest_month)
         logger.info(
             "DCB traction enrich: latest_month=%s window=%d months=%s method=%s",
-            latest_month, self.traction_window, window_months,
+            latest_month,
+            self.traction_window,
+            window_months,
             self.traction_aggregation,
         )
 
@@ -874,10 +919,16 @@ class DCBBargainScanner:
             if agg_score is not None:
                 enriched += 1
 
-        logger.info("DCB traction enrich: %d/%d candidates have traction data", enriched, len(candidates))
+        logger.info(
+            "DCB traction enrich: %d/%d candidates have traction data",
+            enriched,
+            len(candidates),
+        )
         return candidates
 
-    def _filter_corporate_actions(self, candidates: list[dict], as_on_date: str) -> list[dict]:
+    def _filter_corporate_actions(
+        self, candidates: list[dict], as_on_date: str
+    ) -> list[dict]:
         """Remove symbols with bonus/split/rights in the last N days.
 
         Performs case-insensitive matching on action_type to handle
@@ -889,13 +940,21 @@ class DCBBargainScanner:
             inst_db = self._db_path("institutional")
             if not os.path.exists(inst_db):
                 return candidates
-            cutoff_dt = pd.Timestamp(as_on_date) - pd.Timedelta(days=self.corporate_actions_exclude_days)
+            cutoff_dt = pd.Timestamp(as_on_date) - pd.Timedelta(
+                days=self.corporate_actions_exclude_days
+            )
             cutoff = f"{cutoff_dt:%Y-%m-%d}"
             syms = [c["symbol"] for c in candidates]
             placeholders = ",".join("?" for _ in syms)
             # Filter list — lowercase for case-insensitive matching
-            exclude_types = {"bonus", "split", "rights", "bonus issue",
-                             "stock split", "rights issue"}
+            exclude_types = {
+                "bonus",
+                "split",
+                "rights",
+                "bonus issue",
+                "stock split",
+                "rights issue",
+            }
             with sqlite3.connect(inst_db) as conn:
                 rows = conn.execute(
                     f"""
@@ -914,10 +973,13 @@ class DCBBargainScanner:
                     logger.warning(
                         "CA filter: unrecognised action_type '%s' for %s — "
                         "not excluded (add to filter list if needed)",
-                        action_type, symbol,
+                        action_type,
+                        symbol,
                     )
             if excluded:
-                logger.info("CA filter: excluding %d symbols with recent actions", len(excluded))
+                logger.info(
+                    "CA filter: excluding %d symbols with recent actions", len(excluded)
+                )
             return [c for c in candidates if c["symbol"] not in excluded]
         except Exception as e:
             logger.warning("CA filter failed: %s", e)

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { Box, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ChevronRight, ArrowUpDown, Star, Info, Target, BookOpen } from 'lucide-react';
+import { Box, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ChevronRight, ArrowUpDown, Star, Info, Target, BookOpen, Building2 } from 'lucide-react';
 import FundTractionButton from '../components/FundTractionButton';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
@@ -89,6 +89,7 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
 
   const [scanDate, setScanDate] = useState('');
   const [timeframe, setTimeframe] = useState<'daily' | 'weekly'>('daily');
+  const [restrictToHoldings, setRestrictToHoldings] = useState(false);
 
   const [sortCol, setSortCol] = useState<string>('score');
   const [sortAsc, setSortAsc] = useState(false);
@@ -188,6 +189,7 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
           min_mcap: mcapRange?.min ?? 200,
           max_mcap: mcapRange?.max ?? 50000,
           timeframe,
+          restrict_to_holdings: restrictToHoldings,
           ...(scanDate.trim() && { scan_date: scanDate }),
         }),
       });
@@ -206,7 +208,7 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
         setIsScanning(false);
       }
     }
-  }, [fetchScanStatus, clearPolling, mcapRange, scanDate, timeframe]);
+  }, [fetchScanStatus, clearPolling, mcapRange, scanDate, timeframe, restrictToHoldings]);
   startScanRef.current = startScan;
 
   useEffect(() => {
@@ -413,6 +415,22 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
           >
             <Star size={11} fill={watchlistOnly ? 'currentColor' : 'none'} aria-hidden="true" />
             Only Starred
+          </button>
+        </div>
+        <div className="flex flex-col gap-1">
+          <div className="text-[12px] text-[#888] font-mono">Holdings</div>
+          <button
+            onClick={() => setRestrictToHoldings(o => !o)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[12px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 ${
+              restrictToHoldings
+                ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+                : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-emerald-400'
+            }`}
+            aria-label={restrictToHoldings ? 'Show all symbols' : 'Restrict to stocks held by mutual funds'}
+            aria-pressed={restrictToHoldings}
+          >
+            <Building2 size={11} aria-hidden="true" />
+            MF-held only
           </button>
         </div>
         <div className="flex flex-col gap-1">

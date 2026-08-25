@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ChevronRight, ArrowUpDown, Star, Info, Target, Settings2 } from 'lucide-react';
+import { Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ChevronRight, ArrowUpDown, Star, Info, Target, Settings2, Building2 } from 'lucide-react';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import FundTractionButton from '../components/FundTractionButton';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
@@ -115,6 +115,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
   const [sectorFilter, setSectorFilter] = useState<string>('All');
   const [scanDate, setScanDate] = useState('');
   const [timeframe, setTimeframe] = useState<'daily' | 'weekly'>('daily');
+  const [restrictToHoldings, setRestrictToHoldings] = useState(false);
 
   const [dcbWindow, setDcbWindow] = useState(120);
   const [minDiscountPct, setMinDiscountPct] = useState(ADVANCED_DEFAULTS.min_discount_pct);
@@ -252,6 +253,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
           exclude_circuits: excludeCircuits,
           corporate_actions_exclude_days: caExcludeEnabled ? caExcludeDays : 0,
           min_traction_score: 0,
+          restrict_to_holdings: restrictToHoldings,
           traction_window: tractionWindow,
           traction_aggregation: tractionAggregation,
           ...(scanDate.trim() && { scan_date: scanDate }),
@@ -272,7 +274,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
         setIsScanning(false);
       }
     }
-  }, [fetchScanStatus, clearPolling, mcapRange, scanDate, dcbWindow, minDiscountPct, maxDiscountPct, minDelAbs, minAdtvCr, minHighDelDays, sanityMult, timeframe, minFfMcap, excludeCircuits, caExcludeEnabled, caExcludeDays, tractionWindow, tractionAggregation]);
+  }, [fetchScanStatus, clearPolling, mcapRange, scanDate, dcbWindow, minDiscountPct, maxDiscountPct, minDelAbs, minAdtvCr, minHighDelDays, sanityMult, timeframe, minFfMcap, excludeCircuits, caExcludeEnabled, caExcludeDays, tractionWindow, tractionAggregation, restrictToHoldings]);
   startScanRef.current = startScan;
 
   useEffect(() => {
@@ -487,6 +489,22 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
             >
               <Star size={11} fill={watchlistOnly ? 'currentColor' : 'none'} aria-hidden="true" />
               Only Starred
+            </button>
+          </div>
+          <div className="flex flex-col gap-1">
+            <div className="text-[12px] text-[#888] font-mono">Holdings</div>
+            <button
+              onClick={() => setRestrictToHoldings(o => !o)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[12px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 ${
+                restrictToHoldings
+                  ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+                  : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-emerald-400'
+              }`}
+              aria-label={restrictToHoldings ? 'Show all symbols' : 'Restrict to stocks held by mutual funds'}
+              aria-pressed={restrictToHoldings}
+            >
+              <Building2 size={11} aria-hidden="true" />
+              MF-held only
             </button>
           </div>
           <div className="flex flex-col gap-1">
