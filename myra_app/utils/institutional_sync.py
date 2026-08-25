@@ -323,6 +323,16 @@ class InstitutionalSync:
             logger.info("Bulk deals: no new data to fetch (already up to date)")
             return 0
 
+        # nselib rejects single-day windows ("to_date should greater than
+        # from_date"); widen to >= 2 days. INSERT OR IGNORE makes any
+        # overlap with already-fetched rows safe.
+        if (to_date - from_date).days < 2:
+            from_date = to_date - timedelta(days=2)
+            logger.info(
+                "Bulk deals: adjusted date range to 2 days: "
+                f"from {from_date:%d-%m-%Y} to {to_date:%d-%m-%Y}"
+            )
+
         try:
             from nselib import capital_market
 
@@ -368,6 +378,16 @@ class InstitutionalSync:
         if from_date > to_date:
             logger.info("Block deals: no new data to fetch (already up to date)")
             return 0
+
+        # nselib rejects single-day windows ("to_date should greater than
+        # from_date"); widen to >= 2 days. INSERT OR IGNORE makes any
+        # overlap with already-fetched rows safe.
+        if (to_date - from_date).days < 2:
+            from_date = to_date - timedelta(days=2)
+            logger.info(
+                "Block deals: adjusted date range to 2 days: "
+                f"from {from_date:%d-%m-%Y} to {to_date:%d-%m-%Y}"
+            )
 
         try:
             from nselib import capital_market
