@@ -17,6 +17,37 @@ logger = logging.getLogger(__name__)
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
+
+def _parse_deal_number(raw, kind: str, symbol: str, as_int: bool = False):
+    """
+    Clean an nselib numeric field into a number.
+
+    NSE returns quantity/price as display strings with Indian-digit grouping
+    (e.g. "1,00,000"), plain strings ("1250.50"), numpy scalars, NaN for empty
+    cells, or None. Multiplying raw values raises
+    ``TypeError: can't multiply sequence by non-int of type 'str'``.
+
+    Returns int/float, or 0 with a warning (including symbol + raw value)
+    when the value cannot be parsed or is not finite.
+    """
+    import math
+
+    text = str(raw).replace(",", "").strip() if raw is not None else ""
+    try:
+        value = float(text) if text else 0.0
+        if not math.isfinite(value):
+            raise ValueError(f"non-finite value {raw!r}")
+        return int(value) if as_int else value
+    except (ValueError, TypeError):
+        logger.warning(
+            "[InstitutionalSync] Unparseable %s for %s: %r — using 0",
+            kind,
+            symbol,
+            raw,
+        )
+        return 0
+
+
 PROJECT_ROOT = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
@@ -236,18 +267,34 @@ class InstitutionalSync:
 
                 client = str(row.get("ClientName", "")).strip()
                 buy_sell = str(row.get("Buy/Sell", "")).strip()
-                qty = row.get("QuantityTraded", 0)
-                price = row.get("TradePrice/Wght.Avg.Price", 0)
+                # nselib delivers quantity/price as strings ("1,00,000") —
+                # clean to numbers before the trade_value multiplication.
+                qty = _parse_deal_number(
+                    row.get("QuantityTraded", 0), "quantity", symbol, as_int=True
+                )
+                price = _parse_deal_number(
+                    row.get("TradePrice/Wght.Avg.Price", 0), "price", symbol
+                )
 
                 if not symbol or not deal_date:
                     continue
+
+                trade_value = round(qty * price / 10000000, 2) if qty and price else 0
 
                 conn.execute(  # noqa: PG-NPLUS1
                     f"""INSERT OR IGNORE INTO {table}
                      (symbol, date, security_name, client_name, buy_sell, quantity, price, trade_value)
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (symbol, deal_date, str(row.get("SecurityName", "")), client, buy_sell,
-                     qty, price, round(qty * price / 10000000, 2) if qty and price else 0),
+                    (
+                        symbol,
+                        deal_date,
+                        str(row.get("SecurityName", "")),
+                        client,
+                        buy_sell,
+                        qty,
+                        price,
+                        trade_value,
+                    ),
                 )
                 inserted += 1
             conn.commit()
@@ -268,7 +315,9 @@ class InstitutionalSync:
         else:
             from_date = date(2020, 1, 1)  # default: fetch from 2020
 
-        to_date = today - timedelta(days=1)  # yesterday (today's data may not be available)
+        to_date = today - timedelta(
+            days=1
+        )  # yesterday (today's data may not be available)
 
         if from_date > to_date:
             logger.info("Bulk deals: no new data to fetch (already up to date)")
@@ -276,6 +325,7 @@ class InstitutionalSync:
 
         try:
             from nselib import capital_market
+
             # nselib expects dd-mm-YYYY format
             df = capital_market.bulk_deal_data(
                 from_date=f"{from_date:%d-%m-%Y}",
@@ -293,7 +343,9 @@ class InstitutionalSync:
         inserted = self._upsert_deals("bulk_deals", df, from_date, to_date)
 
         self._set_last_sync_date("bulk_deals", to_date.isoformat())
-        logger.info(f"Bulk deals: inserted {inserted} rows (from {from_date} to {to_date})")
+        logger.info(
+            f"Bulk deals: inserted {inserted} rows (from {from_date} to {to_date})"
+        )
         return inserted
 
     def sync_block_deals(self) -> int:
@@ -309,7 +361,9 @@ class InstitutionalSync:
         else:
             from_date = date(2020, 1, 1)  # default: fetch from 2020
 
-        to_date = today - timedelta(days=1)  # yesterday (today's data may not be available)
+        to_date = today - timedelta(
+            days=1
+        )  # yesterday (today's data may not be available)
 
         if from_date > to_date:
             logger.info("Block deals: no new data to fetch (already up to date)")
@@ -317,6 +371,7 @@ class InstitutionalSync:
 
         try:
             from nselib import capital_market
+
             # nselib expects dd-mm-YYYY format; function is block_deals_data (plural)
             df = capital_market.block_deals_data(
                 from_date=f"{from_date:%d-%m-%Y}",
@@ -334,7 +389,9 @@ class InstitutionalSync:
         inserted = self._upsert_deals("block_deals", df, from_date, to_date)
 
         self._set_last_sync_date("block_deals", to_date.isoformat())
-        logger.info(f"Block deals: inserted {inserted} rows (from {from_date} to {to_date})")
+        logger.info(
+            f"Block deals: inserted {inserted} rows (from {from_date} to {to_date})"
+        )
         return inserted
 
     def sync_insider_trades(self):
