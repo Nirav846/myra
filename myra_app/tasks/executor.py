@@ -57,7 +57,14 @@ def _execute_once(name: str, spec: TaskSpec, fn, ctx: TaskContext) -> None:
             _mark_task_run(spec.label)
     else:
         if spec.mark_on_success and not ctx.shutdown_event.is_set():
+            logger.info(f"[MYRA BG] Task {name}: marking as run (mark_on_success=True)")
             _mark_task_run(spec.label)
+        else:
+            logger.debug(
+                f"[MYRA BG] Task {name}: not marking "
+                f"(mark_on_success={spec.mark_on_success}, "
+                f"shutdown={ctx.shutdown_event.is_set()})"
+            )
 
 
 def run_periodic(task_name: str, spec: TaskSpec, ctx: TaskContext) -> None:

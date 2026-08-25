@@ -54,6 +54,13 @@ def run_daily(ctx: TaskContext):
 
     ist_now = now_ist()
     if ist_now.weekday() >= 5 or ist_now.hour < 18:
+        _mark_task_run("fundamentals_daily")
+        logger.debug(
+            "[MYRA BG] Fundamentals daily: off-hours (weekday=%s, hour=%s) — "
+            "marked as run to avoid retry loop",
+            ist_now.weekday(),
+            ist_now.hour,
+        )
         return
 
     tid = register("Fundamentals daily", task_type="one-shot")
