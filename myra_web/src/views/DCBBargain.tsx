@@ -149,6 +149,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
 
   const mountedRef = useRef(true);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const clearCacheTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startScanRef = useRef<(() => void) | null>(null);
 
   const candidates = scanStatus?.candidates ?? [];
@@ -298,15 +299,23 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
     return () => {
       mountedRef.current = false;
       clearPolling();
+      if (clearCacheTimerRef.current) {
+        clearTimeout(clearCacheTimerRef.current);
+        clearCacheTimerRef.current = null;
+      }
     };
   }, [fetchScanStatus, clearPolling]);
 
   const isStale = scanStatus?.last_scan && (Date.now() - new Date(scanStatus.last_scan).getTime() > 30 * 60 * 1000);
 
   const clearCacheOnParamChange = useCallback(() => {
-    if (scanStatus?.scan_status === 'completed') {
+    if (scanStatus?.scan_status !== 'completed') return;
+    // Debounced: one DELETE 500ms after the LAST param change instead of one
+    // request per keystroke/toggle.
+    if (clearCacheTimerRef.current) clearTimeout(clearCacheTimerRef.current);
+    clearCacheTimerRef.current = setTimeout(() => {
       fetch(`${API_BASE}/cache/dcb-bargain`, { method: 'DELETE' }).catch(() => {});
-    }
+    }, 500);
   }, [scanStatus?.scan_status]);
 
   const resetAdvanced = () => {
@@ -324,7 +333,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
     setTractionAggregation('latest');
   };
 
-  const handleCSV = () => {
+  const handleCSV = useCallback(() => {
     if (filteredData.length === 0) return;
     const headers = [
       'Symbol', 'Sector', 'Close', 'DCB', 'Discount%', 'DCBRange',
@@ -354,8 +363,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
     a.download = `dcb_bargain_${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  };
-;
+  }, [filteredData]);
 
   const progressPct = scanStatus?.progress ?? 0;
   const isIdle = scanStatus?.scan_status === 'idle' || !scanStatus;
@@ -401,6 +409,17 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 mr-1" role="group" aria-label="Timeframe">
+            <button onClick={() => { setTimeframe('daily'); clearCacheOnParamChange(); }} aria-pressed={timeframe === 'daily'}
+              className={`px-2 py-1.5 text-[12px] rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50 ${timeframe === 'daily' ? 'bg-blue-600 text-white' : 'bg-[#ffffff0a] text-[#888] hover:text-[#ccc]'}`}>
+              Daily
+            </button>
+            <button onClick={() => { setTimeframe('weekly'); clearCacheOnParamChange(); }} aria-pressed={timeframe === 'weekly'}
+              title="Aggregates daily candles to weekly; delivery absorption still computed on daily price action"
+              className={`px-2 py-1.5 text-[12px] rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50 ${timeframe === 'weekly' ? 'bg-blue-600 text-white' : 'bg-[#ffffff0a] text-[#888] hover:text-[#ccc]'}`}>
+              Weekly
+            </button>
+          </div>
           <HistoricalScanDatePicker selectedDate={scanDate} onSelect={setScanDate} />
           <button
             onClick={startScan}
@@ -426,24 +445,11 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
         </div>
       </header>
 
-      {/* Timeframe toggle */}
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1">
-          <button onClick={() => { setTimeframe('daily'); clearCacheOnParamChange(); }}
-            className={`px-2 py-1 text-[12px] rounded ${timeframe === 'daily' ? 'bg-blue-600 text-white' : 'bg-[#ffffff0a] text-[#888]'}`}>
-            Daily
-          </button>
-          <button onClick={() => { setTimeframe('weekly'); clearCacheOnParamChange(); }}
-            className={`px-2 py-1 text-[12px] rounded ${timeframe === 'weekly' ? 'bg-blue-600 text-white' : 'bg-[#ffffff0a] text-[#888]'}`}>
-            Weekly
-          </button>
+      {timeframe === 'weekly' && (
+        <div className="text-[12px] font-mono text-[#888] px-1" role="note">
+          Weekly mode — aggregates daily candles to weekly. Delivery absorption still computed on daily price action.
         </div>
-        {timeframe === 'weekly' && (
-          <span className="text-[12px] font-mono text-[#888]">
-            Weekly mode — aggregates daily candles to weekly. Delivery absorption still computed on daily price action.
-          </span>
-        )}
-      </div>
+      )}
 
       {/* DCB Parameters */}
       <section className="bg-[#0e1117] border border-[#ffffff1a] rounded p-4 flex flex-col gap-4" aria-label="DCB Parameters">
@@ -510,8 +516,8 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
           </div>
         </div>
 
-        {/* Advanced collapsible */}
-        <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden">
+        {/* Advanced collapsible — mt-1 gives it breathing room vs the flex gap above */}
+        <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden mt-1">
           <button
             onClick={() => setAdvancedOpen(o => !o)}
             className="w-full flex items-center gap-2 px-4 py-2.5 text-xs font-mono text-[#888] hover:text-[#fafafa] transition-colors"
@@ -745,35 +751,35 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
             <span className="ml-2 text-blue-400 capitalize">{timeframe}</span>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
+            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3 flex flex-col gap-1">
               <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Candidates</div>
-              <div className="text-2xl font-bold text-[#fafafa]">{filteredData.length}</div>
+              <div className="text-2xl font-bold text-[#fafafa] leading-tight">{filteredData.length}</div>
             </div>
-            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
+            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3 flex flex-col gap-1">
               <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Avg Discount%</div>
-              <div className="text-2xl font-bold text-emerald-400">
+              <div className="text-2xl font-bold text-emerald-400 leading-tight">
                 {filteredData.length > 0
                   ? (filteredData.reduce((s, d) => s + d.discount_pct, 0) / filteredData.length).toFixed(2) + '%'
                   : '—'}
               </div>
             </div>
-            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
+            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3 flex flex-col gap-1">
               <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Avg DelAbs</div>
-              <div className="text-2xl font-bold text-blue-400">
+              <div className="text-2xl font-bold text-blue-400 leading-tight">
                 {filteredData.length > 0
                   ? (filteredData.reduce((s, d) => s + d.del_abs, 0) / filteredData.length).toFixed(2)
                   : '—'}
               </div>
             </div>
-            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
+            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3 flex flex-col gap-1">
               <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Spike+Deep</div>
-              <div className="text-2xl font-bold text-green-400">
+              <div className="text-2xl font-bold text-green-400 leading-tight">
                 {filteredData.filter(d => d.spike_deep).length}
               </div>
             </div>
-            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3">
+            <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-3 flex flex-col gap-1">
               <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Deep Count</div>
-              <div className="text-2xl font-bold text-red-400">
+              <div className="text-2xl font-bold text-red-400 leading-tight">
                 {filteredData.filter(d => d.depth === 'DEEP').length}
               </div>
             </div>
@@ -802,52 +808,52 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                       Close <SortIcon column="close" />
                     </th>
                     <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('dcb')} scope="col">
-                      <Tooltip content="Delivery Cost Basis — weighted average price at which high-delivery buyers accumulated over the DCB window.">DCB <SortIcon column="dcb" /></Tooltip>
+                      <Tooltip portal content="Delivery Cost Basis — weighted average price at which high-delivery buyers accumulated over the DCB window.">DCB <SortIcon column="dcb" /></Tooltip>
                     </th>
                     <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('discount_pct')} scope="col">
-                      <Tooltip content="Discount % — how far current price is below the DCB. Green ≥20%, Yellow 15–20%, Red <15%.">Discount% <SortIcon column="discount_pct" /></Tooltip>
+                      <Tooltip portal content="Discount % — how far current price is below the DCB. Green ≥20%, Yellow 15–20%, Red <15%.">Discount% <SortIcon column="discount_pct" /></Tooltip>
                     </th>
                     <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('dcb_disc_median')} scope="col">
-                      <Tooltip content="DCB Range — Low / Median / High discount% over the last 60 trading days. Shows where current discount sits in historical context.">DCB Range <SortIcon column="dcb_disc_median" /></Tooltip>
+                      <Tooltip portal content="DCB Range — Low / Median / High discount% over the last 60 trading days. Shows where current discount sits in historical context.">DCB Range <SortIcon column="dcb_disc_median" /></Tooltip>
                     </th>
                     {/* Quality & Signals */}
                     <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('depth')} scope="col">
-                      <Tooltip content="Depth — percentile rank of current discount vs the stock's own history. DEEP (high percentile), MID (mid), SHALLOW (low).">Depth <SortIcon column="depth" /></Tooltip>
+                      <Tooltip portal content="Depth — percentile rank of current discount vs the stock's own history. DEEP (high percentile), MID (mid), SHALLOW (low).">Depth <SortIcon column="depth" /></Tooltip>
                     </th>
                     <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('tier')} scope="col">
-                      <Tooltip content="Tier — relative ranking among current scan candidates. HIGH = top quartile composite score, MOD = middle, LOW = bottom.">Tier <SortIcon column="tier" /></Tooltip>
+                      <Tooltip portal content="Tier — relative ranking among current scan candidates. HIGH = top quartile composite score, MOD = middle, LOW = bottom.">Tier <SortIcon column="tier" /></Tooltip>
                     </th>
                     <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('score')} scope="col" aria-sort={sortCol === 'score' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      <Tooltip content="Composite score combining discount%, delivery absorption, and accumulation strength. Higher = stronger signal.">Score <SortIcon column="score" /></Tooltip>
+                      <Tooltip portal content="Composite score combining discount%, delivery absorption, and accumulation strength. Higher = stronger signal.">Score <SortIcon column="score" /></Tooltip>
                     </th>
                     <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('traction_aggregated')} scope="col" aria-sort={sortCol === 'traction_aggregated' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
-                      <Tooltip content="Aggregated mutual fund traction score. Higher = more fund accumulation. Green ≥30, Yellow 10–29, Red <10.">Traction <SortIcon column="traction_aggregated" /></Tooltip>
+                      <Tooltip portal content="Aggregated mutual fund traction score. Higher = more fund accumulation. Green ≥30, Yellow 10–29, Red <10.">Traction <SortIcon column="traction_aggregated" /></Tooltip>
                     </th>
                     {showExtraCols && (
                       <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('spike_deep')} scope="col">
-                        <Tooltip content="Spike+Deep — today's delivery spike combined with deep discount. Highest-conviction signal when YES.">S+D <SortIcon column="spike_deep" /></Tooltip>
+                        <Tooltip portal content="Spike+Deep — today's delivery spike combined with deep discount. Highest-conviction signal when YES.">S+D <SortIcon column="spike_deep" /></Tooltip>
                       </th>
                     )}
                     {/* Liquidity & Risk */}
                     <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('adtv_cr')} scope="col">
-                      <Tooltip content="Average Daily Traded Value in ₹ Cr over the last 20 trading days.">ADTV <SortIcon column="adtv_cr" /></Tooltip>
+                      <Tooltip portal content="Average Daily Traded Value in ₹ Cr over the last 20 trading days.">ADTV <SortIcon column="adtv_cr" /></Tooltip>
                     </th>
                     <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('free_float_mcap_cr')} scope="col">
-                      <Tooltip content="Free-float market capitalization in ₹ Cr.">FF MCap <SortIcon column="free_float_mcap_cr" /></Tooltip>
+                      <Tooltip portal content="Free-float market capitalization in ₹ Cr.">FF MCap <SortIcon column="free_float_mcap_cr" /></Tooltip>
                     </th>
                     {showExtraCols && (
                       <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('is_lower_circuit')} scope="col">
-                        <Tooltip content="Lower circuit — close pinned at the low with a 5%+ drop. Delivery data may be distorted.">Circuit <SortIcon column="is_lower_circuit" /></Tooltip>
+                        <Tooltip portal content="Lower circuit — close pinned at the low with a 5%+ drop. Delivery data may be distorted.">Circuit <SortIcon column="is_lower_circuit" /></Tooltip>
                       </th>
                     )}
                     {showExtraCols && (
                       <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('circuit_days_last_5')} scope="col">
-                        <Tooltip content="Circuit days in the last 5 trading sessions. ≥3 = sustained circuit lock, caution warranted.">Ckt Days <SortIcon column="circuit_days_last_5" /></Tooltip>
+                        <Tooltip portal content="Circuit days in the last 5 trading sessions. ≥3 = sustained circuit lock, caution warranted.">Ckt Days <SortIcon column="circuit_days_last_5" /></Tooltip>
                       </th>
                     )}
                     {showExtraCols && (
                       <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('del_abs')} scope="col">
-                        <Tooltip content="Delivery Absorption — net institutional buying pressure. Positive = institutions still accumulating.">DelAbs <SortIcon column="del_abs" /></Tooltip>
+                        <Tooltip portal content="Delivery Absorption — net institutional buying pressure. Positive = institutions still accumulating.">DelAbs <SortIcon column="del_abs" /></Tooltip>
                       </th>
                     )}
                   </tr>
