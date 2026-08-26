@@ -70,10 +70,11 @@ export default function ScannerPresetsPanel({ onClose, onLoad }: ScannerPresetsP
                                                     deleteUserPreset(preset.id);
                                                     setRenderTick(t => t+1);
                                                 }}
-                                                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/20 text-red-500 rounded transition-all"
+                                                className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1 hover:bg-red-500/20 text-red-500 rounded transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/50"
                                                 title="Delete Custom Preset"
+                                                aria-label={`Delete custom preset ${preset.name}`}
                                             >
-                                                <Trash2 size={12} />
+                                                <Trash2 size={12} aria-hidden="true" />
                                             </button>
                                         )}
                                     </div>
@@ -86,7 +87,7 @@ export default function ScannerPresetsPanel({ onClose, onLoad }: ScannerPresetsP
                                 <div className="mt-3 flex justify-end">
                                     <button 
                                         onClick={() => onLoad(preset)}
-                                        className="text-xs bg-[#ffffff1a] hover:bg-[#ffffff2a] text-white px-3 py-1.5 rounded transition-colors"
+                                        className="text-xs bg-[#ffffff1a] hover:bg-[#ffffff2a] text-white px-3 py-1.5 rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/50"
                                     >
                                         Load & Run
                                     </button>
