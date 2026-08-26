@@ -67,6 +67,8 @@ export function SavedWorkspaces() {
     <div className="relative" ref={dropdownRef}>
       <button 
         onClick={() => setIsOpen(!isOpen)}
+        aria-expanded={isOpen}
+        aria-label="Toggle Saved Workspaces"
         className="flex items-center gap-1.5 px-2 py-1.5 bg-[#ffffff0a] border border-[#ffffff1a] rounded hover:bg-[#ffffff15] text-[#fafafa] transition-colors text-xs font-mono"
         title="Saved Workspaces"
       >
@@ -81,6 +83,8 @@ export function SavedWorkspaces() {
                <span className="text-[#888] font-semibold uppercase">Saved Layouts</span>
                <button 
                  onClick={() => setIsSaving(!isSaving)}
+                 aria-expanded={isSaving}
+                 aria-label="Save current layout"
                  className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
                >
                   <Save size={12} /> Save
@@ -112,19 +116,26 @@ export function SavedWorkspaces() {
                    <span className="p-4 text-center text-[#888] italic">No saved workspaces</span>
                ) : (
                    workspaces.map(ws => (
-                       <button 
+                       <div
                           key={ws.id}
                           className="flex justify-between items-center px-3 py-2 border-b border-[#ffffff0a] hover:bg-[#ffffff10] text-left transition-colors group"
-                          onClick={() => handleLoad(ws)}
                        >
-                           <span className="truncate pr-2 text-[#ccc] group-hover:text-white">{ws.name}</span>
-                           <div 
+                           <button
+                               className="truncate pr-2 text-[#ccc] group-hover:text-white flex-1 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500 rounded"
+                               onClick={() => handleLoad(ws)}
+                               aria-label={`Load workspace ${ws.name}`}
+                           >
+                               {ws.name}
+                           </button>
+                           <button
+                              type="button"
                               onClick={(e) => handleDelete(ws.id, e)}
-                              className="text-[#888] hover:text-red-400 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                              aria-label={`Delete workspace ${ws.name}`}
+                              className="text-[#888] hover:text-red-400 p-1 opacity-0 group-hover:opacity-100 transition-opacity focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-400 rounded"
                            >
                                <Trash2 size={12} />
-                           </div>
-                       </button>
+                           </button>
+                       </div>
                    ))
                )}
            </div>

@@ -123,7 +123,7 @@ export function SymbolAutocomplete({ value, onSelect, placeholder = 'Search symb
         {loading ? (
           <Loader2 size={12} className="absolute right-2 text-cyan-500 animate-spin pointer-events-none" />
         ) : value && inputValue === value ? (
-          <button onClick={handleClear} className="absolute right-2 text-[#888] hover:text-red-400 transition-colors" title="Clear">
+          <button type="button" onClick={handleClear} className="absolute right-2 text-[#888] hover:text-red-400 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-400 rounded" aria-label="Clear search" title="Clear">
             <X size={12} />
           </button>
         ) : null}
