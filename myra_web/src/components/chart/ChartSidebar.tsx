@@ -41,6 +41,7 @@ export const ChartSidebar: React.FC<ChartSidebarProps> = ({
                 <button 
                     onClick={() => setSidebarOpen(false)} 
                     className="p-1.5 text-gray-400 hover:text-white hover:bg-[#ffffff10] rounded-md transition-colors"
+                    aria-label="Close sidebar"
                 >
                     <PanelLeftClose size={18} />
                 </button>
@@ -97,7 +98,12 @@ export const ChartSidebar: React.FC<ChartSidebarProps> = ({
                                     )}
                                     
                                     {toggle.settingsAction && (
-                                        <button onClick={toggle.settingsAction} className="text-gray-600 hover:text-cyan-500 cursor-pointer transition-colors" title="Settings">
+                                        <button
+                                            onClick={toggle.settingsAction}
+                                            className="text-gray-600 hover:text-cyan-500 cursor-pointer transition-colors"
+                                            title="Settings"
+                                            aria-label={`Settings for ${toggle.label}`}
+                                        >
                                             <Settings2 size={12} />
                                         </button>
                                     )}
