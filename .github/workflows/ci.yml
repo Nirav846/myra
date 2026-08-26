@@ -34,3 +34,45 @@ jobs:
         run: pytest tests/ -v
         env:
           PYTHONPATH: ${{ github.workspace }}
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: myra_web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: myra_web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+# ──────────────────────────────────────────────────────────────
+# External deployment platforms (Vercel / Netlify / Cloudflare)
+# ──────────────────────────────────────────────────────────────
+# If deploying the frontend externally, set the root / base
+# directory to  myra_web  so that Vite can resolve index.html:
+#
+#   Vercel  →  Project Settings > General > Root Directory: myra_web
+#              Build Command:      npm run build
+#              Output Directory:   dist
+#
+#   Netlify →  Site Settings > Build & deploy > Build settings
+#              Base directory:     myra_web
+#              Build command:      npm run build
+#              Publish directory:  dist
+#
+#   Cloudflare Pages →  Build configuration
+#              Root directory:      myra_web
+#              Build command:       npm run build
+#              Build output dir:    dist
