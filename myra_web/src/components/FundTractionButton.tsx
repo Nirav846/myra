@@ -3,6 +3,7 @@ import { TrendingUp } from 'lucide-react';
 interface FundTractionButtonProps {
   symbols: string[];
   disabled?: boolean;
+  size?: string;
 }
 
 /**
@@ -17,14 +18,17 @@ export default function FundTractionButton({ symbols, disabled }: FundTractionBu
     window.open(url, '_blank');
   };
 
+  const isDisabled = disabled || symbols.length === 0;
+
   return (
     <button
       onClick={handleClick}
-      disabled={disabled || symbols.length === 0}
-      className="flex items-center gap-1.5 px-3 py-1.5 bg-[#ffffff0a] hover:bg-[#ffffff15] border border-[#ffffff1a] rounded text-xs text-[#ccc] transition-colors disabled:opacity-40"
-      title={`Open Fund Traction Report for ${symbols.length} symbols`}
+      disabled={isDisabled}
+      className="flex items-center gap-1.5 px-3 py-1.5 bg-[#ffffff0a] hover:bg-[#ffffff15] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/50 border border-[#ffffff1a] rounded text-xs text-[#ccc] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+      title={isDisabled ? "Select symbols to view Fund Traction Report" : `Open Fund Traction Report for ${symbols.length} symbols`}
+      aria-label={isDisabled ? "Select symbols to view Fund Traction Report" : `Open Fund Traction Report for ${symbols.length} symbols`}
     >
-      <TrendingUp size={12} /> MF Report
+      <TrendingUp size={12} aria-hidden="true" /> MF Report
     </button>
   );
 }
