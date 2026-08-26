@@ -45,7 +45,8 @@ export function DebugPanel() {
     return (
       <button 
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-12 right-4 z-50 bg-indigo-600 hover:bg-indigo-500 text-white p-2 rounded-full shadow-lg border border-indigo-400/50 flex items-center justify-center transition-all"
+        aria-label="Open Debug Panel"
+        className="fixed bottom-12 right-4 z-50 bg-indigo-600 hover:bg-indigo-500 text-white p-2 rounded-full shadow-lg border border-indigo-400/50 flex items-center justify-center transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0e1117]"
         title="Open Debug Panel"
       >
         <Terminal size={18} />
@@ -63,21 +64,25 @@ export function DebugPanel() {
         <div className="flex items-center gap-2">
           <button 
             onClick={() => setEvents([])} 
-            className="text-[#888] hover:text-[#fff] p-1 rounded hover:bg-[#ffffff10]"
+            aria-label="Clear Logs"
+            className="text-[#888] hover:text-[#fff] p-1 rounded hover:bg-[#ffffff10] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-indigo-400"
             title="Clear Logs"
           >
             <Trash2 size={12} />
           </button>
           <button 
             onClick={() => setIsPaused(!isPaused)} 
-            className={`${isPaused ? 'text-yellow-400 hover:text-yellow-300' : 'text-[#888] hover:text-[#fff]'} p-1 rounded hover:bg-[#ffffff10]`}
+            aria-label={isPaused ? "Resume Logging" : "Pause Logging"}
+            aria-pressed={isPaused}
+            className={`${isPaused ? 'text-yellow-400 hover:text-yellow-300' : 'text-[#888] hover:text-[#fff]'} p-1 rounded hover:bg-[#ffffff10] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-indigo-400`}
             title={isPaused ? "Resume Logging" : "Pause Logging"}
           >
             {isPaused ? <Play size={12} /> : <Pause size={12} />}
           </button>
           <button 
             onClick={() => setIsOpen(false)} 
-            className="text-[#888] hover:text-red-400 p-1 rounded hover:bg-[#ffffff10] ml-1"
+            aria-label="Close Debug Panel"
+            className="text-[#888] hover:text-red-400 p-1 rounded hover:bg-[#ffffff10] ml-1 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-400"
           >
             <X size={14} />
           </button>
