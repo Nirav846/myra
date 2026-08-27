@@ -10,7 +10,7 @@ from myra_app.constants import DB_DIR
 from myra_app.librarian_core import LibrarianCore
 from myra_app.db.bulk_loader import (
     load_ohlcv_for_universe,
-    rows_for_symbol,
+    get_df_for_symbol,
     COLUMNS_12,
 )
 
@@ -66,14 +66,70 @@ class TriggerScanner:
             ).fetchall()
         return rows
 
+    def _get_tech_df(
+        self, symbol: str, min_date: str, max_date: str | None = None
+    ) -> pd.DataFrame:
+        """Return a per-symbol OHLCV DataFrame with a datetime, sorted date column.
+
+        Uses the single bulk load when available (no tuple round-trip); falls
+        back to the per-symbol DB path for DB-only / parity runs.
+        """
+        if self._bulk_data is not None:
+            df = get_df_for_symbol(
+                self._bulk_data, symbol, self._BULK_COLUMNS, min_date, max_date
+            )
+            if df is None or df.empty:
+                return pd.DataFrame()
+            return df
+
+        rows = self._get_tech_data(symbol, min_date, max_date)
+        if not rows:
+            return pd.DataFrame()
+        if len(rows[0]) >= 12:
+            df = pd.DataFrame(
+                rows,
+                columns=[
+                    "date",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "delivery",
+                    "delivery_pct",
+                    "nifty_outperformance_score",
+                    "sma_50",
+                    "high_52w",
+                    "low_52w",
+                ],
+            )
+        else:
+            df = pd.DataFrame(
+                rows,
+                columns=[
+                    "date",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "delivery",
+                    "delivery_pct",
+                    "nifty_outperformance_score",
+                ],
+            )
+            df["sma_50"] = None
+            df["high_52w"] = None
+            df["low_52w"] = None
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.sort_values("date").reset_index(drop=True)
+        return df
+
     def _get_tech_data(
         self, symbol: str, min_date: str, max_date: str | None = None
     ) -> list[tuple]:
+        """Per-symbol DB fallback (used when the bulk window is unavailable)."""
         max_date = max_date or date.today().isoformat()
-        if self._bulk_data is not None:
-            return rows_for_symbol(
-                self._bulk_data, symbol, self._BULK_COLUMNS, min_date, max_date
-            )
         tech_db = self._db_path("technical")
         if not os.path.exists(tech_db):
             return []
@@ -146,7 +202,10 @@ class TriggerScanner:
         min_date = f"{(ref_date - pd.Timedelta(days=45)):%Y-%m-%d}"
 
         # Single bulk load replaces per-symbol sqlite connections.
-        self._bulk_data = load_ohlcv_for_universe(min_date, as_on_date)
+        # Restrict to the post-filter universe to avoid loading unrelated symbols.
+        self._bulk_data = load_ohlcv_for_universe(
+            min_date, as_on_date, [r[0].strip() for r in rows]
+        )
 
         candidates: list[dict] = []
 
@@ -160,51 +219,8 @@ class TriggerScanner:
         ) in enumerate(rows):
             symbol = symbol.strip()
 
-            tech = self._get_tech_data(symbol, min_date, max_date=as_on_date)
-            if len(tech) < 25:
-                continue
-
-            col_count = len(tech[0]) if tech else 0
-            if col_count >= 12:
-                df = pd.DataFrame(
-                    tech,
-                    columns=[
-                        "date",
-                        "open",
-                        "high",
-                        "low",
-                        "close",
-                        "volume",
-                        "delivery",
-                        "delivery_pct",
-                        "nifty_outperformance_score",
-                        "sma_50",
-                        "high_52w",
-                        "low_52w",
-                    ],
-                )
-            else:
-                df = pd.DataFrame(
-                    tech,
-                    columns=[
-                        "date",
-                        "open",
-                        "high",
-                        "low",
-                        "close",
-                        "volume",
-                        "delivery",
-                        "delivery_pct",
-                        "nifty_outperformance_score",
-                    ],
-                )
-                df["sma_50"] = None
-                df["high_52w"] = None
-                df["low_52w"] = None
-            df["date"] = pd.to_datetime(df["date"])
-            df = df.sort_values("date").reset_index(drop=True)
-
-            if len(df) < 25:
+            df = self._get_tech_df(symbol, min_date, max_date=as_on_date)
+            if df.empty or len(df) < 25:
                 continue
 
             latest_close = float(df["close"].iloc[-1])

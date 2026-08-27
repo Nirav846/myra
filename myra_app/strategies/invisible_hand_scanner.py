@@ -13,7 +13,7 @@ from myra_app.librarian_core import LibrarianCore
 from myra_app.strategies.bottom_hunter import compute_sector_momentum_tiers
 from myra_app.db.bulk_loader import (
     load_ohlcv_for_universe,
-    rows_for_symbol,
+    get_df_for_symbol,
     COLUMNS_12,
 )
 
@@ -68,13 +68,69 @@ class InvisibleHandScanner:
             ).fetchall()
         return rows
 
+    def _get_tech_df(
+        self, symbol: str, min_date: str, max_date: str | None = None
+    ) -> pd.DataFrame:
+        """Return a per-symbol OHLCV DataFrame with a datetime, sorted date column.
+
+        Uses the single bulk load when available (no tuple round-trip); falls
+        back to the per-symbol DB path for DB-only / parity runs.
+        """
+        if self._bulk_data is not None:
+            df = get_df_for_symbol(
+                self._bulk_data, symbol, self._BULK_COLUMNS, min_date, max_date
+            )
+            if df is None or df.empty:
+                return pd.DataFrame()
+            return df
+
+        rows = self._get_tech_data(symbol, min_date, max_date)
+        if not rows:
+            return pd.DataFrame()
+        if len(rows[0]) >= 12:
+            df = pd.DataFrame(
+                rows,
+                columns=[
+                    "date",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "delivery",
+                    "delivery_pct",
+                    "nifty_outperformance_score",
+                    "sma_50",
+                    "high_52w",
+                    "low_52w",
+                ],
+            )
+        else:
+            df = pd.DataFrame(
+                rows,
+                columns=[
+                    "date",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "delivery",
+                    "delivery_pct",
+                    "nifty_outperformance_score",
+                ],
+            )
+            df["sma_50"] = None
+            df["high_52w"] = None
+            df["low_52w"] = None
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.sort_values("date").reset_index(drop=True)
+        return df
+
     def _get_tech_data(
         self, symbol: str, min_date: str, max_date: Optional[str] = None
     ) -> list[tuple]:
-        if self._bulk_data is not None:
-            return rows_for_symbol(
-                self._bulk_data, symbol, self._BULK_COLUMNS, min_date, max_date
-            )
+        """Per-symbol DB fallback (used when the bulk window is unavailable)."""
         tech_db = self._db_path("technical")
         if not os.path.exists(tech_db):
             return []
@@ -221,58 +277,18 @@ class InvisibleHandScanner:
         min_date = f"{(ref_date - pd.Timedelta(days=lookback_calendar_days)):%Y-%m-%d}"
 
         # Single bulk load replaces per-symbol sqlite connections.
-        self._bulk_data = load_ohlcv_for_universe(min_date, as_on_date)
+        # Restrict to the post-filter universe to avoid loading unrelated symbols.
+        self._bulk_data = load_ohlcv_for_universe(
+            min_date, as_on_date, [r[0].strip() for r in rows]
+        )
 
         candidates: list[dict] = []
 
         for idx, (symbol, mcap, ff_pct) in enumerate(rows):
             symbol = symbol.strip()
 
-            tech = self._get_tech_data(symbol, min_date, max_date=self.target_date)
-            if len(tech) < self.window + self.hist_window + 10:
-                continue
-
-            col_count = len(tech[0]) if tech else 0
-            if col_count >= 12:
-                df = pd.DataFrame(
-                    tech,
-                    columns=[
-                        "date",
-                        "open",
-                        "high",
-                        "low",
-                        "close",
-                        "volume",
-                        "delivery",
-                        "delivery_pct",
-                        "nifty_outperformance_score",
-                        "sma_50",
-                        "high_52w",
-                        "low_52w",
-                    ],
-                )
-            else:
-                df = pd.DataFrame(
-                    tech,
-                    columns=[
-                        "date",
-                        "open",
-                        "high",
-                        "low",
-                        "close",
-                        "volume",
-                        "delivery",
-                        "delivery_pct",
-                        "nifty_outperformance_score",
-                    ],
-                )
-                df["sma_50"] = None
-                df["high_52w"] = None
-                df["low_52w"] = None
-            df["date"] = pd.to_datetime(df["date"])
-            df = df.sort_values("date").reset_index(drop=True)
-
-            if len(df) < self.window + self.hist_window + 10:
+            df = self._get_tech_df(symbol, min_date, max_date=self.target_date)
+            if df.empty or len(df) < self.window + self.hist_window + 10:
                 continue
 
             # Split into historical and current windows
@@ -424,7 +440,9 @@ class InvisibleHandScanner:
                 h_vals = curr_df["high"].values.astype(float)
                 l_vals = curr_df["low"].values.astype(float)
                 c_vals = curr_df["close"].values.astype(float)
-                range_pcts = np.where(c_vals > 0, (h_vals - l_vals) / c_vals * 100, 99.0)
+                range_pcts = np.where(
+                    c_vals > 0, (h_vals - l_vals) / c_vals * 100, 99.0
+                )
                 # Count consecutive True from the end
                 for j in range(len(range_pcts) - 1, -1, -1):
                     if range_pcts[j] < 3.0:
@@ -531,17 +549,14 @@ class InvisibleHandScanner:
             cand_df["_ph"] = _ph
             cand_df["_inv_pe"] = _inv_pe
 
-            nm_rank = (
-                pd.to_numeric(cand_df["_nm"], errors="coerce")
-                .rank(pct=True, ascending=True)
+            nm_rank = pd.to_numeric(cand_df["_nm"], errors="coerce").rank(
+                pct=True, ascending=True
             )
-            ph_rank = (
-                pd.to_numeric(cand_df["_ph"], errors="coerce")
-                .rank(pct=True, ascending=True)
+            ph_rank = pd.to_numeric(cand_df["_ph"], errors="coerce").rank(
+                pct=True, ascending=True
             )
-            pe_rank = (
-                pd.to_numeric(cand_df["_inv_pe"], errors="coerce")
-                .rank(pct=True, ascending=True)
+            pe_rank = pd.to_numeric(cand_df["_inv_pe"], errors="coerce").rank(
+                pct=True, ascending=True
             )
 
             nm_valid = cand_df["_nm"].notna()
@@ -585,7 +600,9 @@ class InvisibleHandScanner:
 
         return pd.DataFrame(candidates)
 
-    def _filter_corporate_actions(self, candidates: list[dict], as_on_date: str) -> list[dict]:
+    def _filter_corporate_actions(
+        self, candidates: list[dict], as_on_date: str
+    ) -> list[dict]:
         """Remove symbols with bonus/split/rights in the last N days."""
         if self.corporate_actions_exclude_days <= 0 or not candidates:
             return candidates
@@ -593,7 +610,9 @@ class InvisibleHandScanner:
             inst_db = self._db_path("institutional")
             if not os.path.exists(inst_db):
                 return candidates
-            cutoff_dt = pd.Timestamp(as_on_date) - pd.Timedelta(days=self.corporate_actions_exclude_days)
+            cutoff_dt = pd.Timestamp(as_on_date) - pd.Timedelta(
+                days=self.corporate_actions_exclude_days
+            )
             cutoff = f"{cutoff_dt:%Y-%m-%d}"
             syms = [c["symbol"] for c in candidates]
             placeholders = ",".join("?" for _ in syms)
@@ -610,7 +629,9 @@ class InvisibleHandScanner:
                 ).fetchall()
             excluded = {r[0] for r in rows}
             if excluded:
-                logger.info("CA filter: excluding %d symbols with recent actions", len(excluded))
+                logger.info(
+                    "CA filter: excluding %d symbols with recent actions", len(excluded)
+                )
             return [c for c in candidates if c["symbol"] not in excluded]
         except Exception as e:
             logger.warning("CA filter failed: %s", e)

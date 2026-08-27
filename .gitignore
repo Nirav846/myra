@@ -163,6 +163,9 @@ dmypy.json
 myra_app/db/*.db
 myra_app/db/*.db-wal
 myra_app/db/*.db-shm
+# Root db/ is a runtime data directory (SQLite sidecar DBs + stray duplicates).
+# The real source lives in myra_app/db/. Ignore the root one entirely.
+db/
 
 # =================================================
 #  Binary model files and cached data
