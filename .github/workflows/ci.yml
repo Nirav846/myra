@@ -54,6 +54,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Debug — list files in myra_web
+        run: ls -la
+
       - name: Build frontend
         run: npm run build
 
