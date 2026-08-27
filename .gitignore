@@ -78,6 +78,7 @@ PROMPTRESULT.txt
 *.pdf
 *.xlsx
 *.html
+!myra_web/index.html
 *.spec
 *.whl
 
