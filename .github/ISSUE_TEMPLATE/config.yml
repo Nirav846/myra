@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: MYRA Documentation
+    url: https://github.com/Nirav846/myra/blob/main/docs/USER_GUIDE.md
+    about: Setup, usage, and troubleshooting guide before opening an issue.
+  - name: MYRA Architecture Reference
+    url: https://github.com/Nirav846/myra/blob/main/docs/ARCHITECTURE.md
+    about: System design and data pipeline reference.
+  - name: MYRA README
+    url: https://github.com/Nirav846/myra/blob/main/README.md
+    about: Project overview, features, and quick start.

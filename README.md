@@ -1,10 +1,13 @@
 # MYRA — Personal NSE Stock Screening & Analysis Platform
 
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://python.org)
+[![Node.js 22](https://img.shields.io/badge/node-22.x-blue.svg)](https://nodejs.org)
 [![React 19](https://img.shields.io/badge/react-19-61dafb.svg)](https://react.dev)
 [![SQLite](https://img.shields.io/badge/sqlite-wal%20mode-003b57.svg)](https://sqlite.org)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-367%20passing-brightgreen.svg)](tests/)
-[![CI](https://github.com/Nirav846/myra/actions/workflows/ci.yml/badge.svg)](https://github.com/Nirav846/myra/actions)
+[![Tests Status](https://github.com/Nirav846/myra/actions/workflows/ci.yml/badge.svg)](https://github.com/Nirav846/myra/actions/workflows/ci.yml)
+[![Build Status](https://github.com/Nirav846/myra/actions/workflows/ci.yml/badge.svg)](https://github.com/Nirav846/myra/actions)
 
 MYRA is a comprehensive stock screening and analysis platform for the National Stock Exchange (NSE) of India. It combines daily automated data ingestion (via EOD2/BhavDesk CSVs), Smart Money Concepts (SMC) enrichment, institutional & mutual-fund tracking, a suite of 15 quantitative scanners, ML-based breakout prediction, and an interactive React frontend — all running locally with SQLite.
 
