@@ -8,6 +8,7 @@ unit of work behind ``run(ctx)``.
 
 import importlib
 import logging
+import time
 
 from myra_app.tasks.context import TaskContext
 from myra_app.tasks.registry import TaskSpec
@@ -45,10 +46,13 @@ def _execute_once(name: str, spec: TaskSpec, fn, ctx: TaskContext) -> None:
     """Run one unit of work and update sync_log per the spec's failure policy."""
     if ctx.shutdown_event.is_set():
         return
+    logger.info(f"[MYRA BG] Task {name} starting...")
+    t0 = time.perf_counter()
     try:
         fn(ctx)
     except Exception as e:
-        logger.error(f"[MYRA BG] Task {name} failed: {e}")
+        duration = time.perf_counter() - t0
+        logger.error(f"[MYRA BG] Task {name} failed after {duration:.2f}s: {e}")
         if spec.mark_on_failure:
             logger.warning(
                 f"[MYRA BG] Task {name} marked as run despite failure "
@@ -56,8 +60,12 @@ def _execute_once(name: str, spec: TaskSpec, fn, ctx: TaskContext) -> None:
             )
             _mark_task_run(spec.label)
     else:
+        duration = time.perf_counter() - t0
+        logger.info(f"[MYRA BG] Task {name} completed in {duration:.2f}s")
         if spec.mark_on_success and not ctx.shutdown_event.is_set():
-            logger.info(f"[MYRA BG] Task {name}: marking as run (mark_on_success=True)")
+            logger.debug(
+                f"[MYRA BG] Task {name}: marking as run (mark_on_success=True)"
+            )
             _mark_task_run(spec.label)
         else:
             logger.debug(
@@ -100,7 +108,7 @@ def run_periodic(task_name: str, spec: TaskSpec, ctx: TaskContext) -> None:
     # Startup catch-up: run immediately when overdue.
     if spec.catchup and _is_task_overdue(spec.label, days=spec.interval_days):
         logger.info(f"[MYRA BG] Task {task_name} overdue – running catch-up now...")
-        _execute_once(task_name, spec, fn, ctx)
+        _execute_once(f"{task_name} (catch-up)", spec, fn, ctx)
 
     # Due-check poll loop.
     while not ctx.shutdown_event.is_set():

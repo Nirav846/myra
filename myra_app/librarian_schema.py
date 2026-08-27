@@ -130,6 +130,76 @@ class LibrarianSchemaMixin:
             """,
                 conn=self._tech_conn,
             )
+            self.safe_execute(
+                """
+                CREATE TABLE IF NOT EXISTS launchpad_events (
+                    symbol TEXT,
+                    trigger_date TEXT,
+                    trigger_peak_price REAL,
+                    digestion_low_price REAL,
+                    digestion_low_date TEXT,
+                    launchpad_date TEXT,
+                    launchpad_close REAL,
+                    breakout_date TEXT,
+                    breakout_close REAL,
+                    return_pct REAL,
+                    days_to_breakout INTEGER,
+                    success INTEGER,
+                    max_drawdown_pct REAL,
+                    min_range_atr_ratio REAL,
+                    min_vol_ratio REAL
+                )
+            """,
+                conn=self._tech_conn,
+            )
+            self.safe_execute(
+                "CREATE INDEX IF NOT EXISTS idx_lp_active ON launchpad_events(success, trigger_date)",
+                conn=self._tech_conn,
+            )
+            self.safe_execute(
+                "CREATE INDEX IF NOT EXISTS idx_lp_sym ON launchpad_events(symbol, trigger_date)",
+                conn=self._tech_conn,
+            )
+            self.safe_execute(
+                """
+                CREATE TABLE IF NOT EXISTS launchpad_features (
+                    symbol TEXT,
+                    trigger_date TEXT,
+                    breakout_date TEXT,
+                    return_pct REAL,
+                    max_drawdown_pct REAL,
+                    days_to_breakout REAL,
+                    success INTEGER,
+                    del_zscore_min REAL,
+                    del_zscore_mean REAL,
+                    range_atr_min REAL,
+                    vol_ratio_min REAL,
+                    digestion_days INTEGER,
+                    close_min REAL,
+                    vwap_min REAL,
+                    volume_min INTEGER,
+                    liquidity_min REAL,
+                    fvg_freshness_min REAL
+                )
+            """,
+                conn=self._tech_conn,
+            )
+            self.safe_execute(
+                "CREATE INDEX IF NOT EXISTS idx_lpf_sym ON launchpad_features(symbol, trigger_date)",
+                conn=self._tech_conn,
+            )
+            self.safe_execute(
+                """
+                CREATE TABLE IF NOT EXISTS ingestion_rejects (
+                    symbol TEXT,
+                    date TEXT,
+                    reason TEXT,
+                    raw_values TEXT,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """,
+                conn=self._tech_conn,
+            )
 
         # --- 3. INSTITUTIONAL.DB (Smart Money) ---
         if self._inst_conn:
@@ -311,7 +381,9 @@ class LibrarianSchemaMixin:
                     if result:
                         logger.info(f"[SCHEMA_REGISTRY] {table_name}: schema valid")
                 except Exception as exc:
-                    logger.warning(f"[SCHEMA_REGISTRY] {table_name}: validation skipped ({exc})")
+                    logger.warning(
+                        f"[SCHEMA_REGISTRY] {table_name}: validation skipped ({exc})"
+                    )
 
     def _create_indices(self):
         """Optimizes all sidecars with covering indices."""

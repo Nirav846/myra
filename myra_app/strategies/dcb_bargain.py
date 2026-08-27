@@ -946,15 +946,10 @@ class DCBBargainScanner:
             cutoff = f"{cutoff_dt:%Y-%m-%d}"
             syms = [c["symbol"] for c in candidates]
             placeholders = ",".join("?" for _ in syms)
-            # Filter list — lowercase for case-insensitive matching
-            exclude_types = {
-                "bonus",
-                "split",
-                "rights",
-                "bonus issue",
-                "stock split",
-                "rights issue",
-            }
+            # Keyword-based matching: catch variations like "Bonus 3:1",
+            # "Rights 5:78 @ Premium Rs 110/-", "Buy Back", etc.
+            exclude_keywords = ["bonus", "split", "rights", "buy back"]
+            dividend_keywords = ["dividend"]
             with sqlite3.connect(inst_db) as conn:
                 rows = conn.execute(
                     f"""
@@ -964,15 +959,16 @@ class DCBBargainScanner:
                     """,
                     (*syms, cutoff),
                 ).fetchall()
-            # Case-insensitive matching: compare lowercased action_type
             excluded: set[str] = set()
             for symbol, action_type in rows:
-                if action_type and action_type.strip().lower() in exclude_types:
+                if not action_type or not action_type.strip():
+                    continue
+                low = action_type.strip().lower()
+                if any(kw in low for kw in exclude_keywords):
                     excluded.add(symbol)
-                elif action_type:
-                    logger.warning(
-                        "CA filter: unrecognised action_type '%s' for %s — "
-                        "not excluded (add to filter list if needed)",
+                elif not any(kw in low for kw in dividend_keywords):
+                    logger.debug(
+                        "CA filter: action_type '%s' for %s — not excluded",
                         action_type,
                         symbol,
                     )

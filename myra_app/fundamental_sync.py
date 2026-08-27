@@ -10,7 +10,8 @@ import os
 # Load .env for MORNINGSTAR_TOKEN
 from dotenv import load_dotenv
 from pathlib import Path
-load_dotenv(Path(__file__).resolve().parent.parent / '.env')
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 import sqlite3
 import threading
 import time
@@ -491,15 +492,18 @@ class FundamentalSync:
                 if sym not in latest_close:
                     latest_close[sym] = close
 
-            for symbol, shares_out in shares.items():
-                close_price = latest_close.get(symbol)
-                if close_price and shares_out > 0:
-                    market_cap = shares_out * close_price
-                    val_conn.execute(  # noqa: PG-NPLUS1 — update after batch read
-                        "UPDATE fundamentals SET market_cap = ? WHERE symbol = ?",
-                        (market_cap, symbol),
-                    )
-                    updated += 1
+            # Batch update: single executemany instead of N individual UPDATEs
+            updates = [
+                (shares[sym] * close_price, sym)
+                for sym, close_price in latest_close.items()
+                if close_price and shares.get(sym, 0) > 0
+            ]
+            if updates:
+                val_conn.executemany(
+                    "UPDATE fundamentals SET market_cap = ? WHERE symbol = ?",
+                    updates,
+                )
+                updated = len(updates)
 
         val_conn.commit()
         tech_conn.close()
