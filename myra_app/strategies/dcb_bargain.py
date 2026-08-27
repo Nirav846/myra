@@ -11,7 +11,7 @@ from myra_app.constants import DB_DIR
 from myra_app.librarian_core import LibrarianCore
 from myra_app.db.bulk_loader import (
     load_ohlcv_for_universe,
-    rows_for_symbol,
+    get_df_for_symbol,
     COLUMNS_8,
 )
 
@@ -118,9 +118,17 @@ class DCBBargainScanner:
         self, symbol: str, min_date: str, max_date: str | None = None
     ) -> list[tuple]:
         if self._bulk_data is not None:
-            return rows_for_symbol(
-                self._bulk_data, symbol, self._BULK_COLUMNS, min_date, max_date
+            df = get_df_for_symbol(
+                self._bulk_data,
+                symbol,
+                self._BULK_COLUMNS,
+                min_date,
+                max_date,
             )
+            if df is None or df.empty:
+                return []
+            # Backward-compatible shape: rows of tuples in column order.
+            return list(df.itertuples(index=False, name=None))
         tech_db = self._db_path("technical")
         if not os.path.exists(tech_db):
             return []
@@ -210,13 +218,20 @@ class DCBBargainScanner:
 
     @staticmethod
     def _get_weekly_data(df_daily: pd.DataFrame) -> pd.DataFrame:
-        """Aggregate daily OHLCV+delivery to weekly candles."""
+        """Aggregate daily OHLCV+delivery to weekly (Fri-aligned) candles.
+
+        Input ``df_daily`` is assumed to carry a datetime ``date`` column
+        (the bulk loader path guarantees this).  We avoid a full
+        ``.copy()`` + ``.set_index()`` round trip by selecting the columns
+        up front and resampling in place.
+        """
         if df_daily is None or len(df_daily) < 5:
             return pd.DataFrame()
-        df = df_daily.copy()
-        df["date"] = pd.to_datetime(df["date"])
+
+        df = df_daily[["date", "open", "high", "low", "close", "volume", "delivery"]]
+        # date column is already datetime (guaranteed by get_df_for_symbol).
         df = df.set_index("date").sort_index()
-        weekly = df.resample("W").agg(
+        weekly = df.resample("W-FRI").agg(
             {
                 "open": "first",
                 "high": "max",
@@ -520,7 +535,12 @@ class DCBBargainScanner:
         min_date = f"{(ref_date - pd.Timedelta(days=total_calendar)):%Y-%m-%d}"
 
         # Single bulk load replaces per-symbol sqlite connections.
-        self._bulk_data = load_ohlcv_for_universe(min_date, as_on_date)
+        # Restrict to the (post-filter) universe when the symbol list is
+        # finalized, so we don't pull data for symbols that won't be scanned.
+        universe_symbols = [r[0].strip() for r in rows]
+        self._bulk_data = load_ohlcv_for_universe(
+            min_date, as_on_date, universe_symbols
+        )
 
         is_weekly = self.timeframe == "weekly"
         effective_window = self.dcb_window // 5 if is_weekly else self.dcb_window
@@ -530,32 +550,18 @@ class DCBBargainScanner:
         for idx, (symbol, mcap, ff_pct) in enumerate(rows):
             symbol = symbol.strip()
             try:
-                tech = self._get_tech_data(symbol, min_date, max_date=as_on_date)
-                if len(tech) < max(60, int((self.dcb_window + 50) * 0.6) + 5):
-                    continue
-
-                col_count = len(tech[0]) if tech else 0
-                if col_count >= 8:
-                    df = pd.DataFrame(
-                        tech,
-                        columns=[
-                            "date",
-                            "open",
-                            "high",
-                            "low",
-                            "close",
-                            "volume",
-                            "delivery",
-                            "delivery_pct",
-                        ],
-                    )
-                else:
-                    continue
-
-                df["date"] = pd.to_datetime(df["date"])
-                df = df.sort_values("date").reset_index(drop=True)
-
-                if len(df) < max(60, int((self.dcb_window + 50) * 0.6) + 5):
+                # DataFrame-backed slice from the bulk window. The date column
+                # is already datetime and sorted — no to_datetime/sort needed.
+                df = get_df_for_symbol(
+                    self._bulk_data,
+                    symbol,
+                    self._BULK_COLUMNS,
+                    min_date,
+                    max_date=as_on_date,
+                )
+                if df is None or len(df) < max(
+                    60, int((self.dcb_window + 50) * 0.6) + 5
+                ):
                     continue
 
                 # Free-float filter

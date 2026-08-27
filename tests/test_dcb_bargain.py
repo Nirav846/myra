@@ -810,16 +810,39 @@ def _make_valid_tech_rows(n: int = 200) -> list[tuple]:
     return rows
 
 
+def _make_valid_tech_df(n: int = 200) -> pd.DataFrame:
+    """Build a DataFrame from _make_valid_tech_rows with a datetime date column,
+    matching what get_df_for_symbol returns to scan()."""
+    rows = _make_valid_tech_rows(n)
+    df = pd.DataFrame(
+        rows,
+        columns=[
+            "date",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "delivery",
+            "delivery_pct",
+        ],
+    )
+    df["date"] = pd.to_datetime(df["date"])
+    return df
+
+
 def test_free_float_skip_when_null_ff_pct_and_min_ff_mcap_positive():
     """When min_ff_mcap > 0 and ff_pct is None -> symbol is skipped (not included)."""
     scanner = DCBBargainScanner(min_ff_mcap=600.0)
-    tech_rows = _make_valid_tech_rows()
+    tech_df = _make_valid_tech_df()
 
     with (
         patch.object(scanner, "_get_universe", return_value=[("TEST", 10000, None)]),
-        patch.object(scanner, "_get_tech_data", return_value=tech_rows),
         patch(
-            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe", return_value=None
+            "myra_app.strategies.dcb_bargain.get_df_for_symbol", return_value=tech_df
+        ),
+        patch(
+            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe", return_value={}
         ),
     ):
         result = scanner.scan(as_on_date="2025-06-15")
@@ -829,13 +852,15 @@ def test_free_float_skip_when_null_ff_pct_and_min_ff_mcap_positive():
 def test_free_float_missing_path_when_min_ff_mcap_zero():
     """When min_ff_mcap <= 0 -> candidate included with ff_data_quality='missing', free_float_mcap_cr=None."""
     scanner = DCBBargainScanner(min_ff_mcap=0.0)
-    tech_rows = _make_valid_tech_rows()
+    tech_df = _make_valid_tech_df()
 
     with (
         patch.object(scanner, "_get_universe", return_value=[("TEST", 10000, None)]),
-        patch.object(scanner, "_get_tech_data", return_value=tech_rows),
         patch(
-            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe", return_value=None
+            "myra_app.strategies.dcb_bargain.get_df_for_symbol", return_value=tech_df
+        ),
+        patch(
+            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe", return_value={}
         ),
     ):
         result = scanner.scan(as_on_date="2025-06-15")
@@ -852,7 +877,6 @@ def test_free_float_measured_path_includes_candidate():
     scanner = DCBBargainScanner(
         min_ff_mcap=0.01
     )  # tiny threshold so test data qualifies
-    tech_rows = _make_valid_tech_rows()
     # mcap is raw from fundamentals (not Cr). Universe query divides by 1e7 for Cr filter.
     # free_float_mcap_cr = (mcap * ff_pct / 100) / 1e7
     # Use mcap=10_000_000 raw = 1 Cr market cap, ff_pct=25% -> ff_mcap=0.25 Cr > 0.01
@@ -863,9 +887,12 @@ def test_free_float_measured_path_includes_candidate():
         patch.object(
             scanner, "_get_universe", return_value=[("TEST", mcap_raw, ff_pct)]
         ),
-        patch.object(scanner, "_get_tech_data", return_value=tech_rows),
         patch(
-            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe", return_value=None
+            "myra_app.strategies.dcb_bargain.get_df_for_symbol",
+            return_value=_make_valid_tech_df(),
+        ),
+        patch(
+            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe", return_value={}
         ),
     ):
         result = scanner.scan(as_on_date="2025-06-15")
@@ -879,15 +906,17 @@ def test_free_float_measured_path_includes_candidate():
 def test_free_float_measured_path_skips_below_threshold():
     """When min_ff_mcap > 0 and computed ff mcap < threshold -> candidate skipped."""
     scanner = DCBBargainScanner(min_ff_mcap=100.0)  # high threshold
-    tech_rows = _make_valid_tech_rows()
     # mcap=10_000_000 raw = 1 Cr, ff_pct=25% -> free_float_mcap_cr=0.25 < 100 -> skip
     with (
         patch.object(
             scanner, "_get_universe", return_value=[("TEST", 10_000_000, 25.0)]
         ),
-        patch.object(scanner, "_get_tech_data", return_value=tech_rows),
         patch(
-            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe", return_value=None
+            "myra_app.strategies.dcb_bargain.get_df_for_symbol",
+            return_value=_make_valid_tech_df(),
+        ),
+        patch(
+            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe", return_value={}
         ),
     ):
         result = scanner.scan(as_on_date="2025-06-15")
@@ -898,13 +927,15 @@ def test_free_float_round_none_not_type_error():
     """Regression: round(None, 2) used to raise TypeError in min_ff_mcap=0 path.
     With the guard, free_float_mcap_cr=None passes through cleanly."""
     scanner = DCBBargainScanner(min_ff_mcap=0.0)
-    tech_rows = _make_valid_tech_rows()
 
     with (
         patch.object(scanner, "_get_universe", return_value=[("TEST", 10000, None)]),
-        patch.object(scanner, "_get_tech_data", return_value=tech_rows),
         patch(
-            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe", return_value=None
+            "myra_app.strategies.dcb_bargain.get_df_for_symbol",
+            return_value=_make_valid_tech_df(),
+        ),
+        patch(
+            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe", return_value={}
         ),
     ):
         # This must NOT raise TypeError from round(None, 2)

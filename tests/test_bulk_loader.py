@@ -24,6 +24,7 @@ from myra_app.librarian_core import LibrarianCore
 from myra_app.db.bulk_loader import (
     load_ohlcv_for_universe,
     rows_for_symbol,
+    get_df_for_symbol,
     COLUMNS_8,
     COLUMNS_12,
     COLUMNS_13,
@@ -84,6 +85,45 @@ class TestRowsForSymbol:
         assert rows
         for r in rows:
             assert FIXED_DATE >= r[0] >= "2026-08-01"
+
+
+@pytest.mark.skipif(not os.path.exists(TECH_DB), reason="technical DB not available")
+class TestGetDfForSymbol:
+    def test_returns_sorted_datetime_df(self, bulk):
+        symbol = next(iter(bulk))
+        df = get_df_for_symbol(bulk, symbol, COLUMNS_8)
+        assert df is not None
+        assert list(df.columns) == list(COLUMNS_8)
+        # date column is datetime and ascending
+        assert pd.api.types.is_datetime64_any_dtype(df["date"])
+        assert df["date"].is_monotonic_increasing
+
+    def test_returns_none_for_unknown_symbol(self, bulk):
+        assert get_df_for_symbol(bulk, "NONEXISTENT_SYM", COLUMNS_8) is None
+
+    def test_does_not_mutate_bulk_frame(self, bulk):
+        symbol = next(iter(bulk))
+        original_cols = list(bulk[symbol].columns)
+        df = get_df_for_symbol(bulk, symbol, COLUMNS_8)
+        df["new_col"] = 1  # mutate the returned copy
+        assert "new_col" not in bulk[symbol].columns
+        assert list(bulk[symbol].columns) == original_cols
+
+    def test_returns_none_outside_date_window(self, bulk):
+        symbol = next(iter(bulk))
+        # A window entirely before any data exists -> None
+        df = get_df_for_symbol(
+            bulk, symbol, COLUMNS_8, min_date="1990-01-01", max_date="1990-12-31"
+        )
+        assert df is None
+
+    def test_columns_subset_filtered(self, bulk):
+        symbol = next(iter(bulk))
+        # Only request a subset of existing columns
+        subset = [c for c in COLUMNS_8 if c in bulk[symbol].columns]
+        df = get_df_for_symbol(bulk, symbol, tuple(subset[:2]))
+        assert df is not None
+        assert list(df.columns) == subset[:2]
 
 
 def _scanner_parity(scanner, module):

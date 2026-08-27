@@ -18,7 +18,7 @@ import math
 import os
 import sqlite3
 from datetime import date
-from typing import Dict
+from typing import Dict, Optional, Sequence
 
 import pandas as pd
 
@@ -103,15 +103,20 @@ def _select_columns(conn) -> list[str]:
 
 
 def load_ohlcv_for_universe(
-    start_date: str, end_date: str | None = None
+    start_date: str,
+    end_date: str | None = None,
+    symbols: Optional[Sequence[str]] = None,
 ) -> Dict[str, pd.DataFrame]:
-    """Load OHLCV + delivery rows for ALL symbols in one query.
+    """Load OHLCV + delivery rows for symbols in one query.
 
     Returns ``{symbol: DataFrame}`` with each frame ordered by ``date``
     ascending and containing the columns that exist in the live schema
     (subset of ``TECH_COLUMNS``).
 
-    ``end_date`` defaults to today when omitted.
+    ``end_date`` defaults to today when omitted.  When ``symbols`` is
+    provided (an iterable of symbol strings), only those symbols are
+    loaded via ``WHERE symbol IN (...)``.  When ``symbols`` is None or an
+    empty list, all symbols are loaded (backward-compatible behaviour).
     """
     end_date = end_date or date.today().isoformat()
     tech_db = _tech_db_path()
@@ -126,7 +131,12 @@ def load_ohlcv_for_universe(
             "SELECT symbol, " + ", ".join(cols) + " FROM technical_data "
             "WHERE date BETWEEN ? AND ?"
         )
-        df = pd.read_sql_query(sql, conn, params=(start_date, end_date))
+        params: list = [start_date, end_date]
+        if symbols:
+            ph = ",".join("?" for _ in symbols)
+            sql += f" AND symbol IN ({ph})"
+            params.extend(symbols)
+        df = pd.read_sql_query(sql, conn, params=params)
 
     if df is None or df.empty:
         return {}
@@ -136,6 +146,47 @@ def load_ohlcv_for_universe(
         # Preserve the SQL `ORDER BY date ASC` contract per symbol.
         result[symbol] = group.sort_values("date").reset_index(drop=True)
     return result
+
+
+def get_df_for_symbol(
+    bulk: Dict[str, pd.DataFrame],
+    symbol: str,
+    columns: tuple[str, ...] | None = None,
+    min_date: str | None = None,
+    max_date: str | None = None,
+) -> pd.DataFrame | None:
+    """Return a per-symbol DataFrame slice from the pre-loaded bulk window.
+
+    Returns ``None`` when the symbol is absent, empty, or outside the
+    ``[min_date, max_date]`` window.  The returned frame is a copy (so the
+    cached bulk frame is never mutated) and excludes any requested columns
+    that are missing from the live schema.  The ``date`` column is already
+    datetime and sorted ascending, so callers can skip
+    ``pd.to_datetime``/``sort_values``.
+
+    This is the DataFrame-preserving counterpart to ``rows_for_symbol`` —
+    it avoids the tuple round-trip for scanners (e.g. DCB) that immediately
+    reconstruct a ``pd.DataFrame`` from the returned tuples.
+    """
+    df = bulk.get(symbol)
+    if df is None or df.empty:
+        return None
+    if min_date or max_date:
+        mask = pd.Series(True, index=df.index)
+        if min_date:
+            mask &= df["date"] >= min_date
+        if max_date:
+            mask &= df["date"] <= max_date
+        df = df.loc[mask]
+        if df.empty:
+            return None
+    if columns:
+        present = [c for c in columns if c in df.columns]
+        df = df[present]
+    df = df.copy()
+    if "date" in df.columns:
+        df["date"] = pd.to_datetime(df["date"])
+    return df
 
 
 def rows_for_symbol(
