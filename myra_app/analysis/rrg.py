@@ -30,34 +30,98 @@ CACHE_TTL_HOURS = 6
 # Sector keywords used to filter index files from the full CSV listing.
 # Files whose stem (lowercased) contains any of these are treated as indices.
 _INDEX_KEYWORDS = [
-    "nifty", "banknifty", "sensex", "bankex", "nifty next",
-    "nifty midcap", "nifty smallcap", "nifty alpha", "nifty beta",
-    "nifty quality", "nifty momentum", "nifty value", "nifty low vol",
-    "nifty high beta", "nifty equal weight", "nifty dividend",
-    "nifty growth", "nifty top", "nifty cpse", "nifty mnc",
-    "nifty pse", "nifty psu", "nifty it", "nifty pharma", "nifty auto",
-    "nifty bank", "nifty energy", "nifty metal", "nifty realty",
-    "nifty fmcg", "nifty media", "nifty infra", "nifty commodities",
-    "nifty consumption", "nifty housing", "nifty rural", "nifty ipo",
-    "nifty services", "nifty financial", "nifty private",
-    "nifty consumer", "nifty healthcare", "nifty hospital",
-    "nifty telecom", "nifty digital", "nifty ev", "nifty mobility",
-    "nifty capital", "nifty cement", "nifty chemicals",
-    "nifty construction", "nifty insurance", "nifty nbfc",
-    "nifty sugar", "nifty defence", "nifty railway", "nifty tourism",
-    "nifty india", "nifty shariah", "nifty reit", "nifty sme",
-    "nifty total market", "nifty largemidcap", "nifty microcap",
-    "nifty midsmall", "nifty small finance",
+    "nifty",
+    "banknifty",
+    "sensex",
+    "bankex",
+    "nifty next",
+    "nifty midcap",
+    "nifty smallcap",
+    "nifty alpha",
+    "nifty beta",
+    "nifty quality",
+    "nifty momentum",
+    "nifty value",
+    "nifty low vol",
+    "nifty high beta",
+    "nifty equal weight",
+    "nifty dividend",
+    "nifty growth",
+    "nifty top",
+    "nifty cpse",
+    "nifty mnc",
+    "nifty pse",
+    "nifty psu",
+    "nifty it",
+    "nifty pharma",
+    "nifty auto",
+    "nifty bank",
+    "nifty energy",
+    "nifty metal",
+    "nifty realty",
+    "nifty fmcg",
+    "nifty media",
+    "nifty infra",
+    "nifty commodities",
+    "nifty consumption",
+    "nifty housing",
+    "nifty rural",
+    "nifty ipo",
+    "nifty services",
+    "nifty financial",
+    "nifty private",
+    "nifty consumer",
+    "nifty healthcare",
+    "nifty hospital",
+    "nifty telecom",
+    "nifty digital",
+    "nifty ev",
+    "nifty mobility",
+    "nifty capital",
+    "nifty cement",
+    "nifty chemicals",
+    "nifty construction",
+    "nifty insurance",
+    "nifty nbfc",
+    "nifty sugar",
+    "nifty defence",
+    "nifty railway",
+    "nifty tourism",
+    "nifty india",
+    "nifty shariah",
+    "nifty reit",
+    "nifty sme",
+    "nifty total market",
+    "nifty largemidcap",
+    "nifty microcap",
+    "nifty midsmall",
+    "nifty small finance",
 ]
 
 # Fallback well-known indices (used only if dynamic discovery returns nothing).
 _FALLBACK_INDICES = [
-    "nifty 50", "nifty bank", "nifty it", "nifty pharma", "nifty auto",
-    "nifty metal", "nifty realty", "nifty fmcg", "nifty energy",
-    "nifty financial services", "nifty private bank", "nifty psu bank",
-    "nifty midcap 50", "nifty midcap 100", "nifty midcap 150",
-    "nifty smallcap 50", "nifty smallcap 100", "nifty smallcap 250",
-    "nifty next 50", "nifty next 100", "nifty 500", "nifty 200",
+    "nifty 50",
+    "nifty bank",
+    "nifty it",
+    "nifty pharma",
+    "nifty auto",
+    "nifty metal",
+    "nifty realty",
+    "nifty fmcg",
+    "nifty energy",
+    "nifty financial services",
+    "nifty private bank",
+    "nifty psu bank",
+    "nifty midcap 50",
+    "nifty midcap 100",
+    "nifty midcap 150",
+    "nifty smallcap 50",
+    "nifty smallcap 100",
+    "nifty smallcap 250",
+    "nifty next 50",
+    "nifty next 100",
+    "nifty 500",
+    "nifty 200",
     "nifty 100",
 ]
 
@@ -81,7 +145,7 @@ def _load_csv(index_id: str) -> Optional[pd.DataFrame]:
     safe_id = "".join(c for c in safe_id if c.isalnum() or c in "-_.")
     path = (Path(DATA_FOLDER) / f"{safe_id}.csv").resolve()
     # Ensure resolved path stays within DATA_FOLDER
-    if not str(path).startswith(str(Path(DATA_FOLDER).resolve())):
+    if not path.is_relative_to(Path(DATA_FOLDER).resolve()):
         logger.warning("Path traversal blocked: %s", index_id)
         return None
     if not path.exists():
@@ -170,13 +234,17 @@ def discover_indices() -> List[Dict]:
             continue
         if _is_index_file(stem):
             seen.add(stem)
-            indices.append({"id": stem, "label": _pretty_label(stem)})  # noqa: PG-APPEND
+            indices.append(
+                {"id": stem, "label": _pretty_label(stem)}
+            )  # noqa: PG-APPEND
 
     if not indices:
         logger.warning("Dynamic discovery found nothing; using fallback list")
         for name in _FALLBACK_INDICES:
             stem = name.replace(" ", " ").strip()
-            indices.append({"id": stem, "label": _pretty_label(stem)})  # noqa: PG-APPEND
+            indices.append(
+                {"id": stem, "label": _pretty_label(stem)}
+            )  # noqa: PG-APPEND
 
     logger.info("Discovered %d indices", len(indices))
     return indices
@@ -236,8 +304,16 @@ def compute_rrg(
             logger.warning("Skipping %s: insufficient overlapping data", sector_id)
             continue
 
-        bench_aligned = bench_df[bench_df["Date"].isin(common_dates)].sort_values("Date").reset_index(drop=True)
-        sec_aligned = sec_df[sec_df["Date"].isin(common_dates)].sort_values("Date").reset_index(drop=True)
+        bench_aligned = (
+            bench_df[bench_df["Date"].isin(common_dates)]
+            .sort_values("Date")
+            .reset_index(drop=True)
+        )
+        sec_aligned = (
+            sec_df[sec_df["Date"].isin(common_dates)]
+            .sort_values("Date")
+            .reset_index(drop=True)
+        )
 
         bench_close = bench_aligned["Close"].values
         sec_close = sec_aligned["Close"].values
@@ -291,13 +367,15 @@ def compute_rrg(
         else:
             quadrant = "Improving"
 
-        current.append({  # noqa: PG-APPEND
-            "id": sector_id,
-            "label": label_map.get(sector_id, _pretty_label(sector_id)),
-            "x": round(nx, 4),
-            "y": round(ny, 4),
-            "quadrant": quadrant,
-        })
+        current.append(
+            {  # noqa: PG-APPEND
+                "id": sector_id,
+                "label": label_map.get(sector_id, _pretty_label(sector_id)),
+                "x": round(nx, 4),
+                "y": round(ny, 4),
+                "quadrant": quadrant,
+            }
+        )
 
     # Normalise trails to same z-score scale
     norm_trails: Dict[str, List[List[float]]] = {}

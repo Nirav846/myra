@@ -1327,7 +1327,7 @@ async def clear_scanner_cache(scanner_name: str):
     )
     cache_path = (Path(MODELS_DIR) / f"{safe_stem}_cache.json").resolve()
     # Ensure resolved path stays within MODELS_DIR
-    if not str(cache_path).startswith(str(Path(MODELS_DIR).resolve())):
+    if not cache_path.is_relative_to(Path(MODELS_DIR).resolve()):
         raise HTTPException(status_code=400, detail="Invalid scanner name")
     existed = cache_path.exists()
     if existed:

@@ -285,7 +285,11 @@ async def predict_launchpad():
         return {"predictions": results, "status": "ok"}
     except Exception as e:
         logger.exception("predict_launchpad failed")
-        return {"predictions": [], "status": "error", "message": "Internal server error"}
+        return {
+            "predictions": [],
+            "status": "error",
+            "message": "Internal server error",
+        }
 
 
 @router.get("/launchpad/status")
@@ -300,10 +304,14 @@ async def launchpad_status():
 @router.get("/launchpad/feature-importance")
 async def launchpad_feature_importance():
     """Get feature importance from the launchpad model."""
-    from myra_app.ml_trainer import LaunchpadPredictor
+    try:
+        from myra_app.ml_trainer import LaunchpadPredictor
 
-    predictor = LaunchpadPredictor()
-    return predictor.get_feature_importance()
+        predictor = LaunchpadPredictor()
+        return predictor.get_feature_importance()
+    except Exception:
+        logger.exception("launchpad_feature_importance failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/factor-importance")
@@ -316,4 +324,4 @@ async def factor_importance():
         return result
     except Exception:
         logger.exception("factor_importance failed")
-        return {"status": "error", "message": "Internal server error"}
+        raise HTTPException(status_code=500, detail="Internal server error")
