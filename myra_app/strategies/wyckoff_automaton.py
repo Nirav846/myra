@@ -23,8 +23,8 @@ class WyckoffAutomaton:
 
     def __init__(
         self,
-        min_mcap=200,
-        max_mcap=50000,
+        min_mcap=510,
+        max_mcap=530000,
         lookback_days=90,
         restrict_to_holdings=False,
     ):

@@ -767,8 +767,8 @@ register_scanner(
 
 # --- Wyckoff Automaton ---
 def _wy_parse(payload: dict):
-    min_mcap = int(payload.get("min_mcap", 200))
-    max_mcap = int(payload.get("max_mcap", 50000))
+    min_mcap = int(payload.get("min_mcap", 510))
+    max_mcap = int(payload.get("max_mcap", 530000))
     restrict_to_holdings = bool(payload.get("restrict_to_holdings", False))
     raw_date = payload.get("scan_date", "")
     if raw_date and str(raw_date).strip():

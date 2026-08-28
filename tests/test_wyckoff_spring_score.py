@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from myra_app.strategies.wyckoff_automaton import WyckoffAutomaton
+from myra_web.routes.scanners import _wy_parse
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +102,9 @@ def test_spring_grade(score, expected):
         (0, 0, 5, 7, 0, False, 12.0),  # low
     ],
 )
-def test_compute_spring_score(del_s, wick_s, close_s, depth_s, bonus, confirm, expected):
+def test_compute_spring_score(
+    del_s, wick_s, close_s, depth_s, bonus, confirm, expected
+):
     result = WyckoffAutomaton._compute_spring_score(
         del_s, wick_s, close_s, depth_s, bonus, confirm
     )
@@ -251,3 +254,23 @@ def test_detect_events_spring_no_equal_low():
     # Score without equal-low bonus: 30 + 18.5 + 10 + 10 + 0 + 5 = 73.5
     assert s["spring_score"] == pytest.approx(73.5)
     assert s["grade"] == "A+"
+
+
+# ---------------------------------------------------------------------------
+# Part 3 — Default-value lock tests
+# ---------------------------------------------------------------------------
+
+
+def test_wyckoff_defaults_backend():
+    """WyckoffAutomaton class defaults must match API defaults."""
+    s = WyckoffAutomaton()
+    assert s.min_mcap == 510
+    assert s.max_mcap == 530000
+
+
+def test_wyckoff_defaults_api():
+    """_wy_parse({}) must return the same defaults as the class."""
+    kwargs, scan_date = _wy_parse({})
+    assert kwargs["min_mcap"] == 510
+    assert kwargs["max_mcap"] == 530000
+    assert scan_date is None

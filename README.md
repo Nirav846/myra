@@ -201,7 +201,7 @@ MYRA registers **15 scanners**. Thirteen are registered through the scanner fact
 | **The Trigger** | `/api/trigger/scan` | Stocks approaching a breakout: float-utilization pinch, volume contraction, tight price range, smart-float ratio | min_mcap=200, max_mcap=50000, min_float_util=8%, vol_pinch=0.75 |
 | **Float Exhaustion** | `/api/float-exhaustion/scan` | Volume has exhausted available free float, indicating potential price dislocation | min_mcap=200, max_mcap=50000, window=20d, min_float_util=10% |
 | **Invisible Hand** | `/api/invisible-hand/scan` | Institutional accumulation via volume-delivery divergence, FVG proximity, trend alignment. Supports historical `scan_date` time-travel | min_mcap=200, max_mcap=50000, window=20d, hist_window=60d, min_ih_score=35 |
-| **Wyckoff Automaton** | `/api/wyckoff/scan` | Automated Wyckoff method: accumulation (SC, AR, ST, Spring) and distribution phases | min_mcap=200, max_mcap=50000, lookback=90d |
+| **Wyckoff Automaton** | `/api/wyckoff/scan` | Automated Wyckoff method: accumulation (SC, AR, ST, Spring) and distribution phases | min_mcap=510, max_mcap=530000, lookback=90d |
 | **Liquidity Flip** | `/api/liquidity-flip/scan` | Transition from low-liquidity to high-liquidity regime signalling institutional entry | min_mcap=200, max_mcap=50000, lookback=95d |
 | **Operator Fingerprint** | `/api/operator-fingerprint/scan` | Smart-money fingerprint patterns in price-volume action over a 45-day window | min_mcap=200, max_mcap=50000, lookback=45d |
 | **Seasonal Delivery** | `/api/seasonal-delivery/scan` | Historically high delivery volumes in a specific month using multi-year seasonal patterns | min_mcap=200, max_mcap=50000, min_hist_del=40%, min_consistency=55%, min_years=2 |
