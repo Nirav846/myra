@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { Box, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Star, BookOpen, ChevronRight, Info } from 'lucide-react';
+import { Box, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Star, BookOpen, ChevronRight, Info, Building2 } from 'lucide-react';
 import FundTractionButton from '../components/FundTractionButton';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
@@ -156,6 +156,7 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
 
   const { isWatched } = useWatchlist();
   const [watchlistOnly, setWatchlistOnly] = useState(false);
+  const [restrictToHoldings, setRestrictToHoldings] = useState(false);
 
   const [sectorFilter, setSectorFilter] = useState<string>('All');
   const [eventFilter, setEventFilter] = useState<string>('All');
@@ -222,6 +223,7 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
         body.min_mcap = mcapRange.min;
         body.max_mcap = mcapRange.max;
       }
+      body.restrict_to_holdings = restrictToHoldings;
       if (scanDate.trim()) {
         body.scan_date = scanDate;
       }
@@ -245,7 +247,7 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
         setIsScanning(false);
       }
     }
-  }, [mcapRange, fetchStatus, clearPolling, scanDate]);
+  }, [mcapRange, fetchStatus, clearPolling, scanDate, restrictToHoldings]);
 
   useEffect(() => {
     if (!mcapRange) {
@@ -557,6 +559,22 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
           </button>
         </div>
         <div className="flex flex-col gap-1">
+          <div className="text-[12px] text-[#888] font-mono">Holdings</div>
+          <button
+            onClick={() => setRestrictToHoldings(o => !o)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[12px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 ${
+              restrictToHoldings
+                ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+                : 'bg-[#ffffff0a] border-[#ffffff1a] text-[#888] hover:text-emerald-400'
+            }`}
+            aria-label={restrictToHoldings ? 'Show all symbols' : 'Restrict to stocks held by mutual funds'}
+            aria-pressed={restrictToHoldings}
+          >
+            <Building2 size={11} />
+            MF-held only
+          </button>
+        </div>
+        <div className="flex flex-col gap-1">
           <div className="text-[12px] text-[#888] font-mono">Event</div>
           <select className="bg-[#1a1c24] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#fafafa] focus:border-purple-500 outline-none font-mono" value={eventFilter} onChange={(e) => setEventFilter(e.target.value)}>
             {EVENT_TYPES.map((t) => <option key={t} value={t}>{t === 'All' ? 'All Events' : t + ' — ' + (EVENT_META[t]?.desc ?? '').slice(0, 50) + '...'}</option>)}
@@ -641,8 +659,8 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
           {gradeA.length > 0 && (
             <div className="bg-green-500/5 border border-green-500/20 rounded p-3">
               <div className="text-[12px] text-green-400 font-mono uppercase tracking-wider mb-2 flex items-center gap-2">
-                <span>Grade A Signals</span>
-                <span className="text-[#888]">— textbook Wyckoff events with quality ≥ 75</span>
+                <span>Top Quality (≥75)</span>
+                <span className="text-[#888]">— textbook Wyckoff events with event quality ≥ 75</span>
               </div>
               <div className="flex flex-wrap gap-2">
                 {gradeA.slice(0, 12).map(d => {
@@ -677,7 +695,7 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
                       <Tooltip content="Composite 0-100: delivery absorption 30%, lower wick 30%, close location 20%, grab depth 10%, equal-low bonus 10%.">Spring Score <SortIcon col="spring_score" /></Tooltip>
                     </th>
                     <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" aria-sort={sortCol === 'grade' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('grade'); } }} onClick={() => handleSort('grade')} scope="col">
-                      <Tooltip content="Spring setup grade: A+ ≥ 65, B ≥ 50, C ≥ 35. Only C+ Springs are included.">Grade <SortIcon col="grade" /></Tooltip>
+                      <Tooltip content="Spring setup grade: A+ ≥ 65, B ≥ 50, C ≥ 35. Only C+ Springs are included.">Spring Grade <SortIcon col="grade" /></Tooltip>
                     </th>
                     <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" aria-sort={sortCol === 'close' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('close'); } }} onClick={() => handleSort('close')} scope="col">
                       Close <SortIcon col="close" />

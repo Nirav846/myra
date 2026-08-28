@@ -21,10 +21,17 @@ class WyckoffAutomaton:
     _bulk_data = None
     _BULK_COLUMNS = COLUMNS_13
 
-    def __init__(self, min_mcap=200, max_mcap=50000, lookback_days=90):
+    def __init__(
+        self,
+        min_mcap=200,
+        max_mcap=50000,
+        lookback_days=90,
+        restrict_to_holdings=False,
+    ):
         self.min_mcap = min_mcap
         self.max_mcap = max_mcap
         self.lookback_days = lookback_days
+        self.restrict_to_holdings = bool(restrict_to_holdings)
 
     def _db_path(self, key: str) -> str:
         return os.path.join(DB_DIR, LibrarianCore.DB_MAP[key])
@@ -50,6 +57,25 @@ class WyckoffAutomaton:
                 """,
                 (self.min_mcap, self.max_mcap),
             ).fetchall()
+
+        if self.restrict_to_holdings:
+            from myra_app.utils.fund_utils import get_holding_symbols
+
+            holdings = get_holding_symbols()
+            if not holdings:
+                logger.warning(
+                    "restrict_to_holdings=True but no holding data — "
+                    "falling back to full universe (%d symbols)",
+                    len(rows),
+                )
+            else:
+                before = len(rows)
+                rows = [r for r in rows if r[0].strip() in holdings]
+                logger.info(
+                    "Holdings filter: %d → %d symbols (latest month)",
+                    before,
+                    len(rows),
+                )
         return rows
 
     def _get_tech_data(
@@ -229,7 +255,8 @@ class WyckoffAutomaton:
                 avg_del_pct,
             )
 
-        # Scan last 30 sessions
+        # Scan the recent lookback window. tail(90) is hardcoded to match the
+        # default lookback_days=90 (session count, not calendar days).
         scan_df = df.tail(90).reset_index(drop=True)
         for i in range(len(scan_df)):
             abs_i = i + n - len(scan_df)
@@ -423,8 +450,13 @@ class WyckoffAutomaton:
                             "two_candle_confirm": bool(two_candle_confirm),
                         }
                     )
-                except Exception as exc:
-                    logger.warning("Spring scoring failed for %s: %s", symbol, exc)
+                except (KeyError, IndexError, ValueError) as exc:
+                    logger.warning(
+                        "Spring scoring failed for %s: %s",
+                        symbol,
+                        exc,
+                        exc_info=True,
+                    )
                 continue
 
             # SOS — Sign of Strength
@@ -583,8 +615,8 @@ class WyckoffAutomaton:
                     """
                 ).fetchall()
                 _sector_map = {r[0].strip(): r[1] for r in _sec_rows}
-        except Exception:
-            pass
+        except (sqlite3.Error, OSError) as exc:
+            logger.warning("Could not load sector map for Wyckoff scan: %s", exc)
 
         if as_on_date is None:
             as_on_date = date.today().isoformat()
@@ -604,64 +636,29 @@ class WyckoffAutomaton:
             if len(tech) < max(55, int(self.lookback_days * 0.6) + 5):
                 continue
 
-            col_count = len(tech[0]) if tech else 0
-            if col_count >= 13:
-                df = pd.DataFrame(
-                    tech,
-                    columns=[
-                        "date",
-                        "open",
-                        "high",
-                        "low",
-                        "close",
-                        "volume",
-                        "delivery",
-                        "delivery_pct",
-                        "swing_low",
-                        "nifty_outperformance_score",
-                        "sma_50",
-                        "high_52w",
-                        "low_52w",
-                    ],
-                )
-            elif col_count >= 12:
-                df = pd.DataFrame(
-                    tech,
-                    columns=[
-                        "date",
-                        "open",
-                        "high",
-                        "low",
-                        "close",
-                        "volume",
-                        "delivery",
-                        "delivery_pct",
-                        "nifty_outperformance_score",
-                        "sma_50",
-                        "high_52w",
-                        "low_52w",
-                    ],
-                )
-                df["swing_low"] = None
-            else:
-                df = pd.DataFrame(
-                    tech,
-                    columns=[
-                        "date",
-                        "open",
-                        "high",
-                        "low",
-                        "close",
-                        "volume",
-                        "delivery",
-                        "delivery_pct",
-                        "nifty_outperformance_score",
-                    ],
-                )
-                df["sma_50"] = None
-                df["high_52w"] = None
-                df["low_52w"] = None
-                df["swing_low"] = None
+            # 13-col schema is always produced: rows_for_symbol() (via the bulk
+            # loader COLUMNS_13) and _get_tech_data() both return 13 columns.
+            df = pd.DataFrame(
+                tech,
+                columns=[
+                    "date",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "delivery",
+                    "delivery_pct",
+                    "swing_low",
+                    # The following four columns are loaded for compatibility
+                    # with the shared bulk-loader schema but are NOT used by
+                    # Wyckoff detection logic.
+                    "nifty_outperformance_score",
+                    "sma_50",
+                    "high_52w",
+                    "low_52w",
+                ],
+            )
             df["date"] = pd.to_datetime(df["date"])
             df = df.sort_values("date").reset_index(drop=True)
 
