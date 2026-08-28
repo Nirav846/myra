@@ -195,7 +195,7 @@ def main():
         "T": ("ias_timing_engine", "IAS + Entry Timing Engine", "Score"),
     }
 
-    startup_choice, startup_sub = (
+    startup_choice, _startup_sub = (
         nav.handle_shortcut(args.options) if args.options else (None, None)
     )
     breadth_text = "↗ 0 | ↘ 0"
@@ -291,7 +291,7 @@ def main():
 
         # Generic Strategy Handler
         if choice in strategies:
-            s_id, s_name, s_sort = strategies[choice]
+            s_id, s_name, _s_sort = strategies[choice]
             pd_in = console.input(
                 "\n[info]Backtest Date? (YYYY-MM-DD) [Enter for Today] > [/info]"
             )

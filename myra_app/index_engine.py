@@ -16,11 +16,6 @@ try:
 except ImportError:
     yf = None
 
-try:
-    from nsepython import nse_get_index_quote
-except ImportError:
-    nse_get_index_quote = None
-
 import os
 import sqlite3
 from myra_app.constants import DB_DIR

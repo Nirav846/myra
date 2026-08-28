@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Librarian } from '../lib/Librarian';
 import { useWatchlist } from '../lib/WatchlistContext';
-import { StarButton } from '../components/StarButton';
 import { Ghost, CheckCircle2, Play, Settings2, ShieldAlert, AlertTriangle, Star } from 'lucide-react';
 
 interface SimulationResults {

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Plot from 'react-plotly.js';
 import type { Data, Layout } from 'plotly.js';
-import { RefreshCw, Loader2, AlertTriangle, ChevronDown, ChevronUp, PanelRightOpen, PanelRightClose } from 'lucide-react';
+import { RefreshCw, Loader2, AlertTriangle, ChevronUp, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { API_BASE } from '../config';
 
 // ── Types ────────────────────────────────────────────────────────────────────

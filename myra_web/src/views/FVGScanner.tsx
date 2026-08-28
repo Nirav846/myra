@@ -1,7 +1,6 @@
 import { Librarian } from '../lib/Librarian';
 import { useState, useEffect, useCallback } from 'react';
 import { Copy, Check, RefreshCw, AlertTriangle, ChartBar, Settings2, Star } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceArea, ReferenceLine } from 'recharts';
 import { alertBus } from '../lib/AlertManager';
 import { useSettings } from '../lib/SettingsContext';
 import { useWatchlist } from '../lib/WatchlistContext';

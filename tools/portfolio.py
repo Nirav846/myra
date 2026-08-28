@@ -27,7 +27,6 @@ try:
         delete_holding,
         record_snapshot,
         get_snapshots,
-        get_transactions,
         get_delivery_metrics,
         get_technical_position,
         get_sector_allocation,
@@ -1217,20 +1216,20 @@ Examples:
     p_export.add_argument("format", choices=["csv"], default="csv", nargs="?")
     p_export.add_argument("--filename", "-f", help="Output filename")
 
-    p_perf = sub.add_parser("performance", help="Per-stock and sector breakdown")
+    _p_perf = sub.add_parser("performance", help="Per-stock and sector breakdown")
 
-    p_scanner = sub.add_parser(
+    _p_scanner = sub.add_parser(
         "scanner", help="Cross-reference holdings with MYRA scanner results"
     )
-    p_alerts = sub.add_parser(
+    _p_alerts = sub.add_parser(
         "alerts", help="Show delivery anomaly alerts for your holdings"
     )
 
-    p_risk = sub.add_parser(
+    _p_risk = sub.add_parser(
         "risk", help="Portfolio risk metrics (concentration, drawdown, volatility)"
     )
 
-    p_status = sub.add_parser(
+    _p_status = sub.add_parser(
         "status", help="Show portfolio refresh state and metadata"
     )
 

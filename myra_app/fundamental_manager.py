@@ -132,7 +132,6 @@ class FundamentalManager:
 
             # 2. Update Main Fundamentals Summary Table (MAPPER)
             latest = data[0]
-            prev = data[1] if len(data) > 1 else None
 
             pe = latest.get("stock_pe") or latest.get("pe")
             roe = latest.get("roe")
@@ -145,23 +144,6 @@ class FundamentalManager:
             public_pct = (100 - promoter_pct) if promoter_pct is not None else None
             ff_pct = public_pct  # free float = public holding in Indian market
             ff_mcap = (mcap * ff_pct / 100) if mcap and ff_pct else None
-            ff_shares = None  # requires price, not available here
-
-            # Calculate Growth Metrics
-            profit_growth = 0
-            sales_growth = 0
-            if prev:
-                l_profit = latest.get("net_profit")
-                p_profit = prev.get("net_profit")
-                if l_profit and p_profit and p_profit != 0:
-                    profit_growth = round(
-                        ((l_profit - p_profit) / abs(p_profit)) * 100, 2
-                    )
-
-                l_rev = latest.get("revenue")
-                p_rev = prev.get("revenue")
-                if l_rev and p_rev and p_rev != 0:
-                    sales_growth = round(((l_rev - p_rev) / p_rev) * 100, 2)
 
             v_conn.execute(
                 """
@@ -181,7 +163,21 @@ class FundamentalManager:
                     free_float_market_cap = COALESCE(EXCLUDED.free_float_market_cap, fundamentals.free_float_market_cap),
                     last_updated = EXCLUDED.last_updated
             """,
-                (symbol_clean, pe, roe, eps, bv, mcap, sect, sect, promoter_pct, public_pct, ff_pct, ff_mcap, date.today().isoformat()),
+                (
+                    symbol_clean,
+                    pe,
+                    roe,
+                    eps,
+                    bv,
+                    mcap,
+                    sect,
+                    sect,
+                    promoter_pct,
+                    public_pct,
+                    ff_pct,
+                    ff_mcap,
+                    date.today().isoformat(),
+                ),
             )
 
             v_conn.commit()

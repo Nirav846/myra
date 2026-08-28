@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { API_BASE } from '../config';
-import { TrendingUp, Plus, Edit, Trash2, X, Check, Loader2, AlertTriangle, ChevronDown } from 'lucide-react';
+import { TrendingUp, Plus, Edit, Trash2, X, Check, Loader2, AlertTriangle } from 'lucide-react';
 import Modal from '../components/Modal';
 
 interface SignalDefinition {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Filter, RefreshCw, Download, ChevronUp, ChevronDown, ArrowUpDown, Settings2, Info, Zap, Target, Building2 } from 'lucide-react';
+import { RefreshCw, Download, ChevronUp, ChevronDown, ArrowUpDown, Settings2, Info, Zap, Target, Building2 } from 'lucide-react';
 import FundTractionButton from '../components/FundTractionButton';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
 import { useWatchlist } from '../lib/WatchlistContext';

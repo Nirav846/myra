@@ -161,7 +161,7 @@ class LaunchpadLabeler:
         return any_close_above
 
     def _scan_digestion_and_breakout(
-        self, df: pd.DataFrame, trigger: dict, trigger_start: int
+        self, df: pd.DataFrame, trigger: dict, _trigger_start: int
     ) -> dict | None:
         trig_idx = trigger["trigger_idx"]
         trig_date = trigger["trigger_date"]
@@ -178,9 +178,7 @@ class LaunchpadLabeler:
 
         digestion_low_price = None
         digestion_low_date = None
-        digestion_low_idx = None
         digestion_high_price = trig_price
-        digestion_high_idx = trig_idx
         min_range_atr = float("inf")
         min_vol_ratio = float("inf")
         lowest_close_before_breakout = None
@@ -194,18 +192,15 @@ class LaunchpadLabeler:
             if j == digest_start:
                 digestion_low_price = float(row["close"])
                 digestion_low_date = row["date"]
-                digestion_low_idx = j
 
             current_low = float(row["close"])
             if current_low < digestion_low_price:
                 digestion_low_price = current_low
                 digestion_low_date = row["date"]
-                digestion_low_idx = j
 
             current_high = float(row["high"])
             if current_high > digestion_high_price:
                 digestion_high_price = current_high
-                digestion_high_idx = j
 
             atr_value = (
                 row["atr"]

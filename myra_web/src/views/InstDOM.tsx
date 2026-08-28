@@ -4,7 +4,6 @@ import { AlignRight, Activity, TrendingUp, Loader2, Star } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, Legend } from 'recharts';
 import { SymbolSearch } from '../components/SymbolSearch';
 import { useWatchlist } from '../lib/WatchlistContext';
-import { StarButton } from '../components/StarButton';
 
 export default function InstDOMView({ lib }: { lib: Librarian }) {
   const { isWatched } = useWatchlist();

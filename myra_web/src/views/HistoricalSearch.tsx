@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
 import { Search, Calendar, Activity, BarChart2, Table as TableIcon, Package, TrendingUp, BarChart, Download, AlertTriangle, Info } from 'lucide-react';
 import { ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';

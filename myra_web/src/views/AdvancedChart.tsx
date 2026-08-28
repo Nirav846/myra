@@ -6,7 +6,7 @@ import { ChartSidebar } from '../components/chart/ChartSidebar';
 import CrosshairOverlay from '../components/chart/CrosshairOverlay';
 import type { CrosshairOverlayHandle } from '../components/chart/CrosshairOverlay';
 import { createPortal } from 'react-dom';
-import { Search, Plus, X, BarChart2, PanelLeftClose, Settings2, Info, Crosshair } from 'lucide-react';
+import { X, BarChart2, Settings2, Crosshair } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { SymbolSearch } from '../components/SymbolSearch';
 import { useSettings } from '../lib/SettingsContext';

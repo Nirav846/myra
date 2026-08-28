@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 # NiftyDataPipeline
 # ---------------------------------------------------------------------------
 
+
 class NiftyDataPipeline:
     def __init__(self, librarian):
         self.lib = librarian
@@ -52,7 +53,7 @@ class NiftyDataPipeline:
 
         except Exception as exc:
             logger.error("fetch_historical_nifty error: %s", exc)
-            return pd.DataFrame()   # FIX #3: never return None
+            return pd.DataFrame()  # FIX #3: never return None
 
     def engineer_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -91,6 +92,7 @@ class NiftyDataPipeline:
 # TrendForecaster
 # ---------------------------------------------------------------------------
 
+
 class TrendForecaster:
     FEATURES = ["RSI", "ATR", "MACD", "Ret_1d", "Ret_5d", "Vol_Shock"]
 
@@ -109,7 +111,7 @@ class TrendForecaster:
             return True
 
         df = self.pipeline.fetch_historical_nifty()
-        if df.empty:   # FIX #3: fetch now always returns DataFrame
+        if df.empty:  # FIX #3: fetch now always returns DataFrame
             logger.error("setup_engine: no Nifty data available.")
             return False
 
@@ -206,15 +208,26 @@ class TrendForecaster:
         elif prob < 0.45:
             return {"direction": "BEARISH", "confidence": round((1 - prob) * 100, 1)}
         else:
-            return {"direction": "NEUTRAL", "confidence": round(max(prob, 1 - prob) * 100, 1)}
+            return {
+                "direction": "NEUTRAL",
+                "confidence": round(max(prob, 1 - prob) * 100, 1),
+            }
 
 
 # ---------------------------------------------------------------------------
 # DilatedCNNForecaster
 # ---------------------------------------------------------------------------
 
-_CNN_COLS = ["d_poc", "absorp_ratio", "std20", "delivery_percent",
-             "sma50", "sma200", "rdv", "close"]
+_CNN_COLS = [
+    "d_poc",
+    "absorp_ratio",
+    "std20",
+    "delivery_percent",
+    "sma50",
+    "sma200",
+    "rdv",
+    "close",
+]
 
 
 class DilatedCNNForecaster:
@@ -252,23 +265,30 @@ class DilatedCNNForecaster:
                 x = Conv1D(
                     filters=128,
                     kernel_size=3,
-                    dilation_rate=2 ** i,
+                    dilation_rate=2**i,
                     padding="causal",
                     activation="relu",
                 )(x)
 
             # FIX #13: replace non-serializable Lambda with a proper slicing layer
-            from tensorflow.keras.layers import Cropping1D, Flatten
-            x = x[:, -1, :]   # This is fine inside build — we use a GlobalMaxPool alternative below
+            x = x[
+                :, -1, :
+            ]  # This is fine inside build — we use a GlobalMaxPool alternative below
             # Actually use a Keras-native approach:
             from tensorflow.keras.layers import GlobalAveragePooling1D
+
             # Rebuild cleanly:
             inputs2 = Input(shape=(self.window_size, self.features_count))
             x2 = Dense(128)(inputs2)
             for i in range(4):
-                x2 = Conv1D(128, kernel_size=3, dilation_rate=2 ** i,
-                            padding="causal", activation="relu")(x2)
-            x2 = GlobalAveragePooling1D()(x2)   # serializable, stable
+                x2 = Conv1D(
+                    128,
+                    kernel_size=3,
+                    dilation_rate=2**i,
+                    padding="causal",
+                    activation="relu",
+                )(x2)
+            x2 = GlobalAveragePooling1D()(x2)  # serializable, stable
             x2 = Dropout(0.2)(x2)
             outputs2 = Dense(1)(x2)
             model = Model(inputs2, outputs2)
@@ -283,7 +303,8 @@ class DilatedCNNForecaster:
         if len(df) < self.window_size + 10:
             logger.warning(
                 "DilatedCNNForecaster.train: need ≥%d rows, got %d.",
-                self.window_size + 10, len(df),
+                self.window_size + 10,
+                len(df),
             )
             return False
 
@@ -298,18 +319,19 @@ class DilatedCNNForecaster:
         self.scaler = StandardScaler()
         data = self.scaler.fit_transform(df[_CNN_COLS].fillna(0))
 
-        X = np.array([data[i - self.window_size: i]
-                      for i in range(self.window_size, len(data))])
-        y = data[self.window_size:, -1]
+        X = np.array(
+            [data[i - self.window_size : i] for i in range(self.window_size, len(data))]
+        )
+        y = data[self.window_size :, -1]
 
         self.model = self.build_model()
         if not self.model:
             return False
 
         self.model.fit(X, y, epochs=epochs, verbose=0)
-        self._ensure_model_dir()   # FIX #4
+        self._ensure_model_dir()  # FIX #4
         self.model.save(self.model_path)
-        joblib.dump(self.scaler, self.scaler_path)   # FIX #5
+        joblib.dump(self.scaler, self.scaler_path)  # FIX #5
         logger.info("DilatedCNNForecaster saved to %s.", self.model_path)
         return True
 
@@ -320,13 +342,15 @@ class DilatedCNNForecaster:
             if os.path.exists(self.model_path):
                 try:
                     import tensorflow as tf
+
                     self.model = tf.keras.models.load_model(self.model_path)
                 except Exception as exc:
                     logger.error("DilatedCNNForecaster: model load failed: %s", exc)
                     return None
             else:
                 logger.warning(
-                    "DilatedCNNForecaster: no model at %s. Train first.", self.model_path
+                    "DilatedCNNForecaster: no model at %s. Train first.",
+                    self.model_path,
                 )
                 return None
 
@@ -340,89 +364,41 @@ class DilatedCNNForecaster:
                     return None
             else:
                 logger.error(
-                    "DilatedCNNForecaster: scaler not found at %s. Re-train.", self.scaler_path
+                    "DilatedCNNForecaster: scaler not found at %s. Re-train.",
+                    self.scaler_path,
                 )
                 return None
 
         if len(df) < self.window_size:
             logger.warning(
                 "DilatedCNNForecaster.predict_next: need ≥%d rows, got %d.",
-                self.window_size, len(df),
+                self.window_size,
+                len(df),
             )
             return None
 
         missing = [c for c in _CNN_COLS if c not in df.columns]
         if missing:
-            logger.error("DilatedCNNForecaster.predict_next: missing columns %s.", missing)
+            logger.error(
+                "DilatedCNNForecaster.predict_next: missing columns %s.", missing
+            )
             return None
 
-        data = self.scaler.transform(df[_CNN_COLS].fillna(0))   # FIX #5: use saved scaler
-        last_window = data[-self.window_size:].reshape(1, self.window_size, self.features_count)
+        data = self.scaler.transform(
+            df[_CNN_COLS].fillna(0)
+        )  # FIX #5: use saved scaler
+        last_window = data[-self.window_size :].reshape(
+            1, self.window_size, self.features_count
+        )
         pred_scaled = float(self.model.predict(last_window, verbose=0)[0, 0])
         last_close_scaled = data[-1, -1]
         return (pred_scaled - last_close_scaled) / (abs(last_close_scaled) + 1e-7)
 
 
 # ---------------------------------------------------------------------------
-# DeepEvolutionStrategy
-# ---------------------------------------------------------------------------
-
-class DeepEvolutionStrategy:
-    """NES-style Evolution Strategy optimizer."""
-
-    def __init__(
-        self,
-        weights: list[np.ndarray],
-        reward_function,
-        population_size: int = 50,
-        sigma: float = 0.1,
-        learning_rate: float = 0.01,
-    ):
-        self.weights = weights
-        self.reward_function = reward_function
-        self.population_size = population_size
-        self.sigma = sigma
-        self.learning_rate = learning_rate
-
-    def _get_jittered_weights(self, weights, noise):
-        return [w + self.sigma * n for w, n in zip(weights, noise)]
-
-    def train(self, iterations: int = 100, print_every: int = 10) -> list[np.ndarray]:
-        for i in range(iterations):
-            population_noise = [
-                [np.random.randn(*w.shape) for w in self.weights]
-                for _ in range(self.population_size)
-            ]
-
-            rewards = np.array([
-                self.reward_function(self._get_jittered_weights(self.weights, noise))
-                for noise in population_noise
-            ])
-
-            if np.std(rewards) > 1e-7:
-                rewards = (rewards - np.mean(rewards)) / np.std(rewards)
-
-            # FIX #19: vectorised weight update — eliminates the inner Python loop
-            for idx, w in enumerate(self.weights):
-                # Stack noise for this weight index: shape (P, *w.shape)
-                noise_stack = np.array([population_noise[k][idx]
-                                        for k in range(self.population_size)])
-                # rewards shape: (P,) — broadcast over weight dims
-                update = np.tensordot(rewards, noise_stack, axes=([0], [0]))
-                self.weights[idx] += (
-                    self.learning_rate / (self.population_size * self.sigma)
-                ) * update
-
-            if (i + 1) % print_every == 0:
-                curr_reward = self.reward_function(self.weights)
-                logger.info("[ES] Iteration %d/%d | Reward: %.4f", i + 1, iterations, curr_reward)
-
-        return self.weights
-
-
-# ---------------------------------------------------------------------------
 # EvolutionaryAgent
 # ---------------------------------------------------------------------------
+
 
 class EvolutionaryAgent:
     """Maps technical state to position conviction via evolved weights."""
@@ -474,7 +450,7 @@ class EvolutionaryAgent:
         for key in sorted(self.weights):
             shape = self.weights[key].shape
             size = int(np.prod(shape))
-            self.weights[key] = genes[start: start + size].reshape(shape)
+            self.weights[key] = genes[start : start + size].reshape(shape)
             start += size
 
 
@@ -482,8 +458,16 @@ class EvolutionaryAgent:
 # SMCEnvironment
 # ---------------------------------------------------------------------------
 
-_ENV_COLS = ["d_poc", "absorp_ratio", "std20", "delivery_percent",
-             "sma50", "sma200", "rdv", "close"]
+_ENV_COLS = [
+    "d_poc",
+    "absorp_ratio",
+    "std20",
+    "delivery_percent",
+    "sma50",
+    "sma200",
+    "rdv",
+    "close",
+]
 _REQUIRED_ENV_COLS = _ENV_COLS + ["high_1y"]
 
 
@@ -498,7 +482,9 @@ class SMCEnvironment:
                 f"SMCEnvironment requires columns {_REQUIRED_ENV_COLS}. "
                 f"Missing: {missing}. Check your data pipeline."
             )
-        self.df = df.reset_index(drop=True)   # FIX #8: drop=True gives clean 0-based int index
+        self.df = df.reset_index(
+            drop=True
+        )  # FIX #8: drop=True gives clean 0-based int index
         self.initial_balance = initial_balance
         self.reset()
 
@@ -544,13 +530,16 @@ class SMCEnvironment:
             return np.array([])
 
         # For each step i in [60, N-2], the window is data[i-59 : i+1]
-        n_steps = n - 61   # steps 60 … N-2 (inclusive)
+        n_steps = n - 61  # steps 60 … N-2 (inclusive)
         if n_steps <= 0:
             return np.array([])
 
         # Build (n_steps, 60, 8) with stride tricks
         from numpy.lib.stride_tricks import sliding_window_view
-        windows = sliding_window_view(data, window_shape=(60, 8))[:n_steps]  # (n_steps, 60, 8)
+
+        windows = sliding_window_view(data, window_shape=(60, 8))[
+            :n_steps
+        ]  # (n_steps, 60, 8)
 
         # Vectorised standardisation over all windows at once
         close_vals = windows[:, -1, _ENV_COLS.index("close")]  # (n_steps,)
@@ -597,7 +586,9 @@ class SMCEnvironment:
         log_rewards = np.log(np.maximum(step_returns, 1e-6))
 
         amplified = np.where(log_rewards > 0, log_rewards * 2, log_rewards)
-        is_in_drawdown = (next_prices / np.where(high_1y == 0, 1.0, high_1y) - 1) < -0.15
+        is_in_drawdown = (
+            next_prices / np.where(high_1y == 0, 1.0, high_1y) - 1
+        ) < -0.15
         dd_penalties = np.where((allocations > 0) & is_in_drawdown, -0.02, 0.0)
         participation_bonus = np.where(allocations > 0, 0.0001, 0.0)
 
@@ -606,11 +597,11 @@ class SMCEnvironment:
     # ------------------------------------------------------------------
     def _get_state(self) -> np.ndarray:
         # FIX #8: iloc (positional) instead of loc — safe with reset_index(drop=True)
-        window = self.df.iloc[self.current_step - 59: self.current_step + 1]
+        window = self.df.iloc[self.current_step - 59 : self.current_step + 1]
         return self._standardize_window(window)
 
     def step(self, action: int) -> tuple[np.ndarray, float, bool]:
-        price = float(self.df.iloc[self.current_step]["close"])   # FIX #8
+        price = float(self.df.iloc[self.current_step]["close"])  # FIX #8
         high_1y = float(self.df.iloc[self.current_step]["high_1y"])
 
         prev_val = self.balance + self.inventory * price
@@ -621,7 +612,7 @@ class SMCEnvironment:
         self.current_step += 1
         done = self.current_step >= len(self.df) - 1
 
-        new_price = float(self.df.iloc[self.current_step]["close"])   # FIX #8
+        new_price = float(self.df.iloc[self.current_step]["close"])  # FIX #8
         current_val = self.balance + self.inventory * new_price
         reward = (
             float(np.log(current_val / prev_val))
@@ -638,8 +629,15 @@ class SMCEnvironment:
 # AEONEngine
 # ---------------------------------------------------------------------------
 
-_AEON_COLS = ["d_poc", "absorp_ratio", "std20", "delivery_percent",
-              "sma50", "sma200", "rdv"]
+_AEON_COLS = [
+    "d_poc",
+    "absorp_ratio",
+    "std20",
+    "delivery_percent",
+    "sma50",
+    "sma200",
+    "rdv",
+]
 _AEON_FUNDA_MAP = {
     "absorp_ratio": "Absorp_Ratio",
     "rdv": "RDV",
@@ -689,7 +687,8 @@ class AEONEngine:
                 return True
             logger.warning(
                 "AEONEngine: gene size mismatch (file=%d, expected=%d). Re-train.",
-                len(genes), self.agent.gene_size,
+                len(genes),
+                self.agent.gene_size,
             )
         except Exception as exc:
             logger.error("AEONEngine: model load failed: %s", exc)
@@ -698,7 +697,9 @@ class AEONEngine:
     def _standardize_window(self, window_df: pd.DataFrame) -> np.ndarray:
         return SMCEnvironment._standardize_window_array(window_df).reshape(1, -1)
 
-    def get_conviction(self, symbol: str, df: pd.DataFrame, funda: dict | None = None) -> str:
+    def get_conviction(
+        self, symbol: str, df: pd.DataFrame, funda: dict | None = None
+    ) -> str:
         if df.empty and not funda:
             return "N/A"
 
@@ -715,14 +716,16 @@ class AEONEngine:
                 elif funda:
                     logger.debug(
                         "get_conviction(%s): missing indicators %s, falling back to funda.",
-                        symbol, missing_cols,
+                        symbol,
+                        missing_cols,
                     )
                     # FIX #21: use shared helper
                     state = self._standardize_window(_build_funda_window(funda))
                 else:
                     logger.warning(
                         "get_conviction(%s): missing indicators %s and no funda fallback.",
-                        symbol, missing_cols,
+                        symbol,
+                        missing_cols,
                     )
                     return "N/A"
             elif funda:

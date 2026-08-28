@@ -1,4 +1,3 @@
-import functools
 import logging
 import os
 import threading
@@ -43,11 +42,14 @@ class MYRAScreener:
         """PERFORMANCE IMPROVEMENT: Cached wrapper for precompute_indicators."""
         # NO FUNDAMENTALS: Only technical indicators from Parquet lake
         latest_date = self.lib.get_max_price_date()
-        
+
         with self._cache_lock:
-            if self._indicator_cache_date == latest_date and self._indicator_cache is not None:
+            if (
+                self._indicator_cache_date == latest_date
+                and self._indicator_cache is not None
+            ):
                 return self._indicator_cache
-        
+
         # Cache miss or first run
         try:
             df = self.lib.precompute_indicators()
@@ -56,16 +58,22 @@ class MYRAScreener:
                 self.console.print(
                     "[warning][!] Parquet Indicator Lake is empty. Starting background refresh...[/warning]"
                 )
+
                 # PERFORMANCE IMPROVEMENT: Non-blocking background refresh
                 def _background_refresh():
                     try:
-                        self.lib.sync_market_data(history_years=0.02, skip_maintenance=True)
+                        self.lib.sync_market_data(
+                            history_years=0.02, skip_maintenance=True
+                        )
                         self.lib.start_background_sync(history_years=3)
                     except Exception as e:
-                        self.console.print(f"[error]Background refresh failed: {e}[/error]")
+                        self.console.print(
+                            f"[error]Background refresh failed: {e}[/error]"
+                        )
+
                 threading.Thread(target=_background_refresh, daemon=True).start()
                 return df
-            
+
             # Update cache
             with self._cache_lock:
                 self._indicator_cache = df
@@ -523,9 +531,7 @@ class MYRAScreener:
         )
         # NO FUNDAMENTALS: Removed fundamental ranking
         if results:
-            self.rm.display_discovery_table(
-                results, "Custom Scout", "technicals", []
-            )
+            self.rm.display_discovery_table(results, "Custom Scout", "technicals", [])
             self.rm.archive_results(results, "Custom_Scout", strategy_id="technicals")
 
     def run_full_market_scout(self):
@@ -607,7 +613,6 @@ class MYRAScreener:
             if not line.startswith("#") and line.strip()
             for s in line.replace(",", " ").split()
         ]
-
 
     def _register_signals(
         self, results: list, strategy_id: str, as_of_date: str = None
@@ -707,7 +712,6 @@ class MYRAScreener:
         Returns empty list by default (uses standard columns).
         """
         return ["Dist%"]  # Add "Dist%" as a hero column
-        return []
 
     def close(self):
         self.lib.close()

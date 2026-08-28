@@ -81,7 +81,7 @@ def _get_metadata_connection(read_only: bool = True) -> LibrarianCore:
 # ─── Shutdown handler ─────────────────────────────────────────────────────────
 
 
-def _graceful_shutdown(signum=None, frame=None):
+def _graceful_shutdown(_signum=None, _frame=None):
     """
     Called on Ctrl+C (SIGINT), SIGTERM, or Windows console close.
     Signals all background tasks to stop and waits for them to finish

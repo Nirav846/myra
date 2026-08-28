@@ -34,14 +34,12 @@ class Strategy:
         # Signal if forecast is bullish (> 0.5% move expected)
         has_signal = forecast_move > 0.005
 
-        if has_signal or True:  # Return for all during discovery
-            return {
-                "signal": has_signal,
-                "metrics": {
-                    "Strategy": "CNN-Seq2seq",
-                    "Forecast_Move%": round(forecast_move * 100, 2),
-                    "Type": "DeepLearning",
-                },
-            }
-
-        return {"signal": False}
+        # Return for all during discovery
+        return {
+            "signal": has_signal,
+            "metrics": {
+                "Strategy": "CNN-Seq2seq",
+                "Forecast_Move%": round(forecast_move * 100, 2),
+                "Type": "DeepLearning",
+            },
+        }

@@ -1,6 +1,6 @@
 import { Librarian } from '../lib/Librarian';
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Copy, Check, RefreshCw, Target, Star } from 'lucide-react';
+import { Copy, Check, Target, Star } from 'lucide-react';
 import PresetChip from '../components/PresetChip';
 import { ValueRankerConfig } from '../lib/scannerPresets';
 import { resolveBucket } from '../lib/bucketUtils';

@@ -1,6 +1,6 @@
 import { Librarian } from '../lib/Librarian';
 import { useState, useEffect } from 'react';
-import { Copy, Check, RefreshCw, Database, Search } from 'lucide-react';
+import { Copy, Check, RefreshCw, Database } from 'lucide-react';
 import { SymbolSearch } from '../components/SymbolSearch';
 
 export default function DataLakeView({ lib }: { lib: Librarian }) {

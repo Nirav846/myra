@@ -1,6 +1,6 @@
 import { Librarian } from '../lib/Librarian';
 import { useState, useEffect, useCallback } from 'react';
-import { Copy, Check, RefreshCw, AlertTriangle, ArrowUpDown, Filter, Star } from 'lucide-react';
+import { Copy, Check, RefreshCw, AlertTriangle, ArrowUpDown, Star } from 'lucide-react';
 import { useSettings } from '../lib/SettingsContext';
 import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';

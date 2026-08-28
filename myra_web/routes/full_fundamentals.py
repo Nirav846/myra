@@ -28,10 +28,15 @@ CACHE_TTL_HOURS = 1
 # Small numeric helpers
 # --------------------------------------------------------------------------- #
 
+
 def _series_values(series):
     if not series:
         return []
-    return [p.get("value") for p in series if isinstance(p, dict) and p.get("value") is not None]
+    return [
+        p.get("value")
+        for p in series
+        if isinstance(p, dict) and p.get("value") is not None
+    ]
 
 
 def _series_latest(series):
@@ -65,6 +70,7 @@ def _normalize_dividend_yield(v):
 # --------------------------------------------------------------------------- #
 # Graham Number + Defensive Criteria
 # --------------------------------------------------------------------------- #
+
 
 def compute_graham_metrics(data: dict) -> dict:
     """Compute Graham Number and Defensive Criteria from combined fundamentals.
@@ -150,6 +156,7 @@ def compute_graham_metrics(data: dict) -> dict:
 # Piotroski F-Score (6-criterion simplified)
 # --------------------------------------------------------------------------- #
 
+
 def compute_piotroski_score(data: dict) -> dict:
     """Compute a simplified Piotroski F-Score from available data.
 
@@ -169,12 +176,13 @@ def compute_piotroski_score(data: dict) -> dict:
 
     try:
         import yfinance as _yf
+
         ticker = _yf.Ticker(symbol.strip().upper() + ".NS")
     except Exception:
         return None
 
     # ---- point-in-time values from ticker.info (already fetched) ----
-    roa = ydata.get("roa")            # returnOnAssets (fraction)
+    roa = ydata.get("roa")  # returnOnAssets (fraction)
     cfo = ydata.get("operating_cashflow")
     net_income = ydata.get("net_income")
 
@@ -215,7 +223,9 @@ def compute_piotroski_score(data: dict) -> dict:
     ta_prev = _col(bs, "Total Assets", 1)
 
     de_now = (de_now_raw / ta_now) if de_now_raw and ta_now and ta_now != 0 else None
-    de_prev = (de_prev_raw / ta_prev) if de_prev_raw and ta_prev and ta_prev != 0 else None
+    de_prev = (
+        (de_prev_raw / ta_prev) if de_prev_raw and ta_prev and ta_prev != 0 else None
+    )
 
     # Current year and prior year gross margin from financials
     gm_now_raw = _col(fin, "Gross Profit", 0)
@@ -224,7 +234,9 @@ def compute_piotroski_score(data: dict) -> dict:
 
     gm_prev_raw = _col(fin, "Gross Profit", 1)
     rev_prev = _col(fin, "Total Revenue", 1)
-    gm_prev = (gm_prev_raw / rev_prev) if gm_prev_raw and rev_prev and rev_prev != 0 else None
+    gm_prev = (
+        (gm_prev_raw / rev_prev) if gm_prev_raw and rev_prev and rev_prev != 0 else None
+    )
 
     # Fall back to ticker.info for current-year values not on balance sheet
     if cr_now_bs is None:
@@ -252,23 +264,33 @@ def compute_piotroski_score(data: dict) -> dict:
 
     # 3. CFO > Net Income (quality of earnings)
     if cfo is not None and net_income is not None:
-        _check("CFO > Net Income", cfo > net_income,
-               f"CFO {cfo / 1e7:,.0f} Cr vs NI {net_income / 1e7:,.0f} Cr")
+        _check(
+            "CFO > Net Income",
+            cfo > net_income,
+            f"CFO {cfo / 1e7:,.0f} Cr vs NI {net_income / 1e7:,.0f} Cr",
+        )
 
     # 4. Current Ratio improving (YoY)
     if cr_now_bs is not None and cr_prev is not None:
-        _check("Current ratio improving", cr_now_bs > cr_prev,
-               f"{cr_prev:.2f} -> {cr_now_bs:.2f}")
+        _check(
+            "Current ratio improving",
+            cr_now_bs > cr_prev,
+            f"{cr_prev:.2f} -> {cr_now_bs:.2f}",
+        )
 
     # 5. Leverage declining (D/E YoY)
     if de_now is not None and de_prev is not None:
-        _check("Leverage declining", de_now < de_prev,
-               f"D/E {de_prev:.2f} -> {de_now:.2f}")
+        _check(
+            "Leverage declining", de_now < de_prev, f"D/E {de_prev:.2f} -> {de_now:.2f}"
+        )
 
     # 6. Gross Margin improving (YoY)
     if gm_now is not None and gm_prev is not None:
-        _check("Gross margin improving", gm_now > gm_prev,
-               f"{gm_prev * 100:.1f}% -> {gm_now * 100:.1f}%")
+        _check(
+            "Gross margin improving",
+            gm_now > gm_prev,
+            f"{gm_prev * 100:.1f}% -> {gm_now * 100:.1f}%",
+        )
 
     max_score = len(criteria)
     if max_score == 0:
@@ -292,6 +314,7 @@ def compute_piotroski_score(data: dict) -> dict:
 # --------------------------------------------------------------------------- #
 # Two-Stage DCF Intrinsic Value
 # --------------------------------------------------------------------------- #
+
 
 def compute_dcf(data: dict) -> dict:
     """Two-stage Discounted Cash Flow model.
@@ -322,9 +345,9 @@ def compute_dcf(data: dict) -> dict:
     # Cap growth at 25% (conservative)
     growth = min(growth, 0.25)
 
-    wacc = 0.10          # 10% discount rate for Indian equities
-    terminal_g = 0.03    # 3% perpetual growth
-    horizon = 5          # high-growth years
+    wacc = 0.10  # 10% discount rate for Indian equities
+    terminal_g = 0.03  # 3% perpetual growth
+    horizon = 5  # high-growth years
 
     # Project FCFs for the horizon
     projected = []
@@ -360,6 +383,7 @@ def compute_dcf(data: dict) -> dict:
 # --------------------------------------------------------------------------- #
 # Insights
 # --------------------------------------------------------------------------- #
+
 
 def generate_insights(data: dict) -> list:
     """Rule-based qualitative read of the fundamentals payload."""
@@ -434,76 +458,177 @@ def generate_insights(data: dict) -> list:
         roe = snapshot.get("roe") or ydata.get("roe")
         if roe is not None:
             if roe >= 12:
-                add("roe", "Healthy ROE", f"ROE of {roe:.1f}% indicates strong capital efficiency.", "green")
+                add(
+                    "roe",
+                    "Healthy ROE",
+                    f"ROE of {roe:.1f}% indicates strong capital efficiency.",
+                    "green",
+                )
             elif roe >= 8:
-                add("roe", "Moderate ROE", f"ROE of {roe:.1f}% is acceptable but not exceptional.", "yellow")
+                add(
+                    "roe",
+                    "Moderate ROE",
+                    f"ROE of {roe:.1f}% is acceptable but not exceptional.",
+                    "yellow",
+                )
             else:
-                add("roe", "Weak ROE", f"ROE of {roe:.1f}% is below healthy thresholds.", "red")
+                add(
+                    "roe",
+                    "Weak ROE",
+                    f"ROE of {roe:.1f}% is below healthy thresholds.",
+                    "red",
+                )
 
     # 3. ROCE
-    roce = snapshot.get("roce") or _series_latest(timeseries.get("roce")) or ydata.get("roce")
+    roce = (
+        snapshot.get("roce")
+        or _series_latest(timeseries.get("roce"))
+        or ydata.get("roce")
+    )
     if roce is not None:
         if roce >= 15:
-            add("roce", "Strong ROCE", f"ROCE of {roce:.1f}% clears the 15% efficiency bar.", "green")
+            add(
+                "roce",
+                "Strong ROCE",
+                f"ROCE of {roce:.1f}% clears the 15% efficiency bar.",
+                "green",
+            )
         elif roce >= 10:
-            add("roce", "Decent ROCE", f"ROCE of {roce:.1f}% is reasonable but below 15%.", "yellow")
+            add(
+                "roce",
+                "Decent ROCE",
+                f"ROCE of {roce:.1f}% is reasonable but below 15%.",
+                "yellow",
+            )
         else:
-            add("roce", "Low ROCE", f"ROCE of {roce:.1f}% signals weak capital returns.", "red")
+            add(
+                "roce",
+                "Low ROCE",
+                f"ROCE of {roce:.1f}% signals weak capital returns.",
+                "red",
+            )
 
     # 4. Leverage (Debt/Equity)
     de = _normalize_debt_to_equity(ydata.get("debt_to_equity"))
     if de is not None:
         if de >= 2:
-            add("leverage", "Highly leveraged", f"Debt/Equity of {de:.2f} is dangerously high.", "red")
+            add(
+                "leverage",
+                "Highly leveraged",
+                f"Debt/Equity of {de:.2f} is dangerously high.",
+                "red",
+            )
         elif de < 0.5:
-            add("leverage", "Low leverage", f"Debt/Equity of {de:.2f} is conservative.", "green")
+            add(
+                "leverage",
+                "Low leverage",
+                f"Debt/Equity of {de:.2f} is conservative.",
+                "green",
+            )
         else:
-            add("leverage", "Moderate leverage", f"Debt/Equity of {de:.2f} is within normal bounds.", "yellow")
+            add(
+                "leverage",
+                "Moderate leverage",
+                f"Debt/Equity of {de:.2f} is within normal bounds.",
+                "yellow",
+            )
 
     # 5. Promoter holding
     prom = shareholding.get("promoters")
     if prom is not None:
         if prom >= 50:
-            add("promoter", "Strong promoter stake", f"Promoters hold {prom:.1f}% — high alignment.", "green")
+            add(
+                "promoter",
+                "Strong promoter stake",
+                f"Promoters hold {prom:.1f}% — high alignment.",
+                "green",
+            )
         elif prom < 30:
-            add("promoter", "Low promoter stake", f"Promoters hold only {prom:.1f}%.", "red")
+            add(
+                "promoter",
+                "Low promoter stake",
+                f"Promoters hold only {prom:.1f}%.",
+                "red",
+            )
         else:
-            add("promoter", "Moderate promoter stake", f"Promoters hold {prom:.1f}%.", "yellow")
+            add(
+                "promoter",
+                "Moderate promoter stake",
+                f"Promoters hold {prom:.1f}%.",
+                "yellow",
+            )
 
     # 6. Analyst recommendation
     rec = str(ydata.get("recommendation_key") or "").lower()
     if rec:
         if rec in ("strong_buy", "buy"):
-            add("analyst", "Analysts bullish", "Consensus analyst rating is BUY.", "green")
+            add(
+                "analyst",
+                "Analysts bullish",
+                "Consensus analyst rating is BUY.",
+                "green",
+            )
         elif rec in ("strong_sell", "sell"):
-            add("analyst", "Analysts bearish", "Consensus analyst rating is SELL.", "red")
+            add(
+                "analyst",
+                "Analysts bearish",
+                "Consensus analyst rating is SELL.",
+                "red",
+            )
         else:
-            add("analyst", "Analysts neutral", "Consensus analyst rating is HOLD.", "yellow")
+            add(
+                "analyst",
+                "Analysts neutral",
+                "Consensus analyst rating is HOLD.",
+                "yellow",
+            )
 
     # 7. Dividend yield
-    dy = _normalize_dividend_yield(snapshot.get("dividend_yield") or ydata.get("dividend_yield"))
+    dy = _normalize_dividend_yield(
+        snapshot.get("dividend_yield") or ydata.get("dividend_yield")
+    )
     if dy is not None and dy > 0:
         if dy >= 2:
-            add("dividend", "Attractive dividend", f"Dividend yield of {dy:.2f}% beats the 2% bar.", "green")
+            add(
+                "dividend",
+                "Attractive dividend",
+                f"Dividend yield of {dy:.2f}% beats the 2% bar.",
+                "green",
+            )
         else:
-            add("dividend", "Low dividend yield", f"Dividend yield of {dy:.2f}% is below 2%.", "yellow")
+            add(
+                "dividend",
+                "Low dividend yield",
+                f"Dividend yield of {dy:.2f}% is below 2%.",
+                "yellow",
+            )
 
     # 8. Earnings growth
     eg = ydata.get("earnings_growth")
     if eg is not None:
         if eg < 0:
-            add("growth", "Earnings contracting", f"Earnings growth is {eg * 100:.1f}% YoY.", "yellow")
+            add(
+                "growth",
+                "Earnings contracting",
+                f"Earnings growth is {eg * 100:.1f}% YoY.",
+                "yellow",
+            )
         else:
-            add("growth", "Earnings growing", f"Earnings growth is {eg * 100:.1f}% YoY.", "green")
+            add(
+                "growth",
+                "Earnings growing",
+                f"Earnings growth is {eg * 100:.1f}% YoY.",
+                "green",
+            )
 
     # ------------------------------------------------------------------ #
     # 9–13. Trend-based insights from Screener.in time-series data
     # ------------------------------------------------------------------ #
     _TREND_METRICS = {
-        "price_to_book": ("PBV", False),   # valuation: lower = better
-        "pe":            ("PE",  False),   # valuation: lower = better
-        "roce":          ("ROCE", True),   # efficiency: higher = better
-        "roe":           ("ROE",  True),   # efficiency: higher = better
+        "price_to_book": ("PBV", False),  # valuation: lower = better
+        "pe": ("PE", False),  # valuation: lower = better
+        "roce": ("ROCE", True),  # efficiency: higher = better
+        "roe": ("ROE", True),  # efficiency: higher = better
         "market_cap_to_sales": ("P/S", False),  # valuation: lower = better
     }
 
@@ -525,14 +650,17 @@ def generate_insights(data: dict) -> list:
 
         latest_date_str = sorted_pts[-1]["date"]
         try:
-            from datetime import date as _date
             latest_dt = datetime.fromisoformat(latest_date_str.replace("Z", "")).date()
         except Exception:
             continue
 
         for window_years in (5, 3):
             cutoff = latest_dt.replace(year=latest_dt.year - window_years)
-            window = [p for p in sorted_pts if datetime.fromisoformat(p["date"].replace("Z", "")).date() >= cutoff]
+            window = [
+                p
+                for p in sorted_pts
+                if datetime.fromisoformat(p["date"].replace("Z", "")).date() >= cutoff
+            ]
             if len(window) < 2:
                 continue
 
@@ -685,6 +813,7 @@ def generate_insights(data: dict) -> list:
 # --------------------------------------------------------------------------- #
 # Endpoint
 # --------------------------------------------------------------------------- #
+
 
 def _cache_is_fresh(cache_hit) -> bool:
     try:

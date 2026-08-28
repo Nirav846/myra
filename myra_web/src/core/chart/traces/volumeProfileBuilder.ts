@@ -1,4 +1,4 @@
-import { TraceBuilder, TraceBuilderContext } from './types';
+import { TraceBuilder } from './types';
 import { FrvpResult, FrvpConfig } from '../../../lib/frvpUtils';
 
 export const volumeProfileTraceBuilder: TraceBuilder<FrvpResult, Partial<FrvpConfig> & { showDeliveryProfile?: boolean; showDeliverySR?: boolean; showDelDelta?: boolean }> = {

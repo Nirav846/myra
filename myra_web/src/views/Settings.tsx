@@ -1,4 +1,4 @@
-import { useSettings, Theme, AccentColor, Density, ChartRange, CandlestickStyle, ChartHeight, AutoRefreshInterval, FontSize, FontFamily, SidebarPosition } from '../lib/SettingsContext';
+import { useSettings, Theme, AccentColor, Density, ChartRange, CandlestickStyle, AutoRefreshInterval, SidebarPosition } from '../lib/SettingsContext';
 import { Settings, Palette, Moon, Monitor, LayoutGrid, CheckCircle2, Server, BarChart2, Bell, Bug, Zap } from 'lucide-react';
 
 export default function SettingsView() {
