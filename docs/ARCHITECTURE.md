@@ -272,4 +272,6 @@ React 19 + TypeScript + Vite 6 in `myra_web/`. Key architecture choices:
 - `myra_web/myra_fastapi_server.py` — API bridge (19 routers)
 - `myra_web/routes/scanners.py` — Scanner factory (15 scanners)
 - `tools/enrich_history.py` — Batch enrichment backfill
-- `tests/` — 367-test pytest suite
+- `tools/backtest_wyckoff.py` — Wyckoff per-event-type backtest harness (SC / AR / ST / Spring / SOS; seed 42, 400-symbol sample from the 510–530,000 Cr universe, calendar-day horizons [20..180], benchmark excess vs `^NSEI` from `myra_metadata.db`, 180-day forward guard; `--dump-sc` for post-fix SC spot-checks)
+- `docs/wyckoff_sc_spotcheck.md` — 12-row manual SC verification proving the post-fix events satisfy their gates with no look-ahead
+- `tests/` — 382-test pytest suite

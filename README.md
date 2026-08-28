@@ -174,7 +174,7 @@ myra/
 │   └── src/
 │       ├── views/                 # Scanner + analysis view components
 │       └── App.tsx                # 42 frontend routes
-├── tools/                         # Maintenance scripts (enrich_history, portfolio, db_doctor)
+├── tools/                         # Maintenance scripts (enrich_history, portfolio, db_doctor, backtest_wyckoff)
 ├── tests/                         # 367-test pytest suite
 ├── docs/                          # Documentation
 │   ├── ARCHITECTURE.md
@@ -215,6 +215,23 @@ MYRA registers **15 scanners**. Thirteen are registered through the scanner fact
 | **Multibagger Pro** (custom) | `/api/multibagger/scan` | Early multibagger detection strategy (`multibagger_early_detection.py`) | global result, status endpoint |
 
 **PCR Market Regime** — `get_market_mood()` reads Put-Call Ratio snapshots from `myra_options.db` as the primary market-regime signal (BULLISH→GREED, BEARISH→FEAR), falling back to VIX when unavailable. Current PCR snapshots are exposed via `GET /api/pcr/status`.
+
+## Backtest Harness
+
+`tools/backtest_wyckoff.py` measures forward returns of every `WyckoffAutomaton` event type (SC / AR / ST / Spring / SOS) across 12 evenly spaced scan dates, instead of the single best candidate per symbol returned by `scan()`.
+
+```bash
+python tools/backtest_wyckoff.py
+```
+
+Reproducible by design:
+
+- `random.seed(42)` + `random.sample(_get_universe(), 400)` from the 510–530,000 Cr market-cap universe (~1704 symbols).
+- Scan window `[--start, --end]` (default `--start 2025-07-01`, `--end` = `min(2026-04-30, max_tech_date - 180d)`) with a 180-day forward guard so the longest horizon is always measurable.
+- Calendar-day forward horizons (default `20,40,60,90,120,180`); benchmark excess vs `^NSEI` from `myra_metadata.db` `benchmarks` table.
+- Cost adjustment (0.5% brokerage x2 + 15% STCG) default ON; `--no-costs` to disable.
+- `--dump-sc <csv>` emits post-fix-only SC events; see `docs/wyckoff_sc_spotcheck.md`.
+- Raw per-event detail is written to `wyckoff_backtest_results.csv` (gitignored — a data artifact, never committed).
 
 ## Portfolio Tracker
 
