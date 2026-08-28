@@ -153,6 +153,8 @@ Additional explicit endpoints in `scanners.py`: `GET /dcb-bargain/defaults`, `GE
 
 **Lookback-day convention:** All scanners use calendar days for lookback parameters. Internal minimum-row thresholds use `max(floor, int(lookback_days * 0.6) + 5)` to convert to approximate trading-day counts.
 
+**Wyckoff detection notes:** All Wyckoff baselines (`avg_vol`, `avg_del_pct`, `range_low`, `range_high`) are expanding (rolling-to-signal-day) series — no future information enters any gate. The `range_low_90` / `range_high_90` fields reported per event are signal-local (rolling up to the event candle), not window-global. Springs with `two_candle_confirm=True` are dated on the confirmation candle's `event_date` (the next session), so `days_since` measures from confirmation rather than the grab candle. Equal-low zone detection only scans rows up to the grab candle (no forward look).
+
 ## Task Executor
 
 `myra_app/tasks/registry.py` defines a frozen `TaskSpec` dataclass: `module, label, interval_days, catchup, stagger, mark_on_failure, mark_on_success, enabled, entrypoint, self_loop`. The `TASKS` dict has 12 entries; keys are historical thread names (e.g. `"etf-sync"`), and `label` is the `sync_log` key consumed by data-health — both must stay stable.

@@ -107,7 +107,8 @@ class WyckoffAutomaton:
                 rows = conn.execute(
                     """
                     SELECT date, open, high, low, close, volume, delivery,
-                           delivery_pct, nifty_outperformance_score,
+                           delivery_pct, NULL AS swing_low,
+                           nifty_outperformance_score,
                            NULL AS sma_50, NULL AS high_52w, NULL AS low_52w
                     FROM technical_data
                     WHERE symbol = ? AND date >= ? AND date <= ?
@@ -120,6 +121,16 @@ class WyckoffAutomaton:
     @staticmethod
     def _sanitize_float(value):
         return sanitize_float(value)
+
+    @staticmethod
+    def _has_same_event(events, event_type: str, event_date: str) -> bool:
+        """True if any event already exists with BOTH the same event type and
+        the same event date (dedup is per-type, so different types on the
+        same date are all preserved)."""
+        return any(
+            e.get("event") == event_type and e.get("event_date") == event_date
+            for e in events
+        )
 
     @staticmethod
     def _delivery_absorption_score(del_abs: float) -> float:
@@ -238,22 +249,16 @@ class WyckoffAutomaton:
         if n < 55:
             return events
 
-        avg_vol = float(df["volume"].mean())
-        # Average delivery PERCENTAGE over the window — the baseline for
-        # confirming institutional participation (delivery_pct is already a %).
-        avg_del_pct = float(df["delivery_pct"].values.astype(float).mean())
-        range_low = float(df["low"].min())
-        range_high = float(df["high"].max())
-
-        if avg_vol == 0:
-            return events
-        if n > 0:
-            logger.debug(
-                "rows=%d, avg_vol=%.0f, avg_del_pct=%.1f",
-                n,
-                avg_vol,
-                avg_del_pct,
-            )
+        # Rolling baselines: expanding series so every signal only sees
+        # information available up to its own candle (no look-ahead bias).
+        # pandas expanding() skips NaN by default; delivery_pct may be
+        # object dtype, so cast to float first — the old code used a single
+        # global mean over the whole df (look-ahead) whose np .values mean
+        # was NaN-poisoned by any NaN delivery_pct anywhere in the window.
+        exp_avg_vol = df["volume"].expanding().mean()
+        exp_avg_del = df["delivery_pct"].astype(float).expanding().mean()
+        exp_range_low = df["low"].expanding().min()
+        exp_range_high = df["high"].expanding().max()
 
         # Scan the recent lookback window. tail(90) is hardcoded to match the
         # default lookback_days=90 (session count, not calendar days).
@@ -271,19 +276,26 @@ class WyckoffAutomaton:
 
             if volume_p == 0:
                 continue
+            if float(exp_avg_vol.iloc[abs_i]) == 0:
+                continue
 
-            vol_ratio = volume_p / avg_vol if avg_vol > 0 else 0
+            row_avg_vol = float(exp_avg_vol.iloc[abs_i])
+            row_avg_del = float(exp_avg_del.iloc[abs_i])
+            row_range_low = float(exp_range_low.iloc[abs_i])
+            row_range_high = float(exp_range_high.iloc[abs_i])
+
+            vol_ratio = volume_p / row_avg_vol if row_avg_vol > 0 else 0
 
             # SC — Selling Climax
             is_sc = (
-                volume_p > avg_vol * 1.8
+                volume_p > row_avg_vol * 1.8
                 and close_p > (low_p + (high_p - low_p) * 0.35)
                 and del_pct > 40
-                and close_p <= range_low * 1.15
+                and close_p <= row_range_low * 1.15
             )
 
             if is_sc:
-                quality = self._event_quality("SC", vol_ratio, del_pct, avg_del_pct)
+                quality = self._event_quality("SC", vol_ratio, del_pct, row_avg_del)
                 events.append(  # noqa: PG-APPEND
                     {
                         "symbol": symbol,
@@ -295,8 +307,8 @@ class WyckoffAutomaton:
                         "vol_ratio": vol_ratio,
                         "quality": quality,
                         "close": close_p,
-                        "range_low_90": range_low,
-                        "range_high_90": range_high,
+                        "range_low_90": row_range_low,
+                        "range_high_90": row_range_high,
                         "sc_reference_close": close_p,
                     }
                 )
@@ -308,7 +320,7 @@ class WyckoffAutomaton:
             prior_low = (
                 float(df["low"].iloc[max(0, abs_i - 60) : abs_i].min())
                 if abs_i > 0
-                else float(range_low)
+                else float(exp_range_low.iloc[abs_i])
             )
             # Dynamic delivery threshold: must be 20% above the stock's own 50-day average
             # rather than an arbitrary absolute number that doesn't fit Indian markets
@@ -333,7 +345,7 @@ class WyckoffAutomaton:
                         "Spring",
                         vol_ratio,
                         del_pct,
-                        avg_del_pct,
+                        row_avg_del,
                         extra={"recovery_pct": recovery_pct},
                     )
 
@@ -371,11 +383,12 @@ class WyckoffAutomaton:
                         grab_depth_pct = 0.0
                     depth_score = self._grab_depth_score(grab_depth_pct)
 
-                    # 4. Equal-low detection
+                    # 4. Equal-low detection (past + current only, no future
+                    # look — rows after the grab candle must not influence it)
                     equal_low_zone = False
                     if swing_low_val is not None:
                         lo = max(0, abs_i - 20)
-                        hi = min(n, abs_i + 21)
+                        hi = min(n, abs_i + 1)
                         for j in range(lo, hi):
                             if j == abs_i:
                                 continue
@@ -394,6 +407,7 @@ class WyckoffAutomaton:
 
                     # 5. Two-candle confirmation
                     two_candle_confirm = False
+                    conf_date = None
                     if close_p < open_p and abs_i + 1 < n:
                         nrow = df.iloc[abs_i + 1]
                         nclose = float(nrow["close"])
@@ -405,6 +419,9 @@ class WyckoffAutomaton:
                         )
                         if nclose > nopen and nclose > ref_level:
                             two_candle_confirm = True
+                            # A confirmed Spring is dated on the confirmation
+                            # candle: the signal is only actionable from then.
+                            conf_date = str(nrow["date"])
 
                     # 6. Compute score and grade
                     spring_score = self._compute_spring_score(
@@ -427,13 +444,13 @@ class WyckoffAutomaton:
                             "event": "Spring",
                             "phase": "Phase C",
                             "phase_pct": 75,
-                            "event_date": row_date,
+                            "event_date": conf_date if two_candle_confirm else row_date,
                             "del_pct": del_pct,
                             "vol_ratio": vol_ratio,
                             "quality": quality,
                             "close": close_p,
-                            "range_low_90": range_low,
-                            "range_high_90": range_high,
+                            "range_low_90": row_range_low,
+                            "range_high_90": row_range_high,
                             "sc_reference_close": close_p,
                             "spring_score": self._sanitize_float(spring_score),
                             "grade": grade,
@@ -461,9 +478,9 @@ class WyckoffAutomaton:
 
             # SOS — Sign of Strength
             is_sos = (
-                close_p > (range_low + (range_high - range_low) * 0.45)
-                and volume_p > avg_vol * 1.2
-                and del_pct >= avg_del_pct * 1.0
+                close_p > (row_range_low + (row_range_high - row_range_low) * 0.45)
+                and volume_p > row_avg_vol * 1.2
+                and del_pct >= row_avg_del * 1.0
                 and close_p > open_p
             )
 
@@ -477,7 +494,7 @@ class WyckoffAutomaton:
                     "SOS",
                     vol_ratio,
                     del_pct,
-                    avg_del_pct,
+                    row_avg_del,
                     extra={"close_position": close_position},
                 )
                 events.append(  # noqa: PG-APPEND
@@ -491,8 +508,8 @@ class WyckoffAutomaton:
                         "vol_ratio": vol_ratio,
                         "quality": quality,
                         "close": close_p,
-                        "range_low_90": range_low,
-                        "range_high_90": range_high,
+                        "range_low_90": row_range_low,
+                        "range_high_90": row_range_high,
                         "sc_reference_close": close_p,
                     }
                 )
@@ -513,10 +530,15 @@ class WyckoffAutomaton:
                 nclose = float(nrow["close"])
                 nvol = float(nrow["volume"])
                 ndel = float(nrow["delivery_pct"])
+                # Rolling baselines at the nrow candle only (no future info).
+                # df is a clean 0..n-1 RangeIndex (scan() resets it), so the
+                # iterrows label equals the positional index.
+                nrow_avg_vol = float(exp_avg_vol.iloc[nrow.name])
+                nrow_avg_del = float(exp_avg_del.iloc[nrow.name])
 
                 # AR — Automatic Rally
-                if nclose > sc_close * 1.03 and nvol <= avg_vol * 1.0:
-                    ar_vol_ratio = nvol / avg_vol if avg_vol > 0 else 0
+                if nclose > sc_close * 1.03 and nvol <= nrow_avg_vol * 1.0:
+                    ar_vol_ratio = nvol / nrow_avg_vol if nrow_avg_vol > 0 else 0
                     rally_pct = (
                         (nclose - sc_close) / sc_close * 100 if sc_close > 0 else 0.0
                     )
@@ -524,13 +546,10 @@ class WyckoffAutomaton:
                         "AR",
                         ar_vol_ratio,
                         ndel,
-                        avg_del_pct,
+                        nrow_avg_del,
                         extra={"rally_pct": rally_pct},
                     )
-                    existing = [
-                        e for e in events if e["event_date"] == str(nrow["date"])
-                    ]
-                    if not existing:
+                    if not self._has_same_event(events, "AR", str(nrow["date"])):
                         events.append(  # noqa: PG-APPEND
                             {
                                 "symbol": symbol,
@@ -542,8 +561,8 @@ class WyckoffAutomaton:
                                 "vol_ratio": round(ar_vol_ratio, 1),
                                 "quality": ar_quality,
                                 "close": nclose,
-                                "range_low_90": range_low,
-                                "range_high_90": range_high,
+                                "range_low_90": float(exp_range_low.iloc[nrow.name]),
+                                "range_high_90": float(exp_range_high.iloc[nrow.name]),
                                 "sc_reference_close": sc_close,
                             }
                         )
@@ -551,16 +570,13 @@ class WyckoffAutomaton:
                 # ST — Secondary Test
                 if (
                     abs(nclose - sc_close) / sc_close <= 0.05
-                    and nvol < avg_vol * 0.7
-                    and ndel <= avg_del_pct
+                    and nvol < nrow_avg_vol * 0.7
+                    and ndel <= nrow_avg_del
                 ):
-                    existing = [
-                        e for e in events if e["event_date"] == str(nrow["date"])
-                    ]
-                    if not existing:
-                        st_vol_ratio = nvol / avg_vol if avg_vol > 0 else 0
+                    if not self._has_same_event(events, "ST", str(nrow["date"])):
+                        st_vol_ratio = nvol / nrow_avg_vol if nrow_avg_vol > 0 else 0
                         st_quality = self._event_quality(
-                            "ST", st_vol_ratio, ndel, avg_del_pct
+                            "ST", st_vol_ratio, ndel, nrow_avg_del
                         )
                         events.append(  # noqa: PG-APPEND
                             {
@@ -573,8 +589,8 @@ class WyckoffAutomaton:
                                 "vol_ratio": round(st_vol_ratio, 1),
                                 "quality": st_quality,
                                 "close": nclose,
-                                "range_low_90": range_low,
-                                "range_high_90": range_high,
+                                "range_low_90": float(exp_range_low.iloc[nrow.name]),
+                                "range_high_90": float(exp_range_high.iloc[nrow.name]),
                                 "sc_reference_close": sc_close,
                             }
                         )

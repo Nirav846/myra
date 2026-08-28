@@ -149,3 +149,102 @@ def test_p1_default_as_on_date_falls_back_to_today():
     event_date = pd.Timestamp(sos["event_date"]).date()
     expected = (date.today() - event_date).days
     assert sos["days_since"] == expected
+
+
+# ---------------------------------------------------------------------------
+# P2 — rolling-to-signal-day baselines (look-ahead bias removal)
+# ---------------------------------------------------------------------------
+
+
+def test_rolling_range_future_crash_does_not_suppress_sc():
+    """range_low is now the expanding (rolling) minimum. A FUTURE crash at
+    the last row (low=80) must not widen the SC gate for an earlier Selling
+    Climax at row 65: close 104 <= 100*1.15 (rolling) but 104 > 80*1.15."""
+    df = _build_df(
+        n=70,
+        override_rows={
+            65: {
+                "low": 101.0,
+                "high": 106.0,
+                "close": 104.0,
+                "open": 103.0,
+                "volume": 95000.0,  # > rolling avg_vol (~50682) * 1.8
+                "delivery_pct": 55.0,
+            },
+            69: {"low": 80.0},  # FUTURE crash — must not affect row 65
+        },
+    )
+
+    scanner = WyckoffAutomaton()
+    events = scanner._detect_events(df, symbol="TEST")
+
+    sc_events = [e for e in events if e["event"] == "SC"]
+    assert len(sc_events) == 1
+    assert sc_events[0]["event_date"] == str(df["date"].iloc[65])
+    # The SC's reported range must be the rolling min up to row 65, not 80.
+    assert sc_events[0]["range_low_90"] > 80.0
+
+
+def test_rolling_volume_future_spike_does_not_inflate_earlier_sos():
+    """avg_vol is now rolling. A FUTURE volume spike at the last row must not
+    inflate the volume baseline for an earlier SOS at row 67: 65000 >
+    rolling_avg_vol(~50220)*1.2, but a global mean (incl. 10M spike) would
+    suppress it."""
+    df = _build_df(
+        n=70,
+        override_rows={
+            67: {
+                "open": 102.5,
+                "close": 103.5,
+                "high": 105.0,
+                "low": 101.0,
+                "volume": 65000.0,
+                "delivery_pct": 45.0,
+            },
+            69: {"volume": 10000000.0},  # FUTURE spike — must not affect row 67
+        },
+    )
+
+    scanner = WyckoffAutomaton()
+    events = scanner._detect_events(df, symbol="TEST")
+
+    sos_events = [e for e in events if e["event"] == "SOS"]
+    assert len(sos_events) == 1
+    assert sos_events[0]["event_date"] == str(df["date"].iloc[67])
+
+
+def test_rolling_avg_del_differs_from_global_mean():
+    """avg_del_pct is rolling: with a low-delivery prefix (rows 0-30 at 10%)
+    and a high suffix (rows 31-69 at 50%), the rolling mean at row 40 (~19.1)
+    differs from the global mean (~32.3); an SOS with del_pct=25 fires on the
+    rolling baseline but would be suppressed by the global one."""
+    df = _build_df(
+        n=70,
+        override_rows={
+            40: {
+                "open": 102.5,
+                "close": 103.5,
+                "high": 105.0,
+                "low": 101.0,
+                "volume": 65000.0,
+                "delivery_pct": 25.0,
+            },
+        },
+    )
+    # Prefix profile differs from the suffix → rolling != global mean.
+    df.loc[0:30, "delivery_pct"] = 10.0
+    df.loc[31:69, "delivery_pct"] = 50.0
+    df.at[40, "delivery_pct"] = 25.0
+
+    rolling_at_40 = float(df["delivery_pct"].astype(float).expanding().mean().iloc[40])
+    global_mean = float(df["delivery_pct"].values.astype(float).mean())
+    assert rolling_at_40 < 20.0
+    assert global_mean > 30.0
+    assert rolling_at_40 != global_mean
+
+    scanner = WyckoffAutomaton()
+    events = scanner._detect_events(df, symbol="TEST")
+
+    sos_events = [e for e in events if e["event"] == "SOS"]
+    assert len(sos_events) == 1
+    assert sos_events[0]["event_date"] == str(df["date"].iloc[40])

@@ -10,7 +10,6 @@ import pytest
 from myra_app.strategies.wyckoff_automaton import WyckoffAutomaton
 from myra_web.routes.scanners import _wy_parse
 
-
 # ---------------------------------------------------------------------------
 # Part 1 — Pure helper tests
 # ---------------------------------------------------------------------------
@@ -254,6 +253,96 @@ def test_detect_events_spring_no_equal_low():
     # Score without equal-low bonus: 30 + 18.5 + 10 + 10 + 0 + 5 = 73.5
     assert s["spring_score"] == pytest.approx(73.5)
     assert s["grade"] == "A+"
+
+
+def test_equal_low_zone_ignores_future_swing_low():
+    """A matching swing_low placed only at abs_i+5 (row 73, future) must NOT
+    set equal_low_zone — the zone scan stops at the grab candle (row 68)."""
+    df = _build_wyckoff_df(
+        n=80,
+        override_rows={
+            68: {
+                "low": 98.5,
+                "high": 103.5,
+                "close": 101.0,
+                "open": 103.0,
+                "volume": 70000.0,
+                "delivery_pct": 60.0,
+                "swing_low": 100.0,
+            },
+            69: {
+                "low": 102.0,
+                "high": 106.0,
+                "close": 105.0,
+                "open": 103.0,
+            },
+            73: {"low": 100.0, "swing_low": 100.0},  # FUTURE equal-low match
+        },
+    )
+
+    scanner = WyckoffAutomaton()
+    events = scanner._detect_events(df, symbol="TEST")
+
+    spring_events = [e for e in events if e["event"] == "Spring"]
+    assert len(spring_events) == 1
+    s = spring_events[0]
+    assert s["equal_low_zone"] is False
+    assert s["two_candle_confirm"] is True  # row 69 still confirms
+
+
+def test_two_candle_confirm_event_date_is_confirmation_day():
+    """Spring with two_candle_confirm=True is dated on the CONFIRMATION candle
+    (row 69), not the grab candle (row 68); days_since derives from it."""
+    df = _build_wyckoff_df(
+        n=70,
+        override_rows={
+            68: {
+                "low": 98.5,
+                "high": 103.5,
+                "close": 101.0,
+                "open": 103.0,
+                "volume": 70000.0,
+                "delivery_pct": 60.0,
+            },
+            69: {
+                "low": 102.0,
+                "high": 106.0,
+                "close": 105.0,
+                "open": 103.0,
+            },
+        },
+    )
+
+    scanner = WyckoffAutomaton()
+    as_on = str(df["date"].iloc[69])
+    events = scanner._detect_events(df, symbol="TEST", as_on_date=as_on)
+
+    spring_events = [e for e in events if e["event"] == "Spring"]
+    assert len(spring_events) == 1
+    s = spring_events[0]
+    assert s["two_candle_confirm"] is True
+    # event_date shifted to the confirmation candle, not the grab candle
+    assert s["event_date"] == str(df["date"].iloc[69])
+    assert s["event_date"] != str(df["date"].iloc[68])
+    # event_date is the as-on date → days_since == 0
+    assert s["days_since"] == 0
+
+
+def test_has_same_event_matches_type_and_date():
+    """AR/ST dedup must match event_type AND event_date, so different event
+    types on the same date are preserved."""
+    events = [{"event": "SC", "event_date": "D1"}]
+    assert WyckoffAutomaton._has_same_event(events, "AR", "D1") is False
+    assert WyckoffAutomaton._has_same_event(events, "SC", "D1") is True
+    assert WyckoffAutomaton._has_same_event(events, "SC", "D2") is False
+    assert WyckoffAutomaton._has_same_event([], "SC", "D1") is False
+    # Same date, different event type → both kept (dedup is per-type)
+    assert (
+        WyckoffAutomaton._has_same_event(
+            [{"event": "AR", "event_date": "D1"}], "SC", "D1"
+        )
+        is False
+    )
 
 
 # ---------------------------------------------------------------------------
