@@ -162,7 +162,7 @@ class WyckoffAutomaton:
         event_type: str,
         vol_ratio: float,
         del_pct: float,
-        avg_del: float,
+        avg_del_pct: float,
         extra: dict | None = None,
     ) -> float:
         """
@@ -184,7 +184,9 @@ class WyckoffAutomaton:
 
         elif event_type == "ST":
             vol_score = min(max(0, (1.0 - vol_ratio)) / 0.5 * 50, 50)
-            del_score = min(max(0, (1.0 - del_pct / avg_del)) * 50, 50)
+            # avg_del_pct is the average delivery % over the window; a low
+            # delivery_pct relative to that baseline confirms sellers have left.
+            del_score = min(max(0, (1.0 - del_pct / avg_del_pct)) * 50, 50)
             return round(min(vol_score + del_score, 100), 1)
 
         elif event_type == "Spring":
@@ -202,14 +204,18 @@ class WyckoffAutomaton:
 
         return 0.0
 
-    def _detect_events(self, df: pd.DataFrame, symbol: str = "") -> list[dict]:
+    def _detect_events(
+        self, df: pd.DataFrame, symbol: str = "", as_on_date: str | None = None
+    ) -> list[dict]:
         events = []
         n = len(df)
         if n < 55:
             return events
 
         avg_vol = float(df["volume"].mean())
-        avg_del = float(df["delivery"].values.astype(float).mean())
+        # Average delivery PERCENTAGE over the window — the baseline for
+        # confirming institutional participation (delivery_pct is already a %).
+        avg_del_pct = float(df["delivery_pct"].values.astype(float).mean())
         range_low = float(df["low"].min())
         range_high = float(df["high"].max())
 
@@ -217,10 +223,10 @@ class WyckoffAutomaton:
             return events
         if n > 0:
             logger.debug(
-                "rows=%d, avg_vol=%.0f, avg_del=%.1f",
+                "rows=%d, avg_vol=%.0f, avg_del_pct=%.1f",
                 n,
                 avg_vol,
-                avg_del,
+                avg_del_pct,
             )
 
         # Scan last 30 sessions
@@ -240,7 +246,6 @@ class WyckoffAutomaton:
                 continue
 
             vol_ratio = volume_p / avg_vol if avg_vol > 0 else 0
-            del_ratio = del_pct / avg_del if avg_del > 0 else 0
 
             # SC — Selling Climax
             is_sc = (
@@ -251,7 +256,7 @@ class WyckoffAutomaton:
             )
 
             if is_sc:
-                quality = self._event_quality("SC", vol_ratio, del_pct, avg_del)
+                quality = self._event_quality("SC", vol_ratio, del_pct, avg_del_pct)
                 events.append(  # noqa: PG-APPEND
                     {
                         "symbol": symbol,
@@ -301,7 +306,7 @@ class WyckoffAutomaton:
                         "Spring",
                         vol_ratio,
                         del_pct,
-                        avg_del,
+                        avg_del_pct,
                         extra={"recovery_pct": recovery_pct},
                     )
 
@@ -426,7 +431,7 @@ class WyckoffAutomaton:
             is_sos = (
                 close_p > (range_low + (range_high - range_low) * 0.45)
                 and volume_p > avg_vol * 1.2
-                and del_pct > avg_del * 1.0
+                and del_pct >= avg_del_pct * 1.0
                 and close_p > open_p
             )
 
@@ -440,7 +445,7 @@ class WyckoffAutomaton:
                     "SOS",
                     vol_ratio,
                     del_pct,
-                    avg_del,
+                    avg_del_pct,
                     extra={"close_position": close_position},
                 )
                 events.append(  # noqa: PG-APPEND
@@ -480,7 +485,6 @@ class WyckoffAutomaton:
                 # AR — Automatic Rally
                 if nclose > sc_close * 1.03 and nvol <= avg_vol * 1.0:
                     ar_vol_ratio = nvol / avg_vol if avg_vol > 0 else 0
-                    ar_del_ratio = ndel / avg_del if avg_del > 0 else 0
                     rally_pct = (
                         (nclose - sc_close) / sc_close * 100 if sc_close > 0 else 0.0
                     )
@@ -488,7 +492,7 @@ class WyckoffAutomaton:
                         "AR",
                         ar_vol_ratio,
                         ndel,
-                        avg_del,
+                        avg_del_pct,
                         extra={"rally_pct": rally_pct},
                     )
                     existing = [
@@ -516,16 +520,15 @@ class WyckoffAutomaton:
                 if (
                     abs(nclose - sc_close) / sc_close <= 0.05
                     and nvol < avg_vol * 0.7
-                    and ndel < avg_del
+                    and ndel <= avg_del_pct
                 ):
                     existing = [
                         e for e in events if e["event_date"] == str(nrow["date"])
                     ]
                     if not existing:
                         st_vol_ratio = nvol / avg_vol if avg_vol > 0 else 0
-                        st_del_ratio = ndel / avg_del if avg_del > 0 else 0
                         st_quality = self._event_quality(
-                            "ST", st_vol_ratio, ndel, avg_del
+                            "ST", st_vol_ratio, ndel, avg_del_pct
                         )
                         events.append(  # noqa: PG-APPEND
                             {
@@ -543,6 +546,12 @@ class WyckoffAutomaton:
                                 "sc_reference_close": sc_close,
                             }
                         )
+
+        # Recency relative to the as-of date (so backtests use the selected
+        # scan date, not today). Falls back to today for live scans.
+        ref_date = pd.Timestamp(as_on_date).date() if as_on_date else date.today()
+        for e in events:
+            e["days_since"] = (ref_date - pd.Timestamp(e["event_date"]).date()).days
 
         return events
 
@@ -659,18 +668,13 @@ class WyckoffAutomaton:
             if len(df) < max(55, int(self.lookback_days * 0.6) + 5):
                 continue
 
-            events = self._detect_events(df, symbol=symbol)
+            events = self._detect_events(df, symbol=symbol, as_on_date=as_on_date)
             if not events:
                 continue
 
             def _event_score(e: dict) -> float:
                 recency_penalty = e.get("days_since", 0) / 3.0
                 return e["phase_pct"] - recency_penalty + e["quality"] * 0.1
-
-            for e in events:
-                e["days_since"] = (
-                    date.today() - pd.Timestamp(e["event_date"]).date()
-                ).days
 
             best = max(events, key=_event_score)
             days_since = best.get("days_since", 0)
