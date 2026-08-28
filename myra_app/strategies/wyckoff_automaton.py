@@ -624,8 +624,11 @@ class WyckoffAutomaton:
         ref_date = pd.Timestamp(as_on_date)
         min_date = f"{(ref_date - pd.Timedelta(days=self.lookback_days)):%Y-%m-%d}"
 
-        # Single bulk load replaces per-symbol sqlite connections.
-        self._bulk_data = load_ohlcv_for_universe(min_date, as_on_date)
+        # Single bulk load replaces per-symbol sqlite connections. Restrict the
+        # query to the already-filtered universe so small universes (e.g. mcap
+        # or MF-held filters) don't load the entire market (~1841 symbols).
+        symbols = [row[0].strip() for row in rows]
+        self._bulk_data = load_ohlcv_for_universe(min_date, as_on_date, symbols=symbols)
 
         candidates: list[dict] = []
 

@@ -140,10 +140,13 @@ def register_scanner(
 
                 original_get_tech = getattr(scanner, progress_attr)
                 processed = [0]
+                # ~10 progress updates across the run, but at least 1 per
+                # symbol so small universes (<25) still show progress.
+                step = max(1, total // 10)
 
                 def _tracked_get_tech(symbol, min_date=None, max_date=None):
                     processed[0] += 1
-                    if processed[0] % 25 == 0:
+                    if processed[0] % step == 0 or processed[0] == total:
                         pct = 10 + int((processed[0] / total) * 82)
                         state["progress"] = min(pct, 92)
                         state["message"] = f"Scanning {processed[0]}/{total} symbols..."
@@ -157,6 +160,11 @@ def register_scanner(
                     return original_get_tech(symbol, min_date, max_date)
 
                 setattr(scanner, progress_attr, _tracked_get_tech)
+
+                # Many scanners do a bulk load (often the slowest phase) before
+                # the per-symbol loop, so surface a distinct message here.
+                state["message"] = "Loading market data..."
+                state["progress"] = 10
 
                 if scan_as_of:
                     result = scanner.scan(as_on_date=scan_date)
