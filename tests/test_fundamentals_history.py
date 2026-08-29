@@ -239,6 +239,56 @@ def test_resolve_returns_none_when_db_missing(tmp_path, monkeypatch):
     assert scanner._resolve_pit_mcap("AAA", "2025-06-01") is None
 
 
+def test_resolve_suppresses_per_event_warning_when_history_table_absent(
+    tmp_path, monkeypatch, caplog
+):
+    """A _load_pit_history attempt against a DB that has funds but NO
+    fundamentals_history table leaves the flag False (table absent, scan-level
+    warning already logged) — so _resolve_pit_mcap must NOT emit a per-event
+    "missing point-in-time" warning when it falls back to the snapshot."""
+    monkeypatch.setattr(wy_mod, "DB_DIR", str(tmp_path))
+    db_path = os.path.join(str(tmp_path), "myra_valuation.db")
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "CREATE TABLE fundamentals (symbol TEXT PRIMARY KEY, market_cap REAL,"
+            " date TEXT)"
+        )
+        conn.executemany(
+            "INSERT INTO fundamentals (symbol, market_cap, date) VALUES (?, ?, ?)",
+            [("AAA", 9.0e9, "2026-08-24")],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    scanner = WyckoffAutomaton()
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger=WY_LOGGER):
+        scanner._load_pit_history(["AAA"])  # table absent -> sqlite error, flag False
+    # The scan-level warning was logged, per-event warning must NOT fire.
+    assert any("fundamentals_history unavailable" in r.message for r in caplog.records)
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger=WY_LOGGER):
+        mcap = scanner._resolve_pit_mcap("AAA", "2025-06-01")
+    assert mcap == pytest.approx(9.0e9)  # falls back to current fundamentals
+    assert not [
+        r for r in caplog.records if "Point-in-time market cap missing" in r.message
+    ]
+
+
+def test_resolve_warns_per_event_when_load_never_called(history_db, caplog):
+    """A direct _detect_events caller (e.g. calibration tools / tests) never runs
+    _load_pit_history, so the flag is None — the per-event fallback warning must
+    still fire for that caller."""
+    scanner = WyckoffAutomaton()
+    with caplog.at_level(logging.WARNING, logger=WY_LOGGER):
+        mcap = scanner._resolve_pit_mcap("AAA", "2024-12-31")
+    assert mcap == pytest.approx(9.0e9)
+    assert any("Point-in-time market cap missing" in r.message for r in caplog.records)
+
+
 def test_load_pit_history_filters_to_universe(history_db):
     scanner = WyckoffAutomaton()
     scanner._load_pit_history(["AAA"])  # BBB is in the table but not requested

@@ -73,6 +73,17 @@ class WyckoffAutomaton:
         self._pit_history: dict[str, list[tuple[str, float]]] = {}
         self._current_mcap_map: dict[str, float | None] = {}
         self._pit_warned: set[tuple[str, str]] = set()
+        # Tri-state so _resolve_pit_mcap knows whether to emit its per-event
+        # "missing point-in-time data" warning:
+        #   None  -> _load_pit_history never ran (a direct _detect_events
+        #            caller such as a test or the calibration tools) — warn
+        #            per-event, since there was no scan-level warning.
+        #   True  -> history table present & bulk-loaded; warn per-event for
+        #            symbols lacking an as-of row (deduped via _pit_warned).
+        #   False -> a load was ATTEMPTED but the table/DB is absent;
+        #            _load_pit_history already logged one scan-level warning, so
+        #            suppress the per-event spam.
+        self._pit_history_available: bool | None = None
 
     def _db_path(self, key: str) -> str:
         return os.path.join(DB_DIR, LibrarianCore.DB_MAP[key])
@@ -168,6 +179,7 @@ class WyckoffAutomaton:
         lexicographically, so ``date <= X`` scans can stop at the first miss.
         """
         self._pit_history = {}
+        self._pit_history_available = False
         val_db = self._db_path("valuation")
         if not os.path.exists(val_db):
             logger.warning(
@@ -193,6 +205,11 @@ class WyckoffAutomaton:
                     for sym, d, mc in rows:
                         _bucket = self._pit_history.setdefault(sym.strip(), [])
                         _bucket.append((str(d), float(mc)))  # noqa: PG-APPEND
+            # Successfully queried the table (even if it returned no rows) —
+            # history is "available": _resolve_pit_mcap warns per-event for a
+            # symbol missing an as-of row (deduped), since a scan-level warning
+            # is only emitted when the table/DB is absent.
+            self._pit_history_available = True
         except sqlite3.Error as exc:
             logger.warning(
                 "fundamentals_history unavailable (%s) — point-in-time market "
@@ -227,7 +244,14 @@ class WyckoffAutomaton:
             return best
 
         warn_key = (sym, as_on_date)
-        if warn_key not in self._pit_warned:
+        # Suppress per-event warnings ONLY when a _load_pit_history attempt
+        # found the table/DB absent (scan-level warning already given). For a
+        # successful load (flag True) or a direct _detect_events caller that
+        # never ran the load (flag None), warn per-event (deduped).
+        if (
+            self._pit_history_available is not False
+            and warn_key not in self._pit_warned
+        ):
             logger.warning(
                 "Point-in-time market cap missing for (%s, %s) in "
                 "fundamentals_history — falling back to current snapshot",
