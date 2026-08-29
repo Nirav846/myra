@@ -16,10 +16,35 @@ from myra_app.db.bulk_loader import (
 
 logger = logging.getLogger(__name__)
 
+# Weights feeding the Spring `spring_score` (NOT `e["quality"]` — for Spring,
+# `quality` comes from `_event_quality("Spring", ...)` = del/75*50 + rec/5*50,
+# a separate formula these weights do not control). Four base weights scale the
+# four component scores (summing to 90), the two bonuses are added on top, and
+# `_compute_spring_score` clamps the total to [0, 100].
+#
+# Calibration attempted 2026-08 via tools/calibrate_wyckoff_weights.py
+# (random search, 400 symbols / 12 scan dates / 800 combos, seed 42):
+# ABANDONED. On the fresh dataset no candidate passed the out-of-sample
+# VALIDATION gate (best-on-train VAL Q5-Q1 -2.14% < this default's +11.21%).
+# Re-verified 2026-08-29 on the full dataset (same params): outcome identical —
+# best-on-train VAL Q5-Q1 -2.14% (gap -13.35%) vs default +11.21%, so the
+# shipping weights are still optimal. These remain the shipping weights.
+DEFAULT_SPRING_WEIGHTS = {
+    "delivery_absorption": 30,
+    "lower_wick": 30,
+    "close_location": 20,
+    "grab_depth": 10,
+    "equal_low_bonus": 10,
+    "two_candle_bonus": 5,
+}
+
 
 class WyckoffAutomaton:
     _bulk_data = None
     _BULK_COLUMNS = COLUMNS_13
+    # Class-level alias so both `WyckoffAutomaton.DEFAULT_SPRING_WEIGHTS` and the
+    # module-level constant refer to the same dict.
+    DEFAULT_SPRING_WEIGHTS = DEFAULT_SPRING_WEIGHTS
 
     def __init__(
         self,
@@ -27,11 +52,16 @@ class WyckoffAutomaton:
         max_mcap=530000,
         lookback_days=90,
         restrict_to_holdings=False,
+        weights: dict | None = None,
     ):
         self.min_mcap = min_mcap
         self.max_mcap = max_mcap
         self.lookback_days = lookback_days
         self.restrict_to_holdings = bool(restrict_to_holdings)
+        # Spring scoring weights. A partial override dict is merged over the
+        # defaults, so `weights={"delivery_absorption": 50}` keeps every other
+        # weight at its default. Detection gates/thresholds are NOT affected.
+        self._weights = {**DEFAULT_SPRING_WEIGHTS, **(weights or {})}
 
     def _db_path(self, key: str) -> str:
         return os.path.join(DB_DIR, LibrarianCore.DB_MAP[key])
@@ -133,40 +163,58 @@ class WyckoffAutomaton:
         )
 
     @staticmethod
-    def _delivery_absorption_score(del_abs: float) -> float:
-        """0-30. Linear: <=0 -> 0, +5 -> 15, +10 -> 30."""
-        return round(min(max(del_abs, 0.0) / 10.0 * 30.0, 30.0), 1)
+    def _delivery_absorption_score(
+        del_abs: float, max_score: float = DEFAULT_SPRING_WEIGHTS["delivery_absorption"]
+    ) -> float:
+        """0-max_score. Linear: <=0 -> 0, +5 -> max_score/2, +10 -> max_score."""
+        return round(min(max(del_abs, 0.0) / 10.0 * max_score, max_score), 1)
 
     @staticmethod
-    def _lower_wick_score(ratio: float) -> float:
-        """0-30. Piecewise-linear through (0.20,0), (0.40,15), (0.60,22), (0.75,30)."""
-        pts = [(0.20, 0.0), (0.40, 15.0), (0.60, 22.0), (0.75, 30.0)]
+    def _lower_wick_score(
+        ratio: float, max_score: float = DEFAULT_SPRING_WEIGHTS["lower_wick"]
+    ) -> float:
+        """0-max_score. Piecewise-linear breakpoints anchored at the default 30
+        scale ((0.20,0), (0.40,15), (0.60,22), (0.75,30)) and scaled by
+        max_score/30 so the shape is identical at any weight."""
+        scale = max_score / 30.0
+        pts = [
+            (0.20, 0.0),
+            (0.40, 15.0 * scale),
+            (0.60, 22.0 * scale),
+            (0.75, float(max_score)),
+        ]
         if ratio <= pts[0][0]:
             return 0.0
         if ratio >= pts[-1][0]:
-            return 30.0
+            return float(max_score)
         for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
             if x0 <= ratio < x1:
                 return round(y0 + (ratio - x0) / (x1 - x0) * (y1 - y0), 1)
         return 0.0
 
     @staticmethod
-    def _close_location_score(ratio: float) -> float:
-        """0-20. Step: <0.5 -> 5, 0.5-0.75 -> 10, >0.75 -> 20."""
+    def _close_location_score(
+        ratio: float, max_score: float = DEFAULT_SPRING_WEIGHTS["close_location"]
+    ) -> float:
+        """0-max_score. Step: <0.5 -> max_score/4, 0.5-0.75 -> max_score/2,
+        >0.75 -> max_score."""
         if ratio > 0.75:
-            return 20.0
+            return float(max_score)
         if ratio >= 0.5:
-            return 10.0
-        return 5.0
+            return round(max_score / 2.0, 1)
+        return round(max_score / 4.0, 1)
 
     @staticmethod
-    def _grab_depth_score(depth_pct: float) -> float:
-        """0-10. Step: <0.5 -> 7, 0.5-1.5 -> 10, >1.5 -> 5."""
+    def _grab_depth_score(
+        depth_pct: float, max_score: float = DEFAULT_SPRING_WEIGHTS["grab_depth"]
+    ) -> float:
+        """0-max_score. Step: <0.5 -> max_score*0.7, 0.5-1.5 -> max_score,
+        >1.5 -> max_score*0.5."""
         if depth_pct > 1.5:
-            return 5.0
+            return round(max_score * 0.5, 1)
         if depth_pct >= 0.5:
-            return 10.0
-        return 7.0
+            return float(max_score)
+        return round(max_score * 0.7, 1)
 
     @staticmethod
     def _spring_grade(score: float) -> str:
@@ -187,11 +235,12 @@ class WyckoffAutomaton:
         depth_score,
         equal_low_bonus,
         two_candle_confirm: bool = False,
+        confirm_bonus: float = DEFAULT_SPRING_WEIGHTS["two_candle_bonus"],
     ) -> float:
-        """Sum of factors + 5 if two_candle_confirm, clamped to [0, 100]."""
+        """Sum of factors + confirm_bonus if two_candle_confirm, clamped to [0, 100]."""
         total = del_score + wick_score + close_score + depth_score + equal_low_bonus
         if two_candle_confirm:
-            total += 5.0
+            total += confirm_bonus
         return round(min(max(total, 0.0), 100.0), 1)
 
     @staticmethod
@@ -357,7 +406,9 @@ class WyckoffAutomaton:
                         float(np.nanmean(del_slice)) if len(del_slice) > 0 else del_pct
                     )
                     del_abs = del_pct - avg_del_50
-                    del_score = self._delivery_absorption_score(del_abs)
+                    del_score = self._delivery_absorption_score(
+                        del_abs, self._weights["delivery_absorption"]
+                    )
 
                     # 2. Lower wick ratio + close location
                     denom = high_p - low_p
@@ -367,8 +418,12 @@ class WyckoffAutomaton:
                     else:
                         lower_wick_ratio = 0.5
                         close_location = 0.5
-                    wick_score = self._lower_wick_score(lower_wick_ratio)
-                    close_score = self._close_location_score(close_location)
+                    wick_score = self._lower_wick_score(
+                        lower_wick_ratio, self._weights["lower_wick"]
+                    )
+                    close_score = self._close_location_score(
+                        close_location, self._weights["close_location"]
+                    )
 
                     # 3. Grab depth (uses SMC swing_low at the grab candle)
                     has_swing = "swing_low" in df.columns
@@ -381,7 +436,9 @@ class WyckoffAutomaton:
                         grab_depth_pct = (swing_low_val - low_p) / swing_low_val * 100
                     else:
                         grab_depth_pct = 0.0
-                    depth_score = self._grab_depth_score(grab_depth_pct)
+                    depth_score = self._grab_depth_score(
+                        grab_depth_pct, self._weights["grab_depth"]
+                    )
 
                     # 4. Equal-low detection (past + current only, no future
                     # look — rows after the grab candle must not influence it)
@@ -403,7 +460,9 @@ class WyckoffAutomaton:
                                     ):
                                         equal_low_zone = True
                                         break
-                    equal_low_bonus = 10.0 if equal_low_zone else 0.0
+                    equal_low_bonus = (
+                        self._weights["equal_low_bonus"] if equal_low_zone else 0.0
+                    )
 
                     # 5. Two-candle confirmation
                     two_candle_confirm = False
@@ -431,6 +490,7 @@ class WyckoffAutomaton:
                         depth_score,
                         equal_low_bonus,
                         two_candle_confirm,
+                        self._weights["two_candle_bonus"],
                     )
                     grade = self._spring_grade(spring_score)
 

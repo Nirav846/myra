@@ -233,6 +233,35 @@ Reproducible by design:
 - `--dump-sc <csv>` emits post-fix-only SC events; see `docs/wyckoff_sc_spotcheck.md`.
 - Raw per-event detail is written to `wyckoff_backtest_results.csv` (gitignored — a data artifact, never committed).
 
+### Spring `spring_score` weight calibration
+
+`tools/calibrate_wyckoff_weights.py` calibrates the six `DEFAULT_SPRING_WEIGHTS`
+that feed the Spring `spring_score` against forward returns (120d, cost-adjusted),
+reusing the harness' symbol sample, scan dates, and event-detection data flow.
+
+```bash
+python tools/calibrate_wyckoff_weights.py --search random --n-combos 800   # full run
+python tools/calibrate_wyckoff_weights.py --smoke                          # fast default-only
+```
+
+- **`spring_score` vs `quality`:** the tuned weights scale the components that sum
+  into `spring_score`. They do NOT control `e["quality"]` (for Springs that is
+  `del/75*50 + rec/5*50` in `_event_quality`), so calibration measures Q5-Q1 on
+  `spring_score` restricted to Spring events, never on `quality`.
+- **Leak-free:** expanding-series baselines (already fixed for look-ahead),
+  forward returns from each event's own `event_date`, and a chronological
+  70/15/15 TRAIN/VALIDATION/HOLDOUT split by scan date (search selects on TRAIN
+  only; the holdout never influences selection).
+- **Decision gate (weight-optimisation variant):** PROCEED only if the selected
+  set's VALIDATION Q5-Q1 > 0 and beats the shipped defaults' VALIDATION Q5-Q1;
+  otherwise ABANDON and keep the current weights.
+- **Outcome so far: ABANDONED.** 2026-08 run: best-on-train VAL Q5-Q1 −2.14% vs
+  default +11.21% (gap −13.35%) — no candidate passed the out-of-sample gate.
+  Re-verified 2026-08-29 on the full dataset with identical numbers. The shipping
+  weights (30/30/20/10 + 10/5) remain optimal.
+- Every evaluated weight-set (TRAIN + VALIDATION metrics) is written to
+  `tools/calibrate_wyckoff_weights_output.csv` (gitignored).
+
 ## Portfolio Tracker
 
 The CLI portfolio tracker (`tools/portfolio.py`) manages your personal NSE holdings with auto-refreshed pricing, risk analytics, and scanner overlap — all from MYRA's own databases without external API calls.

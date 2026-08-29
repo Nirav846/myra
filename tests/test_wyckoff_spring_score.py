@@ -346,7 +346,91 @@ def test_has_same_event_matches_type_and_date():
 
 
 # ---------------------------------------------------------------------------
-# Part 3 — Default-value lock tests
+# Part 3 — Weight-override lock tests
+# ---------------------------------------------------------------------------
+
+# The two tests below share the same synthetic Spring as
+# test_detect_events_spring_no_equal_low (grab row 68, confirm row 69,
+# no equal-low zone): del_abs ≈ 29.56, lower_wick_ratio = 0.5,
+# close_location = 0.5, grab_depth_pct = 1.5.
+
+
+def _no_equal_low_df():
+    return _build_wyckoff_df(
+        n=70,
+        override_rows={
+            68: {
+                "low": 98.5,
+                "high": 103.5,
+                "close": 101.0,
+                "open": 103.0,
+                "volume": 70000.0,
+                "delivery_pct": 60.0,
+                "swing_low": 100.0,
+            },
+            69: {
+                "low": 102.0,
+                "high": 106.0,
+                "close": 105.0,
+                "open": 103.0,
+            },
+        },
+    )
+
+
+def test_spring_score_locks_shipped_defaults():
+    """Locks today's DEFAULT_SPRING_WEIGHTS (30/30/20/10 + 10/5): the
+    no-equal-low Spring must score exactly 30 + 18.5 + 10 + 10 + 0 + 5 = 73.5.
+
+    tools/calibrate_wyckoff_weights.py (400 symbols / 12 scan dates / 800
+    combos, seed 42) was run 2026-08 and its candidate weight-sets FAILED the
+    out-of-sample VALIDATION gate, so the shipped defaults stayed unchanged."""
+    scanner = WyckoffAutomaton()
+    events = scanner._detect_events(_no_equal_low_df(), symbol="TEST")
+    spring = [e for e in events if e["event"] == "Spring"]
+    assert len(spring) == 1
+    s = spring[0]
+    assert s["equal_low_zone"] is False
+    assert s["two_candle_confirm"] is True
+    assert s["spring_score"] == pytest.approx(73.5)
+    assert s["grade"] == "A+"
+
+
+def test_spring_weights_override_changes_score():
+    """Passing a non-default weight dict to the constructor must rescale the
+    spring_score without touching detection parameters. Here the weights from
+    the abandoned calibration run (a candidate set that failed the validation
+    gate) move the score to 75.2: 0 + 6.2 + 25 + 40 + 0 + 4."""
+    old = WyckoffAutomaton(
+        weights={
+            "delivery_absorption": 0,
+            "lower_wick": 10,
+            "close_location": 50,
+            "grab_depth": 40,
+            "equal_low_bonus": 12,
+            "two_candle_bonus": 4,
+        }
+    )
+    fresh = WyckoffAutomaton()
+    df = _no_equal_low_df()
+    e_old = [e for e in old._detect_events(df, symbol="TEST") if e["event"] == "Spring"]
+    e_new = [
+        e for e in fresh._detect_events(df, symbol="TEST") if e["event"] == "Spring"
+    ]
+    assert len(e_old) == 1 and len(e_new) == 1
+    # Calibrated-candidate override → the alternative score on this bar
+    assert e_old[0]["spring_score"] == pytest.approx(75.2)
+    # Shipped defaults → the locked reference score
+    assert e_new[0]["spring_score"] == pytest.approx(73.5)
+    assert e_new[0]["spring_score"] != e_old[0]["spring_score"]
+    # Detection outcome identical (same event dates, symbols, grade band)
+    assert e_old[0]["event_date"] == e_new[0]["event_date"]
+    assert e_old[0]["grade"] == "A+"
+    assert e_new[0]["grade"] == "A+"
+
+
+# ---------------------------------------------------------------------------
+# Part 4 — Default-value lock tests
 # ---------------------------------------------------------------------------
 
 

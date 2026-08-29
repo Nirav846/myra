@@ -155,6 +155,8 @@ Additional explicit endpoints in `scanners.py`: `GET /dcb-bargain/defaults`, `GE
 
 **Wyckoff detection notes:** All Wyckoff baselines (`avg_vol`, `avg_del_pct`, `range_low`, `range_high`) are expanding (rolling-to-signal-day) series — no future information enters any gate. The `range_low_90` / `range_high_90` fields reported per event are signal-local (rolling up to the event candle), not window-global. Springs with `two_candle_confirm=True` are dated on the confirmation candle's `event_date` (the next session), so `days_since` measures from confirmation rather than the grab candle. Equal-low zone detection only scans rows up to the grab candle (no forward look).
 
+**Spring `spring_score` vs `quality`:** the six `DEFAULT_SPRING_WEIGHTS` scale only the components summing into `spring_score` (`_delivery_absorption_score`, `_lower_wick_score`, `_close_location_score`, `_grab_depth_score`, equal-low + two-candle bonuses, clamped to [0,100]); they do NOT control `e["quality"]`, which for Springs is the separate `_event_quality("Spring", ...)` formula. `tools/calibrate_wyckoff_weights.py` therefore calibrates Q5-Q1 on `spring_score` only. Calibration outcome (2026-08, re-verified 2026-08-29): **ABANDONED** — best-on-train VALIDATION Q5-Q1 −2.14% does not beat the shipped defaults' +11.21%, so the defaults are kept and documented as optimal in `wyckoff_automaton.py`.
+
 ## Task Executor
 
 `myra_app/tasks/registry.py` defines a frozen `TaskSpec` dataclass: `module, label, interval_days, catchup, stagger, mark_on_failure, mark_on_success, enabled, entrypoint, self_loop`. The `TASKS` dict has 12 entries; keys are historical thread names (e.g. `"etf-sync"`), and `label` is the `sync_log` key consumed by data-health — both must stay stable.
@@ -273,5 +275,6 @@ React 19 + TypeScript + Vite 6 in `myra_web/`. Key architecture choices:
 - `myra_web/routes/scanners.py` — Scanner factory (15 scanners)
 - `tools/enrich_history.py` — Batch enrichment backfill
 - `tools/backtest_wyckoff.py` — Wyckoff per-event-type backtest harness (SC / AR / ST / Spring / SOS; seed 42, 400-symbol sample from the 510–530,000 Cr universe, calendar-day horizons [20..180], benchmark excess vs `^NSEI` from `myra_metadata.db`, 180-day forward guard; `--dump-sc` for post-fix SC spot-checks)
+- `tools/calibrate_wyckoff_weights.py` — Spring `spring_score` weight calibration (probe-scan superset + offline re-scoring via the scanner's own static helpers, exclusive-landing dedupe, chronological 70/15/15 TRAIN/VALIDATION/HOLDOUT split, random/grid search, per-split Q5-Q1/win-rate/Sharpe; PROCEED/ABANDON gate on VALIDATION Q5-Q1 vs the shipped defaults; output CSV gitignored). Outcome: ABANDONED — defaults are optimal
 - `docs/wyckoff_sc_spotcheck.md` — 12-row manual SC verification proving the post-fix events satisfy their gates with no look-ahead
 - `tests/` — 382-test pytest suite
