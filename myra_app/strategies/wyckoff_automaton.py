@@ -53,6 +53,7 @@ class WyckoffAutomaton:
         lookback_days=90,
         restrict_to_holdings=False,
         weights: dict | None = None,
+        mcap_weight: float = 20,
     ):
         self.min_mcap = min_mcap
         self.max_mcap = max_mcap
@@ -63,27 +64,14 @@ class WyckoffAutomaton:
         # weight at its default. Detection gates/thresholds are NOT affected.
         self._weights = {**DEFAULT_SPRING_WEIGHTS, **(weights or {})}
 
-        # Point-in-time market-cap resolution state (Part B infra). Loaded once
-        # per scan(): `_pit_history` holds {symbol: [(date, mcap), ...]} rows
-        # sorted ascending, `_current_mcap_map` holds the latest fundamentals
-        # snapshot per universe symbol (fallback target), and `_pit_warned`
-        # dedupes the "no history row" fallback warnings per (symbol, date).
-        # Scoring integration (mcap-in-quality-score calibration) is DEFERRED —
-        # these fields only feed `point_in_time_mcap` on Spring events.
-        self._pit_history: dict[str, list[tuple[str, float]]] = {}
+        # `mcap_weight` scales the price-adjusted market-cap factor added to the
+        # Spring `quality` score (see `_event_quality`). Set to 0 to disable the
+        # mcap factor entirely. Calibrated default: 20.
+        self.mcap_weight = float(mcap_weight)
+
+        # Current-snapshot market cap per universe symbol (seeded in `scan()`).
+        # `_get_historical_mcap` uses this as the "current mcap" numerator.
         self._current_mcap_map: dict[str, float | None] = {}
-        self._pit_warned: set[tuple[str, str]] = set()
-        # Tri-state so _resolve_pit_mcap knows whether to emit its per-event
-        # "missing point-in-time data" warning:
-        #   None  -> _load_pit_history never ran (a direct _detect_events
-        #            caller such as a test or the calibration tools) — warn
-        #            per-event, since there was no scan-level warning.
-        #   True  -> history table present & bulk-loaded; warn per-event for
-        #            symbols lacking an as-of row (deduped via _pit_warned).
-        #   False -> a load was ATTEMPTED but the table/DB is absent;
-        #            _load_pit_history already logged one scan-level warning, so
-        #            suppress the per-event spam.
-        self._pit_history_available: bool | None = None
 
     def _db_path(self, key: str) -> str:
         return os.path.join(DB_DIR, LibrarianCore.DB_MAP[key])
@@ -170,120 +158,87 @@ class WyckoffAutomaton:
                 ).fetchall()
         return rows
 
-    def _load_pit_history(self, symbols: list[str]) -> None:
-        """Bulk-load point-in-time mcap history for the universe into memory.
+    def _get_historical_mcap(
+        self, df: pd.DataFrame, symbol: str, as_on_date: str | None
+    ) -> float | None:
+        """Resolve a leak-free, price-adjusted historical market cap.
 
-        One chunked SQL query per scan (SQLite caps IN-lists at ~999 vars), so
-        per-event mcap resolution never touches the DB (N+1 avoidance). Rows
-        are kept as ``(date, market_cap)`` ascending by date — ISO dates sort
-        lexicographically, so ``date <= X`` scans can stop at the first miss.
-        """
-        self._pit_history = {}
-        self._pit_history_available = False
-        val_db = self._db_path("valuation")
-        if not os.path.exists(val_db):
-            logger.warning(
-                "fundamentals_history unavailable (%s missing) — point-in-time "
-                "market cap falls back to the current fundamentals snapshot",
-                val_db,
-            )
-            return
-        try:
-            with sqlite3.connect(val_db) as conn:
-                for i in range(0, len(symbols), 900):
-                    chunk = symbols[i : i + 900]
-                    placeholders = ",".join("?" * len(chunk))
-                    # One bulk query per chunk — SQLite caps IN-lists at ~999
-                    # vars, so this is a fixed ~4-query loop, NOT an N+1 (the
-                    # whole point of the chunked bulk load).
-                    rows = conn.execute(  # noqa: PG-NPLUS1
-                        f"SELECT symbol, date, market_cap FROM fundamentals_history "
-                        f"WHERE symbol IN ({placeholders}) AND market_cap IS NOT NULL "
-                        f"ORDER BY symbol, date",
-                        chunk,
-                    ).fetchall()
-                    for sym, d, mc in rows:
-                        _bucket = self._pit_history.setdefault(sym.strip(), [])
-                        _bucket.append((str(d), float(mc)))  # noqa: PG-APPEND
-            # Successfully queried the table (even if it returned no rows) —
-            # history is "available": _resolve_pit_mcap warns per-event for a
-            # symbol missing an as-of row (deduped), since a scan-level warning
-            # is only emitted when the table/DB is absent.
-            self._pit_history_available = True
-        except sqlite3.Error as exc:
-            logger.warning(
-                "fundamentals_history unavailable (%s) — point-in-time market "
-                "cap falls back to the current fundamentals snapshot",
-                exc,
-            )
-            self._pit_history = {}
+        Approximates the market cap as of ``as_on_date`` as
+        ``current_mcap * (price_t / current_price)`` — i.e. the current
+        fundamentals snapshot market cap scaled by how the price has moved
+        between the event date and now. This is leak-free because it only uses
+        historical price data (``price_t``) plus the current snapshot; it never
+        consults data dated after the event.
 
-    def _resolve_pit_mcap(self, symbol: str, as_on_date: str) -> float | None:
-        """Resolve the point-in-time market cap for (symbol, as_on_date).
+        Returns ``None`` (and the caller falls back to the plain score) when
+        any required input is missing: no current mcap for the symbol, no price
+        series, no price on the event date, or a non-positive price.
 
-        Returns the latest ``fundamentals_history.market_cap`` with
-        ``date <= as_on_date``. When no such row exists, falls back to the
-        current fundamentals snapshot (latest-date ``market_cap``) and warns
-        that point-in-time data is missing. Returns None when nothing is found
-        anywhere.
+        The price series is the caller's ``df`` (the same per-symbol frame the
+        detection loop uses) — NOT ``_bulk_data`` — so the factor is identical
+        whether the scanner ran through the bulk loader or the per-symbol DB
+        path (the two paths are parity-tested to produce the same ``df``).
 
-        Fallback sources, cheapest first: (1) the universe-seeded
-        ``_current_mcap_map`` (set by ``scan()`` — zero DB hits on the hot
-        path); (2) a lazy per-symbol query against ``fundamentals`` memoized
-        into the same map (covers direct ``_detect_events`` callers such as
-        the backtest/calibration tools, at one lookup per distinct symbol).
+        Caveat: this assumes shares outstanding are unchanged since the
+        fundamentals snapshot. Stock splits, buybacks, or fresh issuance shift
+        the per-share price without a proportional market-cap change, so the
+        ratio is an approximation, not an exact point-in-time figure.
         """
         sym = symbol.strip()
-        best = None
-        for d, mc in self._pit_history.get(sym, ()):  # dates ascending
-            if d <= as_on_date:
-                best = mc
-            else:
-                break
-        if best is not None:
-            return best
-
-        warn_key = (sym, as_on_date)
-        # Suppress per-event warnings ONLY when a _load_pit_history attempt
-        # found the table/DB absent (scan-level warning already given). For a
-        # successful load (flag True) or a direct _detect_events caller that
-        # never ran the load (flag None), warn per-event (deduped).
-        if (
-            self._pit_history_available is not False
-            and warn_key not in self._pit_warned
-        ):
-            logger.warning(
-                "Point-in-time market cap missing for (%s, %s) in "
-                "fundamentals_history — falling back to current snapshot",
-                sym,
-                as_on_date,
-            )
-            self._pit_warned.add(warn_key)
-
+        # 1. Current market cap (snapshot), cheapest source first: the seeded
+        #    _current_mcap_map, then a lazy per-symbol query memoized into it.
         current = self._current_mcap_map.get(sym)
-        if current is not None or sym in self._current_mcap_map:
-            # In-map: positive value returned, or memoized-missing → None.
-            return current
-
-        val_db = self._db_path("valuation")
-        if not os.path.exists(val_db):
-            self._current_mcap_map[sym] = None
+        if current is None:
+            if sym in self._current_mcap_map:
+                return None  # memoized missing
+            if not os.path.exists(self._db_path("valuation")):
+                self._current_mcap_map[sym] = None
+                return None
+            try:
+                with sqlite3.connect(self._db_path("valuation")) as conn:
+                    row = conn.execute(
+                        "SELECT market_cap FROM fundamentals "
+                        "WHERE symbol = ? AND market_cap IS NOT NULL "
+                        "ORDER BY date DESC LIMIT 1",
+                        (sym,),
+                    ).fetchone()
+                current = float(row[0]) if row and row[0] is not None else None
+            except (sqlite3.Error, OSError):
+                current = None
+            self._current_mcap_map[sym] = current
+        if current is None or current <= 0:
             return None
-        try:
-            with sqlite3.connect(val_db) as conn:
-                row = conn.execute(
-                    "SELECT market_cap FROM fundamentals "
-                    "WHERE symbol = ? AND market_cap IS NOT NULL "
-                    "ORDER BY date DESC LIMIT 1",
-                    (sym,),
-                ).fetchone()
-                if row and row[0] is not None:
-                    mc = float(row[0])
-                    self._current_mcap_map[sym] = mc
-                    return mc
-        except sqlite3.Error:
-            pass
-        self._current_mcap_map[sym] = None
+
+        # 2. Price series: caller-supplied df (identical across bulk/DB paths).
+        if df is None or df.empty or "close" not in df.columns:
+            return None
+
+        # 3. Current price = latest close (frames are date-ascending).
+        current_price = float(df["close"].iloc[-1])
+        if current_price is None or current_price <= 0 or pd.isna(current_price):
+            return None
+
+        # 4. Price on the event date.
+        if not as_on_date:
+            return None
+        target = pd.Timestamp(as_on_date).date()
+        dates = pd.to_datetime(df["date"]).dt.date
+        idx = self._first_index_equal(dates, target)
+        if idx is None:
+            return None
+        price_t = float(df["close"].iloc[idx])
+        if price_t is None or price_t <= 0 or pd.isna(price_t):
+            return None
+
+        # 5. Price-adjusted historical market cap.
+        return current * (price_t / current_price)
+
+    @staticmethod
+    def _first_index_equal(series, target) -> int | None:
+        """First positional index in ``series`` equal to ``target``, else None."""
+        for i, val in enumerate(series):
+            if val == target:
+                return i
         return None
 
     @staticmethod
@@ -381,8 +336,8 @@ class WyckoffAutomaton:
             total += confirm_bonus
         return round(min(max(total, 0.0), 100.0), 1)
 
-    @staticmethod
     def _event_quality(
+        self,
         event_type: str,
         vol_ratio: float,
         del_pct: float,
@@ -417,7 +372,17 @@ class WyckoffAutomaton:
             recovery_pct = float(extra.get("recovery_pct", 0))
             del_score = min(del_pct / 75.0 * 50, 50)
             rec_score = min(recovery_pct / 5.0 * 50, 50)
-            return round(min(del_score + rec_score, 100), 1)
+            base = del_score + rec_score
+            # Price-adjusted market-cap factor (only for Springs, and only when
+            # the caller resolved a historical mcap as-of the event date and
+            # passed it via extra["historical_mcap"]). Approximates historical
+            # mcap as current_mcap * (price_t / current_price); this assumes
+            # shares outstanding are unchanged since the snapshot —
+            # splits/buybacks distort the ratio. Missing mcap => plain base.
+            hmcap = extra.get("historical_mcap")
+            if hmcap is not None and hmcap > 0 and self.mcap_weight > 0:
+                base = base + self.mcap_weight * math.log(float(hmcap))
+            return round(min(base, 100), 1)
 
         elif event_type == "SOS":
             close_pos = float(extra.get("close_position", 0.5))
@@ -528,13 +493,6 @@ class WyckoffAutomaton:
                         if (high_p - low_p) > 0
                         else 0.0
                     )
-                    quality = self._event_quality(
-                        "Spring",
-                        vol_ratio,
-                        del_pct,
-                        row_avg_del,
-                        extra={"recovery_pct": recovery_pct},
-                    )
 
                     # --- Structured Spring Scoring ---
                     # 1. Delivery absorption
@@ -636,14 +594,25 @@ class WyckoffAutomaton:
                     if grade == "D":
                         continue
 
-                    # 8. Point-in-time market cap: resolved as-of the event
-                    # date (the confirmation candle for confirmed Springs), so
-                    # downstream calibration can never see future mcap data.
-                    # NOT yet used by scoring — spring_score/quality/grade are
-                    # untouched by this infra (integration is deferred).
+                    # 8. Quality + price-adjusted historical market cap, both
+                    # resolved as-of the event date (the confirmation candle for
+                    # confirmed Springs) so the score can never see future data.
                     ev_date = conf_date if two_candle_confirm else row_date
-                    pit_mcap = self._sanitize_float(
-                        self._resolve_pit_mcap(symbol, ev_date)
+                    # The price ratio uses the same per-symbol `df` the loop
+                    # already holds — identical whether loaded via the bulk
+                    # loader or the per-symbol DB path (parity-guaranteed).
+                    hist_mcap = self._sanitize_float(
+                        self._get_historical_mcap(df, symbol, ev_date)
+                    )
+                    quality = self._event_quality(
+                        "Spring",
+                        vol_ratio,
+                        del_pct,
+                        row_avg_del,
+                        extra={
+                            "recovery_pct": recovery_pct,
+                            "historical_mcap": hist_mcap,
+                        },
                     )
 
                     events.append(  # noqa: PG-APPEND
@@ -673,7 +642,7 @@ class WyckoffAutomaton:
                             ),
                             "equal_low_zone": bool(equal_low_zone),
                             "two_candle_confirm": bool(two_candle_confirm),
-                            "point_in_time_mcap": pit_mcap,
+                            "historical_mcap": hist_mcap,
                         }
                     )
                 except (KeyError, IndexError, ValueError) as exc:
@@ -855,16 +824,14 @@ class WyckoffAutomaton:
         symbols = [row[0].strip() for row in rows]
         self._bulk_data = load_ohlcv_for_universe(min_date, as_on_date, symbols=symbols)
 
-        # Point-in-time mcap readiness (Part B infra — scoring not affected):
-        # seed the current-snapshot fallback map from the universe itself (no
-        # extra queries) and bulk-load the history table for the universe once.
+        # Seed the current-snapshot market cap per universe symbol — the
+        # "current mcap" numerator used by `_get_historical_mcap` (price-ratio
+        # adjustment), sourced from the universe itself (no extra queries).
         self._current_mcap_map = {
             row[0].strip(): float(row[1])
             for row in rows
             if row[1] is not None and float(row[1]) > 0
         }
-        self._pit_warned.clear()
-        self._load_pit_history(symbols)
 
         candidates: list[dict] = []
 

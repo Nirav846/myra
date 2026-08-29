@@ -439,6 +439,7 @@ def test_wyckoff_defaults_backend():
     s = WyckoffAutomaton()
     assert s.min_mcap == 510
     assert s.max_mcap == 530000
+    assert s.mcap_weight == 20
 
 
 def test_wyckoff_defaults_api():
