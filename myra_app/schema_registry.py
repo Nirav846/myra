@@ -165,6 +165,22 @@ class SchemaRegistry:
             },
             "primary_key": "(symbol)",
         },
+        # Point-in-time mcap history for leak-free Wyckoff calibration.
+        # Table is CREATED at runtime by myra_app/backfill_fundamentals.py
+        # (SchemaRegistry.validate_schema only ALTERs existing tables) — this
+        # entry gives the registry validation/parity awareness of it.
+        "fundamentals_history": {
+            "db": "valuation",
+            "columns": {
+                "symbol": "TEXT NOT NULL",
+                "date": "TEXT NOT NULL",
+                "market_cap": "REAL",
+                "free_float_mcap": "REAL",
+                "free_float_pct": "REAL",
+                "source": "TEXT",
+            },
+            "primary_key": "(symbol, date)",
+        },
         "quarterly_results": {
             "db": "valuation",
             "columns": {
