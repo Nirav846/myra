@@ -2,8 +2,9 @@
 Tests for the price-adjusted historical market cap in the Wyckoff scanner.
 
 Covers `_get_historical_mcap(df, symbol, as_on_date)` (the leak-free
-current_mcap * (price_t / current_price) approximation) and its integration
-into `_event_quality` for Spring events (via extra["historical_mcap"]).
+current_mcap * (price_t / current_price) approximation), `_normalise_mcap`
+(the 0-1 log-mcap normalisation against the scan universe), and their
+integration into `_event_quality` for Spring events (via extra["norm_mcap"]).
 No network access and no real-DB access — price frames are synthetic, and the
 lazy `fundamentals` lookup (when used) runs on a temp DB.
 """
@@ -136,60 +137,98 @@ def test_historical_mcap_lazy_fallback_db_missing_returns_none(tmp_path, monkeyp
 
 
 # ---------------------------------------------------------------------------
-# _event_quality integration — Spring mcap factor (via extra["historical_mcap"])
+# _normalise_mcap — bounded 0-1 factor + edge cases
 # ---------------------------------------------------------------------------
 
 
-def _spring_quality(s, hist_mcap=8.1e9):
+def test_normalise_mcap_bounded_zero_to_one():
+    """`_normalise_mcap` maps log-mcap into [0, 1] using the scan range."""
+    s = _scanner_with()
+    s._mcap_log_range = (math.log(1.0e8), math.log(1.0e10))
+    assert s._normalise_mcap(1.0e10) == pytest.approx(1.0)  # at max
+    assert s._normalise_mcap(1.0e8) == pytest.approx(0.0)  # at min
+    assert s._normalise_mcap(1.0e9) == pytest.approx(0.5)  # mid-range
+    # Out-of-range values clamp to the [0, 1] bounds.
+    assert s._normalise_mcap(1.0e12) == pytest.approx(1.0)
+    assert s._normalise_mcap(1.0e6) == pytest.approx(0.0)
+
+
+def test_normalise_mcap_degenerate_range_returns_zero():
+    """All-mcaps-identical range (hi == lo) → 0.0, so the factor does nothing
+    but is NOT None (robust to the degenerate edge case)."""
+    s = _scanner_with()
+    s._mcap_log_range = (math.log(5.0e9), math.log(5.0e9))
+    assert s._normalise_mcap(5.0e9) == 0.0
+
+
+def test_normalise_mcap_missing_inputs_return_none():
+    """No scan range (direct caller) / missing or non-positive mcap → None,
+    which the score treats as plain base."""
+    s = _scanner_with()
+    assert s._mcap_log_range is None
+    assert s._normalise_mcap(1.0e9) is None  # no range
+    s._mcap_log_range = (math.log(1.0e8), math.log(1.0e10))
+    assert s._normalise_mcap(None) is None
+    assert s._normalise_mcap(0.0) is None
+    assert s._normalise_mcap(-5.0) is None
+
+
+# ---------------------------------------------------------------------------
+# _event_quality integration — Spring mcap factor (via extra["norm_mcap"])
+# ---------------------------------------------------------------------------
+
+
+def _spring_quality(s, norm_mcap=1.0):
     """Spring `_event_quality` with del_pct=75 (→50) and recovery_pct=5 (→50),
-    plus the given historical mcap factor."""
+    plus the given normalised (0-1) mcap factor."""
     return s._event_quality(
         "Spring",
         vol_ratio=1.0,
         del_pct=75.0,
         avg_del_pct=30.0,
-        extra={"recovery_pct": 5.0, "historical_mcap": hist_mcap},
+        extra={"recovery_pct": 5.0, "norm_mcap": norm_mcap},
     )
 
 
-def test_spring_quality_includes_historical_mcap_factor():
-    """With `mcap_weight=20`: base (del/75*50 + rec/5*50 = 100) + 20*ln(1e9)
-    — and the mcap-weight contribution is clamped at 100."""
+def test_spring_quality_includes_norm_mcap_factor():
+    """base (del/75*50 + rec/5*50) + mcap_weight * norm_mcap. With del=30
+    (→20) and rec=5 (→50): base 70; norm 1.0 → 90, norm 0.5 → 80."""
     s = _scanner_with()
-    # Base is already 100 → clamped.
-    assert _spring_quality(s, hist_mcap=8.1e9) == pytest.approx(100.0)
-
-    # Non-clamping base proves the factor is added: del=30 → 20, rec=5 → 50,
-    # so base = 70 and then + 20*ln(1e9) → clamped to 100.
-    s2 = _scanner_with()
-    q2 = s2._event_quality(
+    q = s._event_quality(
         "Spring",
         vol_ratio=1.0,
         del_pct=30.0,
         avg_del_pct=30.0,
-        extra={"recovery_pct": 5.0, "historical_mcap": 1.0e9},
+        extra={"recovery_pct": 5.0, "norm_mcap": 1.0},
     )
-    assert q2 == pytest.approx(min(70.0 + 20.0 * math.log(1.0e9), 100.0))
+    assert q == pytest.approx(90.0)
+    q_half = s._event_quality(
+        "Spring",
+        vol_ratio=1.0,
+        del_pct=30.0,
+        avg_del_pct=30.0,
+        extra={"recovery_pct": 5.0, "norm_mcap": 0.5},
+    )
+    assert q_half == pytest.approx(80.0)
+    # Full base (del 75 → 50, rec 5 → 50) + 20*1 = 100 → still clamps at 100.
+    assert _spring_quality(s, norm_mcap=1.0) == pytest.approx(100.0)
 
 
 def test_spring_quality_mcap_weight_zero_matches_base():
     """`mcap_weight=0` disables the factor → quality equals the plain base."""
     s = _scanner_with(mcap_weight=0)
-    q = _spring_quality(s, hist_mcap=8.1e9)
-    assert q == pytest.approx(100.0)
-    s2 = _scanner_with(mcap_weight=0)
-    q2 = s2._event_quality(
+    q = s._event_quality(
         "Spring",
         vol_ratio=1.0,
         del_pct=30.0,
         avg_del_pct=30.0,
-        extra={"recovery_pct": 5.0, "historical_mcap": 1.0e9},
+        extra={"recovery_pct": 5.0, "norm_mcap": 1.0},
     )
-    assert q2 == pytest.approx(70.0)  # base only, no factor
+    assert q == pytest.approx(70.0)  # base only, no factor
 
 
 def test_spring_quality_mcap_missing_falls_back_to_base():
-    """mcap unresolvable (no historical_mcap in extra) → base score only."""
+    """mcap factor unresolvable (no norm_mcap in extra) → base score only."""
     s = _scanner_with()
     q = s._event_quality(
         "Spring",
@@ -201,9 +240,9 @@ def test_spring_quality_mcap_missing_falls_back_to_base():
     assert q == pytest.approx(70.0)
 
 
-def test_sc_sos_quality_ignores_historical_mcap_extra():
-    """SC/SOS quality ignores the historical_mcap key — the factor is Spring-
-    only (regression guard for the scoring-scope boundary)."""
+def test_sc_sos_quality_ignores_norm_mcap_extra():
+    """SC/SOS quality ignores the norm_mcap key — the factor is Spring-only
+    (regression guard for the scoring-scope boundary)."""
     s = _scanner_with()
     sc_plain = s._event_quality("SC", vol_ratio=2.0, del_pct=40.0, avg_del_pct=30.0)
     sc_extra = s._event_quality(
@@ -211,7 +250,7 @@ def test_sc_sos_quality_ignores_historical_mcap_extra():
         vol_ratio=2.0,
         del_pct=40.0,
         avg_del_pct=30.0,
-        extra={"historical_mcap": 1.0e9},
+        extra={"norm_mcap": 1.0},
     )
     assert sc_extra == sc_plain
     sos_plain = s._event_quality(
@@ -226,6 +265,6 @@ def test_sc_sos_quality_ignores_historical_mcap_extra():
         vol_ratio=2.0,
         del_pct=50.0,
         avg_del_pct=30.0,
-        extra={"close_position": 0.8, "historical_mcap": 1.0e9},
+        extra={"close_position": 0.8, "norm_mcap": 1.0},
     )
     assert sos_extra == sos_plain

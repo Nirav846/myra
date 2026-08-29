@@ -73,6 +73,15 @@ class WyckoffAutomaton:
         # `_get_historical_mcap` uses this as the "current mcap" numerator.
         self._current_mcap_map: dict[str, float | None] = {}
 
+        # Per-scan log-mcap normalisation range (min, max) over the universe,
+        # computed in `scan()` from `_current_mcap_map` (point-in-time: only
+        # data available on the scan date). Used to normalise the Spring mcap
+        # factor to 0-1 so `mcap_weight` contributes on the same scale as the
+        # other quality components (max 20) instead of saturating at 100.
+        # None when no scan has run (direct `_detect_events` callers) — the
+        # mcap factor is then skipped (plain base score).
+        self._mcap_log_range: tuple[float, float] | None = None
+
     def _db_path(self, key: str) -> str:
         return os.path.join(DB_DIR, LibrarianCore.DB_MAP[key])
 
@@ -241,6 +250,27 @@ class WyckoffAutomaton:
                 return i
         return None
 
+    def _normalise_mcap(self, hist_mcap: float | None) -> float | None:
+        """Normalise a historical mcap to 0-1 against the scan-universe range.
+
+        Returns ``(ln(hist_mcap) - lo) / (hi - lo)`` clamped to [0, 1], where
+        (lo, hi) is the per-scan ln(current-mcap) range set in ``scan()`` (the
+        universe's min/max — point-in-time safe, scan-date data only).
+
+        Returns None (caller falls back to the plain base score) only when there
+        is no historical mcap or no scan range (direct ``_detect_events``
+        callers never ran ``scan()``). A degenerate range (all universe mcaps
+        identical) returns 0.0 — the factor does nothing but stays non-None,
+        matching the "robust to edge cases" requirement.
+        """
+        if hist_mcap is None or hist_mcap <= 0 or self._mcap_log_range is None:
+            return None
+        lo, hi = self._mcap_log_range
+        if hi <= lo:
+            return 0.0
+        norm = (math.log(hist_mcap) - lo) / (hi - lo)
+        return min(max(norm, 0.0), 1.0)
+
     @staticmethod
     def _sanitize_float(value):
         return sanitize_float(value)
@@ -373,15 +403,19 @@ class WyckoffAutomaton:
             del_score = min(del_pct / 75.0 * 50, 50)
             rec_score = min(recovery_pct / 5.0 * 50, 50)
             base = del_score + rec_score
-            # Price-adjusted market-cap factor (only for Springs, and only when
-            # the caller resolved a historical mcap as-of the event date and
-            # passed it via extra["historical_mcap"]). Approximates historical
-            # mcap as current_mcap * (price_t / current_price); this assumes
-            # shares outstanding are unchanged since the snapshot —
-            # splits/buybacks distort the ratio. Missing mcap => plain base.
-            hmcap = extra.get("historical_mcap")
-            if hmcap is not None and hmcap > 0 and self.mcap_weight > 0:
-                base = base + self.mcap_weight * math.log(float(hmcap))
+            # Normalised market-cap factor (Spring-only): the caller passes the
+            # 0-1 normalised log-mcap (see `_detect_events`) via
+            # extra["norm_mcap"], where 0/1 are the min/max log-mcap across the
+            # scan universe. `mcap_weight` therefore adds at most
+            # `mcap_weight * 1` (20 with the default) — the same scale as the
+            # other quality components — instead of `mcap_weight * log(mcap)`
+            # which saturated every Spring at 100. Missing norm_mcap (no scan
+            # range or unresolved historical mcap) => plain base score; a
+            # degenerate range passes 0.0 (adds nothing, numerically identical
+            # to base); `mcap_weight=0` disables the factor entirely.
+            norm_mcap = extra.get("norm_mcap")
+            if norm_mcap is not None and self.mcap_weight > 0:
+                base = base + self.mcap_weight * float(norm_mcap)
             return round(min(base, 100), 1)
 
         elif event_type == "SOS":
@@ -604,6 +638,13 @@ class WyckoffAutomaton:
                     hist_mcap = self._sanitize_float(
                         self._get_historical_mcap(df, symbol, ev_date)
                     )
+                    # Normalise the mcap factor to 0-1 against the scan
+                    # universe's log-mcap range, so `mcap_weight` contributes
+                    # on the same scale as the other components (max 20) rather
+                    # than saturating at 100. Degenerate range (all mcaps
+                    # equal) or missing mcap/range (direct callers) -> skip
+                    # the factor (plain base score).
+                    norm_mcap = self._normalise_mcap(hist_mcap)
                     quality = self._event_quality(
                         "Spring",
                         vol_ratio,
@@ -611,7 +652,7 @@ class WyckoffAutomaton:
                         row_avg_del,
                         extra={
                             "recovery_pct": recovery_pct,
-                            "historical_mcap": hist_mcap,
+                            "norm_mcap": norm_mcap,
                         },
                     )
 
@@ -832,6 +873,17 @@ class WyckoffAutomaton:
             for row in rows
             if row[1] is not None and float(row[1]) > 0
         }
+
+        # Normalisation range for the Spring mcap factor: (min, max) of
+        # ln(current_mcap) over the universe. Point-in-time safe — built only
+        # from the scan-date snapshot, never future data. A degenerate range
+        # (all mcaps identical) yields norm 0 downstream.
+        _logs = [
+            math.log(mc)
+            for mc in self._current_mcap_map.values()
+            if mc is not None and mc > 0
+        ]
+        self._mcap_log_range = (min(_logs), max(_logs)) if _logs else None
 
         candidates: list[dict] = []
 
