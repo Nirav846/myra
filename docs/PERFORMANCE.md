@@ -77,6 +77,56 @@ Typical wall-clock for a full-universe scan vs a holdings-filtered scan (local m
 
 ---
 
+## Spring `spring_score` weight calibration
+
+`tools/calibrate_wyckoff_weights.py` systematically calibrates the six
+`DEFAULT_SPRING_WEIGHTS` (delivery_absorption, lower_wick, close_location,
+grab_depth, equal_low_bonus, two_candle_bonus) that feed the Spring
+`spring_score` against forward returns.
+
+### Methodology
+
+- **Data:** `technical_data` only (no fundamentals — leak-free, correctly
+  time-aligned). 400-symbol sample from the 510–530,000 Cr universe, 12 scan
+  dates, seed 42.
+- **Signal flow:** reuses the backtest harness' event detection; each weight set
+  reprobes candidates and re-scores `spring_score` via the scanner's own static
+  helpers (pinned by `tests/test_wyckoff_calibration.py`).
+- **Split:** chronological 70/15/15 TRAIN/VALIDATION/HOLDOUT by scan date.
+  Search selects on TRAIN only; the holdout never influences selection. No
+  cross-split (symbol, event_date) leakage (guarded by `_verify_no_leak`).
+- **Search:** random (default 800 combos, deterministic seed) or grid; base
+  weights normalised to sum 100, bonuses added on top.
+- **Gate:** PROCEED only if the selected set's VALIDATION Q5-Q1 > 0 **and**
+  beats the shipped defaults' VALIDATION Q5-Q1; otherwise ABANDON and keep the
+  current weights.
+
+### Result (2026-08, re-verified 2026-08-29)
+
+| Split | Best-on-TRAIN set | Shipped defaults |
+|-------|-------------------|------------------|
+| TRAIN Q5-Q1  | +13.68% | +5.22% |
+| **VALIDATION Q5-Q1** | **−2.14%** | **+11.21%** |
+| HOLDOUT Q5-Q1 | +0.49% | +4.06% |
+
+The best-on-TRAIN set overfits: its VALIDATION Q5-Q1 (−2.14%) is far **below**
+the shipped defaults' +11.21% (gap −13.35%). **ABANDONED** — no candidate
+passed the out-of-sample gate, so the shipping weights (30/30/20/10 + 10/5)
+remain optimal. This is the correct outcome of a leak-free calibration: the
+hand-tuned weights generalise better than any searched combination.
+
+The training/holdout split is by **event cohort** (first-detectable scan date),
+not by return-window calendar — a TRAIN event's 120-day forward-return window
+may extend into later calendar periods, but each event belongs to exactly one
+split's label set and the holdout/validation labels never influence selection.
+
+### Output
+
+Every evaluated weight set (TRAIN + VALIDATION metrics) is written to
+`tools/calibrate_wyckoff_weights_output.csv` (gitignored).
+
+---
+
 ## Related reading
 
 - [USER_GUIDE.md](USER_GUIDE.md) — how to run scans and filters
