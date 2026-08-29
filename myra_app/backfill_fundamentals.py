@@ -55,11 +55,17 @@ Usage
     python -m myra_app.backfill_fundamentals --start 2025-01-01 --end 2026-04-01 --limit 3
     python -m myra_app.backfill_fundamentals --start 2025-01-01 --end 2026-04-01 --symbols RELIANCE,TCS --dry-run
     python -m myra_app.backfill_fundamentals --start 2025-01-01 --end 2026-04-01 --daily
+    python -m myra_app.backfill_fundamentals --start 2025-01-01 --end 2026-04-01 --no-active-only
 
 ``--start`` / ``--end`` are both required and inclusive (yfinance's ``end`` is
-exclusive, so the script adds one day internally). Full-universe runs
-(3300+ symbols at a ~0.5 s rate limit per fetch) take hours — run them as a
-background job; a short window with ``--limit 3`` is the recommended smoke
+exclusive, so the script adds one day internally). By default (``--active-only``)
+only symbols with OHLCV data in ``technical_data`` within the last 30 days are
+backfilled — intersected with the ``fundamentals`` universe — which drops
+delisted / data-free symbols and reduces a full run from ~3,300 to roughly
+1,800-2,000 symbols. ``--no-active-only`` backfills every ``fundamentals``
+symbol; ``--symbols`` overrides everything and skips the filter. Full-universe
+runs (1800-3300 symbols at a ~0.5 s rate limit per fetch) take hours — run them
+as a background job; a short window with ``--limit 3`` is the recommended smoke
 test. ``--dry-run`` fetches and prints planned rows without writing anything.
 """
 
@@ -115,25 +121,69 @@ def get_universe_symbols(
     conn: sqlite3.Connection,
     symbols: list[str] | None = None,
     limit: int | None = None,
+    active_only: bool = True,
+    tech_db_path: str | None = None,
 ) -> list[str]:
     """Backfill universe.
 
-    ``symbols`` (from ``--symbols``) overrides the default universe, which is
-    the DISTINCT symbols in ``fundamentals`` (mirrors tools/sync_market_cap.py).
-    ``limit`` slices the resulting list (for smoke tests).
+    ``symbols`` (from ``--symbols``) overrides the default universe and skips
+    the active filter. Otherwise the universe is the DISTINCT symbols in
+    ``fundamentals`` (mirrors tools/sync_market_cap.py). When ``active_only``
+    is True (default), it is further narrowed to symbols with OHLCV data in
+    ``technical_data`` within the last 30 days — the Wyckoff scanner only uses
+    such symbols, so this drops delisted / data-free symbols and cuts fetch
+    time. ``limit`` slices the resulting list (for smoke tests) and is applied
+    AFTER the filter.
     """
     if symbols:
+        # Explicit user override — skip the active filter entirely.
         chosen = [s.strip().upper() for s in symbols if s.strip()]
     else:
-        chosen = [
+        funded = [
             r[0]
             for r in conn.execute(
                 "SELECT DISTINCT symbol FROM fundamentals ORDER BY symbol"
             ).fetchall()
         ]
+        if active_only and tech_db_path and os.path.exists(tech_db_path):
+            active = _recently_active_symbols(tech_db_path)
+            if active:
+                active_set = set(active)
+                chosen = [s for s in funded if s.strip() in active_set]
+                if not chosen:
+                    logger.warning(
+                        "Active filter left 0 fundamentals symbols — "
+                        "falling back to the full fundamentals list"
+                    )
+                    chosen = funded
+                else:
+                    logger.info(
+                        "Active filter: %d fundamentals -> %d with recent "
+                        "technical data",
+                        len(funded),
+                        len(chosen),
+                    )
+            else:
+                logger.warning(
+                    "No recently active technical_data symbols found — "
+                    "falling back to the full fundamentals list"
+                )
+                chosen = funded
+        else:
+            chosen = funded
     if limit:
         chosen = chosen[:limit]
     return chosen
+
+
+def _recently_active_symbols(tech_db_path: str) -> set[str]:
+    """Symbols with at least one ``technical_data`` row in the last 30 days."""
+    with sqlite3.connect(tech_db_path) as tconn:
+        rows = tconn.execute(
+            "SELECT DISTINCT symbol FROM technical_data "
+            "WHERE date >= DATE('now', '-30 days')"
+        ).fetchall()
+    return {r[0].strip() for r in rows}
 
 
 def _free_float_mcap(market_cap: float, ff_pct: float | None) -> float | None:
@@ -255,12 +305,18 @@ def backfill_fundamentals_history(
     dry_run: bool = False,
     daily: bool = False,
     db_path: str | None = None,
+    active_only: bool = True,
 ) -> dict:
     """Run the fundamentals-history backfill over the inclusive [start, end].
 
     Returns a summary dict: symbols_attempted / symbols_ok / symbols_failed /
     rows_written / mode ('daily' | 'monthly') / elapsed_seconds. When
     ``dry_run`` is True nothing is written to the database.
+
+    Ctrl+C (KeyboardInterrupt) stops the loop safely: every symbol's rows are
+    committed individually, so already-persisted rows are kept, the open
+    transaction is rolled back, and the exception re-raises so the process
+    exits non-zero (a partial backfill is not a success).
     """
     db_path = db_path or os.path.join(DB_DIR, LibrarianCore.DB_MAP["valuation"])
     if not os.path.exists(db_path):
@@ -268,10 +324,17 @@ def backfill_fundamentals_history(
 
     mode = "daily" if daily else "monthly"
     conn = sqlite3.connect(db_path, timeout=30)
+    tech_db_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["technical"])
     try:
         if not dry_run:
             create_fundamentals_history_table(conn)
-        universe = get_universe_symbols(conn, symbols=symbols, limit=limit)
+        universe = get_universe_symbols(
+            conn,
+            symbols=symbols,
+            limit=limit,
+            active_only=active_only,
+            tech_db_path=tech_db_path,
+        )
         if not universe:
             logger.warning("No symbols to process.")
             return {
@@ -298,7 +361,21 @@ def backfill_fundamentals_history(
         failed = 0
         rows_written = 0
         t0 = time.time()
+
+        def log_progress():
+            logger.info(
+                "Progress %d / %d (ok=%d failed=%d rows=%d, %.0fs)",
+                i,
+                len(universe),
+                ok,
+                failed,
+                rows_written,
+                time.time() - t0,
+            )
+
         for i, sym in enumerate(universe, 1):
+            if i % PROGRESS_EVERY == 0 or i == len(universe):
+                log_progress()
             try:
                 daily_rows = fetch_daily_mcap_history(sym, start, end_inclusive)
                 if not daily_rows:
@@ -318,20 +395,32 @@ def backfill_fundamentals_history(
                         conn, [(sym, *row) for row in final_rows]
                     )
                 ok += 1
+            except KeyboardInterrupt:
+                raise
             except Exception as exc:
                 failed += 1
                 logger.warning("Failed for %s: %s", sym, exc, exc_info=True)
             time.sleep(RATE_LIMIT_SECONDS)
-            if i % PROGRESS_EVERY == 0 or i == len(universe):
-                logger.info(
-                    "Progress %d / %d (ok=%d failed=%d rows=%d, %.0fs)",
-                    i,
-                    len(universe),
-                    ok,
-                    failed,
-                    rows_written,
-                    time.time() - t0,
-                )
+    except KeyboardInterrupt:
+        # Ctrl+C pressed mid-backfill. Every symbol's rows were committed
+        # individually by insert_history_rows, so nothing already persisted is
+        # lost. Roll back any currently-open transaction, then re-raise so the
+        # process exits non-zero and the shell/automation observes the
+        # interruption (a partial backfill is not a success).
+        logger.warning(
+            "Interrupted by Ctrl+C after ~%.0fs. %d/%d symbols ok, %d failed, "
+            "%d rows written. Already-persisted rows are kept.",
+            time.time() - t0,
+            ok,
+            len(universe),
+            failed,
+            rows_written,
+        )
+        try:
+            conn.rollback()
+        except sqlite3.Error:
+            pass
+        raise
     finally:
         conn.close()
 
@@ -400,6 +489,17 @@ def main(argv: list[str] | None = None) -> None:
         help="Store every session instead of monthly snapshots",
     )
     parser.add_argument(
+        "--active-only",
+        action="store_true",
+        default=True,
+        help=(
+            "Only backfill symbols with OHLCV data in technical_data within "
+            "the last 30 days (intersected with the fundamentals universe). "
+            "Default: True. Ignored when --symbols is given. Pass "
+            "--no-active-only to backfill every fundamentals symbol."
+        ),
+    )
+    parser.add_argument(
         "--db",
         default=None,
         help="Override the valuation DB path (default: myra_app/db/myra_valuation.db)",
@@ -424,6 +524,7 @@ def main(argv: list[str] | None = None) -> None:
             dry_run=args.dry_run,
             daily=args.daily,
             db_path=args.db,
+            active_only=args.active_only,
         )
     except FileNotFoundError as exc:
         parser.error(str(exc))
