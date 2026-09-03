@@ -189,7 +189,7 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
           min_mcap: mcapRange?.min ?? 200,
           max_mcap: mcapRange?.max ?? 50000,
           timeframe,
-          restrict_to_holdings: restrictToHoldings,
+          restrict_to_traction_universe: restrictToHoldings,
           ...(scanDate.trim() && { scan_date: scanDate }),
         }),
       });

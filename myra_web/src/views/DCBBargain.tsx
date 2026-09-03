@@ -253,7 +253,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
           exclude_circuits: excludeCircuits,
           corporate_actions_exclude_days: caExcludeEnabled ? caExcludeDays : 0,
           min_traction_score: 0,
-          restrict_to_holdings: restrictToHoldings,
+          restrict_to_traction_universe: restrictToHoldings,
           traction_window: tractionWindow,
           traction_aggregation: tractionAggregation,
           ...(scanDate.trim() && { scan_date: scanDate }),

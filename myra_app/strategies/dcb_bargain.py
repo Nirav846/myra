@@ -44,7 +44,7 @@ class DCBBargainScanner:
         min_traction_score=0.0,
         traction_window=1,
         traction_aggregation="latest",
-        restrict_to_holdings=False,
+        restrict_to_traction_universe=False,
     ):
         self.min_mcap = min_mcap
         self.max_mcap = max_mcap
@@ -66,7 +66,7 @@ class DCBBargainScanner:
                 f"got {traction_aggregation!r}"
             )
         self.traction_aggregation = traction_aggregation
-        self.restrict_to_holdings = bool(restrict_to_holdings)
+        self.restrict_to_traction_universe = bool(restrict_to_traction_universe)
 
     def _db_path(self, key: str) -> str:
         return os.path.join(DB_DIR, LibrarianCore.DB_MAP[key])
@@ -93,13 +93,13 @@ class DCBBargainScanner:
                 (self.min_mcap, self.max_mcap),
             ).fetchall()
 
-        if self.restrict_to_holdings:
-            from myra_app.utils.fund_utils import get_holding_symbols
+        if self.restrict_to_traction_universe:
+            from myra_app.utils.fund_utils import get_traction_symbols
 
-            holdings = get_holding_symbols()
+            holdings = get_traction_symbols()
             if not holdings:
                 logger.warning(
-                    "restrict_to_holdings=True but no holding data — "
+                    "restrict_to_traction_universe=True but no traction data — "
                     "falling back to full universe (%d symbols)",
                     len(rows),
                 )
@@ -107,7 +107,7 @@ class DCBBargainScanner:
                 before = len(rows)
                 rows = [r for r in rows if r[0].strip() in holdings]
                 logger.info(
-                    "Holdings filter: %d → %d symbols (latest month)",
+                    "Traction-universe filter: %d → %d symbols (latest month)",
                     before,
                     len(rows),
                 )

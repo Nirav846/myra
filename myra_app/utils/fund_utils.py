@@ -1,4 +1,16 @@
-"""Shared utilities for mutual-fund holding universe filtering."""
+"""Shared utilities for mutual-fund traction universe filtering.
+
+NOTE: Despite the module name ``fund_utils``, the helpers here currently
+filter by the *monthly traction signal* (``fund_traction`` table) — not
+raw mutual-fund holdings.  This is intentional: the scanners that use
+these helpers (``restrict_to_traction_universe`` filter) want to know
+which stocks are being actively accumulated across mutual funds, which
+the traction signal captures more concisely than the raw holdings CSVs.
+
+TODO: add a separate ``get_mutual_fund_holding_symbols()`` that reads
+from the actual ``cross-fund-holdings-traction/temp_holdings/`` data
+once a holdings-cache table is added to ``myra_valuation.db``.
+"""
 
 import logging
 import os
@@ -14,8 +26,14 @@ logger = logging.getLogger(__name__)
 _cache: dict[str, Set[str]] = {}
 
 
-def get_holding_symbols(month: Optional[str] = None) -> Set[str]:
-    """Return the set of symbols held by at least one mutual fund.
+def get_traction_symbols(month: Optional[str] = None) -> Set[str]:
+    """Return the set of symbols that appear in ``fund_traction`` for a month.
+
+    This is the universe of stocks with non-zero monthly mutual-fund
+    traction signal — used by the ``restrict_to_traction_universe``
+    filter in DCB, Bottom Hunter, and Wyckoff scanners.  It is NOT the
+    set of raw MF holdings; use ``get_mutual_fund_holding_symbols``
+    once that helper is added (see module docstring).
 
     Parameters
     ----------
@@ -31,7 +49,7 @@ def get_holding_symbols(month: Optional[str] = None) -> Set[str]:
     """
     val_db = os.path.join(DB_DIR, "myra_valuation.db")
     if not os.path.exists(val_db):
-        logger.warning("holdings: myra_valuation.db missing")
+        logger.warning("traction: myra_valuation.db missing")
         return set()
 
     conn = sqlite3.connect(val_db)
@@ -40,7 +58,7 @@ def get_holding_symbols(month: Optional[str] = None) -> Set[str]:
         if month is None:
             row = conn.execute("SELECT MAX(month) FROM fund_traction").fetchone()
             if not row or not row[0]:
-                logger.warning("holdings: fund_traction is empty")
+                logger.warning("traction: fund_traction is empty")
                 return set()
             month = row[0]
 
@@ -57,7 +75,7 @@ def get_holding_symbols(month: Optional[str] = None) -> Set[str]:
         symbols: Set[str] = {r[0].strip() for r in rows if r and r[0]}
 
         if not symbols:
-            logger.warning("holdings: no rows for month %s", month)
+            logger.warning("traction: no rows for month %s", month)
 
         # Store with a new key so old-month caches don't linger
         _cache.clear()
@@ -68,6 +86,6 @@ def get_holding_symbols(month: Optional[str] = None) -> Set[str]:
         conn.close()
 
 
-def clear_holding_symbols_cache() -> None:
-    """Invalidate the in-process holding cache (for tests or explicit refresh)."""
+def clear_traction_cache() -> None:
+    """Invalidate the in-process traction cache (for tests or explicit refresh)."""
     _cache.clear()

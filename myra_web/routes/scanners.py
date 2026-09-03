@@ -418,7 +418,9 @@ def _dcb_parse(payload: dict):
     corporate_actions_exclude_days = int(
         payload.get("corporate_actions_exclude_days", 0)
     )
-    restrict_to_holdings = bool(payload.get("restrict_to_holdings", False))
+    restrict_to_traction_universe = bool(
+        payload.get("restrict_to_traction_universe", False)
+    )
     # Traction filter params (off by default for DCB — traction used as sort/highlight, not gate)
     min_traction_score = float(payload.get("min_traction_score", 0.0))
     traction_window = int(payload.get("traction_window", 1))
@@ -443,7 +445,7 @@ def _dcb_parse(payload: dict):
             "min_ff_mcap": min_ff_mcap,
             "exclude_circuits": exclude_circuits,
             "corporate_actions_exclude_days": corporate_actions_exclude_days,
-            "restrict_to_holdings": restrict_to_holdings,
+            "restrict_to_traction_universe": restrict_to_traction_universe,
             "min_traction_score": min_traction_score,
             "traction_window": traction_window,
             "traction_aggregation": traction_aggregation,
@@ -769,7 +771,9 @@ register_scanner(
 def _wy_parse(payload: dict):
     min_mcap = int(payload.get("min_mcap", 510))
     max_mcap = int(payload.get("max_mcap", 530000))
-    restrict_to_holdings = bool(payload.get("restrict_to_holdings", False))
+    restrict_to_traction_universe = bool(
+        payload.get("restrict_to_traction_universe", False)
+    )
     raw_date = payload.get("scan_date", "")
     if raw_date and str(raw_date).strip():
         scan_date = _get_latest_trading_day_before(str(raw_date).strip())
@@ -779,7 +783,7 @@ def _wy_parse(payload: dict):
         {
             "min_mcap": min_mcap,
             "max_mcap": max_mcap,
-            "restrict_to_holdings": restrict_to_holdings,
+            "restrict_to_traction_universe": restrict_to_traction_universe,
         },
         scan_date,
     )
@@ -819,7 +823,9 @@ def _bh_parse(payload: dict):
     timeframe = str(payload.get("timeframe", "daily")).strip().lower()
     if timeframe not in ("daily", "weekly"):
         timeframe = "daily"
-    restrict_to_holdings = bool(payload.get("restrict_to_holdings", False))
+    restrict_to_traction_universe = bool(
+        payload.get("restrict_to_traction_universe", False)
+    )
     raw_date = payload.get("scan_date", "")
     if raw_date and str(raw_date).strip():
         scan_date = _get_latest_trading_day_before(str(raw_date).strip())
@@ -833,7 +839,7 @@ def _bh_parse(payload: dict):
             "adtv_min_cr": adtv_min_cr,
             "lookback_days": lookback_days,
             "timeframe": timeframe,
-            "restrict_to_holdings": restrict_to_holdings,
+            "restrict_to_traction_universe": restrict_to_traction_universe,
         },
         scan_date,
     )

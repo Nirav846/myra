@@ -51,14 +51,14 @@ class WyckoffAutomaton:
         min_mcap=510,
         max_mcap=530000,
         lookback_days=90,
-        restrict_to_holdings=False,
+        restrict_to_traction_universe=False,
         weights: dict | None = None,
         mcap_weight: float = 20,
     ):
         self.min_mcap = min_mcap
         self.max_mcap = max_mcap
         self.lookback_days = lookback_days
-        self.restrict_to_holdings = bool(restrict_to_holdings)
+        self.restrict_to_traction_universe = bool(restrict_to_traction_universe)
         # Spring scoring weights. A partial override dict is merged over the
         # defaults, so `weights={"delivery_absorption": 50}` keeps every other
         # weight at its default. Detection gates/thresholds are NOT affected.
@@ -107,13 +107,13 @@ class WyckoffAutomaton:
                 (self.min_mcap, self.max_mcap),
             ).fetchall()
 
-        if self.restrict_to_holdings:
-            from myra_app.utils.fund_utils import get_holding_symbols
+        if self.restrict_to_traction_universe:
+            from myra_app.utils.fund_utils import get_traction_symbols
 
-            holdings = get_holding_symbols()
+            holdings = get_traction_symbols()
             if not holdings:
                 logger.warning(
-                    "restrict_to_holdings=True but no holding data — "
+                    "restrict_to_traction_universe=True but no traction data — "
                     "falling back to full universe (%d symbols)",
                     len(rows),
                 )
@@ -121,7 +121,7 @@ class WyckoffAutomaton:
                 before = len(rows)
                 rows = [r for r in rows if r[0].strip() in holdings]
                 logger.info(
-                    "Holdings filter: %d → %d symbols (latest month)",
+                    "Traction-universe filter: %d → %d symbols (latest month)",
                     before,
                     len(rows),
                 )

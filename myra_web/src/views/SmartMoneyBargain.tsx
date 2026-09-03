@@ -236,7 +236,7 @@ export default function SmartMoneyBargainView() {
         filter_pct_vs_sma: filterPctVsSma,
         traction_window: tractionWindow,
         traction_aggregation: tractionAggregation,
-        restrict_to_holdings: restrictToHoldings,
+        restrict_to_traction_universe: restrictToHoldings,
       };
       await fetch(`${API_BASE}/smart-money-bargain/scan`, {
         method: 'POST',

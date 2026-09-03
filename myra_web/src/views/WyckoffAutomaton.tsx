@@ -223,7 +223,7 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
         body.min_mcap = mcapRange.min;
         body.max_mcap = mcapRange.max;
       }
-      body.restrict_to_holdings = restrictToHoldings;
+      body.restrict_to_traction_universe = restrictToHoldings;
       if (scanDate.trim()) {
         body.scan_date = scanDate;
       }
