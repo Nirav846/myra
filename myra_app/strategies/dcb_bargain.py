@@ -305,11 +305,31 @@ class DCBBargainScanner:
     def _is_lower_circuit(self, df: pd.DataFrame, idx: int) -> bool:
         """Check if the candle at idx was a lower-circuit day.
 
-        HEURISTIC: Uses a 5% price-drop threshold as a proxy for NSE circuit
-        bands, which are not currently available via API.  Actual circuit limits
-        vary by stock (typically 2%, 5%, 10%, or 20%) and are published by NSE
-        daily.  Replace this heuristic with real circuit-band data when
-        available (e.g. from NSE's daily bhavcopy or a dedicated API).
+        HEURISTIC — approximate circuit detection, not a real source.
+
+        NSE assigns per-stock circuit bands of 2%, 5%, 10%, or 20%
+        depending on the stock's price tier and historical volatility.
+        These are published daily by NSE in the bhavcopy and the
+        "List of scrips with applicable extreme loss margins" file.
+        MYRA does not currently fetch either, so this method uses a
+        universal 5% drop as a single proxy across all stocks.
+
+        Limitations:
+          - 5% over-detects on 10%/20% band stocks (a normal -8% move
+            is mis-flagged as a circuit day).
+          - 5% under-detects on 2% band stocks (a true -2% circuit
+            move is missed entirely).
+          - No upper-circuit detection.
+
+        Replacement plan:
+          1. Pull daily circuit bands from NSE bhavcopy
+             (eod2_data already has the daily file; needs a parser).
+          2. Cache per (symbol, date) into a sidecar table.
+          3. Replace the ``0.95`` constant with the per-stock band.
+
+        Until that lands, the result is a noisy approximation and the
+        downstream ``is_circuit_lock`` filter (which depends on this)
+        should be treated as best-effort.
         """
         if idx < 1:
             return False
