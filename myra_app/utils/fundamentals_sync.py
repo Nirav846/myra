@@ -9,6 +9,7 @@ from myra_app.fetcher import DataFetcher
 
 # --- UPDATED: Import FundamentalManager directly from myra_app ---
 from myra_app.fundamental_manager import FundamentalManager
+from myra_app.constants import DISABLE_FUNDAMENTAL_WRITERS
 
 logger = logging.getLogger("myra.fundamentals_sync")
 
@@ -23,6 +24,13 @@ def sync_fundamentals(force=False, task_id: int = None):
     multi-source FundamentalManager (Screener.in → Yahoo → Google → Finology → NSE).
     Resumable: survives shutdowns.
     """
+    # DISABLE_FUNDAMENTAL_WRITERS: upstox_fetcher now owns the fundamentals table
+    if DISABLE_FUNDAMENTAL_WRITERS:
+        logger.info(
+            "sync_fundamentals skipped: DISABLE_FUNDAMENTAL_WRITERS=True "
+            "(upstox_fetcher owns fundamentals)"
+        )
+        return
     from myra_app.task_tracker import update
 
     if task_id is not None:
@@ -176,7 +184,9 @@ def sync_fundamentals(force=False, task_id: int = None):
     meta_conn.commit()
 
     if task_id is not None:
-        update(task_id, f"Fundamentals sync complete. Updated: {progress['updated_count']}")
+        update(
+            task_id, f"Fundamentals sync complete. Updated: {progress['updated_count']}"
+        )
 
     print(
         f"[MYRA FUNDA] Sync complete. Updated: {progress['updated_count']}, Failed: {progress['failed_count']}"

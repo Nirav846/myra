@@ -18,7 +18,7 @@ import sqlite3
 import sys
 import time
 
-from myra_app.constants import DB_DIR
+from myra_app.constants import DB_DIR, DISABLE_FUNDAMENTAL_WRITERS
 from myra_app.librarian_core import LibrarianCore
 
 from niftyterminal import get_stock_quote
@@ -69,6 +69,13 @@ async def fetch_all(symbols: list[str]) -> list[dict]:
 
 def sync_market_cap():
     """Fetch market_cap, sector, pe for all symbols via niftyterminal."""
+    # DISABLE_FUNDAMENTAL_WRITERS: upstox_fetcher now owns fundamentals table
+    if DISABLE_FUNDAMENTAL_WRITERS:
+        logger.info(
+            "sync_market_cap skipped: DISABLE_FUNDAMENTAL_WRITERS=True "
+            "(upstox_fetcher owns fundamentals)"
+        )
+        return
     db_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["valuation"])
     if not os.path.exists(db_path):
         logger.error("Valuation database not found at %s", db_path)
@@ -258,6 +265,13 @@ def sync_shareholding_and_float(limit: int | None = None):
     Sync shares_outstanding, promoter_holding_pct, public_holding_pct,
     free_float fields, and industry for all symbols via yfinance.
     """
+    # DISABLE_FUNDAMENTAL_WRITERS: upstox_fetcher now owns fundamentals table
+    if DISABLE_FUNDAMENTAL_WRITERS:
+        logger.info(
+            "sync_shareholding_and_float skipped: DISABLE_FUNDAMENTAL_WRITERS=True "
+            "(upstox_fetcher owns fundamentals)"
+        )
+        return
     db_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["valuation"])
     if not os.path.exists(db_path):
         logger.error("Valuation database not found at %s", db_path)
@@ -356,6 +370,13 @@ def sync_shareholding_and_float(limit: int | None = None):
 # ──────────────────────────────────────────────
 
 if __name__ == "__main__":
+    # DISABLE_FUNDAMENTAL_WRITERS: upstox_fetcher now owns fundamentals table
+    if DISABLE_FUNDAMENTAL_WRITERS:
+        print(
+            "sync_market_cap.py disabled: DISABLE_FUNDAMENTAL_WRITERS=True "
+            "(upstox_fetcher owns fundamentals). No rows will be touched."
+        )
+        sys.exit(0)
     import argparse
 
     parser = argparse.ArgumentParser(description="MYRA fundamentals sync")

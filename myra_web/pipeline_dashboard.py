@@ -22,7 +22,13 @@ _ROOT = os.path.dirname(_HERE)
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from myra_app.constants import DB_DIR, DATA_DIR, CACHE_DIR, LOGS_DIR
+from myra_app.constants import (
+    DB_DIR,
+    DATA_DIR,
+    CACHE_DIR,
+    LOGS_DIR,
+    DISABLE_FUNDAMENTAL_WRITERS,
+)
 from myra_app.librarian_core import LibrarianCore
 
 logger = logging.getLogger("pipeline_dashboard")
@@ -241,15 +247,26 @@ class PipelineManager:
         )
 
         val_db = os.path.join(DB_DIR, "myra_valuation.db")
-        try:
-            conn = sqlite3.connect(val_db)
-            conn.execute(
-                "UPDATE fundamentals SET last_fundamental_update = date('now') WHERE shares_outstanding > 0"
+        # DISABLE_FUNDAMENTAL_WRITERS: upstox_fetcher owns the fundamentals table
+        if not DISABLE_FUNDAMENTAL_WRITERS:
+            try:
+                conn = sqlite3.connect(val_db)
+                conn.execute(
+                    "UPDATE fundamentals SET last_fundamental_update = date('now') WHERE shares_outstanding > 0"
+                )
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
+        else:
+            self._push_event(
+                {
+                    "type": "progress",
+                    "task_id": "shares_outstanding_sync",
+                    "progress_pct": 100,
+                    "message": "DISABLE_FUNDAMENTAL_WRITERS=True: last_fundamental_update skipped",
+                }
             )
-            conn.commit()
-            conn.close()
-        except Exception:
-            pass
 
     def _run_fundamentals_sync(self):
         from myra_app.fundamental_sync import FundamentalSync

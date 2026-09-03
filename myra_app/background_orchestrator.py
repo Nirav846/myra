@@ -22,7 +22,7 @@ _ROOT = os.path.dirname(_HERE)
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from myra_app.constants import DB_DIR
+from myra_app.constants import DB_DIR, DISABLE_FUNDAMENTAL_WRITERS
 from myra_app.librarian_core import LibrarianCore
 from myra_app.utils.index_sync import sync_index_constituents
 from myra_app.utils.task_utils import (  # noqa: F401  (re-exported for external callers, e.g. myra_web/routes/health.py)
@@ -232,6 +232,13 @@ def _run_seed_checks():
         return True
 
     def fundamentals_seed():
+        # DISABLE_FUNDAMENTAL_WRITERS: upstox_fetcher now owns fundamentals table
+        if DISABLE_FUNDAMENTAL_WRITERS:
+            logger.info(
+                "[MYRA BG] fundamentals_seed skipped: "
+                "DISABLE_FUNDAMENTAL_WRITERS=True (upstox_fetcher owns fundamentals)"
+            )
+            return
         logger.info("[MYRA BG] Seeding fundamentals...")
         from myra_app.fundamental_sync import FundamentalSync
 

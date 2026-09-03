@@ -16,6 +16,8 @@ import urllib.request
 import json
 from html.parser import HTMLParser
 
+from myra_app.constants import DISABLE_FUNDAMENTAL_WRITERS
+
 logger = logging.getLogger(__name__)
 
 DB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "db")
@@ -273,6 +275,13 @@ async def backfill_shareholding(max_symbols: int | None = None):
     Args:
         max_symbols: If set, limit to N symbols (for testing).
     """
+    # DISABLE_FUNDAMENTAL_WRITERS: upstox_fetcher now owns the fundamentals table
+    if DISABLE_FUNDAMENTAL_WRITERS:
+        logger.info(
+            "backfill_shareholding skipped: DISABLE_FUNDAMENTAL_WRITERS=True "
+            "(upstox_fetcher owns fundamentals)"
+        )
+        return
     db_path = os.path.join(DB_DIR, "myra_valuation.db")
     if not os.path.exists(db_path):
         logger.error("Valuation DB not found at %s", db_path)
@@ -282,7 +291,9 @@ async def backfill_shareholding(max_symbols: int | None = None):
     symbols = [
         row[0]
         for row in conn.execute(
-            "SELECT symbol FROM fundamentals WHERE promoter_holding_pct IS NULL ORDER BY symbol"
+            "SELECT symbol FROM fundamentals "
+            "WHERE promoter_holding_pct IS NULL OR public_holding_pct IS NULL "
+            "ORDER BY symbol"
         ).fetchall()
     ]
 

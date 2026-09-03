@@ -4,6 +4,7 @@ import sys
 import signal
 import time
 import logging
+import asyncio
 from myra_app.db.enrichers.corporate_actions_enricher import enrich_corporate_actions
 from myra_app.db.enrichers.screener_enricher import enrich_screener_fundamentals
 
@@ -32,6 +33,7 @@ def main():
     if "--sync-fund-traction" in sys.argv:
         logger.info("Running fund traction sync (manual)...")
         from myra_app.fund_traction_sync import sync_fund_traction
+
         result = sync_fund_traction(force=True)
         logger.info(f"Fund traction sync complete: {result}")
         return  # Exit after manual sync, don't start daemon
@@ -39,9 +41,40 @@ def main():
     if "--sync-cross-buy" in sys.argv:
         logger.info("Running cross-buy sync (manual)...")
         from myra_app.cross_buy_processor import backfill_months
+
         result = backfill_months()
         logger.info(f"Cross-buy sync complete: {result}")
         return  # Exit after manual sync
+
+    if "--backfill-bse" in sys.argv:
+        logger.info("Running BSE shareholding backfill...")
+        from myra_app.utils.bse_shareholding import backfill_shareholding
+
+        # Parse optional --limit argument: python run_pipeline.py --backfill-bse --limit 100
+        limit = None
+        if "--limit" in sys.argv:
+            idx = sys.argv.index("--limit")
+            if idx + 1 < len(sys.argv):
+                try:
+                    limit = int(sys.argv[idx + 1])
+                    logger.info("Backfill limited to %d symbols", limit)
+                except ValueError:
+                    logger.warning(
+                        "Invalid --limit value, ignoring. Backfilling all symbols."
+                    )
+
+        asyncio.run(backfill_shareholding(max_symbols=limit))
+        logger.info("BSE shareholding backfill complete.")
+
+        # Also sync free-float + shares_outstanding via yfinance so that
+        # free_float_pct / free_float_market_cap are populated alongside
+        # promoter/public holding.
+        logger.info("Running shareholding + free-float sync (yfinance)...")
+        from tools.sync_market_cap import sync_shareholding_and_float
+
+        sync_shareholding_and_float(limit=limit)
+        logger.info("Shareholding + free-float sync complete.")
+        return  # Exit after manual backfill
 
     logger.info("Starting MYRA data pipeline (headless, crash‑safe)…")
 

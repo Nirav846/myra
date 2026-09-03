@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta
 import pandas as pd
 
 from .data_sources import RateLimiter, SourceManager, normalize
+from myra_app.constants import DISABLE_FUNDAMENTAL_WRITERS
 
 
 class FundamentalManager:
@@ -145,40 +146,44 @@ class FundamentalManager:
             ff_pct = public_pct  # free float = public holding in Indian market
             ff_mcap = (mcap * ff_pct / 100) if mcap and ff_pct else None
 
-            v_conn.execute(
-                """
-                INSERT INTO fundamentals (symbol, pe, roe, eps, book_value, market_cap, sector, industry, promoter_holding_pct, public_holding_pct, free_float_pct, free_float_market_cap, last_updated)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT (symbol) DO UPDATE SET
-                    pe = EXCLUDED.pe,
-                    roe = EXCLUDED.roe,
-                    eps = EXCLUDED.eps,
-                    book_value = EXCLUDED.book_value,
-                    market_cap = COALESCE(EXCLUDED.market_cap, fundamentals.market_cap),
-                    sector = COALESCE(EXCLUDED.sector, fundamentals.sector),
-                    industry = COALESCE(EXCLUDED.industry, fundamentals.industry),
-                    promoter_holding_pct = COALESCE(EXCLUDED.promoter_holding_pct, fundamentals.promoter_holding_pct),
-                    public_holding_pct = COALESCE(EXCLUDED.public_holding_pct, fundamentals.public_holding_pct),
-                    free_float_pct = COALESCE(EXCLUDED.free_float_pct, fundamentals.free_float_pct),
-                    free_float_market_cap = COALESCE(EXCLUDED.free_float_market_cap, fundamentals.free_float_market_cap),
-                    last_updated = EXCLUDED.last_updated
-            """,
-                (
-                    symbol_clean,
-                    pe,
-                    roe,
-                    eps,
-                    bv,
-                    mcap,
-                    sect,
-                    sect,
-                    promoter_pct,
-                    public_pct,
-                    ff_pct,
-                    ff_mcap,
-                    date.today().isoformat(),
-                ),
-            )
+            # DISABLE_FUNDAMENTAL_WRITERS: upstox_fetcher now owns the
+            # `fundamentals` table.  Skip ONLY the fundamentals UPSERT;
+            # quarterly_results above still commits normally.
+            if not DISABLE_FUNDAMENTAL_WRITERS:
+                v_conn.execute(
+                    """
+                    INSERT INTO fundamentals (symbol, pe, roe, eps, book_value, market_cap, sector, industry, promoter_holding_pct, public_holding_pct, free_float_pct, free_float_market_cap, last_updated)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (symbol) DO UPDATE SET
+                        pe = EXCLUDED.pe,
+                        roe = EXCLUDED.roe,
+                        eps = EXCLUDED.eps,
+                        book_value = EXCLUDED.book_value,
+                        market_cap = COALESCE(EXCLUDED.market_cap, fundamentals.market_cap),
+                        sector = COALESCE(EXCLUDED.sector, fundamentals.sector),
+                        industry = COALESCE(EXCLUDED.industry, fundamentals.industry),
+                        promoter_holding_pct = COALESCE(EXCLUDED.promoter_holding_pct, fundamentals.promoter_holding_pct),
+                        public_holding_pct = COALESCE(EXCLUDED.public_holding_pct, fundamentals.public_holding_pct),
+                        free_float_pct = COALESCE(EXCLUDED.free_float_pct, fundamentals.free_float_pct),
+                        free_float_market_cap = COALESCE(EXCLUDED.free_float_market_cap, fundamentals.free_float_market_cap),
+                        last_updated = EXCLUDED.last_updated
+                """,
+                    (
+                        symbol_clean,
+                        pe,
+                        roe,
+                        eps,
+                        bv,
+                        mcap,
+                        sect,
+                        sect,
+                        promoter_pct,
+                        public_pct,
+                        ff_pct,
+                        ff_mcap,
+                        date.today().isoformat(),
+                    ),
+                )
 
             v_conn.commit()
 

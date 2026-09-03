@@ -12,7 +12,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from myra_app.constants import DB_DIR  # noqa: E402
+from myra_app.constants import DB_DIR, DISABLE_FUNDAMENTAL_WRITERS  # noqa: E402
 from myra_app.librarian_core import LibrarianCore  # noqa: E402
 
 
@@ -31,6 +31,13 @@ DUPLICATE_PAIRS = [
 
 
 def main() -> None:
+    # DISABLE_FUNDAMENTAL_WRITERS: upstox_fetcher now owns the fundamentals table
+    if DISABLE_FUNDAMENTAL_WRITERS:
+        print(
+            "[consolidate] skipped: DISABLE_FUNDAMENTAL_WRITERS=True "
+            "(upstox_fetcher owns fundamentals)"
+        )
+        return
     db_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["valuation"])
     if not os.path.exists(db_path):
         print(f"[ERROR] Database not found: {db_path}")

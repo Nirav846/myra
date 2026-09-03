@@ -10,6 +10,7 @@ import logging
 
 from myra_app.tasks.context import TaskContext
 from myra_app.utils.task_utils import _is_task_overdue, _mark_task_run, now_ist
+from myra_app.constants import DISABLE_FUNDAMENTAL_WRITERS
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,14 @@ def run(ctx: TaskContext):
     from myra_app.task_tracker import register, unregister
 
     if ctx.shutdown_event.is_set():
+        return
+
+    # DISABLE_FUNDAMENTAL_WRITERS: upstox_fetcher now owns the fundamentals table
+    if DISABLE_FUNDAMENTAL_WRITERS:
+        logger.info(
+            "[MYRA BG] Fundamentals sync skipped: DISABLE_FUNDAMENTAL_WRITERS=True "
+            "(upstox_fetcher owns fundamentals)"
+        )
         return
 
     tid = register("Fundamentals sync", task_type="one-shot")
@@ -50,6 +59,14 @@ def run_daily(ctx: TaskContext):
     from myra_app.task_tracker import register, unregister
 
     if ctx.shutdown_event.is_set():
+        return
+
+    # DISABLE_FUNDAMENTAL_WRITERS: upstox_fetcher now owns the fundamentals table
+    if DISABLE_FUNDAMENTAL_WRITERS:
+        logger.info(
+            "[MYRA BG] Fundamentals daily sync skipped: "
+            "DISABLE_FUNDAMENTAL_WRITERS=True (upstox_fetcher owns fundamentals)"
+        )
         return
 
     ist_now = now_ist()

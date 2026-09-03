@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 import requests
 import yfinance as yf
 
-from myra_app.constants import DB_DIR
+from myra_app.constants import DB_DIR, DISABLE_FUNDAMENTAL_WRITERS
 from myra_app.background_orchestrator import _shutdown_event
 from myra_app.librarian_core import LibrarianCore
 
@@ -241,6 +241,13 @@ class FundamentalSync:
 
     def _merge_and_insert(self, ms_data: dict, nse_data: dict, date_str: str):
         """Merge Morningstar and NSE data and insert into database."""
+        # DISABLE_FUNDAMENTAL_WRITERS: upstox_fetcher now owns fundamentals table
+        if DISABLE_FUNDAMENTAL_WRITERS:
+            logger.info(
+                "[FundamentalSync] _merge_and_insert skipped: "
+                "DISABLE_FUNDAMENTAL_WRITERS=True (upstox_fetcher owns fundamentals)"
+            )
+            return
         all_symbols = set(ms_data.keys()) | set(nse_data.keys())
         db_path = self._get_valuation_db_path()
         records = []
@@ -351,6 +358,13 @@ class FundamentalSync:
         self, cancel_event: threading.Event | None = None
     ):
         """Fetch market cap for all symbols that are missing it."""
+        # DISABLE_FUNDAMENTAL_WRITERS: upstox_fetcher now owns fundamentals table
+        if DISABLE_FUNDAMENTAL_WRITERS:
+            logger.info(
+                "[FundamentalSync] _backfill_market_cap_from_yfinance skipped: "
+                "DISABLE_FUNDAMENTAL_WRITERS=True"
+            )
+            return
         import yfinance as yf
         import time
 
@@ -401,6 +415,13 @@ class FundamentalSync:
         self, cancel_event: threading.Event | None = None
     ):
         """Fetch shares outstanding for all symbols that are missing it."""
+        # DISABLE_FUNDAMENTAL_WRITERS: upstox_fetcher now owns fundamentals table
+        if DISABLE_FUNDAMENTAL_WRITERS:
+            logger.info(
+                "[FundamentalSync] _backfill_shares_outstanding_from_yfinance skipped: "
+                "DISABLE_FUNDAMENTAL_WRITERS=True"
+            )
+            return
         import time
 
         db_path = self._get_valuation_db_path()
@@ -459,6 +480,13 @@ class FundamentalSync:
 
     def _compute_market_cap_from_prices(self):
         """Compute market_cap = shares_outstanding × latest close for all symbols."""
+        # DISABLE_FUNDAMENTAL_WRITERS: upstox_fetcher now owns fundamentals table
+        if DISABLE_FUNDAMENTAL_WRITERS:
+            logger.info(
+                "[FundamentalSync] _compute_market_cap_from_prices skipped: "
+                "DISABLE_FUNDAMENTAL_WRITERS=True"
+            )
+            return
         tech_db = f"{DB_DIR}/myra_technical.db"
         val_db = f"{DB_DIR}/myra_valuation.db"
 
@@ -516,6 +544,13 @@ class FundamentalSync:
         NULL or hasn't been updated in 90 days.  Typically <50 symbols.
         Retries once with a 2-second delay on transient failures.
         """
+        # DISABLE_FUNDAMENTAL_WRITERS: upstox_fetcher now owns fundamentals table
+        if DISABLE_FUNDAMENTAL_WRITERS:
+            logger.info(
+                "[FundamentalSync] _refresh_stale_shares_outstanding skipped: "
+                "DISABLE_FUNDAMENTAL_WRITERS=True"
+            )
+            return {"updated": 0, "total": 0, "skipped": "flag_disabled"}
         import yfinance as yf
 
         val_db = os.path.join(DB_DIR, "myra_valuation.db")
@@ -609,6 +644,19 @@ class FundamentalSync:
         Morningstar is fetched first for all symbols, then yfinance for NIFTY 500.
         Data is merged and inserted with today's date.
         """
+        # DISABLE_FUNDAMENTAL_WRITERS: upstox_fetcher now owns fundamentals table
+        if DISABLE_FUNDAMENTAL_WRITERS:
+            logger.info(
+                "[FundamentalSync] run_full_sync skipped: "
+                "DISABLE_FUNDAMENTAL_WRITERS=True (upstox_fetcher owns fundamentals)"
+            )
+            return {
+                "ms_fetched": 0,
+                "nse_fetched": 0,
+                "inserted": 0,
+                "errors": 0,
+                "skipped": "flag_disabled",
+            }
         logger.info("[FundamentalSync] Starting full sync...")
         self.ms_fetched = 0
         self.nse_fetched = 0
@@ -649,6 +697,19 @@ class FundamentalSync:
 
     def run_ms_only(self):
         """Run Morningstar bulk only - for daily lightweight refresh."""
+        # DISABLE_FUNDAMENTAL_WRITERS: upstox_fetcher now owns fundamentals table
+        if DISABLE_FUNDAMENTAL_WRITERS:
+            logger.info(
+                "[FundamentalSync] run_ms_only skipped: "
+                "DISABLE_FUNDAMENTAL_WRITERS=True"
+            )
+            return {
+                "ms_fetched": 0,
+                "nse_fetched": 0,
+                "inserted": 0,
+                "errors": 0,
+                "skipped": "flag_disabled",
+            }
         logger.info("[FundamentalSync] Starting Morningstar-only sync...")
         self.ms_fetched = 0
         self.nse_fetched = 0
@@ -670,6 +731,19 @@ class FundamentalSync:
 
     def run_nse_only(self, cancel_event: threading.Event | None = None):
         """Run per-symbol yfinance fetch for NIFTY 500 symbols."""
+        # DISABLE_FUNDAMENTAL_WRITERS: upstox_fetcher now owns fundamentals table
+        if DISABLE_FUNDAMENTAL_WRITERS:
+            logger.info(
+                "[FundamentalSync] run_nse_only skipped: "
+                "DISABLE_FUNDAMENTAL_WRITERS=True"
+            )
+            return {
+                "ms_fetched": 0,
+                "nse_fetched": 0,
+                "inserted": 0,
+                "errors": 0,
+                "skipped": "flag_disabled",
+            }
         logger.info(f"[FundamentalSync] Starting yfinance-only sync...")
         self.ms_fetched = 0
         self.nse_fetched = 0
