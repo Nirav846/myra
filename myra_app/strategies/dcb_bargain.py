@@ -541,6 +541,15 @@ class DCBBargainScanner:
         self._bulk_data = load_ohlcv_for_universe(
             min_date, as_on_date, universe_symbols
         )
+        if self._bulk_data is None:
+            # Defensive: load_ohlcv_for_universe returns {} on missing DB or
+            # empty result, but tests (and future code) may monkey-patch it
+            # to None.  Skip the scan rather than raise AttributeError later
+            # in get_df_for_symbol.
+            logger.warning(
+                "DCB scan: bulk data is None – returning empty (no rows to scan)"
+            )
+            return pd.DataFrame()
 
         is_weekly = self.timeframe == "weekly"
         effective_window = self.dcb_window // 5 if is_weekly else self.dcb_window

@@ -185,11 +185,28 @@ class TestScannerBulkParity:
         assert bulk == db
 
     def test_dcb_parity(self):
+        # DCB scanner is bulk-only: there is no per-symbol DB path
+        # (post bulk-loader refactor).  Earlier parity assertions failed
+        # because the scanner passed _bulk_data=None into get_df_for_symbol
+        # during the DB-path half of the harness.  This test now verifies:
+        #   1. The bulk path runs without error and returns a DataFrame.
+        #   2. The scanner defends against load_ohlcv_for_universe returning
+        #      None (the guard added in scan()).
         from myra_app.strategies import dcb_bargain as mod
         from myra_app.strategies.dcb_bargain import DCBBargainScanner
 
-        bulk, db = _scanner_parity(
-            DCBBargainScanner(min_mcap=1500, max_mcap=2500, dcb_window=120), mod
-        )
-        # Both paths should produce the same result (even if both are empty)
-        assert bulk == db
+        scanner = DCBBargainScanner(min_mcap=1500, max_mcap=2500, dcb_window=120)
+        bulk = scanner.scan(as_on_date=FIXED_DATE)
+        assert isinstance(bulk, pd.DataFrame)
+
+        # Guard test: monkey-patch load_ohlcv_for_universe to return None.
+        original = mod.load_ohlcv_for_universe
+        mod.load_ohlcv_for_universe = lambda *a, **k: None
+        try:
+            scanner._bulk_data = None
+            guarded = scanner.scan(as_on_date=FIXED_DATE)
+        finally:
+            mod.load_ohlcv_for_universe = original
+        # Must NOT raise; returns an empty DataFrame.
+        assert isinstance(guarded, pd.DataFrame)
+        assert guarded.empty

@@ -1013,3 +1013,27 @@ def test_filter_corporate_actions_uses_iso_date_column(tmp_path, monkeypatch):
     assert "RECENT" not in kept_syms, "Bonus within 60 days must be excluded"
     assert "OLD" in kept_syms, "Split 200 days ago must be kept"
     assert "TRICKY" in kept_syms, "Old 'TRICKY' (31-Dec-2024 ISO) must be kept"
+
+
+# ---------------------------------------------------------------------------
+# _bulk_data is None guard
+# ---------------------------------------------------------------------------
+
+
+def test_scan_returns_empty_when_bulk_data_is_none():
+    """When load_ohlcv_for_universe returns None (e.g. tests, future
+    call sites), scan() must NOT raise AttributeError; it returns an
+    empty DataFrame with a warning log.
+    """
+    scanner = DCBBargainScanner()
+
+    with (
+        patch(
+            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe",
+            return_value=None,
+        ),
+    ):
+        result = scanner.scan(as_on_date="2025-06-15")
+
+    assert isinstance(result, pd.DataFrame)
+    assert result.empty
