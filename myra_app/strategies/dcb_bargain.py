@@ -555,6 +555,9 @@ class DCBBargainScanner:
         effective_window = self.dcb_window // 5 if is_weekly else self.dcb_window
 
         candidates: list[dict] = []
+        ff_null_skipped = 0
+        ff_below_threshold_skipped = 0
+        frame_too_short_skipped = 0
 
         for idx, (symbol, mcap, ff_pct) in enumerate(rows):
             symbol = symbol.strip()
@@ -571,10 +574,12 @@ class DCBBargainScanner:
                 if df is None or len(df) < max(
                     60, int((self.dcb_window + 50) * 0.6) + 5
                 ):
+                    frame_too_short_skipped += 1
                     continue
 
                 # Free-float filter
                 if self.min_ff_mcap > 0 and ff_pct is None:
+                    ff_null_skipped += 1
                     logger.debug(
                         "Skipping %s: free_float_pct missing, cannot apply FF filter",
                         symbol,
@@ -587,6 +592,7 @@ class DCBBargainScanner:
                     ff_data_quality = "measured"
                     free_float_mcap_cr = (mcap * ff_pct / 100.0) / 1e7
                     if free_float_mcap_cr < self.min_ff_mcap:
+                        ff_below_threshold_skipped += 1
                         continue
 
                 # Weekly aggregation if needed
@@ -749,6 +755,19 @@ class DCBBargainScanner:
         else:
             for c in candidates:
                 c["tier"] = self._tier_from_score(c["score"])
+
+        # Summary log so operators know how many symbols were filtered out
+        # at each stage.  Particularly useful for the free-float NULL count
+        # (default min_ff_mcap=600 silently drops ~1200 symbols otherwise).
+        logger.info(
+            "DCB Bargain scan summary: universe=%d candidates=%d "
+            "skipped(ff_null=%d, ff_below_threshold=%d, frame_too_short=%d)",
+            len(rows),
+            n,
+            ff_null_skipped,
+            ff_below_threshold_skipped,
+            frame_too_short_skipped,
+        )
 
         logger.info("DCB Bargain scan complete: %d candidates found", n)
 
