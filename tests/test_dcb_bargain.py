@@ -943,3 +943,73 @@ def test_free_float_round_none_not_type_error():
 
     assert len(result) == 1
     assert result.iloc[0]["free_float_mcap_cr"] is None
+
+
+# ---------------------------------------------------------------------------
+# _filter_corporate_actions: regression test for date-column fix
+# ---------------------------------------------------------------------------
+
+
+def test_filter_corporate_actions_uses_iso_date_column(tmp_path, monkeypatch):
+    """Regression: the filter must compare against the ISO `date` column,
+    not the DD-MMM-YYYY `ex_date` text column.  Old behaviour spuriously
+    excluded any symbol whose ex_date started with '3' because the text
+    sorts after any 2024-2026 ISO cutoff.
+    """
+    import os
+    import sqlite3
+
+    # Build an isolated institutional DB with both columns.
+    inst_db = tmp_path / "inst.db"
+    conn = sqlite3.connect(inst_db)
+    conn.execute(
+        "CREATE TABLE corporate_actions ("
+        "id INTEGER, symbol TEXT, date TEXT, security_name TEXT,"
+        "action_type TEXT, ex_date TEXT, record_date TEXT, source TEXT)"
+    )
+    # Recent bonus (within 60 days of 2025-06-15)  -> SHOULD be excluded
+    conn.execute(
+        "INSERT INTO corporate_actions (symbol, date, action_type, ex_date) "
+        "VALUES (?, ?, ?, ?)",
+        ("RECENT", "2025-05-01", "Bonus 1:1", "01-May-2025"),
+    )
+    # Old split (200 days before)                    -> should NOT be excluded
+    conn.execute(
+        "INSERT INTO corporate_actions (symbol, date, action_type, ex_date) "
+        "VALUES (?, ?, ?, ?)",
+        (
+            "OLD",
+            "2024-12-01",
+            "Face Value Split (Sub-Division) - From Rs 10/- "
+            "Per Share To Rs 2/- Per Share",
+            "01-Dec-2024",
+        ),
+    )
+    # Edge case: ex_date starts with '3' but the underlying ISO date is OLD
+    # (the exact corruption the old code produced: '31-Dec-2024' >= '2025-04-16'
+    # is True by text comparison even though the date is 8 months earlier).
+    conn.execute(
+        "INSERT INTO corporate_actions (symbol, date, action_type, ex_date) "
+        "VALUES (?, ?, ?, ?)",
+        ("TRICKY", "2024-12-31", "Bonus 1:1", "31-Dec-2024"),
+    )
+    conn.commit()
+    conn.close()
+
+    scanner = DCBBargainScanner(corporate_actions_exclude_days=60)
+    monkeypatch.setattr(
+        "myra_app.strategies.dcb_bargain.LibrarianCore.DB_MAP",
+        {"institutional": str(inst_db)},
+    )
+
+    candidates = [
+        {"symbol": "RECENT"},
+        {"symbol": "OLD"},
+        {"symbol": "TRICKY"},
+    ]
+    kept = scanner._filter_corporate_actions(candidates, as_on_date="2025-06-15")
+
+    kept_syms = {c["symbol"] for c in kept}
+    assert "RECENT" not in kept_syms, "Bonus within 60 days must be excluded"
+    assert "OLD" in kept_syms, "Split 200 days ago must be kept"
+    assert "TRICKY" in kept_syms, "Old 'TRICKY' (31-Dec-2024 ISO) must be kept"

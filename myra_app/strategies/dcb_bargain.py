@@ -957,11 +957,15 @@ class DCBBargainScanner:
             exclude_keywords = ["bonus", "split", "rights", "buy back"]
             dividend_keywords = ["dividend"]
             with sqlite3.connect(inst_db) as conn:
+                # Use the ISO `date` column (YYYY-MM-DD), not `ex_date` which
+                # is stored in NSE's DD-MMM-YYYY text format.  Text comparison
+                # against an ISO cutoff would mis-classify most rows because
+                # the month name sorts after any year-month-day string.
                 rows = conn.execute(
                     f"""
                     SELECT DISTINCT symbol, action_type FROM corporate_actions
                     WHERE symbol IN ({placeholders})
-                      AND ex_date >= ?
+                      AND date >= ?
                     """,
                     (*syms, cutoff),
                 ).fetchall()
