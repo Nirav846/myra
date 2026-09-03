@@ -25,6 +25,24 @@ class DCBBargainScanner:
     _bulk_data = None
     _BULK_COLUMNS = COLUMNS_8
 
+    # ── Backtest validation status (audit reference) ────────────────────
+    # Only ``min_discount_pct=15%`` is backtest-validated (+18.2% net 60d,
+    # 77.8% win rate on 511 symbols / 19 dates, cost-adjusted).
+    #
+    # The following thresholds are NOT backtest-validated — each is
+    # marked with ``# TODO: validate with backtest`` at its definition.
+    # Update this list when validation runs and the TODO markers should
+    # be removed at the same time:
+    #
+    #   min_high_del_days=10          (constructor default)
+    #   sanity_mult=5.0               (constructor default)
+    #   _tier_from_score HIGH=20 MOD=10 (fallback cutoffs)
+    #   _is_lower_circuit 5% drop      (NSE circuit heuristic)
+    #   _is_likely_circuit_lock 3-day streak + 20% vol collapse
+    #   _check_spike_deep 1.3x delivery spike + 0.6 close-loc + 20% disc
+    #   scan() score weighting 0.6*discount + 0.4*del_abs
+    # ────────────────────────────────────────────────────────────────────
+
     def __init__(
         self,
         min_mcap=200,
