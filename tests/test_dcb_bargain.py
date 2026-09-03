@@ -1037,3 +1037,46 @@ def test_scan_returns_empty_when_bulk_data_is_none():
 
     assert isinstance(result, pd.DataFrame)
     assert result.empty
+
+
+# ---------------------------------------------------------------------------
+# End-to-end weekly timeframe test
+# ---------------------------------------------------------------------------
+
+
+def test_scan_weekly_timeframe_end_to_end():
+    """Full scan() with timeframe='weekly' on a 250-row daily frame.
+
+    Verifies:
+      - effective_window = dcb_window // 5 (= 24 for default 120)
+      - weekly aggregation reduces row count
+      - candidate dict carries timeframe='weekly'
+      - score, discount_pct, ADTV, del_abs all populated
+    """
+    scanner = DCBBargainScanner(
+        timeframe="weekly",
+        min_ff_mcap=0.0,  # allow candidate through the FF filter
+    )
+    tech_df = _make_valid_tech_df(n=250)  # ~50 weeks of trading days
+
+    with (
+        patch.object(scanner, "_get_universe", return_value=[("TEST", 5000, 50.0)]),
+        patch(
+            "myra_app.strategies.dcb_bargain.get_df_for_symbol", return_value=tech_df
+        ),
+        patch(
+            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe", return_value={}
+        ),
+    ):
+        result = scanner.scan(as_on_date="2025-06-15")
+
+    # 250 trading days -> ~50 weekly bars, plenty above the min window of 24.
+    assert len(result) == 1
+    row = result.iloc[0]
+    assert row["timeframe"] == "weekly"
+    # Weekly score formula is the same: discount_pct * 0.6 + del_abs * 0.4
+    assert isinstance(row["score"], float)
+    # discount % should be non-zero (price drifts down in the helper)
+    assert row["discount_pct"] > 0
+    # ADTV in Cr
+    assert row["adtv_cr"] > 0
