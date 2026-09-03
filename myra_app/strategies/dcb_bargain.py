@@ -596,6 +596,7 @@ class DCBBargainScanner:
         ff_null_skipped = 0
         ff_below_threshold_skipped = 0
         frame_too_short_skipped = 0
+        failed_count = 0
 
         for idx, (symbol, mcap, ff_pct) in enumerate(rows):
             symbol = symbol.strip()
@@ -753,6 +754,7 @@ class DCBBargainScanner:
                     }
                 )
             except Exception:
+                failed_count += 1
                 logger.exception("DCB scan failed for %s", symbol)
                 continue
 
@@ -799,12 +801,14 @@ class DCBBargainScanner:
         # (default min_ff_mcap=600 silently drops ~1200 symbols otherwise).
         logger.info(
             "DCB Bargain scan summary: universe=%d candidates=%d "
-            "skipped(ff_null=%d, ff_below_threshold=%d, frame_too_short=%d)",
+            "skipped(ff_null=%d, ff_below_threshold=%d, frame_too_short=%d) "
+            "failed=%d",
             len(rows),
             n,
             ff_null_skipped,
             ff_below_threshold_skipped,
             frame_too_short_skipped,
+            failed_count,
         )
 
         logger.info("DCB Bargain scan complete: %d candidates found", n)
