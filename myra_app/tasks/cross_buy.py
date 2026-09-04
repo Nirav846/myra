@@ -112,7 +112,21 @@ def run(ctx: TaskContext):
         months = detect_available_months()
         if months:
             result = process_month(months[-1])  # latest month
-            _mark_task_run("cross_buy_sync")
+            # Audit fix: process_month returns success=False on parser/no-CSV
+            # errors WITHOUT raising. Report explicitly so the dashboard doesn't
+            # show a phantom success.
+            if result.get("success") is False:
+                _mark_task_run(
+                    "cross_buy_sync",
+                    status="failed",
+                    error_message=(
+                        result.get("error")
+                        or result.get("reason")
+                        or "process_month reported failure"
+                    )[:500],
+                )
+            else:
+                _mark_task_run("cross_buy_sync")
             logger.info(f"[MYRA BG] Cross-buy sync complete: {result}")
         else:
             logger.info(

@@ -13,6 +13,142 @@ from myra_app.librarian_core import LibrarianCore
 DB_DIR = os.path.join(PROJECT_ROOT, "myra_app", "db")
 DB_MAP = LibrarianCore.DB_MAP
 
+# Meta DB path matches task_utils.py / librarian_core.DB_MAP["meta"] convention.
+META_DB_PATH = os.path.join(DB_DIR, DB_MAP["meta"])
+
+
+class _TeeStdout:
+    """File-like that forwards every write to a real stream and retains a copy.
+
+    Used to capture audit output during a doctor run without altering the
+    on-screen console output. Captured text is parsed by
+    ``_extract_issue_lines`` after the run completes.
+    """
+
+    def __init__(self, real):
+        self._real = real
+        self._buf: list[str] = []
+
+    def write(self, s):
+        self._real.write(s)
+        self._buf.append(s)
+        return len(s)
+
+    def flush(self):
+        try:
+            self._real.flush()
+        except Exception:
+            pass
+
+    def isatty(self):
+        try:
+            return self._real.isatty()
+        except Exception:
+            return False
+
+    @property
+    def captured(self) -> str:
+        return "".join(self._buf)
+
+
+# Issue-line keywords to capture for the doctor_runs JSON payload. The
+# existing audit uses these exact tokens in its print() lines.
+_ISSUE_KEYWORDS = ("[WARNING]", "[CRITICAL]", "[ERROR]")
+
+
+def _extract_issue_lines(text: str) -> list[str]:
+    """Pull WARNING/CRITICAL/ERROR lines from captured stdout, ordered as they
+    appeared. Order is preserved so a stable top-N still reflects the audit's
+    actual emission order rather than sorted-by-severity."""
+    out: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        for kw in _ISSUE_KEYWORDS:
+            if kw in stripped:
+                # Trim leading two-space indent + "[KEYWORD] " token for storage.
+                msg = stripped
+                # Drop the two-space prefix if present.
+                if msg.startswith("  "):
+                    msg = msg[2:]
+                # Drop the [KEYWORD] token (keep the message body).
+                if msg.startswith(kw):
+                    msg = msg[len(kw) :].lstrip()
+                out.append(f"{kw} {msg}")
+                break
+    return out
+
+
+def _ensure_doctor_runs_table(conn: sqlite3.Connection) -> None:
+    """Idempotent CREATE TABLE IF NOT EXISTS for doctor_runs.
+
+    Schema mirrors the prevailing style in librarian_schema.py:78-89
+    (lineage_tracking) and etf_sync.py:369 — lowercase snake_case columns,
+    ``INTEGER PRIMARY KEY AUTOINCREMENT`` for event-log tables.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS doctor_runs (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            when_utc        DATETIME,
+            issues_found    INTEGER,
+            issues_fixed    INTEGER,
+            issues_failed   INTEGER,
+            critical_json   TEXT
+        )
+        """
+    )
+    conn.commit()
+
+
+def _persist_doctor_run(
+    when_utc: str,
+    issues_found: int,
+    issues_fixed: int,
+    issues_failed: int,
+    issues: list[str],
+) -> None:
+    """Write one doctor_runs row. Failure of this write must never crash the
+    audit (prompt safety requirement). All exceptions are caught and logged."""
+    import json
+
+    try:
+        # Cap stored payload to keep the table row compact while preserving
+        # all CRITICAL entries (highest-severity first within the head of the
+        # list, since audit emits CRITICAL inline).
+        critical = [s for s in issues if s.startswith("[CRITICAL]")]
+        non_critical = [s for s in issues if not s.startswith("[CRITICAL]")]
+        top = critical + non_critical
+        # If total issues exceed the top-N cap (5), keep all criticals + the
+        # first (5 - #criticals) non-criticals.
+        KEEP = 5
+        if len(top) > KEEP:
+            kept = critical[:KEEP]
+            remaining = KEEP - len(kept)
+            if remaining > 0:
+                kept += non_critical[:remaining]
+            top = kept
+
+        payload = json.dumps(top, ensure_ascii=False)
+    except Exception as exc:
+        payload = json.dumps([f"<<payload-construction-failed: {exc}>>"])
+
+    try:
+        conn = sqlite3.connect(META_DB_PATH, timeout=10)
+        try:
+            _ensure_doctor_runs_table(conn)
+            conn.execute(
+                "INSERT INTO doctor_runs "
+                "(when_utc, issues_found, issues_fixed, issues_failed, critical_json) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (when_utc, issues_found, issues_fixed, issues_failed, payload),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as exc:
+        # Last-ditch: log and continue. The audit results stand regardless.
+        print(f"  [WARNING] Failed to persist doctor_runs row: {exc}")
+
 
 class DbDoctor:
     def __init__(self, dry_run=False):
@@ -22,16 +158,37 @@ class DbDoctor:
         self.issues_failed = 0
 
     def run(self):
-        print("\n[MYRA DB DOCTOR] Starting full audit...\n")
-        self.check_db_files_exist()
-        self.check_technical_schema()
-        self.check_meta_schema()
-        self.check_valuation_schema()
-        self.check_technical_data_quality()
-        self.check_etf_contamination()
-        self._record_audit_run()
-        self.check_wal_mode()
-        self.print_summary()
+        # Install stdout tee so we can capture audit output without changing
+        # what the operator sees on the console. Restored in the finally block
+        # even if any check raises.
+        real_stdout = sys.stdout
+        tee = _TeeStdout(real_stdout)
+        sys.stdout = tee
+        when_utc = datetime.now(timezone.utc).isoformat()
+        try:
+            print("\n[MYRA DB DOCTOR] Starting full audit...\n")
+            self.check_db_files_exist()
+            self.check_technical_schema()
+            self.check_meta_schema()
+            self.check_valuation_schema()
+            self.check_technical_data_quality()
+            self.check_etf_contamination()
+            self._record_audit_run()
+            self.check_wal_mode()
+            self.print_summary()
+        finally:
+            sys.stdout = real_stdout
+        # Persist one summary row to doctor_runs. This runs after stdout is
+        # restored so any failure in the persistence layer cannot corrupt the
+        # operator's console output above. A failure to persist is logged
+        # but never crashes this method.
+        _persist_doctor_run(
+            when_utc=when_utc,
+            issues_found=self.issues_found,
+            issues_fixed=self.issues_fixed,
+            issues_failed=self.issues_failed,
+            issues=_extract_issue_lines(tee.captured),
+        )
 
     def _get_connection(self, db_key):
         db_file = DB_MAP.get(db_key)

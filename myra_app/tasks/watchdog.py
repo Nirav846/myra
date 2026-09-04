@@ -109,6 +109,23 @@ def _is_db_stale(days_threshold: int = 1) -> bool:
         return False
 
 
+def _check_last_sync_date_today() -> bool:
+    """True iff metadata 'last_sync_date' equals today's IST date.
+
+    Set only by ingest.run()'s success branch. Used after kicking off
+    run_daily_ingest() so the watchdog's stale_catchup record reflects a
+    real success rather than a silent failure.
+    """
+    try:
+        lib = _get_metadata_connection(read_only=True)
+        last = lib.get_metadata("last_sync_date")
+        if not last:
+            return False
+        return last.strip() == now_ist().date().isoformat()
+    except Exception:
+        return False
+
+
 def run(ctx: TaskContext):
     """
     Polls every 60 seconds. When a new trading day is detected after
@@ -149,8 +166,12 @@ def run(ctx: TaskContext):
                         logger.info(
                             "[MYRA BG] Database is STALE (1+ days behind). Triggering catch-up..."
                         )
-                        _mark_task_run("stale_catchup")
+                        # Audit fix: only record stale_catchup as run after
+                        # the ingest actually succeeded (otherwise a silent
+                        # failure would masquerade as success here).
                         run_daily_ingest(ctx, force=True)
+                        if _check_last_sync_date_today():
+                            _mark_task_run("stale_catchup")
                     elif (
                         ist_now.hour >= 18
                         and ist_now.minute >= 30
@@ -159,8 +180,9 @@ def run(ctx: TaskContext):
                         logger.info(
                             "[MYRA BG] Market closed – retrying post-close ingestion..."
                         )
-                        _mark_task_run("stale_catchup")
                         run_daily_ingest(ctx, force=True)
+                        if _check_last_sync_date_today():
+                            _mark_task_run("stale_catchup")
                     continue
 
                 if (

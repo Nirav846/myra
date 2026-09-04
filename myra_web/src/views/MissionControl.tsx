@@ -4,6 +4,7 @@ import { Librarian } from '../lib/Librarian';
 import { useLazyWidgetData } from '../hooks/useLazyWidgetData';
 import { SymbolAutocomplete } from '../components/SymbolAutocomplete';
 import ErrorBoundary from '../components/ErrorBoundary';
+import PipelineStatusPanel from '../components/PipelineStatusPanel';
 import { API_ROOT } from '../config';
 import { useWatchlist } from '../lib/WatchlistContext';
 
@@ -456,6 +457,11 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
           </div>
         )}
       </section>
+
+      {/* Pipeline Status Panel (Phase 5) */}
+      <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded-xl p-4 text-red-400 text-xs font-mono" role="alert">Pipeline status widget crashed</div>}>
+        <PipelineStatusPanel />
+      </ErrorBoundary>
 
       {/* System Metrics Strip */}
       <section aria-label="System Metrics" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">

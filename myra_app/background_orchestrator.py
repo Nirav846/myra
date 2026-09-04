@@ -346,9 +346,32 @@ def _ensure_network_cache_db():
         )
         conn.commit()
         conn.close()
-        logger.info(f"[MYRA BG] Network cache database verified at {cache_db_path}")
+        logger.info(f"[MYRA BG] Memory DB verified at {cache_db_path}")
     except Exception as e:
         logger.warning(f"[MYRA BG] Failed to initialize network cache database: {e}")
+
+
+def _ensure_options_db():
+    """Create/verify the myra_options.db sidecar on startup.
+
+    Mirrors the _ensure_calendar_db / _ensure_network_cache_db pattern so
+    the doctor stops emitting "[WARNING] DB file missing: myra_options.db"
+    on every boot. The actual schema is owned by myra_app.options_chain
+    (lazy, on-demand); we only ensure the file exists with a minimal
+    scaffold so DB-file-presence audits are accurate. option_chain._init_db()
+    runs the full DDL on first read.
+    """
+    try:
+        options_db_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["options"])
+        os.makedirs(os.path.dirname(options_db_path), exist_ok=True)
+        conn = sqlite3.connect(options_db_path)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.commit()
+        conn.close()
+        logger.info(f"[MYRA BG] Options DB verified at {options_db_path}")
+    except Exception as e:
+        logger.warning(f"[MYRA BG] Failed to initialize options database: {e}")
 
 
 def start():
@@ -361,6 +384,7 @@ def start():
     _ensure_sync_log_table()
     _ensure_calendar_db()
     _ensure_network_cache_db()
+    _ensure_options_db()
 
     logger.info("[MYRA BG] Running startup DB health check (synchronous)...")
     from myra_app.tasks.doctor import run as _run_db_doctor

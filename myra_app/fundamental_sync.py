@@ -40,6 +40,45 @@ MORNINGSTAR_HEADERS = {
 }
 
 
+# ── Upsert policy (audit C2) ─────────────────────────────────────────────────
+# Conflict target is `symbol` — single-column PRIMARY KEY on `fundamentals`
+# (verified at librarian_schema.py:260 and schema_registry.py:166).
+#
+# Three classes of column when a record arrives:
+#
+#   ALWAYS_OVERWRITE   — metadata / row identity; never null-guard.
+#                        Update unconditionally from excluded.
+#
+#   ZERO_GUARDED       — the five columns previously protected by the
+#                        existing_values guard at lines 319-328. The pre-fix
+#                        semantics treated "null OR zero" as "not a value";
+#                        we preserve that — incoming must be > 0 to update,
+#                        otherwise the existing row value is kept.
+#
+#   COALESCE_PROTECTED — every other metric column. Plain COALESCE so an
+#                        incoming NULL never erases a good existing value,
+#                        but a valid incoming value still updates.
+_FUNDAMENTALS_ALWAYS_OVERWRITE = frozenset(
+    {
+        "symbol",  # row identity (PK target)
+        "date",  # write metadata
+        "last_updated",  # write metadata
+        "source_ms",  # provenance
+        "source_nse",  # provenance
+    }
+)
+_FUNDAMENTALS_ZERO_GUARDED = frozenset(
+    {
+        "shares_outstanding",
+        "market_cap",
+        "promoter_holding_pct",
+        "free_float_pct",
+        "free_float_market_cap",
+    }
+)
+# Anything else written by _merge_and_insert is COALESCE-protected.
+
+
 class FundamentalSync:
     """Syncs fundamental data from Morningstar and yfinance into myra_valuation.db."""
 
@@ -347,10 +386,73 @@ class FundamentalSync:
                         if c not in r:
                             r[c] = None
                 placeholders = [f":{c}" for c in columns]
-                sql = f"INSERT OR REPLACE INTO fundamentals ({','.join(columns)}) VALUES ({','.join(placeholders)})"
+
+                # Audit C2 fix: switch from INSERT OR REPLACE to an upsert
+                # that preserves existing non-null values when the incoming
+                # fetch is partial. Three-class policy:
+                #   ALWAYS_OVERWRITE → excluded.<col>
+                #   ZERO_GUARDED     → CASE WHEN excluded.<col> > 0
+                #                                  THEN excluded.<col>
+                #                                  ELSE fundamentals.<col>
+                #                          END
+                #   COALESCE_PROTECTED → COALESCE(excluded.<col>, fundamentals.<col>)
+                # Symbol is the PK conflict target (librarian_schema.py:260).
+                set_clauses = []
+                for col in columns:
+                    if col == "symbol":
+                        # PK — don't include in UPDATE SET
+                        continue
+                    if col in _FUNDAMENTALS_ALWAYS_OVERWRITE:
+                        set_clauses.append(f"{col}=excluded.{col}")
+                    elif col in _FUNDAMENTALS_ZERO_GUARDED:
+                        set_clauses.append(
+                            f"{col}=CASE WHEN excluded.{col} > 0 "
+                            f"THEN excluded.{col} ELSE fundamentals.{col} END"
+                        )
+                    else:
+                        set_clauses.append(
+                            f"{col}=COALESCE(excluded.{col}, fundamentals.{col})"
+                        )
+
+                # Per-row clobber-prevented accounting: for every
+                # COALESCE-protected and ZERO_GUARDED column whose incoming
+                # value is None, the upsert just saved (or would have saved)
+                # an existing good value from being overwritten. We count
+                # only metric columns (skipping the always-overwrite set)
+                # because those are the ones the previous INSERT OR REPLACE
+                # silently clobbered.
+                clobber_prevented_cols = 0
+                clobber_prevented_symbols: set[str] = set()
+                for r in records:
+                    sym = r.get("symbol", "")
+                    any_metric_null = False
+                    for col in columns:
+                        if col == "symbol":
+                            continue
+                        if col in _FUNDAMENTALS_ALWAYS_OVERWRITE:
+                            continue
+                        val = r.get(col)
+                        if val is None:
+                            clobber_prevented_cols += 1
+                            any_metric_null = True
+                    if any_metric_null:
+                        clobber_prevented_symbols.add(sym)
+
+                sql = (
+                    f"INSERT INTO fundamentals ({','.join(columns)}) "
+                    f"VALUES ({','.join(placeholders)}) "
+                    f"ON CONFLICT(symbol) DO UPDATE SET {','.join(set_clauses)}"
+                )
                 conn.executemany(sql, records)
                 self.inserted = len(records)
                 logger.info(f"[FundamentalSync] Inserted {self.inserted} records")
+                # Per-run audit summary at INFO level (audit C2 visibility gap).
+                if clobber_prevented_cols > 0:
+                    logger.info(
+                        f"[FUNDAMENTAL SYNC] {clobber_prevented_cols} columns "
+                        f"across {len(clobber_prevented_symbols)} symbols would "
+                        f"have gone null, preserved existing values"
+                    )
         except Exception as e:
             logger.error(f"[FundamentalSync] Insert failed: {e}")
 

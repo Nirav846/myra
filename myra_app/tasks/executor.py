@@ -53,12 +53,15 @@ def _execute_once(name: str, spec: TaskSpec, fn, ctx: TaskContext) -> None:
     except Exception as e:
         duration = time.perf_counter() - t0
         logger.error(f"[MYRA BG] Task {name} failed after {duration:.2f}s: {e}")
+        # Capture the failure (truncated) before any retry-gating decision so
+        # the recorded error survives even when the task is marked-as-run.
+        _fail_msg = str(e)[:500]
         if spec.mark_on_failure:
             logger.warning(
                 f"[MYRA BG] Task {name} marked as run despite failure "
                 "(mark_on_failure=True); next attempt next cycle."
             )
-            _mark_task_run(spec.label)
+            _mark_task_run(spec.label, status="failed", error_message=_fail_msg)
     else:
         duration = time.perf_counter() - t0
         logger.info(f"[MYRA BG] Task {name} completed in {duration:.2f}s")
@@ -66,7 +69,7 @@ def _execute_once(name: str, spec: TaskSpec, fn, ctx: TaskContext) -> None:
             logger.debug(
                 f"[MYRA BG] Task {name}: marking as run (mark_on_success=True)"
             )
-            _mark_task_run(spec.label)
+            _mark_task_run(spec.label, status="success")
         else:
             logger.debug(
                 f"[MYRA BG] Task {name}: not marking "

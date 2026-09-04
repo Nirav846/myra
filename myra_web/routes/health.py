@@ -22,8 +22,10 @@ logger = logging.getLogger(__name__)
 try:
     from myra_app.background_orchestrator import _get_last_run
 except ImportError:
+
     def _get_last_run(task_name):
         return "Never"
+
 
 router = APIRouter(prefix="/api", tags=["health"])
 
@@ -358,3 +360,99 @@ async def pcr_status():
     except Exception as exc:
         logger.warning("pcr_status failed: %s", exc)
         return {"status": "error", "snapshots": [], "message": "Internal server error"}
+
+
+# --------------------------------------------------------------------------
+# Phase 4: doctor_runs + sync_log surfacing for the pipeline dashboard.
+# Read-only. Each query is wrapped independently — a missing doctor_runs
+# table or a malformed sync_log row does not fail the other endpoint.
+# --------------------------------------------------------------------------
+
+_META_DB_PATH = os.path.join(DB_DIR, LibrarianCore.DB_MAP["meta"])
+
+
+def _read_latest_doctor_run() -> dict:
+    """Return the latest doctor_runs row, or None if the table is absent
+    or empty. Never raises — exceptions return None so callers can decide
+    whether to expose `doctor: null` to the client."""
+    if not os.path.exists(_META_DB_PATH):
+        return None
+    try:
+        conn = sqlite3.connect(_META_DB_PATH, timeout=5)
+        try:
+            row = conn.execute(
+                "SELECT id, when_utc, issues_found, issues_fixed, issues_failed, critical_json "
+                "FROM doctor_runs ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        finally:
+            conn.close()
+        if row is None:
+            return None
+        # Column order in doctor_runs (db_doctor.py:90-97):
+        #   0 id, 1 when_utc, 2 issues_found, 3 issues_fixed, 4 issues_failed, 5 critical_json
+        critical_raw = row[5]
+        try:
+            critical = json.loads(critical_raw) if critical_raw else []
+        except (TypeError, ValueError):
+            critical = [critical_raw] if critical_raw else []
+        return {
+            "id": row[0],
+            "when_utc": row[1],
+            "issues_found": row[2],
+            "issues_fixed": row[3],
+            "issues_failed": row[4],
+            "critical": critical,
+        }
+    except Exception as exc:
+        logger.warning("read_latest_doctor_run failed: %s", exc)
+        return None
+
+
+def _read_all_sync_log() -> list:
+    """Return every row in sync_log as a list of dicts, or [] on any
+    failure. Mirrors the schema_registry / task_ql._ensure_sync_log_table
+    column set; missing columns yield None per-row."""
+    if not os.path.exists(_META_DB_PATH):
+        return []
+    try:
+        conn = sqlite3.connect(_META_DB_PATH, timeout=5)
+        try:
+            rows = conn.execute(
+                "SELECT task_name, last_run, last_status, error_message "
+                "FROM sync_log ORDER BY task_name"
+            ).fetchall()
+        finally:
+            conn.close()
+        return [
+            {
+                "task_name": r[0],
+                "last_run": r[1],
+                "last_status": r[2],
+                "error_message": r[3],
+            }
+            for r in rows
+        ]
+    except Exception as exc:
+        logger.warning("read_all_sync_log failed: %s", exc)
+        return []
+
+
+@router.get("/health/doctor")
+async def get_doctor_status():
+    """Latest row from doctor_runs (Phase 3 audit persistence).
+
+    Returns ``{"doctor": null}`` if no doctor_runs rows exist yet
+    (e.g. a fresh deployment that hasn't run the doctor yet). Never
+    raises — failures degrade to ``doctor: null``.
+    """
+    return {"doctor": _read_latest_doctor_run()}
+
+
+@router.get("/health/tasks")
+async def get_sync_log_status():
+    """All rows currently in sync_log (Phase 3 status/error persistence).
+
+    Returns an empty list if sync_log is absent or unreadable.
+    Never raises.
+    """
+    return {"tasks": _read_all_sync_log()}

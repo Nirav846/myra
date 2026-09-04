@@ -24,7 +24,19 @@ def run(ctx: TaskContext):
         from myra_app.fund_traction_sync import sync_fund_traction
 
         result = sync_fund_traction()
-        _mark_task_run("fund_traction_sync")
+        # Audit fix: sync_fund_traction returns success=False on
+        # empty/no-data or probe-failure WITHOUT raising. Report explicitly so
+        # the dashboard doesn't show a phantom success.
+        if result.get("success") is False:
+            _mark_task_run(
+                "fund_traction_sync",
+                status="failed",
+                error_message=(
+                    result.get("error") or "sync_fund_traction reported failure"
+                )[:500],
+            )
+        else:
+            _mark_task_run("fund_traction_sync")
         logger.info(
             f"[MYRA BG] Fund traction sync complete. "
             f"Months: {result['months_synced']}, Rows: {result['rows_inserted']}"

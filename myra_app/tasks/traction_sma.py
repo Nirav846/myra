@@ -24,7 +24,20 @@ def run(ctx: TaskContext):
         from myra_app.fund_traction_sync import update_traction_sma
 
         result = update_traction_sma()
-        _mark_task_run("traction_sma_update")
+        # Audit fix: update_traction_sma returns a result dict with
+        # success=False on partial/data errors WITHOUT raising. The executor's
+        # exception-handler cannot catch this. Report it explicitly so the
+        # dashboard doesn't see a stale "success" row.
+        if result.get("success") is False:
+            _mark_task_run(
+                "traction_sma_update",
+                status="failed",
+                error_message=(
+                    result.get("error") or "update_traction_sma reported failure"
+                )[:500],
+            )
+        else:
+            _mark_task_run("traction_sma_update")
         logger.info(
             f"[MYRA BG] Traction SMA update complete. "
             f"Month: {result['month']}, Updated: {result['updated']}, "

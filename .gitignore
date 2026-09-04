@@ -232,13 +232,13 @@ yarn-error.log*
 # =================================================
 #  AI agent / local tools (not part of core app)
 # =================================================
-.opencode/
+# .opencode/ agent definitions are now tracked
 conductor/
 memory/
 superpowers/
 opencode.json
 auto_improve.md
-AGENTS.md
+
 AI_INSTRUCTIONS.md
 SKILL.md
 

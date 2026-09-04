@@ -63,15 +63,26 @@ def _connect(read_only: bool = False) -> sqlite3.Connection:
 
 
 def _ensure_sync_log_table() -> None:
-    """Create sync_log table if it doesn't exist."""
+    """Create sync_log table if it doesn't exist.
+
+    The DDL declares the full column set (task_name, last_run, last_status,
+    error_message, progress_pct) so fresh deployments get the same shape the
+    rest of the codebase already operates on. Live DBs that were migrated to
+    include last_status / error_message / progress_pct via a different DDL
+    path are unaffected — CREATE TABLE IF NOT EXISTS is a no-op when the
+    table already exists with any shape.
+    """
     try:
         conn = _connect()
         try:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS sync_log (
-                    task_name   TEXT PRIMARY KEY,
-                    last_run    TEXT
+                    task_name      TEXT PRIMARY KEY,
+                    last_run       TEXT,
+                    last_status    TEXT     DEFAULT 'unknown',
+                    error_message  TEXT,
+                    progress_pct   REAL     DEFAULT 0
                 )
             """
             )
@@ -128,20 +139,36 @@ def _get_last_run(task_name: str) -> datetime | None:
     return None
 
 
-def _mark_task_run(task_name: str) -> None:
-    """Write current IST timestamp to sync_log for a task."""
+def _mark_task_run(
+    task_name: str,
+    status: str = "success",
+    error_message: str | None = None,
+) -> None:
+    """Write current IST timestamp + status/error to sync_log for a task.
+
+    ``status`` is "success" or "failed"; ``error_message`` is the exception
+    text (already truncated by the caller if needed) or None. Retry-gating
+    behavior is unchanged — this function is only invoked by the executor
+    per the spec's mark_on_success / mark_on_failure rules; adding the
+    status/error columns does not change when the task is considered "due"
+    next cycle.
+    """
     try:
         timestamp = now_ist().isoformat()
         with _WRITE_LOCK:
             conn = _connect()
             try:
                 conn.execute(
-                    "INSERT OR REPLACE INTO sync_log (task_name, last_run) VALUES (?, ?)",
-                    (task_name, timestamp),
+                    "INSERT OR REPLACE INTO sync_log "
+                    "(task_name, last_run, last_status, error_message) "
+                    "VALUES (?, ?, ?, ?)",
+                    (task_name, timestamp, status, error_message),
                 )
                 conn.commit()
             finally:
                 conn.close()
-        logger.info(f"[MYRA BG] Marked {task_name} last_run: {timestamp}")
+        logger.info(
+            f"[MYRA BG] Marked {task_name} last_run={timestamp} status={status}"
+        )
     except Exception as e:
         logger.warning(f"[MYRA BG] Failed to mark task run for {task_name}: {e}")
