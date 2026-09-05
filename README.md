@@ -216,7 +216,82 @@ MYRA registers **15 scanners**. Thirteen are registered through the scanner fact
 
 **PCR Market Regime** — `get_market_mood()` reads Put-Call Ratio snapshots from `myra_options.db` as the primary market-regime signal (BULLISH→GREED, BEARISH→FEAR), falling back to VIX when unavailable. Current PCR snapshots are exposed via `GET /api/pcr/status`.
 
-## Backtest Harness
+## Backtest Engine
+
+The MYRA backtest engine (`myra_app/backtest_engine.py`) is a standalone, pluggable harness for evaluating trading signals against historical NSE data. It reads universe + OHLCV prices directly from MYRA's existing sidecar databases (`myra_technical.db`, `myra_metadata.db`, `myra_calendar.db`), so no extra ingestion is required.
+
+**What it does**
+
+- Walks every trading day in a configurable window (default: train 2015→2023, holdout 2024→latest).
+- Filters the equity universe per day, applies a discontinuity blackout, then calls your **signal function** to rank candidates.
+- Opens **one new position per day** (top-1 signal) at a fixed ₹10,000 notional — concurrent positions are allowed.
+- Evaluates one of three **exit modes** per trade (fixed N days, 20% trailing stop, or rule-based 5% stop OR SMA break).
+- Applies NSE-style costs (STT, brokerage, impact cost) on each round trip.
+- Aggregates per-trade P&L into a summary with win rate, avg return, max drawdown, peak concurrent capital, total net P&L.
+
+### Quick start — run a baseline backtest
+
+```python
+import sqlite3
+from myra_app.backtest_engine import (
+    run_backtest,
+    BacktestConfig,
+    RandomSignal,        # dummy signal — for sanity testing only
+    MomentumSignal,      # placeholder momentum — Task 2 will refine
+    SIGNAL_REGISTRY,
+)
+
+# Option A: use the convenience entry-point that opens MYRA's sidecars for you
+from myra_app.backtest_engine import run_backtest_myra, BacktestConfig
+
+cfg = BacktestConfig(
+    signal="momentum",          # or "random"
+    exit_mode="fixed",          # "fixed" | "trailing" | "rule"
+    fixed_hold_days=60,
+    window="all",               # "train" | "holdout" | "all"
+    start_date="2025-01-01",    # optional override
+    end_date="2026-06-30",
+)
+result = run_backtest_myra(cfg)
+print(result.summary)
+print(result.trades.head())
+```
+
+Or call `run_backtest(conn, config)` directly with your own `sqlite3.Connection` if you've already attached the relevant tables.
+
+### Plugging in a custom signal
+
+Signals are plain Python classes implementing the `SignalFunction` protocol: a `score(date, universe, conn) -> pd.Series` method (index = symbol, higher = better) plus a `requires_delivery` flag.
+
+```python
+from myra_app.backtest_engine import SIGNAL_REGISTRY
+
+class DeliveryPileSignal:
+    """Buy symbols whose 5-day delivery% is in the top decile."""
+    requires_delivery = True
+
+    def score(self, date, universe, conn):
+        rows = conn.execute(
+            "SELECT symbol, AVG(delivery_pct) AS d FROM technical_data "
+            "WHERE symbol IN ({}) AND date BETWEEN ? AND ? "
+            "GROUP BY symbol".format(",".join("?" * len(universe))),
+            (*universe, "2025-01-01", str(date.date())),
+        ).fetchall()
+        return pd.Series({r[0]: r[1] for r in rows}).sort_values(ascending=False)
+
+SIGNAL_REGISTRY["delivery_pile"] = DeliveryPileSignal
+```
+
+Then reference it as `BacktestConfig(signal="delivery_pile", requires_delivery=True, ...)`. The engine will automatically skip pre-`TRAIN_START_DELIVERY` dates for delivery-aware signals.
+
+### Where outputs live
+
+- `BacktestResult.trades` — per-trade DataFrame: `entry_date, exit_date, symbol, entry_price, exit_price, n_hold_days, pnl_gross, costs, pnl_net, exit_reason`.
+- `BacktestResult.summary` — dict with `total_trades, win_rate, avg_return, max_drawdown, peak_concurrent_capital, total_pnl_net`.
+
+See `ARCHITECTURE.md` for the full data-flow diagram (date loop → universe → signal → position → exit → cost → aggregation).
+
+## Wyckoff Backtest Harness
 
 `tools/backtest_wyckoff.py` measures forward returns of every `WyckoffAutomaton` event type (SC / AR / ST / Spring / SOS) across 12 evenly spaced scan dates, instead of the single best candidate per symbol returned by `scan()`.
 

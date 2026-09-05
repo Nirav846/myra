@@ -207,3 +207,91 @@ React Frontend (myra_web/src/)
 | Thread safety | All writes use `with LibrarianCore._db_lock:` |
 | Frontend access | Read-only via FastAPI — never direct DB access from the React frontend |
 | Valuation DB | `myra_valuation.db` is backend-only — never exposed directly to the frontend |
+
+## Backtest Flow
+
+`myra_app/backtest_engine.py` implements a single-position-per-day backtest loop that walks the trading calendar top-down, opens a new top-1 position each day, evaluates one of three exit modes, applies NSE-style costs, and aggregates per-trade P&L into a summary. Below is the per-day control flow:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  run_backtest(conn, config)                                                 │
+│                                                                             │
+│   ┌─────────────────────────────────────────────────────────────────────┐  │
+│   │ _resolve_window(requires_delivery, start, end)                       │  │
+│   │   → picks train (2015/2019 → 2023) | holdout (2024 → HOLDOUT_END) | all│ │
+│   │   → TRAIN_START_DELIVERY if signal.requires_delivery else 2015-01-01 │  │
+│   └─────────────────────────────────────────────────────────────────────┘  │
+│                                  ▼                                          │
+│   ┌─────────────────────────────────────────────────────────────────────┐  │
+│   │ _trading_days(conn, start, end)                                       │  │
+│   │   → prefer myra_calendar.market_calendar.is_trading_day=1             │  │
+│   │   → fallback: DISTINCT date FROM technical_data                       │  │
+│   └─────────────────────────────────────────────────────────────────────┘  │
+│                                  ▼                                          │
+│   for day_idx, day_iso in enumerate(trading_days):                          │
+│                                                                             │
+│   ┌─── (1) UNIVERSE FILTER ───────────────────────────────────────────┐    │
+│   │ _eligible_symbols_at_date(conn, day_ts, seed_universe=None)        │    │
+│   │   a. instrument_type='EQUITY' from symbols_master                   │    │
+│   │   b. has technical_data within trailing 90 days                     │    │
+│   │   c. NOT in discontinuity blackout (±5 trading days of z>6 events)  │    │
+│   │   → returns sorted list[str] of eligible symbols                   │    │
+│   └────────────────────────────────────────────────────────────────────┘    │
+│                                  ▼                                          │
+│   ┌─── (2) SIGNAL SCORING ────────────────────────────────────────────┐    │
+│   │ signal.score(day_ts, eligible, conn) -> pd.Series (idx=symbol)     │    │
+│   │   dropna(); restrict to eligible symbols                            │    │
+│   └────────────────────────────────────────────────────────────────────┘    │
+│                                  ▼                                          │
+│   ┌─── (3) TOP-1 SELECTION ───────────────────────────────────────────┐    │
+│   │ top_sym = scores.idxmax()        # always open a new position       │    │
+│   └────────────────────────────────────────────────────────────────────┘    │
+│                                  ▼                                          │
+│   ┌─── (4) POSITION MANAGEMENT ───────────────────────────────────────┐    │
+│   │ • ADV cache refreshed every 20 trading days for impact cost        │    │
+│   │ • Forward slice loaded (≤ max(fixed_hold+5, 200) trading days)     │    │
+│   │ • Position size = ₹10,000 (POSITION_VALUE_INR) per new position    │    │
+│   │ • Concurrent positions allowed — multiple open simultaneously     │    │
+│   └────────────────────────────────────────────────────────────────────┘    │
+│                                  ▼                                          │
+│   ┌─── (5) EXIT RULE EVALUATION (one of three modes) ─────────────────┐    │
+│   │ exit_mode='fixed'   → _exit_fixed_holding:  close at N trading days│    │
+│   │ exit_mode='trailing'→ _exit_trailing_stop: 20% trail on max-high   │    │
+│   │ exit_mode='rule'    → _exit_rule_based: 5% stop OR close < SMA(N)  │    │
+│   │   returns (exit_idx, exit_reason); exits at last day if no trigger │    │
+│   └────────────────────────────────────────────────────────────────────┘    │
+│                                  ▼                                          │
+│   ┌─── (6) COST APPLICATION ──────────────────────────────────────────┐    │
+│   │ entry_value = ₹10,000 (no STT on buy)                              │    │
+│   │ exit_value  = shares × exit_price                                   │    │
+│   │ costs = total_round_trip_costs(entry_value, exit_value, ADV_value) │    │
+│   │   • STT: 0.025% of sell value                                       │    │
+│   │   • Brokerage: min(₹20, 0.03% of trade value) per side             │    │
+│   │   • Impact: k·√(position/ADV) with 0.5% flat fallback               │    │
+│   │ pnl_net = pnl_gross − costs.total                                   │    │
+│   └────────────────────────────────────────────────────────────────────┘    │
+│                                  ▼                                          │
+│   ┌─── (7) TRADE RECORD ──────────────────────────────────────────────┐    │
+│   │ trades.append({entry_date, exit_date, symbol, entry_price,         │    │
+│   │                 exit_price, n_hold_days, pnl_gross, costs,         │    │
+│   │                 pnl_net, exit_reason})                             │    │
+│   └────────────────────────────────────────────────────────────────────┘    │
+│                                                                             │
+│   ┌─── (8) RESULT AGGREGATION ────────────────────────────────────────┐    │
+│   │ _compute_summary(trades_df, config) →                              │    │
+│   │   total_trades, win_rate, avg_return, max_drawdown,                │    │
+│   │   peak_concurrent_capital, total_pnl_net                           │    │
+│   │ _max_concurrent_positions: vectorised event sweep (exit=-1, entry=+1)│    │
+│   │ _max_drawdown_from_cumsum: peak − trough of cumulative P&L         │    │
+│   └────────────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Key invariants**
+
+- **Leak-free**: discontinuity blackout prevents buying into split/bonus artefacts; `_trading_days` restricts iteration to real market sessions.
+- **Concurrent positions**: a new position opens every day regardless of existing open positions; the engine does **not** enforce capacity limits — peak concurrent capital scales linearly with overlap.
+- **Forward-window cost**: trailing and rule exits pre-load up to 200 trading days per trade for evaluation; fixed exits use `fixed_hold_days + 5` for safety.
+- **Delivery-aware signals**: signals with `requires_delivery=True` skip pre-`2019-10-01` dates automatically.
+
+See `README.md` → *Backtest Engine* for usage examples (signal registration, custom signals, configuration).
