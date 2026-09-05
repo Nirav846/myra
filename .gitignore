@@ -291,3 +291,10 @@ tools/calibrate_wyckoff_weights_output.csv
 
 # Windows shortcuts (local convenience, e.g. "Myra - Shortcut.lnk")
 *.lnk
+.opencode/
+*.backup
+*.recovered
+*.broken
+*.sc_fixed
+trial/
+tools/compare_*.py
