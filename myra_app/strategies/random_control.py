@@ -100,10 +100,18 @@ class RandomControl:
         ts = pd.Timestamp(date)
         day_seed = (self.seed + ts.toordinal()) & 0x7FFFFFFF
 
+        # Sort the universe so the resulting Series index is in a canonical
+        # order. This makes the top-1 selection (idxmax in the engine) stable
+        # regardless of how the caller ordered the input list. Without this
+        # sort, two code paths passing the same set of symbols in different
+        # orders (e.g. list(sorted(set)) vs list(set)) can pick different
+        # "random" winners — defeating the purpose of a control.
+        sorted_universe = sorted(universe)
+
         # Local Random instance — does NOT touch the global random state.
         rng = random.Random(day_seed)
-        scores = [rng.random() for _ in range(len(universe))]
-        return pd.Series(scores, index=pd.Index(universe, name="symbol"))
+        scores = [rng.random() for _ in range(len(sorted_universe))]
+        return pd.Series(scores, index=pd.Index(sorted_universe, name="symbol"))
 
 
 # ──────────────────────────────────────────────────────────────────────────────

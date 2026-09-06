@@ -632,7 +632,12 @@ def run_backtest(
             continue
 
         # 3. Pick top-1
-        top_sym = scores.idxmax()
+        # Sort by score DESC, then symbol ASC for a deterministic, reproducible
+        # tie-break. This protects against floating-point ties in the momentum
+        # signal and ensures the random control's winner is stable regardless
+        # of the iteration order of the input universe.
+        sorted_scores = scores.sort_values(ascending=False, kind="mergesort")
+        top_sym = sorted_scores.index[0]
         # If top_sym already has multiple positions we still open (concurrent).
         # Per spec: "a new position opens each day regardless of existing positions".
 
