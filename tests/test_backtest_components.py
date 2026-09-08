@@ -28,6 +28,11 @@ from myra_app.backtest_engine import (
     BacktestResult,
     COST_MODEL,
     HOLDOUT_END,
+    KAUSHIK_DELIVERY_ELEV_THRESHOLD,
+    KAUSHIK_DELIVERY_FILTER_WINDOW,
+    KaushikBOHMethod1,
+    KaushikBOHMethod1Delivery,
+    KaushikBOHMethod1DeliveryFilter,
     MomentumSignal,
     POSITION_VALUE_INR,
     RandomSignal,
@@ -37,6 +42,7 @@ from myra_app.backtest_engine import (
     TRAIN_START_PRICE_ONLY,
     _eligible_symbols_at_date,
     _exit_fixed_holding,
+    _exit_profit_target,
     _exit_rule_based,
     _exit_trailing_stop,
     _resolve_window,
@@ -765,3 +771,530 @@ class TestSelectionStability:
         a = rc.score(date, universe, conn=None)
         b = rc.score(date, universe, conn=None)
         pd.testing.assert_series_equal(a, b)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Phase 2 — profit-target exit.
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class TestExitProfitTarget:
+    """3d — close at first close >= entry * (1+pct), else 252-day cap."""
+
+    def _prices(self, closes, n=260):
+        return pd.DataFrame(
+            {
+                "date": pd.date_range("2024-01-01", periods=len(closes)),
+                "close": closes,
+                "high": [c * 1.01 for c in closes],
+                "low": [c * 0.99 for c in closes],
+                "volume": [100_000] * len(closes),
+            }
+        )
+
+    def test_target_hit_exits_at_first_close(self) -> None:
+        closes = [100.0, 107.0, 108.0, 120.0]
+        idx, reason = _exit_profit_target(
+            self._prices(closes), entry_idx=0, target_pct=0.075, cap_days=252
+        )
+        assert idx == 2  # 108 >= 107.5; the first close that clears the target
+        assert reason == "pt_target_75bp"
+
+    def test_target_hit_on_cap_day_still_counts_as_target(self) -> None:
+        # Cap day is idx 252; close exactly at trigger → counts as target, not cap.
+        closes = [100.0] * 252 + [107.5]
+        idx, reason = _exit_profit_target(
+            self._prices(closes), entry_idx=0, target_pct=0.075, cap_days=252
+        )
+        assert idx == 252
+        assert reason == "pt_target_75bp"
+
+    def test_no_hit_forces_252_day_cap(self) -> None:
+        closes = [100.0] * 260
+        idx, reason = _exit_profit_target(
+            self._prices(closes), entry_idx=0, target_pct=0.075, cap_days=252
+        )
+        assert idx == 252
+        assert reason == "pt_252d_cap"
+
+    def test_series_ends_before_cap_reports_eod(self) -> None:
+        closes = [100.0] * 10
+        idx, reason = _exit_profit_target(
+            self._prices(closes), entry_idx=0, target_pct=0.075, cap_days=252
+        )
+        assert idx == 9
+        assert reason == "pt_eod"
+
+    def test_5_and_10_pct_reasons_reflect_target(self) -> None:
+        closes = [100.0, 106.0]
+        idx, reason = _exit_profit_target(
+            self._prices(closes), entry_idx=0, target_pct=0.05, cap_days=252
+        )
+        assert reason == "pt_target_50bp"
+        closes = [100.0, 111.0]
+        idx, reason = _exit_profit_target(
+            self._prices(closes), entry_idx=0, target_pct=0.10, cap_days=252
+        )
+        assert reason == "pt_target_100bp"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Phase 2 — Kaushik BOH Method 1 signal.
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def kaushik_db():
+    """Reset the module-level Kaushik precompute cache and build a fresh,
+    long-enough (>252 trading days) in-memory calendar."""
+    import myra_app.backtest_engine as be
+
+    be._KAUSHIK_CACHE = None
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE technical_data ("
+        "  symbol TEXT, date TEXT, open REAL, high REAL, low REAL, "
+        "  close REAL, volume INTEGER, delivery INTEGER, delivery_pct REAL)"
+    )
+    conn.execute(
+        "CREATE TABLE symbols_master (symbol TEXT PRIMARY KEY, instrument_type TEXT)"
+    )
+    conn.execute(
+        "CREATE TABLE corporate_actions ("
+        "  symbol TEXT, date TEXT, action_type TEXT, ex_date TEXT)"
+    )
+    conn.execute(
+        "CREATE TABLE market_calendar (date TEXT PRIMARY KEY, is_trading_day INTEGER)"
+    )
+    # Weekdays from 2020-01-01 → 2022-12-31 (~783 trading days).
+    s = pd.Timestamp("2020-01-01")
+    e = pd.Timestamp("2022-12-31")
+    cur = s
+    while cur <= e:
+        if cur.weekday() < 5:
+            conn.execute(
+                "INSERT INTO market_calendar (date, is_trading_day) VALUES (?, 1)",
+                (cur.strftime("%Y-%m-%d"),),
+            )
+        cur += pd.Timedelta(days=1)
+    yield conn
+    conn.close()
+    be._KAUSHIK_CACHE = None
+
+
+def _insert_kaushik_series(
+    conn: sqlite3.Connection,
+    symbol: str,
+    days: list[str],
+    closes: list[float],
+    lows: list[float],
+    delivery_pct: list[float] | None = None,
+) -> None:
+    """Insert a full OHLC series for one symbol on the given trading days.
+
+    delivery_pct defaults to 0.0 per row.
+    """
+    assert len(days) == len(closes) == len(lows)
+    for i, d in enumerate(days):
+        dp = (delivery_pct[i] if delivery_pct else 0.0) or 0.0
+        conn.execute(
+            "INSERT INTO technical_data "
+            "(symbol, date, open, high, low, close, volume, delivery_pct) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                symbol,
+                d,
+                closes[i],
+                max(closes[i], lows[i]) * 1.001,
+                lows[i],
+                closes[i],
+                100_000,
+                dp,
+            ),
+        )
+    conn.execute(
+        "INSERT INTO symbols_master (symbol, instrument_type) VALUES (?, 'EQUITY')",
+        (symbol,),
+    )
+    conn.commit()
+
+
+def _kaushik_days(conn: sqlite3.Connection) -> list[str]:
+    return [
+        r[0]
+        for r in conn.execute(
+            "SELECT date FROM market_calendar WHERE is_trading_day = 1 ORDER BY date"
+        ).fetchall()
+    ]
+
+
+class TestKaushikBOHMethod1:
+    """Signal is a discrete 20%-recovery crossing, with per-cycle cooldown."""
+
+    def _flat_then_dip_recover(
+        self, n_flat: int = 252, dip: float = 80.0, recover: float = 96.2
+    ) -> tuple[list[float], list[float]]:
+        """Price flat at 100 for n_flat days, one 80 close/low, then recover
+        (recovery day's low stays above the dip so year_low remains 80)."""
+        closes = [100.0] * n_flat + [dip, recover, 100.0]
+        lows = [99.0] * n_flat + [dip, dip + 5.0, 99.0]
+        return closes, lows
+
+    def test_crossing_is_a_discrete_event(self, kaushik_db) -> None:
+        days = _kaushik_days(kaushik_db)
+        closes, lows = self._flat_then_dip_recover()
+        _insert_kaushik_series(kaushik_db, "RIDER", days[: len(closes)], closes, lows)
+        sig = KaushikBOHMethod1(delivery_variant=False)
+
+        # Day index of the recovery: 252 + 1 = 253rd trading day.
+        signal_day = days[len(closes) - 2]  # the recover day
+        # The day after (still above threshold) must NOT re-fire.
+        after_day = days[len(closes) - 1]
+
+        s_sig = sig.score(pd.Timestamp(signal_day), ["RIDER"], kaushik_db)
+        s_after = sig.score(pd.Timestamp(after_day), ["RIDER"], kaushik_db)
+
+        assert "RIDER" in s_sig.index
+        assert s_after.empty  # discrete crossing, not "currently above"
+        # overshoot = 96.2 / 96.0 - 1 = 0.00208…; score = -overshoot
+        assert s_sig["RIDER"] == pytest.approx(-(96.2 / 96.0 - 1.0))
+
+    def test_no_signal_without_full_52w_lookback(self, kaushik_db) -> None:
+        days = _kaushik_days(kaushik_db)
+        # Only 100 days of data → year_low never defined.
+        closes = [100.0] * 100
+        lows = [99.0] * 100
+        _insert_kaushik_series(kaushik_db, "NEWKID", days[:100], closes, lows)
+        sig = KaushikBOHMethod1()
+        s = sig.score(pd.Timestamp(days[99]), ["NEWKID"], kaushik_db)
+        assert s.empty
+
+    def test_cooldown_blocks_until_fresh_low(self, kaushik_db) -> None:
+        days = _kaushik_days(kaushik_db)
+        # Cycle 1: flat 252, dip 80, recover 96.2, then drift higher.
+        closes = [100.0] * 252 + [80.0, 96.2]
+        lows = [99.0] * 252 + [80.0, 85.0]
+        # Cycle 2: new low 75, recover to 90.2 (>= 1.2*75=90).
+        closes += [100.0] * 100 + [75.0, 90.2]
+        lows += [99.0] * 100 + [75.0, 80.0]
+        _insert_kaushik_series(kaushik_db, "CYCLER", days[: len(closes)], closes, lows)
+        sig = KaushikBOHMethod1()
+
+        sig1_day = days[253]  # first recovery (96.2)
+        sig2_day = days[253 + 1 + 100 + 1]  # second recovery (90.2)
+        probe_no_sig = days[254]  # right after first signal, still rising
+
+        s1 = sig.score(pd.Timestamp(sig1_day), ["CYCLER"], kaushik_db)
+        s_none = sig.score(pd.Timestamp(probe_no_sig), ["CYCLER"], kaushik_db)
+        s2 = sig.score(pd.Timestamp(sig2_day), ["CYCLER"], kaushik_db)
+        s_cooldown_day = sig.score(
+            pd.Timestamp(days[253 + 1 + 100]), ["CYCLER"], kaushik_db
+        )
+
+        assert "CYCLER" in s1.index
+        assert s_none.empty  # stayed above threshold → no re-cross
+        assert s_cooldown_day.empty  # new low day alone is not a signal
+        assert "CYCLER" in s2.index  # fresh low 75 → cycle restarts
+
+    def test_delivery_variant_ranks_by_elevation(self, kaushik_db) -> None:
+        days = _kaushik_days(kaushik_db)
+        # Both symbols dip to 80 then recover on the SAME day.
+        # A: recovers to 96.4 (overshoot 0.0042), signal-day delivery 60, prior 30.
+        # B: recovers to 96.0 (overshoot 0.0),   signal-day delivery 40, prior 35.
+        n_flat = 252
+        signal_trading_idx = n_flat + 1  # 253
+        closes_a = [100.0] * n_flat + [80.0, 96.4]
+        lows_a = [99.0] * n_flat + [80.0, 85.0]
+        closes_b = [100.0] * n_flat + [80.0, 96.0]
+        lows_b = [99.0] * n_flat + [80.0, 85.0]
+        # Delivery: 30 for 20 days before signal; 60 on signal day (A),
+        # 35 before; 40 on signal day (B).
+        dp_a = [30.0] * (signal_trading_idx - 20) + [30.0] * 20 + [60.0]
+        dp_b = [35.0] * (signal_trading_idx - 20) + [35.0] * 20 + [40.0]
+        _insert_kaushik_series(
+            kaushik_db, "AAA", days[: len(closes_a)], closes_a, lows_a, dp_a
+        )
+        _insert_kaushik_series(
+            kaushik_db, "BBB", days[: len(closes_b)], closes_b, lows_b, dp_b
+        )
+
+        base = KaushikBOHMethod1(delivery_variant=False)
+        deliv = KaushikBOHMethod1(delivery_variant=True)
+        sig_day = days[signal_trading_idx]
+
+        s_base = base.score(pd.Timestamp(sig_day), ["AAA", "BBB"], kaushik_db)
+        s_deliv = deliv.score(pd.Timestamp(sig_day), ["AAA", "BBB"], kaushik_db)
+
+        # Mirror the engine's top-1 picker: sort score DESC, take index[0].
+        base_winner = s_base.sort_values(ascending=False, kind="mergesort").index[0]
+        deliv_winner = s_deliv.sort_values(ascending=False, kind="mergesort").index[0]
+
+        # Base: score = -overshoot → smaller overshoot (BBB=0.0) wins.
+        assert base_winner == "BBB"
+        # Delivery: score = elevation → A (60-30=30) beats B (40-35=5).
+        assert deliv_winner == "AAA"
+        assert s_deliv["AAA"] == pytest.approx(30.0)
+        assert s_deliv["BBB"] == pytest.approx(5.0)
+
+    def test_registry_maps_kaushik_signals(self) -> None:
+        assert SIGNAL_REGISTRY["kaushik_boh_m1"] is KaushikBOHMethod1
+        assert SIGNAL_REGISTRY["kaushik_boh_m1_delivery"] is KaushikBOHMethod1Delivery
+        assert (
+            SIGNAL_REGISTRY["kaushik_boh_m1_delivery_filter"]
+            is KaushikBOHMethod1DeliveryFilter
+        )
+        assert not KaushikBOHMethod1().requires_delivery
+        assert KaushikBOHMethod1Delivery().requires_delivery
+        assert KaushikBOHMethod1DeliveryFilter().requires_delivery
+        assert (
+            KaushikBOHMethod1DeliveryFilter().delivery_window
+            == KAUSHIK_DELIVERY_FILTER_WINDOW
+        )
+        assert (
+            KaushikBOHMethod1DeliveryFilter().elev_threshold
+            == KAUSHIK_DELIVERY_ELEV_THRESHOLD
+        )
+
+
+class TestKaushikBOHMethod1DeliveryFilter:
+    """Delivery-as-ENTRY-FILTER: an un-elevated crossing produces NO trade,
+    even as the sole candidate; passing candidates use the BASE tie-break."""
+
+    def _setup_two_symbols(self, conn):
+        days = _kaushik_days(conn)
+        n_flat = 252
+        signal_idx = n_flat + 1  # recover day index (253)
+        closes_a = [100.0] * n_flat + [80.0, 96.4]
+        lows_a = [99.0] * n_flat + [80.0, 85.0]
+        closes_b = [100.0] * n_flat + [80.0, 96.0]
+        lows_b = [99.0] * n_flat + [80.0, 85.0]
+        # A: delivery constant 30 before, 60 on signal day  -> elevation +30
+        # B: delivery constant 50 before, 40 on signal day  -> elevation -10
+        dp_a = [30.0] * signal_idx + [60.0]
+        dp_b = [50.0] * signal_idx + [40.0]
+        _insert_kaushik_series(
+            conn, "AAA", days[: len(closes_a)], closes_a, lows_a, dp_a
+        )
+        _insert_kaushik_series(
+            conn, "BBB", days[: len(closes_b)], closes_b, lows_b, dp_b
+        )
+        return days, days[signal_idx]
+
+    def test_non_elevated_sole_candidate_is_blocked(self, kaushik_db) -> None:
+        days = _kaushik_days(kaushik_db)
+        n_flat = 252
+        signal_idx = n_flat + 1
+        closes = [100.0] * n_flat + [80.0, 96.2]
+        lows = [99.0] * n_flat + [80.0, 85.0]
+        dp = [50.0] * signal_idx + [40.0]  # delivery DROPS on signal day
+        _insert_kaushik_series(
+            kaushik_db, "SOLELO", days[: len(closes)], closes, lows, dp
+        )
+        sig_day = days[signal_idx]
+
+        base = KaushikBOHMethod1(delivery_variant=False)
+        filt = KaushikBOHMethod1DeliveryFilter()
+        s_base = base.score(pd.Timestamp(sig_day), ["SOLELO"], kaushik_db)
+        s_filt = filt.score(pd.Timestamp(sig_day), ["SOLELO"], kaushik_db)
+
+        assert "SOLELO" in s_base.index  # base method takes the crossing
+        assert s_filt.empty  # filter refuses: delivery not elevated
+
+    def test_passing_candidate_uses_base_tiebreak(self, kaushik_db) -> None:
+        days, sig_day = self._setup_two_symbols(kaushik_db)
+        filt = KaushikBOHMethod1DeliveryFilter()
+        s_filt = filt.score(pd.Timestamp(sig_day), ["AAA", "BBB"], kaushik_db)
+
+        # Elevated A passes; un-elevated B is dropped even though it also crossed.
+        assert "AAA" in s_filt.index
+        assert "BBB" not in s_filt.index
+        # Base tie-break applies among passers: score = -overshoot (AAA: 96.4/96-1).
+        assert s_filt["AAA"] == pytest.approx(-(96.4 / 96.0 - 1.0))
+
+    def test_filter_is_stricter_than_tie_break_variant(self, kaushik_db) -> None:
+        days, sig_day = self._setup_two_symbols(kaushik_db)
+        deliv = KaushikBOHMethod1(delivery_variant=True)
+        filt = KaushikBOHMethod1DeliveryFilter()
+        s_deliv = deliv.score(pd.Timestamp(sig_day), ["AAA", "BBB"], kaushik_db)
+        s_filt = filt.score(pd.Timestamp(sig_day), ["AAA", "BBB"], kaushik_db)
+
+        # Tie-break styles BOTH candidates (ranks by elevation, A first);
+        # the filter keeps only A.
+        assert set(["AAA", "BBB"]) == set(s_deliv.index)
+        assert set(["AAA"]) == set(s_filt.index)
+        assert s_deliv["AAA"] > s_deliv["BBB"]
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Phase 3 — Kaushik real averaging mechanism.
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def long_kaushik_db():
+    """Same in-memory harness as `kaushik_db` but with a 2020–2025 calendar so
+    a re-anchored 252-day cap (anchored to the MOST RECENT tranche) fits."""
+    import myra_app.backtest_engine as be
+
+    be._KAUSHIK_CACHE = None
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE technical_data ("
+        "  symbol TEXT, date TEXT, open REAL, high REAL, low REAL, "
+        "  close REAL, volume INTEGER, delivery INTEGER, delivery_pct REAL)"
+    )
+    conn.execute(
+        "CREATE TABLE symbols_master (symbol TEXT PRIMARY KEY, instrument_type TEXT)"
+    )
+    conn.execute(
+        "CREATE TABLE corporate_actions ("
+        "  symbol TEXT, date TEXT, action_type TEXT, ex_date TEXT)"
+    )
+    conn.execute(
+        "CREATE TABLE market_calendar (date TEXT PRIMARY KEY, is_trading_day INTEGER)"
+    )
+    s = pd.Timestamp("2020-01-01")
+    e = pd.Timestamp("2025-12-31")
+    cur = s
+    while cur <= e:
+        if cur.weekday() < 5:
+            conn.execute(
+                "INSERT INTO market_calendar (date, is_trading_day) VALUES (?, 1)",
+                (cur.strftime("%Y-%m-%d"),),
+            )
+        cur += pd.Timedelta(days=1)
+    yield conn
+    conn.close()
+    be._KAUSHIK_CACHE = None
+
+
+class TestKaushikAveraging:
+    """Phase-3 averaging: fresh signals on held symbols blend the cost basis,
+    re-anchor the 252-day cap, and never block the top-1 new entry."""
+
+    def _cfg(self, last_day: str, average_in: bool = True) -> BacktestConfig:
+        return BacktestConfig(
+            signal="kaushik_boh_m1",
+            exit_mode="profit_target",
+            profit_target_pct=0.075,
+            window="all",
+            start_date="2020-01-01",
+            end_date=last_day,
+            average_in=average_in,
+        )
+
+    def test_average_in_uses_blended_basis_for_target(self, kaushik_db) -> None:
+        """Cycle 2 average-in blends the basis; the target applies to the blend."""
+        days = _kaushik_days(kaushik_db)
+        # Signal 1 on days[253] (96.2, low floor 80). While open, a fresh
+        # lower low (70 < floor) + recovery (84.2 >= 1.2*70) → signal 2 on
+        # days[295]; blended = (96.2 + 84.2) / 2; target 90.2*1.075 = 96.965.
+        closes = (
+            [100.0] * 252 + [80.0, 96.2] + [90.0] * 40 + [70.0, 84.2] + [105.0] * 10
+        )
+        lows = [99.0] * 252 + [80.0, 85.0] + [88.0] * 40 + [70.0, 75.0] + [104.0] * 10
+        _insert_kaushik_series(kaushik_db, "RIDER", days[: len(closes)], closes, lows)
+
+        res = run_backtest(kaushik_db, self._cfg(days[len(closes) - 1]))
+
+        assert len(res.trades) == 1
+        r = res.trades.iloc[0]
+        assert int(r["n_tranches"]) == 2
+        assert r["blended_basis"] == pytest.approx((96.2 + 84.2) / 2)
+        assert r["entry_price"] == pytest.approx(96.2)
+        assert r["exit_price"] == pytest.approx(105.0)
+        assert r["exit_reason"] == "pt_target_75bp"
+        assert int(r["n_hold_days"]) == 43  # days[296] - days[253]
+        assert r["pnl_net"] > 0
+
+    def test_three_tranche_cap_ignores_fourth_signal(self, kaushik_db) -> None:
+        """3 tranches deploy at 96.2/84.2/72.2; a 4th fresh-low recovery at
+        50.6 is ignored; position resolves via the blended target."""
+        days = _kaushik_days(kaushik_db)
+        closes = (
+            [100.0] * 252
+            + [80.0, 96.2]  # signal 1 (days[253])
+            + [90.0] * 3
+            + [70.0, 84.2]  # signal 2 (days[258]) → tranche 2
+            + [70.0] * 3
+            + [60.0, 72.2]  # signal 3 (days[263]) → tranche 3
+            + [60.0] * 3
+            + [42.0, 50.6]  # signal 4 (days[268]) → IGNORED
+            + [200.0] * 5  # blended target 84.2*1.075 → exit days[269]
+        )
+        lows = (
+            [99.0] * 252
+            + [80.0, 85.0]
+            + [88.0] * 3
+            + [70.0, 75.0]
+            + [68.0] * 3
+            + [60.0, 65.0]
+            + [58.0] * 3
+            + [42.0, 46.0]
+            + [199.0] * 5
+        )
+        _insert_kaushik_series(kaushik_db, "RIDER", days[: len(closes)], closes, lows)
+
+        res = run_backtest(kaushik_db, self._cfg(days[len(closes) - 1]))
+
+        assert len(res.trades) == 1
+        r = res.trades.iloc[0]
+        assert int(r["n_tranches"]) == 3
+        assert r["blended_basis"] == pytest.approx((96.2 + 84.2 + 72.2) / 3)
+        assert r["exit_reason"] == "pt_target_75bp"
+        assert r["exit_price"] == pytest.approx(200.0)
+        assert res.summary["n_tranche_distribution"] == {3: 1}
+
+    def test_cap_reanchors_to_last_tranche(self, long_kaushik_db) -> None:
+        """Cap runs 252 trading days from the MOST RECENT tranche (days[295]),
+        letting the position outlive the first tranche's own 252-day clock."""
+        days = _kaushik_days(long_kaushik_db)
+        closes = (
+            [100.0] * 252
+            + [80.0, 96.2]  # signal 1 on days[253] (target 103.415)
+            + [60.0] * 40  # never hits target
+            + [30.0, 36.2]  # signal 2 on days[295] → tranche 2 (36.2)
+            + [60.0] * 530  # still below 66.2*1.075 → cap at days[547]
+        )
+        lows = [99.0] * 252 + [80.0, 85.0] + [58.0] * 40 + [30.0, 34.0] + [58.0] * 530
+        _insert_kaushik_series(
+            long_kaushik_db, "RIDER", days[: len(closes)], closes, lows
+        )
+
+        res = run_backtest(long_kaushik_db, self._cfg(days[len(closes) - 1]))
+
+        assert len(res.trades) == 1
+        r = res.trades.iloc[0]
+        assert int(r["n_tranches"]) == 2
+        assert r["blended_basis"] == pytest.approx((96.2 + 36.2) / 2)
+        assert r["exit_reason"] == "pt_252d_cap"
+        assert r["exit_date"] == days[547]  # 295 (last tranche) + 252
+        assert int(r["n_hold_days"]) == 547 - 253
+
+    def test_average_in_does_not_block_top1_new_entry(self, kaushik_db) -> None:
+        """Same-day: RIDER averages in tranche 2 while BOAT opens as the new
+        top-1 entry. Capital peaks at 3 x 10k (2 tranches + 1 fresh)."""
+        days = _kaushik_days(kaushik_db)
+        # RIDER: signal 1 on days[253]; fresh low 70 + recovery on days[257]/[258]
+        # re-signals (tranche 2). BOAT: first signal on the SAME days[258].
+        rider_c = [100.0] * 252 + [80.0, 96.2] + [90.0] * 3 + [70.0, 84.2] + [200.0] * 5
+        rider_l = [99.0] * 252 + [80.0, 85.0] + [88.0] * 3 + [70.0, 75.0] + [199.0] * 5
+        boat_c = [95.0] * 257 + [70.0, 84.2] + [200.0] * 5
+        boat_l = [94.0] * 257 + [70.0, 75.0] + [199.0] * 5
+        _insert_kaushik_series(
+            kaushik_db, "RIDER", days[: len(rider_c)], rider_c, rider_l
+        )
+        _insert_kaushik_series(kaushik_db, "BOAT", days[: len(boat_c)], boat_c, boat_l)
+
+        res = run_backtest(kaushik_db, self._cfg(days[len(rider_c) - 1]))
+
+        assert set(res.trades["symbol"]) == {"RIDER", "BOAT"}
+        rider = res.trades[res.trades["symbol"] == "RIDER"].iloc[0]
+        boat = res.trades[res.trades["symbol"] == "BOAT"].iloc[0]
+        assert int(rider["n_tranches"]) == 2
+        assert rider["blended_basis"] == pytest.approx((96.2 + 84.2) / 2)
+        assert int(boat["n_tranches"]) == 1
+        assert boat["blended_basis"] == pytest.approx(84.2)
+        assert rider["exit_reason"] == boat["exit_reason"] == "pt_target_75bp"
+        # 2 tranches on RIDER (20k) + 1 on BOAT (10k) = 30k peak that day
+        assert res.summary["peak_concurrent_capital"] >= 3 * POSITION_VALUE_INR

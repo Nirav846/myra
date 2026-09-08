@@ -292,6 +292,8 @@ tools/calibrate_wyckoff_weights_output.csv
 # Windows shortcuts (local convenience, e.g. "Myra - Shortcut.lnk")
 *.lnk
 .opencode/
+# Backtest scratch workspace — local analysis/output only, never committed
+.backtest_scratch/
 *.backup
 *.recovered
 *.broken

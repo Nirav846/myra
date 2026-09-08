@@ -289,6 +289,34 @@ class SchemaRegistry:
             },
             "primary_key": "(task_name)",
         },
+        # Bottom Hunter M1 scanner runtime state (see
+        # myra_app/strategies/bottom_hunter_m1_state.py).  The cooldown table
+        # is WRITTEN by the scanner (per-cycle floor / running min of the
+        # 252-day low); the positions table is READ by the scanner and
+        # maintained by the user (D4 — no full tranche simulation live).
+        "bhm1_cooldown": {
+            "db": "meta",
+            "columns": {
+                "symbol": "TEXT NOT NULL",
+                "signal_date": "TEXT",
+                "floor_year_low": "REAL",
+                "run_min_year_low": "REAL",
+                "updated_at": "TEXT",
+            },
+            "primary_key": "(symbol)",
+        },
+        "bhm1_positions": {
+            "db": "meta",
+            "columns": {
+                "symbol": "TEXT NOT NULL",
+                "first_entry_date": "TEXT",
+                "last_tranche_date": "TEXT",
+                "n_tranches": "INTEGER",
+                "blended_basis": "REAL",
+                "updated_at": "TEXT",
+            },
+            "primary_key": "(symbol)",
+        },
         # ── institutional.db ──────────────────────────────────
         "fii_dii_history": {
             "db": "institutional",
@@ -483,6 +511,27 @@ class SchemaRegistry:
                 "date": "TEXT",
                 "rank_nifty500": "INTEGER",
                 "rank_sector": "INTEGER",
+            },
+            "primary_key": "(symbol, date)",
+        },
+        # Point-in-time daily market-cap rank (D1 — Bottom Hunter M1).
+        # Populated by myra_app/mcap_rank_builder.py: the historical full
+        # rebuild (build_mcap_rank_daily) plus the daily per-date upsert
+        # (update_mcap_rank_for_date), wired into
+        # feature_enrichment.process_enrichment_pipeline (non-fatal).  The
+        # maintenance test in tests/test_backtest_components.py guards the
+        # unfiltered side; mcap_cr is in ₹ crore.  Methodology:
+        # mcap(T) = stored_close(T) × shares_outstanding_current, which
+        # cancels split/bonus price adjustments (multiplier cancels) but does
+        # NOT capture non-split dilution (rights/QIP/mergers) — see the
+        # documented correction table in mcap_rank_builder.py.
+        "mcap_rank_daily": {
+            "db": "scoring",
+            "columns": {
+                "symbol": "TEXT NOT NULL",
+                "date": "TEXT NOT NULL",
+                "mcap_cr": "REAL",
+                "mcap_rank": "INTEGER",
             },
             "primary_key": "(symbol, date)",
         },

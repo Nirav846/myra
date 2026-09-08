@@ -871,6 +871,49 @@ register_scanner(
 )
 
 
+# --- Bottom Hunter M1 ---
+def _bhm1_parse(payload: dict):
+    top_n = int(payload.get("top_n", 500))
+    if top_n < 50 or top_n > 3000:
+        top_n = 500
+    raw_date = payload.get("scan_date", "")
+    if raw_date and str(raw_date).strip():
+        scan_date = _get_latest_trading_day_before(str(raw_date).strip())
+    else:
+        scan_date = None
+    return {"top_n": top_n}, scan_date
+
+
+def _bhm1_build(kwargs, scan_date):
+    from myra_app.strategies.bottom_hunter_m1_scanner import (
+        BottomHunterM1Scanner,
+    )
+
+    return BottomHunterM1Scanner(**kwargs)
+
+
+register_scanner(
+    "bottom-hunter-m1",
+    state_template={
+        "scan_status": "idle",
+        "last_scan": None,
+        "progress": 0,
+        "message": "Idle — click Scan to start",
+        "candidates": [],
+        "scanned_date": None,
+    },
+    cache_file="bottom_hunter_m1_cache.json",
+    parse_payload=_bhm1_parse,
+    build_scanner=_bhm1_build,
+    scan_as_of=True,
+    result_mode="df",
+    progress_attr="_get_tech_data",
+    status_extra="scanned_date",
+    init_message="Initialising Bottom Hunter M1 scanner...",
+    label="Bottom Hunter M1",
+)
+
+
 # --- Climax Accumulation ---
 def _climax_parse(payload: dict):
     min_adtv_cr = float(payload.get("min_adtv_cr", 1.0))

@@ -335,7 +335,9 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
             # Add missing score columns to technical_data table
             for col in score_columns:
                 try:
-                    conn.execute(f"ALTER TABLE technical_data ADD COLUMN {col} REAL")  # noqa: PG-NPLUS1
+                    conn.execute(
+                        f"ALTER TABLE technical_data ADD COLUMN {col} REAL"
+                    )  # noqa: PG-NPLUS1
                 except sqlite3.OperationalError:
                     pass  # Column already exists
 
@@ -413,7 +415,9 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
             print("[MYRA Enrichment] Computing SMA-50 and 52-week high/low...")
             for col in ["sma_50", "high_52w", "low_52w"]:
                 try:
-                    conn.execute(f"ALTER TABLE technical_data ADD COLUMN {col} REAL")  # noqa: PG-NPLUS1
+                    conn.execute(
+                        f"ALTER TABLE technical_data ADD COLUMN {col} REAL"
+                    )  # noqa: PG-NPLUS1
                 except sqlite3.OperationalError:
                     pass
 
@@ -443,7 +447,9 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
                 h52 = float(row["high_52w"]) if row["high_52w"] is not None else None
                 l52 = float(row["low_52w"]) if row["low_52w"] is not None else None
                 if sma is not None or h52 is not None or l52 is not None:
-                    update_rows.append((sma, h52, l52, row["symbol"], str(row["date"])))  # noqa: PG-APPEND
+                    update_rows.append(
+                        (sma, h52, l52, row["symbol"], str(row["date"]))
+                    )  # noqa: PG-APPEND
 
             if update_rows:
                 conn.executemany(
@@ -456,6 +462,31 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
                 )
 
         update(tid, "Enrichment complete")
+
+        # --- PIT market-cap rank for the day (D1 — BHM1 universe) ---
+        # Per-date upsert into the standalone mcap_rank_daily table
+        # (scoring.db).  The builder computes in pandas + batched sqlite
+        # writes — the same Python-side write idiom as the enrichment
+        # pipeline (no SQL-window writer).  Non-fatal: the scanner falls
+        # back to the fundamentals snapshot when the table is absent/stale.
+        try:
+            latest_rank_date = (
+                target_date
+                or conn.execute("SELECT MAX(date) FROM technical_data").fetchone()[0]
+            )
+            if latest_rank_date:
+                from myra_app.mcap_rank_builder import update_mcap_rank_for_date
+
+                n_rank = update_mcap_rank_for_date(str(latest_rank_date))
+                logger.info(
+                    "mcap_rank_daily updated for %s: %d rows",
+                    latest_rank_date,
+                    n_rank,
+                )
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "mcap_rank_daily update skipped (non-fatal)", exc_info=True
+            )
 
         # Print total elapsed time
         total_elapsed = (datetime.now() - start_time).total_seconds()

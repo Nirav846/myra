@@ -71,6 +71,7 @@ _SCANNER_CACHE_MAP: dict[str, str] = {
 _SCANNER_ROUTES: dict[str, str] = {
     "The Trigger": "/trigger",
     "Bottom Hunter": "/bottom-hunter",
+    "Bottom Hunter M1": "/bottom-hunter-m1",
     "Invisible Hand": "/invisible-hand",
     "Wyckoff Automaton": "/wyckoff",
     "Liquidity Flip": "/liquidity-flip",

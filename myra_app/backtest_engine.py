@@ -7,10 +7,12 @@ against historical MYRA data. Designed to:
   * Read universe + prices from existing MYRA SQLite sidecars (technical,
     meta, institutional).
   * Accept an arbitrary `SignalFunction` (price-only or delivery-aware).
-  * Support three independent exit modes:
+  * Support four independent exit modes:
       1. Fixed holding period (N trading days).
       2. 20% trailing stop from max-high-since-entry.
       3. Rule-based (5% stop OR trend break below 20d SMA).
+      4. Profit-target (close at first close >= entry * (1+pct), or
+         force-close after `profit_target_cap_days` trading days).
   * Apply NSE-style frictions (STT, brokerage, impact) on each entry/exit.
   * Run on train / holdout / all windows with `window='train'|'holdout'|'all'`.
 
@@ -199,9 +201,257 @@ class MomentumSignal:
         return df.reindex(universe).fillna(0.0)
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Kaushik "Bottom Out Hunting" Method 1 (Phase 2).
+# ──────────────────────────────────────────────────────────────────────────────
+KAUSHIK_LOOKBACK = 252  # rolling 52-week window (trading days)
+KAUSHIK_RECOVERY_MULT = 1.20  # recover to year_low * 1.20 to fire
+KAUSHIK_DELIVERY_AVG_WINDOW = 20  # trailing avg delivery % for elevation
+# Entry-FILTER variant (Phase-2 Follow-up 2): elevation must be strictly above
+# the symbol's own trailing baseline to trade at all. Window = 10 (train-best
+# from the Follow-up-1 sweep; W=10 also minimises early-window data dropout),
+# threshold = 0 (strictly elevated vs own trailing average).
+KAUSHIK_DELIVERY_FILTER_WINDOW = 10
+KAUSHIK_DELIVERY_ELEV_THRESHOLD = 0.0
+
+# Module-level cache of precomputed Kaushik events:
+#   {date_iso: {symbol: (overshoot, delivery_elevation_or_None)}}
+# Computed once per process (all 12 Phase-2 runs share it). The event map is
+# independent of window / target_pct / variant, so one precompute serves all.
+_KAUSHIK_CACHE: Optional[dict[str, dict[str, tuple[float, Optional[float]]]]] = None
+
+
+def _precompute_kaushik_events(
+    conn: sqlite3.Connection,
+    delivery_window: int = KAUSHIK_DELIVERY_AVG_WINDOW,
+) -> dict[str, dict[str, tuple[float, Optional[float]]]]:
+    """Stream ALL technical_data rows grouped by symbol and detect signals.
+
+    Per symbol:
+      - year_low[i] = min(low[i-251..i])  (rolling 252-trading-day low,
+        recomputed daily, requires a full 252-day window).
+      - cross[i] = close[i-1] < 1.20*year_low[i] AND close[i] >= 1.20*year_low[i]
+        (discrete upward crossing, NOT "currently above").
+      - Cooldown: after a signal on day s (floor = year_low[s]), the symbol
+        cannot signal again until year_low drops STRICTLY below `floor`
+        (a fresh 52-week low), restarting the cycle. Tracks the running min
+        of year_low since the last signal, which handles rolling-window lows
+        that age out and rise again.
+      - delivery_elevation[i] = delivery_pct[i] - mean(delivery_pct[i-W..i-1])
+        (self-relative, trailing-W average excludes the signal day; W is
+        `delivery_window`, 20 by default — sensitivity-swept only in the
+        Phase-2 follow-up, signal/cooldown logic is untouched by W).
+    """
+    global _KAUSHIK_CACHE
+    if _KAUSHIK_CACHE is not None:
+        return _KAUSHIK_CACHE
+
+    from numpy.lib.stride_tricks import sliding_window_view
+
+    events: dict[str, dict[str, tuple[float, Optional[float]]]] = {}
+    cur_sym: Optional[str] = None
+    dates: list[str] = []
+    closes: list[float] = []
+    lows: list[float] = []
+    dpcts: list[float] = []
+
+    def _flush(sym: str) -> None:
+        if not dates:
+            return
+        n = len(dates)
+        close_arr = np.asarray(closes, dtype=float)
+        low_arr = np.asarray(lows, dtype=float)
+        dp_arr = np.asarray(dpcts, dtype=float)
+        if n < KAUSHIK_LOOKBACK + 1:
+            return  # not even one full 52-week window (and a prior close)
+        # Rolling 252-day low of LOW, valid from index KAUSHIK_LOOKBACK-1 on.
+        year_low = np.full(n, np.nan)
+        year_low[KAUSHIK_LOOKBACK - 1 :] = sliding_window_view(
+            low_arr, KAUSHIK_LOOKBACK
+        ).min(axis=-1)
+        # Trailing-W delivery mean strictly before each day (shifted rolling).
+        del_base = (
+            pd.Series(dp_arr)
+            .rolling(delivery_window, min_periods=delivery_window)
+            .mean()
+            .shift(1)
+            .to_numpy()
+        )
+        # Sequential cooldown sweep.
+        threshold = KAUSHIK_RECOVERY_MULT
+        in_cd = False
+        floor = np.inf
+        run_min = np.inf
+        for i in range(KAUSHIK_LOOKBACK, n):
+            y = year_low[i]
+            if np.isnan(y):
+                continue
+            if in_cd:
+                if y < run_min:
+                    run_min = y
+                if run_min < floor:
+                    in_cd = False  # fresh 52-week low → cycle restarts
+                    # Fall through: a same-day reversal could also cross.
+                else:
+                    continue
+            if close_arr[i - 1] < threshold * y and close_arr[i] >= threshold * y:
+                overshoot = close_arr[i] / (threshold * y) - 1.0
+                elev: Optional[float] = None
+                if not (np.isnan(dp_arr[i]) or np.isnan(del_base[i])):
+                    elev = float(dp_arr[i] - del_base[i])
+                events.setdefault(dates[i], {})[sym] = (overshoot, elev)
+                in_cd = True
+                floor = y
+                run_min = np.inf
+
+    cur = conn.execute(
+        "SELECT symbol, date, close, low, delivery_pct "
+        "FROM technical_data ORDER BY symbol, date"
+    )
+    for sym, d, c, lo, dp in cur:
+        if sym != cur_sym:
+            if cur_sym is not None:
+                _flush(cur_sym)
+            cur_sym = sym
+            dates = []
+            closes = []
+            lows = []
+            dpcts = []
+        dates.append(d)  # noqa: PG-APPEND
+        closes.append(c)  # noqa: PG-APPEND
+        lows.append(lo)  # noqa: PG-APPEND
+        dpcts.append(dp)  # noqa: PG-APPEND
+    if cur_sym is not None:
+        _flush(cur_sym)
+
+    _KAUSHIK_CACHE = events
+    return events
+
+
+class KaushikBOHMethod1:
+    """Kaushik 'Bottom Out Hunting' Method 1 — 20% recovery off 52-week low.
+
+    A symbol signals on day `t` iff:
+      - close[t-1] < year_low[t] * 1.20  (below the 20%-recovery line)
+      - close[t]  >= year_low[t] * 1.20  (crosses UP through it)
+    where year_low[t] is the rolling 252-trading-day low of the LOW price,
+    recomputed daily. This is a discrete crossing event, not a "currently
+    above" condition that would re-fire daily.
+
+    Cooldown: once a symbol signals on day s (floor = year_low[s]), it cannot
+    signal again until year_low drops strictly below that floor — a fresh
+    52-week low — which restarts the cycle. Mirrors Kaushik's one-signal-per-
+    genuine-bottom-and-recovery behavior rather than re-entering the same leg.
+
+    score() returns a Series indexed by symbol containing only symbols that
+    signal on `date`:
+      - base variant: score = -overshoot (smallest overshoot = freshest
+        crossing wins the top-1 tie-break, approximating a GTT limit fill
+        near the trigger).
+      - delivery variant: score = delivery_elevation (signal-day delivery%
+        minus trailing-20-day avg), so the most delivery-confirmed candidate
+        wins when there is a choice. Delivery-restricted to 2019-10-01+ via
+        requires_delivery in the harness.
+    """
+
+    requires_delivery = False
+
+    def __init__(self, delivery_variant: bool = False):
+        self.delivery_variant = delivery_variant
+
+    def score(
+        self,
+        date: pd.Timestamp,
+        universe: list[str],
+        conn: sqlite3.Connection,
+    ) -> pd.Series:
+        events = _precompute_kaushik_events(conn)
+        date_ts = pd.Timestamp(date)
+        date_s = f"{date_ts.year:04d}-{date_ts.month:02d}-{date_ts.day:02d}"
+        day_events = events.get(date_s)
+        if not day_events:
+            return pd.Series(dtype=float)
+        univ = set(universe)
+        out: dict[str, float] = {}
+        for sym, (overshoot, elev) in day_events.items():
+            if sym not in univ:
+                continue
+            if self.delivery_variant:
+                if elev is None:
+                    continue  # no delivery elevation to rank by
+                out[sym] = float(elev)
+            else:
+                out[sym] = -float(overshoot)
+        if not out:
+            return pd.Series(dtype=float)
+        return pd.Series(out, dtype=float)
+
+
+class KaushikBOHMethod1Delivery(KaushikBOHMethod1):
+    """Delivery-augmented variant: identical logic, but the same-day tie-break
+    ranks by delivery elevation instead of overshoot."""
+
+    requires_delivery = True
+
+    def __init__(self):
+        super().__init__(delivery_variant=True)
+
+
+class KaushikBOHMethod1DeliveryFilter(KaushikBOHMethod1):
+    """Delivery entry-FILTER variant (Phase-2 Follow-up 2).
+
+    Identical entry/cooldown/exit logic to the base method, plus one hard
+    condition at the crossing day: the candidate's delivery percentage must be
+    strictly elevated relative to its own trailing baseline (elevation > 0,
+    self-relative trailing `delivery_window` average excluding the signal day).
+    If a crossing occurs but delivery is not elevated, NO trade is taken for
+    that symbol that day — even if it is the only candidate. Remaining
+    candidates use the base tie-break (smallest overshoot), NOT delivery
+    re-ranking — this variant screens the entry, it does not rank the entries.
+    """
+
+    requires_delivery = True
+
+    def __init__(
+        self,
+        elev_threshold: float = KAUSHIK_DELIVERY_ELEV_THRESHOLD,
+        delivery_window: int = KAUSHIK_DELIVERY_FILTER_WINDOW,
+    ):
+        super().__init__(delivery_variant=False)  # base tie-break (overshoot)
+        self.elev_threshold = elev_threshold
+        self.delivery_window = delivery_window
+
+    def score(
+        self,
+        date: pd.Timestamp,
+        universe: list[str],
+        conn: sqlite3.Connection,
+    ) -> pd.Series:
+        events = _precompute_kaushik_events(conn, delivery_window=self.delivery_window)
+        date_ts = pd.Timestamp(date)
+        date_s = f"{date_ts.year:04d}-{date_ts.month:02d}-{date_ts.day:02d}"
+        day_events = events.get(date_s)
+        if not day_events:
+            return pd.Series(dtype=float)
+        univ = set(universe)
+        out: dict[str, float] = {}
+        for sym, (overshoot, elev) in day_events.items():
+            if sym not in univ:
+                continue
+            if elev is None or elev <= self.elev_threshold:
+                continue  # delivery NOT elevated -> no trade, even if sole candidate
+            out[sym] = -float(overshoot)  # base tie-break among passing candidates
+        if not out:
+            return pd.Series(dtype=float)
+        return pd.Series(out, dtype=float)
+
+
 SIGNAL_REGISTRY: dict[str, Callable[..., SignalFunction]] = {
     "random": RandomSignal,
     "momentum": MomentumSignal,
+    "kaushik_boh_m1": KaushikBOHMethod1,
+    "kaushik_boh_m1_delivery": KaushikBOHMethod1Delivery,
+    "kaushik_boh_m1_delivery_filter": KaushikBOHMethod1DeliveryFilter,
 }
 
 
@@ -213,15 +463,23 @@ SIGNAL_REGISTRY: dict[str, Callable[..., SignalFunction]] = {
 @dataclass
 class BacktestConfig:
     signal: str = "random"
-    exit_mode: Literal["fixed", "trailing", "rule"] = "fixed"
+    exit_mode: Literal["fixed", "trailing", "rule", "profit_target"] = "fixed"
     fixed_hold_days: int = 60
     trailing_pct: float = 0.20
     rule_stop_pct: float = 0.05
     rule_sma_window: int = 20
+    profit_target_pct: float = 0.075  # close at close >= entry * (1 + pct)
+    profit_target_cap_days: int = (
+        252  # force-close after N trading days if target not hit
+    )
     window: Literal["train", "holdout", "all"] = "all"
     requires_delivery: bool = False
     start_date: Optional[str] = None  # override default window start
     end_date: Optional[str] = None  # override default window end
+    average_in: bool = (
+        False  # Kaushik real averaging: fresh signals on held symbols add tranches
+    )
+    max_tranches: int = 3  # per-symbol tranche cap (blended cost-basis position)
 
 
 @dataclass
@@ -756,6 +1014,42 @@ def _exit_rule_based(
     return n - 1, "rule_eod"
 
 
+def _exit_profit_target(
+    pos_prices: pd.DataFrame,
+    entry_idx: int,
+    target_pct: float,
+    cap_days: int = 252,
+) -> tuple[int, str]:
+    """Close at the first close >= entry_close * (1 + target_pct).
+
+    If the target is not hit within `cap_days` trading days (~1 year),
+    force-close at whatever price prevails on that day. If the price
+    series ends before `cap_days` elapse (window end / data end), close
+    at the last available row and report `pt_eod`.
+
+    Returns (exit_idx, reason) where reason is:
+      - f"pt_target_{bp}bp"  target hit
+      - "pt_252d_cap"        252-trading-day cap force-close
+      - "pt_eod"             series ended before target or cap
+    """
+    n = len(pos_prices)
+    if entry_idx >= n - 1:
+        return n - 1, "pt_eod"
+    entry_close = float(pos_prices["close"].iloc[entry_idx])
+    trigger = entry_close * (1.0 + target_pct)
+    closes = pos_prices["close"].to_numpy()
+    cap_idx = entry_idx + cap_days
+    # Scan the earliest of [cap boundary, last available row] for the target.
+    scan_end = min(cap_idx, n - 1)
+    for i in range(entry_idx + 1, scan_end + 1):
+        if float(closes[i]) >= trigger:
+            return i, f"pt_target_{int(round(target_pct * 1000))}bp"
+    if cap_idx < n:
+        # We observed the full cap window without a target hit.
+        return cap_idx, "pt_252d_cap"
+    return n - 1, "pt_eod"
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Main backtest loop.
 # ──────────────────────────────────────────────────────────────────────────────
@@ -786,6 +1080,9 @@ def run_backtest(
       - corporate_actions (symbol, date) — used by discontinuity script only
       - market_calendar (date, is_trading_day) — optional fallback
     """
+    if config.average_in:
+        return _run_backtest_averaging(conn, config, seed_universe)
+
     start_date, end_date = _resolve_window(
         config.requires_delivery, config.start_date, config.end_date
     )
@@ -878,11 +1175,14 @@ def run_backtest(
 
         # 6. Forward slice — load forward window for exit evaluation. This also
         # yields the entry price at row 0, so we avoid a separate per-day query.
-        # Cap forward window at fixed_hold_days (or 200 for trailing/rule).
-        max_forward = max(
-            config.fixed_hold_days + 5,
-            200 if config.exit_mode != "fixed" else config.fixed_hold_days + 5,
-        )
+        # Cap forward window at fixed_hold_days (or 200 for trailing/rule, or
+        # profit_target_cap_days + 5 for the profit-target exit).
+        if config.exit_mode == "profit_target":
+            max_forward = config.profit_target_cap_days + 5
+        elif config.exit_mode == "fixed":
+            max_forward = config.fixed_hold_days + 5
+        else:
+            max_forward = 200
         fwd_end_idx = min(day_idx + max_forward, len(trading_days) - 1)
         fwd_dates = trading_days[day_idx : fwd_end_idx + 1]
         if len(fwd_dates) < 2:
@@ -905,6 +1205,13 @@ def run_backtest(
         elif config.exit_mode == "trailing":
             exit_idx, reason = _exit_trailing_stop(
                 pos_prices, entry_idx, config.trailing_pct
+            )
+        elif config.exit_mode == "profit_target":
+            exit_idx, reason = _exit_profit_target(
+                pos_prices,
+                entry_idx,
+                config.profit_target_pct,
+                config.profit_target_cap_days,
             )
         else:  # rule
             exit_idx, reason = _exit_rule_based(
@@ -946,6 +1253,235 @@ def run_backtest(
     return BacktestResult(trades=trades_df, summary=summary)
 
 
+def _run_backtest_averaging(
+    conn: sqlite3.Connection,
+    config: BacktestConfig,
+    seed_universe: Optional[Iterable[str]] = None,
+) -> BacktestResult:
+    """Profit-target backtest with Kaushik's real averaging mechanism.
+
+    Positions are tracked per symbol with up to `config.max_tranches`
+    tranches of POSITION_VALUE_INR each. While a position is open, a FRESH
+    signal on the same symbol (new rolling-252-day low strictly below the
+    low that triggered the previous entry, followed by a 20% recovery
+    crossing — guaranteed by the shared Kaushik cooldown in
+    `_precompute_kaushik_events`) averages in another tranche.
+
+    Exit rules (per the Phase-3 design decisions):
+      - the profit target applies to the volume-weighted blended entry price
+        across all tranches, not the first entry price;
+      - the 252-trading-day cap re-anchors to the MOST RECENT tranche's
+        entry date; a position survives cap(i=0) if later tranches refreshed
+        the clock;
+      - once max_tranches is reached, further signals are ignored and the
+        position resolves only via blended-target or re-anchored cap;
+      - average-ins never block that day's top-1 new-signal entry — a held
+        symbol consuming 2-3 tranches does not compete with the steady
+        stream of new top-1 picks elsewhere.
+
+    Capital accounting: each tranche is a separate +POSITION_VALUE_INR
+    allocation, so a symbol can consume up to
+    max_tranches * POSITION_VALUE_INR over its lifecycle. The summary's
+    peak_concurrent_capital is the real rupee peak over all open tranches.
+    """
+    start_date, end_date = _resolve_window(
+        config.requires_delivery, config.start_date, config.end_date
+    )
+    if config.window == "train":
+        end_date = TRAIN_END
+    elif config.window == "holdout":
+        start_date = "2024-01-01"
+        if not config.end_date:
+            end_date = HOLDOUT_END
+
+    trading_days = _trading_days(conn, start_date, end_date)
+    empty_cols = [
+        "entry_date",
+        "exit_date",
+        "symbol",
+        "entry_price",
+        "exit_price",
+        "n_hold_days",
+        "pnl_gross",
+        "costs",
+        "pnl_net",
+        "exit_reason",
+    ]
+    if not trading_days:
+        return BacktestResult(
+            trades=pd.DataFrame(columns=empty_cols),
+            summary=_empty_summary(),
+        )
+
+    events = _precompute_kaushik_events(conn)
+    pool = list(seed_universe) if seed_universe is not None else None
+    universe_by_date = _preload_universe_by_date(conn, trading_days, universe_seed=pool)
+
+    # Lazy per-symbol (date -> close) cache: positions can stay open longer
+    # than 252 days and are re-anchored, so forward slices are insufficient.
+    closes_cache: dict[str, dict[str, float]] = {}
+    positions: dict[str, dict] = {}
+    trades: list[dict] = []  # noqa: PG-APPEND
+    peak_capital = 0.0
+    last_idx = len(trading_days) - 1
+
+    def _close_map(sym: str) -> dict[str, float]:
+        if sym not in closes_cache:
+            rows = conn.execute(
+                "SELECT date, close FROM technical_data WHERE symbol = ? ORDER BY date",
+                (sym,),
+            ).fetchall()
+            closes_cache[sym] = {d: float(c) for d, c in rows}
+        return closes_cache[sym]
+
+    def _entry_adv(sym: str, day_iso: str) -> Optional[float]:
+        return _load_adv_window(conn, [sym], day_iso).get(sym)
+
+    def _resolve_position(
+        sym: str, exit_idx: int, exit_iso: str, close: float, reason: str
+    ) -> None:
+        pos = positions.pop(sym)
+        n = pos["n_tranches"]
+        # PnL over tranches: each tranche round-trips its own 10k at exit close.
+        shares_total = sum(POSITION_VALUE_INR / p for p in pos["tranche_prices"])
+        exit_value_total = shares_total * close
+        pnl_gross = exit_value_total - POSITION_VALUE_INR * n
+        costs_total = 0.0
+        for k in range(n):
+            cost_row = total_round_trip_costs(
+                POSITION_VALUE_INR,
+                (POSITION_VALUE_INR / pos["tranche_prices"][k]) * close,
+                pos["tranche_adv"][k],
+            )
+            costs_total += cost_row["total"]
+        trades.append(  # noqa: PG-APPEND
+            {
+                "entry_date": pos["tranche_days"][0],
+                "exit_date": exit_iso,
+                "symbol": sym,
+                "entry_price": pos["tranche_prices"][0],
+                "exit_price": close,
+                "n_hold_days": exit_idx - pos["tranche_idx"][0],
+                "pnl_gross": pnl_gross,
+                "costs": costs_total,
+                "pnl_net": pnl_gross - costs_total,
+                "exit_reason": reason,
+                "n_tranches": n,
+                "blended_basis": pos["blended"],
+                "tranche_dates": "|".join(pos["tranche_days"]),
+                "tranche_prices": "|".join(f"{p:.2f}" for p in pos["tranche_prices"]),
+            }
+        )
+
+    for day_idx, day_iso in enumerate(trading_days):
+        eligible = universe_by_date.get(day_iso)
+        if not eligible:
+            continue
+
+        # 1. Exits FIRST — runs EVERY trading day, not just signal days (a
+        #    position must resolve on a quiet day too). The blended target /
+        #    re-anchored cap applies to today's close; a position that exits
+        #    today cannot average in.
+        for sym in list(positions):
+            pos = positions[sym]
+            cm = _close_map(sym)
+            close = cm.get(day_iso)
+            exit_iso = day_iso
+            idx = day_idx
+            if close is None:
+                # Data gap: look back a few trading days for the last close.
+                back = 0
+                for j in range(1, 11):
+                    if day_idx - j < 0:
+                        break
+                    cj = cm.get(trading_days[day_idx - j])
+                    if cj is not None:
+                        close = cj
+                        exit_iso = trading_days[day_idx - j]
+                        idx = day_idx - j
+                        back = j
+                        break
+                if close is None:
+                    continue  # no usable price today — keep waiting
+                if back >= 10:
+                    # Effectively stopped trading: resolve at last known close.
+                    _resolve_position(sym, idx, exit_iso, close, "pt_eod")
+                    continue
+            trigger = pos["blended"] * (1.0 + config.profit_target_pct)
+            if close >= trigger:
+                _resolve_position(
+                    sym,
+                    idx,
+                    exit_iso,
+                    close,
+                    f"pt_target_{int(round(config.profit_target_pct * 1000))}bp",
+                )
+            elif (idx - pos["last_tranche_idx"]) >= config.profit_target_cap_days:
+                _resolve_position(sym, idx, exit_iso, close, "pt_252d_cap")
+            elif day_idx == last_idx:
+                _resolve_position(sym, idx, exit_iso, close, "pt_eod")
+
+        day_events = events.get(day_iso)
+        if not day_events:
+            continue
+
+        univ = set(eligible)
+        signals: dict[str, float] = {}
+        for sym, (overshoot, _elev) in day_events.items():
+            if sym in univ:
+                # Same tie-break as the base method: smallest overshoot wins.
+                signals[sym] = -float(overshoot)
+
+        # 2. ENTRIES — top-1 NEW signal first (never blocked by averages),
+        #    then average-ins for every signaling symbol already held.
+        prev_open = set(positions)
+        new_candidates = [s for s in signals if s not in prev_open]
+        if new_candidates:
+            top_sym = sorted(new_candidates, key=lambda s: (-signals[s], s))[0]
+            entry_price = _close_map(top_sym).get(day_iso)
+            if entry_price is not None:
+                positions[top_sym] = {
+                    "tranche_days": [day_iso],
+                    "tranche_idx": [day_idx],
+                    "tranche_prices": [entry_price],
+                    "tranche_adv": [_entry_adv(top_sym, day_iso)],
+                    "n_tranches": 1,
+                    "blended": entry_price,
+                    "last_tranche_idx": day_idx,
+                }
+
+        for sym in signals:
+            if sym not in prev_open:
+                continue  # positions opened TODAY start at tranche 1
+            pos = positions.get(sym)
+            if pos is None or pos["n_tranches"] >= config.max_tranches:
+                continue  # tranche cap reached — resolve via target/cap only
+            t_price = _close_map(sym).get(day_iso)
+            if t_price is None:
+                continue
+            pos["tranche_days"].append(day_iso)  # noqa: PG-APPEND
+            pos["tranche_idx"].append(day_idx)  # noqa: PG-APPEND
+            pos["tranche_prices"].append(t_price)  # noqa: PG-APPEND
+            pos["tranche_adv"].append(_entry_adv(sym, day_iso))  # noqa: PG-APPEND
+            pos["n_tranches"] += 1
+            pos["blended"] = sum(pos["tranche_prices"]) / pos["n_tranches"]
+            pos["last_tranche_idx"] = day_idx
+
+        daily_capital = (
+            sum(p["n_tranches"] for p in positions.values()) * POSITION_VALUE_INR
+        )
+        peak_capital = max(peak_capital, daily_capital)
+
+    trades_df = pd.DataFrame(trades)
+    summary = _compute_summary(trades_df, config, peak_capital_override=peak_capital)
+    if not trades_df.empty:
+        dist = trades_df["n_tranches"].value_counts().to_dict()
+        summary["n_tranche_distribution"] = {
+            int(k): int(v) for k, v in sorted(dist.items())
+        }
+    return BacktestResult(trades=trades_df, summary=summary)
+
+
 def _empty_summary() -> dict:
     return {
         "total_trades": 0,
@@ -957,7 +1493,11 @@ def _empty_summary() -> dict:
     }
 
 
-def _compute_summary(trades: pd.DataFrame, config: BacktestConfig) -> dict:
+def _compute_summary(
+    trades: pd.DataFrame,
+    config: BacktestConfig,
+    peak_capital_override: Optional[float] = None,
+) -> dict:
     if trades.empty:
         return _empty_summary()
     pnls = trades["pnl_net"].astype(float)
@@ -970,8 +1510,14 @@ def _compute_summary(trades: pd.DataFrame, config: BacktestConfig) -> dict:
     # capital grows linearly with number of overlapping positions (worst case).
     # We approximate by counting trades whose entry_date <= today AND exit_date >= today.
     # Simpler proxy: peak_concurrent_capital = max(active_count) * POSITION_VALUE_INR.
+    # Averaging mode overrides with the real rupee peak over all open tranches,
+    # since a 2-3 tranche symbol consumes 20k-30k, not one position slot.
     active_count_max = _max_concurrent_positions(trades)
-    peak_concurrent_capital = active_count_max * POSITION_VALUE_INR
+    peak_concurrent_capital = (
+        peak_capital_override
+        if peak_capital_override is not None
+        else active_count_max * POSITION_VALUE_INR
+    )
 
     # Max drawdown on cumulative PnL (over time, ordered by entry_date)
     sorted_trades = trades.sort_values("entry_date")
