@@ -40,6 +40,7 @@ import PortfolioView from './views/PortfolioView';
 import DataSyncView from './views/DataSync';
 import DeliveryAnomalyScannerView from './views/DeliveryAnomalyScanner';
 import BottomHunterView from './views/BottomHunter';
+import RecoveryLadderView from './views/RecoveryLadder';
 import ClimaxAccumulationView from './views/ClimaxAccumulation';
 import ConfluenceView from './views/ConfluenceView';
 import DCBBargainView from './views/DCBBargain';
@@ -58,6 +59,7 @@ const TABS = [
   { id: 'Mission Control', path: '/mission-control', icon: '🎛️', category: 'dashboard' },
   { id: 'Portfolio', path: '/portfolio', icon: '💰', category: 'dashboard' },
   { id: 'Bottom Hunter', path: '/bottom-hunter', icon: '🎯', category: 'scanners', group: 'Price Action' },
+  { id: 'Recovery Ladder', path: '/recovery-ladder', icon: '🪜', category: 'scanners', group: 'Price Action' },
   { id: 'DCB Bargain', path: '/dcb-bargain', icon: '🏷️', category: 'scanners', group: 'Institutional / Flow' },
   { id: 'Smart Money Bargain', path: '/smart-money-bargain', icon: '🏦', category: 'scanners', group: 'Institutional / Flow' },
   { id: 'Consensus', path: '/confluence', icon: '🔗', category: 'scanners', group: 'Overview' },
@@ -285,6 +287,7 @@ export default function App() {
                 <Route path="/delivery-anomaly" element={<DeliveryAnomalyScannerView lib={librarian} />} />
                 <Route path="/multibagger-pro-scanner" element={<MultibaggerProScannerView lib={librarian} />} />
                 <Route path="/bottom-hunter" element={<BottomHunterView lib={librarian} />} />
+                <Route path="/recovery-ladder" element={<RecoveryLadderView />} />
                 <Route path="/climax-accumulation" element={<ClimaxAccumulationView lib={librarian} />} />
                 <Route path="/dcb-bargain" element={<DCBBargainView lib={librarian} />} />
                 <Route path="/smart-money-bargain" element={<SmartMoneyBargainView />} />

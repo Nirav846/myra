@@ -30,6 +30,7 @@ type SortKey = 'scanner_count' | 'symbol' | 'sector' | 'best_grade';
 const SCANNER_ROUTES: Record<string, string> = {
   'The Trigger': '/trigger',
   'Bottom Hunter': '/bottom-hunter',
+  'Recovery Ladder': '/recovery-ladder',
   'Invisible Hand': '/invisible-hand',
   'Wyckoff Automaton': '/wyckoff',
   'Liquidity Flip': '/liquidity-flip',

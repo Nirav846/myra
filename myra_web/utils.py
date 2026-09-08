@@ -65,13 +65,14 @@ _SCANNER_CACHE_MAP: dict[str, str] = {
     "multibagger_cache.json": "Multibagger Pro",
     "climax_accumulation_cache.json": "Climax Accumulation",
     "launchpad_scan_cache.json": "Launchpad Scanner",
+    "bottom_hunter_m1_cache.json": "Recovery Ladder",
 }
 
 # Display-name → frontend route (for link column)
 _SCANNER_ROUTES: dict[str, str] = {
     "The Trigger": "/trigger",
     "Bottom Hunter": "/bottom-hunter",
-    "Bottom Hunter M1": "/bottom-hunter-m1",
+    "Recovery Ladder": "/recovery-ladder",
     "Invisible Hand": "/invisible-hand",
     "Wyckoff Automaton": "/wyckoff",
     "Liquidity Flip": "/liquidity-flip",

@@ -909,8 +909,8 @@ register_scanner(
     result_mode="df",
     progress_attr="_get_tech_data",
     status_extra="scanned_date",
-    init_message="Initialising Bottom Hunter M1 scanner...",
-    label="Bottom Hunter M1",
+    init_message="Initialising Recovery Ladder scanner...",
+    label="Recovery Ladder",
 )
 
 
