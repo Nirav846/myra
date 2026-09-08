@@ -416,9 +416,15 @@ export default function RecoveryLadder() {
           <div className="px-4 py-10 text-center text-xs font-mono text-[#666]">
             {status?.message || 'Idle — click Scan to start.'}
           </div>
-        ) : isScanning ? (
+) : isScanning ? (
           <div className="px-4 py-10 text-center text-xs font-mono text-[#666]">
             Scanning… {Math.round(status?.progress ?? 0)}% — rechecking shortly.
+          </div>
+        ) : !settings.averaging && visibleCandidates.length === 0 && (status?.candidates?.length ?? 0) > 0 ? (
+          <div className="px-4 py-10 text-center text-xs font-mono text-[#666]">
+            Every signal on {status?.scanned_date || 'the scan date'} is an ADD (tranche add-on) — the scan
+            {' '}did find {status?.candidates?.length} candidate{status?.candidates?.length === 1 ? '' : 's'}, but
+            {' '}single-entry mode shows NEW signals only. Switch Averaging ON to view them.
           </div>
         ) : visibleCandidates.length === 0 ? (
           <div className="px-4 py-10 text-center text-xs font-mono text-[#666]">
