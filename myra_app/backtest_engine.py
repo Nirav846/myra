@@ -1586,6 +1586,141 @@ def _max_drawdown_from_cumsum(cum: pd.Series) -> float:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Post-hoc MAE/MFE enrichment and stop-sensitivity sweep.
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def compute_mae_mfe(
+    trades_df: pd.DataFrame,
+    conn: sqlite3.Connection,
+) -> pd.DataFrame:
+    """Post-hoc: add mae_pct and mfe_pct columns to a trade log.
+
+    MAE (Maximum Adverse Excursion) = worst unrealized return (%) observed
+    at any point during the hold, relative to the position's cost basis.
+    MFE (Maximum Favorable Excursion) = best unrealized return (%).
+
+    For single-tranche trades the basis is entry_price.
+    For multi-tranche (averaging) trades the basis is blended_basis (simple
+    average of tranche entry prices), matching the profit-target logic.
+
+    Uses the existing _load_prices_window() for OHLCV reload — no new data.
+    """
+    if trades_df.empty:
+        out = trades_df.copy()
+        out["mae_pct"] = pd.Series(dtype="float64")
+        out["mfe_pct"] = pd.Series(dtype="float64")
+        return out
+
+    # Batch price loading per symbol to avoid repeated DB round-trips.
+    price_cache: dict[str, pd.DataFrame] = {}
+    symbols = trades_df["symbol"].unique().tolist()
+    global_min = trades_df["entry_date"].min()
+    global_max = trades_df["exit_date"].max()
+    all_prices = _load_prices_window(conn, symbols, global_min, global_max)
+    if not all_prices.empty:
+        for sym, grp in all_prices.groupby("symbol"):
+            price_cache[sym] = grp.set_index("date").sort_index()
+
+    mae_list: list[float] = []
+    mfe_list: list[float] = []
+
+    for _, row in trades_df.iterrows():
+        sym = row["symbol"]
+        basis = (
+            row["blended_basis"]
+            if "n_tranches" in trades_df.columns and row.get("n_tranches", 1) > 1
+            else row["entry_price"]
+        )
+        prices = price_cache.get(sym)
+        if prices is None or pd.isna(basis) or basis <= 0:
+            mae_list.append(0.0)
+            mfe_list.append(0.0)
+            continue
+
+        window = prices.loc[row["entry_date"] : row["exit_date"]]
+        if window.empty:
+            mae_list.append(0.0)
+            mfe_list.append(0.0)
+            continue
+
+        low_min = float(window["low"].min())
+        high_max = float(window["high"].max())
+        mae_list.append((low_min / basis - 1.0) * 100.0)
+        mfe_list.append((high_max / basis - 1.0) * 100.0)
+
+    out = trades_df.copy()
+    out["mae_pct"] = mae_list
+    out["mfe_pct"] = mfe_list
+    return out
+
+
+def retrospective_stop_sweep(
+    trades_df: pd.DataFrame,
+    start_pct: float = 2.0,
+    end_pct: float = 30.0,
+    step_pct: float = 1.0,
+) -> pd.DataFrame:
+    """Sweep fixed stop-loss levels over MAE-enriched trade log.
+
+    For each stop level s (as a positive percentage), counts trades whose
+    MAE breached -s%, and reports:
+      - n_stopped:    trades that would have been stopped out
+      - pct_stopped:  fraction of total
+      - avg_return_when_not_stopped: mean pnl_net / 10000 for survivors
+      - winners_killed: profitable trades stopped out prematurely
+      - losers_stopped: losing trades that would have been cut earlier
+
+    Returns a DataFrame indexed by stop_pct.
+    """
+    if trades_df.empty or "mae_pct" not in trades_df.columns:
+        return pd.DataFrame(
+            columns=[
+                "stop_pct",
+                "n_stopped",
+                "pct_stopped",
+                "avg_return_when_not_stopped",
+                "winners_killed",
+                "losers_stopped",
+            ]
+        )
+
+    total = len(trades_df)
+    is_winner = trades_df["pnl_net"] > 0
+
+    rows = []
+    stop_levels = []
+    level = start_pct
+    while level <= end_pct + 1e-9:
+        stop_levels.append(round(level, 2))
+        level += step_pct
+
+    for stop in stop_levels:
+        breached = trades_df["mae_pct"] <= -stop
+        n_stopped = int(breached.sum())
+        survivors = trades_df[~breached]
+        avg_ret = (
+            float(survivors["pnl_net"].mean() / POSITION_VALUE_INR)
+            if not survivors.empty
+            else 0.0
+        )
+        winners_killed = int((breached & is_winner).sum())
+        losers_stopped = int((breached & ~is_winner).sum())
+        rows.append(
+            {
+                "stop_pct": stop,
+                "n_stopped": n_stopped,
+                "pct_stopped": round(n_stopped / total * 100, 2) if total else 0.0,
+                "avg_return_when_not_stopped": round(avg_ret, 6),
+                "winners_killed": winners_killed,
+                "losers_stopped": losers_stopped,
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Convenience entry-point — open MYRA DB connections and run.
 # ──────────────────────────────────────────────────────────────────────────────
 

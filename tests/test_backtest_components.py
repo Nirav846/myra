@@ -37,7 +37,6 @@ from myra_app.backtest_engine import (
     POSITION_VALUE_INR,
     RandomSignal,
     SIGNAL_REGISTRY,
-    TRAIN_END,
     TRAIN_START_DELIVERY,
     TRAIN_START_PRICE_ONLY,
     _eligible_symbols_at_date,
@@ -49,6 +48,8 @@ from myra_app.backtest_engine import (
     calc_brokerage,
     calc_impact_cost,
     calc_stt,
+    compute_mae_mfe,
+    retrospective_stop_sweep,
     run_backtest,
     total_round_trip_costs,
 )
@@ -1298,3 +1299,291 @@ class TestKaushikAveraging:
         assert rider["exit_reason"] == boat["exit_reason"] == "pt_target_75bp"
         # 2 tranches on RIDER (20k) + 1 on BOAT (10k) = 30k peak that day
         assert res.summary["peak_concurrent_capital"] >= 3 * POSITION_VALUE_INR
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 7. MAE/MFE post-hoc enrichment
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _insert_ohlcv(conn, symbol, dates, closes, highs=None, lows=None):
+    """Insert synthetic OHLCV rows. highs/lows default to close ± 2."""
+    highs = highs or [c * 1.02 for c in closes]
+    lows = lows or [c * 0.98 for c in closes]
+    for d, c, h, l in zip(dates, closes, highs, lows):
+        conn.execute(
+            "INSERT INTO technical_data "
+            "(symbol, date, open, high, low, close, volume, delivery, delivery_pct) "
+            "VALUES (?, ?, ?, ?, ?, ?, 1000, 500, 50.0)",
+            (symbol, d, c, h, l, c),
+        )
+
+
+class TestComputeMaeMfe:
+    """compute_mae_mfe: post-hoc MAE/MFE enrichment."""
+
+    def test_single_tranche_known_path(self, in_mem_db):
+        """MAE/MFE match hand-computed values on a known price path."""
+        # 5-day window: entry at 100, dips to 92 (MAE -8%), rallies to 112 (MFE +12%), exits at 108.
+        dates = ["2025-01-06", "2025-01-07", "2025-01-08", "2025-01-09", "2025-01-10"]
+        closes = [100.0, 95.0, 93.0, 110.0, 108.0]
+        highs = [101.0, 96.0, 94.0, 112.0, 109.0]
+        lows = [99.0, 94.0, 92.0, 108.0, 107.0]
+        _insert_ohlcv(in_mem_db, "TEST", dates, closes, highs, lows)
+
+        trades = pd.DataFrame(
+            [
+                {
+                    "entry_date": "2025-01-06",
+                    "exit_date": "2025-01-10",
+                    "symbol": "TEST",
+                    "entry_price": 100.0,
+                    "exit_price": 108.0,
+                    "n_hold_days": 4,
+                    "pnl_gross": 800.0,
+                    "costs": 30.0,
+                    "pnl_net": 770.0,
+                    "exit_reason": "fixed_4d",
+                }
+            ]
+        )
+        result = compute_mae_mfe(trades, in_mem_db)
+        assert result["mae_pct"].iloc[0] == pytest.approx(-8.0, abs=0.01)
+        assert result["mfe_pct"].iloc[0] == pytest.approx(12.0, abs=0.01)
+
+    def test_multi_tranche_uses_blended_basis(self, in_mem_db):
+        """Multi-tranche trade references blended_basis, not first tranche price."""
+        # Tranche 1 at 100, tranche 2 at 80 → blended = 90.
+        # Price dips to 84 → MAE = (84/90 - 1)*100 = -6.67%, NOT (84/100 - 1)*100 = -16%.
+        # High on entry day = 101 → MFE = (101/90 - 1)*100 = 12.22%.
+        dates = ["2025-01-06", "2025-01-07", "2025-01-08"]
+        closes = [100.0, 85.0, 95.0]
+        highs = [101.0, 86.0, 96.0]
+        lows = [99.0, 84.0, 94.0]
+        _insert_ohlcv(in_mem_db, "MULTI", dates, closes, highs, lows)
+
+        trades = pd.DataFrame(
+            [
+                {
+                    "entry_date": "2025-01-06",
+                    "exit_date": "2025-01-08",
+                    "symbol": "MULTI",
+                    "entry_price": 100.0,
+                    "exit_price": 95.0,
+                    "n_hold_days": 2,
+                    "pnl_gross": -50.0,
+                    "costs": 30.0,
+                    "pnl_net": -80.0,
+                    "exit_reason": "fixed_2d",
+                    "n_tranches": 2,
+                    "blended_basis": 90.0,
+                    "tranche_dates": "2025-01-06|2025-01-07",
+                    "tranche_prices": "100.00|80.00",
+                }
+            ]
+        )
+        result = compute_mae_mfe(trades, in_mem_db)
+        # MAE from blended basis: 84/90 - 1 = -6.67%
+        assert result["mae_pct"].iloc[0] == pytest.approx(
+            (84.0 / 90.0 - 1.0) * 100.0, abs=0.01
+        )
+        # MFE from blended basis: 101/90 - 1 = 12.22% (high on entry day)
+        assert result["mfe_pct"].iloc[0] == pytest.approx(
+            (101.0 / 90.0 - 1.0) * 100.0, abs=0.01
+        )
+
+    def test_empty_trades(self, in_mem_db):
+        """Empty trade log returns empty DataFrame with mae_pct/mfe_pct columns."""
+        trades = pd.DataFrame(
+            columns=[
+                "entry_date",
+                "exit_date",
+                "symbol",
+                "entry_price",
+                "exit_price",
+                "n_hold_days",
+                "pnl_gross",
+                "costs",
+                "pnl_net",
+                "exit_reason",
+            ]
+        )
+        result = compute_mae_mfe(trades, in_mem_db)
+        assert "mae_pct" in result.columns
+        assert "mfe_pct" in result.columns
+        assert len(result) == 0
+
+    def test_missing_price_data(self, in_mem_db):
+        """Trade with no OHLCV data gets MAE/MFE = 0 (graceful fallback)."""
+        trades = pd.DataFrame(
+            [
+                {
+                    "entry_date": "2025-01-06",
+                    "exit_date": "2025-01-10",
+                    "symbol": "NODATA",
+                    "entry_price": 100.0,
+                    "exit_price": 110.0,
+                    "n_hold_days": 4,
+                    "pnl_gross": 1000.0,
+                    "costs": 30.0,
+                    "pnl_net": 970.0,
+                    "exit_reason": "fixed_4d",
+                }
+            ]
+        )
+        result = compute_mae_mfe(trades, in_mem_db)
+        assert result["mae_pct"].iloc[0] == 0.0
+        assert result["mfe_pct"].iloc[0] == 0.0
+
+    def test_batch_loading(self, in_mem_db):
+        """Multiple trades on different symbols load prices in one batch."""
+        dates = ["2025-01-06", "2025-01-07", "2025-01-08"]
+        _insert_ohlcv(
+            in_mem_db, "SYM_A", dates, [100, 90, 110], [101, 91, 111], [99, 89, 109]
+        )
+        _insert_ohlcv(
+            in_mem_db, "SYM_B", dates, [200, 190, 210], [201, 191, 211], [199, 189, 209]
+        )
+
+        trades = pd.DataFrame(
+            [
+                {
+                    "entry_date": "2025-01-06",
+                    "exit_date": "2025-01-08",
+                    "symbol": "SYM_A",
+                    "entry_price": 100.0,
+                    "exit_price": 110.0,
+                    "n_hold_days": 2,
+                    "pnl_gross": 1000.0,
+                    "costs": 30.0,
+                    "pnl_net": 970.0,
+                    "exit_reason": "fixed_2d",
+                },
+                {
+                    "entry_date": "2025-01-06",
+                    "exit_date": "2025-01-08",
+                    "symbol": "SYM_B",
+                    "entry_price": 200.0,
+                    "exit_price": 210.0,
+                    "n_hold_days": 2,
+                    "pnl_gross": 500.0,
+                    "costs": 30.0,
+                    "pnl_net": 470.0,
+                    "exit_reason": "fixed_2d",
+                },
+            ]
+        )
+        result = compute_mae_mfe(trades, in_mem_db)
+        assert result["mae_pct"].iloc[0] == pytest.approx(
+            (89.0 / 100.0 - 1.0) * 100.0, abs=0.01
+        )
+        assert result["mfe_pct"].iloc[0] == pytest.approx(
+            (111.0 / 100.0 - 1.0) * 100.0, abs=0.01
+        )
+        assert result["mae_pct"].iloc[1] == pytest.approx(
+            (189.0 / 200.0 - 1.0) * 100.0, abs=0.01
+        )
+        assert result["mfe_pct"].iloc[1] == pytest.approx(
+            (211.0 / 200.0 - 1.0) * 100.0, abs=0.01
+        )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 8. Retrospective stop-sensitivity sweep
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class TestRetrospectiveStopSweep:
+    """retrospective_stop_sweep: trade-off table for fixed stop-loss levels."""
+
+    def test_basic_sweep(self):
+        """Known MAE values produce correct winners_killed / losers_stopped counts."""
+        trades = pd.DataFrame(
+            [
+                # Winner with MAE -5%: survives 10% stop, killed at 25%? No — only if MAE <= -25%.
+                {"pnl_net": 500.0, "mae_pct": -5.0},
+                # Winner with MAE -12%: killed at 10% stop
+                {"pnl_net": 300.0, "mae_pct": -12.0},
+                # Loser with MAE -18%: cut at 15% stop
+                {"pnl_net": -800.0, "mae_pct": -18.0},
+                # Loser with MAE -8%: cut at 10% stop
+                {"pnl_net": -200.0, "mae_pct": -8.0},
+                # Deep winner with MAE -2%: survives all stops
+                {"pnl_net": 1000.0, "mae_pct": -2.0},
+            ]
+        )
+        # Use user-specified levels: 10%, 15%, 20%, 25%
+        result = retrospective_stop_sweep(
+            trades, start_pct=10.0, end_pct=25.0, step_pct=5.0
+        )
+
+        # 10% stop: MAE <= -10% → trades 1 (-12%), 2 (-18%), 3 (-8%) → NO, -8% > -10%
+        # trades 1 (-12%) and 2 (-18%) → 2 stopped
+        row10 = result[result["stop_pct"] == 10.0].iloc[0]
+        assert row10["n_stopped"] == 2
+        assert row10["winners_killed"] == 1  # trade 1
+        assert row10["losers_stopped"] == 1  # trade 2
+
+        # 15% stop: MAE <= -15% → trade 2 (-18%) → 1 stopped
+        row15 = result[result["stop_pct"] == 15.0].iloc[0]
+        assert row15["n_stopped"] == 1
+        assert row15["winners_killed"] == 0
+        assert row15["losers_stopped"] == 1  # trade 2
+
+        # 20% stop: no MAE breaches -20% → 0 stopped
+        row20 = result[result["stop_pct"] == 20.0].iloc[0]
+        assert row20["n_stopped"] == 0
+
+        # 25% stop: no MAE breaches -25% → 0 stopped
+        row25 = result[result["stop_pct"] == 25.0].iloc[0]
+        assert row25["n_stopped"] == 0
+
+    def test_empty_trades(self):
+        """Empty trade log returns empty DataFrame with correct columns."""
+        result = retrospective_stop_sweep(pd.DataFrame())
+        assert len(result) == 0
+        assert "stop_pct" in result.columns
+        assert "winners_killed" in result.columns
+
+    def test_no_mae_column(self):
+        """Trade log without mae_pct returns empty DataFrame."""
+        result = retrospective_stop_sweep(pd.DataFrame({"pnl_net": [100]}))
+        assert len(result) == 0
+
+    def test_all_winners(self):
+        """Sweep over all-profitable trades: losers_stopped should be 0."""
+        trades = pd.DataFrame(
+            [
+                {"pnl_net": 500.0, "mae_pct": -3.0},
+                {"pnl_net": 800.0, "mae_pct": -7.0},
+                {"pnl_net": 200.0, "mae_pct": -1.0},
+            ]
+        )
+        result = retrospective_stop_sweep(
+            trades, start_pct=10.0, end_pct=25.0, step_pct=5.0
+        )
+        for _, row in result.iterrows():
+            assert row["losers_stopped"] == 0
+
+    def test_survivor_avg_return(self):
+        """avg_return_when_not_stopped reflects only surviving trades."""
+        trades = pd.DataFrame(
+            [
+                {"pnl_net": 1000.0, "mae_pct": -2.0},  # survives 10% stop
+                {
+                    "pnl_net": -500.0,
+                    "mae_pct": -8.0,
+                },  # survives 10% stop (MAE -8% > -10%)
+                {"pnl_net": 300.0, "mae_pct": -1.0},  # survives 10% stop
+            ]
+        )
+        result = retrospective_stop_sweep(
+            trades, start_pct=10.0, end_pct=10.0, step_pct=1.0
+        )
+        row = result.iloc[0]
+        # All 3 survive (MAE -2%, -8%, -1% all > -10%)
+        # Survivors: pnl_net = [1000, -500, 300], mean = 800/3, / 10000
+        assert row["n_stopped"] == 0
+        assert row["avg_return_when_not_stopped"] == pytest.approx(
+            (1000.0 - 500.0 + 300.0) / 3 / 10000, abs=0.001
+        )
