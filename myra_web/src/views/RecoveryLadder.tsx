@@ -3,6 +3,8 @@ import { AlertTriangle, Info, RefreshCw, XCircle } from 'lucide-react';
 import { API_BASE } from '../config';
 import { HistoricalScanDatePicker } from '../components/HistoricalScanDatePicker';
 import ScrollableTable from '../components/ScrollableTable';
+import NearTriggerWatchlist from './NearTriggerWatchlist';
+import MyPositionsWithAlerts from './MyPositionsWithAlerts';
 
 // ── Validated defaults (mirror the scanner's backtest-validated config) ────
 const VALIDATED_PROFIT_TARGETS = [5, 7.5, 10]; // % — all three were backtested
@@ -189,6 +191,25 @@ export default function RecoveryLadder() {
   }, [status, settings]);
 
   const targetCol = `Target ${settings.profitTarget}%`;
+  // Days since signal for triggered-status view.
+  const enrichedCandidates = useMemo(() => {
+    return visibleCandidates.map((c) => {
+      let daysSinceSignal = 0;
+      if (c.signal_date) {
+        try {
+          const sigDt = new Date(c.signal_date);
+          const now = new Date();
+          daysSinceSignal = Math.floor((now.getTime() - sigDt.getTime()) / 86400000);
+        } catch { /* ignore */ }
+      }
+      // Distance to profit target from current price.
+      const targetPrice = c.blended_basis
+        ? c.blended_basis * (1 + settings.profitTarget / 100)
+        : c.close * (1 + settings.profitTarget / 100);
+      const pctToTarget = ((c.close / (c.blended_basis || c.close)) - 1) * 100;
+      return { ...c, daysSinceSignal, targetPrice, pctToTarget };
+    });
+  }, [visibleCandidates, settings.profitTarget]);
   // The backend serves idle + cached candidates from the persisted cache —
   // results must render whenever candidates exist, regardless of scan status.
   const noResultsYet =
@@ -393,7 +414,7 @@ export default function RecoveryLadder() {
       <section className="bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden flex flex-col min-h-0" aria-label="Recovery Ladder results">
         <div className="flex items-center gap-3 px-4 py-2.5 border-b border-[#ffffff1a] flex-wrap">
           <span className="text-xs font-mono text-[#ccc]">
-            {isScanning ? `Scanning… ${Math.round(status?.progress ?? 0)}%` : `${visibleCandidates.length} candidate${visibleCandidates.length === 1 ? '' : 's'}`}
+            {isScanning ? `Scanning… ${Math.round(status?.progress ?? 0)}%` : `${enrichedCandidates.length} candidate${enrichedCandidates.length === 1 ? '' : 's'}`}
           </span>
           {status?.scanned_date && (
             <span className="text-[11px] font-mono text-violet-300 bg-violet-500/10 border border-violet-500/20 rounded px-2 py-0.5">
@@ -420,13 +441,13 @@ export default function RecoveryLadder() {
           <div className="px-4 py-10 text-center text-xs font-mono text-[#666]">
             Scanning… {Math.round(status?.progress ?? 0)}% — rechecking shortly.
           </div>
-        ) : !settings.averaging && visibleCandidates.length === 0 && (status?.candidates?.length ?? 0) > 0 ? (
+        ) : !settings.averaging && enrichedCandidates.length === 0 && (status?.candidates?.length ?? 0) > 0 ? (
           <div className="px-4 py-10 text-center text-xs font-mono text-[#666]">
             Every signal on {status?.scanned_date || 'the scan date'} is an ADD (tranche add-on) — the scan
             {' '}did find {status?.candidates?.length} candidate{status?.candidates?.length === 1 ? '' : 's'}, but
             {' '}single-entry mode shows NEW signals only. Switch Averaging ON to view them.
           </div>
-        ) : visibleCandidates.length === 0 ? (
+        ) : enrichedCandidates.length === 0 ? (
           <div className="px-4 py-10 text-center text-xs font-mono text-[#666]">
             No crossings on {status?.scanned_date || 'the scan date'} — check back after the next trading day.
           </div>
@@ -438,8 +459,10 @@ export default function RecoveryLadder() {
                   <th className="px-3 py-2">Symbol</th>
                   <th className="px-3 py-2">Signal</th>
                   <th className="px-3 py-2">Date</th>
+                  <th className="px-3 py-2">Days Since</th>
                   <th className="px-3 py-2">Close</th>
                   <th className="px-3 py-2">{targetCol}</th>
+                  <th className="px-3 py-2">To Target</th>
                   <th className="px-3 py-2">Year Low</th>
                   <th className="px-3 py-2">Recovery Line</th>
                   <th className="px-3 py-2">Overshoot %</th>
@@ -452,7 +475,7 @@ export default function RecoveryLadder() {
                 </tr>
               </thead>
               <tbody>
-                {visibleCandidates.map((c) => (
+              {enrichedCandidates.map((c) => (
                   <tr key={c.symbol} className="border-b border-[#ffffff0d] hover:bg-[#ffffff08]">
                     <td className="px-3 py-2 text-[#fafafa] font-semibold">{c.symbol}</td>
                     <td className="px-3 py-2">
@@ -465,9 +488,17 @@ export default function RecoveryLadder() {
                       )}
                     </td>
                     <td className="px-3 py-2 text-[#ccc]">{c.signal_date}</td>
+                    <td className="px-3 py-2 text-[#ccc]">{c.daysSinceSignal}d</td>
                     <td className="px-3 py-2 text-[#fafafa]">₹ {c.close.toFixed(2)}</td>
                     <td className="px-3 py-2 text-violet-300">
-                      ₹ {(c.close * (1 + settings.profitTarget / 100)).toFixed(2)}
+                      ₹ {c.targetPrice.toFixed(2)}
+                    </td>
+                    <td className="px-3 py-2">
+                      {c.blended_basis != null ? (
+                        <span className={c.pctToTarget >= settings.profitTarget ? 'text-green-400' : 'text-[#ccc]'}>
+                          {c.pctToTarget >= 0 ? '+' : ''}{c.pctToTarget.toFixed(1)}%
+                        </span>
+                      ) : '—'}
                     </td>
                     <td className="px-3 py-2 text-[#ccc]">₹ {c.year_low.toFixed(2)}</td>
                     <td className="px-3 py-2 text-[#ccc]">₹ {c.recovery_line.toFixed(2)}</td>
@@ -495,6 +526,12 @@ export default function RecoveryLadder() {
           </ScrollableTable>
         )}
       </section>
+
+      {/* Near-Trigger Watchlist */}
+      <NearTriggerWatchlist scannedDate={status?.scanned_date ?? null} />
+
+      {/* My Positions with Alerts */}
+      <MyPositionsWithAlerts />
     </main>
   );
 }

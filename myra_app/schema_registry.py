@@ -313,6 +313,7 @@ class SchemaRegistry:
                 "last_tranche_date": "TEXT",
                 "n_tranches": "INTEGER",
                 "blended_basis": "REAL",
+                "tranche_prices": "TEXT",
                 "updated_at": "TEXT",
             },
             "primary_key": "(symbol)",

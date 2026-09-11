@@ -549,6 +549,85 @@ class BottomHunterM1Scanner:
             )
         return result
 
+    def scan_near_trigger(
+        self,
+        as_on_date: Optional[str] = None,
+        band_pct: float = 5.0,
+    ) -> pd.DataFrame:
+        """Surface stocks approaching the recovery line but not yet crossed.
+
+        Returns symbols where close is within `band_pct`% below the
+        recovery_line (year_low * recovery_mult), sorted by proximity
+        (closest to trigger first).  Symbols currently in cooldown
+        (haven't set a fresh lower low since their last signal) are
+        excluded — a near-trigger stock in cooldown cannot actually fire.
+        """
+        as_of = self._resolve_as_on_date(as_on_date)
+        universe = self._get_universe()
+        if not universe:
+            return pd.DataFrame()
+
+        min_date = f"{(pd.Timestamp(as_of) - pd.Timedelta(days=545)):%Y-%m-%d}"
+        # Intentionally do NOT call load_ohlcv_for_universe here —
+        # scan_near_trigger uses _get_tech_data directly (which respects
+        # the bulk path set by scan(), or falls back to SQL).
+
+        # Load cooldown state — symbols in cooldown are excluded.
+        from myra_app.strategies.bottom_hunter_m1_state import (
+            connect_meta,
+            load_cooldown,
+        )
+
+        cooldown: dict[str, dict] = {}
+        meta_path = self.state_db or self._db_path("meta")
+        if os.path.exists(meta_path):
+            try:
+                conn = connect_meta(meta_path)
+                cooldown = load_cooldown(conn)
+                conn.close()
+            except Exception:
+                pass
+
+        results: list[dict] = []
+        for symbol, rank, mcap_cr in universe:
+            # Skip symbols currently in cooldown — they cannot fire a signal yet.
+            if symbol in cooldown:
+                continue
+
+            rows = self._get_tech_data(symbol, min_date, max_date=as_of)
+            if len(rows) < self.lookback + 1:
+                continue
+            closes = np.array([r[4] for r in rows], dtype=float)
+            lows = np.array([r[3] for r in rows], dtype=float)
+
+            # Rolling 252-day low at the latest bar.
+            y = float(np.min(lows[-self.lookback :]))
+            close = float(closes[-1])
+            recovery_line = self.recovery_mult * y
+            pct_to_trigger = (recovery_line - close) / close * 100
+
+            # Only show stocks that haven't crossed yet and are within band.
+            if pct_to_trigger <= 0 or pct_to_trigger > band_pct:
+                continue
+
+            results.append(
+                {
+                    "symbol": symbol,
+                    "close": round(close, 2),
+                    "year_low": round(y, 2),
+                    "recovery_line": round(recovery_line, 2),
+                    "pct_to_trigger": round(pct_to_trigger, 2),
+                    "mcap_rank": rank,
+                    "mcap_cr": round(mcap_cr, 2),
+                    "delivery_pct": self._last_delivery_pct(rows),
+                }
+            )
+
+        df = pd.DataFrame(results)
+        if not df.empty:
+            df = df.sort_values("pct_to_trigger").reset_index(drop=True)
+        return df
+
     @staticmethod
     def _last_delivery_pct(rows: list[tuple]) -> Optional[float]:
         """Latest delivery_pct as reference info ONLY (D5 — never ranked on).

@@ -2,9 +2,8 @@
 MAE/MFE Analysis — Method 1 Backtest Post-Hoc Diagnostics
 ==========================================================
 Computes Maximum Adverse Excursion (MAE) and Maximum Favorable Excursion
-(MFE) for every trade across all 6 Method 1 signal variants (base / delivery
-/ delivery-filter × single / averaging), then runs a retroactive stop-loss
-sensitivity sweep.
+(MFE) for every trade across Method 1 signal variants, then runs a
+retroactive stop-loss sensitivity sweep.
 
 Output
 ------
@@ -14,10 +13,11 @@ Output
 
 How to run
 ----------
-    python tools/mae_mfe_analysis.py                     # full run
-    python tools/mae_mfe_analysis.py --dry-run           # exit after config print
-    python tools/mae_mfe_analysis.py --window holdout     # holdout only
-    python tools/mae_mfe_analysis.py --profit-target 0.10 # 10% target
+    python tools/mae_mfe_analysis.py                                          # all variants, 7.5%
+    python tools/mae_mfe_analysis.py --variants base_single,base_avg          # shipped config only
+    python tools/mae_mfe_analysis.py --targets 5,7.5,10                       # all three targets
+    python tools/mae_mfe_analysis.py --window holdout --targets 5,7.5,10      # holdout x 3 targets
+    python tools/mae_mfe_analysis.py --pit                                    # use PIT universe (required for backtests)
 """
 from __future__ import annotations
 
@@ -25,7 +25,6 @@ import argparse
 import os
 import sqlite3
 import sys
-import textwrap
 from dataclasses import replace
 
 import pandas as pd
@@ -64,6 +63,7 @@ VARIANTS: list[dict] = [
         "label": "filter_avg",
     },
 ]
+VARIANT_MAP = {v["label"]: v for v in VARIANTS}
 
 
 def _open_conn() -> sqlite3.Connection:
@@ -80,8 +80,27 @@ def _open_conn() -> sqlite3.Connection:
     return conn
 
 
-def _fmt_pct(v: float) -> str:
-    return f"{v:+.2f}%"
+def _load_pit_universe() -> dict[str, list[str]]:
+    """Load PIT universe from Phase 4 corrected JSON file.
+
+    IMPORTANT: mcap_rank_daily is a live-only, current-snapshot table.
+    NEVER use it to approximate historical universe membership.
+    Historical/backtest work always uses this offline PIT reconstruction.
+    """
+    import json
+
+    pit_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)),
+        ".backtest_scratch",
+        "_phase4_mcap_top500_corrected.json",
+    )
+    if not os.path.exists(pit_path):
+        print(f"ERROR: PIT universe file not found at {pit_path}")
+        return {}
+    with open(pit_path) as f:
+        data = json.load(f)
+    print(f"Loaded PIT universe from {os.path.basename(pit_path)}: {len(data)} dates")
+    return data
 
 
 def _summary_row(label: str, trades: pd.DataFrame) -> dict:
@@ -89,25 +108,20 @@ def _summary_row(label: str, trades: pd.DataFrame) -> dict:
         return {"variant": label, "n_trades": 0}
     winners = trades[trades["pnl_net"] > 0]
     losers = trades[trades["pnl_net"] <= 0]
-    losing_trades = trades[trades["pnl_net"] <= 0]
     return {
         "variant": label,
         "n_trades": len(trades),
         "win_rate": f"{len(winners) / len(trades) * 100:.1f}%",
-        "avg_pnl": f"₹{trades['pnl_net'].mean():.0f}",
+        "avg_pnl": f"{trades['pnl_net'].mean():.0f}",
         "mae_median": f"{trades['mae_pct'].median():+.2f}%",
         "mae_p10": f"{trades['mae_pct'].quantile(0.10):+.2f}%",
         "mae_p90": f"{trades['mae_pct'].quantile(0.90):+.2f}%",
         "mfe_median": f"{trades['mfe_pct'].median():+.2f}%",
         "mfe_median_losers": (
-            f"{losing_trades['mfe_pct'].median():+.2f}%"
-            if not losing_trades.empty
-            else "N/A"
+            f"{losers['mfe_pct'].median():+.2f}%" if not losers.empty else "N/A"
         ),
         "n_losers_with_mfe_gt5": (
-            int((losing_trades["mfe_pct"] > 5.0).sum())
-            if not losing_trades.empty
-            else 0
+            int((losers["mfe_pct"] > 5.0).sum()) if not losers.empty else 0
         ),
     }
 
@@ -138,64 +152,98 @@ def run_analysis(args: argparse.Namespace) -> None:
     conn = _open_conn()
     os.makedirs(REPORTS_DIR, exist_ok=True)
 
+    # Load PIT universe if --pit specified
+    pit_universe = None
+    if args.pit:
+        pit_universe = _load_pit_universe()
+        if not pit_universe:
+            print("ERROR: Could not load PIT universe. Aborting.")
+            return
+
+    # Resolve variants
+    if args.variants:
+        labels = [v.strip() for v in args.variants.split(",")]
+        variants = [VARIANT_MAP[l] for l in labels if l in VARIANT_MAP]
+        if not variants:
+            print(f"No valid variants. Available: {list(VARIANT_MAP.keys())}")
+            return
+    else:
+        variants = VARIANTS
+
+    # Resolve targets (user enters percentages like "5,7.5,10", convert to decimal)
+    targets = (
+        [float(t) / 100.0 for t in args.targets.split(",")] if args.targets else [0.075]
+    )
+
     all_trades: list[pd.DataFrame] = []
     sweep_results: list[pd.DataFrame] = []
     summary_rows: list[dict] = []
 
     print("=" * 80)
-    print("MAE/MFE Analysis — Method 1 Backtest Post-Hoc Diagnostics")
+    print("MAE/MFE Analysis -- Method 1 Backtest Post-Hoc Diagnostics")
     print("=" * 80)
-    print(f"Window: {args.window}  |  Profit target: {args.profit_target*100:.1f}%")
-    print(f"Stop sweep: {args.stop_start}%–{args.stop_end}% in {args.stop_step}% steps")
+    print(f"Window: {args.window}  |  Targets: {[f'{t*100:.1f}%' for t in targets]}")
+    print(f"Variants: {[v['label'] for v in variants]}")
+    universe_desc = "PIT (Phase 4 corrected)" if args.pit else "FULL (no cap filter)"
+    print(f"Universe: {universe_desc}")
+    print(f"Stop sweep: {args.stop_start}%-{args.stop_end}% in {args.stop_step}% steps")
     print()
 
-    for variant in VARIANTS:
-        label = variant["label"]
-        sig = variant["signal"]
-        avg = variant["average_in"]
+    for target_pct in targets:
+        target_label = f"{target_pct*100:.1f}%"
+        print(f"\n{'=' * 80}")
+        print(f"  PROFIT TARGET: {target_label}")
+        print(f"{'=' * 80}")
 
-        cfg = BacktestConfig(
-            signal=sig,
-            exit_mode="profit_target",
-            profit_target_pct=args.profit_target,
-            window=args.window,
-            average_in=avg,
-            max_tranches=3,
-        )
+        for variant in variants:
+            label = variant["label"]
+            sig = variant["signal"]
+            avg = variant["average_in"]
 
-        print(f"Running {label}...", end=" ", flush=True)
-        result = run_backtest(conn, cfg)
-        trades = result.trades
-        print(f"{len(trades)} trades")
+            cfg = BacktestConfig(
+                signal=sig,
+                exit_mode="profit_target",
+                profit_target_pct=target_pct,
+                window=args.window,
+                average_in=avg,
+                max_tranches=3,
+            )
 
-        if trades.empty:
-            continue
+            print(f"  Running {label}...", end=" ", flush=True)
+            result = run_backtest(conn, cfg, pit_universe=pit_universe)
+            trades = result.trades
+            print(f"{len(trades)} trades")
 
-        # Compute MAE/MFE
-        enriched = compute_mae_mfe(trades, conn)
-        enriched["variant"] = label
-        all_trades.append(enriched)
+            if trades.empty:
+                continue
 
-        # Stop sweep
-        sweep = retrospective_stop_sweep(
-            enriched,
-            start_pct=args.stop_start,
-            end_pct=args.stop_end,
-            step_pct=args.stop_step,
-        )
-        sweep["variant"] = label
-        sweep_results.append(sweep)
+            # Compute MAE/MFE
+            enriched = compute_mae_mfe(trades, conn)
+            enriched["variant"] = label
+            enriched["target"] = target_label
+            all_trades.append(enriched)
 
-        # Summary
-        summary_rows.append(_summary_row(label, enriched))
+            # Stop sweep
+            sweep = retrospective_stop_sweep(
+                enriched,
+                start_pct=args.stop_start,
+                end_pct=args.stop_end,
+                step_pct=args.stop_step,
+            )
+            sweep["variant"] = label
+            sweep["target"] = target_label
+            sweep_results.append(sweep)
 
-        # Capped-loss timing analysis
-        _print_capped_loss_analysis(enriched, label)
+            # Summary
+            summary_rows.append(_summary_row(f"{label} (pt={target_label})", enriched))
+
+            # Capped-loss timing analysis
+            _print_capped_loss_analysis(enriched, f"{label} (pt={target_label})")
 
     conn.close()
 
     if not all_trades:
-        print("\nNo trades found across any variant.")
+        print("\nNo trades found across any variant/target combination.")
         return
 
     # ── Combine and save ─────────────────────────────────────────────────────
@@ -209,51 +257,85 @@ def run_analysis(args: argparse.Namespace) -> None:
 
     # ── Print summary table ──────────────────────────────────────────────────
     print("\n" + "=" * 80)
-    print("MAE/MFE Summary by Variant")
+    print("MAE/MFE Summary by Variant × Target")
     print("=" * 80)
     summary_df = pd.DataFrame(summary_rows)
     print(summary_df.to_string(index=False))
 
     # ── Print stop-sensitivity table ─────────────────────────────────────────
     print("\n" + "=" * 80)
-    print("Stop-Loss Sensitivity (user-specified levels)")
+    print("Stop-Loss Sensitivity — FULL POPULATION (stopped trades replaced")
+    print("with stop-level loss, averaged over ALL trades, same N as baseline)")
     print("=" * 80)
     key_levels = [10.0, 15.0, 20.0, 25.0]
-    for variant_label in combined_sweep["variant"].unique():
-        vsweep = combined_sweep[combined_sweep["variant"] == variant_label]
-        vtrades = combined_trades[combined_trades["variant"] == variant_label]
-        print(f"\n  {variant_label} ({len(vtrades)} trades):")
-        print(
-            f"  {'Stop%':>6s}  {'Stopped':>8s}  {'Killed':>8s}  {'Reduced':>8s}  {'AvgRet':>10s}"
-        )
-        for lvl in key_levels:
-            row = vsweep[vsweep["stop_pct"] == lvl]
-            if row.empty:
+    for target_label in combined_sweep["target"].unique():
+        print(f"\n  Target: {target_label}")
+        for variant_label in combined_sweep["variant"].unique():
+            vsweep = combined_sweep[
+                (combined_sweep["variant"] == variant_label)
+                & (combined_sweep["target"] == target_label)
+            ]
+            vtrades = combined_trades[
+                (combined_trades["variant"] == variant_label)
+                & (combined_trades["target"] == target_label)
+            ]
+            if vtrades.empty:
                 continue
-            r = row.iloc[0]
+
+            # No-stop baseline: avg PnL across ALL trades (rupees)
+            baseline_avg_pnl = float(vtrades["pnl_net"].mean())
+            n_total = len(vtrades)
+
+            print(f"\n    {variant_label} ({n_total} trades):")
             print(
-                f"  {r['stop_pct']:>5.0f}%  {int(r['n_stopped']):>8d}  "
-                f"{int(r['winners_killed']):>8d}  {int(r['losers_stopped']):>8d}  "
-                f"{r['avg_return_when_not_stopped']:>+10.4f}"
+                f"    {'Stop%':>6s}  {'Stopped':>8s}  {'Killed':>8s}  {'Reduced':>8s}  {'AvgPnL(Rs)':>12s}  {'vs Base':>10s}"
             )
+            print(
+                f"    {'------':>6s}  {'--------':>8s}  {'--------':>8s}  {'--------':>8s}  {'----------':>12s}  {'---------':>10s}"
+            )
+
+            # No-stop baseline row
+            print(
+                f"    {'None':>6s}  {0:>8d}  {0:>8d}  {n_total:>8d}  "
+                f"{baseline_avg_pnl:>+12.0f}  {'(baseline)':>10s}"
+            )
+
+            # Stopped rows
+            for lvl in key_levels:
+                row = vsweep[vsweep["stop_pct"] == lvl]
+                if row.empty:
+                    continue
+                r = row.iloc[0]
+                avg_pnl = r["avg_pnl_full_pop"]
+                delta = avg_pnl - baseline_avg_pnl
+                print(
+                    f"    {r['stop_pct']:>5.0f}%  {int(r['n_stopped']):>8d}  "
+                    f"{int(r['winners_killed']):>8d}  {int(r['losers_stopped']):>8d}  "
+                    f"{avg_pnl:>+12.0f}  {delta:>+10.0f}"
+                )
 
     # ── Print MFE-for-losers analysis ────────────────────────────────────────
     print("\n" + "=" * 80)
     print("MFE for Losing Trades (how many were profitable at some point?)")
     print("=" * 80)
-    for variant_label in combined_trades["variant"].unique():
-        vtrades = combined_trades[combined_trades["variant"] == variant_label]
-        losers = vtrades[vtrades["pnl_net"] <= 0]
-        if losers.empty:
-            continue
-        profitable_at_some_point = (losers["mfe_pct"] > 0).sum()
-        mfe_gt5 = (losers["mfe_pct"] > 5.0).sum()
-        mfe_gt10 = (losers["mfe_pct"] > 10.0).sum()
-        print(
-            f"  {variant_label:25s}  {len(losers):>4d} losers  |  "
-            f"{profitable_at_some_point:>3d} were +ve at peak ({profitable_at_some_point/len(losers)*100:.0f}%)  |  "
-            f"{mfe_gt5:>3d} peaked >5%  |  {mfe_gt10:>3d} peaked >10%"
-        )
+    for target_label in combined_trades["target"].unique():
+        print(f"\n  Target: {target_label}")
+        for variant_label in combined_trades["variant"].unique():
+            vtrades = combined_trades[
+                (combined_trades["variant"] == variant_label)
+                & (combined_trades["target"] == target_label)
+            ]
+            losers = vtrades[vtrades["pnl_net"] <= 0]
+            if losers.empty:
+                continue
+            profitable_at_some_point = (losers["mfe_pct"] > 0).sum()
+            mfe_gt5 = (losers["mfe_pct"] > 5.0).sum()
+            mfe_gt10 = (losers["mfe_pct"] > 10.0).sum()
+            print(
+                f"    {variant_label:25s}  {len(losers):>4d} losers  |  "
+                f"{profitable_at_some_point:>3d} were +ve at peak ({profitable_at_some_point/len(losers)*100:.0f}%)  |  "
+                f"{mfe_gt5:>3d} peaked >5%  |  {mfe_gt10:>3d} peaked >10%"
+            )
 
     print(f"\nOutput saved to:")
     print(f"  {trades_path}")
@@ -271,10 +353,16 @@ def main() -> None:
         help="Backtest window (default: all)",
     )
     parser.add_argument(
-        "--profit-target",
-        type=float,
-        default=0.075,
-        help="Profit target as decimal (default: 0.075 = 7.5%%)",
+        "--targets",
+        type=str,
+        default=None,
+        help="Comma-separated profit targets as percentages (e.g. '5,7.5,10'). Default: 7.5",
+    )
+    parser.add_argument(
+        "--variants",
+        type=str,
+        default=None,
+        help=f"Comma-separated variant labels. Available: {list(VARIANT_MAP.keys())}",
     )
     parser.add_argument(
         "--stop-start",
@@ -295,11 +383,19 @@ def main() -> None:
         help="Stop sweep step percentage (default: 1.0)",
     )
     parser.add_argument("--dry-run", action="store_true", help="Print config and exit")
+    parser.add_argument(
+        "--pit",
+        action="store_true",
+        help="Use PIT (point-in-time) universe from Phase 4 corrected JSON. "
+        "Required for accurate historical backtest universe membership.",
+    )
     args = parser.parse_args()
 
     if args.dry_run:
         print("Dry run — config:")
-        print(f"  window={args.window}  profit_target={args.profit_target}")
+        print(
+            f"  window={args.window}  targets={args.targets}  variants={args.variants}"
+        )
         print(f"  stop_sweep: {args.stop_start}–{args.stop_end} step {args.stop_step}")
         return
 

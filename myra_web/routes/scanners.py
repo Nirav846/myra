@@ -914,6 +914,246 @@ register_scanner(
 )
 
 
+# ── Bottom Hunter M1 — Near-Trigger, Status Enrichment, My Positions ──────
+
+
+@router.get("/bottom-hunter-m1/near-trigger")
+def bhm1_near_trigger(
+    top_n: int = 500,
+    band_pct: float = 5.0,
+    scan_date: str = "",
+):
+    """Stocks approaching the recovery line but not yet crossed."""
+    from myra_app.strategies.bottom_hunter_m1_scanner import BottomHunterM1Scanner
+
+    date_val = scan_date.strip() if scan_date.strip() else None
+    resolved_date = _get_latest_trading_day_before(date_val) if date_val else None
+    scanner = BottomHunterM1Scanner(top_n=top_n)
+    df = scanner.scan_near_trigger(as_on_date=resolved_date, band_pct=band_pct)
+    if df.empty:
+        return {
+            "candidates": [],
+            "scanned_date": resolved_date or scanner._resolve_as_on_date(None),
+        }
+    records = json.loads(df.to_json(orient="records"))
+    return {
+        "candidates": records,
+        "scanned_date": resolved_date or scanner._resolve_as_on_date(None),
+    }
+
+
+@router.get("/bottom-hunter-m1/positions")
+def bhm1_get_positions():
+    """Return all user-entered positions with computed alert states."""
+    from myra_app.strategies.bottom_hunter_m1_state import connect_meta, load_positions
+    from myra_app.strategies.bottom_hunter_m1_scanner import BottomHunterM1Scanner
+
+    conn = connect_meta()
+    positions = load_positions(conn)
+    conn.close()
+
+    if not positions:
+        return {"positions": []}
+
+    # Get current prices for all held symbols.
+    import os
+    import sqlite3
+    from myra_app.constants import DB_DIR
+    from myra_app.librarian_core import LibrarianCore
+
+    tech_db = os.path.join(DB_DIR, LibrarianCore.DB_MAP["technical"])
+    tech_conn = sqlite3.connect(tech_db)
+
+    scanner = BottomHunterM1Scanner()
+    as_of = scanner._resolve_as_on_date(None)
+
+    # Load signal data for AVERAGE alert.
+    from myra_app.strategies.bottom_hunter_m1_state import connect_meta as cm
+
+    meta_conn = cm()
+    from myra_app.strategies.bottom_hunter_m1_state import load_cooldown
+
+    cooldown = load_cooldown(meta_conn)
+    meta_conn.close()
+
+    results = []
+    for symbol, pos in positions.items():
+        row = tech_conn.execute(
+            "SELECT close, date FROM technical_data WHERE symbol = ? AND date <= ? ORDER BY date DESC LIMIT 1",
+            (symbol, as_of),
+        ).fetchone()
+        current_price = float(row[0]) if row else None
+        current_date = row[1] if row else as_of
+
+        n_tranches = pos.get("n_tranches", 0) or 0
+        blended_basis = pos.get("blended_basis")
+        first_entry = pos.get("first_entry_date", "")
+        last_tranche = pos.get("last_tranche_date", "")
+
+        # Days held (trading days since first entry).
+        days_held = 0
+        if first_entry and current_date:
+            import pandas as pd
+
+            try:
+                d1 = pd.Timestamp(first_entry)
+                d2 = pd.Timestamp(current_date)
+                days_held = max(0, (d2 - d1).days)
+            except Exception:
+                pass
+
+        # Days remaining until 252-day cap (from last_tranche_date).
+        days_to_cap = 252
+        if last_tranche and current_date:
+            import pandas as pd
+
+            try:
+                d1 = pd.Timestamp(last_tranche)
+                d2 = pd.Timestamp(current_date)
+                # Trading days approximation: calendar days * 5/7.
+                cal_days = max(0, (d2 - d1).days)
+                trading_days = int(cal_days * 5 / 7)
+                days_to_cap = max(0, 252 - trading_days)
+            except Exception:
+                pass
+
+        # Distance to profit target.
+        target_price = None
+        pct_to_target = None
+        if blended_basis and current_price:
+            target_price = (
+                blended_basis * 1.10
+            )  # Use 10% as reference; actual target is user-configurable
+            pct_to_target = (current_price / blended_basis - 1) * 100
+
+        # Alert state computation.
+        alert = "HOLD"
+        alert_detail = ""
+        PROFIT_TARGET_PCT = 0.10  # Reference target for alerts
+        CAP_WARNING_DAYS = 20
+
+        if blended_basis and current_price:
+            target_price_actual = blended_basis * (1 + PROFIT_TARGET_PCT)
+            if current_price >= target_price_actual:
+                alert = "SELL"
+                alert_detail = f"Target ₹{target_price_actual:.2f} reached"
+
+        if alert == "HOLD" and n_tranches < 3:
+            # Check if there's a fresh crossing signal for this symbol.
+            cd = cooldown.get(symbol)
+            if cd and cd.get("signal_date"):
+                alert = "AVERAGE"
+                alert_detail = f"Signal on {cd['signal_date']}"
+
+        if alert == "HOLD" and days_to_cap <= CAP_WARNING_DAYS and days_to_cap > 0:
+            alert = "CAP APPROACHING"
+            alert_detail = f"{days_to_cap} trading days remaining"
+
+        # Delivery elevation (informational only).
+        delivery_pct = None
+        tech_row = tech_conn.execute(
+            "SELECT delivery_pct FROM technical_data WHERE symbol = ? AND date <= ? ORDER BY date DESC LIMIT 1",
+            (symbol, as_of),
+        ).fetchone()
+        if tech_row and tech_row[0] is not None:
+            try:
+                delivery_pct = round(float(tech_row[0]), 2)
+            except (ValueError, TypeError):
+                pass
+
+        results.append(
+            {
+                "symbol": symbol,
+                "first_entry_date": first_entry,
+                "last_tranche_date": last_tranche,
+                "n_tranches": n_tranches,
+                "blended_basis": round(blended_basis, 2) if blended_basis else None,
+                "tranche_prices": pos.get("tranche_prices"),
+                "current_price": round(current_price, 2) if current_price else None,
+                "days_held": days_held,
+                "days_to_cap": days_to_cap,
+                "pct_to_target": round(pct_to_target, 2)
+                if pct_to_target is not None
+                else None,
+                "alert": alert,
+                "alert_detail": alert_detail,
+                "delivery_pct": delivery_pct,
+            }
+        )
+
+    tech_conn.close()
+    return {"positions": results}
+
+
+@router.post("/bottom-hunter-m1/positions")
+def bhm1_add_position(payload: dict = Body(...)):
+    """Add or update a position (user-entered holding).
+
+    Accepts either:
+      - ``tranche_prices``: list of entry prices (e.g. [96.2, 84.2]). Server
+        computes the harmonic-mean blended basis (total invested / total shares),
+        matching the backtest engine's corrected exit-trigger formula.
+      - ``blended_basis``: a pre-computed basis (legacy, trusted as-is).
+    """
+    from myra_app.strategies.bottom_hunter_m1_state import connect_meta, upsert_position
+    from datetime import date
+
+    symbol = payload.get("symbol", "").upper().strip()
+    if not symbol:
+        raise HTTPException(status_code=400, detail="Symbol is required")
+
+    first_entry_date = payload.get("first_entry_date", "")
+    last_tranche_date = payload.get("last_tranche_date", first_entry_date)
+    n_tranches = int(payload.get("n_tranches", 1))
+    blended_basis = payload.get("blended_basis")
+    tranche_prices = payload.get("tranche_prices")
+
+    if n_tranches < 1 or n_tranches > 3:
+        raise HTTPException(status_code=400, detail="n_tranches must be 1-3")
+
+    # Validate tranche_prices if provided
+    if tranche_prices is not None:
+        if not isinstance(tranche_prices, list) or len(tranche_prices) < 1:
+            raise HTTPException(
+                status_code=400,
+                detail="tranche_prices must be a non-empty list of numbers",
+            )
+        if len(tranche_prices) > 3:
+            raise HTTPException(status_code=400, detail="tranche_prices max 3 entries")
+        try:
+            tranche_prices = [float(p) for p in tranche_prices]
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=400, detail="tranche_prices must be numeric"
+            )
+
+    conn = connect_meta()
+    upsert_position(
+        conn,
+        symbol,
+        first_entry_date=first_entry_date,
+        last_tranche_date=last_tranche_date,
+        n_tranches=n_tranches,
+        blended_basis=blended_basis,
+        updated_at=date.today().isoformat(),
+        tranche_prices=tranche_prices,
+    )
+    conn.close()
+    return {"status": "ok", "symbol": symbol}
+
+
+@router.delete("/bottom-hunter-m1/positions/{symbol}")
+def bhm1_delete_position(symbol: str):
+    """Remove a position."""
+    from myra_app.strategies.bottom_hunter_m1_state import connect_meta, delete_position
+
+    symbol = symbol.upper().strip()
+    conn = connect_meta()
+    delete_position(conn, symbol)
+    conn.close()
+    return {"status": "deleted", "symbol": symbol}
+
+
 # --- Climax Accumulation ---
 def _climax_parse(payload: dict):
     min_adtv_cr = float(payload.get("min_adtv_cr", 1.0))

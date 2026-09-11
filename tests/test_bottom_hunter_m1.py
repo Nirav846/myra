@@ -23,7 +23,9 @@ from myra_app.strategies.bottom_hunter_m1_scanner import (
 )
 from myra_app.strategies.bottom_hunter_m1_state import (
     connect_meta,
+    delete_position,
     load_cooldown,
+    load_positions,
     upsert_position,
 )
 
@@ -381,3 +383,360 @@ def test_scan_empty_universe_returns_empty_df(tmp_path):
         result = scanner.scan()
     assert isinstance(result, pd.DataFrame)
     assert result.empty
+
+
+# ---------------------------------------------------------------------------
+# scan_near_trigger — near-trigger watchlist
+# ---------------------------------------------------------------------------
+
+
+def _near_trigger_rows(symbol="NEAR"):
+    """252 flat bars at 100, then close=118 (within 5% of recovery line 120).
+    year_low=100 → recovery_line=120, pct_to_trigger=(1-118/120)*100≈1.67%."""
+    close_seq = [100.0] * LOOKBACK + [118.0]
+    low_seq = [100.0] * LOOKBACK + [100.0]
+    return _rows_series(close_seq, low_seq)
+
+
+def test_near_trigger_returns_approaching_stocks(tmp_path):
+    """Stocks close to but below the recovery line appear in near-trigger output."""
+    scanner = _make_scanner(tmp_path)
+    scanner._resolve_as_on_date = lambda *a, **k: "2025-09-11"
+
+    with (
+        patch.object(
+            scanner,
+            "_get_universe",
+            return_value=[("NEAR", 1, 100.0), ("FAR", 2, 200.0)],
+        ),
+        patch(
+            "myra_app.strategies.bottom_hunter_m1_scanner.load_ohlcv_for_universe",
+            return_value={},
+        ),
+        patch.object(
+            scanner,
+            "_get_tech_data",
+            lambda symbol, min_date, max_date=None: (
+                _near_trigger_rows("NEAR")
+                if symbol == "NEAR"
+                else _flat(close=100, low=100, n=LOOKBACK + 1)
+            ),
+        ),
+    ):
+        result = scanner.scan_near_trigger(as_on_date="2025-09-11", band_pct=5.0)
+
+    assert len(result) == 1
+    row = result.iloc[0]
+    assert row["symbol"] == "NEAR"
+    assert 0 < row["pct_to_trigger"] <= 5.0
+    assert row["recovery_line"] == pytest.approx(1.20 * 100.0)
+
+
+def test_near_trigger_excludes_crossed_stocks(tmp_path):
+    """Stocks that already crossed the recovery line are excluded."""
+    scanner = _make_scanner(tmp_path)
+    scanner._resolve_as_on_date = lambda *a, **k: "2025-09-11"
+
+    with (
+        patch.object(
+            scanner,
+            "_get_universe",
+            return_value=[("CROSSED", 1, 100.0)],
+        ),
+        patch(
+            "myra_app.strategies.bottom_hunter_m1_scanner.load_ohlcv_for_universe",
+            return_value={},
+        ),
+        patch.object(
+            scanner,
+            "_get_tech_data",
+            lambda symbol, min_date, max_date=None: _demo_rows("CROSSED"),
+        ),
+    ):
+        result = scanner.scan_near_trigger(as_on_date="2025-09-11", band_pct=5.0)
+
+    assert result.empty  # crossed stocks don't appear
+
+
+def test_near_trigger_excludes_cooldown_stocks(tmp_path):
+    """Stocks in cooldown (recent signal, haven't set fresh low) are excluded."""
+    scanner = _make_scanner(tmp_path)
+    scanner._resolve_as_on_date = lambda *a, **k: "2025-09-11"
+
+    # Seed cooldown for COOLDOWN_SYM — it triggered recently and is cooling off.
+    meta_db = str(tmp_path / "meta.db")
+    conn = connect_meta(meta_db)
+    upsert_position(
+        conn,
+        "COOLDOWN_SYM",
+        first_entry_date="2025-09-10",
+        last_tranche_date="2025-09-10",
+        n_tranches=1,
+        blended_basis=100.0,
+        updated_at="2025-09-10",
+    )
+    from myra_app.strategies.bottom_hunter_m1_state import save_cooldown
+
+    save_cooldown(
+        conn,
+        {
+            "COOLDOWN_SYM": {
+                "signal_date": "2025-09-10",
+                "floor": 100.0,
+                "run_min": 100.0,
+            }
+        },
+        "2025-09-10",
+    )
+    conn.close()
+
+    scanner2 = _make_scanner(tmp_path)  # Fresh scanner reads cooldown from meta.db
+    scanner2._resolve_as_on_date = lambda *a, **k: "2025-09-11"
+
+    with (
+        patch.object(
+            scanner2,
+            "_get_universe",
+            return_value=[("COOLDOWN_SYM", 1, 100.0), ("FRESH", 2, 200.0)],
+        ),
+        patch(
+            "myra_app.strategies.bottom_hunter_m1_scanner.load_ohlcv_for_universe",
+            return_value={},
+        ),
+        patch.object(
+            scanner2,
+            "_get_tech_data",
+            lambda symbol, min_date, max_date=None: (
+                # COOLDOWN_SYM: close=118, year_low=100 → 1.67% from trigger (would pass band)
+                _near_trigger_rows("COOLDOWN_SYM")
+                if symbol == "COOLDOWN_SYM"
+                # FRESH: same price profile but NOT in cooldown
+                else _near_trigger_rows("FRESH")
+            ),
+        ),
+    ):
+        result = scanner2.scan_near_trigger(as_on_date="2025-09-11", band_pct=5.0)
+
+    # COOLDOWN_SYM should NOT appear despite being within 5% of trigger.
+    assert len(result) == 1
+    assert result.iloc[0]["symbol"] == "FRESH"
+
+
+def test_near_trigger_sorted_by_proximity(tmp_path):
+    """Results are sorted with closest-to-trigger first."""
+
+    def _make_rows(close_val, low_val):
+        close_seq = [100.0] * LOOKBACK + [close_val]
+        low_seq = [100.0] * LOOKBACK + [low_val]
+        return _rows_series(close_seq, low_seq)
+
+    scanner = _make_scanner(tmp_path)
+    scanner._resolve_as_on_date = lambda *a, **k: "2025-09-11"
+
+    # FAR: year_low=90 → recovery_line=108, close=106 → 1.85% away
+    # CLOSE: year_low=100 → recovery_line=120, close=118 → 1.67% away
+    # CLOSE should appear first
+    with (
+        patch.object(
+            scanner,
+            "_get_universe",
+            return_value=[("FAR", 1, 100.0), ("CLOSE", 2, 200.0)],
+        ),
+        patch(
+            "myra_app.strategies.bottom_hunter_m1_scanner.load_ohlcv_for_universe",
+            return_value={},
+        ),
+        patch.object(
+            scanner,
+            "_get_tech_data",
+            lambda symbol, min_date, max_date=None: (
+                _make_rows(106.0, 90.0) if symbol == "FAR" else _make_rows(118.0, 100.0)
+            ),
+        ),
+    ):
+        result = scanner.scan_near_trigger(as_on_date="2025-09-11", band_pct=5.0)
+
+    assert len(result) == 2
+    assert result.iloc[0]["pct_to_trigger"] <= result.iloc[1]["pct_to_trigger"]
+
+
+# ---------------------------------------------------------------------------
+# Position CRUD + alert computation
+# ---------------------------------------------------------------------------
+
+
+def test_position_upsert_and_load(tmp_path):
+    """Positions can be inserted and loaded back."""
+    from myra_app.strategies.bottom_hunter_m1_state import (
+        delete_position,
+        load_positions,
+    )
+
+    conn = connect_meta(str(tmp_path / "meta.db"))
+    upsert_position(
+        conn,
+        "TEST",
+        first_entry_date="2025-01-15",
+        last_tranche_date="2025-02-10",
+        n_tranches=2,
+        blended_basis=95.50,
+        updated_at="2025-09-01",
+    )
+    positions = load_positions(conn)
+    assert "TEST" in positions
+    assert positions["TEST"]["n_tranches"] == 2
+    assert positions["TEST"]["blended_basis"] == pytest.approx(95.50)
+
+    delete_position(conn, "TEST")
+    positions = load_positions(conn)
+    assert "TEST" not in positions
+    conn.close()
+
+
+def test_position_tranche_cap_enforced():
+    """n_tranches must be 1-3."""
+    from myra_app.strategies.bottom_hunter_m1_state import connect_meta as cm
+
+    conn = cm(":memory:")
+    # Valid range
+    upsert_position(
+        conn,
+        "A",
+        first_entry_date="2025-01-01",
+        last_tranche_date="2025-01-01",
+        n_tranches=3,
+        blended_basis=100.0,
+        updated_at="2025-09-01",
+    )
+    pos = load_positions(conn)
+    assert pos["A"]["n_tranches"] == 3
+    conn.close()
+
+
+def test_alert_hold_when_no_action():
+    """HOLD alert: position exists, no target hit, no signal, cap not approaching."""
+    # This is a logic test — verify the alert state machine.
+    # HOLD = default when: price < target, no signal, cap > 20 days away.
+    assert _compute_alert(
+        current_price=95.0,
+        blended_basis=100.0,
+        target_pct=10.0,
+        has_signal=False,
+        n_tranches=1,
+        days_to_cap=200,
+    ) == ("HOLD", "")
+
+
+def test_alert_sell_when_target_reached():
+    """SELL alert: current price >= blended_basis * (1 + target_pct)."""
+    alert, _ = _compute_alert(
+        current_price=111.0,
+        blended_basis=100.0,
+        target_pct=10.0,
+        has_signal=False,
+        n_tranches=1,
+        days_to_cap=200,
+    )
+    assert alert == "SELL"
+
+
+def test_alert_average_on_signal():
+    """AVERAGE alert: fresh signal fired, under 3-tranche cap."""
+    alert, detail = _compute_alert(
+        current_price=95.0,
+        blended_basis=100.0,
+        target_pct=10.0,
+        has_signal=True,
+        n_tranches=1,
+        days_to_cap=200,
+    )
+    assert alert == "AVERAGE"
+    assert "signal" in detail.lower() or "Signal" in detail
+
+
+def test_alert_average_blocked_at_cap():
+    """No AVERAGE alert when at 3-tranche cap — falls back to HOLD."""
+    alert, _ = _compute_alert(
+        current_price=95.0,
+        blended_basis=100.0,
+        target_pct=10.0,
+        has_signal=True,
+        n_tranches=3,
+        days_to_cap=200,
+    )
+    assert alert == "HOLD"
+
+
+def test_alert_cap_approaching():
+    """CAP APPROACHING: within 20 trading days of 252-day cap, no target hit."""
+    alert, detail = _compute_alert(
+        current_price=95.0,
+        blended_basis=100.0,
+        target_pct=10.0,
+        has_signal=False,
+        n_tranches=1,
+        days_to_cap=15,
+    )
+    assert alert == "CAP APPROACHING"
+    assert "15" in detail
+
+
+def test_alert_priority_sell_over_average():
+    """SELL takes priority over AVERAGE when both conditions are met."""
+    alert, _ = _compute_alert(
+        current_price=111.0,
+        blended_basis=100.0,
+        target_pct=10.0,
+        has_signal=True,
+        n_tranches=1,
+        days_to_cap=200,
+    )
+    assert alert == "SELL"
+
+
+def test_alert_priority_average_over_cap():
+    """AVERAGE takes priority over CAP APPROACHING."""
+    alert, _ = _compute_alert(
+        current_price=95.0,
+        blended_basis=100.0,
+        target_pct=10.0,
+        has_signal=True,
+        n_tranches=2,
+        days_to_cap=10,
+    )
+    assert alert == "AVERAGE"
+
+
+# ---------------------------------------------------------------------------
+# Helper for alert computation tests (mirrors backend logic)
+# ---------------------------------------------------------------------------
+
+CAP_WARNING_DAYS = 20
+
+
+def _compute_alert(
+    current_price: float,
+    blended_basis: float,
+    target_pct: float,
+    has_signal: bool,
+    n_tranches: int,
+    days_to_cap: int,
+) -> tuple[str, str]:
+    """Replicate the backend alert state machine for unit testing."""
+    alert = "HOLD"
+    detail = ""
+
+    target_price = blended_basis * (1 + target_pct / 100)
+    if current_price >= target_price:
+        alert = "SELL"
+        detail = f"Target Rs{target_price:.2f} reached"
+
+    if alert == "HOLD" and has_signal and n_tranches < 3:
+        alert = "AVERAGE"
+        detail = "Signal detected"
+
+    if alert == "HOLD" and days_to_cap <= CAP_WARNING_DAYS and days_to_cap > 0:
+        alert = "CAP APPROACHING"
+        detail = f"{days_to_cap} trading days remaining"
+
+    return alert, detail

@@ -1189,7 +1189,8 @@ class TestKaushikAveraging:
         days = _kaushik_days(kaushik_db)
         # Signal 1 on days[253] (96.2, low floor 80). While open, a fresh
         # lower low (70 < floor) + recovery (84.2 >= 1.2*70) → signal 2 on
-        # days[295]; blended = (96.2 + 84.2) / 2; target 90.2*1.075 = 96.965.
+        # days[295]; blended = harmonic_mean(96.2, 84.2) ≈ 89.80;
+        # target 89.80*1.075 ≈ 96.54.
         closes = (
             [100.0] * 252 + [80.0, 96.2] + [90.0] * 40 + [70.0, 84.2] + [105.0] * 10
         )
@@ -1201,7 +1202,8 @@ class TestKaushikAveraging:
         assert len(res.trades) == 1
         r = res.trades.iloc[0]
         assert int(r["n_tranches"]) == 2
-        assert r["blended_basis"] == pytest.approx((96.2 + 84.2) / 2)
+        # Share-weighted (harmonic) mean: 20000 / (10000/96.2 + 10000/84.2)
+        assert r["blended_basis"] == pytest.approx(89.800887, abs=0.01)
         assert r["entry_price"] == pytest.approx(96.2)
         assert r["exit_price"] == pytest.approx(105.0)
         assert r["exit_reason"] == "pt_target_75bp"
@@ -1221,7 +1223,7 @@ class TestKaushikAveraging:
             + [60.0, 72.2]  # signal 3 (days[263]) → tranche 3
             + [60.0] * 3
             + [42.0, 50.6]  # signal 4 (days[268]) → IGNORED
-            + [200.0] * 5  # blended target 84.2*1.075 → exit days[269]
+            + [200.0] * 5  # blended target 83.05*1.075 ≈ 89.28 → exit days[269]
         )
         lows = (
             [99.0] * 252
@@ -1241,7 +1243,8 @@ class TestKaushikAveraging:
         assert len(res.trades) == 1
         r = res.trades.iloc[0]
         assert int(r["n_tranches"]) == 3
-        assert r["blended_basis"] == pytest.approx((96.2 + 84.2 + 72.2) / 3)
+        # Share-weighted: 30000 / (10000/96.2 + 10000/84.2 + 10000/72.2)
+        assert r["blended_basis"] == pytest.approx(83.052086, abs=0.01)
         assert r["exit_reason"] == "pt_target_75bp"
         assert r["exit_price"] == pytest.approx(200.0)
         assert res.summary["n_tranche_distribution"] == {3: 1}
@@ -1255,9 +1258,9 @@ class TestKaushikAveraging:
             + [80.0, 96.2]  # signal 1 on days[253] (target 103.415)
             + [60.0] * 40  # never hits target
             + [30.0, 36.2]  # signal 2 on days[295] → tranche 2 (36.2)
-            + [60.0] * 530  # still below 66.2*1.075 → cap at days[547]
+            + [50.0] * 530  # below harmonic target 52.6*1.075≈56.55 → cap at days[547]
         )
-        lows = [99.0] * 252 + [80.0, 85.0] + [58.0] * 40 + [30.0, 34.0] + [58.0] * 530
+        lows = [99.0] * 252 + [80.0, 85.0] + [58.0] * 40 + [30.0, 34.0] + [48.0] * 530
         _insert_kaushik_series(
             long_kaushik_db, "RIDER", days[: len(closes)], closes, lows
         )
@@ -1267,7 +1270,8 @@ class TestKaushikAveraging:
         assert len(res.trades) == 1
         r = res.trades.iloc[0]
         assert int(r["n_tranches"]) == 2
-        assert r["blended_basis"] == pytest.approx((96.2 + 36.2) / 2)
+        # Share-weighted: 20000 / (10000/96.2 + 10000/36.2)
+        assert r["blended_basis"] == pytest.approx(52.604834, abs=0.01)
         assert r["exit_reason"] == "pt_252d_cap"
         assert r["exit_date"] == days[547]  # 295 (last tranche) + 252
         assert int(r["n_hold_days"]) == 547 - 253
@@ -1293,7 +1297,8 @@ class TestKaushikAveraging:
         rider = res.trades[res.trades["symbol"] == "RIDER"].iloc[0]
         boat = res.trades[res.trades["symbol"] == "BOAT"].iloc[0]
         assert int(rider["n_tranches"]) == 2
-        assert rider["blended_basis"] == pytest.approx((96.2 + 84.2) / 2)
+        # Share-weighted: 20000 / (10000/96.2 + 10000/84.2)
+        assert rider["blended_basis"] == pytest.approx(89.800887, abs=0.01)
         assert int(boat["n_tranches"]) == 1
         assert boat["blended_basis"] == pytest.approx(84.2)
         assert rider["exit_reason"] == boat["exit_reason"] == "pt_target_75bp"
@@ -1351,11 +1356,11 @@ class TestComputeMaeMfe:
         assert result["mae_pct"].iloc[0] == pytest.approx(-8.0, abs=0.01)
         assert result["mfe_pct"].iloc[0] == pytest.approx(12.0, abs=0.01)
 
-    def test_multi_tranche_uses_blended_basis(self, in_mem_db):
-        """Multi-tranche trade references blended_basis, not first tranche price."""
-        # Tranche 1 at 100, tranche 2 at 80 → blended = 90.
-        # Price dips to 84 → MAE = (84/90 - 1)*100 = -6.67%, NOT (84/100 - 1)*100 = -16%.
-        # High on entry day = 101 → MFE = (101/90 - 1)*100 = 12.22%.
+    def test_multi_tranche_uses_share_weighted_basis(self, in_mem_db):
+        """Multi-tranche trade uses share-weighted (harmonic mean) basis, not arithmetic."""
+        # Tranche 1 at 100, tranche 2 at 80 → harmonic mean = 2/(1/100+1/80) = 88.89.
+        # Price dips to 84 → MAE = (84/88.89 - 1)*100 = -5.50%, NOT (84/100 - 1)*100 = -16%.
+        # High on entry day = 101 → MFE = (101/88.89 - 1)*100 = 13.62%.
         dates = ["2025-01-06", "2025-01-07", "2025-01-08"]
         closes = [100.0, 85.0, 95.0]
         highs = [101.0, 86.0, 96.0]
@@ -1383,13 +1388,14 @@ class TestComputeMaeMfe:
             ]
         )
         result = compute_mae_mfe(trades, in_mem_db)
-        # MAE from blended basis: 84/90 - 1 = -6.67%
+        # Share-weighted basis: 2 / (1/100 + 1/80) = 88.8889 (harmonic mean)
+        # MAE from share-weighted basis: 84/88.8889 - 1 = -5.50%
         assert result["mae_pct"].iloc[0] == pytest.approx(
-            (84.0 / 90.0 - 1.0) * 100.0, abs=0.01
+            (84.0 / 88.8889 - 1.0) * 100.0, abs=0.01
         )
-        # MFE from blended basis: 101/90 - 1 = 12.22% (high on entry day)
+        # MFE from share-weighted basis: 101/88.8889 - 1 = 13.62% (high on entry day)
         assert result["mfe_pct"].iloc[0] == pytest.approx(
-            (101.0 / 90.0 - 1.0) * 100.0, abs=0.01
+            (101.0 / 88.8889 - 1.0) * 100.0, abs=0.01
         )
 
     def test_empty_trades(self, in_mem_db):
@@ -1566,7 +1572,7 @@ class TestRetrospectiveStopSweep:
             assert row["losers_stopped"] == 0
 
     def test_survivor_avg_return(self):
-        """avg_return_when_not_stopped reflects only surviving trades."""
+        """avg_pnl_full_pop equals baseline when no trades are stopped."""
         trades = pd.DataFrame(
             [
                 {"pnl_net": 1000.0, "mae_pct": -2.0},  # survives 10% stop
@@ -1582,8 +1588,11 @@ class TestRetrospectiveStopSweep:
         )
         row = result.iloc[0]
         # All 3 survive (MAE -2%, -8%, -1% all > -10%)
-        # Survivors: pnl_net = [1000, -500, 300], mean = 800/3, / 10000
+        # Full-pop mean = survivor mean = (1000 - 500 + 300) / 3
         assert row["n_stopped"] == 0
-        assert row["avg_return_when_not_stopped"] == pytest.approx(
-            (1000.0 - 500.0 + 300.0) / 3 / 10000, abs=0.001
+        assert row["avg_pnl_full_pop"] == pytest.approx(
+            (1000.0 - 500.0 + 300.0) / 3, abs=0.01
+        )
+        assert row["avg_pnl_survivors"] == pytest.approx(
+            (1000.0 - 500.0 + 300.0) / 3, abs=0.01
         )

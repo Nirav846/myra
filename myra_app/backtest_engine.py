@@ -224,13 +224,15 @@ _KAUSHIK_CACHE: Optional[dict[str, dict[str, tuple[float, Optional[float]]]]] = 
 def _precompute_kaushik_events(
     conn: sqlite3.Connection,
     delivery_window: int = KAUSHIK_DELIVERY_AVG_WINDOW,
+    recovery_mult: float = KAUSHIK_RECOVERY_MULT,
 ) -> dict[str, dict[str, tuple[float, Optional[float]]]]:
     """Stream ALL technical_data rows grouped by symbol and detect signals.
 
     Per symbol:
       - year_low[i] = min(low[i-251..i])  (rolling 252-trading-day low,
         recomputed daily, requires a full 252-day window).
-      - cross[i] = close[i-1] < 1.20*year_low[i] AND close[i] >= 1.20*year_low[i]
+      - cross[i] = close[i-1] < recovery_mult*year_low[i]
+                  AND close[i] >= recovery_mult*year_low[i]
         (discrete upward crossing, NOT "currently above").
       - Cooldown: after a signal on day s (floor = year_low[s]), the symbol
         cannot signal again until year_low drops STRICTLY below `floor`
@@ -243,8 +245,9 @@ def _precompute_kaushik_events(
         Phase-2 follow-up, signal/cooldown logic is untouched by W).
     """
     global _KAUSHIK_CACHE
-    if _KAUSHIK_CACHE is not None:
-        return _KAUSHIK_CACHE
+    cache_key = (recovery_mult, delivery_window)
+    if _KAUSHIK_CACHE is not None and _KAUSHIK_CACHE.get("key") == cache_key:
+        return _KAUSHIK_CACHE["events"]
 
     from numpy.lib.stride_tricks import sliding_window_view
 
@@ -278,7 +281,7 @@ def _precompute_kaushik_events(
             .to_numpy()
         )
         # Sequential cooldown sweep.
-        threshold = KAUSHIK_RECOVERY_MULT
+        threshold = recovery_mult
         in_cd = False
         floor = np.inf
         run_min = np.inf
@@ -324,7 +327,7 @@ def _precompute_kaushik_events(
     if cur_sym is not None:
         _flush(cur_sym)
 
-    _KAUSHIK_CACHE = events
+    _KAUSHIK_CACHE = {"key": cache_key, "events": events}
     return events
 
 
@@ -355,6 +358,7 @@ class KaushikBOHMethod1:
     """
 
     requires_delivery = False
+    recovery_mult: float = KAUSHIK_RECOVERY_MULT
 
     def __init__(self, delivery_variant: bool = False):
         self.delivery_variant = delivery_variant
@@ -365,7 +369,7 @@ class KaushikBOHMethod1:
         universe: list[str],
         conn: sqlite3.Connection,
     ) -> pd.Series:
-        events = _precompute_kaushik_events(conn)
+        events = _precompute_kaushik_events(conn, recovery_mult=self.recovery_mult)
         date_ts = pd.Timestamp(date)
         date_s = f"{date_ts.year:04d}-{date_ts.month:02d}-{date_ts.day:02d}"
         day_events = events.get(date_s)
@@ -446,12 +450,31 @@ class KaushikBOHMethod1DeliveryFilter(KaushikBOHMethod1):
         return pd.Series(out, dtype=float)
 
 
+class KaushikBOHMethod2(KaushikBOHMethod1):
+    """Kaushik 'Bottom Out Hunting' Method 2 — 40% recovery off 52-week low.
+
+    Identical entry/cooldown/exit logic to Method 1, but the recovery
+    threshold is 1.40 instead of 1.20. The higher bar means fewer signals,
+    but each signal has more confirmation that the stock has genuinely
+    bottomed and is in a sustainable uptrend.
+
+    Cooldown, averaging, cap mechanics — all identical to Method 1.
+    Only the entry threshold differs.
+    """
+
+    recovery_mult: float = 1.40
+
+    def __init__(self):
+        super().__init__(delivery_variant=False)
+
+
 SIGNAL_REGISTRY: dict[str, Callable[..., SignalFunction]] = {
     "random": RandomSignal,
     "momentum": MomentumSignal,
     "kaushik_boh_m1": KaushikBOHMethod1,
     "kaushik_boh_m1_delivery": KaushikBOHMethod1Delivery,
     "kaushik_boh_m1_delivery_filter": KaushikBOHMethod1DeliveryFilter,
+    "kaushik_boh_m2": KaushikBOHMethod2,
 }
 
 
@@ -480,6 +503,9 @@ class BacktestConfig:
         False  # Kaushik real averaging: fresh signals on held symbols add tranches
     )
     max_tranches: int = 3  # per-symbol tranche cap (blended cost-basis position)
+    recovery_mult: float = (
+        KAUSHIK_RECOVERY_MULT  # entry threshold multiplier (1.20=M1, 1.40=M2)
+    )
 
 
 @dataclass
@@ -607,6 +633,7 @@ def _preload_universe_by_date(
     conn: sqlite3.Connection,
     trading_days: list[str],
     universe_seed: Optional[Iterable[str]] = None,
+    pit_universe: Optional[dict[str, list[str]]] = None,
 ) -> dict[str, list[str]]:
     """Pre-compute the eligible universe for every trading day in one pass.
 
@@ -823,6 +850,20 @@ def _preload_universe_by_date(
         if d_i < N_td:
             day_iso = trading_days[d_i]
             out[day_iso] = [s for s in out[day_iso] if s not in black_syms]
+
+    # Apply PIT universe: intersect each day's eligible set with the
+    # point-in-time top-N list for that date.  This ensures historical
+    # backtests use the correct per-date composition rather than a
+    # static snapshot.
+    if pit_universe is not None:
+        for day_iso in trading_days:
+            pit_syms = set(pit_universe.get(day_iso, []))
+            if pit_syms:
+                out[day_iso] = [s for s in out[day_iso] if s in pit_syms]
+            else:
+                # No PIT data for this date — fall back to seed/full
+                pass
+
     return out
 
 
@@ -1071,6 +1112,7 @@ def run_backtest(
     conn: sqlite3.Connection,
     config: BacktestConfig,
     seed_universe: Optional[Iterable[str]] = None,
+    pit_universe: Optional[dict[str, list[str]]] = None,
 ) -> BacktestResult:
     """Execute a backtest with the given config. Returns trades + summary.
 
@@ -1079,9 +1121,14 @@ def run_backtest(
       - symbols_master (symbol, instrument_type)
       - corporate_actions (symbol, date) — used by discontinuity script only
       - market_calendar (date, is_trading_day) — optional fallback
+
+    `pit_universe`: optional per-date PIT universe dict
+      ``{date_iso: [symbol, ...]}``.  When provided, each day's eligible
+      set is intersected with this list, giving true point-in-time
+      universe membership for historical backtests.
     """
     if config.average_in:
-        return _run_backtest_averaging(conn, config, seed_universe)
+        return _run_backtest_averaging(conn, config, seed_universe, pit_universe)
 
     start_date, end_date = _resolve_window(
         config.requires_delivery, config.start_date, config.end_date
@@ -1130,7 +1177,9 @@ def run_backtest(
     # Pre-load the per-day eligible universe in one bulk query, then look up
     # in memory during the day loop. This avoids 2,200+ repeated SQL fetches
     # (~85% of total runtime was spent in the per-day universe filter).
-    universe_by_date = _preload_universe_by_date(conn, trading_days, universe_seed=pool)
+    universe_by_date = _preload_universe_by_date(
+        conn, trading_days, universe_seed=pool, pit_universe=pit_universe
+    )
 
     # Cache ADV per (symbol, date). Recompute every 20 trading days.
     adv_cache: dict[str, float] = {}
@@ -1257,6 +1306,7 @@ def _run_backtest_averaging(
     conn: sqlite3.Connection,
     config: BacktestConfig,
     seed_universe: Optional[Iterable[str]] = None,
+    pit_universe: Optional[dict[str, list[str]]] = None,
 ) -> BacktestResult:
     """Profit-target backtest with Kaushik's real averaging mechanism.
 
@@ -1313,9 +1363,11 @@ def _run_backtest_averaging(
             summary=_empty_summary(),
         )
 
-    events = _precompute_kaushik_events(conn)
+    events = _precompute_kaushik_events(conn, recovery_mult=config.recovery_mult)
     pool = list(seed_universe) if seed_universe is not None else None
-    universe_by_date = _preload_universe_by_date(conn, trading_days, universe_seed=pool)
+    universe_by_date = _preload_universe_by_date(
+        conn, trading_days, universe_seed=pool, pit_universe=pit_universe
+    )
 
     # Lazy per-symbol (date -> close) cache: positions can stay open longer
     # than 252 days and are re-anchored, so forward slices are insufficient.
@@ -1464,7 +1516,13 @@ def _run_backtest_averaging(
             pos["tranche_prices"].append(t_price)  # noqa: PG-APPEND
             pos["tranche_adv"].append(_entry_adv(sym, day_iso))  # noqa: PG-APPEND
             pos["n_tranches"] += 1
-            pos["blended"] = sum(pos["tranche_prices"]) / pos["n_tranches"]
+            # Share-weighted blended basis: total invested / total shares.
+            # This matches the PnL formula (shares_total * close - capital).
+            # Using arithmetic mean here would inflate the exit trigger for
+            # multi-tranche trades, delaying exits and distorting PnL.
+            total_invested = POSITION_VALUE_INR * pos["n_tranches"]
+            total_shares = sum(POSITION_VALUE_INR / p for p in pos["tranche_prices"])
+            pos["blended"] = total_invested / total_shares
             pos["last_tranche_idx"] = day_idx
 
         daily_capital = (
@@ -1601,8 +1659,10 @@ def compute_mae_mfe(
     MFE (Maximum Favorable Excursion) = best unrealized return (%).
 
     For single-tranche trades the basis is entry_price.
-    For multi-tranche (averaging) trades the basis is blended_basis (simple
-    average of tranche entry prices), matching the profit-target logic.
+    For multi-tranche (averaging) trades the basis is the share-weighted
+    blended cost basis (total invested / total shares = harmonic mean of
+    tranche prices), matching both the exit trigger and PnL calculation.
+    The trade log's blended_basis column stores this same share-weighted value.
 
     Uses the existing _load_prices_window() for OHLCV reload — no new data.
     """
@@ -1627,11 +1687,22 @@ def compute_mae_mfe(
 
     for _, row in trades_df.iterrows():
         sym = row["symbol"]
-        basis = (
-            row["blended_basis"]
-            if "n_tranches" in trades_df.columns and row.get("n_tranches", 1) > 1
-            else row["entry_price"]
-        )
+        n_tr = row.get("n_tranches", 1) if "n_tranches" in trades_df.columns else 1
+        if n_tr > 1 and "tranche_prices" in trades_df.columns:
+            # Share-weighted basis: total_invested / total_shares.
+            # Each tranche invests POSITION_VALUE_INR, so:
+            #   basis = (n * POSITION_VALUE_INR) / sum(POSITION_VALUE_INR / p_i)
+            #         = n / sum(1 / p_i)   (harmonic mean)
+            try:
+                t_prices = [
+                    float(p) for p in str(row["tranche_prices"]).split("|") if p
+                ]
+                total_shares = sum(POSITION_VALUE_INR / p for p in t_prices)
+                basis = (POSITION_VALUE_INR * len(t_prices)) / total_shares
+            except (ValueError, ZeroDivisionError):
+                basis = row["entry_price"]
+        else:
+            basis = row["entry_price"]
         prices = price_cache.get(sym)
         if prices is None or pd.isna(basis) or basis <= 0:
             mae_list.append(0.0)
@@ -1663,13 +1734,26 @@ def retrospective_stop_sweep(
 ) -> pd.DataFrame:
     """Sweep fixed stop-loss levels over MAE-enriched trade log.
 
-    For each stop level s (as a positive percentage), counts trades whose
-    MAE breached -s%, and reports:
-      - n_stopped:    trades that would have been stopped out
-      - pct_stopped:  fraction of total
-      - avg_return_when_not_stopped: mean pnl_net / 10000 for survivors
-      - winners_killed: profitable trades stopped out prematurely
-      - losers_stopped: losing trades that would have been cut earlier
+    For each stop level s (as a positive percentage), evaluates the full
+    trade population under two exit rules:
+      - Non-breached trades keep their actual pnl_net.
+      - Breached trades have PnL replaced with the realized loss at the
+        stop level, approximated as:
+          stop_pnl = -POSITION_VALUE_INR * n_tranches * s / 100
+        (each tranche loses s% of its invested capital at the stop level;
+         this is exact when the stop fires at the MAE price, and a
+         close approximation when the stock gaps through the stop).
+
+    Columns:
+      - stop_pct:              the tested stop level
+      - n_stopped:             trades whose MAE breached the stop
+      - pct_stopped:           fraction of total
+      - avg_pnl_full_pop:      mean pnl across ALL trades (stopped trades
+                               replaced with stop-level loss) — directly
+                               comparable to the no-stop baseline
+      - avg_pnl_survivors:     mean pnl among non-breached trades only
+      - winners_killed:        profitable trades stopped out prematurely
+      - losers_stopped:        losing trades cut earlier
 
     Returns a DataFrame indexed by stop_pct.
     """
@@ -1679,7 +1763,8 @@ def retrospective_stop_sweep(
                 "stop_pct",
                 "n_stopped",
                 "pct_stopped",
-                "avg_return_when_not_stopped",
+                "avg_pnl_full_pop",
+                "avg_pnl_survivors",
                 "winners_killed",
                 "losers_stopped",
             ]
@@ -1687,6 +1772,13 @@ def retrospective_stop_sweep(
 
     total = len(trades_df)
     is_winner = trades_df["pnl_net"] > 0
+
+    # Pre-compute n_tranches per trade for stop-level PnL.
+    if "n_tranches" in trades_df.columns:
+        n_tr = trades_df["n_tranches"].fillna(1).astype(int).values
+    else:
+        n_tr = np.ones(total, dtype=int)
+    pnlActual = trades_df["pnl_net"].values.astype(float)
 
     rows = []
     stop_levels = []
@@ -1696,14 +1788,23 @@ def retrospective_stop_sweep(
         level += step_pct
 
     for stop in stop_levels:
-        breached = trades_df["mae_pct"] <= -stop
+        breached = trades_df["mae_pct"].values <= -stop
         n_stopped = int(breached.sum())
-        survivors = trades_df[~breached]
-        avg_ret = (
-            float(survivors["pnl_net"].mean() / POSITION_VALUE_INR)
-            if not survivors.empty
-            else 0.0
+
+        # Full-population average: stopped trades replaced with stop-level loss.
+        stop_pnl_per_trade = np.where(
+            breached,
+            -POSITION_VALUE_INR * n_tr * stop / 100.0,
+            pnlActual,
         )
+        avg_full = float(stop_pnl_per_trade.mean())
+
+        # Survivor-only average (kept for reference).
+        survivors_mask = ~breached
+        avg_surv = (
+            float(pnlActual[survivors_mask].mean()) if survivors_mask.any() else 0.0
+        )
+
         winners_killed = int((breached & is_winner).sum())
         losers_stopped = int((breached & ~is_winner).sum())
         rows.append(
@@ -1711,7 +1812,8 @@ def retrospective_stop_sweep(
                 "stop_pct": stop,
                 "n_stopped": n_stopped,
                 "pct_stopped": round(n_stopped / total * 100, 2) if total else 0.0,
-                "avg_return_when_not_stopped": round(avg_ret, 6),
+                "avg_pnl_full_pop": round(avg_full, 2),
+                "avg_pnl_survivors": round(avg_surv, 2),
                 "winners_killed": winners_killed,
                 "losers_stopped": losers_stopped,
             }

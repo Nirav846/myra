@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS {POSITIONS_TABLE} (
     last_tranche_date  TEXT,
     n_tranches         INTEGER,
     blended_basis      REAL,
+    tranche_prices     TEXT,
     updated_at         TEXT
 )
 """
@@ -169,18 +170,20 @@ def load_positions(conn: sqlite3.Connection) -> dict[str, dict]:
     """Return {symbol: position} for the user's currently held positions."""
     rows = conn.execute(
         f"SELECT symbol, first_entry_date, last_tranche_date, n_tranches, "
-        f"blended_basis FROM {POSITIONS_TABLE}"
+        f"blended_basis, tranche_prices FROM {POSITIONS_TABLE}"
     ).fetchall()
-    return {
-        r[0]: {
+    result = {}
+    for r in rows:
+        tp = r[5]
+        tranche_prices = [float(x) for x in tp.split("|")] if tp else None
+        result[r[0]] = {
             "first_entry_date": r[1],
             "last_tranche_date": r[2],
             "n_tranches": r[3] or 0,
             "blended_basis": r[4],
+            "tranche_prices": tranche_prices,
         }
-        for r in rows
-        if r[1] is not None
-    }
+    return result
 
 
 def upsert_position(
@@ -192,17 +195,36 @@ def upsert_position(
     n_tranches: int,
     blended_basis: Optional[float],
     updated_at: str,
+    tranche_prices: Optional[list[float]] = None,
 ) -> None:
-    """Create/replace one position row (user-side bookkeeping helper)."""
+    """Create/replace one position row (user-side bookkeeping helper).
+
+    If ``tranche_prices`` is provided, ``blended_basis`` is recomputed as the
+    share-weighted harmonic mean (total invested / total shares), matching the
+    backtest engine's corrected exit-trigger formula.  The caller-supplied
+    ``blended_basis`` is ignored when tranche prices are present.
+    """
+    from myra_app.backtest_engine import POSITION_VALUE_INR
+
+    if tranche_prices and len(tranche_prices) >= 1:
+        total_invested = POSITION_VALUE_INR * len(tranche_prices)
+        total_shares = sum(POSITION_VALUE_INR / p for p in tranche_prices)
+        blended_basis = round(total_invested / total_shares, 4)
+        tranche_prices_str = "|".join(f"{p:.4f}" for p in tranche_prices)
+    else:
+        tranche_prices_str = None
+
     conn.execute(
         f"INSERT INTO {POSITIONS_TABLE} "
         f"(symbol, first_entry_date, last_tranche_date, n_tranches, "
-        f"blended_basis, updated_at) VALUES (?, ?, ?, ?, ?, ?) "
+        f"blended_basis, tranche_prices, updated_at) "
+        f"VALUES (?, ?, ?, ?, ?, ?, ?) "
         f"ON CONFLICT(symbol) DO UPDATE SET "
         f"first_entry_date=excluded.first_entry_date, "
         f"last_tranche_date=excluded.last_tranche_date, "
         f"n_tranches=excluded.n_tranches, "
         f"blended_basis=excluded.blended_basis, "
+        f"tranche_prices=excluded.tranche_prices, "
         f"updated_at=excluded.updated_at",
         (
             symbol,
@@ -210,6 +232,7 @@ def upsert_position(
             last_tranche_date,
             n_tranches,
             blended_basis,
+            tranche_prices_str,
             updated_at,
         ),
     )
