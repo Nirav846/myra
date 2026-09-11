@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    # Weekly audit — Monday 06:00 UTC
+    - cron: "0 6 * * 1"
 
 permissions:
   contents: read
@@ -64,6 +67,41 @@ jobs:
 
       - name: Verify build output
         run: ls -la dist/
+
+  # ──────────────────────────────────────────────────────────────
+  # Weekly dependency audit (catches gaps in Dependabot's cadence)
+  # ──────────────────────────────────────────────────────────────
+  audit:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Run pip-audit
+        run: pip-audit --require-hashes=false --progress-spinner=off
+        continue-on-error: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: myra_web/package-lock.json
+
+      - name: Run npm audit
+        working-directory: myra_web
+        run: |
+          npm ci
+          npm audit --audit-level=moderate
+        continue-on-error: false
 
 # ──────────────────────────────────────────────────────────────
 # External deployment platforms (Vercel / Netlify / Cloudflare)

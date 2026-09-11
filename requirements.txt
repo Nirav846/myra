@@ -12,14 +12,14 @@ pytz
 PyYAML
 requests
 rich
-scikit-learn
+scikit-learn>=1.5.0
 tensorflow
 torch
 transformers
 xgboost
 yfinance
-urllib3
-python-dotenv
+urllib3>=2.7.0
+python-dotenv>=1.2.2
 fastapi>=0.100.0
 httpx>=0.27.0
 scrapling

@@ -1,0 +1,41 @@
+version: 2
+updates:
+  # npm (frontend)
+  - package-ecosystem: npm
+    directory: myra_web
+    schedule:
+      interval: daily
+    open-pull-requests-limit: 10
+    reviewers:
+      - Nirav846
+    labels:
+      - dependencies
+      - security
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    allow:
+      - dependency-type: all
+    # Auto-merge patch/minor security PRs via the scheduled audit job
+    # Major-version bumps require manual review
+
+  # pip (backend)
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: daily
+    open-pull-requests-limit: 10
+    reviewers:
+      - Nirav846
+    labels:
+      - dependencies
+      - security
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    allow:
+      - dependency-type: all
