@@ -13,6 +13,7 @@ class LibrarianSchemaMixin:
     def _migrate_meta_schema(self):
         """Auto-migrates new columns into symbols_master if they don't exist."""
         columns = {
+            "name": "TEXT",
             "source": "TEXT",
             "confidence": "REAL",
             "last_updated_sector": "TEXT",
@@ -39,6 +40,7 @@ class LibrarianSchemaMixin:
                 """
                 CREATE TABLE IF NOT EXISTS symbols_master (
                     symbol TEXT PRIMARY KEY,
+                    name TEXT,
                     first_seen TEXT,
                     last_seen TEXT,
                     in_active_universe INTEGER DEFAULT 0,
@@ -56,7 +58,7 @@ class LibrarianSchemaMixin:
                     last_fundamental_update TEXT,
                     bse_scrip_code TEXT
                 )
-            """,
+                """,
                 conn=self._meta_conn,
             )
             self._migrate_meta_schema()
