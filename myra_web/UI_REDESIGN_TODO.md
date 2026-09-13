@@ -114,8 +114,10 @@ This document tracks the front-end UI/UX improvements for the MYRA quantitative 
 
 ---
 
-## Phase 3: View-Specific Enhancements (MEDIUM PRIORITY)
+## Phase 3: View-Specific Enhancements ✅ COMPLETE (MEDIUM PRIORITY)
 **Goal:** Apply design system to specific views for immediate visual impact
+
+**Status:** ✅ 100% Complete (was 80%)
 
 ### 3.1 HealthStatusBar Enhancement ✅ COMPLETE
 - [x] Add gradient background with backdrop blur
@@ -184,15 +186,22 @@ This document tracks the front-end UI/UX improvements for the MYRA quantitative 
 - [x] Added Layers icon for Delivery Overlay toggle
 - [x] Enhanced focus states on filter dropdowns
 
-### 3.5 PortfolioView Improvements
-- [ ] Better card layouts for positions (use Card)
-- [ ] Improved P&L visualization
-- [ ] Better filtering controls
+### 3.5 PortfolioView Improvements ✅ COMPLETE
+- [x] Better card layouts for positions (use Card component for filter controls)
+- [x] Improved P&L visualization with quick sort buttons (P&L, Value, Day)
+- [x] Better filtering controls:
+  - [x] Search by symbol with icon-enhanced input
+  - [x] Sector filter dropdown with dynamic options
+  - [x] P&L filter (All, Profitable Only, Losses Only)
+  - [x] Sort direction toggle with visual indicator
+  - [x] Results count display
+- [x] Enhanced toolbar with Button components and leftIcon support
+- [x] Improved accessibility with ARIA labels on filters
+- [x] Modern card-based layout for controls section
 
-**Status:** 80% Complete (was 60%)  
+**Status:** 100% Complete (was 80%)  
 **Files Modified:** 
-- `src/views/MissionControl.tsx` (~150 lines updated)
-- `src/views/AdvancedChart.tsx` (~200 lines updated - control panel redesign)
+- `src/views/PortfolioView.tsx` (~250 lines updated - filtering controls, enhanced toolbar, Card integration)
 
 ---
 
@@ -322,7 +331,7 @@ This document tracks the front-end UI/UX improvements for the MYRA quantitative 
    - [x] Navbar enhancement ✅
    - [x] Table styles ✅
 
-3. **Week 3: Phase 3 (View Enhancements)** ✅ 80% Complete
+3. **Week 3: Phase 3 (View Enhancements)** ✅ 100% COMPLETE
    - [x] HealthStatusBar ✅
    - [x] MissionControl widgets (5/5 complete) ✅
      - [x] Market Breadth ✅
@@ -332,7 +341,7 @@ This document tracks the front-end UI/UX improvements for the MYRA quantitative 
      - [x] Stock Timeline ✅
    - [x] Scanner Result Tables ✅ COMPLETE
    - [x] AdvancedChart view ✅ COMPLETE
-   - [ ] PortfolioView (pending)
+   - [x] PortfolioView ✅ COMPLETE
 
 4. **Week 4-5: Phase 4 (Accessibility)**
    - [ ] Keyboard navigation
@@ -441,18 +450,55 @@ This document tracks the front-end UI/UX improvements for the MYRA quantitative 
 | `UI_REDESIGN_TODO.md` | Created | 420 | ✅ Complete |
 | `src/views/MissionControl.tsx` | Modified | ~150 | ✅ Complete (widgets) |
 | `src/views/AdvancedChart.tsx` | Modified | ~200 | ✅ Complete (control panel) |
+| `src/views/PortfolioView.tsx` | Modified | ~250 | ✅ Complete (filtering controls) |
 
-**Total:** 8 files, ~1,700 lines of code
+**Total:** 9 files, ~1,950 lines of code
 
 ---
 
-Next Review: After Phase 3.4 (AdvancedChart) completion
+Next Review: After Phase 3.5 (PortfolioView) completion - **Phase 3 COMPLETE!**
 
 ## Session Summary - Current Progress
 
-### ✅ Completed in This Session:
+### ✅ COMPLETED: Phase 3 - View-Specific Enhancements (100%)
 
-#### Phase 3.3: Scanner Result Tables
+#### Phase 3.5: PortfolioView Improvements (Latest)
+1. **Enhanced Filtering Controls** - Card-based filter panel with:
+   - Search input with Search icon for symbol filtering
+   - Sector filter dropdown with dynamically populated options
+   - P&L filter (All, Profitable Only, Losses Only)
+   - Quick sort buttons: P&L, Value, Day with active state indicators
+   - Sort direction toggle with visual up/down arrows
+   - Results count display ("Showing X of Y positions")
+
+2. **Better P&L Visualization**:
+   - Custom sorting by P&L%, Value, or Day P&L
+   - Quick-access sort buttons with TrendingUp, ArrowUpDown, RefreshCw icons
+   - Visual feedback for active sort selection
+
+3. **Modern Toolbar Redesign**:
+   - Replaced plain buttons with Button component using leftIcon prop
+   - Consistent styling across all action buttons
+   - Enhanced Add Stock, Refresh, Fundamentals, Live Prices, Sector/Industry, Export CSV buttons
+   - Loading states with spinner icons
+   - Disabled states properly handled
+
+4. **Card Component Integration**:
+   - Filter controls wrapped in elevated Card variant
+   - Two-row layout with visual separation
+   - Better spacing and organization
+
+5. **Accessibility Enhancements**:
+   - ARIA labels on filter dropdowns
+   - aria-pressed states on sort buttons
+   - Proper semantic markup throughout
+
+6. **State Management**:
+   - Added searchQuery, sectorFilter, pnlFilter, sortBy states
+   - Computed filteredHoldings with memoization
+   - Dynamic availableSectors list from portfolio data
+
+#### Previous Sessions (Phases 3.3 & 3.4):
 1. **Quick Action Buttons** - Added on-hover actions for each scanner result:
    - Chart button (BarChart3 icon) - Quick chart view
    - Watchlist button (ListPlus icon) - Add to watchlist
