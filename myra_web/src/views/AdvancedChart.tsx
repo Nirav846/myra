@@ -26,6 +26,7 @@ import IndicatorSettingsPanel from '../components/IndicatorSettingsPanel';
 import { createCandleIndexes, buildDateToIndexMap } from '../utils/chartCoords';
 import { IndicatorWorker } from '../workers/indicatorWorker';
 import * as Comlink from 'comlink';
+import { decimateOHLCVData } from '../utils/dataDecimator';
 
 // Lazy-load indicator modules - preloaded on mount
 const INDICATOR_KEYS = ['sma', 'rsi', 'fvg', 'swings', 'volumeProfile', 'delIntensityCore', 'instBlocks', 'delAd', 'liqVoids'];
@@ -206,9 +207,21 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
     const candleIndexes = useMemo(() => createCandleIndexes(data.length), [data.length]);
     const dateToIndex = useMemo(() => buildDateToIndexMap(dates), [dates]);
 
-    // Extract base data arrays
+    // Virtualize long data series - decimate if > 5000 candles
+    const MAX_DATA_POINTS = 2000;
+    const decimatedData = useMemo(() => {
+        if (!data || data.length <= MAX_DATA_POINTS) return data;
+        console.debug(`[DataDecimator] Downsampling ${data.length} candles to ${MAX_DATA_POINTS} for performance`);
+        return decimateOHLCVData(data, MAX_DATA_POINTS);
+    }, [data]);
+
+    // Use decimated data for all subsequent calculations
+    const renderData = decimatedData || data;
+    const renderDataLength = renderData?.length || 0;
+
+    // Extract base data arrays from potentially decimated data
     const baseData = useMemo(() => {
-        if (!data || data.length === 0) {
+        if (!renderData || renderData.length === 0) {
             return {
                 opens: [], highs: [], lows: [], closes: [], volumes: [],
                 vwap: [], deliveryFinal: [], deliveryPct: [], deliveryRatio: [],
@@ -216,40 +229,40 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
                 niftyOut: [], trendAlignment: [], volumeColors: [], deliveryColorsInverse: []
             };
         }
-        const opens = data.map(d => d.open);
-        const highs = data.map(d => d.high);
-        const lows = data.map(d => d.low);
-        const closes = data.map(d => d.close);
-        const volumes = data.map(d => {
+        const opens = renderData.map(d => d.open);
+        const highs = renderData.map(d => d.high);
+        const lows = renderData.map(d => d.low);
+        const closes = renderData.map(d => d.close);
+        const volumes = renderData.map(d => {
             const vol = d.volume_final != null ? Number(d.volume_final) : Number(d.volume);
             return isNaN(vol) ? 0 : vol;
         });
-        const vwap = data.map(d => d.vwap);
-        const deliveryFinal = data.map(d => {
+        const vwap = renderData.map(d => d.vwap);
+        const deliveryFinal = renderData.map(d => {
             const delVal = d.delivery_final ? Number(d.delivery_final) : 0;
             return isNaN(delVal) ? 0 : delVal;
         });
-        const deliveryPct = data.map((d, i) => {
+        const deliveryPct = renderData.map((d, i) => {
             if (d.delivery_pct != null && !isNaN(Number(d.delivery_pct))) return Number(d.delivery_pct);
             const delVal = deliveryFinal[i];
             const vol = Math.max(1, Number(d.volume) || 0);
             return (delVal / vol) * 100;
         });
-        const deliveryRatio = data.map(d => d.delivery_ratio);
-        const stockReturn = data.map(d => d.stock_return);
-        const volComp = data.map(d => d.volatility_compression_score);
-        const relVol = data.map(d => d.relative_volume_score);
-        const divScores = data.map(d => d.delivery_divergence_score);
-        const niftyOut = data.map(d => d.nifty_outperformance_score);
-        const trendAlignment = data.map(d => d.trend_alignment);
-        const volumeColors = data.map(d => d.close >= d.open ? '#22c55e' : '#ef4444');
-        const deliveryColorsInverse = data.map(d => d.close >= d.open ? '#ef4444' : '#22c55e');
+        const deliveryRatio = renderData.map(d => d.delivery_ratio);
+        const stockReturn = renderData.map(d => d.stock_return);
+        const volComp = renderData.map(d => d.volatility_compression_score);
+        const relVol = renderData.map(d => d.relative_volume_score);
+        const divScores = renderData.map(d => d.delivery_divergence_score);
+        const niftyOut = renderData.map(d => d.nifty_outperformance_score);
+        const trendAlignment = renderData.map(d => d.trend_alignment);
+        const volumeColors = renderData.map(d => d.close >= d.open ? '#22c55e' : '#ef4444');
+        const deliveryColorsInverse = renderData.map(d => d.close >= d.open ? '#ef4444' : '#22c55e');
         
         return {
             opens, highs, lows, closes, volumes, vwap, deliveryFinal, deliveryPct, deliveryRatio,
             stockReturn, volComp, relVol, divScores, niftyOut, trendAlignment, volumeColors, deliveryColorsInverse
         };
-    }, [data]);
+    }, [renderData]);
 
     // Heavy indicator calculations via Web Worker (with main thread fallback)
     const [workerResults, setWorkerResults] = useState<{
