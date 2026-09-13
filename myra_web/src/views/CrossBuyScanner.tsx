@@ -3,13 +3,13 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft, RefreshCw, Download, Handshake } from 'lucide-react';
 import { API_BASE } from '../config';
 import { 
-  ScannerTable, 
+  VirtualizedTable, 
   SignalBadge, 
   MiniBarCell, 
   FormatCurrency,
   type TableColumn,
   type SortState
-} from '../components/ui/ScannerTable';
+} from '../components/ui/VirtualizedTable';
 
 interface CrossBuyStock {
   symbol: string; month: string;
@@ -269,7 +269,7 @@ export default function CrossBuyScannerView() {
 
       {/* Table */}
       {data && (
-        <ScannerTable<CrossBuyStock>
+        <VirtualizedTable<CrossBuyStock>
           data={data.stocks}
           columns={columns}
           sortState={sortState}
@@ -279,6 +279,9 @@ export default function CrossBuyScannerView() {
           rowKey={(item) => item.symbol}
           enableHover={true}
           enableStripes={true}
+          containerHeight={500}
+          estimatedRowHeight={40}
+          overscan={5}
         />
       )}
 

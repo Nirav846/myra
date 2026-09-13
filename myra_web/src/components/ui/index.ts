@@ -18,6 +18,11 @@ export {
   type TableColumn,
   type SortState
 } from './ScannerTable';
+export { 
+  VirtualizedTable,
+  type TableColumn as VirtualTableColumn,
+  type SortState as VirtualSortState
+} from './VirtualizedTable';
 
 // Future exports (to be implemented):
 // export { Input, Select, Checkbox, Radio } from './Input';

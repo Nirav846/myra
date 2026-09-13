@@ -13,6 +13,7 @@
   "dependencies": {
     "@google/genai": "^1.29.0",
     "@tailwindcss/vite": "^4.1.14",
+    "@tanstack/react-virtual": "^3.14.12",
     "@types/plotly.js": "^3.0.10",
     "@types/react-plotly.js": "^2.6.4",
     "@vitejs/plugin-react": "^5.0.4",

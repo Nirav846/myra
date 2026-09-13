@@ -6,16 +6,12 @@ node_modules/
 dist/
 build/
 *.js.map
-*.tsbuildinfo
-
-# Logs and temp files
-*.log
-*.tmp
+*.ts.map
 
 # Environment
 .env
 .env.local
-.env.*
+*.env.*
 
 # Editors
 .vscode/
@@ -23,27 +19,52 @@ build/
 *.swp
 *.swo
 
-# OS
-.DS_Store
-Thumbs.db
+# Logs and temp files
+*.log
+*.tmp
 
-# Coverage
-coverage/
-htmlcov/
-.coverage
-
-# Python
+# Python (if applicable)
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
 *.so
-*.egg-info/
-.eggs/
+.coverage
+coverage/
+htmlcov/
+
+# Testing
 .mypy_cache/
 .pytest_cache/
-.tox/
-.coverage
-nosetests.xml
+.nyc_output/
+coverage/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Compression
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
 ```
