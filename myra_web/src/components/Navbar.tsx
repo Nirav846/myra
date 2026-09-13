@@ -34,6 +34,8 @@ export default function Navbar({ tabs }: NavbarProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   const [overflowCategoryKeys, setOverflowCategoryKeys] = useState<string[]>([]);
   const [dropdownFilter, setDropdownFilter] = useState('');
+  const [focusedIndex, setFocusedIndex] = useState(-1);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const grouped = useMemo(() => {
     const map: Record<string, Tab[]> = {};
@@ -77,6 +79,20 @@ export default function Navbar({ tabs }: NavbarProps) {
         setOpenDropdown(null);
         setMoreOpen(false);
         setDropdownFilter('');
+        setFocusedIndex(-1);
+      }
+      // Arrow key navigation within dropdown
+      if (openDropdown && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+        e.preventDefault();
+        const dropdown = document.querySelector('[data-nav-dropdown]');
+        if (!dropdown) return;
+        const links = Array.from(dropdown.querySelectorAll('a[href]'));
+        const currentIndex = links.findIndex(el => el === document.activeElement);
+        let nextIndex = e.key === 'ArrowDown' 
+          ? (currentIndex < links.length - 1 ? currentIndex + 1 : 0)
+          : (currentIndex > 0 ? currentIndex - 1 : links.length - 1);
+        (links[nextIndex] as HTMLElement)?.focus();
+        setFocusedIndex(nextIndex);
       }
     };
     document.addEventListener('keydown', handler);
