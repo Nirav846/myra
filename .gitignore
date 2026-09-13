@@ -1,3 +1,4 @@
+```
 # Dependencies
 node_modules/
 
@@ -6,40 +7,39 @@ dist/
 build/
 target/
 
-# Environment variables
-.env
-.env.local
-.env.*
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Python specific
+# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
+env/
 venv/
 .venv/
-.env/
+.ENV
+.ENV.*
+.python-version
+.pytest_cache/
+.mypy_cache/
+.coverage
+coverage/
 
 # Logs
 *.log
 
-# Coverage
-.coverage
-coverage/
-htmlcov/
+# Environment variables
+.env
+.env.local
+.env.*
 
-# Temporary files
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
 *.tmp
-*.temp
 
-# OS generated files
+# OS
 .DS_Store
 Thumbs.db
 
@@ -66,25 +66,4 @@ Thumbs.db
 *.tar.bz2
 *.tar.xz
 *.tar.zst
-
-# MyPy
-.mypy_cache/
-
-# PyTest
-.pytest_cache/
-
-# Gradle
-.gradle/
-
-# Compiled binary files
-*.exe
-*.dll
-*.so
-*.a
-*.out
-
-# Julia
-julia-*/
-
-# Zig
-zig*/
+```

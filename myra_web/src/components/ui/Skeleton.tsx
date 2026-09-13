@@ -16,6 +16,7 @@ interface SkeletonProps {
   animation?: 'pulse' | 'wave' | 'none';
   className?: string;
   style?: CSSProperties;
+  'aria-label'?: string;
 }
 
 export function Skeleton({
@@ -24,7 +25,8 @@ export function Skeleton({
   variant = 'rectangular',
   animation = 'pulse',
   className = '',
-  style = {}
+  style = {},
+  'aria-label': ariaLabel,
 }: SkeletonProps) {
   const baseStyles: CSSProperties = {
     width,
@@ -51,6 +53,7 @@ export function Skeleton({
       }}
       aria-hidden="true"
       role="status"
+      aria-label={ariaLabel}
     />
   );
 }
