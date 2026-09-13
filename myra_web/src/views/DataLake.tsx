@@ -2,6 +2,7 @@ import { Librarian } from '../lib/Librarian';
 import { useState, useEffect } from 'react';
 import { Copy, Check, RefreshCw, Database } from 'lucide-react';
 import { SymbolSearch } from '../components/SymbolSearch';
+import { EmptyState } from '../components/ui';
 
 export default function DataLakeView({ lib }: { lib: Librarian }) {
   const [copied, setCopied] = useState(false);
@@ -181,7 +182,18 @@ export default function DataLakeView({ lib }: { lib: Librarian }) {
             </tbody>
           </table>
           {!dataLoaded && !isRefreshing && (
-            <div className="w-full py-8 text-center text-[#888] text-xs font-mono">No data loaded or empty result sequence.</div>
+            <div className="mt-4">
+              <EmptyState 
+                variant="noResults"
+                title="No Data Found"
+                description={errorMsg || 'No data loaded or empty result sequence. Try searching for a different symbol or category.'}
+                action={{
+                  label: 'Try Another Symbol',
+                  onClick: () => setSearchQuery('RELIANCE'),
+                  variant: 'outline',
+                }}
+              />
+            </div>
           )}
         </div>
       </div>

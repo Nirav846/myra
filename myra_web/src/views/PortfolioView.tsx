@@ -7,6 +7,7 @@ import {
 import Modal from '../components/Modal';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
 import { Button, IconButton } from '../components/ui/Button';
+import { EmptyState } from '../components/ui';
 
 interface SignalDefinition {
   key: string;
@@ -777,7 +778,11 @@ export default function PortfolioView() {
   if (!data) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[#888] font-mono text-sm">No data available.</div>
+        <EmptyState 
+          variant="noData"
+          title="No Portfolio Data"
+          description="No portfolio data is currently available. Please add positions or check back later."
+        />
       </div>
     );
   }

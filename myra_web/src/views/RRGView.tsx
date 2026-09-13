@@ -3,6 +3,7 @@ import Plot from 'react-plotly.js';
 import type { Data, Layout } from 'plotly.js';
 import { RefreshCw, Loader2, AlertTriangle, ChevronUp, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { API_BASE } from '../config';
+import { EmptyState } from '../components/ui';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface IndexEntry {
@@ -492,8 +493,17 @@ export default function RRGView() {
               useResizeHandler
             />
           ) : (
-            <div className="flex items-center justify-center h-full text-[#888]">
-              No data available. Select sectors and click Refresh.
+            <div className="flex items-center justify-center h-full">
+              <EmptyState 
+                variant="noData"
+                title="No RRG Data"
+                description="Select sectors and click Refresh to generate the Relative Rotation Graph."
+                action={{
+                  label: 'Select Sectors',
+                  onClick: () => setShowSectorPanel(true),
+                  variant: 'outline',
+                }}
+              />
             </div>
           )}
         </div>
