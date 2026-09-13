@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, ReactNode } from 'react';
 import {
   RefreshCw, Play, CheckCircle, XCircle, Clock, AlertTriangle,
-  Database, HardDrive, Key, Server, StopCircle, X, ChevronRight, CalendarClock
+  Database, HardDrive, Key, Server, StopCircle, X, ChevronRight, CalendarClock,
+  Download, Dna, List, BarChart3, TrendingUp, Coins, Building2
 } from 'lucide-react';
 import { useHealthStatus } from '../hooks/useHealthStatus';
 import { API_BASE } from '../config';
@@ -59,15 +60,15 @@ interface PipelineChecks {
   [key: string]: CheckItem | Record<string, CheckItem>;
 }
 
-const TASK_META: Record<string, { name: string; key: string; duration: string; icon: string; color: string }> = {
-  daily_ingest: { name: 'Daily Ingest', key: 'daily_ingest', duration: '2-5 min', icon: '📥', color: 'cyan' },
-  enrichment: { name: 'Feature Enrichment', key: 'enrichment', duration: '5-10 min', icon: '🧬', color: 'fuchsia' },
-  etf_sync: { name: 'ETF Sync', key: 'etf_sync', duration: '1-2 min', icon: '📋', color: 'green' },
-  index_sync: { name: 'Index Sync', key: 'index_sync', duration: '1-3 min', icon: '📊', color: 'yellow' },
-  fundamentals_sync: { name: 'Fundamentals Sync', key: 'fundamentals_sync', duration: '10-20 min', icon: '📈', color: 'blue' },
-  market_cap_sync: { name: 'Market Cap Sync', key: 'market_cap_sync', duration: '3-5 min', icon: '💰', color: 'purple' },
-  shares_outstanding_sync: { name: 'Shares Refresh', key: 'shares_outstanding_sync', duration: '1-3 min', icon: '📊', color: 'cyan' },
-  institutional_sync: { name: 'Institutional Sync', key: 'institutional_sync', duration: '1-3 min', icon: '🏛️', color: 'amber' },
+const TASK_META: Record<string, { name: string; key: string; duration: string; icon: ReactNode; color: string }> = {
+  daily_ingest: { name: 'Daily Ingest', key: 'daily_ingest', duration: '2-5 min', icon: <Download size={16} />, color: 'cyan' },
+  enrichment: { name: 'Feature Enrichment', key: 'enrichment', duration: '5-10 min', icon: <Dna size={16} />, color: 'fuchsia' },
+  etf_sync: { name: 'ETF Sync', key: 'etf_sync', duration: '1-2 min', icon: <List size={16} />, color: 'green' },
+  index_sync: { name: 'Index Sync', key: 'index_sync', duration: '1-3 min', icon: <BarChart3 size={16} />, color: 'yellow' },
+  fundamentals_sync: { name: 'Fundamentals Sync', key: 'fundamentals_sync', duration: '10-20 min', icon: <TrendingUp size={16} />, color: 'blue' },
+  market_cap_sync: { name: 'Market Cap Sync', key: 'market_cap_sync', duration: '3-5 min', icon: <Coins size={16} />, color: 'purple' },
+  shares_outstanding_sync: { name: 'Shares Refresh', key: 'shares_outstanding_sync', duration: '1-3 min', icon: <BarChart3 size={16} />, color: 'cyan' },
+  institutional_sync: { name: 'Institutional Sync', key: 'institutional_sync', duration: '1-3 min', icon: <Building2 size={16} />, color: 'amber' },
 };
 
 const TASK_DEPS: Record<string, string[]> = {
