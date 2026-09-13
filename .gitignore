@@ -1,28 +1,19 @@
 # Dependencies
 node_modules/
 
-# Build artifacts
+# Build outputs
 dist/
 build/
 *.js.map
-*.ts.map
 
 # Environment
 .env
 .env.local
-.env.*
+*.env.*
 
 # Editors
 .vscode/
 .idea/
-*.swp
-*.swo
-
-# Logs
-*.log
-
-# Temp files
-*.tmp
 
 # Python
 __pycache__/
@@ -35,68 +26,69 @@ venv/
 .venv/
 pip-log.txt
 pip-delete-this-directory.txt
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
+
+# Logs
 *.log
-*.pot
-*.pyc
-*.pyo
-*.pyd
-.MF
-tags
-TAGS
-id
-*.swp
-*~
-.pytest_cache/
-.mypy_cache/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Testing
+coverage/
+htmlcov/
+.coverage
+*.cover
 .hypothesis/
+.pytest_cache/
 
-# Node.js
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-node_modules/
-jspm_packages/
-web_modules/
-libpeerconnection.log
-*.min.js
-*.min.css
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# TypeScript
-*.tsbuildinfo
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
+*~
 *.bak
+*.save
+*.old
 
-# React/Next.js
-.next/
-out/
-export/
-.next/static/chunks/
-.next/static/css/
-.next/server/
-.next/cache/
-.next/types/
-next-env.d.ts
-.next/*/
-!.next/cache/**
-*.tsx.snap
-
-# Compiled/Binary
+# Compiled and binary files
+*.o
+*.obj
 *.exe
 *.dll
 *.so
 *.a
-*.obj
 *.out
 *.class
-*.jar
-*.war
-*.ear
+
+# Compressed files
 *.zip
 *.gz
 *.tar
@@ -120,60 +112,67 @@ next-env.d.ts
 *.tar.xz
 *.tar.zst
 
-# System files
-.DS_Store
-Thumbs.db
-ehthumbs.db
-Icon?
-.CFUserTextEncoding
-.Spotlight-V100
-.Trashes
-.AppleDouble
-.LSOverride
-.DocumentRevisions-V100
-.fseventsd
-.SnapshotMetadata
-.PKCS7
-.pkcs7
-.com.apple.timemachine.donotpresent
-.com.apple.timemachine.supported
-.nfs
-.~lock.*
-*~
-*.swp
-*.swo
-*#
-.\#*
-.~*
-*~
-.swp
-.swo
-.swn
-.swp
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
 
 # Coverage
-coverage/
-htmlcov/
-.coverage*
+.coverage.*
+coverage.xml
+*.gcov
+*.lcov
 
-# Testing
-.junit
-.ijwb
-.ijws
-*.iml
-*.iws
-*.ipr
-out/
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Bower
+bower_components/
+
+# Grunt
+.grunt
+
+# Gulp
+gulp-build/
+
+# Jspm
+jspm_packages/
+
+# Webpack
+webpack-stats.json
+
+# SASS
+.sass-cache/
+
+# Yarn
+.yarn-integrity
+.yarn-cache
 
 # Gradle
 .gradle/
 build/
 
-# Target
+# Maven
 target/
 
-# Myra specific
-myra_web/dist/
-myra_web/build/
-myra_web/.next/
-myra_web/out/
+# Go
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Rust
+target/
+
+# Julia
+julia-*/
+
+# Zig
+zig*/
+
+# Temporary build artifacts
+tmp/
+temp/

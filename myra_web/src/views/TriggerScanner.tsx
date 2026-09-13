@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Star, Zap, BookOpen, ChevronRight, Info } from 'lucide-react';
+import { Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Star, Zap, BookOpen, ChevronRight, Info, ExternalLink, BarChart3, ListPlus } from 'lucide-react';
 import FundTractionButton from '../components/FundTractionButton';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
@@ -789,53 +789,81 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
                 <tbody className="divide-y divide-[#ffffff0a]">
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={14} className="px-4 py-8 text-center text-[#888]">No triggers ready — all three gates must pass simultaneously.</td>
+                      <td colSpan={15} className="px-4 py-8 text-center text-[#888]">No triggers ready — all three gates must pass simultaneously.</td>
                     </tr>
                   ) : (
                     filteredData.map((row, index) => (
-                      <tr key={row.symbol} role="row" aria-rowindex={index + 1} className="hover:bg-[#ffffff05] transition-colors">
+                      <tr key={row.symbol} role="row" aria-rowindex={index + 1} className="hover:bg-[#ffffff05] transition-colors group">
                         <td className="px-3 py-3 font-bold" role="rowheader">
                           <div className="flex items-center gap-1.5">
                             <StarButton symbol={row.symbol} size={11} />
                             <button
                               onClick={() => window.open(`/#/chart?symbol=${encodeURIComponent(row.symbol)}`, '_blank')}
-                              className="text-[#fafafa] hover:text-orange-400 inline-flex items-center gap-1 transition-colors group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50"
+                              className="text-[#fafafa] hover:text-orange-400 inline-flex items-center gap-1 transition-colors group/btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500/50"
                               aria-label={`Open chart for ${row.symbol}`}
                             >
                               {row.symbol}
-                              <ArrowUpRight size={12} className="opacity-0 group-hover:opacity-100" aria-hidden="true" />
+                              <ArrowUpRight size={12} className="opacity-0 group-hover/btn:opacity-100" aria-hidden="true" />
                             </button>
                           </div>
                         </td>
                         <td className="px-3 py-3 text-[#888] text-[12px] max-w-[120px] truncate" title={row.sector ?? ''}>{row.sector ?? '—'}</td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.market_cap_cr.toFixed(0)}</td>
                         <td className="px-3 py-3 text-right">
-                          <span className={row.float_util_pct >= 25 ? 'text-red-400' : row.float_util_pct >= 15 ? 'text-orange-400' : row.float_util_pct >= 12 ? 'text-amber-400' : 'text-[#888]'}>{row.float_util_pct.toFixed(1)}%</span>
+                          <span className={row.float_util_pct >= 25 ? 'value-negative' : row.float_util_pct >= 15 ? 'text-orange-400' : row.float_util_pct >= 12 ? 'text-amber-400' : 'text-text-tertiary'}>{row.float_util_pct.toFixed(1)}%</span>
                         </td>
                         <td className="px-3 py-3 text-right">
-                          <span className={row.gate1_score >= 80 ? 'text-green-400' : row.gate1_score >= 60 ? 'text-orange-400' : row.gate1_score >= 40 ? 'text-amber-400' : 'text-[#888]'}>{row.gate1_score.toFixed(1)}</span>
+                          <span className={row.gate1_score >= 80 ? 'value-positive' : row.gate1_score >= 60 ? 'text-warning' : row.gate1_score >= 40 ? 'text-amber-400' : 'text-text-tertiary'}>{row.gate1_score.toFixed(1)}</span>
                         </td>
                         <td className="px-3 py-3 text-right">
-                          <span className={row.avg_down_del < 35 ? 'text-green-400' : row.avg_down_del < 45 ? 'text-amber-400' : 'text-[#888]'}>{row.avg_down_del.toFixed(1)}%</span>
+                          <span className={row.avg_down_del < 35 ? 'value-positive' : row.avg_down_del < 45 ? 'text-warning' : 'text-text-tertiary'}>{row.avg_down_del.toFixed(1)}%</span>
                         </td>
                         <td className="px-3 py-3 text-right">
-                          <span className={row.gate2_score >= 80 ? 'text-green-400' : row.gate2_score >= 60 ? 'text-cyan-400' : 'text-[#888]'}>{row.gate2_score.toFixed(1)}</span>
+                          <span className={row.gate2_score >= 80 ? 'value-positive' : row.gate2_score >= 60 ? 'text-cyan-400' : 'text-text-tertiary'}>{row.gate2_score.toFixed(1)}</span>
                         </td>
                         <td className="px-3 py-3 text-right">
-                          <span className={row.gate3_score >= 80 ? 'text-green-400' : row.gate3_score >= 60 ? 'text-blue-400' : 'text-[#888]'}>{row.gate3_score.toFixed(1)}</span>
+                          <span className={row.gate3_score >= 80 ? 'value-positive' : row.gate3_score >= 60 ? 'text-blue-400' : 'text-text-tertiary'}>{row.gate3_score.toFixed(1)}</span>
                         </td>
                         <td className="px-3 py-3 text-right">
-                          <span className={(row.breakout_prox ?? 0) > 0.70 ? 'text-green-400' : (row.breakout_prox ?? 0) > 0.50 ? 'text-amber-400' : 'text-[#888]'}>{((row.breakout_prox ?? 0) * 100).toFixed(0)}%</span>
+                          <span className={(row.breakout_prox ?? 0) > 0.70 ? 'value-positive' : (row.breakout_prox ?? 0) > 0.50 ? 'text-warning' : 'text-text-tertiary'}>{((row.breakout_prox ?? 0) * 100).toFixed(0)}%</span>
                         </td>
                         <td className="px-3 py-3 text-right font-mono">
-                          <span className={`px-2 py-0.5 rounded text-[12px] font-bold border ${GRADE_COLORS[row.grade] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
+                          <span className={`px-2 py-0.5 rounded text-[12px] font-bold border ${GRADE_COLORS[row.grade] || 'bg-white/5 text-text-secondary border-white/10'}`}>
                             {row.trigger_score.toFixed(0)} · {row.grade}
                           </span>
                         </td>
-                        <td className="px-3 py-3 text-right text-[#ccc]">{row.base_duration}</td>
-                        <td className="px-3 py-3 text-right text-[#ccc]">{row.close.toFixed(2)}</td>
+                        <td className="px-3 py-3 text-right text-text-secondary numeric">{row.base_duration}</td>
+                        <td className="px-3 py-3 text-right text-text-secondary numeric">{row.close.toFixed(2)}</td>
                         <td className="px-3 py-3 text-right">
-                          <span className={row.wk52_pos < 75 ? 'text-green-400' : row.wk52_pos < 88 ? 'text-amber-400' : 'text-[#888]'}>{row.wk52_pos.toFixed(1)}%</span>
+                          <span className={row.wk52_pos < 75 ? 'value-positive' : row.wk52_pos < 88 ? 'text-warning' : 'text-text-tertiary'}>{row.wk52_pos.toFixed(1)}%</span>
+                        </td>
+                        <td className="px-3 py-3 text-right opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex items-center gap-1 justify-end">
+                            <button
+                              onClick={() => window.open(`/#/chart?symbol=${encodeURIComponent(row.symbol)}`, '_blank')}
+                              className="p-1 hover:bg-accent-indigo/20 rounded text-text-secondary hover:text-accent-indigo transition-colors"
+                              title="View Chart"
+                              aria-label={`View chart for ${row.symbol}`}
+                            >
+                              <ExternalLink size={12} />
+                            </button>
+                            <button
+                              onClick={() => {/* Watchlist action - can be wired to context */}}
+                              className="p-1 hover:bg-yellow-500/20 rounded text-text-secondary hover:text-yellow-400 transition-colors"
+                              title="Add to Watchlist"
+                              aria-label={`Add ${row.symbol} to watchlist`}
+                            >
+                              <ListPlus size={12} />
+                            </button>
+                            <button
+                              onClick={() => {/* Fund traction action */}}
+                              className="p-1 hover:bg-blue-500/20 rounded text-text-secondary hover:text-blue-400 transition-colors"
+                              title="Fund Traction"
+                              aria-label={`Show fund traction for ${row.symbol}`}
+                            >
+                              <BarChart3 size={12} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
