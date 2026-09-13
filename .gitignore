@@ -1,166 +1,24 @@
-```
-# Dependencies
-node_modules/
+# Universal gitignore - shared with all contributors
+# Local-only patterns belong in .git/info/exclude (never tracked)
 
-# Build outputs
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+env/
+ENV/
+node_modules/
 dist/
 build/
-target/
-
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-.venv/
-.ENV
-.ENV.*
-.python-version
+*.egg-info/
 .pytest_cache/
 .mypy_cache/
 .coverage
-coverage/
-
-# Logs
-*.log
-
-# Environment variables
-.env
-.env.local
-.env.*
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*.tmp
-
-# OS
+htmlcov/
+.tox/
 .DS_Store
 Thumbs.db
-
-# Compressed files
-*.zip
-*.gz
-*.tar
-*.tgz
-*.bz2
-*.xz
-*.7z
-*.rar
-*.zst
-*.lz4
-*.lzh
-*.cab
-*.arj
-*.rpm
-*.deb
-*.Z
-*.lz
-*.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
-```
-# =================================================
-#  Scratch scripts, outputs, backups
-# =================================================
-_*.py
-check_*.py
-verify_*.py
-inspect_*.py
-show_*.py
-fix_*.py
-*.backup
-*.broken
-*.recovered
-*.sc_fixed
-*.old
-trial/
-
-# External repos (never commit)
-eod2/
-eod2-*/
-BhavDesk/
-cross-fund-holdings-traction/
-
-# AI agent artifacts
-.agent/
-.agents/
-.opencode/
-.claude/
-.gemini/
-conductor/
-memory/
-superpowers/
-
-# =================================================
-#  MYRA final cleanup - scratch outputs and AI artifacts
-# =================================================
-
-# AI / agent artifacts at root
-AI_INSTRUCTIONS.md
-Auto_Agent_Help.txt
-PROJECT_RULES.md
-SKILL.md
-HELP.md
-auto_improve.md
-.bgeminiignore
-.geminiignore
-.julesrules
-Myra - Shortcut.lnk
-skills-lock.json
-opencode.json
-
-# Scratch output files at root
-*.txt
-*.csv
-*.lnk
-*.md
-!README.md
-!PROJECT_SUMMARY.md
-!requirements.txt
-!config/nse_manual_overrides.csv
-!config/ruff.toml
-
-# Subdirectories to ignore
-.backtest_scratch/
-.huggingface/
-myra_reports/
-myra_app/data/
-pkscreener_env/
-data/
-logs/
-models/
-results/
-
-# Databases
-*.db
-*.sqlite
-*.sqlite3
-myra_app/db/*.db
-myra_app/db/*.sqlite
-myra_app/db/backups/
-myra_app/db/New Text Document.txt
-myra_app/db/PKDevTools_cache.sqlite
-
-# Backup/recovery
-*.backup
-*.broken
-*.recovered
-*.sc_fixed
-
-# =================================================
-#  Final cleanup - root scratch scripts and helpers
-# =================================================
-/test_*.py
-/tools/compare_*.py
-/config/myra_sources.json
-/config/pkscreener.ini
-HELP FILES/
-PROJECT_RULES.md
+*.log
+.env
+.env.*
