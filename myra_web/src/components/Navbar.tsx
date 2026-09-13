@@ -36,6 +36,28 @@ export default function Navbar({ tabs }: NavbarProps) {
   const [dropdownFilter, setDropdownFilter] = useState('');
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Detect mobile viewport
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth <= 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Prevent body scroll when mobile menu is open
+  useEffect(() => {
+    if (mobileMenuOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [mobileMenuOpen]);
 
   const grouped = useMemo(() => {
     const map: Record<string, Tab[]> = {};
@@ -361,6 +383,66 @@ export default function Navbar({ tabs }: NavbarProps) {
 
   return (
     <nav className="navbar" role="navigation" aria-label="Main navigation">
+      {/* Mobile hamburger menu button */}
+      {isMobile && (
+        <>
+          <button
+            className={`mobile-menu-toggle${mobileMenuOpen ? ' active' : ''}`}
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={mobileMenuOpen}
+            aria-controls="mobile-nav-panel"
+          >
+            <div className="mobile-menu-icon">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+          </button>
+
+          {/* Mobile nav overlay */}
+          <div
+            className={`mobile-nav-overlay${mobileMenuOpen ? ' open' : ''}`}
+            onClick={() => setMobileMenuOpen(false)}
+            aria-hidden="true"
+          />
+
+          {/* Mobile nav panel */}
+          <div
+            id="mobile-nav-panel"
+            className={`mobile-nav-panel${mobileMenuOpen ? ' open' : ''}`}
+            role="dialog"
+            aria-label="Mobile navigation menu"
+            aria-modal="true"
+          >
+            {CATEGORY_ORDER.filter(cat => grouped[cat]).map(category => (
+              <div key={category} className="mobile-nav-section">
+                <div className="mobile-nav-section-title">
+                  {CATEGORY_LABELS[category] || category}
+                </div>
+                {grouped[category].map(tab => {
+                  const isActive = location.pathname.startsWith(tab.path);
+                  return (
+                    <NavLink
+                      key={tab.id}
+                      to={tab.path}
+                      className={`mobile-nav-item${isActive ? ' active' : ''}`}
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      <span className="mobile-nav-icon">
+                        {typeof tab.icon === 'string' ? tab.icon : null}
+                      </span>
+                      {tab.id}
+                    </NavLink>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Desktop navigation */}
       <div className="menu-container" tabIndex={0}>
         <div className="menu" ref={menuRef} style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
           {visibleKeys.map(renderCategoryContent)}
