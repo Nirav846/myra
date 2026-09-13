@@ -1,4 +1,4 @@
-import { memo, useRef, useCallback } from 'react';
+import { memo, useRef, useCallback, useEffect } from 'react';
 import Plot from 'react-plotly.js';
 import { useChartStore } from '../../store/chartStore';
 
@@ -11,33 +11,71 @@ interface PlotlyCanvasProps {
   plotRef?: React.RefObject<any | null>;
 }
 
+// Debounce helper for relayout events
+function createRelayoutDebounce() {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  let pendingData: any | null = null;
+  
+  const flush = () => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+  };
+  
+  const schedule = (data: any, callback: (data: any) => void, delayMs: number) => {
+    flush();
+    pendingData = data;
+    timeoutId = setTimeout(() => {
+      if (pendingData) {
+        callback(pendingData);
+        pendingData = null;
+      }
+      timeoutId = null;
+    }, delayMs);
+  };
+  
+  return { schedule, flush };
+}
+
 export const PlotlyCanvas = memo(({ data, layout, config, style, dates, plotRef }: PlotlyCanvasProps) => {
   const setViewport = useChartStore(state => state.setViewport);
   const setHoveredIndex = useChartStore(state => state.setHoveredIndex);
   const hoverRaf = useRef<number | null>(null);
   const lastUpdate = useRef<number>(0);
+  const relayoutDebounce = useRef(createRelayoutDebounce());
+  
+  // Cleanup debounce on unmount
+  useEffect(() => {
+    return () => {
+      relayoutDebounce.current.flush();
+    };
+  }, []);
 
   const handleRelayout = useCallback((e: any) => {
-    if (e['xaxis.range[0]'] !== undefined && e['xaxis.range[1]'] !== undefined) {
-      const from = Number(e['xaxis.range[0]']);
-      const to = Number(e['xaxis.range[1]']);
-      
-      if (isFinite(from) && isFinite(to)) {
-          const startIndex = Math.min(from, to);
-          const endIndex = Math.max(from, to);
-          setViewport({
-              startIndex,
-              endIndex,
-              startTime: dates[Math.floor(startIndex)] || null,
-              endTime: dates[Math.ceil(endIndex)] || null,
-              candleCount: endIndex - startIndex + 1,
-          });
-      } else {
+    // Debounce relayout events to prevent excessive API calls during rapid zooming/panning
+    relayoutDebounce.current.schedule(e, (debouncedData: any) => {
+      if (debouncedData['xaxis.range[0]'] !== undefined && debouncedData['xaxis.range[1]'] !== undefined) {
+        const from = Number(debouncedData['xaxis.range[0]']);
+        const to = Number(debouncedData['xaxis.range[1]']);
+        
+        if (isFinite(from) && isFinite(to)) {
+            const startIndex = Math.min(from, to);
+            const endIndex = Math.max(from, to);
+            setViewport({
+                startIndex,
+                endIndex,
+                startTime: dates[Math.floor(startIndex)] || null,
+                endTime: dates[Math.ceil(endIndex)] || null,
+                candleCount: endIndex - startIndex + 1,
+            });
+        } else {
+            setViewport(null);
+        }
+      } else if (debouncedData['xaxis.autorange']) {
           setViewport(null);
       }
-    } else if (e['xaxis.autorange']) {
-        setViewport(null);
-    }
+    }, 150); // 150ms debounce delay
   }, [setViewport, dates]);
 
   const handleHover = useCallback((e: any) => {
