@@ -3,6 +3,7 @@ import { Librarian } from '../lib/Librarian';
 import { BrainCircuit, ChevronDown, ChevronRight, Activity, Cpu, Play, SlidersHorizontal, Rocket, Tag, AlertTriangle, XCircle } from 'lucide-react';
 import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar } from 'recharts';
 import { API_BASE } from '../config';
+import { useToast } from '../components/ui/Toast';
 
 interface MLStatus {
   exists: boolean;
@@ -74,22 +75,12 @@ function isStale(dateStr: string | null | undefined): boolean {
 
 export default function MLLabView({ lib }: { lib: Librarian }) {
   const [labMode, setLabMode] = useState<'forward_return' | 'launchpad' | 'factor_importance'>('forward_return');
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
+  const toast = useToast();
   const mountedRef = useRef(true);
   const abortRefs = useRef<AbortController[]>([]);
 
   const [pipelineStatus, setPipelineStatus] = useState<PipelineStatus | null>(null);
   const [staleBannerOpen, setStaleBannerOpen] = useState(true);
-
-  const showToast = useCallback((message: string, type: 'success' | 'error') => {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToast({ message, type });
-    toastTimerRef.current = setTimeout(() => {
-      if (mountedRef.current) setToast(null);
-    }, 3000);
-  }, []);
 
   // --- FORWARD RETURN STATE ---
   const [status, setStatus] = useState<MLStatus | null>(null);
@@ -229,10 +220,10 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
         body: JSON.stringify({ features: selectedFeatures, hyperparameters: hyperparams })
       });
       if (res && res.ok) {
-        showToast('Model trained successfully', 'success');
+        toast.success('Model trained successfully');
         await fetchStatus();
-      } else { showToast('Training failed', 'error'); }
-    } catch { showToast('Training failed', 'error'); }
+      } else { toast.error('Training failed'); }
+    } catch { toast.error('Training failed'); }
     finally { if (mountedRef.current) setTraining(false); }
   };
 
@@ -244,8 +235,8 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
       if (res && res.ok) {
         const data = await res.json();
         if (mountedRef.current) setPredictions(data.predictions || []);
-      } else { showToast('Prediction failed', 'error'); }
-    } catch { showToast('Prediction failed', 'error'); }
+      } else { toast.error('Prediction failed'); }
+    } catch { toast.error('Prediction failed'); }
     finally { if (mountedRef.current) setPredicting(false); }
   };
 
@@ -263,8 +254,8 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
         } else {
           setImportance(data as FeatureImportance[]);
         }
-      } else { showToast('Importance failed', 'error'); }
-    } catch { showToast('Importance failed', 'error'); }
+      } else { toast.error('Importance failed'); }
+    } catch { toast.error('Importance failed'); }
     finally { if (mountedRef.current) setFetchingImportance(false); }
   };
 
@@ -280,8 +271,8 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
         const data = await res.json();
         showToast(`Labelling complete. ${data.labeled_count || 0} events found.`, 'success');
         await fetchLpStatus();
-      } else { showToast('Labelling failed', 'error'); }
-    } catch { showToast('Labelling failed', 'error'); }
+      } else { toast.error('Labelling failed'); }
+    } catch { toast.error('Labelling failed'); }
     finally { if (mountedRef.current) setLpLabeling(false); }
   };
 
@@ -293,10 +284,10 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
         body: JSON.stringify({ features: lpSelectedFeatures, hyperparameters: lpHyperparams })
       });
       if (res && res.ok) {
-        showToast('Launchpad model trained', 'success');
+        toast.success('Launchpad model trained');
         await fetchLpStatus();
-      } else { showToast('Training failed', 'error'); }
-    } catch { showToast('Training failed', 'error'); }
+      } else { toast.error('Training failed'); }
+    } catch { toast.error('Training failed'); }
     finally { if (mountedRef.current) setLpTraining(false); }
   };
 
@@ -317,8 +308,8 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
           }));
           setLpImportance(mapped);
         }
-      } else { showToast('Importance failed', 'error'); }
-    } catch { showToast('Importance failed', 'error'); }
+      } else { toast.error('Importance failed'); }
+    } catch { toast.error('Importance failed'); }
     finally { if (mountedRef.current) setLpFetchingImportance(false); }
   };
 
