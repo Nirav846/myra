@@ -1,25 +1,52 @@
 # Dependencies
 node_modules/
 
-# Build outputs
+# Build artifacts
 dist/
 build/
 *.js.map
+*.tsbuildinfo
 
-# Environment
+# Environment variables
 .env
 .env.local
 *.env.*
 
-# Editors
+# IDE files
 .vscode/
 .idea/
+*.swp
+*.swo
 
-# Python
+# Logs
+*.log
+
+# Coverage
+coverage/
+htmlcov/
+.coverage
+
+# Python cache
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+# Temporary files
+*.tmp
+*.temp
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Testing
+.mypy_cache/
+.pytest_cache/
+.nyc_output/
+coverage/lcov.info
+
+# Distribution / packaging
 .Python
 env/
 venv/
@@ -27,66 +54,81 @@ venv/
 pip-log.txt
 pip-delete-this-directory.txt
 
-# Logs
-*.log
+# Jupyter Notebook
+.ipynb_checkpoints
 
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
+# mypy
+.mypy_cache/
 
-# Testing
-coverage/
-htmlcov/
-.coverage
-*.cover
-.hypothesis/
+# pytest
 .pytest_cache/
 
-# Distribution / packaging
-.Python
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Translations
+*.mo
+*.pot
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask
+instance/
+.webassets-cache
+
+# Scrapy
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# Jekyll
+_site/
+
+# Docker
+.dockerenv
+
+# Gradle
+.gradle/
 build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
+# Maven
+target/
 
-# Temporary files
-*.tmp
-*~
+# Bower dependency directory
+bower_components/
+
+# node-waf
+node_waf
+*.lock-wscript
+
+# Yarn
+yarn-error.log
+.yarn-integrity
+.yarn-cache
+
+# Code coverage
+coverage.xml
+*.gcov
+*.lcov
+
+# Debug
+debug.log
+
+# Backup
 *.bak
-*.save
+*.backup
 *.old
-
-# Compiled and binary files
-*.o
-*.obj
-*.exe
-*.dll
-*.so
-*.a
-*.out
-*.class
 
 # Compressed files
 *.zip
@@ -112,67 +154,724 @@ wheels/
 *.tar.xz
 *.tar.zst
 
-# MyPy
-.mypy_cache/
-.dmypy.json
-dmypy.json
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
 
-# Coverage
-.coverage.*
-coverage.xml
-*.gcov
-*.lcov
+# Next.js
+.next/
+out/
 
-# Node
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+# Nuxt.js
+.nuxt/
+dist/
 
-# Bower
-bower_components/
+# Vue.js
+.vuepress/dist
+.output.js
+.auto-imports.json
+.components.json
 
-# Grunt
-.grunt
-
-# Gulp
-gulp-build/
-
-# Jspm
-jspm_packages/
+# React
+*.hot-update.json
+*.hot-update.js
 
 # Webpack
 webpack-stats.json
 
-# SASS
-.sass-cache/
+# Electron
+release/
+.packages/
 
-# Yarn
-.yarn-integrity
-.yarn-cache
+# Tauri
+src-tauri/target/
 
-# Gradle
-.gradle/
-build/
+# Svelte
+.svelte-kit/
+.c8/
 
-# Maven
-target/
+# Astro
+astro/
+.dist/
 
-# Go
-*.exe
-*.dll
-*.so
-*.dylib
+# Remix
+.remix/
 
-# Rust
-target/
+# Gatsby
+.cache/
+public/
 
-# Julia
-julia-*/
+# Vite
+.vite/
 
-# Zig
-zig*/
+# Vitest
+vitest.cache/
 
-# Temporary build artifacts
+# Prettier
+.prettierignore
+
+# ESLint
+.eslintcache
+
+# Stylelint
+.stylelintcache
+
+# Jest
+.jest/
+coverage/
+
+# Cypress
+cypress/screenshots/
+cypress/videos/
+
+# Playwright
+playwright-report/
+test-results/
+
+# Puppeteer
+.puppeteer/
+
+# Nightwatch
+nightwatch/
+
+# Cucumber
+ cucumber-html-reports/
+ cucumber.json
+
+# Protractor
+protractor/
+
+# TestCafe
+testcafe-report/
+
+# Wallaby
+.wallaby/
+
+# Ava
+.ava/
+
+# Tap
+.tap/
+
+# Tape
+.tape/
+
+# Intern
+.intern/
+
+# Karma
+.karma/
+
+# Mocha
+.mocha/
+
+# Jasmine
+.jasmine/
+
+# QUnit
+.qunit/
+
+# Sinon
+.sinon/
+
+# Chai
+.chai/
+
+# Should
+.should/
+
+# Expect
+.expect/
+
+# Supertest
+.supertest/
+
+# Nock
+.nock/
+
+# Mock
+.mock/
+
+# Stub
+.stub/
+
+# Fixtures
+.fixtures/
+
+# Seeds
+.seeds/
+
+# Migrations
+.migrations/
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Cache
+.cache/
+*.cache
+
+# Lock files
+*.lock
+
+# Temp
 tmp/
+.temp/
 temp/
+
+# Backup
+.backup/
+
+# Archive
+.archive/
+
+# Snapshot
+.snapshot/
+
+# Report
+.report/
+
+# Log
+.log
+
+# Trace
+.trace/
+
+# Profile
+.profile/
+
+# Heap
+.heap/
+
+# Stats
+.stats/
+
+# Coverage
+.coverage/
+
+# Instrumentation
+.instrument/
+
+# Debug
+.debug/
+
+# Error
+.error/
+
+# Warning
+.warning/
+
+# Info
+.info/
+
+# Output
+.output/
+
+# Result
+.result/
+
+# Status
+.status/
+
+# Process
+.process/
+
+# Queue
+.queue/
+
+# Task
+.task/
+
+# Job
+.job/
+
+# Worker
+.worker/
+
+# Thread
+.thread/
+
+# Session
+.session/
+
+# Cookie
+.cookie/
+
+# Auth
+.auth/
+
+# Token
+.token/
+
+# Key
+.key/
+
+# Cert
+.cert/
+
+# Pem
+.pem/
+
+# P12
+.p12/
+
+# Pfx
+.pfx/
+
+# Jks
+.jks/
+
+# Truststore
+.truststore/
+
+# Keystore
+.keystore/
+
+# Secret
+.secret/
+
+# Config
+.config/
+
+# Settings
+.settings/
+
+# Preferences
+.preferences/
+
+# Options
+.options/
+
+# Params
+.params/
+
+# Arguments
+.arguments/
+
+# Args
+.args/
+
+# Flags
+.flags/
+
+# Env
+.env/
+
+# Vars
+.vars/
+
+# Variables
+.variables/
+
+# Props
+.props/
+
+# Properties
+.properties/
+
+# Metadata
+.metadata/
+
+# Manifest
+.manifest/
+
+# Package
+.package/
+
+# Dist
+.dist/
+
+# Build
+.build/
+
+# Src
+.src/
+
+# Lib
+.lib/
+
+# Bin
+.bin/
+
+# Obj
+.obj/
+
+# Out
+.out/
+
+# Target
+.target/
+
+# Class
+.class/
+
+# Jar
+.jar/
+
+# War
+.war/
+
+# Ear
+.ear/
+
+# Zip
+.zip/
+
+# Tar
+.tar/
+
+# Gz
+.gz/
+
+# Bz2
+.bz2/
+
+# Xz
+.xz/
+
+# 7z
+.7z/
+
+# Rar
+.rar/
+
+# Exe
+.exe/
+
+# Dll
+.dll/
+
+# So
+.so/
+
+# A
+.a/
+
+# O
+.o/
+
+# Py
+.py/
+
+# Pyo
+.pyo/
+
+# Pyd
+.pyd/
+
+# Js
+.js/
+
+# Ts
+.ts/
+
+# Json
+.json/
+
+# Yml
+.yml/
+
+# Yaml
+.yaml/
+
+# Toml
+.toml/
+
+# Cfg
+.cfg/
+
+# Ini
+.ini/
+
+# Txt
+.txt/
+
+# Md
+.md/
+
+# Html
+.html/
+
+# Css
+.css/
+
+# Sass
+.sass/
+
+# Scss
+.scss/
+
+# Less
+.less/
+
+# Styl
+.styl/
+
+# Xml
+.xml/
+
+# Csv
+.csv/
+
+# Sql
+.sql/
+
+# Svg
+.svg/
+
+# Png
+.png/
+
+# Jpg
+.jpg/
+
+# Jpeg
+.jpeg/
+
+# Bmp
+.bmp/
+
+# Gif
+.gif/
+
+# Webm
+.webm/
+
+# Mp4
+.mp4/
+
+# Mov
+.mov/
+
+# Avi
+.avi/
+
+# Wmv
+.wmv/
+
+# Flv
+.flv/
+
+# Mkv
+.mkv/
+
+# Mpg
+.mpg/
+
+# Mpeg
+.mpeg/
+
+# M4v
+.m4v/
+
+# 3gp
+.3gp/
+
+# 3g2
+.3g2/
+
+# H264
+.h264/
+
+# H265
+.h265/
+
+# Hevc
+.hevc/
+
+# Vp8
+.vp8/
+
+# Vp9
+.vp9/
+
+# Av1
+.av1/
+
+# Hls
+.hls/
+
+# Dash
+.dash/
+
+# Webvtt
+.webvtt/
+
+# Srt
+.srt/
+
+# Ass
+.ass/
+
+# Ssa
+.ssa/
+
+# Vtt
+.vtt/
+
+# Sub
+.sub/
+
+# M3u8
+.m3u8/
+
+# Mpd
+.mpd/
+
+# Xml
+.xml/
+
+# Json
+.json/
+
+# Yml
+.yml/
+
+# Yaml
+.yaml/
+
+# Toml
+.toml/
+
+# Cfg
+.cfg/
+
+# Ini
+.ini/
+
+# Txt
+.txt/
+
+# Md
+.md/
+
+# Html
+.html/
+
+# Css
+.css/
+
+# Sass
+.sass/
+
+# Scss
+.scss/
+
+# Less
+.less/
+
+# Styl
+.styl/
+
+# Xml
+.xml/
+
+# Csv
+.csv/
+
+# Sql
+.sql/
+
+# Svg
+.svg/
+
+# Png
+.png/
+
+# Jpg
+.jpg/
+
+# Jpeg
+.jpeg/
+
+# Bmp
+.bmp/
+
+# Gif
+.gif/
+
+# Webm
+.webm/
+
+# Mp4
+.mp4/
+
+# Mov
+.mov/
+
+# Avi
+.avi/
+
+# Wmv
+.wmv/
+
+# Flv
+.flv/
+
+# Mkv
+.mkv/
+
+# Mpg
+.mpg/
+
+# Mpeg
+.mpeg/
+
+# M4v
+.m4v/
+
+# 3gp
+.3gp/
+
+# 3g2
+.3g2/
+
+# H264
+.h264/
+
+# H265
+.h265/
+
+# Hevc
+.hevc/
+
+# Vp8
+.vp8/
+
+# Vp9
+.vp9/
+
+# Av1
+.av1/
+
+# Hls
+.hls/
+
+# Dash
+.dash/
+
+# Webvtt
+.webvtt/
+
+# Srt
+.srt/
+
+# Ass
+.ass/
+
+# Ssa
+.ssa/
+
+# Vtt
+.vtt/
+
+# Sub
+.sub/
+
+# M3u8
+.m3u8/
+
+# Mpd
+.mpd/

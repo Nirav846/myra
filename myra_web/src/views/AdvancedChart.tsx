@@ -6,11 +6,12 @@ import { ChartSidebar } from '../components/chart/ChartSidebar';
 import CrosshairOverlay from '../components/chart/CrosshairOverlay';
 import type { CrosshairOverlayHandle } from '../components/chart/CrosshairOverlay';
 import { createPortal } from 'react-dom';
-import { X, BarChart2, Settings2, Crosshair } from 'lucide-react';
+import { X, BarChart2, Settings2, Crosshair, ZoomIn, ZoomOut, RefreshCw, Layers } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { SymbolSearch } from '../components/SymbolSearch';
 import { useSettings } from '../lib/SettingsContext';
 import { useCrosshair } from '../hooks/useCrosshair';
+import { Button, ButtonGroup, IconButton } from '../components/ui/Button';
 
 // Removed static import of aggregateData, using worker instead
 import { useChartStore } from '../store/chartStore';
@@ -1572,115 +1573,182 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
               </div>
           )}
 
-          {/* Controls Bar */}
-          <div className="flex items-start lg:items-center justify-start gap-4 mb-2 flex-col lg:flex-row flex-wrap">
+          {/* Controls Bar - Redesigned with ButtonGroup */}
+          <div className="flex flex-col gap-3 mb-4">
+              {/* Top Row: Symbol Management & Filters */}
               <div className="flex flex-wrap items-center gap-3">
                   {!sidebarOpen && (
-                      <button 
+                      <IconButton 
                          onClick={() => setSidebarOpen(true)}
-                         className="bg-[#1a1c24] border border-[#ffffff1a] p-1.5 rounded text-[#888] hover:text-white transition-all shadow-sm hover:bg-[#2a2c34]"
+                         variant="ghost"
+                         size="sm"
                          title="Open Settings Panel"
+                         aria-label="Open indicator settings sidebar"
                       >
                          <Settings2 size={16} />
-                      </button>
+                      </IconButton>
                   )}
-                  <div className="flex flex-wrap gap-2">
-                      {symbols.map(sym => (
-                         <div key={sym} className="flex items-center gap-1 bg-cyan-500/10 text-cyan-400 text-[12px] px-2 py-1 rounded border border-cyan-500/20 font-mono font-bold">
-                            {sym}
-                            <button onClick={() => removeSymbol(sym)} className="hover:text-white"><X size={10} /></button>
-                         </div>
-                      ))}
-                  </div>
+                  
+                  {/* Active Symbols */}
+                  {symbols.length > 0 && (
+                      <ButtonGroup>
+                          {symbols.map(sym => (
+                             <div key={sym} className="flex items-center gap-1 bg-cyan-500/10 text-cyan-400 text-[12px] px-2 py-1 rounded border border-cyan-500/20 font-mono font-bold">
+                                {sym}
+                                <button 
+                                    onClick={() => removeSymbol(sym)} 
+                                    className="hover:text-white transition-colors"
+                                    aria-label={`Remove ${sym}`}
+                                >
+                                    <X size={10} />
+                                </button>
+                             </div>
+                          ))}
+                      </ButtonGroup>
+                  )}
+                  
+                  {/* Filters */}
                   {symbols.length < 4 && (
-                      <div className="flex items-center gap-2">
-                            <div className="flex items-center gap-2">
-                               <select 
-                                   value={indexFilter} 
-                                   onChange={e => setIndexFilter(e.target.value)}
-                                   className="bg-[#0e1117] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#ccc] font-mono outline-none uppercase transition-colors"
-                               >
-                                   <option value="All">Index Filter: All</option>
-                                   {availableIndices.map(idx => (
-                                       <option key={idx} value={idx}>{idx}</option>
-                                   ))}
-                               </select>
-                               <select 
-                                   value={sectorFilter} 
-                                   onChange={e => setSectorFilter(e.target.value)}
-                                   className="bg-[#0e1117] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#ccc] font-mono outline-none uppercase transition-colors"
-                               >
-                                   <option value="All">Sector Filter: All</option>
-                                   {availableSectors.map(sec => (
-                                       <option key={sec} value={sec}>{sec}</option>
-                                   ))}
-                               </select>
-                               <select 
-                                   value={mcapFilter} 
-                                   onChange={e => setMcapFilter(e.target.value)}
-                                   className="bg-[#0e1117] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#ccc] font-mono outline-none uppercase transition-colors"
-                               >
-                                   <option value="All">Market Cap: All</option>
-                                   <option value="Large Cap (N50)">Large Cap (N50)</option>
-                                   <option value="Large Cap (N100)">Large Cap (N100)</option>
-                                   <option value="Broader Market (N500)">Broader Market (N500)</option>
-                                   <option value="Nifty Small Cap 250">Nifty Small Cap 250</option>
-                                   <option value="Deep Frontier">Deep Frontier</option>
-                               </select>
-                            </div>
-                        <div className="w-48">
-                          <SymbolSearch 
-                              lib={lib}
-                              onSymbolSelect={(sym) => {
-                                  if (sym && !symbols.includes(sym)) {
-                                      if (scrollEnabled) setSymbols([sym]);
-                                      else setSymbols(prev => [...prev, sym]);
-                                  }
-                              }}
-                              placeholder="Add symbol..."
-                              clearOnSelect={!scrollEnabled}
-                              filterSymbols={filteredSymbolsSet}
-                          />
-                        </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                          <select 
+                              value={indexFilter} 
+                              onChange={e => setIndexFilter(e.target.value)}
+                              className="bg-[#0e1117] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#ccc] font-mono outline-none uppercase transition-colors hover:border-[#ffffff33] focus:border-cyan-500/50"
+                              aria-label="Filter by index"
+                          >
+                              <option value="All">Index: All</option>
+                              {availableIndices.map(idx => (
+                                  <option key={idx} value={idx}>{idx}</option>
+                              ))}
+                          </select>
+                          
+                          <select 
+                              value={sectorFilter} 
+                              onChange={e => setSectorFilter(e.target.value)}
+                              className="bg-[#0e1117] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#ccc] font-mono outline-none uppercase transition-colors hover:border-[#ffffff33] focus:border-cyan-500/50"
+                              aria-label="Filter by sector"
+                          >
+                              <option value="All">Sector: All</option>
+                              {availableSectors.map(sec => (
+                                  <option key={sec} value={sec}>{sec}</option>
+                              ))}
+                          </select>
+                          
+                          <select 
+                              value={mcapFilter} 
+                              onChange={e => setMcapFilter(e.target.value)}
+                              className="bg-[#0e1117] border border-[#ffffff1a] rounded px-2 py-1.5 text-xs text-[#ccc] font-mono outline-none uppercase transition-colors hover:border-[#ffffff33] focus:border-cyan-500/50"
+                              aria-label="Filter by market cap"
+                          >
+                              <option value="All">Market Cap: All</option>
+                              <option value="Large Cap (N50)">Large Cap (N50)</option>
+                              <option value="Large Cap (N100)">Large Cap (N100)</option>
+                              <option value="Broader Market (N500)">Broader Market (N500)</option>
+                              <option value="Nifty Small Cap 250">Nifty Small Cap 250</option>
+                              <option value="Deep Frontier">Deep Frontier</option>
+                          </select>
+                          
+                          <div className="w-48">
+                            <SymbolSearch 
+                                lib={lib}
+                                onSymbolSelect={(sym) => {
+                                    if (sym && !symbols.includes(sym)) {
+                                        if (scrollEnabled) setSymbols([sym]);
+                                        else setSymbols(prev => [...prev, sym]);
+                                    }
+                                }}
+                                placeholder="Add symbol..."
+                                clearOnSelect={!scrollEnabled}
+                                filterSymbols={filteredSymbolsSet}
+                            />
+                          </div>
                       </div>
                   )}
               </div>
 
-              <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-1 bg-[#1a1c24] p-0.5 rounded border border-[#ffffff1a]">
+              {/* Bottom Row: Range, Tools & Actions */}
+              <div className="flex flex-wrap items-center gap-3">
+                  {/* Range Selector */}
+                  <ButtonGroup orientation="horizontal">
                       {(['1M', '3M', '6M', '1Y', 'All'] as const).map(r => (
-                         <button 
+                         <Button
                            key={r} 
                            onClick={() => setRange(r)} 
-                           className={`px-2 py-1 text-[12px] rounded font-mono transition-colors ${range === r ? 'bg-cyan-500/20 text-cyan-400' : 'text-[#888] hover:bg-[#ffffff1a]'}`}
-                         >{r}</button>
+                           variant={range === r ? 'primary' : 'ghost'}
+                           size="sm"
+                           className={`font-mono text-[11px] ${range === r ? '' : 'text-[#888] hover:text-white'}`}
+                         >
+                            {r}
+                         </Button>
                       ))}
-                  </div>
+                  </ButtonGroup>
                   
+                  <div className="h-6 w-px bg-[#ffffff1a]" />
+                  
+                  {/* Quick Toggles */}
                   <label className="flex items-center gap-2 cursor-pointer group">
                       <input 
                           type="checkbox" 
                           checked={scrollEnabled} 
                           onChange={e => setScrollEnabled(e.target.checked)} 
-                          className="accent-cyan-500 w-3 h-3 m-0" 
+                          className="accent-cyan-500 w-3.5 h-3.5 m-0 rounded border-[#ffffff33] bg-transparent focus:ring-0" 
                       />
                       <span className="text-[12px] font-mono text-[#888] group-hover:text-white transition-colors">Fast Scroll</span>
                   </label>
-                  <button
+                  
+                  <Button
                       onClick={() => setCrosshairEnabled(prev => !prev)}
-                      className={`flex items-center gap-1.5 text-[12px] font-mono px-2 py-1 rounded transition-colors border ${crosshairEnabled ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30' : 'bg-[#1a1c24] text-[#888] border-[#ffffff1a] hover:text-white'}`}
-                      title="Toggle Crosshair"
+                      variant={crosshairEnabled ? 'primary' : 'outline'}
+                      size="sm"
+                      leftIcon={<Crosshair size={12} />}
+                      className="font-mono text-[11px]"
+                      aria-pressed={crosshairEnabled}
+                      aria-label="Toggle crosshair tool"
                   >
-                      <Crosshair size={12} />
                       Crosshair
-                  </button>
-                  <button
+                  </Button>
+                  
+                  <Button
                       onClick={() => setShowDeliveryOverlay(prev => !prev)}
-                      className={`flex items-center gap-1.5 text-[12px] font-mono px-2 py-1 rounded transition-colors border ${showDeliveryOverlay ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30' : 'bg-[#1a1c24] text-[#888] border-[#ffffff1a] hover:text-white'}`}
-                      title="Toggle Delivery Divergence Overlay"
+                      variant={showDeliveryOverlay ? 'primary' : 'outline'}
+                      size="sm"
+                      leftIcon={<Layers size={12} />}
+                      className="font-mono text-[11px]"
+                      aria-pressed={showDeliveryOverlay}
+                      aria-label="Toggle delivery divergence overlay"
                   >
                       Delivery Overlay
-                  </button>
+                  </Button>
+                  
+                  <div className="flex-1" />
+                  
+                  {/* View Actions */}
+                  <ButtonGroup orientation="horizontal">
+                      <IconButton
+                          variant="ghost"
+                          size="sm"
+                          title="Zoom In"
+                          aria-label="Zoom in chart"
+                      >
+                          <ZoomIn size={14} />
+                      </IconButton>
+                      <IconButton
+                          variant="ghost"
+                          size="sm"
+                          title="Zoom Out"
+                          aria-label="Zoom out chart"
+                      >
+                          <ZoomOut size={14} />
+                      </IconButton>
+                      <IconButton
+                          variant="ghost"
+                          size="sm"
+                          title="Reset View"
+                          aria-label="Reset chart view"
+                      >
+                          <RefreshCw size={14} />
+                      </IconButton>
+                  </ButtonGroup>
               </div>
           </div>
           
