@@ -6,6 +6,16 @@
 export { Card, CardHeader, CardTitle, CardContent, CardFooter } from './Card';
 export { Button, IconButton, ButtonGroup } from './Button';
 export { Skeleton, TableSkeleton, CardSkeleton, WidgetSkeleton } from './Skeleton';
+export { 
+  ScannerTable, 
+  PositiveNegativeCell, 
+  SignalBadge, 
+  MiniBarCell, 
+  FormatInt, 
+  FormatCurrency,
+  type TableColumn,
+  type SortState
+} from './ScannerTable';
 
 // Future exports (to be implemented):
 // export { Input, Select, Checkbox, Radio } from './Input';
