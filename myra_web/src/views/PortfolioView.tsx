@@ -1,7 +1,12 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { API_BASE } from '../config';
-import { TrendingUp, Plus, Edit, Trash2, X, Check, Loader2, AlertTriangle } from 'lucide-react';
+import { 
+  TrendingUp, TrendingDown, Plus, Edit, Trash2, X, Check, Loader2, AlertTriangle,
+  Filter, Search, ArrowUpDown, Eye, EyeOff, Download, RefreshCw, BarChart3, Factory
+} from 'lucide-react';
 import Modal from '../components/Modal';
+import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
+import { Button, IconButton } from '../components/ui/Button';
 
 interface SignalDefinition {
   key: string;
@@ -311,6 +316,12 @@ export default function PortfolioView() {
   const [showIndustry, setShowIndustry] = useState(false);
   const [industryLoading, setIndustryLoading] = useState(false);
   
+  // Filtering and search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sectorFilter, setSectorFilter] = useState<string>('all');
+  const [pnlFilter, setPnlFilter] = useState<'all' | 'positive' | 'negative'>('all');
+  const [sortBy, setSortBy] = useState<'pnl' | 'value' | 'day'>('pnl');
+  
   const fetchBenchmark = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/portfolio/benchmark`);
@@ -545,21 +556,62 @@ export default function PortfolioView() {
     }
   };
 
-  const sortedHoldings = useMemo(() => {
+  // Filter holdings based on search and filters
+  const filteredHoldings = useMemo(() => {
     if (!data?.holdings) return [];
-    const arr = [...data.holdings];
-    arr.sort((a, b) => {
-      let va: any = (a as any)[sortKey];
-      let vb: any = (b as any)[sortKey];
-      if (va == null) va = -Infinity;
-      if (vb == null) vb = -Infinity;
-      if (typeof va === 'string') {
-        return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+    return data.holdings.filter(h => {
+      // Search filter
+      if (searchQuery && !h.symbol.toLowerCase().includes(searchQuery.toLowerCase())) {
+        return false;
       }
-      return sortDir === 'asc' ? va - vb : vb - va;
+      // Sector filter
+      if (sectorFilter !== 'all' && h.sector !== sectorFilter) {
+        return false;
+      }
+      // P&L filter
+      if (pnlFilter === 'positive' && h.overall_pnl_pct < 0) {
+        return false;
+      }
+      if (pnlFilter === 'negative' && h.overall_pnl_pct >= 0) {
+        return false;
+      }
+      return true;
     });
+  }, [data, searchQuery, sectorFilter, pnlFilter]);
+
+  const sortedHoldings = useMemo(() => {
+    if (!filteredHoldings.length) return [];
+    const arr = [...filteredHoldings];
+    
+    // Custom sorting based on sortBy state
+    if (sortBy === 'pnl') {
+      arr.sort((a, b) => sortDir === 'asc' ? a.overall_pnl_pct - b.overall_pnl_pct : b.overall_pnl_pct - a.overall_pnl_pct);
+    } else if (sortBy === 'value') {
+      arr.sort((a, b) => sortDir === 'asc' ? a.current_value - b.current_value : b.current_value - a.current_value);
+    } else if (sortBy === 'day') {
+      arr.sort((a, b) => sortDir === 'asc' ? a.day_pnl_pct - b.day_pnl_pct : b.day_pnl_pct - a.day_pnl_pct);
+    } else {
+      // Default column-based sorting
+      arr.sort((a, b) => {
+        let va: any = (a as any)[sortKey];
+        let vb: any = (b as any)[sortKey];
+        if (va == null) va = -Infinity;
+        if (vb == null) vb = -Infinity;
+        if (typeof va === 'string') {
+          return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+        }
+        return sortDir === 'asc' ? va - vb : vb - va;
+      });
+    }
     return arr;
-  }, [data, sortKey, sortDir]);
+  }, [filteredHoldings, sortBy, sortDir, sortKey]);
+
+  // Get unique sectors for filter dropdown
+  const availableSectors = useMemo(() => {
+    if (!data?.holdings) return [];
+    const sectors = new Set(data.holdings.map(h => h.sector).filter(Boolean));
+    return Array.from(sectors).sort();
+  }, [data]);
 
   const sortIndicator = (key: string) => {
     if (sortKey !== key) return ' \u2195';
@@ -952,113 +1004,205 @@ export default function PortfolioView() {
         </div>
       )}
 
-      {/* ── Toolbar ── */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="px-3 py-1 text-[12px] rounded font-mono transition-colors bg-emerald-600 text-white hover:bg-emerald-700 flex items-center gap-1"
-        >
-          <Plus size={14} /> Add Stock
-        </button>
-        <button
-          onClick={handleRefresh}
-          disabled={refreshing}
-          className="px-3 py-1 text-[12px] rounded font-mono transition-colors bg-[#ffffff0a] text-[#888] hover:text-white disabled:opacity-50"
-        >
-          {refreshing ? '\u23F3 Refreshing...' : '\u27F3 Refresh'}
-        </button>
-        <button
-          onClick={() => setShowFundamentals(!showFundamentals)}
-          className={`px-3 py-1 text-[12px] rounded font-mono transition-colors ${
-            showFundamentals ? 'bg-blue-600 text-white' : 'bg-[#ffffff0a] text-[#888] hover:text-white'
-          }`}
-        >
-          {'\uD83D\uDCCA'} Fundamentals {showFundamentals ? 'ON' : 'OFF'}
-        </button>
-        <button
-          onClick={() => {
-            if (showLivePrices) {
-              setShowLivePrices(false);
-              setTimeout(() => fetchLivePrices(), 50);
-            } else {
-              fetchLivePrices();
-            }
-          }}
-          disabled={liveLoading}
-          className={`px-3 py-1 text-[12px] rounded font-mono transition-colors disabled:opacity-50 ${
-            showLivePrices ? 'bg-green-600 text-white' : 'bg-[#ffffff0a] text-[#888] hover:text-white'
-          }`}
-        >
-          {liveLoading ? '\u23F3 Loading...' : showLivePrices ? '\uD83D\uDCE1 Live ON' : '\uD83D\uDCE1 Live Prices'}
-        </button>
-        <button
-          onClick={async () => {
-            if (!showIndustry) {
-              const hasData = data.holdings.some(h => h.industry);
-              if (!hasData) {
-                setIndustryLoading(true);
-                try {
-                  await fetch(`${API_BASE}/portfolio/refresh-industry`, { method: 'POST' });
-                  await fetchPortfolio();
-                } finally {
-                  setIndustryLoading(false);
+      {/* ── Enhanced Filtering Controls ── */}
+      <Card variant="elevated" padding="md">
+        <div className="flex flex-col gap-3">
+          {/* First row: Search and primary filters */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative flex-1 min-w-[200px] max-w-md">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#888]" />
+              <input
+                type="text"
+                placeholder="Search by symbol..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-1.5 text-[12px] rounded bg-[#0e1117] border border-[#ffffff1a] text-[#fafafa] placeholder-[#888] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              />
+            </div>
+            
+            <select
+              value={sectorFilter}
+              onChange={(e) => setSectorFilter(e.target.value)}
+              className="px-3 py-1.5 text-[12px] rounded bg-[#0e1117] border border-[#ffffff1a] text-[#fafafa] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              aria-label="Filter by sector"
+            >
+              <option value="all">All Sectors</option>
+              {availableSectors.map(sector => (
+                <option key={sector} value={sector}>{sector}</option>
+              ))}
+            </select>
+            
+            <select
+              value={pnlFilter}
+              onChange={(e) => setPnlFilter(e.target.value as 'all' | 'positive' | 'negative')}
+              className="px-3 py-1.5 text-[12px] rounded bg-[#0e1117] border border-[#ffffff1a] text-[#fafafa] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              aria-label="Filter by P&L"
+            >
+              <option value="all">All P&L</option>
+              <option value="positive">Profitable Only</option>
+              <option value="negative">Losses Only</option>
+            </select>
+            
+            <div className="flex items-center gap-1 ml-auto">
+              <span className="text-[12px] text-[#888] font-mono">Sort by:</span>
+              <Button
+                variant={sortBy === 'pnl' ? 'primary' : 'ghost'}
+                size="sm"
+                onClick={() => { setSortBy('pnl'); setSortDir('desc'); }}
+                aria-pressed={sortBy === 'pnl'}
+              >
+                <TrendingUp size={12} className="mr-1" />
+                P&L
+              </Button>
+              <Button
+                variant={sortBy === 'value' ? 'primary' : 'ghost'}
+                size="sm"
+                onClick={() => { setSortBy('value'); setSortDir('desc'); }}
+                aria-pressed={sortBy === 'value'}
+              >
+                <ArrowUpDown size={12} className="mr-1" />
+                Value
+              </Button>
+              <Button
+                variant={sortBy === 'day' ? 'primary' : 'ghost'}
+                size="sm"
+                onClick={() => { setSortBy('day'); setSortDir('desc'); }}
+                aria-pressed={sortBy === 'day'}
+              >
+                <RefreshCw size={12} className="mr-1" />
+                Day
+              </Button>
+              <IconButton
+                variant="ghost"
+                size="sm"
+                onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+                aria-label={`Sort ${sortDir === 'asc' ? 'descending' : 'ascending'}`}
+              >
+                {sortDir === 'asc' ? '↑' : '↓'}
+              </IconButton>
+            </div>
+          </div>
+          
+          {/* Second row: Action buttons */}
+          <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-[#ffffff0a]">
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setShowAddModal(true)}
+              leftIcon={<Plus size={14} />}
+            >
+              Add Stock
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              leftIcon={refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            >
+              {refreshing ? 'Refreshing...' : 'Refresh'}
+            </Button>
+            <Button
+              variant={showFundamentals ? 'primary' : 'ghost'}
+              size="sm"
+              onClick={() => setShowFundamentals(!showFundamentals)}
+              leftIcon={<BarChart3 size={14} />}
+            >
+              Fundamentals {showFundamentals ? 'ON' : 'OFF'}
+            </Button>
+            <Button
+              variant={showLivePrices ? 'primary' : 'outline'}
+              size="sm"
+              onClick={() => {
+                if (showLivePrices) {
+                  setShowLivePrices(false);
+                  setTimeout(() => fetchLivePrices(), 50);
+                } else {
+                  fetchLivePrices();
                 }
-              }
-            }
-            setShowIndustry(!showIndustry);
-          }}
-          disabled={industryLoading}
-          className={`px-3 py-1 text-[12px] rounded font-mono transition-colors ${
-            showIndustry ? 'bg-purple-600 text-white' : 'bg-[#ffffff0a] text-[#888] hover:text-white'
-          }`}
-        >
-          {industryLoading ? '⏳ Loading...' : showIndustry ? '🏭 Industry' : '🏭 Sector'}
-        </button>
-        <button
-          onClick={() => {
-            const headers = ['Symbol','Qty','Avg','LTP','Live','Value','P&L%','Day%','Del%','vsSMA50%','Sector'];
-            if (showFundamentals) {
-              headers.push('Stars','OpMgn%','FCFY%','Prmtr%','CurRatio','MktCap','P/E');
-            }
-            const csvRows = [headers];
-            for (const h of sortedHoldings) {
-              const live = showLivePrices && livePrices[h.symbol];
-              const ltpVal = live ? livePrices[h.symbol].ltp : h.ltp;
-              const row = [
-                h.symbol, String(h.net_qty), String(h.avg_price),
-                ltpVal != null ? String(ltpVal) : '',
-                live ? 'Y' : 'N',
-                String(h.current_value), String(h.overall_pnl_pct),
-                String(h.day_pnl_pct),
-                h.delivery_pct != null ? String(h.delivery_pct) : '',
-                h.vs_sma50_pct != null ? String(h.vs_sma50_pct) : '',
-                h.sector,
-              ];
-              if (showFundamentals) {
-                row.push(
-                  h.morningstar_rating != null ? String(h.morningstar_rating) : '',
-                  h.operating_margin != null ? String(h.operating_margin) : '',
-                  h.free_cash_flow_yield != null ? String(h.free_cash_flow_yield) : '',
-                  h.promoter_holding != null ? String(h.promoter_holding) : '',
-                  h.current_ratio != null ? String(h.current_ratio) : '',
-                  h.market_cap != null ? String(h.market_cap) : '',
-                  h.pe != null ? String(h.pe) : '',
-                );
-              }
-              csvRows.push(row);
-            }
-            const csv = csvRows.map(r => r.join(',')).join('\n');
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url; a.download = `portfolio_${new Date().toISOString().slice(0,10)}.csv`; a.click();
-            URL.revokeObjectURL(url);
-          }}
-          className="px-3 py-1 text-[12px] rounded font-mono transition-colors bg-[#ffffff0a] text-[#888] hover:text-white"
-        >
-          {'\uD83D\uDCCB'} Export CSV
-        </button>
-      </div>
+              }}
+              disabled={liveLoading}
+              leftIcon={liveLoading ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
+            >
+              {liveLoading ? 'Loading...' : showLivePrices ? 'Live ON' : 'Live Prices'}
+            </Button>
+            <Button
+              variant={showIndustry ? 'primary' : 'ghost'}
+              size="sm"
+              onClick={async () => {
+                if (!showIndustry) {
+                  const hasData = data.holdings.some(h => h.industry);
+                  if (!hasData) {
+                    setIndustryLoading(true);
+                    try {
+                      await fetch(`${API_BASE}/portfolio/refresh-industry`, { method: 'POST' });
+                      await fetchPortfolio();
+                    } finally {
+                      setIndustryLoading(false);
+                    }
+                  }
+                }
+                setShowIndustry(!showIndustry);
+              }}
+              disabled={industryLoading}
+              leftIcon={<Factory size={14} />}
+            >
+              {industryLoading ? 'Loading...' : showIndustry ? 'Industry' : 'Sector'}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                const headers = ['Symbol','Qty','Avg','LTP','Live','Value','P&L%','Day%','Del%','vsSMA50%','Sector'];
+                if (showFundamentals) {
+                  headers.push('Stars','OpMgn%','FCFY%','Prmtr%','CurRatio','MktCap','P/E');
+                }
+                const csvRows = [headers];
+                for (const h of sortedHoldings) {
+                  const live = showLivePrices && livePrices[h.symbol];
+                  const ltpVal = live ? livePrices[h.symbol].ltp : h.ltp;
+                  const row = [
+                    h.symbol, String(h.net_qty), String(h.avg_price),
+                    ltpVal != null ? String(ltpVal) : '',
+                    live ? 'Y' : 'N',
+                    String(h.current_value), String(h.overall_pnl_pct),
+                    String(h.day_pnl_pct),
+                    h.delivery_pct != null ? String(h.delivery_pct) : '',
+                    h.vs_sma50_pct != null ? String(h.vs_sma50_pct) : '',
+                    h.sector,
+                  ];
+                  if (showFundamentals) {
+                    row.push(
+                      h.morningstar_rating != null ? String(h.morningstar_rating) : '',
+                      h.operating_margin != null ? String(h.operating_margin) : '',
+                      h.free_cash_flow_yield != null ? String(h.free_cash_flow_yield) : '',
+                      h.promoter_holding != null ? String(h.promoter_holding) : '',
+                      h.current_ratio != null ? String(h.current_ratio) : '',
+                      h.market_cap != null ? String(h.market_cap) : '',
+                      h.pe != null ? String(h.pe) : '',
+                    );
+                  }
+                  csvRows.push(row);
+                }
+                const csv = csvRows.map(r => r.join(',')).join('\n');
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = `portfolio_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+                URL.revokeObjectURL(url);
+              }}
+              leftIcon={<Download size={14} />}
+            >
+              Export CSV
+            </Button>
+            
+            {/* Results count */}
+            <span className="text-[12px] text-[#888] font-mono ml-auto">
+              Showing {sortedHoldings.length} of {data?.holdings?.length || 0} positions
+            </span>
+          </div>
+        </div>
+      </Card>
 
       {/* ── Live Price Disclaimer ── */}
       {showLivePrices && (

@@ -7,12 +7,12 @@ build/
 *.js.map
 *.tsbuildinfo
 
-# Environment variables
+# Environment
 .env
 .env.local
-*.env.*
+.env.*
 
-# IDE files
+# Editors
 .vscode/
 .idea/
 *.swp
@@ -21,857 +21,204 @@ build/
 # Logs
 *.log
 
-# Coverage
-coverage/
-htmlcov/
-.coverage
-
-# Python cache
+# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-
-# Temporary files
-*.tmp
-*.temp
-
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# Testing
-.mypy_cache/
-.pytest_cache/
-.nyc_output/
-coverage/lcov.info
-
-# Distribution / packaging
 .Python
 env/
 venv/
 .venv/
 pip-log.txt
 pip-delete-this-directory.txt
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# mypy
-.mypy_cache/
-
-# pytest
-.pytest_cache/
-
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
-
-# Translations
-*.mo
-*.pot
-
-# Django
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-
-# Flask
-instance/
-.webassets-cache
-
-# Scrapy
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-target/
-
-# Jekyll
-_site/
-
-# Docker
-.dockerenv
-
-# Gradle
-.gradle/
-build/
-
-# Maven
-target/
-
-# Bower dependency directory
-bower_components/
-
-# node-waf
-node_waf
-*.lock-wscript
-
-# Yarn
-yarn-error.log
-.yarn-integrity
-.yarn-cache
-
-# Code coverage
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
 coverage.xml
-*.gcov
-*.lcov
+*.cover
+*.log
+.git/
+.mypy_cache/
+.pytest_cache/
+.hypothesis/
 
-# Debug
-debug.log
+# Temporary files
+*.tmp
+*.temp
+*~
+.DS_Store
+Thumbs.db
 
-# Backup
-*.bak
-*.backup
-*.old
+# Generated documentation
+docs/_build/
+docs/build/
 
-# Compressed files
-*.zip
-*.gz
-*.tar
-*.tgz
-*.bz2
-*.xz
-*.7z
-*.rar
-*.zst
-*.lz4
-*.lzh
-*.cab
-*.arj
-*.rpm
-*.deb
-*.Z
-*.lz
-*.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
+# Distribution / packaging
+.Python
+_build/
+buck-out/
+build/
+dist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.hypothesis/
+.coverage
+htmlcov/
+.cov/
+coverage.xml
+*.log
+*.tmp
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+node_modules/
+dist
+build
+.nyc_output
+coverage
+.nyc-output
 
 # TypeScript
+node_modules/
+dist
+build
+.nyc_output
+coverage
 *.tsbuildinfo
-next-env.d.ts
+.next
+out
+.nuxt
 
-# Next.js
+# React/Next.js
+node_modules/
+.next
+out
+build
+public/dist
+coverage
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 .next/
 out/
-
-# Nuxt.js
-.nuxt/
-dist/
-
-# Vue.js
-.vuepress/dist
-.output.js
-.auto-imports.json
-.components.json
-
-# React
-*.hot-update.json
-*.hot-update.js
-
-# Webpack
-webpack-stats.json
-
-# Electron
-release/
-.packages/
-
-# Tauri
-src-tauri/target/
-
-# Svelte
+.nft.json
+.vercel
 .svelte-kit/
-.c8/
-
-# Astro
-astro/
-.dist/
-
-# Remix
-.remix/
-
-# Gatsby
-.cache/
-public/
-
-# Vite
-.vite/
-
-# Vitest
-vitest.cache/
-
-# Prettier
-.prettierignore
-
-# ESLint
-.eslintcache
-
-# Stylelint
-.stylelintcache
-
-# Jest
-.jest/
+.c8
 coverage/
 
-# Cypress
-cypress/screenshots/
-cypress/videos/
-
-# Playwright
-playwright-report/
-test-results/
-
-# Puppeteer
-.puppeteer/
-
-# Nightwatch
-nightwatch/
-
-# Cucumber
- cucumber-html-reports/
- cucumber.json
-
-# Protractor
-protractor/
-
-# TestCafe
-testcafe-report/
-
-# Wallaby
-.wallaby/
-
-# Ava
-.ava/
-
-# Tap
-.tap/
-
-# Tape
-.tape/
-
-# Intern
-.intern/
-
-# Karma
-.karma/
-
-# Mocha
-.mocha/
-
-# Jasmine
-.jasmine/
-
-# QUnit
-.qunit/
-
-# Sinon
-.sinon/
-
-# Chai
-.chai/
-
-# Should
-.should/
-
-# Expect
-.expect/
-
-# Supertest
-.supertest/
-
-# Nock
-.nock/
-
-# Mock
-.mock/
-
-# Stub
-.stub/
-
-# Fixtures
-.fixtures/
-
-# Seeds
-.seeds/
-
-# Migrations
-.migrations/
-
-# Database
-*.db
-*.db-shm
-*.db-wal
-
-# Cache
-.cache/
-*.cache
-
-# Lock files
-*.lock
-
-# Temp
-tmp/
-.temp/
-temp/
-
-# Backup
-.backup/
-
-# Archive
-.archive/
-
-# Snapshot
-.snapshot/
-
-# Report
-.report/
-
-# Log
-.log
-
-# Trace
-.trace/
-
-# Profile
-.profile/
-
-# Heap
-.heap/
-
-# Stats
-.stats/
-
-# Coverage
-.coverage/
-
-# Instrumentation
-.instrument/
-
-# Debug
-.debug/
-
-# Error
-.error/
-
-# Warning
-.warning/
-
-# Info
-.info/
-
-# Output
-.output/
-
-# Result
-.result/
-
-# Status
-.status/
-
-# Process
-.process/
-
-# Queue
-.queue/
-
-# Task
-.task/
-
-# Job
-.job/
-
-# Worker
-.worker/
-
-# Thread
-.thread/
-
-# Session
-.session/
-
-# Cookie
-.cookie/
-
-# Auth
-.auth/
-
-# Token
-.token/
-
-# Key
-.key/
-
-# Cert
-.cert/
-
-# Pem
-.pem/
-
-# P12
-.p12/
-
-# Pfx
-.pfx/
-
-# Jks
-.jks/
-
-# Truststore
-.truststore/
-
-# Keystore
-.keystore/
-
-# Secret
-.secret/
-
-# Config
-.config/
-
-# Settings
-.settings/
-
-# Preferences
-.preferences/
-
-# Options
-.options/
-
-# Params
-.params/
-
-# Arguments
-.arguments/
-
-# Args
-.args/
-
-# Flags
-.flags/
-
-# Env
-.env/
-
-# Vars
-.vars/
-
-# Variables
-.variables/
-
-# Props
-.props/
-
-# Properties
-.properties/
-
-# Metadata
-.metadata/
-
-# Manifest
-.manifest/
-
-# Package
-.package/
-
-# Dist
-.dist/
-
-# Build
-.build/
-
-# Src
-.src/
-
-# Lib
-.lib/
-
-# Bin
-.bin/
-
-# Obj
-.obj/
-
-# Out
-.out/
-
-# Target
-.target/
-
-# Class
-.class/
-
-# Jar
-.jar/
-
-# War
-.war/
-
-# Ear
-.ear/
-
-# Zip
-.zip/
-
-# Tar
-.tar/
-
-# Gz
-.gz/
-
-# Bz2
-.bz2/
-
-# Xz
-.xz/
-
-# 7z
-.7z/
-
-# Rar
-.rar/
-
-# Exe
-.exe/
-
-# Dll
-.dll/
-
-# So
-.so/
-
-# A
-.a/
-
-# O
-.o/
-
-# Py
-.py/
-
-# Pyo
-.pyo/
-
-# Pyd
-.pyd/
-
-# Js
-.js/
-
-# Ts
-.ts/
-
-# Json
-.json/
-
-# Yml
-.yml/
-
-# Yaml
-.yaml/
-
-# Toml
-.toml/
-
-# Cfg
-.cfg/
-
-# Ini
-.ini/
-
-# Txt
-.txt/
-
-# Md
-.md/
-
-# Html
-.html/
-
-# Css
-.css/
-
-# Sass
-.sass/
-
-# Scss
-.scss/
-
-# Less
-.less/
-
-# Styl
-.styl/
-
-# Xml
-.xml/
-
-# Csv
-.csv/
-
-# Sql
-.sql/
-
-# Svg
-.svg/
-
-# Png
-.png/
-
-# Jpg
-.jpg/
-
-# Jpeg
-.jpeg/
-
-# Bmp
-.bmp/
-
-# Gif
-.gif/
-
-# Webm
-.webm/
-
-# Mp4
-.mp4/
-
-# Mov
-.mov/
-
-# Avi
-.avi/
-
-# Wmv
-.wmv/
-
-# Flv
-.flv/
-
-# Mkv
-.mkv/
-
-# Mpg
-.mpg/
-
-# Mpeg
-.mpeg/
-
-# M4v
-.m4v/
-
-# 3gp
-.3gp/
-
-# 3g2
-.3g2/
-
-# H264
-.h264/
-
-# H265
-.h265/
-
-# Hevc
-.hevc/
-
-# Vp8
-.vp8/
-
-# Vp9
-.vp9/
-
-# Av1
-.av1/
-
-# Hls
-.hls/
-
-# Dash
-.dash/
-
-# Webvtt
-.webvtt/
-
-# Srt
-.srt/
-
-# Ass
-.ass/
-
-# Ssa
-.ssa/
-
-# Vtt
-.vtt/
-
-# Sub
-.sub/
-
-# M3u8
-.m3u8/
-
-# Mpd
-.mpd/
-
-# Xml
-.xml/
-
-# Json
-.json/
-
-# Yml
-.yml/
-
-# Yaml
-.yaml/
-
-# Toml
-.toml/
-
-# Cfg
-.cfg/
-
-# Ini
-.ini/
-
-# Txt
-.txt/
-
-# Md
-.md/
-
-# Html
-.html/
-
-# Css
-.css/
-
-# Sass
-.sass/
-
-# Scss
-.scss/
-
-# Less
-.less/
-
-# Styl
-.styl/
-
-# Xml
-.xml/
-
-# Csv
-.csv/
-
-# Sql
-.sql/
-
-# Svg
-.svg/
-
-# Png
-.png/
-
-# Jpg
-.jpg/
-
-# Jpeg
-.jpeg/
-
-# Bmp
-.bmp/
-
-# Gif
-.gif/
-
-# Webm
-.webm/
-
-# Mp4
-.mp4/
-
-# Mov
-.mov/
-
-# Avi
-.avi/
-
-# Wmv
-.wmv/
-
-# Flv
-.flv/
-
-# Mkv
-.mkv/
-
-# Mpg
-.mpg/
-
-# Mpeg
-.mpeg/
-
-# M4v
-.m4v/
-
-# 3gp
-.3gp/
-
-# 3g2
-.3g2/
-
-# H264
-.h264/
-
-# H265
-.h265/
-
-# Hevc
-.hevc/
-
-# Vp8
-.vp8/
-
-# Vp9
-.vp9/
-
-# Av1
-.av1/
-
-# Hls
-.hls/
-
-# Dash
-.dash/
-
-# Webvtt
-.webvtt/
-
-# Srt
-.srt/
-
-# Ass
-.ass/
-
-# Ssa
-.ssa/
-
-# Vtt
-.vtt/
-
-# Sub
-.sub/
-
-# M3u8
-.m3u8/
-
-# Mpd
-.mpd/
+# Webpack
+node_modules/
+webpack-stats.json
+*.js.map
+*.mjs.map
+*.css.map
+
+# Vite
+node_modules/
+dist
+.cache
+.vite
+coverage/
+
+# General
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Icon?
+.directory
+.fseventsd
+.Spotlight-V100
+.Trashes
+DocumentRevisions-V100
+com.apple.timemachine.donotpresent
+AppleDouble
+LSOverride
+Icon
+._*
+.SHLF
+.VolumeIcon.icns
+.com.apple.timemachine.supported
+.Metadata
+.localized
+TemporaryItems
+Trashes
+*.nib
+*.plist
+*.sublime-workspace
+*.tmproj
+nbproject/
+nbbuild/
+nbdist/
+.nb-gradle/
+*.swp
+*.swo
+*~
+*.tmp
+*.temp
+*.log
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Icon?
+.directory
+.fseventsd
+.Spotlight-V100
+.Trashes
+DocumentRevisions-V100
+com.apple.timemachine.donotpresent
+AppleDouble
+LSOverride
+Icon
+._*
+.SHLF
+.VolumeIcon.icns
+.com.apple.timemachine.supported
+.Metadata
+.localized
+TemporaryItems
+Trashes
+*.nib
+*.plist
+*.sublime-workspace
+*.tmproj
+nbproject/
+nbbuild/
+nbdist/
+.nb-gradle/
+*.swp
+*.swo
+*~
+*.tmp
+*.temp
+*.log
