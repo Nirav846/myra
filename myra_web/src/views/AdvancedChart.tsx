@@ -148,38 +148,54 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
     const candleIndexes = useMemo(() => createCandleIndexes(data.length), [data.length]);
     const dateToIndex = useMemo(() => buildDateToIndexMap(dates), [dates]);
 
-    const indicators = useMemo(() => {
+    // Extract base data arrays
+    const baseData = useMemo(() => {
+        if (!data || data.length === 0) {
+            return {
+                opens: [], highs: [], lows: [], closes: [], volumes: [],
+                vwap: [], deliveryFinal: [], deliveryPct: [], deliveryRatio: [],
+                stockReturn: [], volComp: [], relVol: [], divScores: [],
+                niftyOut: [], trendAlignment: [], volumeColors: [], deliveryColorsInverse: []
+            };
+        }
         const opens = data.map(d => d.open);
         const highs = data.map(d => d.high);
         const lows = data.map(d => d.low);
         const closes = data.map(d => d.close);
-    const volumes = data.map(d => {
-        const vol = d.volume_final != null ? Number(d.volume_final) : Number(d.volume);
-        return isNaN(vol) ? 0 : vol;
-    });
-    
-    const vwap = data.map(d => d.vwap);
-    const deliveryFinal = data.map(d => {
-        const delVal = d.delivery_final ? Number(d.delivery_final) : 0;
-        return isNaN(delVal) ? 0 : delVal;
-    });
-    const deliveryPct = data.map((d, i) => {
-        if (d.delivery_pct != null && !isNaN(Number(d.delivery_pct))) return Number(d.delivery_pct);
-        const delVal = deliveryFinal[i];
-        const vol = Math.max(1, Number(d.volume) || 0);
-        return (delVal / vol) * 100;
-    });
-    const deliveryRatio = data.map(d => d.delivery_ratio);
-    const stockReturn = data.map(d => d.stock_return);
-    const volComp = data.map(d => d.volatility_compression_score);
-    const relVol = data.map(d => d.relative_volume_score);
-    const divScores = data.map(d => d.delivery_divergence_score);
-    const niftyOut = data.map(d => d.nifty_outperformance_score);
-    const trendAlignment = data.map(d => d.trend_alignment);
-    const volumeColors = data.map(d => d.close >= d.open ? '#22c55e' : '#ef4444');
+        const volumes = data.map(d => {
+            const vol = d.volume_final != null ? Number(d.volume_final) : Number(d.volume);
+            return isNaN(vol) ? 0 : vol;
+        });
+        const vwap = data.map(d => d.vwap);
+        const deliveryFinal = data.map(d => {
+            const delVal = d.delivery_final ? Number(d.delivery_final) : 0;
+            return isNaN(delVal) ? 0 : delVal;
+        });
+        const deliveryPct = data.map((d, i) => {
+            if (d.delivery_pct != null && !isNaN(Number(d.delivery_pct))) return Number(d.delivery_pct);
+            const delVal = deliveryFinal[i];
+            const vol = Math.max(1, Number(d.volume) || 0);
+            return (delVal / vol) * 100;
+        });
+        const deliveryRatio = data.map(d => d.delivery_ratio);
+        const stockReturn = data.map(d => d.stock_return);
+        const volComp = data.map(d => d.volatility_compression_score);
+        const relVol = data.map(d => d.relative_volume_score);
+        const divScores = data.map(d => d.delivery_divergence_score);
+        const niftyOut = data.map(d => d.nifty_outperformance_score);
+        const trendAlignment = data.map(d => d.trend_alignment);
+        const volumeColors = data.map(d => d.close >= d.open ? '#22c55e' : '#ef4444');
+        const deliveryColorsInverse = data.map(d => d.close >= d.open ? '#ef4444' : '#22c55e');
+        
+        return {
+            opens, highs, lows, closes, volumes, vwap, deliveryFinal, deliveryPct, deliveryRatio,
+            stockReturn, volComp, relVol, divScores, niftyOut, trendAlignment, volumeColors, deliveryColorsInverse
+        };
+    }, [data]);
 
-    // Delivery-Weighted OBV: cumulative add of delivery on up days, subtract on down days
-    const deliveryObv = (() => {
+    // Delivery-Weighted OBV
+    const deliveryObv = useMemo(() => {
+        if (!data || data.length === 0) return [];
         const arr: number[] = [];
         let cum = 0;
         for (const d of data) {
@@ -189,11 +205,11 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
             arr.push(cum);
         }
         return arr;
-    })();
+    }, [data]);
 
     // 14-period ATR using Wilder's smoothing
-    const atr = (() => {
-        if (data.length < 2) return data.map(() => 0);
+    const atr = useMemo(() => {
+        if (!data || data.length < 2) return data ? data.map(() => 0) : [];
         const tr: number[] = [data[0].high - data[0].low];
         for (let i = 1; i < data.length; i++) {
             const hl = data[i].high - data[i].low;
@@ -209,89 +225,123 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
             arr.push(atrVal);
         }
         return arr;
-    })();
-    const atrPct = closes.map((c, i) => c > 0 ? (atr[i] / c) * 100 : 0);
+    }, [data]);
 
-    // Delivery bars are coloured inverse to price direction — a red delivery bar on a green candle highlights divergence.
-    const deliveryColorsInverse = data.map(d => d.close >= d.open ? '#ef4444' : '#22c55e');
+    const atrPct = useMemo(() => {
+        if (!baseData.closes || !atr || atr.length === 0) return [];
+        return baseData.closes.map((c, i) => c > 0 ? (atr[i] / c) * 100 : 0);
+    }, [baseData.closes, atr]);
 
     // Delivery MA
-    const delMaData = toggles.showDelMA 
-        ? chartRegistry.getIndicator('sma')?.calculate(data.map(d => ({...d, close: d.delivery_final != null ? Number(d.delivery_final) : Number(d.delivery_qty) || 0})), { period: 20 }) || []
-        : [];
+    const delMaData = useMemo(() => {
+        if (!toggles.showDelMA || !data) return [];
+        const delData = data.map(d => ({...d, close: d.delivery_final != null ? Number(d.delivery_final) : Number(d.delivery_qty) || 0}));
+        return chartRegistry.getIndicator('sma')?.calculate(delData, { period: 20 }) || [];
+    }, [toggles.showDelMA, data]);
 
-    const swingsObj = toggles.showSwings ? chartRegistry.getIndicator('swings')?.calculate(data, {}) : null;
+    // Swings
+    const swingsObj = useMemo(() => {
+        if (!toggles.showSwings || !data) return null;
+        return chartRegistry.getIndicator('swings')?.calculate(data, {});
+    }, [toggles.showSwings, data]);
 
-    const vwapObj = [];
-    if (toggles.showVwap) {
-      // VWAP shown is Anchored VWAP (resets per trading day) — for intraday VWAP, use the DB column.
-      let cumPV = 0, cumVol = 0;
-      let lastDate = '';
-      for (const d of data) {
-        const typPrice = (d.high + d.low + d.close) / 3;
-        const vol = Number(d.volume_final ?? d.volume ?? 0);
-        
-        const dateStr = String(d.date).split('T')[0].split(' ')[0];
-        if (lastDate !== dateStr) {
-            cumPV = 0;
-            cumVol = 0;
-            lastDate = dateStr;
+    // VWAP (Anchored)
+    const vwapObj = useMemo(() => {
+        if (!toggles.showVwap || !data) return [];
+        let cumPV = 0, cumVol = 0;
+        let lastDate = '';
+        const result: (number | null)[] = [];
+        for (const d of data) {
+            const typPrice = (d.high + d.low + d.close) / 3;
+            const vol = Number(d.volume_final ?? d.volume ?? 0);
+            
+            const dateStr = String(d.date).split('T')[0].split(' ')[0];
+            if (lastDate !== dateStr) {
+                cumPV = 0;
+                cumVol = 0;
+                lastDate = dateStr;
+            }
+
+            cumPV += typPrice * vol;
+            cumVol += vol;
+            if (d.vwap != null && !isNaN(d.vwap)) {
+                result.push(d.vwap);
+            } else {
+                result.push(cumVol > 0 ? cumPV / cumVol : null);
+            }
         }
+        return result;
+    }, [toggles.showVwap, data]);
 
-        cumPV += typPrice * vol;
-        cumVol += vol;
-        if (d.vwap != null && !isNaN(d.vwap)) {
-          vwapObj.push(d.vwap);
-        } else {
-          vwapObj.push(cumVol > 0 ? cumPV / cumVol : null);
-        }
-      }
-    }
+    // SMAs
+    const smaResults = useMemo(() => {
+        if (!data) return {};
+        const configs = [
+            { toggle: toggles.showSma20, period: 20 },
+            { toggle: toggles.showSma50, period: 50 },
+            { toggle: toggles.showSma150, period: 150 },
+            { toggle: toggles.showSma200, period: 200 },
+        ];
+        const results: Record<number, number[]> = {};
+        configs.forEach(cfg => {
+            if (cfg.toggle) {
+                const p = chartRegistry.getIndicator('sma')?.calculate(data, { period: cfg.period });
+                if (p) results[cfg.period] = p;
+            }
+        });
+        return results;
+    }, [toggles.showSma20, toggles.showSma50, toggles.showSma150, toggles.showSma200, data]);
 
-    const smaConfigs = [
-      { toggle: toggles.showSma20, period: 20, color: '#eab308', width: 1 },
-      { toggle: toggles.showSma50, period: 50, color: '#0ea5e9', width: 1 },
-      { toggle: toggles.showSma150, period: 150, color: '#d946ef', width: 1.5 },
-      { toggle: toggles.showSma200, period: 200, color: '#f97316', width: 1.5 },
-    ];
-    
-    const smaResults: Record<number, number[]> = {};
+    // RSI
+    const rsiResult = useMemo(() => {
+        if (!toggles.showRsi || !data) return [];
+        return chartRegistry.getIndicator('rsi')?.calculate(data, { period: 14 }) || [];
+    }, [toggles.showRsi, data]);
 
-    smaConfigs.forEach(cfg => {
-      if (cfg.toggle) {
-        const p = chartRegistry.getIndicator('sma')?.calculate(data, { period: cfg.period });
-        if (p) smaResults[cfg.period] = p;
-      }
-    });
+    // FVG
+    const activeFVGs = useMemo(() => {
+        if (!toggles.showFvg || !data) return [];
+        return chartRegistry.getIndicator('fvg')?.calculate(data, { showMitigated: true }) || [];
+    }, [toggles.showFvg, data]);
 
-    const rsiResult = toggles.showRsi ? chartRegistry.getIndicator('rsi')?.calculate(data, { period: 14 }) || [] : [];
-    const activeFVGs = toggles.showFvg ? chartRegistry.getIndicator('fvg')?.calculate(data, { showMitigated: true }) || [] : [];
-    
-    // Updated LiqVoids and SmartMoney logic
-    const liqVoidsResult = toggles.showLiqVoids 
-        ? computeLiquidityVoids(data, bucket, liqVoidSettings) 
-        : null;
-    const smObj = toggles.showSmartMoney 
-        ? computeSmartMoneyPrints(data, bucket, smpSettings) 
-        : null;
+    // Liquidity Voids
+    const liqVoidsResult = useMemo(() => {
+        if (!toggles.showLiqVoids || !data) return null;
+        return computeLiquidityVoids(data, bucket, liqVoidSettings);
+    }, [toggles.showLiqVoids, data, bucket, liqVoidSettings]);
 
-    const diObj = toggles.showDelDivergence ? chartRegistry.getIndicator('delIntensityCore')?.calculate(data, {}) : null;
-    const ibObj = toggles.showInstBlocks ? chartRegistry.getIndicator('instBlocks')?.calculate(data, {}) : null;
-    
-    let dbObj: any = null;
-    if (toggles.showDelVwapBands) {
-        dbObj = { mid: [], upper: [], lower: [] };
+    // Smart Money Prints
+    const smObj = useMemo(() => {
+        if (!toggles.showSmartMoney || !data) return null;
+        return computeSmartMoneyPrints(data, bucket, smpSettings);
+    }, [toggles.showSmartMoney, data, bucket, smpSettings]);
+
+    // Delivery Intensity Core
+    const diObj = useMemo(() => {
+        if (!toggles.showDelDivergence || !data) return null;
+        return chartRegistry.getIndicator('delIntensityCore')?.calculate(data, {});
+    }, [toggles.showDelDivergence, data]);
+
+    // Institutional Blocks
+    const ibObj = useMemo(() => {
+        if (!toggles.showInstBlocks || !data) return null;
+        return chartRegistry.getIndicator('instBlocks')?.calculate(data, {});
+    }, [toggles.showInstBlocks, data]);
+
+    // Delivery VWAP Bands
+    const dbObj = useMemo(() => {
+        if (!toggles.showDelVwapBands || !data) return null;
+        const obj: { mid: (number | null)[], upper: (number | null)[], lower: (number | null)[] } = { mid: [], upper: [], lower: [] };
         let cumDPV = 0, cumDel = 0, n = 0, mean = 0, m2 = 0;
         for (const d of data) {
             const typPrice = (d.high + d.low + d.close) / 3;
-            // Support either delivery_final or delivery column
             const del = Number(d.delivery_final ?? d.delivery ?? 0);
             
             n++;
             cumDPV += typPrice * del;
             cumDel += del;
             const dwap = cumDel > 0 ? cumDPV / cumDel : null;
-            dbObj.mid.push(dwap);
+            obj.mid.push(dwap);
             
             if (dwap !== null && del > 0) {
                 const delta = typPrice - mean;
@@ -301,56 +351,63 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
                 
                 const variance = m2 / cumDel;
                 const stdDev = Math.sqrt(variance);
-                dbObj.upper.push(dwap + stdDev * 1.5);
-                dbObj.lower.push(dwap - stdDev * 1.5);
+                obj.upper.push(dwap + stdDev * 1.5);
+                obj.lower.push(dwap - stdDev * 1.5);
             } else {
-                dbObj.upper.push(null);
-                dbObj.lower.push(null);
+                obj.upper.push(null);
+                obj.lower.push(null);
             }
         }
-    }
+        return obj;
+    }, [toggles.showDelVwapBands, data]);
 
-    const daObj = toggles.showDelAD ? chartRegistry.getIndicator('delAd')?.calculate(data, {}) : null;
+    // Delivery AD
+    const daObj = useMemo(() => {
+        if (!toggles.showDelAD || !data) return null;
+        return chartRegistry.getIndicator('delAd')?.calculate(data, {});
+    }, [toggles.showDelAD, data]);
 
-    let currentY = 0;
-    const gap = 0.04;
-    const activePanes = [toggles.showRsi, toggles.showDelAD, toggles.showDelivery, toggles.showVolume, toggles.showDeliveryObv].filter(Boolean).length;
-    // Limit sub-panes to max 60% of total height to ensure price chart is visible
-    const paneHeight = activePanes > 0 ? Math.min(0.16, Math.max(0.05, (0.6 - (activePanes * gap)) / activePanes)) : 0;
-    
-    const rsiDomain = toggles.showRsi ? [currentY, currentY + paneHeight] : [0, 0];
-    if (toggles.showRsi) currentY += paneHeight + gap;
-    
-    const delAdDomain = toggles.showDelAD ? [currentY, currentY + paneHeight] : [0, 0];
-    if (toggles.showDelAD) currentY += paneHeight + gap;
-    
-    const delDomain = toggles.showDelivery ? [currentY, currentY + paneHeight] : [0, 0];
-    if (toggles.showDelivery) currentY += paneHeight + gap;
-    
-    const volDomain = toggles.showVolume ? [currentY, currentY + paneHeight] : [0, 0];
-    if (toggles.showVolume) currentY += paneHeight + gap;
-    
-    const obvDomain = toggles.showDeliveryObv ? [currentY, currentY + paneHeight] : [0, 0];
-    if (toggles.showDeliveryObv) currentY += paneHeight + gap;
-    
-    const totalPaneSpace = currentY;
-    const safeCurrentY = Math.min(0.65, totalPaneSpace);
-    const priceDomain = [safeCurrentY, 1.0];
+    // Pane layout calculations
+    const paneLayout = useMemo(() => {
+        const gap = 0.04;
+        const activePanes = [toggles.showRsi, toggles.showDelAD, toggles.showDelivery, toggles.showVolume, toggles.showDeliveryObv].filter(Boolean).length;
+        const paneHeight = activePanes > 0 ? Math.min(0.16, Math.max(0.05, (0.6 - (activePanes * gap)) / activePanes)) : 0;
+        
+        let currentY = 0;
+        const rsiDomain = toggles.showRsi ? [currentY, currentY + paneHeight] : [0, 0];
+        if (toggles.showRsi) currentY += paneHeight + gap;
+        
+        const delAdDomain = toggles.showDelAD ? [currentY, currentY + paneHeight] : [0, 0];
+        if (toggles.showDelAD) currentY += paneHeight + gap;
+        
+        const delDomain = toggles.showDelivery ? [currentY, currentY + paneHeight] : [0, 0];
+        if (toggles.showDelivery) currentY += paneHeight + gap;
+        
+        const volDomain = toggles.showVolume ? [currentY, currentY + paneHeight] : [0, 0];
+        if (toggles.showVolume) currentY += paneHeight + gap;
+        
+        const obvDomain = toggles.showDeliveryObv ? [currentY, currentY + paneHeight] : [0, 0];
+        if (toggles.showDeliveryObv) currentY += paneHeight + gap;
+        
+        const totalPaneSpace = currentY;
+        const safeCurrentY = Math.min(0.65, totalPaneSpace);
+        const priceDomain = [safeCurrentY, 1.0];
 
-    return {
-        opens, highs, lows, closes, volumes, vwap, deliveryFinal, deliveryPct, deliveryRatio, stockReturn, volComp, relVol, divScores, niftyOut, trendAlignment, volumeColors, deliveryColorsInverse,
-        delMaData, swingsObj, vwapObj, smaConfigs, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj,
-        currentY, rsiDomain, delAdDomain, delDomain, volDomain, priceDomain,
-        obvDomain, deliveryObv, atr, atrPct
-    };
-}, [data, toggles]);
+        return { currentY, rsiDomain, delAdDomain, delDomain, volDomain, obvDomain, priceDomain };
+    }, [toggles.showRsi, toggles.showDelAD, toggles.showDelivery, toggles.showVolume, toggles.showDeliveryObv]);
 
 const computed = useMemo(() => {
 const {
     opens, highs, lows, closes, volumes, vwap, deliveryFinal, deliveryPct, deliveryRatio, stockReturn, volComp, relVol, divScores, niftyOut, trendAlignment, volumeColors, deliveryColorsInverse,
-    delMaData, swingsObj, vwapObj, smaConfigs, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj,
+    delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj,
     currentY, rsiDomain, delAdDomain, delDomain, volDomain, priceDomain, obvDomain, deliveryObv, atr, atrPct
-} = indicators;
+} = {
+    ...baseData,
+    delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj,
+    ...paneLayout,
+    obvDomain: paneLayout.obvDomain,
+    deliveryObv, atr, atrPct
+};
 
     const traceCtx: TraceBuilderContext = {
       data,
@@ -647,13 +704,18 @@ const {
     return {
         smasTraces, rsiTraces, volProfileTraces, vwapTraces, swingsTraces, instBlocksTraces, delVwapBandsTraces, delAdTraces, niftyOutTraces, smartMoneyPrintsTraces, delIntensityCoreTraces, shapes, volumeTraces, deliveryTraces, annotations, profileResult, vpMaxVolume, deliveryOverlayTraces, deliveryObvTraces, trendShapes
     };
-}, [indicators, viewport, data, toggles]);
+}, [baseData, delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj, paneLayout, deliveryObv, atr, atrPct, viewport, data, toggles]);
 
 const {
-        opens, highs, lows, closes, volumes, vwap, deliveryFinal, deliveryPct, deliveryRatio, stockReturn, volComp, relVol, divScores, niftyOut, trendAlignment, volumeColors, deliveryColorsInverse,
-        delMaData, swingsObj, vwapObj, smaConfigs, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj,
-        currentY, rsiDomain, delAdDomain, delDomain, volDomain, priceDomain, obvDomain, deliveryObv, atr, atrPct
-} = indicators;
+        opens, highs, lows, closes, volumes, vwap, deliveryFinal, deliveryPct, deliveryRatio, stockReturn, volComp, relVol, divScores, niftyOut, trendAlignment, volumeColors, deliveryColorsInverse
+} = baseData;
+
+const { currentY, rsiDomain, delAdDomain, delDomain, volDomain, priceDomain, obvDomain } = paneLayout;
+
+const allIndicatorData = {
+    delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj,
+    deliveryObv, atr, atrPct
+};
 
 const {
     smasTraces, rsiTraces, volProfileTraces, vwapTraces, swingsTraces, instBlocksTraces, delVwapBandsTraces, delAdTraces, niftyOutTraces, smartMoneyPrintsTraces, delIntensityCoreTraces, shapes, volumeTraces, deliveryTraces, annotations, profileResult, vpMaxVolume, deliveryOverlayTraces, deliveryObvTraces, trendShapes
