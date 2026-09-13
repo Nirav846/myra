@@ -25,6 +25,7 @@ export {
   type SortState as VirtualSortState 
 } from './VirtualizedTable';
 export { ToastProvider, useToast, type Toast, type ToastType } from './Toast';
+export { EmptyState, type EmptyStateProps } from './EmptyState';
 
 // Future exports (to be implemented):
 // export { Input, Select, Checkbox, Radio } from './Input';

@@ -5,6 +5,7 @@ import { useSettings } from '../lib/SettingsContext';
 import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
 import ScrollableTable from '../components/ScrollableTable';
+import { EmptyState } from '../components/ui';
 
 interface LeaderboardRow {
   ticker: string;
@@ -249,7 +250,19 @@ export default function LeaderboardView({ lib }: { lib: Librarian }) {
             </tbody>
           </table>
             {(!apiData || apiData.length === 0) && !isRefreshing && (
-              <div className="w-full py-8 text-center text-[#888] text-xs font-mono">No data loaded.</div>
+              <div className="mt-4">
+                <EmptyState 
+                  variant="noData"
+                  title="No Leaderboard Data"
+                  description="No data is currently available. Please try refreshing or check back later."
+                  action={{
+                    label: 'Refresh Data',
+                    onClick: refreshData,
+                    variant: 'outline',
+                    icon: <RefreshCw className="w-4 h-4" />,
+                  }}
+                />
+              </div>
             )}
           </ScrollableTable>
         </div>
