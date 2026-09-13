@@ -92,6 +92,12 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
     const plotRef = useRef<any>(null);
     const overlayHandleRef = useRef<CrosshairOverlayHandle | null>(null);
 
+    // Granular selector to avoid re-renders when other store properties change
+    const chartStoreSelectors = useMemo(() => ({
+        viewport,
+        hoveredIndex
+    }), [viewport, hoveredIndex]);
+
     const dates = useMemo(() => (data ? data.map((d: any) => d.date) : []) as string[], [data]);
 
     const formatCrosshairDate = useCallback((idx: number) => {
@@ -273,24 +279,35 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
         return result;
     }, [toggles.showVwap, data]);
 
-    // SMAs
+    // SMAs - Split into per-indicator memos
+    const sma20Result = useMemo(() => {
+        if (!toggles.showSma20 || !data) return null;
+        return chartRegistry.getIndicator('sma')?.calculate(data, { period: 20 }) || null;
+    }, [toggles.showSma20, data]);
+
+    const sma50Result = useMemo(() => {
+        if (!toggles.showSma50 || !data) return null;
+        return chartRegistry.getIndicator('sma')?.calculate(data, { period: 50 }) || null;
+    }, [toggles.showSma50, data]);
+
+    const sma150Result = useMemo(() => {
+        if (!toggles.showSma150 || !data) return null;
+        return chartRegistry.getIndicator('sma')?.calculate(data, { period: 150 }) || null;
+    }, [toggles.showSma150, data]);
+
+    const sma200Result = useMemo(() => {
+        if (!toggles.showSma200 || !data) return null;
+        return chartRegistry.getIndicator('sma')?.calculate(data, { period: 200 }) || null;
+    }, [toggles.showSma200, data]);
+
     const smaResults = useMemo(() => {
-        if (!data) return {};
-        const configs = [
-            { toggle: toggles.showSma20, period: 20 },
-            { toggle: toggles.showSma50, period: 50 },
-            { toggle: toggles.showSma150, period: 150 },
-            { toggle: toggles.showSma200, period: 200 },
-        ];
         const results: Record<number, number[]> = {};
-        configs.forEach(cfg => {
-            if (cfg.toggle) {
-                const p = chartRegistry.getIndicator('sma')?.calculate(data, { period: cfg.period });
-                if (p) results[cfg.period] = p;
-            }
-        });
+        if (sma20Result) results[20] = sma20Result;
+        if (sma50Result) results[50] = sma50Result;
+        if (sma150Result) results[150] = sma150Result;
+        if (sma200Result) results[200] = sma200Result;
         return results;
-    }, [toggles.showSma20, toggles.showSma50, toggles.showSma150, toggles.showSma200, data]);
+    }, [sma20Result, sma50Result, sma150Result, sma200Result]);
 
     // RSI
     const rsiResult = useMemo(() => {
@@ -399,15 +416,16 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
 const computed = useMemo(() => {
 const {
     opens, highs, lows, closes, volumes, vwap, deliveryFinal, deliveryPct, deliveryRatio, stockReturn, volComp, relVol, divScores, niftyOut, trendAlignment, volumeColors, deliveryColorsInverse,
-    delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj,
     currentY, rsiDomain, delAdDomain, delDomain, volDomain, priceDomain, obvDomain, deliveryObv, atr, atrPct
 } = {
     ...baseData,
-    delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj,
     ...paneLayout,
     obvDomain: paneLayout.obvDomain,
     deliveryObv, atr, atrPct
 };
+
+// Access indicator results from outer scope (they are already memoized)
+const { delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj } = allIndicatorData;
 
     const traceCtx: TraceBuilderContext = {
       data,
@@ -712,10 +730,11 @@ const {
 
 const { currentY, rsiDomain, delAdDomain, delDomain, volDomain, priceDomain, obvDomain } = paneLayout;
 
-const allIndicatorData = {
+// Aggregate all indicator data for use in computed useMemo and ChartItemInner
+const allIndicatorData = useMemo(() => ({
     delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj,
     deliveryObv, atr, atrPct
-};
+}), [delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj, deliveryObv, atr, atrPct]);
 
 const {
     smasTraces, rsiTraces, volProfileTraces, vwapTraces, swingsTraces, instBlocksTraces, delVwapBandsTraces, delAdTraces, niftyOutTraces, smartMoneyPrintsTraces, delIntensityCoreTraces, shapes, volumeTraces, deliveryTraces, annotations, profileResult, vpMaxVolume, deliveryOverlayTraces, deliveryObvTraces, trendShapes
