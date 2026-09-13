@@ -533,3 +533,198 @@ th[aria-sort][tabindex="0"]:focus-visible {
     scroll-behavior: auto !important;
   }
 }
+
+/* ============================================
+   Toast Notification Styles
+   ============================================ */
+
+.toast-container {
+  position: fixed;
+  bottom: var(--space-lg);
+  right: var(--space-lg);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  max-width: 420px;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-elevated);
+  backdrop-filter: blur(8px);
+  pointer-events: auto;
+  min-width: 300px;
+  max-width: 420px;
+  position: relative;
+  overflow: hidden;
+  transform-origin: bottom right;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.toast-enter {
+  animation: toast-slide-in 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.toast-exit {
+  animation: toast-slide-out 0.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes toast-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(100%) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes toast-slide-out {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100%) scale(0.9);
+  }
+}
+
+.toast-success {
+  border-left: 4px solid var(--success-text);
+}
+
+.toast-error {
+  border-left: 4px solid var(--error-text);
+}
+
+.toast-info {
+  border-left: 4px solid var(--info-text);
+}
+
+.toast-warning {
+  border-left: 4px solid var(--warning-text);
+}
+
+.toast-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+}
+
+.toast-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.toast-message {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  word-wrap: break-word;
+}
+
+.toast-dismiss {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.toast-dismiss:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.toast-dismiss:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.toast-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, 
+    rgba(99, 102, 241, 0.3) 0%, 
+    rgba(99, 102, 241, 0.6) 50%, 
+    rgba(99, 102, 241, 0.3) 100%);
+  animation: toast-progress linear forwards;
+}
+
+.toast-progress-success {
+  background: linear-gradient(90deg, 
+    rgba(74, 222, 128, 0.3) 0%, 
+    rgba(74, 222, 128, 0.6) 50%, 
+    rgba(74, 222, 128, 0.3) 100%);
+}
+
+.toast-progress-error {
+  background: linear-gradient(90deg, 
+    rgba(248, 113, 113, 0.3) 0%, 
+    rgba(248, 113, 113, 0.6) 50%, 
+    rgba(248, 113, 113, 0.3) 100%);
+}
+
+.toast-progress-info {
+  background: linear-gradient(90deg, 
+    rgba(59, 130, 246, 0.3) 0%, 
+    rgba(59, 130, 246, 0.6) 50%, 
+    rgba(59, 130, 246, 0.3) 100%);
+}
+
+.toast-progress-warning {
+  background: linear-gradient(90deg, 
+    rgba(250, 204, 21, 0.3) 0%, 
+    rgba(250, 204, 21, 0.6) 50%, 
+    rgba(250, 204, 21, 0.3) 100%);
+}
+
+@keyframes toast-progress {
+  from {
+    transform: scaleX(1);
+    transform-origin: left;
+  }
+  to {
+    transform: scaleX(0);
+    transform-origin: left;
+  }
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .toast-container {
+    left: var(--space-md);
+    right: var(--space-md);
+    bottom: var(--space-md);
+    max-width: none;
+  }
+  
+  .toast {
+    min-width: auto;
+    max-width: none;
+  }
+}
