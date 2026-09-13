@@ -2,97 +2,138 @@ import { IndicatorModule } from '../technical-analysis/types';
 import { TraceBuilder } from './traces/types';
 import { LayoutBuilder } from './layout/types';
 
-import { smaIndicator } from '../technical-analysis/indicators/sma';
-import { rsiIndicator } from '../technical-analysis/indicators/rsi';
-import { atrIndicator } from '../technical-analysis/indicators/atr';
-import { fvgIndicator } from '../technical-analysis/indicators/fvg';
-import { swingsIndicator } from '../technical-analysis/indicators/swings';
-import { volumeProfileIndicator } from '../technical-analysis/indicators/volumeProfile';
+// Lazy-load indicator modules dynamically
+const indicatorLoaders: Record<string, () => Promise<IndicatorModule<any, any>>> = {
+    'sma': () => import('../technical-analysis/indicators/sma').then(m => m.smaIndicator),
+    'rsi': () => import('../technical-analysis/indicators/rsi').then(m => m.rsiIndicator),
+    'atr': () => import('../technical-analysis/indicators/atr').then(m => m.atrIndicator),
+    'fvg': () => import('../technical-analysis/indicators/fvg').then(m => m.fvgIndicator),
+    'swings': () => import('../technical-analysis/indicators/swings').then(m => m.swingsIndicator),
+    'volumeProfile': () => import('../technical-analysis/indicators/volumeProfile').then(m => m.volumeProfileIndicator),
+    'delVwapBands': () => import('../technical-analysis/indicators/delVwapBands').then(m => m.delVwapBandsIndicator),
+    'instBlocks': () => import('../technical-analysis/indicators/instBlocks').then(m => m.instBlocksIndicator),
+    'delAd': () => import('../technical-analysis/indicators/delAd').then(m => m.delAdIndicator),
+    'smartMoneyPrints': () => import('../technical-analysis/indicators/smartMoneyPrints').then(m => m.smartMoneyPrintsIndicator),
+    'delIntensityCore': () => import('../technical-analysis/indicators/delIntensityCore').then(m => m.delIntensityCoreIndicator),
+    'liqVoids': () => import('../technical-analysis/indicators/liqVoids').then(m => m.liqVoidsIndicator),
+};
 
-import { smaTraceBuilder } from './traces/smaBuilder';
-import { rsiTraceBuilder } from './traces/rsiBuilder';
-import { fvgTraceBuilder } from './traces/fvgBuilder';
-import { volumeProfileTraceBuilder } from './traces/volumeProfileBuilder';
-import { swingsTraceBuilder } from './traces/swingsBuilder';
-import { vwapTraceBuilder } from './traces/vwapBuilder';
-import { volumeTraceBuilder } from './traces/volumeBuilder';
-import { deliveryTraceBuilder } from './traces/deliveryBuilder';
-import { niftyOutTraceBuilder } from './traces/niftyOutBuilder';
-import { delVwapBandsIndicator } from '../technical-analysis/indicators/delVwapBands';
-import { delVwapBandsTraceBuilder } from './traces/delVwapBandsBuilder';
-import { instBlocksIndicator } from '../technical-analysis/indicators/instBlocks';
-import { instBlocksTraceBuilder } from './traces/instBlocksBuilder';
-import { delAdIndicator } from '../technical-analysis/indicators/delAd';
-import { delAdTraceBuilder } from './traces/delAdBuilder';
-import { smartMoneyPrintsIndicator } from '../technical-analysis/indicators/smartMoneyPrints';
-import { smartMoneyPrintsTraceBuilder } from './traces/smartMoneyPrintsBuilder';
-import { delIntensityCoreIndicator } from '../technical-analysis/indicators/delIntensityCore';
-import { delIntensityCoreTraceBuilder } from './traces/delIntensityCoreBuilder';
+// Lazy-load trace builders dynamically
+const traceBuilderLoaders: Record<string, () => Promise<TraceBuilder<any, any>>> = {
+    'sma': () => import('./traces/smaBuilder').then(m => m.smaTraceBuilder),
+    'rsi': () => import('./traces/rsiBuilder').then(m => m.rsiTraceBuilder),
+    'fvg': () => import('./traces/fvgBuilder').then(m => m.fvgTraceBuilder),
+    'volumeProfile': () => import('./traces/volumeProfileBuilder').then(m => m.volumeProfileTraceBuilder),
+    'swings': () => import('./traces/swingsBuilder').then(m => m.swingsTraceBuilder),
+    'vwap': () => import('./traces/vwapBuilder').then(m => m.vwapTraceBuilder),
+    'volume': () => import('./traces/volumeBuilder').then(m => m.volumeTraceBuilder),
+    'delivery': () => import('./traces/deliveryBuilder').then(m => m.deliveryTraceBuilder),
+    'niftyOut': () => import('./traces/niftyOutBuilder').then(m => m.niftyOutTraceBuilder),
+    'delVwapBands': () => import('./traces/delVwapBandsBuilder').then(m => m.delVwapBandsTraceBuilder),
+    'instBlocks': () => import('./traces/instBlocksBuilder').then(m => m.instBlocksTraceBuilder),
+    'delAd': () => import('./traces/delAdBuilder').then(m => m.delAdTraceBuilder),
+    'smartMoneyPrints': () => import('./traces/smartMoneyPrintsBuilder').then(m => m.smartMoneyPrintsTraceBuilder),
+    'delIntensityCore': () => import('./traces/delIntensityCoreBuilder').then(m => m.delIntensityCoreTraceBuilder),
+};
 
-import { fibonacciLayoutBuilder } from './layout/fibonacciBuilder';
-import { liqVoidsLayoutBuilder } from './layout/liqVoidsBuilder';
-import { liqVoidsIndicator } from '../technical-analysis/indicators/liqVoids';
+// Lazy-load layout builders dynamically
+const layoutBuilderLoaders: Record<string, () => Promise<LayoutBuilder<any>>> = {
+    'fibonacci': () => import('./layout/fibonacciBuilder').then(m => m.fibonacciLayoutBuilder),
+    'liqVoids': () => import('./layout/liqVoidsBuilder').then(m => m.liqVoidsLayoutBuilder),
+};
 
 class ChartRegistry {
     private indicators = new Map<string, IndicatorModule<any, any>>();
     private traceBuilders = new Map<string, TraceBuilder<any, any>>();
     private layoutBuilders = new Map<string, LayoutBuilder<any>>();
+    private pendingIndicators = new Map<string, Promise<void>>();
+    private pendingTraceBuilders = new Map<string, Promise<void>>();
+    private pendingLayoutBuilders = new Map<string, Promise<void>>();
 
-    registerIndicator(indicator: IndicatorModule<any, any>) {
-        this.indicators.set(indicator.id, indicator);
+    private async ensureIndicator(id: string): Promise<void> {
+        if (this.indicators.has(id) || this.pendingIndicators.has(id)) {
+            return this.pendingIndicators.get(id);
+        }
+        const loader = indicatorLoaders[id];
+        if (!loader) return;
+        
+        const loadPromise = loader().then(module => {
+            this.indicators.set(id, module);
+            this.pendingIndicators.delete(id);
+        }).catch(err => {
+            console.error(`Failed to lazy-load indicator "${id}":`, err);
+            this.pendingIndicators.delete(id);
+        });
+        
+        this.pendingIndicators.set(id, loadPromise);
+        return loadPromise;
     }
 
-    getIndicator(id: string) {
+    private async ensureTraceBuilder(id: string): Promise<void> {
+        if (this.traceBuilders.has(id) || this.pendingTraceBuilders.has(id)) {
+            return this.pendingTraceBuilders.get(id);
+        }
+        const loader = traceBuilderLoaders[id];
+        if (!loader) return;
+        
+        const loadPromise = loader().then(module => {
+            this.traceBuilders.set(id, module);
+            this.pendingTraceBuilders.delete(id);
+        }).catch(err => {
+            console.error(`Failed to lazy-load trace builder "${id}":`, err);
+            this.pendingTraceBuilders.delete(id);
+        });
+        
+        this.pendingTraceBuilders.set(id, loadPromise);
+        return loadPromise;
+    }
+
+    private async ensureLayoutBuilder(id: string): Promise<void> {
+        if (this.layoutBuilders.has(id) || this.pendingLayoutBuilders.has(id)) {
+            return this.pendingLayoutBuilders.get(id);
+        }
+        const loader = layoutBuilderLoaders[id];
+        if (!loader) return;
+        
+        const loadPromise = loader().then(module => {
+            this.layoutBuilders.set(id, module);
+            this.pendingLayoutBuilders.delete(id);
+        }).catch(err => {
+            console.error(`Failed to lazy-load layout builder "${id}":`, err);
+            this.pendingLayoutBuilders.delete(id);
+        });
+        
+        this.pendingLayoutBuilders.set(id, loadPromise);
+        return loadPromise;
+    }
+
+    async getIndicator(id: string): Promise<IndicatorModule<any, any> | undefined> {
+        await this.ensureIndicator(id);
         return this.indicators.get(id);
     }
 
-    registerTraceBuilder(builder: TraceBuilder<any, any>) {
-        this.traceBuilders.set(builder.id, builder);
-    }
-
-    getTraceBuilder(id: string) {
+    async getTraceBuilder(id: string): Promise<TraceBuilder<any, any> | undefined> {
+        await this.ensureTraceBuilder(id);
         return this.traceBuilders.get(id);
     }
 
-    registerLayoutBuilder(builder: LayoutBuilder<any>) {
-        this.layoutBuilders.set(builder.id, builder);
+    async getLayoutBuilder(id: string): Promise<LayoutBuilder<any> | undefined> {
+        await this.ensureLayoutBuilder(id);
+        return this.layoutBuilders.get(id);
     }
-
-    getLayoutBuilder(id: string) {
+    
+    // Synchronous versions for backward compatibility (returns already-loaded modules)
+    getIndicatorSync(id: string): IndicatorModule<any, any> | undefined {
+        return this.indicators.get(id);
+    }
+    
+    getTraceBuilderSync(id: string): TraceBuilder<any, any> | undefined {
+        return this.traceBuilders.get(id);
+    }
+    
+    getLayoutBuilderSync(id: string): LayoutBuilder<any> | undefined {
         return this.layoutBuilders.get(id);
     }
 }
 
 export const chartRegistry = new ChartRegistry();
-
-// Initialize registry with core indicators and builders
-chartRegistry.registerIndicator(smaIndicator);
-chartRegistry.registerIndicator(rsiIndicator);
-chartRegistry.registerIndicator(atrIndicator);
-chartRegistry.registerIndicator(fvgIndicator);
-chartRegistry.registerIndicator(swingsIndicator);
-chartRegistry.registerIndicator(volumeProfileIndicator);
-chartRegistry.registerIndicator(delVwapBandsIndicator);
-chartRegistry.registerIndicator(instBlocksIndicator);
-chartRegistry.registerIndicator(delAdIndicator);
-chartRegistry.registerIndicator(smartMoneyPrintsIndicator);
-chartRegistry.registerIndicator(delIntensityCoreIndicator);
-chartRegistry.registerIndicator(liqVoidsIndicator);
-
-chartRegistry.registerTraceBuilder(smaTraceBuilder);
-chartRegistry.registerTraceBuilder(rsiTraceBuilder);
-chartRegistry.registerTraceBuilder(fvgTraceBuilder);
-chartRegistry.registerTraceBuilder(volumeProfileTraceBuilder);
-chartRegistry.registerTraceBuilder(swingsTraceBuilder);
-chartRegistry.registerTraceBuilder(vwapTraceBuilder);
-chartRegistry.registerTraceBuilder(volumeTraceBuilder);
-chartRegistry.registerTraceBuilder(deliveryTraceBuilder);
-chartRegistry.registerTraceBuilder(niftyOutTraceBuilder);
-chartRegistry.registerTraceBuilder(delVwapBandsTraceBuilder);
-chartRegistry.registerTraceBuilder(instBlocksTraceBuilder);
-chartRegistry.registerTraceBuilder(delAdTraceBuilder);
-chartRegistry.registerTraceBuilder(smartMoneyPrintsTraceBuilder);
-chartRegistry.registerTraceBuilder(delIntensityCoreTraceBuilder);
-
-chartRegistry.registerLayoutBuilder(fibonacciLayoutBuilder);
-chartRegistry.registerLayoutBuilder(liqVoidsLayoutBuilder);

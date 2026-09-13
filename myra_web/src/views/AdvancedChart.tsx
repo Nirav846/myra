@@ -25,6 +25,11 @@ import { computeSmartMoneyPrints, smpToTraces } from '../lib/smartMoneyPrints';
 import IndicatorSettingsPanel from '../components/IndicatorSettingsPanel';
 import { createCandleIndexes, buildDateToIndexMap } from '../utils/chartCoords';
 
+// Lazy-load indicator modules - preloaded on mount
+const INDICATOR_KEYS = ['sma', 'rsi', 'fvg', 'swings', 'volumeProfile', 'delIntensityCore', 'instBlocks', 'delAd', 'liqVoids'];
+const TRACE_BUILDER_KEYS = ['swings', 'vwap', 'sma', 'rsi', 'fvg', 'volumeProfile', 'delIntensityCore', 'instBlocks', 'delVwapBands', 'delAd', 'niftyOut', 'volume', 'delivery'];
+const LAYOUT_BUILDER_KEYS = ['fibonacci', 'liqVoids'];
+
 const usePersistedState = <T,>(key: string, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
   const [state, setState] = useState<T>(() => {
     const saved = localStorage.getItem(key);
@@ -91,6 +96,27 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
     const hoveredIndex = useChartStore(state => state.hoveredIndex);
     const plotRef = useRef<any>(null);
     const overlayHandleRef = useRef<CrosshairOverlayHandle | null>(null);
+    const [modulesLoaded, setModulesLoaded] = useState(false);
+
+    // Pre-load lazy indicator modules on mount
+    useEffect(() => {
+        let mounted = true;
+        const loadModules = async () => {
+            try {
+                await Promise.all([
+                    ...INDICATOR_KEYS.map(k => chartRegistry.getIndicatorSync(k)),
+                    ...TRACE_BUILDER_KEYS.map(k => chartRegistry.getTraceBuilderSync(k)),
+                    ...LAYOUT_BUILDER_KEYS.map(k => chartRegistry.getLayoutBuilderSync(k))
+                ]);
+                if (mounted) setModulesLoaded(true);
+            } catch (err) {
+                console.error('Failed to lazy-load chart modules:', err);
+                if (mounted) setModulesLoaded(true); // Continue even on error
+            }
+        };
+        loadModules();
+        return () => { mounted = false; };
+    }, []);
 
     // Granular selector to avoid re-renders when other store properties change
     const chartStoreSelectors = useMemo(() => ({
@@ -242,13 +268,13 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
     const delMaData = useMemo(() => {
         if (!toggles.showDelMA || !data) return [];
         const delData = data.map(d => ({...d, close: d.delivery_final != null ? Number(d.delivery_final) : Number(d.delivery_qty) || 0}));
-        return chartRegistry.getIndicator('sma')?.calculate(delData, { period: 20 }) || [];
+        return chartRegistry.getIndicatorSync('sma')?.calculate(delData, { period: 20 }) || [];
     }, [toggles.showDelMA, data]);
 
     // Swings
     const swingsObj = useMemo(() => {
         if (!toggles.showSwings || !data) return null;
-        return chartRegistry.getIndicator('swings')?.calculate(data, {});
+        return chartRegistry.getIndicatorSync('swings')?.calculate(data, {});
     }, [toggles.showSwings, data]);
 
     // VWAP (Anchored)
@@ -282,22 +308,22 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
     // SMAs - Split into per-indicator memos
     const sma20Result = useMemo(() => {
         if (!toggles.showSma20 || !data) return null;
-        return chartRegistry.getIndicator('sma')?.calculate(data, { period: 20 }) || null;
+        return chartRegistry.getIndicatorSync('sma')?.calculate(data, { period: 20 }) || null;
     }, [toggles.showSma20, data]);
 
     const sma50Result = useMemo(() => {
         if (!toggles.showSma50 || !data) return null;
-        return chartRegistry.getIndicator('sma')?.calculate(data, { period: 50 }) || null;
+        return chartRegistry.getIndicatorSync('sma')?.calculate(data, { period: 50 }) || null;
     }, [toggles.showSma50, data]);
 
     const sma150Result = useMemo(() => {
         if (!toggles.showSma150 || !data) return null;
-        return chartRegistry.getIndicator('sma')?.calculate(data, { period: 150 }) || null;
+        return chartRegistry.getIndicatorSync('sma')?.calculate(data, { period: 150 }) || null;
     }, [toggles.showSma150, data]);
 
     const sma200Result = useMemo(() => {
         if (!toggles.showSma200 || !data) return null;
-        return chartRegistry.getIndicator('sma')?.calculate(data, { period: 200 }) || null;
+        return chartRegistry.getIndicatorSync('sma')?.calculate(data, { period: 200 }) || null;
     }, [toggles.showSma200, data]);
 
     const smaResults = useMemo(() => {
@@ -312,13 +338,13 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
     // RSI
     const rsiResult = useMemo(() => {
         if (!toggles.showRsi || !data) return [];
-        return chartRegistry.getIndicator('rsi')?.calculate(data, { period: 14 }) || [];
+        return chartRegistry.getIndicatorSync('rsi')?.calculate(data, { period: 14 }) || [];
     }, [toggles.showRsi, data]);
 
     // FVG
     const activeFVGs = useMemo(() => {
         if (!toggles.showFvg || !data) return [];
-        return chartRegistry.getIndicator('fvg')?.calculate(data, { showMitigated: true }) || [];
+        return chartRegistry.getIndicatorSync('fvg')?.calculate(data, { showMitigated: true }) || [];
     }, [toggles.showFvg, data]);
 
     // Liquidity Voids
@@ -336,13 +362,13 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
     // Delivery Intensity Core
     const diObj = useMemo(() => {
         if (!toggles.showDelDivergence || !data) return null;
-        return chartRegistry.getIndicator('delIntensityCore')?.calculate(data, {});
+        return chartRegistry.getIndicatorSync('delIntensityCore')?.calculate(data, {});
     }, [toggles.showDelDivergence, data]);
 
     // Institutional Blocks
     const ibObj = useMemo(() => {
         if (!toggles.showInstBlocks || !data) return null;
-        return chartRegistry.getIndicator('instBlocks')?.calculate(data, {});
+        return chartRegistry.getIndicatorSync('instBlocks')?.calculate(data, {});
     }, [toggles.showInstBlocks, data]);
 
     // Delivery VWAP Bands
@@ -381,7 +407,7 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
     // Delivery AD
     const daObj = useMemo(() => {
         if (!toggles.showDelAD || !data) return null;
-        return chartRegistry.getIndicator('delAd')?.calculate(data, {});
+        return chartRegistry.getIndicatorSync('delAd')?.calculate(data, {});
     }, [toggles.showDelAD, data]);
 
     // Pane layout calculations
@@ -445,7 +471,7 @@ const { delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoi
             }
         }
         
-        profileResult = chartRegistry.getIndicator('volumeProfile')?.calculate(profileData, { 
+        profileResult = chartRegistry.getIndicatorSync('volumeProfile')?.calculate(profileData, { 
             resolution: toggles.profileResolution,
             bucket: bucket 
         });
@@ -457,18 +483,18 @@ const { delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoi
 
     let swingsTraces: any[] = [];
     if (toggles.showSwings && swingsObj) {
-        swingsTraces.push(...(chartRegistry.getTraceBuilder('swings')?.buildTraces(swingsObj, traceCtx) || []));
+        swingsTraces.push(...(chartRegistry.getTraceBuilderSync('swings')?.buildTraces(swingsObj, traceCtx) || []));
     }
     
     let vwapTraces: any[] = [];
     if (toggles.showVwap && vwapObj.length > 0) {
-        vwapTraces.push(...(chartRegistry.getTraceBuilder('vwap')?.buildTraces(vwapObj, traceCtx) || []));
+        vwapTraces.push(...(chartRegistry.getTraceBuilderSync('vwap')?.buildTraces(vwapObj, traceCtx) || []));
     }
 
     let smasTraces: any[] = [];
     smaConfigs.forEach(cfg => {
       if (cfg.toggle && smaResults[cfg.period]) {
-        smasTraces.push(...(chartRegistry.getTraceBuilder('sma')?.buildTraces(smaResults[cfg.period], traceCtx, { period: cfg.period, color: cfg.color, width: cfg.width, yaxis: 'y' }) || []));
+        smasTraces.push(...(chartRegistry.getTraceBuilderSync('sma')?.buildTraces(smaResults[cfg.period], traceCtx, { period: cfg.period, color: cfg.color, width: cfg.width, yaxis: 'y' }) || []));
       }
     });
 
@@ -492,7 +518,7 @@ const { delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoi
     }
 
     if (toggles.showRsi && rsiResult.length > 0) {
-      const tb = chartRegistry.getTraceBuilder('rsi');
+      const tb = chartRegistry.getTraceBuilderSync('rsi');
       if (tb) {
          rsiTraces.push(...tb.buildTraces(rsiResult, traceCtx, { period: 14, color: '#8b5cf6', width: 1.5, yaxis: 'y3' }));
          if (tb.buildShapes) shapes.push(...tb.buildShapes(rsiResult, traceCtx));
@@ -500,14 +526,14 @@ const { delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoi
     }
 
     if (toggles.showFvg && activeFVGs.length > 0) {
-        const tb = chartRegistry.getTraceBuilder('fvg');
+        const tb = chartRegistry.getTraceBuilderSync('fvg');
         if (tb && tb.buildShapes) {
             shapes.push(...tb.buildShapes(activeFVGs, traceCtx, { showMitigated: true }));
         }
     }
 
     if (toggles.showFibonacci) {
-        const lb = chartRegistry.getLayoutBuilder('fibonacci');
+        const lb = chartRegistry.getLayoutBuilderSync('fibonacci');
         if (lb && lb.buildShapes) {
             shapes.push(...lb.buildShapes(traceCtx));
         }
@@ -524,13 +550,13 @@ const { delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoi
 
     let delIntensityCoreTraces: any[] = [];
     if (toggles.showDelDivergence && diObj) {
-        delIntensityCoreTraces.push(...(chartRegistry.getTraceBuilder('delIntensityCore')?.buildTraces(diObj, traceCtx) || []));
+        delIntensityCoreTraces.push(...(chartRegistry.getTraceBuilderSync('delIntensityCore')?.buildTraces(diObj, traceCtx) || []));
     }
 
     let volProfileTraces: any[] = [];
     
     if (profileResult && (toggles.showDeliveryProfile || toggles.showDeliverySR || toggles.showDelDelta)) {
-        const tb = chartRegistry.getTraceBuilder('volumeProfile');
+        const tb = chartRegistry.getTraceBuilderSync('volumeProfile');
         if (tb) {
             if (toggles.showDeliveryProfile || toggles.showDelDelta) {
                 volProfileTraces.push(...tb.buildTraces(profileResult, traceCtx, { 
@@ -554,17 +580,17 @@ const { delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoi
 
     let instBlocksTraces: any[] = [];
     if (toggles.showInstBlocks && ibObj) {
-        instBlocksTraces.push(...(chartRegistry.getTraceBuilder('instBlocks')?.buildTraces(ibObj, traceCtx) || []));
+        instBlocksTraces.push(...(chartRegistry.getTraceBuilderSync('instBlocks')?.buildTraces(ibObj, traceCtx) || []));
     }
     
     let delVwapBandsTraces: any[] = [];
     if (toggles.showDelVwapBands && dbObj) {
-        delVwapBandsTraces.push(...(chartRegistry.getTraceBuilder('delVwapBands')?.buildTraces(dbObj, traceCtx) || []));
+        delVwapBandsTraces.push(...(chartRegistry.getTraceBuilderSync('delVwapBands')?.buildTraces(dbObj, traceCtx) || []));
     }
 
     let delAdTraces: any[] = [];
     if (toggles.showDelAD && daObj) {
-        delAdTraces.push(...(chartRegistry.getTraceBuilder('delAd')?.buildTraces(daObj, traceCtx) || []));
+        delAdTraces.push(...(chartRegistry.getTraceBuilderSync('delAd')?.buildTraces(daObj, traceCtx) || []));
     }
 
     let deliveryObvTraces: any[] = [];
@@ -619,7 +645,7 @@ const { delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoi
 
     let niftyOutTraces: any[] = [];
     if (toggles.showNiftyOut) {
-        const tb = chartRegistry.getTraceBuilder('niftyOut');
+        const tb = chartRegistry.getTraceBuilderSync('niftyOut');
         if (tb) niftyOutTraces.push(...tb.buildTraces(niftyOut, traceCtx));
     }
 
@@ -642,13 +668,13 @@ const { delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoi
     // Sub-panes builders
     let volumeTraces: any[] = [];
     if (toggles.showVolume) {
-        const tb = chartRegistry.getTraceBuilder('volume');
+        const tb = chartRegistry.getTraceBuilderSync('volume');
         if (tb) volumeTraces.push(...tb.buildTraces(volumes, traceCtx));
     }
 
     let deliveryTraces: any[] = [];
     if (toggles.showDelivery) {
-        const tb = chartRegistry.getTraceBuilder('delivery');
+        const tb = chartRegistry.getTraceBuilderSync('delivery');
         if (tb) {
             deliveryTraces.push(...tb.buildTraces(deliveryFinal, traceCtx, {
                 showMA: toggles.showDelMA,
