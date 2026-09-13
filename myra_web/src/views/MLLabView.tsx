@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Librarian } from '../lib/Librarian';
-import { BrainCircuit, ChevronDown, ChevronRight, Activity, Cpu, Play, SlidersHorizontal, Rocket, Tag, AlertTriangle, XCircle } from 'lucide-react';
+import { BrainCircuit, ChevronDown, ChevronRight, Activity, Cpu, Play, SlidersHorizontal, Rocket, Tag } from 'lucide-react';
 import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar } from 'recharts';
 import { API_BASE } from '../config';
 import { useToast } from '../components/ui/Toast';
@@ -78,9 +78,6 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
   const toast = useToast();
   const mountedRef = useRef(true);
   const abortRefs = useRef<AbortController[]>([]);
-
-  const [pipelineStatus, setPipelineStatus] = useState<PipelineStatus | null>(null);
-  const [staleBannerOpen, setStaleBannerOpen] = useState(true);
 
   // --- FORWARD RETURN STATE ---
   const [status, setStatus] = useState<MLStatus | null>(null);
@@ -249,7 +246,7 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
         const data = await res.json();
         if (!mountedRef.current) return;
         if (data && !Array.isArray(data) && data.error) {
-          showToast(data.error, 'error');
+          toast.error(data.error);
           setImportance(null);
         } else {
           setImportance(data as FeatureImportance[]);
@@ -269,7 +266,7 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
       });
       if (res && res.ok) {
         const data = await res.json();
-        showToast(`Labelling complete. ${data.labeled_count || 0} events found.`, 'success');
+        toast.success(`Labelling complete. ${data.labeled_count || 0} events found.`);
         await fetchLpStatus();
       } else { toast.error('Labelling failed'); }
     } catch { toast.error('Labelling failed'); }
@@ -299,7 +296,7 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
         const raw = await res.json();
         if (!mountedRef.current) return;
         if (raw && !Array.isArray(raw) && raw.error) {
-          showToast(raw.error, 'error');
+          toast.error(raw.error);
           setLpImportance(null);
         } else {
           const mapped: FeatureImportance[] = (raw as any[]).map(r => ({
@@ -313,24 +310,8 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
     finally { if (mountedRef.current) setLpFetchingImportance(false); }
   };
 
-  const tasks = pipelineStatus?.tasks ?? {};
-  const enrichmentStale = isStale(tasks.enrichment?.last_run);
-  const fundamentalsStale = isStale(tasks.fundamentals_sync?.last_run);
-  const showStaleWarning = staleBannerOpen && (enrichmentStale || fundamentalsStale);
-
   return (
     <div className="flex flex-col h-full relative">
-      {showStaleWarning && (
-        <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2 flex items-center gap-2 text-xs font-mono">
-          <AlertTriangle size={14} className="text-amber-400 shrink-0" />
-          <span className="text-amber-300/90">
-            Data may be stale. Run Feature Enrichment and Fundamentals Sync from Data Sync.
-          </span>
-          <button onClick={() => setStaleBannerOpen(false)} className="ml-auto text-amber-500/50 hover:text-amber-300">
-            <XCircle size={14} />
-          </button>
-        </div>
-      )}
 
       {toast && (
         <div className={`absolute top-4 right-4 z-50 px-4 py-2 rounded text-sm font-mono shadow-lg border ${

@@ -275,11 +275,16 @@ This document tracks the front-end UI/UX improvements for the MYRA quantitative 
 - [ ] Subtle hover effects on cards
 - [ ] Loading shimmer effects
 
-### 6.2 Notification System
-- [ ] Create Toast component
-- [ ] Add success/error/info variants
-- [ ] Auto-dismiss with manual override
-- [ ] Stack notifications
+### 6.2 Notification System ✅ COMPLETE
+- [x] Create Toast component (`src/components/ui/Toast.tsx`)
+- [x] Add success/error/info/warning variants
+- [x] Auto-dismiss with manual override
+- [x] Stack notifications (max 5, configurable)
+- [x] Accessible with ARIA live regions
+- [x] Smooth animations (slide-in/out, progress bar)
+- [x] Pause on hover
+- [x] Integrated in App.tsx via ToastProvider
+- [x] Migrated MLLabView from showToast to useToast hook
 
 ### 6.3 Empty States
 - [ ] Design friendly empty states
