@@ -18,7 +18,33 @@ interface ChartHeaderProps {
     atrPct: number[];
 }
 
-export const ChartHeader: React.FC<ChartHeaderProps> = ({
+const propsAreEqual = (prevProps: ChartHeaderProps, nextProps: ChartHeaderProps): boolean => {
+    // Critical: dataIndex changes frequently during crosshair movement
+    if (prevProps.dataIndex !== nextProps.dataIndex) return false;
+    if (prevProps.symbol !== nextProps.symbol) return false;
+    
+    // Only check the value at dataIndex for array props (most common access pattern)
+    const idx = prevProps.dataIndex;
+    const nextIdx = nextProps.dataIndex;
+    
+    // Compare scalar values at the current index
+    if (prevProps.opens[idx] !== nextProps.opens[idx]) return false;
+    if (prevProps.highs[idx] !== nextProps.highs[idx]) return false;
+    if (prevProps.lows[idx] !== nextProps.lows[idx]) return false;
+    if (prevProps.closes[idx] !== nextProps.closes[idx]) return false;
+    if (prevProps.volumes[idx] !== nextProps.volumes[idx]) return false;
+    if (prevProps.deliveryPct[idx] !== nextProps.deliveryPct[idx]) return false;
+    if (prevProps.relVol[idx] !== nextProps.relVol[idx]) return false;
+    if (prevProps.volComp[idx] !== nextProps.volComp[idx]) return false;
+    if (prevProps.divScores[idx] !== nextProps.divScores[idx]) return false;
+    if (prevProps.trendAlignment[idx] !== nextProps.trendAlignment[idx]) return false;
+    if (prevProps.atr[idx] !== nextProps.atr[idx]) return false;
+    if (prevProps.atrPct[idx] !== nextProps.atrPct[idx]) return false;
+    
+    return true;
+};
+
+export const ChartHeader: React.FC<ChartHeaderProps> = React.memo(({
     symbol,
     dataIndex,
     dates,
@@ -95,4 +121,4 @@ export const ChartHeader: React.FC<ChartHeaderProps> = ({
              </div>
         </div>
     );
-};
+}, propsAreEqual);
