@@ -306,6 +306,164 @@ body {
   scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
 
+/* Mobile Navigation - Hamburger Menu */
+.mobile-menu-toggle {
+  display: none;
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: 0.5rem;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all var(--transition-fast);
+}
+
+.mobile-menu-toggle:hover,
+.mobile-menu-toggle:focus {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.mobile-menu-toggle:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-focus);
+}
+
+.mobile-menu-icon {
+  display: block;
+  width: 24px;
+  height: 24px;
+  position: relative;
+}
+
+.mobile-menu-icon span {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: currentColor;
+  border-radius: 2px;
+  transition: all var(--transition-normal);
+}
+
+.mobile-menu-icon span:nth-child(1) {
+  top: 6px;
+}
+
+.mobile-menu-icon span:nth-child(2) {
+  top: 11px;
+}
+
+.mobile-menu-icon span:nth-child(3) {
+  top: 16px;
+}
+
+/* Active state for hamburger menu */
+.mobile-menu-toggle.active .mobile-menu-icon span:nth-child(1) {
+  top: 11px;
+  transform: rotate(45deg);
+}
+
+.mobile-menu-toggle.active .mobile-menu-icon span:nth-child(2) {
+  opacity: 0;
+}
+
+.mobile-menu-toggle.active .mobile-menu-icon span:nth-child(3) {
+  top: 11px;
+  transform: rotate(-45deg);
+}
+
+/* Mobile menu panel */
+.mobile-nav-panel {
+  position: fixed;
+  top: 60px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(33, 38, 45, 0.98);
+  backdrop-filter: blur(12px);
+  z-index: 1000;
+  overflow-y: auto;
+  transform: translateX(-100%);
+  transition: transform var(--transition-normal);
+  padding: var(--space-lg);
+  border-top: 1px solid var(--border-default);
+}
+
+.mobile-nav-panel.open {
+  transform: translateX(0);
+}
+
+.mobile-nav-section {
+  margin-bottom: var(--space-lg);
+}
+
+.mobile-nav-section-title {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: var(--space-sm);
+  padding-left: var(--space-sm);
+}
+
+.mobile-nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+  min-height: 44px; /* Touch target size */
+}
+
+.mobile-nav-item:hover,
+.mobile-nav-item:focus {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.mobile-nav-item:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-focus);
+}
+
+.mobile-nav-item.active {
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, rgba(6, 182, 212, 0.05) 100%);
+  color: var(--text-primary);
+  border-left: 3px solid var(--cyan-500);
+}
+
+.mobile-nav-icon {
+  font-size: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+}
+
+/* Overlay for mobile menu */
+.mobile-nav-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 999;
+  opacity: 0;
+  visibility: hidden;
+  transition: all var(--transition-normal);
+}
+
+.mobile-nav-overlay.open {
+  opacity: 1;
+  visibility: visible;
+}
+
 /* MYRA scanner table scrollbars — Webkit (Chrome, Edge, Safari) - Updated */
 .scanner-table-scroll::-webkit-scrollbar {
   width: 6px;
@@ -1197,6 +1355,17 @@ th[aria-sort][tabindex="0"]:focus-visible {
 
 /* Mobile responsive */
 @media (max-width: 768px) {
+  /* Show hamburger menu, hide desktop nav */
+  .mobile-menu-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .menu-container {
+    display: none;
+  }
+  
   .toast-container {
     left: var(--space-md);
     right: var(--space-md);
@@ -1207,5 +1376,50 @@ th[aria-sort][tabindex="0"]:focus-visible {
   .toast {
     min-width: auto;
     max-width: none;
+  }
+  
+  /* Responsive font sizes */
+  :root {
+    --font-size-base: 14px;
+    --font-size-sm: 12px;
+    --font-size-xs: 11px;
+  }
+  
+  /* Adjust card padding for mobile */
+  .card {
+    padding: var(--space-sm);
+  }
+  
+  /* Optimize table for mobile scrolling */
+  .scanner-table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Ensure touch targets are at least 44px */
+  button, 
+  a, 
+  input, 
+  select,
+  .btn,
+  .icon-button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Adjust navbar height for mobile */
+  .navbar {
+    padding: 0 var(--space-sm);
+  }
+}
+
+/* Tablet responsive */
+@media (min-width: 769px) and (max-width: 1024px) {
+  :root {
+    --font-size-base: 15px;
+  }
+  
+  .navbar {
+    padding: 0 var(--space-md);
   }
 }
