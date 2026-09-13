@@ -302,3 +302,5 @@ trial/
 tools/compare_*.py
 eod2-old-1/
 eod2-old-2/
+eod2-*/
+eod2*/
