@@ -24,6 +24,8 @@ import { computeLiquidityVoids, liqVoidsToShapes } from '../lib/liquidityVoid';
 import { computeSmartMoneyPrints, smpToTraces } from '../lib/smartMoneyPrints';
 import IndicatorSettingsPanel from '../components/IndicatorSettingsPanel';
 import { createCandleIndexes, buildDateToIndexMap } from '../utils/chartCoords';
+import { IndicatorWorker } from '../workers/indicatorWorker';
+import * as Comlink from 'comlink';
 
 // Lazy-load indicator modules - preloaded on mount
 const INDICATOR_KEYS = ['sma', 'rsi', 'fvg', 'swings', 'volumeProfile', 'delIntensityCore', 'instBlocks', 'delAd', 'liqVoids'];
@@ -97,6 +99,30 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
     const plotRef = useRef<any>(null);
     const overlayHandleRef = useRef<CrosshairOverlayHandle | null>(null);
     const [modulesLoaded, setModulesLoaded] = useState(false);
+    const [worker, setWorker] = useState<Comlink.Remote<IndicatorWorker> | null>(null);
+
+    // Initialize Web Worker for heavy indicator calculations
+    useEffect(() => {
+        let mounted = true;
+        const initWorker = async () => {
+            try {
+                const workerInstance = new Worker(
+                    new URL('../workers/indicatorWorker.ts', import.meta.url),
+                    { type: 'module' }
+                );
+                const wrappedWorker = Comlink.wrap<IndicatorWorker>(workerInstance);
+                if (mounted) setWorker(wrappedWorker);
+            } catch (err) {
+                console.warn('Failed to initialize indicator worker, falling back to main thread:', err);
+                if (mounted) setWorker(null);
+            }
+        };
+        initWorker();
+        return () => {
+            mounted = false;
+            // Worker will be terminated automatically when component unmounts
+        };
+    }, []);
 
     // Pre-load lazy indicator modules on mount
     useEffect(() => {
@@ -225,8 +251,52 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
         };
     }, [data]);
 
-    // Delivery-Weighted OBV
+    // Heavy indicator calculations via Web Worker (with main thread fallback)
+    const [workerResults, setWorkerResults] = useState<{
+        deliveryObv?: number[];
+        atr?: number[];
+        swingsObj?: { swingHighs: number[]; swingLows: number[] };
+    }>({});
+
+    // Use worker for heavy calculations when available
+    useEffect(() => {
+        if (!worker || !data || data.length === 0) return;
+        
+        let cancelled = false;
+        const requestId = Date.now();
+        
+        const calculateWithWorker = async () => {
+            try {
+                const [deliveryObvResult, atrResult, swingsResult] = await Promise.all([
+                    worker.calculateIndicators(requestId, 'deliveryObv', data),
+                    worker.calculateIndicators(requestId, 'atr', data),
+                    toggles.showSwings ? worker.calculateIndicators(requestId, 'swings', data) : Promise.resolve(null)
+                ]);
+                
+                if (!cancelled) {
+                    setWorkerResults({
+                        deliveryObv: deliveryObvResult as number[],
+                        atr: atrResult as number[],
+                        swingsObj: swingsResult as { swingHighs: number[]; swingLows: number[] } | null
+                    });
+                }
+            } catch (err) {
+                console.warn('Worker calculation failed, falling back to main thread:', err);
+                if (!cancelled) setWorkerResults({});
+            }
+        };
+        
+        calculateWithWorker();
+        
+        return () => {
+            cancelled = true;
+        };
+    }, [worker, data, toggles.showSwings]);
+
+    // Delivery-Weighted OBV (main thread fallback)
     const deliveryObv = useMemo(() => {
+        if (workerResults.deliveryObv !== undefined) return workerResults.deliveryObv;
+        // Fallback: calculate on main thread
         if (!data || data.length === 0) return [];
         const arr: number[] = [];
         let cum = 0;
@@ -237,10 +307,12 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
             arr.push(cum);
         }
         return arr;
-    }, [data]);
+    }, [workerResults.deliveryObv, data]);
 
-    // 14-period ATR using Wilder's smoothing
+    // 14-period ATR using Wilder's smoothing (main thread fallback)
     const atr = useMemo(() => {
+        if (workerResults.atr !== undefined) return workerResults.atr;
+        // Fallback: calculate on main thread
         if (!data || data.length < 2) return data ? data.map(() => 0) : [];
         const tr: number[] = [data[0].high - data[0].low];
         for (let i = 1; i < data.length; i++) {
@@ -257,7 +329,15 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
             arr.push(atrVal);
         }
         return arr;
-    }, [data]);
+    }, [workerResults.atr, data]);
+
+    // Swings (main thread fallback)
+    const swingsObj = useMemo(() => {
+        if (!toggles.showSwings || !data) return null;
+        if (workerResults.swingsObj !== undefined) return workerResults.swingsObj;
+        // Fallback: calculate on main thread via registry
+        return chartRegistry.getIndicatorSync('swings')?.calculate(data, {}) || null;
+    }, [toggles.showSwings, data, workerResults.swingsObj]);
 
     const atrPct = useMemo(() => {
         if (!baseData.closes || !atr || atr.length === 0) return [];
@@ -270,12 +350,6 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
         const delData = data.map(d => ({...d, close: d.delivery_final != null ? Number(d.delivery_final) : Number(d.delivery_qty) || 0}));
         return chartRegistry.getIndicatorSync('sma')?.calculate(delData, { period: 20 }) || [];
     }, [toggles.showDelMA, data]);
-
-    // Swings
-    const swingsObj = useMemo(() => {
-        if (!toggles.showSwings || !data) return null;
-        return chartRegistry.getIndicatorSync('swings')?.calculate(data, {});
-    }, [toggles.showSwings, data]);
 
     // VWAP (Anchored)
     const vwapObj = useMemo(() => {

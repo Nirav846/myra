@@ -19,6 +19,7 @@
     "@vitejs/plugin-react": "^5.0.4",
     "assert": "^2.1.0",
     "buffer": "^6.0.3",
+    "comlink": "^4.4.2",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
