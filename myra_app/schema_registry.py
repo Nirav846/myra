@@ -66,6 +66,11 @@ class SchemaRegistry:
                 "vwap": "REAL",
                 "delivery_pct": "REAL",
                 "delivery_ratio": "REAL",
+                "sma_5": "REAL",
+                "sma_10": "REAL",
+                "sma_15": "REAL",
+                "sma_50": "REAL",
+                "sma_200": "REAL",
             },
             "primary_key": "(symbol, date)",
             "required_for_ingestion": ["symbol", "date", "close", "volume"],
@@ -178,30 +183,31 @@ class SchemaRegistry:
             },
             "primary_key": "(symbol, report_date)",
         },
-        # ── meta.db ───────────────────────────────────────────
-        "symbols_master": {
-            "db": "meta",
-            "columns": {
-                "symbol": "TEXT PRIMARY KEY",
-                "first_seen": "TEXT",
-                "last_seen": "TEXT",
-                "in_active_universe": "INTEGER DEFAULT 0",
-                "in_nifty500": "INTEGER DEFAULT 0",
-                "sector": "TEXT",
-                "industry": "TEXT",
-                "raw_sector": "TEXT",
-                "raw_industry": "TEXT",
-                "source": "TEXT",
-                "confidence": "REAL",
-                "last_updated_sector": "TEXT",
-                "sector_locked": "INTEGER DEFAULT 0",
-                "is_active": "INTEGER DEFAULT 1",
-                "instrument_type": "TEXT DEFAULT 'EQUITY'",
-                "last_fundamental_update": "TEXT",
-                "bse_scrip_code": "TEXT",
-            },
-            "primary_key": "(symbol)",
-        },
+# ── meta.db ───────────────────────────────────────────
+         "symbols_master": {
+             "db": "meta",
+             "columns": {
+                 "symbol": "TEXT PRIMARY KEY",
+                 "name": "TEXT",
+                 "first_seen": "TEXT",
+                 "last_seen": "TEXT",
+                 "in_active_universe": "INTEGER DEFAULT 0",
+                 "in_nifty500": "INTEGER DEFAULT 0",
+                 "sector": "TEXT",
+                 "industry": "TEXT",
+                 "raw_sector": "TEXT",
+                 "raw_industry": "TEXT",
+                 "source": "TEXT",
+                 "confidence": "REAL",
+                 "last_updated_sector": "TEXT",
+                 "sector_locked": "INTEGER DEFAULT 0",
+                 "is_active": "INTEGER DEFAULT 1",
+                 "instrument_type": "TEXT DEFAULT 'EQUITY'",
+                 "last_fundamental_update": "TEXT",
+                 "bse_scrip_code": "TEXT",
+             },
+             "primary_key": "(symbol)",
+         },
         "index_constituents": {
             "db": "meta",
             "columns": {
@@ -314,6 +320,23 @@ class SchemaRegistry:
                 "n_tranches": "INTEGER",
                 "blended_basis": "REAL",
                 "tranche_prices": "TEXT",
+                "updated_at": "TEXT",
+            },
+            "primary_key": "(symbol)",
+        },
+        # Super Breakout scanner runtime state (see
+        # myra_app/strategies/super_breakout_state.py).  One row per active
+        # position — tracks entry price/date, the ever-activated flag that
+        # gates protective-stop vs trailing-stop, and highest close since
+        # entry for reference.  Written by the scanner on live scans.
+        "sb_positions": {
+            "db": "meta",
+            "columns": {
+                "symbol": "TEXT NOT NULL",
+                "entry_date": "TEXT",
+                "entry_price": "REAL",
+                "ever_activated": "INTEGER",
+                "highest_close": "REAL",
                 "updated_at": "TEXT",
             },
             "primary_key": "(symbol)",

@@ -31,6 +31,7 @@ const SCANNER_ROUTES: Record<string, string> = {
   'The Trigger': '/trigger',
   'Bottom Hunter': '/bottom-hunter',
   'Recovery Ladder': '/recovery-ladder',
+  'Super Breakout(MSK)': '/super-breakout',
   'Invisible Hand': '/invisible-hand',
   'Wyckoff Automaton': '/wyckoff',
   'Liquidity Flip': '/liquidity-flip',

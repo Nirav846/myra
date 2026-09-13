@@ -914,6 +914,75 @@ register_scanner(
 )
 
 
+# --- Super Breakout ---
+def _sb_parse(payload: dict):
+    top_n = int(payload.get("top_n", 500))
+    if top_n < 50 or top_n > 3000:
+        top_n = 500
+    raw_date = payload.get("scan_date", "")
+    if raw_date and str(raw_date).strip():
+        scan_date = _get_latest_trading_day_before(str(raw_date).strip())
+    else:
+        scan_date = None
+    return {"top_n": top_n}, scan_date
+
+
+def _sb_build(kwargs, scan_date):
+    from myra_app.strategies.super_breakout_scanner import SuperBreakoutScanner
+
+    return SuperBreakoutScanner(**kwargs)
+
+
+register_scanner(
+    "super-breakout",
+    state_template={
+        "scan_status": "idle",
+        "last_scan": None,
+        "progress": 0,
+        "message": "Idle — click Scan to start",
+        "candidates": [],
+        "scanned_date": None,
+    },
+    cache_file="super_breakout_cache.json",
+    parse_payload=_sb_parse,
+    build_scanner=_sb_build,
+    scan_as_of=True,
+    result_mode="df",
+    progress_attr="_get_tech_data",
+    status_extra="scanned_date",
+    init_message="Initialising Super Breakout scanner...",
+    label="Super Breakout",
+)
+
+
+# ── Super Breakout — Near-Trigger Watchlist ──────────────────────────────────
+
+
+@router.get("/super-breakout/near-trigger")
+def sb_near_trigger(
+    top_n: int = 500,
+    band_pct: float = 5.0,
+    scan_date: str = "",
+):
+    """Stocks approaching the SMA(50) crossover but not yet crossed."""
+    from myra_app.strategies.super_breakout_scanner import SuperBreakoutScanner
+
+    date_val = scan_date.strip() if scan_date.strip() else None
+    resolved_date = _get_latest_trading_day_before(date_val) if date_val else None
+    scanner = SuperBreakoutScanner(top_n=top_n)
+    df = scanner.scan_near_trigger(as_on_date=resolved_date, band_pct=band_pct)
+    if df.empty:
+        return {
+            "candidates": [],
+            "scanned_date": resolved_date or scanner._resolve_as_on_date(None),
+        }
+    records = json.loads(df.to_json(orient="records"))
+    return {
+        "candidates": records,
+        "scanned_date": resolved_date or scanner._resolve_as_on_date(None),
+    }
+
+
 # ── Bottom Hunter M1 — Near-Trigger, Status Enrichment, My Positions ──────
 
 
@@ -1614,6 +1683,7 @@ _ALLOWED_CACHE_CLEAR = {
     "climax-accumulation",
     "dcb-bargain",
     "delivery-divergence",
+    "super-breakout",
 }
 
 

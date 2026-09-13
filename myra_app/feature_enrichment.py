@@ -410,10 +410,13 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
             # Check if enrichment should pause after processing all symbols
             wait_if_paused()
 
-            # --- 52-week high/low and SMA-50 computation ---
-            update(tid, "Computing SMA-50 and 52-week metrics…")
-            print("[MYRA Enrichment] Computing SMA-50 and 52-week high/low...")
-            for col in ["sma_50", "high_52w", "low_52w"]:
+            # --- 52-week high/low and SMA metrics ---
+            update(tid, "Computing SMA metrics and 52-week high/low…")
+            print("[MYRA Enrichment] Computing SMA metrics and 52-week high/low...")
+            for col in [
+                "sma_5", "sma_10", "sma_15", "sma_50", "sma_200",
+                "high_52w", "low_52w",
+            ]:
                 try:
                     conn.execute(
                         f"ALTER TABLE technical_data ADD COLUMN {col} REAL"
@@ -425,9 +428,25 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
             df_roll = df_roll.with_columns(
                 [
                     pl.col("close")
+                    .rolling_mean(5, min_periods=1)
+                    .over("symbol")
+                    .alias("sma_5"),
+                    pl.col("close")
+                    .rolling_mean(10, min_periods=1)
+                    .over("symbol")
+                    .alias("sma_10"),
+                    pl.col("close")
+                    .rolling_mean(15, min_periods=1)
+                    .over("symbol")
+                    .alias("sma_15"),
+                    pl.col("close")
                     .rolling_mean(50, min_periods=1)
                     .over("symbol")
                     .alias("sma_50"),
+                    pl.col("close")
+                    .rolling_mean(200, min_periods=1)
+                    .over("symbol")
+                    .alias("sma_200"),
                     pl.col("high")
                     .rolling_max(252, min_periods=1)
                     .over("symbol")
@@ -443,22 +462,27 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
 
             update_rows = []
             for row in df_latest.iter_rows(named=True):
-                sma = float(row["sma_50"]) if row["sma_50"] is not None else None
-                h52 = float(row["high_52w"]) if row["high_52w"] is not None else None
-                l52 = float(row["low_52w"]) if row["low_52w"] is not None else None
-                if sma is not None or h52 is not None or l52 is not None:
+                vals = []
+                for col in ["sma_5", "sma_10", "sma_15", "sma_50", "sma_200",
+                            "high_52w", "low_52w"]:
+                    v = row[col]
+                    vals.append(float(v) if v is not None else None)
+                if any(v is not None for v in vals):
                     update_rows.append(
-                        (sma, h52, l52, row["symbol"], str(row["date"]))
+                        (*vals, row["symbol"], str(row["date"]))
                     )  # noqa: PG-APPEND
 
             if update_rows:
                 conn.executemany(
-                    "UPDATE technical_data SET sma_50 = ?, high_52w = ?, low_52w = ? WHERE symbol = ? AND date = ?",
+                    "UPDATE technical_data SET "
+                    "sma_5 = ?, sma_10 = ?, sma_15 = ?, sma_50 = ?, sma_200 = ?, "
+                    "high_52w = ?, low_52w = ? "
+                    "WHERE symbol = ? AND date = ?",
                     update_rows,
                 )
                 conn.commit()
                 print(
-                    f"[MYRA Enrichment] Updated {len(update_rows)} symbols with 52-week/SMA-50 metrics"
+                    f"[MYRA Enrichment] Updated {len(update_rows)} symbols with SMA/52-week metrics"
                 )
 
         update(tid, "Enrichment complete")

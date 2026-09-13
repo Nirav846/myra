@@ -57,8 +57,220 @@ _MID_CAP_MAX = 2e11  # < Rs 20,000 Cr -> Mid
 _IST_TZ = timezone(timedelta(hours=5, minutes=30))
 
 _MONTH_SUFFIX_RE = re.compile(r"_(\d{2})_(\d{2})\.csv$", re.IGNORECASE)
-_PUNCT_RE = re.compile(r"[,.'()\-]+")
+_NORMALIZE_PUNCT_RE = re.compile(r"[.,\'()\-@#]+")
+_ABBREV_PERIOD_RE = re.compile(r"(?<=[A-Za-z])\.(?=[A-Za-z])")
 _WS_RE = re.compile(r"\s+")
+
+def normalize_company_name(name: str) -> str:
+    """Normalize a company name for matching: lowercases, converts '&' to 'and',
+    strips periods from abbreviations (J.K. → jk), removes punctuation,
+    strips leading 'the', removes common suffixes (ltd, limited, inc,
+    corporation, corp, pvt, private, company, co), collapses multiple spaces.
+    """
+    if not name:
+        return ""
+    text = str(name)
+    text = text.replace("&", " and ")
+    text = _ABBREV_PERIOD_RE.sub("", text)
+    text = _NORMALIZE_PUNCT_RE.sub(" ", text)
+    text = _WS_RE.sub(" ", text).strip()
+    text = text.lower()
+    if text.startswith("the "):
+        text = text[4:]
+    suffixes = {"ltd", "limited", "inc", "corporation", "corp", "pvt", "private", "company", "co"}
+    while text:
+        words = text.split()
+        if len(words) == 1:
+            break
+        if words[-1] in suffixes:
+            words = words[:-1]
+            text = " ".join(words)
+        else:
+            break
+    return text
+
+# Blocklist for foreign companies (they have no NSE symbol)
+_FOREIGN_BLOCKLIST_RAW = {
+    "Alphabet Inc",
+    "Microsoft Corp",
+    "Amazon Com Inc",
+    "Meta Platforms",
+    "Nvidia Corporation",
+    "Adobe Inc",
+    "Accenture Plc",
+    "Epam Systems Inc",
+    "Cognizant Tech Solutions",
+    "LG Electronics Inc",
+}
+_FOREIGN_BLOCKLIST = {normalize_company_name(name) for name in _FOREIGN_BLOCKLIST_RAW}
+
+# Path to manual overrides file (in project root config)
+MANUAL_OVERRIDES_PATH = Path(__file__).resolve().parents[1] / "config" / "nse_manual_overrides.csv"
+
+# Caches
+_NAME_TO_NSE_CACHE: dict[str, str] | None = None
+_MARKET_CAP_CACHE: dict[str, float] | None = None
+_SYMBOL_NAME_CACHE: dict[str, str] | None = None  # normalized name -> symbol (for fuzzy fallback)
+_NAMES_POPULATED: bool = False  # flag to indicate we have attempted to populate symbols_master.name
+
+def _load_symbol_names_from_metadata() -> None:
+    """Load symbol names from metadata.db into _SYMBOL_NAME_CACHE.
+    Populates the cache with normalized name -> symbol for active equity symbols.
+    If the name column is missing or no names, leaves cache as None.
+    """
+    global _SYMBOL_NAME_CACHE
+    if _SYMBOL_NAME_CACHE is not None:
+        # Already loaded
+        return
+    import sqlite3
+    db_path = os.path.join(DB_DIR, "myra_metadata.db")
+    if not os.path.exists(db_path):
+        logger.warning("Metadata DB not found at %s", db_path)
+        _SYMBOL_NAME_CACHE = None
+        return
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        conn.execute("PRAGMA query_only=ON")
+        cursor = conn.cursor()
+        # Check if name column exists
+        cursor.execute("PRAGMA table_info(symbols_master)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "name" not in columns:
+            logger.warning("symbols_master table lacks 'name' column; cannot load symbol names for fuzzy fallback")
+            _SYMBOL_NAME_CACHE = None
+            conn.close()
+            return
+        # Query for active equity symbols with non-empty name
+        cursor.execute(
+            """
+            SELECT symbol, name
+            FROM symbols_master
+            WHERE (instrument_type='EQUITY' OR instrument_type IS NULL)
+              AND (is_active=1 OR is_active IS NULL)
+              AND name IS NOT NULL
+              AND name != ''
+            """
+        )
+        rows = cursor.fetchall()
+        conn.close()
+    except sqlite3.Error as exc:
+        logger.warning("Failed to query symbol names from metadata: %s", exc)
+        _SYMBOL_NAME_CACHE = None
+        return
+
+    if not rows:
+        logger.warning("No symbol names found in metadata DB")
+        _SYMBOL_NAME_CACHE = None
+        return
+
+    mapping: dict[str, str] = {}
+    for symbol, name in rows:
+        if not symbol or not name:
+            continue
+        key = normalize_company_name(name)
+        if not key:
+            continue
+        if key in mapping:
+            logger.warning("Duplicate normalized name '%s' from symbols_master: keeping first symbol '%s', ignoring '%s'", key, mapping[key], symbol)
+        else:
+            mapping[key] = symbol
+    _SYMBOL_NAME_CACHE = mapping
+    logger.debug("Loaded %d symbol names from metadata for fuzzy fallback", len(mapping))
+
+
+def _populate_symbol_names_from_nse() -> None:
+    """Populate missing names in symbols_master from the NSE EQUITY_L.csv.
+    This is a one-time operation; we attempt to fill empty names for symbols that already exist.
+    We do not insert new symbols.
+    """
+    import csv, urllib.request, os, sqlite3
+    from io import StringIO
+
+    url = "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=15) as response:
+            data = response.read().decode("utf-8", errors="replace")
+    except Exception as exc:
+        logger.warning("Failed to download NSE equity master: %s", exc)
+        return
+
+    # Parse CSV
+    try:
+        df_raw = csv.DictReader(StringIO(data))
+        # Normalize column names: strip whitespace
+        df_raw.fieldnames = [name.strip() if name else name for name in df_raw.fieldnames]
+    except Exception as exc:
+        logger.warning("Failed to parse NSE CSV: %s", exc)
+        return
+
+    # Find symbol and name columns
+    symbol_col = None
+    name_col = None
+    for col in df_raw.fieldnames:
+        if col.upper() == "SYMBOL":
+            symbol_col = col
+        if col.upper() in ("NAME OF COMPANY", "NAME"):
+            name_col = col
+    if symbol_col is None or name_col is None:
+        logger.warning("Could not find SYMBOL and NAME columns in NSE CSV")
+        return
+
+    # Build mapping from symbol to name
+    nse_name_map: dict[str, str] = {}
+    for row in df_raw:
+        sym = (row.get(symbol_col) or "").strip()
+        name = (row.get(name_col) or "").strip()
+        if sym and name:
+            nse_name_map[sym] = name
+
+    if not nse_name_map:
+        logger.warning("No symbol-name pairs extracted from NSE CSV")
+        return
+
+    # Update symbols_master table
+    db_path = os.path.join(DB_DIR, "myra_metadata.db")
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        # Update only existing symbols where name is NULL or empty
+        # We'll batch update
+        updated = 0
+        for sym, name in nse_name_map.items():
+            cursor.execute(
+                "UPDATE symbols_master SET name=? WHERE symbol=? AND (name IS NULL OR name='')",
+                (name, sym)
+            )
+            updated += cursor.rowcount
+        conn.commit()
+        conn.close()
+        logger.info("Populated names for %d symbols in symbols_master from NSE master", updated)
+    except sqlite3.Error as exc:
+        logger.warning("Failed to update symbols_master with names from NSE: %s", exc)
+
+
+def _ensure_symbol_names_populated() -> None:
+    """Ensure that symbol names are populated in metadata DB for fuzzy fallback.
+    Attempts to load names from metadata; if insufficient, tries to populate from NSE master.
+    """
+    global _NAMES_POPULATED
+    if _NAMES_POPULATED:
+        return
+    # First, try to load names from metadata to see how many we have
+    _load_symbol_names_from_metadata()
+    if _SYMBOL_NAME_CACHE is not None:
+        # If we have a reasonable fraction of symbols with names, consider it good.
+        # We could check the count against total symbols, but for simplicity, if we have any, we assume it's enough.
+        # However, we might want to populate if the cache is very small.
+        # We'll skip population for now; we can add logic later if needed.
+        _NAMES_POPULATED = True
+        return
+    # If we get here, _SYMBOL_NAME_CACHE is None (missing column or no names)
+    logger.info("Attempting to populate symbol names from NSE master")
+    _populate_symbol_names_from_nse()
+    # After population, try loading again
+    _load_symbol_names_from_metadata()
+    _NAMES_POPULATED = True
 
 _RE_SMALL_CAP = re.compile(r"small[\s_-]*cap", re.IGNORECASE)
 _RE_MID_CAP = re.compile(r"mid[\s_-]*cap|large\s*(?:&|and)\s*mid", re.IGNORECASE)
@@ -272,53 +484,17 @@ def _get_market_cap_map() -> dict[str, float]:
     return caps
 
 
-def _normalize_company(name: str) -> str:
-    """Normalize a company name for matching: upper-case, collapse whitespace,
-    strip punctuation like ,.'()- .
 
-    Args:
-        name: Raw company name.
-
-    Returns:
-        Normalized upper-case key.
-    """
-    text = _PUNCT_RE.sub(" ", (name or ""))
-    return _WS_RE.sub(" ", text).strip().upper()
-
-
-_CORP_SUFFIXES = {"LIMITED", "LTD", "PRIVATE", "PVT", "INDIA"}
-
-
-def _fallback_name_keys(normalized: str) -> list[str]:
-    """Build fallback lookup keys by dropping trailing corporate-suffix words.
-
-    Args:
-        normalized: Output of _normalize_company().
-
-    Returns:
-        List of progressively shorter keys (without duplicates).
-    """
-    tokens = normalized.split()
-    keys: list[str] = []
-    while len(tokens) > 1 and tokens[-1] in _CORP_SUFFIXES:
-        tokens.pop()
-        key = " ".join(tokens)
-        if key not in keys:
-            keys.append(key)
-    return keys
 
 
 def _load_name_to_nse() -> dict[str, str]:
     """Load config/name_to_nse.csv into {normalized_company_name: nse_symbol}.
-
-    Each company is indexed under its full normalized name PLUS alias keys
-    generated by progressively dropping trailing corporate suffixes
-    (Limited/Ltd/Private/Pvt/India). Aliases use setdefault so an existing
-    distinct entry always wins over an ambiguous shorter alias. Cached at
-    module level after first load.
-
-    Returns:
-        Mapping dict; empty dict if the file is missing/unreadable.
+    Also loads manual overrides from MANUAL_OVERRIDES_PATH (if exists) and
+    merges them (overrides win). Uses the normalize_company_name helper
+    which lowercases, removes punctuation .,&'()-,
+    removes common suffixes (ltd, limited, inc, corporation, corp, pvt,
+    private, company, co), collapses multiple spaces.
+    Returns mapping dict; empty if the file is missing/unreadable.
     """
     global _NAME_TO_NSE_CACHE
     if _NAME_TO_NSE_CACHE is not None:
@@ -326,20 +502,42 @@ def _load_name_to_nse() -> dict[str, str]:
     mapping: dict[str, str] = {}
     try:
         import csv
-
         with NAME_TO_NSE_PATH.open("r", encoding="utf-8-sig", newline="") as fh:
             for rec in csv.DictReader(fh):
                 company = (rec.get("company_name") or "").strip()
                 nse = (rec.get("nse") or "").strip().upper()
                 if not company or not nse:
                     continue
-                key = _normalize_company(company)
+                key = normalize_company_name(company)
                 if key:
-                    mapping.setdefault(key, nse)
-                for alias in _fallback_name_keys(key):
-                    mapping.setdefault(alias, nse)
+                    if key in mapping:
+                        logger.debug("Duplicate normalized key '%s' in name_to_nse.csv: keeping existing symbol '%s', ignoring '%s'", key, mapping[key], nse)
+                    else:
+                        mapping[key] = nse
     except OSError as exc:
         logger.warning("Could not read %s: %s", NAME_TO_NSE_PATH, exc)
+    # Load manual overrides (if file exists)
+    try:
+        if MANUAL_OVERRIDES_PATH.exists():
+            with MANUAL_OVERRIDES_PATH.open("r", encoding="utf-8-sig", newline="") as fh:
+                for rec in csv.DictReader(fh):
+                    company = (rec.get("company_name") or "").strip()
+                    nse = (rec.get("nse") or rec.get("nse_symbol") or "").strip().upper()  # support both column names
+                    if not company or not nse:
+                        continue
+                    key = normalize_company_name(company)
+                    if key:
+                        if key in mapping:
+                            logger.info("Manual override for '%s' (%s) replaces existing symbol '%s' with '%s'", company, key, mapping[key], nse)
+                        else:
+                            logger.info("Added manual override for '%s' (%s) -> '%s'", company, key, nse)
+                        mapping[key] = nse
+                    else:
+                        logger.warning("Manual override company name '%s' normalizes to empty; skipping", company)
+        else:
+            logger.debug("Manual overrides file %s not found", MANUAL_OVERRIDES_PATH)
+    except Exception as exc:
+        logger.warning("Failed to load manual overrides from %s: %s", MANUAL_OVERRIDES_PATH, exc)
     _NAME_TO_NSE_CACHE = mapping
     return mapping
 
@@ -347,8 +545,15 @@ def _load_name_to_nse() -> dict[str, str]:
 def _resolve_symbol(row: Any, name_map: dict[str, str]) -> str | None:
     """Resolve the NSE symbol for one holding row.
 
-    Prefers row.nse; otherwise looks up row.name via the normalized mapping
-    (with trailing-suffix fallback keys).
+    Steps:
+    1. Check blocklist (foreign companies) -> skip.
+    2. Use row.nse if present.
+    3. Normalize the name and look up in the provided name_map (from CSV).
+    4. If not found, attempt fuzzy fallback against symbols_master (requires name column).
+       - Exact normalized match.
+       - Prefix match (one string is a prefix of the other).
+       - Token overlap >= 80% (intersection / max token count).
+    Returns uppercase NSE symbol or None.
 
     Args:
         row: mf_screener.load.HoldingRow instance.
@@ -357,21 +562,77 @@ def _resolve_symbol(row: Any, name_map: dict[str, str]) -> str | None:
     Returns:
         Uppercase NSE symbol, or None when unresolvable.
     """
-    nse = (getattr(row, "nse", "") or "").strip()
-    if nse:
-        return nse.upper()
-    name = getattr(row, "name", "") or ""
-    key = _normalize_company(name)
-    if not key:
+    # Blocklist check
+    name_raw = getattr(row, "name", "") or ""
+    if not name_raw:
         return None
-    hit = name_map.get(key)
-    if hit:
-        return hit
-    for fb_key in _fallback_name_keys(key):
-        hit = name_map.get(fb_key)
+    key = normalize_company_name(name_raw)
+    if key in _FOREIGN_BLOCKLIST:
+        logger.debug("Foreign company name blocked: %s (normalized: %s)", name_raw, key)
+        return None
+
+    # Use nse from row if available
+    nse = getattr(row, "nse", "") or ""
+    if nse:
+        return nse.strip().upper()
+
+    # Lookup in the CSV-based mapping
+    if key:
+        hit = name_map.get(key)
         if hit:
             return hit
-    return None
+
+    # Fuzzy fallback against symbols_master (requires name column)
+    # Ensure we have symbol names populated (from metadata, possibly via NSE master)
+    _ensure_symbol_names_populated()
+    if _SYMBOL_NAME_CACHE is None:
+        logger.debug("Symbol name cache not available; skipping fuzzy fallback")
+        return None
+
+    # Exact match
+    if key in _SYMBOL_NAME_CACHE:
+        symbol = _SYMBOL_NAME_CACHE[key]
+        logger.debug("Fuzzy exact match: %s -> %s", name_raw, symbol)
+        return symbol
+
+    # Collect candidates for prefix and token overlap
+    input_tokens = set(key.split())
+    candidates = []  # list of (symbol, score_type, score_value)
+    # Prefix match
+    for cached_name, symbol in _SYMBOL_NAME_CACHE.items():
+        if cached_name == key:
+            continue  # already handled exact
+        if cached_name.startswith(key) or key.startswith(cached_name):
+            # Avoid overly short prefixes: require both strings length >= 2 and the shorter length >= 2?
+            # We'll accept any prefix for now but could add a minimum length.
+            candidates.append((symbol, "prefix", 0))  # score_value not used for now
+    # Token overlap match
+    for cached_name, symbol in _SYMBOL_NAME_CACHE.items():
+        if cached_name == key:
+            continue
+        cached_tokens = set(cached_name.split())
+        if not input_tokens or not cached_tokens:
+            continue
+        intersection = len(input_tokens & cached_tokens)
+        max_len = max(len(input_tokens), len(cached_tokens))
+        if max_len > 0 and intersection / max_len >= 0.8:
+            candidates.append((symbol, "token", intersection / max_len))
+
+    # Prioritize: exact already handled, then prefix, then token.
+    # We'll choose the first candidate if we have exactly one candidate of any type.
+    # If multiple candidates, we log ambiguity and return None.
+    if len(candidates) == 1:
+        symbol, match_type, _ = candidates[0]
+        if match_type == "prefix":
+            logger.warning("Fuzzy prefix match: %s -> %s", name_raw, symbol)
+        else:  # token
+            logger.warning("Fuzzy token match (%.0f%%): %s -> %s", candidates[0][2]*100, name_raw, symbol)
+        return symbol
+    elif len(candidates) > 1:
+        logger.warning("Ambiguous fuzzy match for '%s': %d candidates (prefix/token)", name_raw, len(candidates))
+        return None
+    else:
+        return None
 
 
 def _month_from_filename(path: Path) -> str | None:

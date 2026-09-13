@@ -66,6 +66,7 @@ _SCANNER_CACHE_MAP: dict[str, str] = {
     "climax_accumulation_cache.json": "Climax Accumulation",
     "launchpad_scan_cache.json": "Launchpad Scanner",
     "bottom_hunter_m1_cache.json": "Recovery Ladder",
+    "super_breakout_cache.json": "Super Breakout",
 }
 
 # Display-name → frontend route (for link column)
@@ -73,6 +74,7 @@ _SCANNER_ROUTES: dict[str, str] = {
     "The Trigger": "/trigger",
     "Bottom Hunter": "/bottom-hunter",
     "Recovery Ladder": "/recovery-ladder",
+    "Super Breakout": "/super-breakout",
     "Invisible Hand": "/invisible-hand",
     "Wyckoff Automaton": "/wyckoff",
     "Liquidity Flip": "/liquidity-flip",
