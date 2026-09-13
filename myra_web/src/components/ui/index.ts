@@ -6,6 +6,7 @@
 export { Card, CardHeader, CardTitle, CardContent, CardFooter } from './Card';
 export { Button, IconButton, ButtonGroup } from './Button';
 export { Skeleton, TableSkeleton, CardSkeleton, WidgetSkeleton } from './Skeleton';
+export { PageLoader, LazyLoadView, createLazyComponent } from './PageLoader';
 export { 
   ScannerTable, 
   PositiveNegativeCell, 

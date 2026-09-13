@@ -1,22 +1,25 @@
-import { useState, useEffect } from 'react';
-import LeaderboardView from './views/Leaderboard';
-import FVGScannerView from './views/FVGScanner';
-import DataLakeView from './views/DataLake';
+import { useState, useEffect, lazy, Suspense } from 'react';
+import { PageLoader } from './components/ui/PageLoader';
+
+// Lazy load heavy views for performance optimization (Phase 5.1)
+const LeaderboardView = lazy(() => import('./views/Leaderboard'));
+const FVGScannerView = lazy(() => import('./views/FVGScanner'));
+const DataLakeView = lazy(() => import('./views/DataLake'));
 
 import MissionControlView from './views/MissionControl';
 import SettingsView from './views/Settings';
-import HistoricalSearchView from './views/HistoricalSearch';
-import SectorFlowView from './views/SectorFlow';
-import GhostSimulatorView from './views/GhostSimulator';
-import MultibaggerMatrixView from './views/MultibaggerMatrix';
-import InstDOMView from './views/InstDOM';
-import FiiDiiScannerView from './views/FiiDiiScanner';
-import PriceDeliveryDivergenceScannerView from './views/PriceDeliveryDivergenceScanner';
+const HistoricalSearchView = lazy(() => import('./views/HistoricalSearch'));
+const SectorFlowView = lazy(() => import('./views/SectorFlow'));
+const GhostSimulatorView = lazy(() => import('./views/GhostSimulator'));
+const MultibaggerMatrixView = lazy(() => import('./views/MultibaggerMatrix'));
+const InstDOMView = lazy(() => import('./views/InstDOM'));
+const FiiDiiScannerView = lazy(() => import('./views/FiiDiiScanner'));
+const PriceDeliveryDivergenceScannerView = lazy(() => import('./views/PriceDeliveryDivergenceScanner'));
 import AdvancedChartView from './views/AdvancedChart';
-import ReversionEngineView from './views/ReversionEngine';
-import ValueRankerView from './views/ValueRanker';
-import InvisibleHandScannerView from './views/InvisibleHandScanner';
-import TriggerScannerView from './views/TriggerScanner';
+const ReversionEngineView = lazy(() => import('./views/ReversionEngine'));
+const ValueRankerView = lazy(() => import('./views/ValueRanker'));
+const InvisibleHandScannerView = lazy(() => import('./views/InvisibleHandScanner'));
+const TriggerScannerView = lazy(() => import('./views/TriggerScanner'));
 import { getLibrarian } from './lib/Librarian';
 import { API_ROOT } from './config';
 import { useSettings } from './lib/SettingsContext';
@@ -28,32 +31,32 @@ import { SavedWorkspaces } from './components/SavedWorkspaces';
 import ScannerPresetsPanel from './components/ScannerPresetsPanel';
 import Navbar from './components/Navbar';
 import { LiveRegion } from './components/LiveRegion';
-import MLLabView from './views/MLLabView';
-import LaunchpadScannerView from './views/LaunchpadScanner';
-import MultibaggerProScannerView from './views/MultibaggerProScanner';
-import DarvasBoxProScannerView from './views/DarvasBoxProScanner';
-import LiquidityFlipDetectorView from './views/LiquidityFlipDetector';
-import OperatorFingerprintScannerView from './views/OperatorFingerprintScanner';
-import FloatExhaustionScannerView from './views/FloatExhaustionScanner';
-import SeasonalDeliveryHarvesterView from './views/SeasonalDeliveryHarvester';
-import WyckoffAutomatonView from './views/WyckoffAutomaton';
+const MLLabView = lazy(() => import('./views/MLLabView'));
+const LaunchpadScannerView = lazy(() => import('./views/LaunchpadScanner'));
+const MultibaggerProScannerView = lazy(() => import('./views/MultibaggerProScanner'));
+const DarvasBoxProScannerView = lazy(() => import('./views/DarvasBoxProScanner'));
+const LiquidityFlipDetectorView = lazy(() => import('./views/LiquidityFlipDetector'));
+const OperatorFingerprintScannerView = lazy(() => import('./views/OperatorFingerprintScanner'));
+const FloatExhaustionScannerView = lazy(() => import('./views/FloatExhaustionScanner'));
+const SeasonalDeliveryHarvesterView = lazy(() => import('./views/SeasonalDeliveryHarvester'));
+const WyckoffAutomatonView = lazy(() => import('./views/WyckoffAutomaton'));
 import PortfolioView from './views/PortfolioView';
-import DataSyncView from './views/DataSync';
-import DeliveryAnomalyScannerView from './views/DeliveryAnomalyScanner';
-import BottomHunterView from './views/BottomHunter';
-import RecoveryLadderView from './views/RecoveryLadder';
-import SuperBreakoutView from './views/SuperBreakoutView';
-import ClimaxAccumulationView from './views/ClimaxAccumulation';
-import ConfluenceView from './views/ConfluenceView';
-import DCBBargainView from './views/DCBBargain';
-import SmartMoneyBargainView from './views/SmartMoneyBargain';
-import RRGView from './views/RRGView';
-import FundTractionReportView from './views/FundTractionReport';
-import FundTractionScannerView from './views/FundTractionScanner';
-import CrossBuyScannerView from './views/CrossBuyScanner';
-import NewsSentimentView from './views/NewsSentiment';
-import FundamentalsView from './views/FundamentalsView';
-import FullFundamentalsView from './views/FullFundamentalsView';
+const DataSyncView = lazy(() => import('./views/DataSync'));
+const DeliveryAnomalyScannerView = lazy(() => import('./views/DeliveryAnomalyScanner'));
+const BottomHunterView = lazy(() => import('./views/BottomHunter'));
+const RecoveryLadderView = lazy(() => import('./views/RecoveryLadder'));
+const SuperBreakoutView = lazy(() => import('./views/SuperBreakoutView'));
+const ClimaxAccumulationView = lazy(() => import('./views/ClimaxAccumulation'));
+const ConfluenceView = lazy(() => import('./views/ConfluenceView'));
+const DCBBargainView = lazy(() => import('./views/DCBBargain'));
+const SmartMoneyBargainView = lazy(() => import('./views/SmartMoneyBargain'));
+const RRGView = lazy(() => import('./views/RRGView'));
+const FundTractionReportView = lazy(() => import('./views/FundTractionReport'));
+const FundTractionScannerView = lazy(() => import('./views/FundTractionScanner'));
+const CrossBuyScannerView = lazy(() => import('./views/CrossBuyScanner'));
+const NewsSentimentView = lazy(() => import('./views/NewsSentiment'));
+const FundamentalsView = lazy(() => import('./views/FundamentalsView'));
+const FullFundamentalsView = lazy(() => import('./views/FullFundamentalsView'));
 import { AlertCircle, Settings as SettingsIcon, SlidersHorizontal, BrainCircuit, Rocket, Database, RotateCw, Eye, Zap } from 'lucide-react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 
@@ -256,50 +259,50 @@ export default function App() {
                   if (target) navigate(target.path);
                 }} />} />
                 <Route path="/portfolio" element={<PortfolioView />} />
-                <Route path="/ml-lab" element={<MLLabView lib={librarian} />} />
-                <Route path="/launchpad-scanner" element={<LaunchpadScannerView lib={librarian} onNavigate={(tab, symbol) => {
+                <Route path="/ml-lab" element={<LazyLoadView><MLLabView lib={librarian} /></LazyLoadView>} />
+                <Route path="/launchpad-scanner" element={<LazyLoadView><LaunchpadScannerView lib={librarian} onNavigate={(tab, symbol) => {
                   const target = TABS.find(t => t.id === tab);
                   if (target) navigate(`${target.path}?symbol=${symbol}`);
-                }} />} />
-                <Route path="/leaderboard" element={<LeaderboardView lib={librarian} />} />
-                <Route path="/price-delivery-divergence" element={<PriceDeliveryDivergenceScannerView lib={librarian} />} />
-                <Route path="/fvg-scanner" element={<FVGScannerView lib={librarian} />} />
-                <Route path="/historical-search" element={<HistoricalSearchView lib={librarian} />} />
+                }} /></LazyLoadView>} />
+                <Route path="/leaderboard" element={<LazyLoadView><LeaderboardView lib={librarian} /></LazyLoadView>} />
+                <Route path="/price-delivery-divergence" element={<LazyLoadView><PriceDeliveryDivergenceScannerView lib={librarian} /></LazyLoadView>} />
+                <Route path="/fvg-scanner" element={<LazyLoadView><FVGScannerView lib={librarian} /></LazyLoadView>} />
+                <Route path="/historical-search" element={<LazyLoadView><HistoricalSearchView lib={librarian} /></LazyLoadView>} />
                 <Route path="/chart" element={<AdvancedChartView lib={librarian} activeSymbol={globalSelectedTicker} />} />
-                <Route path="/fundamentals" element={<FundamentalsView lib={librarian} />} />
-                <Route path="/deep-fundamentals" element={<FullFundamentalsView lib={librarian} />} />
-                <Route path="/sector-flow" element={<SectorFlowView lib={librarian} />} />
-                <Route path="/reversion-engine" element={<ReversionEngineView lib={librarian} />} />
-                <Route path="/ghost-simulator" element={<GhostSimulatorView lib={librarian} />} />
-                <Route path="/multibagger-matrix" element={<MultibaggerMatrixView lib={librarian} />} />
-                <Route path="/value-ranker" element={<ValueRankerView lib={librarian} />} />
-                <Route path="/darvas-box-pro" element={<DarvasBoxProScannerView lib={librarian} />} />
-                <Route path="/liquidity-flip" element={<LiquidityFlipDetectorView lib={librarian} />} />
-                <Route path="/operator-fingerprint" element={<OperatorFingerprintScannerView lib={librarian} />} />
-                <Route path="/float-exhaustion" element={<FloatExhaustionScannerView lib={librarian} />} />
-                <Route path="/seasonal-delivery" element={<SeasonalDeliveryHarvesterView lib={librarian} />} />
-                <Route path="/wyckoff" element={<WyckoffAutomatonView lib={librarian} />} />
-                <Route path="/inst-dom" element={<InstDOMView lib={librarian} />} />
-                <Route path="/fii-dii-scanner" element={<FiiDiiScannerView lib={librarian} />} />
-                <Route path="/fund-traction" element={<FundTractionScannerView />} />
-                <Route path="/cross-buy" element={<CrossBuyScannerView />} />
-                <Route path="/parquet-lake" element={<DataLakeView lib={librarian} />} />
-                <Route path="/invisible-hand" element={<InvisibleHandScannerView lib={librarian} />} />
-                <Route path="/trigger" element={<TriggerScannerView lib={librarian} />} />
+                <Route path="/fundamentals" element={<LazyLoadView><FundamentalsView lib={librarian} /></LazyLoadView>} />
+                <Route path="/deep-fundamentals" element={<LazyLoadView><FullFundamentalsView lib={librarian} /></LazyLoadView>} />
+                <Route path="/sector-flow" element={<LazyLoadView><SectorFlowView lib={librarian} /></LazyLoadView>} />
+                <Route path="/reversion-engine" element={<LazyLoadView><ReversionEngineView lib={librarian} /></LazyLoadView>} />
+                <Route path="/ghost-simulator" element={<LazyLoadView><GhostSimulatorView lib={librarian} /></LazyLoadView>} />
+                <Route path="/multibagger-matrix" element={<LazyLoadView><MultibaggerMatrixView lib={librarian} /></LazyLoadView>} />
+                <Route path="/value-ranker" element={<LazyLoadView><ValueRankerView lib={librarian} /></LazyLoadView>} />
+                <Route path="/darvas-box-pro" element={<LazyLoadView><DarvasBoxProScannerView lib={librarian} /></LazyLoadView>} />
+                <Route path="/liquidity-flip" element={<LazyLoadView><LiquidityFlipDetectorView lib={librarian} /></LazyLoadView>} />
+                <Route path="/operator-fingerprint" element={<LazyLoadView><OperatorFingerprintScannerView lib={librarian} /></LazyLoadView>} />
+                <Route path="/float-exhaustion" element={<LazyLoadView><FloatExhaustionScannerView lib={librarian} /></LazyLoadView>} />
+                <Route path="/seasonal-delivery" element={<LazyLoadView><SeasonalDeliveryHarvesterView lib={librarian} /></LazyLoadView>} />
+                <Route path="/wyckoff" element={<LazyLoadView><WyckoffAutomatonView lib={librarian} /></LazyLoadView>} />
+                <Route path="/inst-dom" element={<LazyLoadView><InstDOMView lib={librarian} /></LazyLoadView>} />
+                <Route path="/fii-dii-scanner" element={<LazyLoadView><FiiDiiScannerView lib={librarian} /></LazyLoadView>} />
+                <Route path="/fund-traction" element={<LazyLoadView><FundTractionScannerView /></LazyLoadView>} />
+                <Route path="/cross-buy" element={<LazyLoadView><CrossBuyScannerView /></LazyLoadView>} />
+                <Route path="/parquet-lake" element={<LazyLoadView><DataLakeView lib={librarian} /></LazyLoadView>} />
+                <Route path="/invisible-hand" element={<LazyLoadView><InvisibleHandScannerView lib={librarian} /></LazyLoadView>} />
+                <Route path="/trigger" element={<LazyLoadView><TriggerScannerView lib={librarian} /></LazyLoadView>} />
                 <Route path="/settings" element={<SettingsView />} />
-                <Route path="/data-sync" element={<DataSyncView />} />
-                <Route path="/delivery-anomaly" element={<DeliveryAnomalyScannerView lib={librarian} />} />
-                <Route path="/multibagger-pro-scanner" element={<MultibaggerProScannerView lib={librarian} />} />
-                <Route path="/bottom-hunter" element={<BottomHunterView lib={librarian} />} />
-                <Route path="/recovery-ladder" element={<RecoveryLadderView />} />
-                <Route path="/super-breakout" element={<SuperBreakoutView />} />
-                <Route path="/climax-accumulation" element={<ClimaxAccumulationView lib={librarian} />} />
-                <Route path="/dcb-bargain" element={<DCBBargainView lib={librarian} />} />
-                <Route path="/smart-money-bargain" element={<SmartMoneyBargainView />} />
-                <Route path="/news-sentiment" element={<NewsSentimentView />} />
-                <Route path="/confluence" element={<ConfluenceView />} />
-                <Route path="/rrg" element={<RRGView />} />
-                <Route path="/fund-traction-report" element={<FundTractionReportView />} />
+                <Route path="/data-sync" element={<LazyLoadView><DataSyncView /></LazyLoadView>} />
+                <Route path="/delivery-anomaly" element={<LazyLoadView><DeliveryAnomalyScannerView lib={librarian} /></LazyLoadView>} />
+                <Route path="/multibagger-pro-scanner" element={<LazyLoadView><MultibaggerProScannerView lib={librarian} /></LazyLoadView>} />
+                <Route path="/bottom-hunter" element={<LazyLoadView><BottomHunterView lib={librarian} /></LazyLoadView>} />
+                <Route path="/recovery-ladder" element={<LazyLoadView><RecoveryLadderView /></LazyLoadView>} />
+                <Route path="/super-breakout" element={<LazyLoadView><SuperBreakoutView /></LazyLoadView>} />
+                <Route path="/climax-accumulation" element={<LazyLoadView><ClimaxAccumulationView lib={librarian} /></LazyLoadView>} />
+                <Route path="/dcb-bargain" element={<LazyLoadView><DCBBargainView lib={librarian} /></LazyLoadView>} />
+                <Route path="/smart-money-bargain" element={<LazyLoadView><SmartMoneyBargainView /></LazyLoadView>} />
+                <Route path="/news-sentiment" element={<LazyLoadView><NewsSentimentView /></LazyLoadView>} />
+                <Route path="/confluence" element={<LazyLoadView><ConfluenceView /></LazyLoadView>} />
+                <Route path="/rrg" element={<LazyLoadView><RRGView /></LazyLoadView>} />
+                <Route path="/fund-traction-report" element={<LazyLoadView><FundTractionReportView /></LazyLoadView>} />
 
                 {/* Fallback */}
                 <Route path="*" element={<Navigate to="/mission-control" replace />} />
