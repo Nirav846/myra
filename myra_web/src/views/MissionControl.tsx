@@ -561,154 +561,219 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
         </ErrorBoundary>
 
         {/* Nifty Outlook Widget */}
-        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[12px] font-mono" role="alert">Nifty Outlook crashed</div>}>
-        <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col justify-center">
-          <div className="flex items-center justify-between mb-1">
-            <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Nifty Outlook</div>
+        <ErrorBoundary fallback={<div className="bg-error-bg border border-error-border rounded-xl p-4 text-error-text text-[12px] font-mono" role="alert">Nifty Outlook crashed</div>}>
+        <Card variant="elevated" padding="md" className="flex flex-col justify-center min-h-[140px]">
+          <CardHeader>
+            <CardTitle>Nifty Outlook</CardTitle>
             <div className="flex items-center gap-2">
-              <button onClick={niftyWidget.fetchData} disabled={niftyWidget.loading} className="text-[#888] hover:text-[#fafafa] transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 rounded" title="Refresh Nifty Outlook" aria-label="Refresh Nifty Outlook">
+              <button 
+                onClick={niftyWidget.fetchData} 
+                disabled={niftyWidget.loading} 
+                className="text-text-tertiary hover:text-text-primary transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded p-1" 
+                title="Refresh Nifty Outlook" 
+                aria-label="Refresh Nifty Outlook"
+              >
                 <RotateCw size={14} className={niftyWidget.loading ? 'animate-spin' : ''} aria-hidden="true" />
               </button>
-              <label className="flex items-center gap-1 text-[12px] text-[#888] font-mono cursor-pointer select-none hover:text-[#888] transition-colors" aria-label="Toggle auto-refresh for Nifty outlook">
-                <input type="checkbox" checked={niftyWidget.autoRefresh} onChange={e => niftyWidget.setAutoRefresh(e.target.checked)} className="accent-yellow-500 w-2.5 h-2.5" />
-                Auto-refresh
+              <label className="flex items-center gap-1.5 text-[12px] text-text-secondary font-mono cursor-pointer select-none hover:text-text-primary transition-colors" aria-label="Toggle auto-refresh for Nifty outlook">
+                <input type="checkbox" checked={niftyWidget.autoRefresh} onChange={e => niftyWidget.setAutoRefresh(e.target.checked)} className="accent-indigo-500 w-3 h-3 rounded" />
+                <span className="text-xs">Auto</span>
               </label>
             </div>
-          </div>
+          </CardHeader>
+          
           {niftyWidget.loading && !niftyWidget.data ? (
-            <div className="text-sm text-[#ccc] py-1" role="status" aria-live="polite">Analyzing...</div>
+            <div className="space-y-2" role="status" aria-live="polite">
+              <Skeleton height="1rem" variant="rounded" />
+              <Skeleton height="3rem" variant="rounded" />
+            </div>
           ) : niftyWidget.error ? (
-            <div className="text-[12px] text-red-400 font-mono mt-1" role="alert">{niftyWidget.error}</div>
+            <div className="text-[12px] text-error-text font-mono mt-1 flex items-center gap-2" role="alert">
+              <Info size={12} />
+              {niftyWidget.error}
+            </div>
           ) : !niftyWidget.data ? (
-            <div className="text-sm text-[#888] py-1 font-mono" role="status">Click Refresh to load</div>
+            <div className="text-sm text-text-tertiary py-2 font-mono flex items-center gap-2">
+              <Info size={14} />
+              Click refresh to load
+            </div>
           ) : (
             <>
-              <div className="flex items-center justify-between mb-2">
-                <span className={`text-xs font-bold font-mono ${getValueColor(niftyWidget.data.probability_up - 50)}`}>
+              <div className="flex items-center justify-between mb-3">
+                <span className={`text-sm font-bold font-mono ${getValueColor(niftyWidget.data.probability_up - 50)}`}>
                   {niftyWidget.data.probability_up}% UP
                 </span>
-                <span className={`text-[12px] font-mono px-2 py-0.5 rounded border ${
-                    niftyWidget.data.probability_up > 50 ? 'bg-green-500/10 text-green-400 border-green-500/20' : 
-                    'bg-red-500/10 text-red-400 border-red-500/20'
+                <span className={`text-[12px] font-mono px-2 py-1 rounded-lg border ${
+                    niftyWidget.data.probability_up > 50 
+                      ? 'bg-success-bg text-success-text border-success-border' 
+                      : 'bg-error-bg text-error-text border-error-border'
                  }`}>
                   {niftyWidget.data.signal}
                 </span>
               </div>
-              <div className="grid grid-cols-2 gap-2 mt-1">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider pb-1">Bull Factors</div>
-                  <ul className="space-y-0.5 max-h-16 overflow-y-auto pr-1" aria-label="Bull factors list" role="list">
+                  <div className="text-[11px] text-text-tertiary font-mono uppercase tracking-wider pb-1.5">Bull Factors</div>
+                  <ul className="space-y-1 max-h-20 overflow-y-auto pr-1 scrollbar-thin" aria-label="Bull factors list" role="list">
                     {niftyWidget.data.bull_factors?.map((f: string, i: number) => (
-                      <li key={i} className="text-[12px] text-green-400 font-mono flex gap-1 leading-tight"><span className="shrink-0" aria-hidden="true">•</span><span>{f}</span></li>
+                      <li key={i} className="text-[11px] text-success-text font-mono flex gap-1.5 leading-tight">
+                        <span className="shrink-0 mt-0.5" aria-hidden="true">
+                          <TrendingUp size={10} />
+                        </span>
+                        <span>{f}</span>
+                      </li>
                     ))}
-                    {!niftyWidget.data.bull_factors?.length && <li className="text-[12px] text-[#888] font-mono" role="status">None</li>}
+                    {!niftyWidget.data.bull_factors?.length && <li className="text-[11px] text-text-tertiary font-mono" role="status">None</li>}
                   </ul>
                 </div>
                 <div>
-                  <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider pb-1">Bear Factors</div>
-                  <ul className="space-y-0.5 max-h-16 overflow-y-auto pr-1" aria-label="Bear factors list" role="list">
+                  <div className="text-[11px] text-text-tertiary font-mono uppercase tracking-wider pb-1.5">Bear Factors</div>
+                  <ul className="space-y-1 max-h-20 overflow-y-auto pr-1 scrollbar-thin" aria-label="Bear factors list" role="list">
                     {niftyWidget.data.bear_factors?.map((f: string, i: number) => (
-                      <li key={i} className="text-[12px] text-red-400 font-mono flex gap-1 leading-tight"><span className="shrink-0" aria-hidden="true">•</span><span>{f}</span></li>
+                      <li key={i} className="text-[11px] text-error-text font-mono flex gap-1.5 leading-tight">
+                        <span className="shrink-0 mt-0.5" aria-hidden="true">
+                          <TrendingDown size={10} />
+                        </span>
+                        <span>{f}</span>
+                      </li>
                     ))}
-                    {!niftyWidget.data.bear_factors?.length && <li className="text-[12px] text-[#888] font-mono" role="status">None</li>}
+                    {!niftyWidget.data.bear_factors?.length && <li className="text-[11px] text-text-tertiary font-mono" role="status">None</li>}
                   </ul>
                 </div>
               </div>
             </>
           )}
-        </div>
+        </Card>
         </ErrorBoundary>
 
         {/* FII/Retail Divergence Widget */}
-        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[12px] font-mono" role="alert">FII Divergence crashed</div>}>
-        <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col justify-center">
-          <div className="flex items-center justify-between mb-1">
-            <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Smart Money vs Retail</div>
+        <ErrorBoundary fallback={<div className="bg-error-bg border border-error-border rounded-xl p-4 text-error-text text-[12px] font-mono" role="alert">FII Divergence crashed</div>}>
+        <Card variant="elevated" padding="md" className="flex flex-col justify-center min-h-[140px]">
+          <CardHeader>
+            <CardTitle>Smart Money vs Retail</CardTitle>
             <div className="flex items-center gap-2">
-              <button onClick={divergenceWidget.fetchData} disabled={divergenceWidget.loading} className="text-[#888] hover:text-[#fafafa] transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 rounded" title="Refresh Smart Money vs Retail" aria-label="Refresh Smart Money vs Retail">
+              <button 
+                onClick={divergenceWidget.fetchData} 
+                disabled={divergenceWidget.loading} 
+                className="text-text-tertiary hover:text-text-primary transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded p-1" 
+                title="Refresh Smart Money vs Retail" 
+                aria-label="Refresh Smart Money vs Retail"
+              >
                 <RotateCw size={14} className={divergenceWidget.loading ? 'animate-spin' : ''} aria-hidden="true" />
               </button>
-              <label className="flex items-center gap-1 text-[12px] text-[#888] font-mono cursor-pointer select-none hover:text-[#888] transition-colors" aria-label="Toggle auto-refresh for divergence">
-                <input type="checkbox" checked={divergenceWidget.autoRefresh} onChange={e => divergenceWidget.setAutoRefresh(e.target.checked)} className="accent-yellow-500 w-2.5 h-2.5" />
-                Auto-refresh
+              <label className="flex items-center gap-1.5 text-[12px] text-text-secondary font-mono cursor-pointer select-none hover:text-text-primary transition-colors" aria-label="Toggle auto-refresh for divergence">
+                <input type="checkbox" checked={divergenceWidget.autoRefresh} onChange={e => divergenceWidget.setAutoRefresh(e.target.checked)} className="accent-indigo-500 w-3 h-3 rounded" />
+                <span className="text-xs">Auto</span>
               </label>
             </div>
+          </CardHeader>
+          
+          <div className="mb-3">
+            <SymbolAutocomplete value={fiiSymbol} onSelect={setFiiSymbol} placeholder="Search symbol..." />
           </div>
-          <div className="mb-2">
-            <SymbolAutocomplete value={fiiSymbol} onSelect={setFiiSymbol} placeholder="Symbol..." />
-          </div>
+          
           {divergenceWidget.loading && !divergenceWidget.data ? (
-            <div className="text-sm text-[#ccc] py-1" role="status" aria-live="polite">Scanning flows...</div>
+            <div className="space-y-2" role="status" aria-live="polite">
+              <Skeleton height="1rem" variant="rounded" />
+              <Skeleton height="2rem" variant="rounded" />
+            </div>
           ) : divergenceWidget.error ? (
-            <div className="text-[12px] text-red-400 font-mono mt-1" role="alert">{divergenceWidget.error}</div>
+            <div className="text-[12px] text-error-text font-mono mt-1 flex items-center gap-2" role="alert">
+              <Info size={12} />
+              {divergenceWidget.error}
+            </div>
           ) : !divergenceWidget.data ? (
-            <div className="text-sm text-[#888] py-1 font-mono" role="status">Click Refresh to load</div>
+            <div className="text-sm text-text-tertiary py-2 font-mono flex items-center gap-2">
+              <Info size={14} />
+              Click refresh to load
+            </div>
           ) : (
             <>
-              <div className="text-sm font-bold text-[#fafafa] mb-1">{divergenceWidget.data.signal || 'Neutral'}</div>
+              <div className="text-base font-bold text-text-primary mb-2">{divergenceWidget.data.signal || 'Neutral'}</div>
               <div className="mt-1">
-                 <span className={`text-[12px] font-mono px-2 py-0.5 rounded border ${
-                    divergenceWidget.data.confidence === 'High' ? 'bg-green-500/10 text-green-400 border-green-500/20' : 
-                    divergenceWidget.data.confidence === 'Medium' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' : 
-                    'bg-[#ffffff05] text-[#888] border-[#ffffff1a]'
+                 <span className={`text-[12px] font-mono px-2.5 py-1 rounded-lg border ${
+                    divergenceWidget.data.confidence === 'High' 
+                      ? 'bg-success-bg text-success-text border-success-border' 
+                      : divergenceWidget.data.confidence === 'Medium' 
+                        ? 'bg-warning-bg text-warning-text border-warning-border'
+                        : 'bg-bg-tertiary text-text-tertiary border-border-default'
                  }`}>
                    {divergenceWidget.data.confidence} Confidence
                  </span>
               </div>
             </>
           )}
-        </div>
+        </Card>
         </ErrorBoundary>
 
         {/* Stock Brief (AI Multi‑Agent Debate) Widget */}
-        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[12px] font-mono" role="alert">Stock Brief crashed</div>}>
-        <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col justify-center">
-          <div className="flex items-center justify-between mb-1">
-            <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Stock Brief (AI Debate)</div>
+        <ErrorBoundary fallback={<div className="bg-error-bg border border-error-border rounded-xl p-4 text-error-text text-[12px] font-mono" role="alert">Stock Brief crashed</div>}>
+        <Card variant="elevated" padding="md" className="flex flex-col justify-center min-h-[140px]">
+          <CardHeader>
+            <CardTitle>Stock Brief (AI Debate)</CardTitle>
             <div className="flex items-center gap-2">
-              <button onClick={stockBrief.fetchData} disabled={stockBrief.loading} className="text-[#888] hover:text-[#fafafa] transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 rounded" title="Refresh Stock Brief" aria-label="Refresh Stock Brief">
+              <button 
+                onClick={stockBrief.fetchData} 
+                disabled={stockBrief.loading} 
+                className="text-text-tertiary hover:text-text-primary transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded p-1" 
+                title="Refresh Stock Brief" 
+                aria-label="Refresh Stock Brief"
+              >
                 <RotateCw size={14} className={stockBrief.loading ? 'animate-spin' : ''} aria-hidden="true" />
               </button>
-              <label className="flex items-center gap-1 text-[12px] text-[#888] font-mono cursor-pointer select-none hover:text-[#888] transition-colors" aria-label="Toggle auto-refresh for stock brief">
-                <input type="checkbox" checked={stockBrief.autoRefresh} onChange={e => stockBrief.setAutoRefresh(e.target.checked)} className="accent-yellow-500 w-2.5 h-2.5" />
-                Auto-refresh
+              <label className="flex items-center gap-1.5 text-[12px] text-text-secondary font-mono cursor-pointer select-none hover:text-text-primary transition-colors" aria-label="Toggle auto-refresh for stock brief">
+                <input type="checkbox" checked={stockBrief.autoRefresh} onChange={e => stockBrief.setAutoRefresh(e.target.checked)} className="accent-indigo-500 w-3 h-3 rounded" />
+                <span className="text-xs">Auto</span>
               </label>
             </div>
+          </CardHeader>
+          
+          <div className="mb-3">
+            <SymbolAutocomplete value={briefSymbol} onSelect={setBriefSymbol} placeholder="Search symbol..." />
           </div>
-          <div className="mb-2">
-            <SymbolAutocomplete value={briefSymbol} onSelect={setBriefSymbol} placeholder="Symbol..." />
-          </div>
+          
           {stockBrief.loading && !stockBrief.data ? (
-            <div className="text-sm text-[#ccc] py-1" role="status" aria-live="polite">Running AI debate...</div>
+            <div className="space-y-2" role="status" aria-live="polite">
+              <Skeleton height="1rem" variant="rounded" />
+              <Skeleton height="3rem" variant="rounded" />
+            </div>
           ) : stockBrief.error ? (
-            <div className="text-[12px] text-red-400 font-mono mt-1" role="alert">{stockBrief.error}</div>
+            <div className="text-[12px] text-error-text font-mono mt-1 flex items-center gap-2" role="alert">
+              <Info size={12} />
+              {stockBrief.error}
+            </div>
           ) : !stockBrief.data?.consensus ? (
-            <div className="text-sm text-[#888] py-1 font-mono" role="status">Click Refresh to load</div>
+            <div className="text-sm text-text-tertiary py-2 font-mono flex items-center gap-2">
+              <Info size={14} />
+              Click refresh to load
+            </div>
           ) : (
             <>
-              <div className="flex items-center justify-between mb-2">
-                <span className={`text-xs font-bold font-mono ${getValueColor(stockBrief.data.consensus?.signal === 'BUY' ? 1 : stockBrief.data.consensus?.signal === 'SELL' ? -1 : 0)}`}>
+              <div className="flex items-center justify-between mb-3">
+                <span className={`text-sm font-bold font-mono ${getValueColor(stockBrief.data.consensus?.signal === 'BUY' ? 1 : stockBrief.data.consensus?.signal === 'SELL' ? -1 : 0)}`}>
                   {stockBrief.data.consensus?.signal || 'HOLD'}
                 </span>
-                <span className={`text-[12px] font-mono px-2 py-0.5 rounded border ${
-                  stockBrief.data.consensus?.strength === 'strong' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
-                  stockBrief.data.consensus?.strength === 'neutral' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' :
-                  'bg-[#ffffff05] text-[#888] border-[#ffffff1a]'
+                <span className={`text-[12px] font-mono px-2.5 py-1 rounded-lg border ${
+                  stockBrief.data.consensus?.strength === 'strong' 
+                    ? 'bg-success-bg text-success-text border-success-border' 
+                    : stockBrief.data.consensus?.strength === 'neutral' 
+                      ? 'bg-warning-bg text-warning-text border-warning-border'
+                      : 'bg-bg-tertiary text-text-tertiary border-border-default'
                 }`}>
                   {stockBrief.data.consensus?.strength === 'strong' ? 'High' : stockBrief.data.consensus?.strength === 'neutral' ? 'Medium' : 'Low'} Confidence
                 </span>
               </div>
-              <div className="text-[12px] text-[#aaa] font-mono leading-relaxed mt-1 max-h-20 overflow-y-auto pr-1 space-y-0.5">
+              <div className="text-[12px] text-text-secondary font-mono leading-relaxed max-h-24 overflow-y-auto pr-2 scrollbar-thin space-y-1.5">
                 {stockBrief.data.debate?.slice(0, 6).filter(Boolean).map((agent: any, idx: number) => (
-                  <div key={idx} className="flex items-start gap-1 text-[12px] text-[#aaa] font-mono leading-snug">
-                    <span className="text-[12px] shrink-0 mt-0.5">{agent.verdict === 'BUY' ? '🟢' : agent.verdict === 'SELL' ? '🔴' : '🟡'}</span>
-                    <span><b className="text-[#ccc]">{agent.agent}:</b> {agent.one_liner || agent.verdict}</span>
+                  <div key={idx} className="flex items-start gap-2 text-[12px] text-text-secondary font-mono leading-snug">
+                    <span className="shrink-0 mt-0.5">{agent.verdict === 'BUY' ? '🟢' : agent.verdict === 'SELL' ? '🔴' : '🟡'}</span>
+                    <span><b className="text-text-primary">{agent.agent}:</b> {agent.one_liner || agent.verdict}</span>
                   </div>
                 ))}
               </div>
             </>
           )}
-        </div>
+        </Card>
         </ErrorBoundary>
 
         {/* Stock Timeline Widget */}
