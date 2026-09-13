@@ -1,3 +1,4 @@
+```
 # Dependencies
 node_modules/
 
@@ -6,6 +7,10 @@ dist/
 build/
 *.js.map
 *.tsbuildinfo
+
+# Logs and temp files
+*.log
+*.tmp
 
 # Environment
 .env
@@ -18,8 +23,14 @@ build/
 *.swp
 *.swo
 
-# Logs
-*.log
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
+coverage/
+htmlcov/
+.coverage
 
 # Python
 __pycache__/
@@ -27,198 +38,12 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
-env/
-venv/
-.venv/
-pip-log.txt
-pip-delete-this-directory.txt
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.log
-.git/
+*.so
+*.egg-info/
+.eggs/
 .mypy_cache/
 .pytest_cache/
-.hypothesis/
-
-# Temporary files
-*.tmp
-*.temp
-*~
-.DS_Store
-Thumbs.db
-
-# Generated documentation
-docs/_build/
-docs/build/
-
-# Distribution / packaging
-.Python
-_build/
-buck-out/
-build/
-dist/
-develop-eggs/
-.installed.cfg
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Testing
-.pytest_cache/
-.hypothesis/
+.tox/
 .coverage
-htmlcov/
-.cov/
-coverage.xml
-*.log
-*.tmp
-
-# Node.js
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-node_modules/
-dist
-build
-.nyc_output
-coverage
-.nyc-output
-
-# TypeScript
-node_modules/
-dist
-build
-.nyc_output
-coverage
-*.tsbuildinfo
-.next
-out
-.nuxt
-
-# React/Next.js
-node_modules/
-.next
-out
-build
-public/dist
-coverage
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-.next/
-out/
-.nft.json
-.vercel
-.svelte-kit/
-.c8
-coverage/
-
-# Webpack
-node_modules/
-webpack-stats.json
-*.js.map
-*.mjs.map
-*.css.map
-
-# Vite
-node_modules/
-dist
-.cache
-.vite
-coverage/
-
-# General
-.DS_Store
-Thumbs.db
-ehthumbs.db
-Icon?
-.directory
-.fseventsd
-.Spotlight-V100
-.Trashes
-DocumentRevisions-V100
-com.apple.timemachine.donotpresent
-AppleDouble
-LSOverride
-Icon
-._*
-.SHLF
-.VolumeIcon.icns
-.com.apple.timemachine.supported
-.Metadata
-.localized
-TemporaryItems
-Trashes
-*.nib
-*.plist
-*.sublime-workspace
-*.tmproj
-nbproject/
-nbbuild/
-nbdist/
-.nb-gradle/
-*.swp
-*.swo
-*~
-*.tmp
-*.temp
-*.log
-.DS_Store
-Thumbs.db
-ehthumbs.db
-Icon?
-.directory
-.fseventsd
-.Spotlight-V100
-.Trashes
-DocumentRevisions-V100
-com.apple.timemachine.donotpresent
-AppleDouble
-LSOverride
-Icon
-._*
-.SHLF
-.VolumeIcon.icns
-.com.apple.timemachine.supported
-.Metadata
-.localized
-TemporaryItems
-Trashes
-*.nib
-*.plist
-*.sublime-workspace
-*.tmproj
-nbproject/
-nbbuild/
-nbdist/
-.nb-gradle/
-*.swp
-*.swo
-*~
-*.tmp
-*.temp
-*.log
+nosetests.xml
+```
