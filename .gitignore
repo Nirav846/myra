@@ -67,3 +67,101 @@ Thumbs.db
 *.tar.xz
 *.tar.zst
 ```
+# =================================================
+#  Scratch scripts, outputs, backups
+# =================================================
+_*.py
+check_*.py
+verify_*.py
+inspect_*.py
+show_*.py
+fix_*.py
+*.backup
+*.broken
+*.recovered
+*.sc_fixed
+*.old
+trial/
+
+# External repos (never commit)
+eod2/
+eod2-*/
+BhavDesk/
+cross-fund-holdings-traction/
+
+# AI agent artifacts
+.agent/
+.agents/
+.opencode/
+.claude/
+.gemini/
+conductor/
+memory/
+superpowers/
+
+# =================================================
+#  MYRA final cleanup - scratch outputs and AI artifacts
+# =================================================
+
+# AI / agent artifacts at root
+AI_INSTRUCTIONS.md
+Auto_Agent_Help.txt
+PROJECT_RULES.md
+SKILL.md
+HELP.md
+auto_improve.md
+.bgeminiignore
+.geminiignore
+.julesrules
+Myra - Shortcut.lnk
+skills-lock.json
+opencode.json
+
+# Scratch output files at root
+*.txt
+*.csv
+*.lnk
+*.md
+!README.md
+!PROJECT_SUMMARY.md
+!requirements.txt
+!config/nse_manual_overrides.csv
+!config/ruff.toml
+
+# Subdirectories to ignore
+.backtest_scratch/
+.huggingface/
+myra_reports/
+myra_app/data/
+pkscreener_env/
+data/
+logs/
+models/
+results/
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+myra_app/db/*.db
+myra_app/db/*.sqlite
+myra_app/db/backups/
+myra_app/db/New Text Document.txt
+myra_app/db/PKDevTools_cache.sqlite
+
+# Backup/recovery
+*.backup
+*.broken
+*.recovered
+*.sc_fixed
+
+# =================================================
+#  Final cleanup - root scratch scripts and helpers
+# =================================================
+/test_*.py
+/tools/compare_*.py
+/config/myra_sources.json
+/config/pkscreener.ini
+HELP FILES/
+PROJECT_SUMMARY.md
+PROJECT_RULES.md
