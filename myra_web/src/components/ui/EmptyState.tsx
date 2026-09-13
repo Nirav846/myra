@@ -29,6 +29,9 @@ export interface EmptyStateProps {
   
   /** Custom class name for styling */
   className?: string;
+  
+  /** ARIA label for accessibility */
+  'aria-label'?: string;
 }
 
 const defaultContent: Record<string, { title: string; description: string; icon: React.ReactNode }> = {
@@ -67,6 +70,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   action,
   children,
   className = '',
+  'aria-label': ariaLabel,
 }) => {
   const content = defaultContent[variant];
   
@@ -80,6 +84,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
       className={`flex flex-col items-center justify-center p-8 text-center ${className}`}
       role="status"
       aria-live="polite"
+      aria-label={ariaLabel}
     >
       <CardContent className="flex flex-col items-center gap-4 max-w-md">
         {/* Icon Container */}

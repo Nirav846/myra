@@ -14,6 +14,8 @@ interface CardProps extends HTMLAttributes<HTMLDivElement> {
   padding?: 'none' | 'sm' | 'md' | 'lg';
   hover?: boolean;
   className?: string;
+  role?: string;
+  'aria-label'?: string;
 }
 
 export function Card({ 
