@@ -1,5 +1,5 @@
 import { ReactNode, useMemo } from 'react';
-import { ArrowUpDown } from 'lucide-react';
+import { ArrowUpDown, ExternalLink, Star, Info } from 'lucide-react';
 
 export interface TableColumn<T> {
   key: keyof T | null;
@@ -10,6 +10,7 @@ export interface TableColumn<T> {
   render?: (item: T, index: number) => ReactNode;
   headerClassName?: string;
   cellClassName?: string;
+  conditionalFormat?: (value: any, item: T) => string;
 }
 
 export interface SortState<T> {
@@ -28,6 +29,8 @@ interface ScannerTableProps<T> {
   rowClassName?: (item: T, index: number) => string;
   enableHover?: boolean;
   enableStripes?: boolean;
+  showQuickActions?: boolean;
+  onQuickAction?: (action: string, item: T) => void;
 }
 
 export function ScannerTable<T extends Record<string, any>>({
@@ -41,6 +44,8 @@ export function ScannerTable<T extends Record<string, any>>({
   rowClassName,
   enableHover = true,
   enableStripes = true,
+  showQuickActions = false,
+  onQuickAction,
 }: ScannerTableProps<T>) {
   const sortedData = useMemo(() => {
     if (!sortKey) return data;
@@ -130,26 +135,63 @@ export function ScannerTable<T extends Record<string, any>>({
                   ${rowClass}
                   ${hoverClass}
                   ${stripeClass}
+                  group
                 `}
               >
-                {columns.map((col) => (
-                  <td
-                    key={`${key}-${String(col.key ?? col.label)}`}
-                    className={`
-                      px-3 py-2.5
-                      ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}
-                      ${col.cellClassName || ''}
-                      ${col.key === null ? '' : 'numeric'}
-                    `}
-                  >
-                    {col.render 
-                      ? col.render(item, index)
-                      : col.key 
-                        ? String(item[col.key] ?? '—')
-                        : '—'
-                    }
+                {columns.map((col) => {
+                  const value = col.key ? item[col.key] : null;
+                  const conditionalClass = col.conditionalFormat ? col.conditionalFormat(value, item) : '';
+                  
+                  return (
+                    <td
+                      key={`${key}-${String(col.key ?? col.label)}`}
+                      className={`
+                        px-3 py-2.5
+                        ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}
+                        ${col.cellClassName || ''}
+                        ${conditionalClass}
+                        ${col.key === null ? '' : 'numeric'}
+                      `}
+                    >
+                      {col.render 
+                        ? col.render(item, index)
+                        : col.key 
+                          ? String(item[col.key] ?? '—')
+                          : '—'
+                      }
+                    </td>
+                  );
+                })}
+                {showQuickActions && (
+                  <td className="px-3 py-2.5 text-right opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-1 justify-end">
+                      <button
+                        onClick={() => onQuickAction?.('chart', item)}
+                        className="p-1 hover:bg-accent-indigo/20 rounded text-text-secondary hover:text-accent-indigo transition-colors"
+                        title="View Chart"
+                        aria-label={`View chart for ${item.symbol || 'item'}`}
+                      >
+                        <ExternalLink size={12} />
+                      </button>
+                      <button
+                        onClick={() => onQuickAction?.('watchlist', item)}
+                        className="p-1 hover:bg-yellow-500/20 rounded text-text-secondary hover:text-yellow-400 transition-colors"
+                        title="Add to Watchlist"
+                        aria-label={`Add ${item.symbol || 'item'} to watchlist`}
+                      >
+                        <Star size={12} />
+                      </button>
+                      <button
+                        onClick={() => onQuickAction?.('info', item)}
+                        className="p-1 hover:bg-blue-500/20 rounded text-text-secondary hover:text-blue-400 transition-colors"
+                        title="More Info"
+                        aria-label={`Show info for ${item.symbol || 'item'}`}
+                      >
+                        <Info size={12} />
+                      </button>
+                    </div>
                   </td>
-                ))}
+                )}
               </tr>
             );
           })}
@@ -174,6 +216,76 @@ export function PositiveNegativeCell({ value, suffix = '' }: { value: number | n
       'text-text-primary'
     }>
       {pct.toFixed(2)}{suffix}
+    </span>
+  );
+}
+
+export function ConditionalValue({ 
+  value, 
+  formatter,
+  positiveThreshold,
+  negativeThreshold,
+  suffix = '' 
+}: { 
+  value: number | null | undefined; 
+  formatter?: (v: number) => string;
+  positiveThreshold?: number;
+  negativeThreshold?: number;
+  suffix?: string;
+}) {
+  if (value === null || value === undefined) {
+    return <span className="text-text-tertiary">—</span>;
+  }
+  
+  const numValue = Number(value);
+  const displayValue = formatter ? formatter(numValue) : numValue.toString();
+  
+  let colorClass = 'text-text-primary';
+  if (positiveThreshold !== undefined && numValue >= positiveThreshold) {
+    colorClass = 'text-success font-semibold';
+  } else if (negativeThreshold !== undefined && numValue <= negativeThreshold) {
+    colorClass = 'text-error font-semibold';
+  } else if (numValue > 0) {
+    colorClass = 'text-warning';
+  }
+  
+  return (
+    <span className={colorClass}>
+      {displayValue}{suffix}
+    </span>
+  );
+}
+
+export function PercentageCell({ 
+  value, 
+  showBar = false,
+  positiveIsGood = true
+}: { 
+  value: number | null | undefined; 
+  showBar?: boolean;
+  positiveIsGood?: boolean;
+}) {
+  if (value === null || value === undefined) {
+    return <span className="text-text-tertiary">—</span>;
+  }
+  
+  const pct = Number(value);
+  const isPositive = pct >= 0;
+  const colorClass = isPositive 
+    ? (positiveIsGood ? 'text-success' : 'text-error')
+    : (positiveIsGood ? 'text-error' : 'text-success');
+  
+  return (
+    <span className={`flex items-center gap-2 justify-end ${colorClass}`}>
+      {showBar && (
+        <span className="w-8 h-1 rounded-full bg-white/10 overflow-hidden shrink-0">
+          <span 
+            className={`block h-full rounded-full ${isPositive ? 'bg-success' : 'bg-error'}`} 
+            style={{ width: `${Math.min(100, Math.abs(pct))}%` }} 
+          />
+        </span>
+      )}
+      <span className="font-mono">{pct.toFixed(2)}%</span>
     </span>
   );
 }

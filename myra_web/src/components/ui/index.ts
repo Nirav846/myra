@@ -13,6 +13,8 @@ export {
   MiniBarCell, 
   FormatInt, 
   FormatCurrency,
+  ConditionalValue,
+  PercentageCell,
   type TableColumn,
   type SortState
 } from './ScannerTable';
