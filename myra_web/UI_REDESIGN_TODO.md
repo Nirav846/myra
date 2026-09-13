@@ -117,17 +117,31 @@ This document tracks the front-end UI/UX improvements for the MYRA quantitative 
 ## Phase 3: View-Specific Enhancements (MEDIUM PRIORITY)
 **Goal:** Apply design system to specific views for immediate visual impact
 
-### 3.1 HealthStatusBar Enhancement
-- [ ] Add gradient background
-- [ ] Improve badge styling for status indicators
-- [ ] Better visual hierarchy with icons
-- [ ] Enhanced collapsible scanner counts panel
+### 3.1 HealthStatusBar Enhancement ✅ COMPLETE
+- [x] Add gradient background with backdrop blur
+- [x] Improve badge styling for status indicators (rounded-full, semantic colors)
+- [x] Better visual hierarchy with Lucide icons (Calendar, Database, HardDrive, ScanLine)
+- [x] Enhanced collapsible scanner counts panel (better styling, ARIA attributes)
+- [x] Replace #888 with CSS variables (#9da5b4, text-text-secondary)
+- [x] Add proper ARIA roles and labels (status, alert, region)
+- [x] Improved focus states for keyboard navigation
+- [x] Better height (h-10 vs h-9) for improved touch targets
 
-### 3.2 MissionControl Dashboard Widgets
-- [ ] Redesign widget cards with glass morphism
-- [ ] Add loading skeletons for widgets (use WidgetSkeleton)
-- [ ] Improve data visualization (progress bars, sparklines)
-- [ ] Better empty states
+### 3.2 MissionControl Dashboard Widgets 🔄 IN PROGRESS
+- [x] Import Card, Skeleton components from ui library
+- [x] Add Lucide icons (Activity, TrendingUp, TrendingDown, Info)
+- [x] Market Breadth widget redesign:
+  - [x] Use Card component with elevated variant
+  - [x] Add Skeleton loaders for loading state
+  - [x] Enhanced progress bar with gradients and pulse animation
+  - [x] Icon-enhanced advance/decline indicators
+  - [x] Better error states with Info icon
+  - [x] Improved ARIA labels and roles
+  - [x] Date display enhancement
+- [ ] Nifty Outlook widget redesign (next)
+- [ ] Morning Brief widget redesign (next)
+- [ ] FII Divergence widget redesign (next)
+- [ ] Pipeline Status integration (already using Panel component)
 
 ### 3.3 Scanner Result Tables
 - [x] Apply modern table styles (CSS already done)

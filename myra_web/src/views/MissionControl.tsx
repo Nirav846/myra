@@ -1,10 +1,23 @@
 import { useState, useEffect, useRef } from 'react';
-import { Activity, BarChart2, BrainCircuit, Target, Database, RotateCw, Star } from 'lucide-react';
+import { 
+  Activity, 
+  BarChart2, 
+  BrainCircuit, 
+  Target, 
+  Database, 
+  RotateCw, 
+  Star,
+  TrendingUp,
+  TrendingDown,
+  Info
+} from 'lucide-react';
 import { Librarian } from '../lib/Librarian';
 import { useLazyWidgetData } from '../hooks/useLazyWidgetData';
 import { SymbolAutocomplete } from '../components/SymbolAutocomplete';
 import ErrorBoundary from '../components/ErrorBoundary';
 import PipelineStatusPanel from '../components/PipelineStatusPanel';
+import { Card, CardHeader, CardTitle } from '../components/ui/Card';
+import { Skeleton } from '../components/ui/Skeleton';
 import { API_ROOT } from '../config';
 import { useWatchlist } from '../lib/WatchlistContext';
 
@@ -465,40 +478,86 @@ export default function MissionControlView({ lib, navigateTo }: { lib: Librarian
 
       {/* System Metrics Strip */}
       <section aria-label="System Metrics" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[12px] font-mono" role="alert">Market Breadth crashed</div>}>
-        <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col justify-center">
-          <div className="flex items-center justify-between mb-1">
-            <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Market Breadth (All NSE)</div>
+        <ErrorBoundary fallback={<div className="bg-error-bg border border-error-border rounded-lg p-4 text-error text-[12px] font-mono" role="alert">Market Breadth crashed</div>}>
+        <Card variant="elevated" padding="md" className="flex flex-col justify-center min-h-[140px]">
+          <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <button onClick={breadthWidget.fetchData} disabled={breadthWidget.loading} className="text-[#888] hover:text-[#fafafa] transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 rounded" title="Refresh Market Breadth" aria-label="Refresh Market Breadth">
+              <Activity size={16} className="text-text-tertiary" aria-hidden="true" />
+              <div className="text-[12px] text-text-secondary font-mono uppercase tracking-wider">Market Breadth (All NSE)</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={breadthWidget.fetchData} 
+                disabled={breadthWidget.loading} 
+                className="text-text-tertiary hover:text-text-primary transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded p-1" 
+                title="Refresh Market Breadth" 
+                aria-label="Refresh Market Breadth"
+              >
                 <RotateCw size={14} className={breadthWidget.loading ? 'animate-spin' : ''} aria-hidden="true" />
               </button>
-              <label className="flex items-center gap-1 text-[12px] text-[#888] font-mono cursor-pointer select-none hover:text-[#888] transition-colors" aria-label="Toggle auto-refresh for market breadth">
-                <input type="checkbox" checked={breadthWidget.autoRefresh} onChange={e => breadthWidget.setAutoRefresh(e.target.checked)} className="accent-yellow-500 w-2.5 h-2.5" />
-                Auto-refresh
+              <label className="flex items-center gap-1.5 text-[12px] text-text-secondary font-mono cursor-pointer select-none hover:text-text-primary transition-colors" aria-label="Toggle auto-refresh for market breadth">
+                <input type="checkbox" checked={breadthWidget.autoRefresh} onChange={e => breadthWidget.setAutoRefresh(e.target.checked)} className="accent-indigo-500 w-3 h-3 rounded" />
+                <span className="text-xs">Auto</span>
               </label>
             </div>
           </div>
+          
           {breadthWidget.loading && !breadthWidget.data ? (
-            <div className="text-sm text-[#ccc] py-1" role="status" aria-live="polite">Waiting for data...</div>
+            <div className="space-y-2" role="status" aria-live="polite">
+              <Skeleton height="1.75rem" variant="rounded" />
+              <Skeleton height="0.5rem" variant="rounded" />
+            </div>
           ) : breadthWidget.error ? (
-            <div className="text-[12px] text-red-400 font-mono mt-1" role="alert">{breadthWidget.error}</div>
+            <div className="text-[12px] text-error font-mono mt-1 flex items-center gap-2" role="alert">
+              <Info size={12} />
+              {breadthWidget.error}
+            </div>
           ) : !breadthWidget.data ? (
-            <div className="text-sm text-[#888] py-1 font-mono" role="status">Click Refresh to load</div>
+            <div className="text-sm text-text-tertiary py-2 font-mono flex items-center gap-2">
+              <Info size={14} />
+              Click refresh to load
+            </div>
           ) : (
             <>
-              <div className="text-xl font-bold flex flex-col sm:flex-row sm:items-baseline gap-2">
-                <span className="text-green-400">{breadthWidget.data.advances} ADV</span>
-                <span className="hidden sm:inline text-[#888]">|</span>
-                <span className="text-red-400">{breadthWidget.data.declines} DEC</span>
+              <div className="text-2xl font-bold flex items-baseline gap-3">
+                <span className="text-success flex items-center gap-1">
+                  <TrendingUp size={16} className="opacity-75" aria-hidden="true" />
+                  {breadthWidget.data.advances}
+                  <span className="text-xs font-normal text-text-secondary ml-0.5">ADV</span>
+                </span>
+                <span className="text-border-default">|</span>
+                <span className="text-error flex items-center gap-1">
+                  <TrendingDown size={16} className="opacity-75" aria-hidden="true" />
+                  {breadthWidget.data.declines}
+                  <span className="text-xs font-normal text-text-secondary ml-0.5">DEC</span>
+                </span>
               </div>
-              <div className="w-full h-1 bg-[#333] mt-2 rounded overflow-hidden flex">
-                <div className="h-full bg-green-500 transition-all duration-500" style={{ width: `${advPct}%` }}></div>
-                <div className="h-full bg-red-500 transition-all duration-500" style={{ width: `${decPct}%` }}></div>
+              <div className="w-full h-2 bg-bg-tertiary mt-3 rounded-full overflow-hidden flex shadow-inner">
+                <div 
+                  className="h-full bg-gradient-to-r from-success to-success/80 transition-all duration-500 relative" 
+                  style={{ width: `${advPct}%` }}
+                  role="progressbar"
+                  aria-valuenow={advPct}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label={`Advances: ${advPct}%`}
+                >
+                  <div className="absolute inset-0 bg-white/10 animate-pulse" />
+                </div>
+                <div 
+                  className="h-full bg-gradient-to-r from-error/80 to-error transition-all duration-500" 
+                  style={{ width: `${decPct}%` }}
+                  aria-hidden="true"
+                />
               </div>
+              {breadthWidget.data.date && (
+                <p className="text-[11px] text-text-tertiary mt-2 font-mono">
+                  As of {new Date(breadthWidget.data.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </p>
+              )}
             </>
           )}
-        </div>
+        </Card>
         </ErrorBoundary>
 
         {/* Nifty Outlook Widget */}
