@@ -1028,6 +1028,7 @@ def test_scan_returns_empty_when_bulk_data_is_none():
     scanner = DCBBargainScanner()
 
     with (
+        patch.object(scanner, "_get_universe", return_value=[]),
         patch(
             "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe",
             return_value=None,
