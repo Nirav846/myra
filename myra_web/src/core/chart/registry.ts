@@ -24,6 +24,10 @@ const indicatorLoaders: Record<string, () => Promise<IndicatorModule<any, any>>>
     'marketStructureShift': () => import('../technical-analysis/indicators/marketStructureShift').then(m => ({ id: 'marketStructureShift', defaults: {}, calculate: m.detectMarketStructureShifts }) as IndicatorModule<any, any>),
     'changeOfCharacter': () => import('../technical-analysis/indicators/changeOfCharacter').then(m => ({ id: 'changeOfCharacter', defaults: {}, calculate: m.detectChangeOfCharacter }) as IndicatorModule<any, any>),
     'deliveryVolumeRatio': () => import('../technical-analysis/indicators/deliveryVolumeRatio').then(m => ({ id: 'deliveryVolumeRatio', defaults: { lookback: 20 }, calculate: m.calculateDeliveryVolumeRatio }) as IndicatorModule<any, any>),
+    'ifi': () => import('../technical-analysis/indicators/ifi').then(m => ({ id: 'ifi', defaults: { period: 20 }, calculate: m.calculateIFI }) as IndicatorModule<any, any>),
+    'smartMoneyDivergence': () => import('../technical-analysis/indicators/smartMoneyDivergence').then(m => ({ id: 'smartMoneyDivergence', defaults: { lookback: 10 }, calculate: m.detectSmartMoneyDivergence }) as IndicatorModule<any, any>),
+    'deliveryClusters': () => import('../technical-analysis/indicators/deliveryClusters').then(m => ({ id: 'deliveryClusters', defaults: { minConsecutiveDays: 3, threshold: 60 }, calculate: m.detectDeliveryClusters }) as IndicatorModule<any, any>),
+    'delAdjRsi': () => import('../technical-analysis/indicators/delAdjRsi').then(m => ({ id: 'delAdjRsi', defaults: { period: 14, deliveryWeight: 0.5 }, calculate: m.calculateDeliveryAdjustedRSI }) as IndicatorModule<any, any>),
 };
 
 // Lazy-load trace builders dynamically
@@ -45,6 +49,10 @@ const traceBuilderLoaders: Record<string, () => Promise<TraceBuilder<any, any>>>
     'orderBlocks': () => import('./traces/orderBlocksBuilder').then(m => m.orderBlocksTraceBuilder),
     'equalHighsLows': () => import('./traces/equalHighsLowsBuilder').then(m => m.equalHighsLowsTraceBuilder),
     'premiumDiscount': () => import('./traces/premiumDiscountBuilder').then(m => m.premiumDiscountTraceBuilder),
+    'ifi': () => import('./traces/ifiBuilder').then(m => m.ifiTraceBuilder),
+    'smartMoneyDivergence': () => import('./traces/smartMoneyDivergenceBuilder').then(m => m.smartMoneyDivergenceTraceBuilder),
+    'deliveryClusters': () => import('./traces/deliveryClustersBuilder').then(m => m.deliveryClustersTraceBuilder),
+    'delAdjRsi': () => import('./traces/delAdjRsiBuilder').then(m => m.delAdjRsiTraceBuilder),
 };
 
 // Lazy-load layout builders dynamically
