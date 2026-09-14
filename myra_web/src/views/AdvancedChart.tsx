@@ -1314,7 +1314,7 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
   const queryParams = new URLSearchParams(location.search);
   const urlSymbol = queryParams.get('symbol') || undefined;
   const initialSymbol = urlSymbol || activeSymbol || 'RELIANCE';
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = usePersistedState('chart-sidebar-open', false);
   const [symbols, setSymbols] = useState<string[]>([initialSymbol]);
   const [searchInput, setSearchInput] = useState('');
   const [range, setRange] = useState(settings.defaultChartRange);
