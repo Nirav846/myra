@@ -1,5 +1,5 @@
-import React from 'react';
-import { PanelLeftClose, Settings2, Info } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { PanelLeftClose, Settings2, Info, Search } from 'lucide-react';
 
 interface SidebarToggle {
     id: string;
@@ -31,6 +31,26 @@ export const ChartSidebar: React.FC<ChartSidebarProps> = ({
     candleTimeframe,
     setCandleTimeframe
 }) => {
+    const [filter, setFilter] = useState('');
+
+    const activeCount = useMemo(() => toggles.filter(t => t.state).length, [toggles]);
+
+    const filteredToggles = useMemo(() => {
+        if (!filter.trim()) return toggles;
+        const q = filter.toLowerCase();
+        return toggles.filter(t => t.label.toLowerCase().includes(q));
+    }, [toggles, filter]);
+
+    const grouped = useMemo(() => {
+        const map: Record<string, SidebarToggle[]> = {};
+        for (const t of filteredToggles) {
+            const g = t.group || 'Analysis Objects';
+            if (!map[g]) map[g] = [];
+            map[g].push(t);
+        }
+        return map;
+    }, [filteredToggles]);
+
     return (
         <div className={`flex flex-col border-r border-[#ffffff1a] transition-all duration-300 ${sidebarOpen ? 'w-64' : 'w-0 overflow-hidden'}`}>
             <div className="h-14 flex items-center justify-between px-4 border-b border-[#ffffff1a] shrink-0">
@@ -48,6 +68,31 @@ export const ChartSidebar: React.FC<ChartSidebarProps> = ({
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar bg-[#16181d]">
+                {/* Search filter */}
+                <div className="relative">
+                    <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
+                    <input
+                        type="text"
+                        value={filter}
+                        onChange={e => setFilter(e.target.value)}
+                        placeholder="Filter indicators…"
+                        className="w-full bg-[#1a1c24] border border-[#ffffff1a] rounded pl-8 pr-2 py-1.5 text-xs text-[#ccc] font-mono outline-none placeholder:text-gray-600 focus:border-cyan-500 transition-colors"
+                    />
+                    {filter && (
+                        <button
+                            onClick={() => setFilter('')}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white text-[10px]"
+                        >✕</button>
+                    )}
+                </div>
+
+                <div className="text-[11px] text-gray-500 font-mono">
+                    {activeCount} of {toggles.length} active
+                    {filter && filteredToggles.length !== toggles.length && (
+                        <span className="text-gray-600"> · {filteredToggles.length} shown</span>
+                    )}
+                </div>
+
                 <div className="space-y-3">
                     <h3 className="text-[12px] font-bold text-gray-500 uppercase tracking-widest mb-4 border-b border-white/5 pb-2">Candle Timeframe</h3>
                     <select 
@@ -61,12 +106,7 @@ export const ChartSidebar: React.FC<ChartSidebarProps> = ({
                     </select>
                 </div>
 
-                {Object.entries(toggles.reduce((acc, toggle) => {
-                    const group = toggle.group || 'Analysis Objects';
-                    if (!acc[group]) acc[group] = [];
-                    acc[group].push(toggle);
-                    return acc;
-                }, {} as Record<string, typeof toggles>)).map(([groupName, groupToggles]) => (
+                {Object.entries(grouped).map(([groupName, groupToggles]) => (
                     <div key={groupName} className="space-y-3 mb-6">
                         <h3 className="text-[12px] font-bold text-gray-500 uppercase tracking-widest mb-4 border-b border-white/5 pb-2">{groupName}</h3>
                         <div className="space-y-1.5 px-1">
