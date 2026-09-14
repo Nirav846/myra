@@ -27,10 +27,14 @@ import { createCandleIndexes, buildDateToIndexMap } from '../utils/chartCoords';
 import { IndicatorWorker } from '../workers/indicatorWorker';
 import * as Comlink from 'comlink';
 import { decimateOHLCVData } from '../utils/dataDecimator';
+import { buildSmartMoneyDivergence } from '../core/chart/traces/smartMoneyDivergenceBuilder';
+import { buildDeliveryClusters } from '../core/chart/traces/deliveryClustersBuilder';
+import { buildDeliveryAdjustedRSI } from '../core/chart/traces/delAdjRsiBuilder';
+import { buildInstitutionalFlowIndex } from '../core/chart/traces/ifiBuilder';
 
 // Lazy-load indicator modules - preloaded on mount
-const INDICATOR_KEYS = ['sma', 'rsi', 'fvg', 'swings', 'volumeProfile', 'delIntensityCore', 'instBlocks', 'delAd', 'liqVoids'];
-const TRACE_BUILDER_KEYS = ['swings', 'vwap', 'sma', 'rsi', 'fvg', 'volumeProfile', 'delIntensityCore', 'instBlocks', 'delVwapBands', 'delAd', 'niftyOut', 'volume', 'delivery'];
+const INDICATOR_KEYS = ['sma', 'rsi', 'fvg', 'swings', 'volumeProfile', 'delIntensityCore', 'instBlocks', 'delAd', 'liqVoids', 'orderBlocks', 'equalHighsLows', 'breakerBlocks', 'premiumDiscount'];
+const TRACE_BUILDER_KEYS = ['swings', 'vwap', 'sma', 'rsi', 'fvg', 'volumeProfile', 'delIntensityCore', 'instBlocks', 'delVwapBands', 'delAd', 'niftyOut', 'volume', 'delivery', 'orderBlocks', 'equalHighsLows', 'breakerBlocks', 'premiumDiscount'];
 const LAYOUT_BUILDER_KEYS = ['fibonacci', 'liqVoids'];
 
 const usePersistedState = <T,>(key: string, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
@@ -284,7 +288,7 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
                 const [deliveryObvResult, atrResult, swingsResult] = await Promise.all([
                     worker.calculateIndicators(requestId, 'deliveryObv', data),
                     worker.calculateIndicators(requestId, 'atr', data),
-                    toggles.showSwings ? worker.calculateIndicators(requestId, 'swings', data) : Promise.resolve(null)
+                    toggles.showSwings || toggles.showBreakerBlocks ? worker.calculateIndicators(requestId, 'swings', data) : Promise.resolve(null)
                 ]);
                 
                 if (!cancelled) {
@@ -305,7 +309,7 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
         return () => {
             cancelled = true;
         };
-    }, [worker, data, toggles.showSwings]);
+    }, [worker, data, toggles.showSwings, toggles.showBreakerBlocks]);
 
     // Delivery-Weighted OBV (main thread fallback)
     const deliveryObv = useMemo(() => {
@@ -345,13 +349,13 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
         return arr;
     }, [workerResults.atr, data]);
 
-    // Swings (main thread fallback)
+    // Swings (main thread fallback) — also needed for breaker blocks
     const swingsObj = useMemo(() => {
-        if (!toggles.showSwings || !data) return null;
+        if ((!toggles.showSwings && !toggles.showBreakerBlocks) || !data) return null;
         if (workerResults.swingsObj !== undefined) return workerResults.swingsObj;
         // Fallback: calculate on main thread via registry
         return chartRegistry.getIndicatorSync('swings')?.calculate(data, {}) || null;
-    }, [toggles.showSwings, data, workerResults.swingsObj]);
+    }, [toggles.showSwings, toggles.showBreakerBlocks, data, workerResults.swingsObj]);
 
     const atrPct = useMemo(() => {
         if (!baseData.closes || !atr || atr.length === 0) return [];
@@ -498,6 +502,54 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
         return chartRegistry.getIndicatorSync('delAd')?.calculate(data, {});
     }, [toggles.showDelAD, data]);
 
+    // Order Blocks
+    const obObj = useMemo(() => {
+        if (!toggles.showOrderBlocks || !data) return null;
+        return chartRegistry.getIndicatorSync('orderBlocks')?.calculate(data, { threshold: 1.5 }) || null;
+    }, [toggles.showOrderBlocks, data]);
+
+    // Equal Highs/Lows
+    const ehlObj = useMemo(() => {
+        if (!toggles.showEqualHighsLows || !data) return null;
+        return chartRegistry.getIndicatorSync('equalHighsLows')?.calculate(data, { tolerancePercent: 0.5, minTouches: 2 }) || null;
+    }, [toggles.showEqualHighsLows, data]);
+
+    // Premium / Discount
+    const pdObj = useMemo(() => {
+        if (!toggles.showPremiumDiscount || !data) return null;
+        return chartRegistry.getIndicatorSync('premiumDiscount')?.calculate(data, { lookback: 50 }) || null;
+    }, [toggles.showPremiumDiscount, data]);
+
+    // Breaker Blocks (needs swings)
+    const bbObj = useMemo(() => {
+        if (!toggles.showBreakerBlocks || !data || !swingsObj) return null;
+        return chartRegistry.getIndicatorSync('breakerBlocks')?.calculate(data, { swings: swingsObj }) || null;
+    }, [toggles.showBreakerBlocks, data, swingsObj]);
+
+    // Smart Money Divergence (date-based → will adapt in computed)
+    const smDivData = useMemo(() => {
+        if (!toggles.showSmartMoneyDiv || !data) return null;
+        return buildSmartMoneyDivergence(data, 10);
+    }, [toggles.showSmartMoneyDiv, data]);
+
+    // Delivery Clusters (date-based → will adapt in computed)
+    const delClustersData = useMemo(() => {
+        if (!toggles.showDeliveryClusters || !data) return null;
+        return buildDeliveryClusters(data, 3, 60);
+    }, [toggles.showDeliveryClusters, data]);
+
+    // Delivery-Adjusted RSI (date-based → will adapt in computed)
+    const delAdjRsiData = useMemo(() => {
+        if (!toggles.showDelAdjRsi || !data) return null;
+        return buildDeliveryAdjustedRSI(data, 14, 0.5);
+    }, [toggles.showDelAdjRsi, data]);
+
+    // IFI (date-based → will adapt in computed)
+    const ifiData = useMemo(() => {
+        if (!toggles.showIfi || !data) return null;
+        return buildInstitutionalFlowIndex(data, 20);
+    }, [toggles.showIfi, data]);
+
     // Pane layout calculations
     const paneLayout = useMemo(() => {
         const gap = 0.04;
@@ -627,6 +679,38 @@ const { delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoi
         }
     }
 
+    // Order Blocks
+    if (toggles.showOrderBlocks && obObj) {
+        const tb = chartRegistry.getTraceBuilderSync('orderBlocks');
+        if (tb && tb.buildShapes) {
+            shapes.push(...tb.buildShapes(obObj, traceCtx));
+        }
+    }
+
+    // Equal Highs/Lows
+    if (toggles.showEqualHighsLows && ehlObj) {
+        const tb = chartRegistry.getTraceBuilderSync('equalHighsLows');
+        if (tb && tb.buildShapes) {
+            shapes.push(...tb.buildShapes(ehlObj, traceCtx));
+        }
+    }
+
+    // Breaker Blocks
+    if (toggles.showBreakerBlocks && bbObj) {
+        const tb = chartRegistry.getTraceBuilderSync('breakerBlocks');
+        if (tb && tb.buildShapes) {
+            shapes.push(...tb.buildShapes(bbObj, traceCtx));
+        }
+    }
+
+    // Premium / Discount
+    if (toggles.showPremiumDiscount && pdObj) {
+        const tb = chartRegistry.getTraceBuilderSync('premiumDiscount');
+        if (tb && tb.buildShapes) {
+            shapes.push(...tb.buildShapes(pdObj, traceCtx));
+        }
+    }
+
     if (toggles.showLiqVoids && liqVoidsResult && liqVoidsResult.length > 0) {
         shapes.push(...liqVoidsToShapes(liqVoidsResult, dates, liqVoidSettings, dateToIndex));
     }
@@ -693,6 +777,52 @@ const { delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoi
             line: { color: '#8884d8', width: 1.5 },
             hoverinfo: 'none',
             showlegend: false,
+        });
+    }
+
+    // Smart Money Divergence — adapt date-based traces to candleIndexes
+    let smDivTraces: any[] = [];
+    if (toggles.showSmartMoneyDiv && smDivData && smDivData.length > 0) {
+        smDivData.forEach((trace: any) => {
+            if (!trace.x || !trace.y) return;
+            const xMapped = (trace.x as string[]).map((d: string) => dateToIndex.get(d) ?? 0);
+            smDivTraces.push({ ...trace, x: xMapped, yaxis: 'y', hoverinfo: 'none', showlegend: false });
+        });
+    }
+
+    // Delivery Clusters — adapt date-based traces to candleIndexes
+    let delClustersTraces: any[] = [];
+    if (toggles.showDeliveryClusters && delClustersData && delClustersData.length > 0) {
+        delClustersData.forEach((trace: any) => {
+            if (trace.type === 'scatter' && trace.x) {
+                const xMapped = (trace.x as string[]).map((d: string) => dateToIndex.get(d) ?? 0);
+                delClustersTraces.push({ ...trace, x: xMapped, yaxis: 'y', hoverinfo: 'none', showlegend: false });
+            } else if (trace.type === 'rect' && trace.x0 !== undefined) {
+                // Shape-based trace — convert date refs to indexes
+                const x0 = dateToIndex.get(trace.x0) ?? 0;
+                const x1 = dateToIndex.get(trace.x1) ?? data.length - 1;
+                delClustersTraces.push({ ...trace, x0, x1, xref: 'x', yaxis: 'y', hoverinfo: 'none', showlegend: false });
+            }
+        });
+    }
+
+    // Delivery-Adjusted RSI — adapt date-based traces to candleIndexes
+    let delAdjRsiTraces: any[] = [];
+    if (toggles.showDelAdjRsi && delAdjRsiData && delAdjRsiData.length > 0) {
+        delAdjRsiData.forEach((trace: any) => {
+            if (!trace.x || !trace.y) return;
+            const xMapped = (trace.x as string[]).map((d: string) => dateToIndex.get(d) ?? 0);
+            delAdjRsiTraces.push({ ...trace, x: xMapped, yaxis: 'y3', hoverinfo: 'none', showlegend: false });
+        });
+    }
+
+    // IFI — adapt date-based traces to candleIndexes
+    let ifiTraces: any[] = [];
+    if (toggles.showIfi && ifiData && ifiData.length > 0) {
+        ifiData.forEach((trace: any) => {
+            if (!trace.x || !trace.y) return;
+            const xMapped = (trace.x as string[]).map((d: string) => dateToIndex.get(d) ?? 0);
+            ifiTraces.push({ ...trace, x: xMapped, yaxis: 'y3', hoverinfo: 'none', showlegend: false });
         });
     }
 
@@ -834,9 +964,9 @@ const { delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoi
     }
     
     return {
-        smasTraces, rsiTraces, volProfileTraces, vwapTraces, swingsTraces, instBlocksTraces, delVwapBandsTraces, delAdTraces, niftyOutTraces, smartMoneyPrintsTraces, delIntensityCoreTraces, shapes, volumeTraces, deliveryTraces, annotations, profileResult, vpMaxVolume, deliveryOverlayTraces, deliveryObvTraces, trendShapes
+        smasTraces, rsiTraces, volProfileTraces, vwapTraces, swingsTraces, instBlocksTraces, delVwapBandsTraces, delAdTraces, niftyOutTraces, smartMoneyPrintsTraces, delIntensityCoreTraces, shapes, volumeTraces, deliveryTraces, annotations, profileResult, vpMaxVolume, deliveryOverlayTraces, deliveryObvTraces, trendShapes, smDivTraces, delClustersTraces, delAdjRsiTraces, ifiTraces
     };
-}, [baseData, delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj, paneLayout, deliveryObv, atr, atrPct, viewport, data, toggles]);
+}, [baseData, delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj, obObj, ehlObj, pdObj, bbObj, smDivData, delClustersData, delAdjRsiData, ifiData, paneLayout, deliveryObv, atr, atrPct, viewport, data, toggles]);
 
 const {
         opens, highs, lows, closes, volumes, vwap, deliveryFinal, deliveryPct, deliveryRatio, stockReturn, volComp, relVol, divScores, niftyOut, trendAlignment, volumeColors, deliveryColorsInverse
@@ -847,11 +977,11 @@ const { currentY, rsiDomain, delAdDomain, delDomain, volDomain, priceDomain, obv
 // Aggregate all indicator data for use in computed useMemo and ChartItemInner
 const allIndicatorData = useMemo(() => ({
     delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj,
-    deliveryObv, atr, atrPct
-}), [delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj, deliveryObv, atr, atrPct]);
+    deliveryObv, atr, atrPct, obObj, ehlObj, pdObj, bbObj, smDivData, delClustersData, delAdjRsiData, ifiData
+}), [delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj, deliveryObv, atr, atrPct, obObj, ehlObj, pdObj, bbObj, smDivData, delClustersData, delAdjRsiData, ifiData]);
 
 const {
-    smasTraces, rsiTraces, volProfileTraces, vwapTraces, swingsTraces, instBlocksTraces, delVwapBandsTraces, delAdTraces, niftyOutTraces, smartMoneyPrintsTraces, delIntensityCoreTraces, shapes, volumeTraces, deliveryTraces, annotations, profileResult, vpMaxVolume, deliveryOverlayTraces, deliveryObvTraces, trendShapes
+    smasTraces, rsiTraces, volProfileTraces, vwapTraces, swingsTraces, instBlocksTraces, delVwapBandsTraces, delAdTraces, niftyOutTraces, smartMoneyPrintsTraces, delIntensityCoreTraces, shapes, volumeTraces, deliveryTraces, annotations, profileResult, vpMaxVolume, deliveryOverlayTraces, deliveryObvTraces, trendShapes, smDivTraces, delClustersTraces, delAdjRsiTraces, ifiTraces
 } = computed;
 
 const allShapes = useMemo(() => [...shapes, ...trendShapes], [shapes, trendShapes]);
@@ -1064,7 +1194,19 @@ const dataIndex = hoveredIndex !== undefined && hoveredIndex >= 0 && hoveredInde
                                       ...(toggles.showDelAD ? delAdTraces.map(t => ({...t, hoverinfo: 'none'})) : []),
                                       
                                       // Delivery-Weighted OBV
-                                      ...(toggles.showDeliveryObv ? deliveryObvTraces.map(t => ({...t, hoverinfo: 'none'})) : [])
+                                      ...(toggles.showDeliveryObv ? deliveryObvTraces.map(t => ({...t, hoverinfo: 'none'})) : []),
+                                      
+                                      // Smart Money Divergence
+                                      ...(toggles.showSmartMoneyDiv ? smDivTraces.map(t => ({...t, hoverinfo: 'none'})) : []),
+                                      
+                                      // Delivery Clusters
+                                      ...(toggles.showDeliveryClusters ? delClustersTraces.map(t => ({...t, hoverinfo: 'none'})) : []),
+                                      
+                                      // Delivery-Adjusted RSI
+                                      ...(toggles.showDelAdjRsi ? delAdjRsiTraces.map(t => ({...t, hoverinfo: 'none'})) : []),
+                                      
+                                      // IFI (Institutional Flow Index)
+                                      ...(toggles.showIfi ? ifiTraces.map(t => ({...t, hoverinfo: 'none'})) : [])
                                   ]}
                                   layout={chartLayout}
                                  config={{
@@ -1170,6 +1312,14 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
   const [showDeliveryOverlay, setShowDeliveryOverlay] = usePersistedState('chart-showDeliveryOverlay', false);
 
   const [showSwings, setShowSwings] = usePersistedState('chart-showSwings', true);
+  const [showOrderBlocks, setShowOrderBlocks] = usePersistedState('chart-showOrderBlocks', false);
+  const [showEqualHighsLows, setShowEqualHighsLows] = usePersistedState('chart-showEqualHighsLows', false);
+  const [showBreakerBlocks, setShowBreakerBlocks] = usePersistedState('chart-showBreakerBlocks', false);
+  const [showPremiumDiscount, setShowPremiumDiscount] = usePersistedState('chart-showPremiumDiscount', false);
+  const [showSmartMoneyDiv, setShowSmartMoneyDiv] = usePersistedState('chart-showSmartMoneyDiv', false);
+  const [showDeliveryClusters, setShowDeliveryClusters] = usePersistedState('chart-showDeliveryClusters', false);
+  const [showDelAdjRsi, setShowDelAdjRsi] = usePersistedState('chart-showDelAdjRsi', false);
+  const [showIfi, setShowIfi] = usePersistedState('chart-showIfi', false);
   const [crosshairEnabled, setCrosshairEnabled] = usePersistedState('chart-crosshair', true);
 
   const [limitDataRange, setLimitDataRange] = usePersistedState('chart-limitDataRange', true);
@@ -1646,12 +1796,14 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
       showSma20, showSma50, showSma150, showSma200, showFvg, showFibonacci,
       showVwap, showSwings, showNiftyOut, showSmartMoney, showDelDivergence, 
       showDelVwapBands, showLiqVoids, showInstBlocks, showDelDelta, showNakedPoc,
-      showDeliveryOverlay
+      showDeliveryOverlay, showOrderBlocks, showEqualHighsLows, showBreakerBlocks,
+      showPremiumDiscount, showSmartMoneyDiv, showDeliveryClusters, showDelAdjRsi, showIfi
   }), [
       showSma20, showSma50, showSma150, showSma200, showFvg, showFibonacci,
       showVwap, showSwings, showNiftyOut, showSmartMoney, showDelDivergence, 
       showDelVwapBands, showLiqVoids, showInstBlocks, showDelDelta, showNakedPoc,
-      showDeliveryOverlay
+      showDeliveryOverlay, showOrderBlocks, showEqualHighsLows, showBreakerBlocks,
+      showPremiumDiscount, showSmartMoneyDiv, showDeliveryClusters, showDelAdjRsi, showIfi
   ]);
 
   const paneToggles = useMemo(() => ({
@@ -1692,6 +1844,14 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
     { id: 'naked_poc', label: 'Naked POC Lines', state: showNakedPoc, set: setShowNakedPoc, desc: 'Tracks unrested volume & delivery Nodes until they are tested.' },
     { id: 'liq_voids', label: 'Liquidity Voids', state: showLiqVoids, set: setShowLiqVoids, desc: 'Shaded areas where large price movement occurred on low relative volume (potential gap fills).', settingsAction: () => setIndicatorSettingsOpen(true) },
     { id: 'inst_blocks', label: 'Inst. Blocks', state: showInstBlocks, set: setShowInstBlocks, desc: 'Massive volume anomalies (> 3.5x average) paired with > 65% delivery.' },
+    { id: 'order_blocks', label: 'Order Blocks', state: showOrderBlocks, set: setShowOrderBlocks, desc: 'Institutional accumulation/distribution zones — last candle before strong moves.' },
+    { id: 'equal_hl', label: 'Equal Highs/Lows', state: showEqualHighsLows, set: setShowEqualHighsLows, desc: 'Liquidity pools — multiple peaks/troughs at similar price levels.' },
+    { id: 'breaker_blocks', label: 'Breaker Blocks', state: showBreakerBlocks, set: setShowBreakerBlocks, desc: 'Failed order blocks that reverse after liquidity sweeps.' },
+    { id: 'premium_discount', label: 'Premium / Discount', state: showPremiumDiscount, set: setShowPremiumDiscount, desc: 'Fibonacci-based zones — Premium (sell), Discount (buy), Equilibrium.' },
+    { id: 'smart_money_div', label: 'SM Divergence', state: showSmartMoneyDiv, set: setShowSmartMoneyDiv, desc: 'Divergence between price action and institutional delivery flow.' },
+    { id: 'del_clusters', label: 'Delivery Clusters', state: showDeliveryClusters, set: setShowDeliveryClusters, desc: 'Consecutive high delivery days forming support/resistance zones.' },
+    { id: 'del_adj_rsi', label: 'Del-Adj RSI', state: showDelAdjRsi, set: setShowDelAdjRsi, desc: 'RSI weighted by delivery percentage for institutional signal clarity.' },
+    { id: 'ifi', label: 'IFI (Institutional Flow)', state: showIfi, set: setShowIfi, desc: 'Composite score (-100 to +100) — delivery, volume, and momentum.' },
     { id: 'rsi', label: 'RSI Pane', state: showRsi, set: setShowRsi },
     { id: 'delivery_obv', label: 'Delivery OBV', state: showDeliveryObv, set: setShowDeliveryObv, desc: 'Cumulative delivery-weighted OBV. Adds delivery on up days, subtracts on down days.' },
     { id: 'limit_data_range', label: 'Limit to 2 Years', state: limitDataRange, set: setLimitDataRange, desc: 'Limit data fetching to recent 2 years to improve performance.', group: 'Hardware' },
@@ -1701,7 +1861,8 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
       showNiftyOut, showLogScale, showVolume, showDelivery, showDelMA, showDeliveryProfile, 
       showDeliverySR, showSmartMoney, showDelDivergence, showDelAD, showDelVwapBands, 
       showLiqVoids, showInstBlocks, showRsi, performanceMode, limitDataRange, showDelDelta, showNakedPoc,
-      showDeliveryOverlay, showDeliveryObv
+      showDeliveryOverlay, showDeliveryObv, showOrderBlocks, showEqualHighsLows, showBreakerBlocks,
+      showPremiumDiscount, showSmartMoneyDiv, showDeliveryClusters, showDelAdjRsi, showIfi
   ]);
 
   return (
