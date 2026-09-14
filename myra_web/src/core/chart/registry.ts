@@ -20,6 +20,10 @@ const indicatorLoaders: Record<string, () => Promise<IndicatorModule<any, any>>>
     'equalHighsLows': () => import('../technical-analysis/indicators/equalHighsLows').then(m => ({ id: 'equalHighsLows', defaults: { tolerancePercent: 0.5, minTouches: 2 }, calculate: m.detectEqualHighsLows }) as IndicatorModule<any, any>),
     'premiumDiscount': () => import('../technical-analysis/indicators/premiumDiscount').then(m => ({ id: 'premiumDiscount', defaults: { lookback: 50 }, calculate: m.calculatePremiumDiscount }) as IndicatorModule<any, any>),
     'deliveryTrend': () => import('../technical-analysis/indicators/deliveryTrend').then(m => ({ id: 'deliveryTrend', defaults: {}, calculate: m.calculateDeliveryTrend }) as IndicatorModule<any, any>),
+    'breakerBlocks': () => import('../technical-analysis/indicators/breakerBlocks').then(m => ({ id: 'breakerBlocks', defaults: {}, calculate: m.detectBreakerBlocks }) as IndicatorModule<any, any>),
+    'marketStructureShift': () => import('../technical-analysis/indicators/marketStructureShift').then(m => ({ id: 'marketStructureShift', defaults: {}, calculate: m.detectMarketStructureShifts }) as IndicatorModule<any, any>),
+    'changeOfCharacter': () => import('../technical-analysis/indicators/changeOfCharacter').then(m => ({ id: 'changeOfCharacter', defaults: {}, calculate: m.detectChangeOfCharacter }) as IndicatorModule<any, any>),
+    'deliveryVolumeRatio': () => import('../technical-analysis/indicators/deliveryVolumeRatio').then(m => ({ id: 'deliveryVolumeRatio', defaults: { lookback: 20 }, calculate: m.calculateDeliveryVolumeRatio }) as IndicatorModule<any, any>),
 };
 
 // Lazy-load trace builders dynamically
