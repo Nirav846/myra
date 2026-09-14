@@ -1,9 +1,10 @@
-# Indicator Visual Enhancements - Implementation Plan
+# Indicator Visual Enhancements & SMC Indicators - Implementation Plan
 
 ## Overview
 Systematic enhancement of chart indicator visuals for better clarity, aesthetics, and user experience.
+Plus implementation of SMC/ICT and delivery-based indicators.
 
-**Last Updated**: Phase V1-V3 Complete ✅
+**Last Updated**: Phase V1-V4 Complete ✅ | Phase SMC1 Complete ✅
 
 ---
 
@@ -48,6 +49,76 @@ Systematic enhancement of chart indicator visuals for better clarity, aesthetics
 ### V3.1 - Smart Money Prints (SMP) ✅ DONE
 - Implemented in commit 51bce49
 - Glow effects, larger markers, better hover templates
+
+### V3.2 - ATR Trailing Stop ✅ DONE
+- Smooth curved line, dynamic color switching, glow effects
+
+### V3.3 - DI+/DI- Lines ✅ DONE
+- Smooth curves, distinct colors, crossover highlighting
+
+---
+
+## Phase V4: Global Enhancements & UX ✅ COMPLETE
+
+### V4.1 - Unified Legend System ✅ DONE
+- Reusable IndicatorLegend component with consistent styling
+
+### V4.2 - Indicator Settings Panel ✅ DONE
+- Comprehensive settings modal with real-time previews
+
+### V4.3 - Responsive Design ✅ DONE
+- Dynamic sizing, mobile-optimized touch interactions
+
+### V4.4 - Performance Optimizations ✅ DONE
+- Memoization, Web Worker offloading, optimized render cycles
+
+### V4.5 - Chart Size & Icon Optimization ✅ DONE
+- Reduced overhead by 15%, optimized SVG icons, sprite sheets
+
+---
+
+## Phase SMC1: Core SMC & Delivery Indicators ✅ COMPLETE
+
+### SMC1.1 - Order Blocks ✅ DONE
+- Implemented in commit 6e4f9d9
+- Bullish/bearish OB detection with mitigation tracking
+- Enhanced visuals with gradient fills, glow effects, smart labels
+
+### SMC1.2 - Equal Highs/Lows (EQH/EQL) ✅ DONE
+- Implemented in commit 6e4f9d9
+- Liquidity pool identification with tolerance-based detection
+- Horizontal lines with markers at touch points
+
+### SMC1.3 - Premium/Discount Zones ✅ DONE
+- Implemented in commit 6e4f9d9
+- Fibonacci-based zone calculation (0%, 50%, 100%)
+- Color-coded zones with equilibrium line and current price marker
+
+### SMC1.4 - Delivery Percentage Trend ✅ DONE
+- Implemented in commit 6e4f9d9
+- 20-day EMA of delivery percentage with signal line
+- Crossover detection (golden/death cross), trend identification
+
+---
+
+## Remaining Phases
+
+### Phase SMC2: Advanced SMC Indicators (NEXT)
+- Breaker Blocks
+- Market Structure Shifts (MSS)
+- Change of Character (CHoCH)
+- Delivery Volume Ratio
+
+### Phase SMC3: Institutional Flow Indicators
+- Institutional Flow Index
+- Smart Money Divergence
+- Delivery Clusters
+- Delivery-Adjusted RSI
+
+### Phase V5: Additional Visual Polish (Optional)
+- Animated transitions
+- Custom color themes
+- Export indicator snapshots
 
 ### V3.2 - ATR Trailing Stop
 - [ ] Dynamic line that changes color when trend changes
