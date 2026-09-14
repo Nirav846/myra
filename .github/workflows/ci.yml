@@ -52,18 +52,23 @@ jobs:
           fetch-depth: 1
           submodules: false
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: "npm"
-          cache-dependency-path: myra_web/package-lock.json
+          cache: "pnpm"
+          cache-dependency-path: myra_web/pnpm-lock.yaml
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build frontend
-        run: npm run build
+        run: pnpm build
 
       - name: Verify build output
         run: ls -la dist/
@@ -89,18 +94,23 @@ jobs:
         run: pip-audit --require-hashes=false --progress-spinner=off
         continue-on-error: false
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: "npm"
-          cache-dependency-path: myra_web/package-lock.json
+          cache: "pnpm"
+          cache-dependency-path: myra_web/pnpm-lock.yaml
 
-      - name: Run npm audit
+      - name: Run pnpm audit
         working-directory: myra_web
         run: |
-          npm ci
-          npm audit --audit-level=moderate
+          pnpm install --frozen-lockfile
+          pnpm audit --audit-level=moderate
         continue-on-error: false
 
 # ──────────────────────────────────────────────────────────────
