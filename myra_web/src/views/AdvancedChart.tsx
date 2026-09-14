@@ -2136,6 +2136,7 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
                       className="font-mono text-[11px]"
                       aria-pressed={crosshairEnabled}
                       aria-label="Toggle crosshair tool"
+                      title="Crosshair — ← → to move, Home / End to jump"
                   >
                       Crosshair
                   </Button>

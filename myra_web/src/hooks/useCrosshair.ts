@@ -207,9 +207,34 @@ export function useCrosshair(
       gd.addEventListener('mousemove', handleMouseMove);
       gd.addEventListener('mouseleave', handleMouseLeave);
 
+      // Keyboard navigation for crosshair
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (!enabled) return;
+        const current = useChartStore.getState().hoveredIndex;
+        let next = current;
+        if (e.key === 'ArrowRight') {
+          next = Math.min(dataLength - 1, (current < 0 ? 0 : current) + 1);
+        } else if (e.key === 'ArrowLeft') {
+          next = Math.max(0, (current < 0 ? 0 : current) - 1);
+        } else if (e.key === 'Home') {
+          next = 0;
+        } else if (e.key === 'End') {
+          next = dataLength - 1;
+        } else {
+          return;
+        }
+        e.preventDefault();
+        setHoveredIndex(next);
+      };
+
+      gd.setAttribute('tabindex', '0');
+      gd.style.outline = 'none';
+      gd.addEventListener('keydown', handleKeyDown);
+
       mountCleanup = () => {
         gd.removeEventListener('mousemove', handleMouseMove);
         gd.removeEventListener('mouseleave', handleMouseLeave);
+        gd.removeEventListener('keydown', handleKeyDown);
         if (rafId.current) {
           cancelAnimationFrame(rafId.current);
           rafId.current = null;
