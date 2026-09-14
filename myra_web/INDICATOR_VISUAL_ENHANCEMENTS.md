@@ -4,7 +4,7 @@
 Systematic enhancement of chart indicator visuals for better clarity, aesthetics, and user experience.
 Plus implementation of SMC/ICT and delivery-based indicators.
 
-**Last Updated**: Phase V1-V4 Complete ✅ | Phase SMC1-SMC2 Complete ✅
+**Last Updated**: Phase V1-V4 Complete ✅ | Phase SMC1-SMC3 Complete ✅
 
 ---
 
@@ -144,19 +144,35 @@ Plus implementation of SMC/ICT and delivery-based indicators.
 
 ---
 
+## Phase SMC3: Institutional Flow Indicators ✅ COMPLETE
+
+### SMC3.1 - Institutional Flow Index (IFI) ✅ DONE
+- Implemented in commit 3f399dc
+- Combines delivery percentage, volume ratio, and price momentum
+- Range: -100 to +100 with color-coded zones (>50 accumulation, <-50 distribution)
+- Component breakdown showing individual scores
+
+### SMC3.2 - Smart Money Divergence ✅ DONE
+- Implemented in commit 3f399dc
+- Detects bullish/bearish divergences between price and institutional delivery flow
+- Diamond markers with confidence indicators and trend lines
+- Smart labels showing divergence strength
+
+### SMC3.3 - Delivery Clusters ✅ DONE
+- Implemented in commit 3f399dc
+- Identifies consecutive high delivery activity days as support/resistance zones
+- Heat-map visualization with gradient fills
+- Strong cluster markers with fire emoji labels
+
+### SMC3.4 - Delivery-Adjusted RSI ✅ DONE
+- Implemented in commit 3f399dc
+- Enhanced RSI weighting volume by delivery percentage
+- Dual-line display comparing standard vs delivery-adjusted RSI
+- Overbought/oversold zones with color transitions
+
+---
+
 ## Remaining Phases
-
-### Phase SMC2: Advanced SMC Indicators (NEXT)
-- Breaker Blocks
-- Market Structure Shifts (MSS)
-- Change of Character (CHoCH)
-- Delivery Volume Ratio
-
-### Phase SMC3: Institutional Flow Indicators
-- Institutional Flow Index
-- Smart Money Divergence
-- Delivery Clusters
-- Delivery-Adjusted RSI
 
 ### Phase V5: Additional Visual Polish (Optional)
 - Animated transitions
