@@ -1963,6 +1963,22 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
 
           {fetchErrors.length > 0 && (
               <div className="flex flex-col gap-2 mb-4">
+                  {fetchErrors.length > 1 && (
+                      <button
+                        onClick={() => {
+                            const map = retryControllersRef.current;
+                            fetchErrors.forEach(err => {
+                                const existing = map.get(err.symbol);
+                                if (existing) existing.abort();
+                                const controller = new AbortController();
+                                map.set(err.symbol, controller);
+                                fetchSymbolData(err.symbol, controller.signal);
+                            });
+                            setFetchErrors([]);
+                        }}
+                        className="bg-red-500/20 hover:bg-red-500/30 text-red-300 text-xs px-3 py-1.5 rounded transition-colors self-end"
+                      >Retry All ({fetchErrors.length})</button>
+                  )}
                   {fetchErrors.map(err => (
                       <div key={err.id} className="bg-red-500/10 border border-red-500/30 text-red-400 text-xs px-4 py-2 rounded flex items-center justify-between gap-3">
                           <span className="flex-1">{err.message}</span>
