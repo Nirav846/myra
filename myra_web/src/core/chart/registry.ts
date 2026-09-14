@@ -21,7 +21,9 @@ const indicatorLoaders: Record<string, () => Promise<IndicatorModule<any, any>>>
     'premiumDiscount': () => import('../technical-analysis/indicators/premiumDiscount').then(m => ({ id: 'premiumDiscount', defaults: { lookback: 50 }, calculate: m.calculatePremiumDiscount }) as IndicatorModule<any, any>),
     'deliveryTrend': () => import('../technical-analysis/indicators/deliveryTrend').then(m => ({ id: 'deliveryTrend', defaults: {}, calculate: m.calculateDeliveryTrend }) as IndicatorModule<any, any>),
     'breakerBlocks': () => import('../technical-analysis/indicators/breakerBlocks').then(m => ({ id: 'breakerBlocks', defaults: {}, calculate: m.detectBreakerBlocks }) as IndicatorModule<any, any>),
+    // Registered but not exposed in UI — overlaps with Order Blocks / Swings
     'marketStructureShift': () => import('../technical-analysis/indicators/marketStructureShift').then(m => ({ id: 'marketStructureShift', defaults: {}, calculate: m.detectMarketStructureShifts }) as IndicatorModule<any, any>),
+    // Registered but not exposed in UI — overlaps with Order Blocks / Swings
     'changeOfCharacter': () => import('../technical-analysis/indicators/changeOfCharacter').then(m => ({ id: 'changeOfCharacter', defaults: {}, calculate: m.detectChangeOfCharacter }) as IndicatorModule<any, any>),
     'deliveryVolumeRatio': () => import('../technical-analysis/indicators/deliveryVolumeRatio').then(m => ({ id: 'deliveryVolumeRatio', defaults: { lookback: 20 }, calculate: m.calculateDeliveryVolumeRatio }) as IndicatorModule<any, any>),
     'ifi': () => import('../technical-analysis/indicators/ifi').then(m => ({ id: 'ifi', defaults: { period: 20 }, calculate: m.calculateIFI }) as IndicatorModule<any, any>),
@@ -53,6 +55,8 @@ const traceBuilderLoaders: Record<string, () => Promise<TraceBuilder<any, any>>>
     'smartMoneyDivergence': () => import('./traces/smartMoneyDivergenceBuilder').then(m => m.smartMoneyDivergenceTraceBuilder),
     'deliveryClusters': () => import('./traces/deliveryClustersBuilder').then(m => m.deliveryClustersTraceBuilder),
     'delAdjRsi': () => import('./traces/delAdjRsiBuilder').then(m => m.delAdjRsiTraceBuilder),
+    'deliveryTrend': () => import('./traces/deliveryTrendBuilder').then(m => m.deliveryTrendTraceBuilder),
+    'deliveryVolumeRatio': () => import('./traces/deliveryVolumeRatioBuilder').then(m => m.deliveryVolumeRatioTraceBuilder),
 };
 
 // Lazy-load layout builders dynamically

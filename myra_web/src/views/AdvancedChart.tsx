@@ -33,8 +33,8 @@ import { buildDeliveryAdjustedRSI } from '../core/chart/traces/delAdjRsiBuilder'
 import { buildInstitutionalFlowIndex } from '../core/chart/traces/ifiBuilder';
 
 // Lazy-load indicator modules - preloaded on mount
-const INDICATOR_KEYS = ['sma', 'rsi', 'fvg', 'swings', 'volumeProfile', 'delIntensityCore', 'instBlocks', 'delAd', 'liqVoids', 'orderBlocks', 'equalHighsLows', 'breakerBlocks', 'premiumDiscount'];
-const TRACE_BUILDER_KEYS = ['swings', 'vwap', 'sma', 'rsi', 'fvg', 'volumeProfile', 'delIntensityCore', 'instBlocks', 'delVwapBands', 'delAd', 'niftyOut', 'volume', 'delivery', 'orderBlocks', 'equalHighsLows', 'breakerBlocks', 'premiumDiscount'];
+const INDICATOR_KEYS = ['sma', 'rsi', 'fvg', 'swings', 'volumeProfile', 'delIntensityCore', 'instBlocks', 'delAd', 'liqVoids', 'orderBlocks', 'equalHighsLows', 'breakerBlocks', 'premiumDiscount', 'deliveryTrend', 'deliveryVolumeRatio'];
+const TRACE_BUILDER_KEYS = ['swings', 'vwap', 'sma', 'rsi', 'fvg', 'volumeProfile', 'delIntensityCore', 'instBlocks', 'delVwapBands', 'delAd', 'niftyOut', 'volume', 'delivery', 'orderBlocks', 'equalHighsLows', 'breakerBlocks', 'premiumDiscount', 'deliveryTrend', 'deliveryVolumeRatio'];
 const LAYOUT_BUILDER_KEYS = ['fibonacci', 'liqVoids'];
 
 const usePersistedState = <T,>(key: string, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
@@ -550,11 +550,41 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
         return buildInstitutionalFlowIndex(data, 20);
     }, [toggles.showIfi, data]);
 
+    // Delivery Trend
+    const deliveryTrendData = useMemo(() => {
+        if (!toggles.showDeliveryTrend || !data) return null;
+        return chartRegistry.getIndicatorSync('deliveryTrend')?.calculate(data, {}) || null;
+    }, [toggles.showDeliveryTrend, data]);
+
+    // Delivery Volume Ratio (simplified — derives ratio from candle data)
+    const deliveryVolumeRatioData = useMemo(() => {
+        if (!toggles.showDeliveryVolumeRatio || !data || data.length < 21) return null;
+        const ratios: number[] = [];
+        const lookback = 20;
+        for (let i = 0; i < data.length; i++) {
+            if (i < lookback) { ratios.push(0); continue; }
+            const deliveryPct = data[i].delivery_pct ?? 50;
+            let avgDelivery = 0;
+            let count = 0;
+            for (let j = i - lookback; j < i; j++) {
+                const dp = data[j].delivery_pct ?? 50;
+                avgDelivery += data[j].volume * (dp / 100);
+                count++;
+            }
+            avgDelivery = count > 0 ? avgDelivery / count : 0;
+            const currentDelivery = data[i].volume * (deliveryPct / 100);
+            ratios.push(avgDelivery > 0 ? currentDelivery / avgDelivery : 0);
+        }
+        return { ratios, signals: [] };
+    }, [toggles.showDeliveryVolumeRatio, data]);
+
 // Aggregate all indicator data for use in computed useMemo and ChartItemInner
 const allIndicatorData = useMemo(() => ({
     delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj,
-    deliveryObv, atr, atrPct, obObj, ehlObj, pdObj, bbObj, smDivData, delClustersData, delAdjRsiData, ifiData
-}), [delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj, deliveryObv, atr, atrPct, obObj, ehlObj, pdObj, bbObj, smDivData, delClustersData, delAdjRsiData, ifiData]);
+    deliveryObv, atr, atrPct, obObj, ehlObj, pdObj, bbObj, smDivData, delClustersData, delAdjRsiData, ifiData,
+    deliveryTrendData, deliveryVolumeRatioData
+}), [delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj, deliveryObv, atr, atrPct, obObj, ehlObj, pdObj, bbObj, smDivData, delClustersData, delAdjRsiData, ifiData,
+    deliveryTrendData, deliveryVolumeRatioData]);
 
     // Pane layout calculations
     const paneLayout = useMemo(() => {
@@ -830,6 +860,24 @@ const { delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoi
             const xMapped = (trace.x as string[]).map((d: string) => dateToIndex.get(d) ?? 0);
             ifiTraces.push({ ...trace, x: xMapped, yaxis: 'y3', hoverinfo: 'none', showlegend: false });
         });
+    }
+
+    // Delivery Trend — via registry trace builder (uses candleIndexes natively)
+    let deliveryTrendTraces: any[] = [];
+    if (toggles.showDeliveryTrend && deliveryTrendData) {
+        const tb = chartRegistry.getTraceBuilderSync('deliveryTrend');
+        if (tb) {
+            deliveryTrendTraces.push(...tb.buildTraces(deliveryTrendData, traceCtx));
+        }
+    }
+
+    // Delivery Volume Ratio — via registry trace builder (uses candleIndexes natively)
+    let deliveryVolumeRatioTraces: any[] = [];
+    if (toggles.showDeliveryVolumeRatio && deliveryVolumeRatioData) {
+        const tb = chartRegistry.getTraceBuilderSync('deliveryVolumeRatio');
+        if (tb) {
+            deliveryVolumeRatioTraces.push(...tb.buildTraces(deliveryVolumeRatioData, traceCtx));
+        }
     }
 
     // Trend regime background shapes
@@ -1206,7 +1254,13 @@ const dataIndex = hoveredIndex !== undefined && hoveredIndex >= 0 && hoveredInde
                                       ...(toggles.showDelAdjRsi ? delAdjRsiTraces.map(t => ({...t, hoverinfo: 'none'})) : []),
                                       
                                       // IFI (Institutional Flow Index)
-                                      ...(toggles.showIfi ? ifiTraces.map(t => ({...t, hoverinfo: 'none'})) : [])
+                                      ...(toggles.showIfi ? ifiTraces.map(t => ({...t, hoverinfo: 'none'})) : []),
+
+                                      // Delivery Trend
+                                      ...(toggles.showDeliveryTrend ? deliveryTrendTraces.map(t => ({...t, hoverinfo: 'none'})) : []),
+
+                                      // Delivery Volume Ratio
+                                      ...(toggles.showDeliveryVolumeRatio ? deliveryVolumeRatioTraces.map(t => ({...t, hoverinfo: 'none'})) : [])
                                   ]}
                                   layout={chartLayout}
                                  config={{
@@ -1320,6 +1374,8 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
   const [showDeliveryClusters, setShowDeliveryClusters] = usePersistedState('chart-showDeliveryClusters', false);
   const [showDelAdjRsi, setShowDelAdjRsi] = usePersistedState('chart-showDelAdjRsi', false);
   const [showIfi, setShowIfi] = usePersistedState('chart-showIfi', false);
+  const [showDeliveryTrend, setShowDeliveryTrend] = usePersistedState('chart-showDeliveryTrend', false);
+  const [showDeliveryVolumeRatio, setShowDeliveryVolumeRatio] = usePersistedState('chart-showDeliveryVolumeRatio', false);
   const [crosshairEnabled, setCrosshairEnabled] = usePersistedState('chart-crosshair', true);
 
   const [limitDataRange, setLimitDataRange] = usePersistedState('chart-limitDataRange', true);
@@ -1797,13 +1853,15 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
       showVwap, showSwings, showNiftyOut, showSmartMoney, showDelDivergence, 
       showDelVwapBands, showLiqVoids, showInstBlocks, showDelDelta, showNakedPoc,
       showDeliveryOverlay, showOrderBlocks, showEqualHighsLows, showBreakerBlocks,
-      showPremiumDiscount, showSmartMoneyDiv, showDeliveryClusters, showDelAdjRsi, showIfi
+      showPremiumDiscount, showSmartMoneyDiv, showDeliveryClusters, showDelAdjRsi, showIfi,
+      showDeliveryTrend, showDeliveryVolumeRatio
   }), [
       showSma20, showSma50, showSma150, showSma200, showFvg, showFibonacci,
       showVwap, showSwings, showNiftyOut, showSmartMoney, showDelDivergence, 
       showDelVwapBands, showLiqVoids, showInstBlocks, showDelDelta, showNakedPoc,
       showDeliveryOverlay, showOrderBlocks, showEqualHighsLows, showBreakerBlocks,
-      showPremiumDiscount, showSmartMoneyDiv, showDeliveryClusters, showDelAdjRsi, showIfi
+      showPremiumDiscount, showSmartMoneyDiv, showDeliveryClusters, showDelAdjRsi, showIfi,
+      showDeliveryTrend, showDeliveryVolumeRatio
   ]);
 
   const paneToggles = useMemo(() => ({
@@ -1852,6 +1910,8 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
     { id: 'del_clusters', label: 'Delivery Clusters', state: showDeliveryClusters, set: setShowDeliveryClusters, desc: 'Consecutive high delivery days forming support/resistance zones.' },
     { id: 'del_adj_rsi', label: 'Del-Adj RSI', state: showDelAdjRsi, set: setShowDelAdjRsi, desc: 'RSI weighted by delivery percentage for institutional signal clarity.' },
     { id: 'ifi', label: 'IFI (Institutional Flow)', state: showIfi, set: setShowIfi, desc: 'Composite score (-100 to +100) — delivery, volume, and momentum.' },
+    { id: 'del_trend', label: 'Delivery Trend', state: showDeliveryTrend, set: setShowDeliveryTrend, desc: 'EMA20 + signal line of delivery percentage — bullish/bearish crossover signals.' },
+    { id: 'del_volume_ratio', label: 'Delivery Volume Ratio', state: showDeliveryVolumeRatio, set: setShowDeliveryVolumeRatio, desc: 'Current vs 20-day avg delivery volume — accumulation (>1.5x) / distribution (<0.8x).' },
     { id: 'rsi', label: 'RSI Pane', state: showRsi, set: setShowRsi },
     { id: 'delivery_obv', label: 'Delivery OBV', state: showDeliveryObv, set: setShowDeliveryObv, desc: 'Cumulative delivery-weighted OBV. Adds delivery on up days, subtracts on down days.' },
     { id: 'limit_data_range', label: 'Limit to 2 Years', state: limitDataRange, set: setLimitDataRange, desc: 'Limit data fetching to recent 2 years to improve performance.', group: 'Hardware' },
