@@ -550,6 +550,12 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
         return buildInstitutionalFlowIndex(data, 20);
     }, [toggles.showIfi, data]);
 
+// Aggregate all indicator data for use in computed useMemo and ChartItemInner
+const allIndicatorData = useMemo(() => ({
+    delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj,
+    deliveryObv, atr, atrPct, obObj, ehlObj, pdObj, bbObj, smDivData, delClustersData, delAdjRsiData, ifiData
+}), [delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj, deliveryObv, atr, atrPct, obObj, ehlObj, pdObj, bbObj, smDivData, delClustersData, delAdjRsiData, ifiData]);
+
     // Pane layout calculations
     const paneLayout = useMemo(() => {
         const gap = 0.04;
@@ -973,12 +979,6 @@ const {
 } = baseData;
 
 const { currentY, rsiDomain, delAdDomain, delDomain, volDomain, priceDomain, obvDomain } = paneLayout;
-
-// Aggregate all indicator data for use in computed useMemo and ChartItemInner
-const allIndicatorData = useMemo(() => ({
-    delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj,
-    deliveryObv, atr, atrPct, obObj, ehlObj, pdObj, bbObj, smDivData, delClustersData, delAdjRsiData, ifiData
-}), [delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj, deliveryObv, atr, atrPct, obObj, ehlObj, pdObj, bbObj, smDivData, delClustersData, delAdjRsiData, ifiData]);
 
 const {
     smasTraces, rsiTraces, volProfileTraces, vwapTraces, swingsTraces, instBlocksTraces, delVwapBandsTraces, delAdTraces, niftyOutTraces, smartMoneyPrintsTraces, delIntensityCoreTraces, shapes, volumeTraces, deliveryTraces, annotations, profileResult, vpMaxVolume, deliveryOverlayTraces, deliveryObvTraces, trendShapes, smDivTraces, delClustersTraces, delAdjRsiTraces, ifiTraces
