@@ -95,6 +95,7 @@ const ChartItem = memo(({ sym, data, overlayToggles, paneToggles, perfToggles, s
 });
 
 const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, settings, bucket, liqVoidSettings, smpSettings, crosshairEnabled }: any) => {
+    // Granular Zustand selectors to prevent unnecessary re-renders
     const viewport = useChartStore(state => state.viewport);
     const hoveredIndex = useChartStore(state => state.hoveredIndex);
     const plotRef = useRef<any>(null);
