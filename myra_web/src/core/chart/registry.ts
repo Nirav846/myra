@@ -16,6 +16,10 @@ const indicatorLoaders: Record<string, () => Promise<IndicatorModule<any, any>>>
     'smartMoneyPrints': () => import('../technical-analysis/indicators/smartMoneyPrints').then(m => m.smartMoneyPrintsIndicator),
     'delIntensityCore': () => import('../technical-analysis/indicators/delIntensityCore').then(m => m.delIntensityCoreIndicator),
     'liqVoids': () => import('../technical-analysis/indicators/liqVoids').then(m => m.liqVoidsIndicator),
+    'orderBlocks': () => import('../technical-analysis/indicators/orderBlocks').then(m => ({ id: 'orderBlocks', defaults: {}, calculate: m.detectOrderBlocks }) as IndicatorModule<any, any>),
+    'equalHighsLows': () => import('../technical-analysis/indicators/equalHighsLows').then(m => ({ id: 'equalHighsLows', defaults: { tolerancePercent: 0.5, minTouches: 2 }, calculate: m.detectEqualHighsLows }) as IndicatorModule<any, any>),
+    'premiumDiscount': () => import('../technical-analysis/indicators/premiumDiscount').then(m => ({ id: 'premiumDiscount', defaults: { lookback: 50 }, calculate: m.calculatePremiumDiscount }) as IndicatorModule<any, any>),
+    'deliveryTrend': () => import('../technical-analysis/indicators/deliveryTrend').then(m => ({ id: 'deliveryTrend', defaults: {}, calculate: m.calculateDeliveryTrend }) as IndicatorModule<any, any>),
 };
 
 // Lazy-load trace builders dynamically
@@ -34,6 +38,9 @@ const traceBuilderLoaders: Record<string, () => Promise<TraceBuilder<any, any>>>
     'delAd': () => import('./traces/delAdBuilder').then(m => m.delAdTraceBuilder),
     'smartMoneyPrints': () => import('./traces/smartMoneyPrintsBuilder').then(m => m.smartMoneyPrintsTraceBuilder),
     'delIntensityCore': () => import('./traces/delIntensityCoreBuilder').then(m => m.delIntensityCoreTraceBuilder),
+    'orderBlocks': () => import('./traces/orderBlocksBuilder').then(m => m.orderBlocksTraceBuilder),
+    'equalHighsLows': () => import('./traces/equalHighsLowsBuilder').then(m => m.equalHighsLowsTraceBuilder),
+    'premiumDiscount': () => import('./traces/premiumDiscountBuilder').then(m => m.premiumDiscountTraceBuilder),
 };
 
 // Lazy-load layout builders dynamically
