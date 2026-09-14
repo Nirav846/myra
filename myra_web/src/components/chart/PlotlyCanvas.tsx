@@ -1,5 +1,7 @@
 import { memo, useRef, useCallback, useEffect } from 'react';
+// Use plotly.js-dist-min for better tree-shaking instead of full plotly.js
 import Plot from 'react-plotly.js';
+import type { PlotData, Layout } from 'plotly.js-dist-min';
 import { useChartStore } from '../../store/chartStore';
 
 interface PlotlyCanvasProps {
