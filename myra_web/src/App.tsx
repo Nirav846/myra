@@ -1,5 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
-import { PageLoader } from './components/ui/PageLoader';
+import { PageLoader, LazyLoadView } from './components/ui/PageLoader';
 
 // Lazy load heavy views for performance optimization (Phase 5.1)
 const LeaderboardView = lazy(() => import('./views/Leaderboard'));
