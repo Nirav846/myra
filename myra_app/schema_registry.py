@@ -183,31 +183,31 @@ class SchemaRegistry:
             },
             "primary_key": "(symbol, report_date)",
         },
-# ── meta.db ───────────────────────────────────────────
-         "symbols_master": {
-             "db": "meta",
-             "columns": {
-                 "symbol": "TEXT PRIMARY KEY",
-                 "name": "TEXT",
-                 "first_seen": "TEXT",
-                 "last_seen": "TEXT",
-                 "in_active_universe": "INTEGER DEFAULT 0",
-                 "in_nifty500": "INTEGER DEFAULT 0",
-                 "sector": "TEXT",
-                 "industry": "TEXT",
-                 "raw_sector": "TEXT",
-                 "raw_industry": "TEXT",
-                 "source": "TEXT",
-                 "confidence": "REAL",
-                 "last_updated_sector": "TEXT",
-                 "sector_locked": "INTEGER DEFAULT 0",
-                 "is_active": "INTEGER DEFAULT 1",
-                 "instrument_type": "TEXT DEFAULT 'EQUITY'",
-                 "last_fundamental_update": "TEXT",
-                 "bse_scrip_code": "TEXT",
-             },
-             "primary_key": "(symbol)",
-         },
+        # ── meta.db ───────────────────────────────────────────
+        "symbols_master": {
+            "db": "meta",
+            "columns": {
+                "symbol": "TEXT PRIMARY KEY",
+                "name": "TEXT",
+                "first_seen": "TEXT",
+                "last_seen": "TEXT",
+                "in_active_universe": "INTEGER DEFAULT 0",
+                "in_nifty500": "INTEGER DEFAULT 0",
+                "sector": "TEXT",
+                "industry": "TEXT",
+                "raw_sector": "TEXT",
+                "raw_industry": "TEXT",
+                "source": "TEXT",
+                "confidence": "REAL",
+                "last_updated_sector": "TEXT",
+                "sector_locked": "INTEGER DEFAULT 0",
+                "is_active": "INTEGER DEFAULT 1",
+                "instrument_type": "TEXT DEFAULT 'EQUITY'",
+                "last_fundamental_update": "TEXT",
+                "bse_scrip_code": "TEXT",
+            },
+            "primary_key": "(symbol)",
+        },
         "index_constituents": {
             "db": "meta",
             "columns": {
@@ -589,6 +589,175 @@ class SchemaRegistry:
                 "updated_at": "TEXT",
             },
             "primary_key": "(index_symbol)",
+        },
+        # ── institutional.db — non-deal auxiliary tables ─────────
+        "sync_metadata": {
+            "db": "institutional",
+            "columns": {
+                "key": "TEXT",
+                "value": "TEXT NOT NULL",
+                "updated_at": "TEXT NOT NULL",
+            },
+            "primary_key": "(key)",
+        },
+        # ── meta.db — diagnostic / audit tables ──────────────────
+        "doctor_runs": {
+            "db": "meta",
+            "columns": {
+                "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+                "when_utc": "DATETIME",
+                "issues_found": "INTEGER",
+                "issues_fixed": "INTEGER",
+                "issues_failed": "INTEGER",
+                "critical_json": "TEXT",
+            },
+            "primary_key": "(id)",
+        },
+        # ── valuation.db — fund-flow & auxiliary tables ──────────
+        "fund_cross_buy": {
+            "db": "valuation",
+            "columns": {
+                "symbol": "TEXT",
+                "month": "TEXT",
+                "total_funds": "INTEGER",
+                "large_funds": "INTEGER",
+                "mid_funds": "INTEGER",
+                "small_funds": "INTEGER",
+                "multi_funds": "INTEGER",
+                "other_funds": "INTEGER",
+                "cross_buy_ratio": "REAL",
+                "signal_tag": "TEXT",
+                "last_updated": "TEXT",
+            },
+            "primary_key": "(symbol, month)",
+        },
+        "fund_traction": {
+            "db": "valuation",
+            "columns": {
+                "symbol": "TEXT NOT NULL",
+                "month": "TEXT NOT NULL",
+                "traction_score": "REAL",
+                "number_of_funds": "INTEGER",
+                "adds_new": "INTEGER",
+                "reduces_closes": "INTEGER",
+                "sma_30": "REAL",
+                "month_end_close": "REAL",
+                "close_latest": "REAL",
+                "pct_vs_sma": "REAL",
+            },
+            "primary_key": "(symbol, month)",
+        },
+        # valuation.sync_metadata collides by name with institutional's
+        # sync_metadata, so the registry key is prefixed; the real DB table
+        # name is preserved in "table" for tools like dump_schema.py.
+        "valuation_sync_metadata": {
+            "table": "sync_metadata",
+            "db": "valuation",
+            "columns": {
+                "key": "TEXT",
+                "value": "TEXT NOT NULL",
+                "updated_at": "TEXT NOT NULL",
+            },
+            "primary_key": "(key)",
+        },
+        # ── myra_portfolio.db ───────────────────────────────────
+        # NOTE: myra_portfolio.db is NOT in DB_MAP (managed by
+        # portfolio_db.py, not the pipeline).  The "db" key here is
+        # used only by dump_schema.py's cross-check; the startup
+        # validation in librarian_schema.py silently skips unknown
+        # db keys, so these entries do not affect live behaviour.
+        "fundamental_cache": {
+            "db": "myra_portfolio",
+            "columns": {
+                "symbol": "TEXT",
+                "pe": "REAL",
+                "sector": "TEXT",
+                "market_cap": "REAL",
+                "fetched_at": "TEXT",
+            },
+            "primary_key": "(symbol)",
+        },
+        "holdings": {
+            "db": "myra_portfolio",
+            "columns": {
+                "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+                "symbol": "TEXT NOT NULL",
+                "category": "TEXT",
+                "net_qty": "INTEGER NOT NULL",
+                "avg_price": "REAL NOT NULL",
+                "created_at": "TEXT",
+                "updated_at": "TEXT",
+            },
+            "primary_key": "(id)",
+        },
+        "industry_cache": {
+            "db": "myra_portfolio",
+            "columns": {
+                "symbol": "TEXT",
+                "industry": "TEXT",
+                "yf_sector": "TEXT",
+                "fetched_at": "TEXT",
+            },
+            "primary_key": "(symbol)",
+        },
+        "live_price_cache": {
+            "db": "myra_portfolio",
+            "columns": {
+                "symbol": "TEXT",
+                "ltp": "REAL",
+                "change": "REAL",
+                "change_pct": "REAL",
+                "previous_close": "REAL",
+                "fetched_at": "TEXT",
+            },
+            "primary_key": "(symbol)",
+        },
+        "portfolio_meta": {
+            "db": "myra_portfolio",
+            "columns": {
+                "key": "TEXT",
+                "value": "TEXT",
+            },
+            "primary_key": "(key)",
+        },
+        "price_cache": {
+            "db": "myra_portfolio",
+            "columns": {
+                "symbol": "TEXT",
+                "latest_close": "REAL",
+                "previous_close": "REAL",
+                "latest_date": "TEXT",
+                "updated_at": "TEXT",
+            },
+            "primary_key": "(symbol)",
+        },
+        "snapshots": {
+            "db": "myra_portfolio",
+            "columns": {
+                "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+                "date": "TEXT NOT NULL",
+                "total_invested": "REAL NOT NULL",
+                "total_current": "REAL NOT NULL",
+                "overall_pnl": "REAL NOT NULL",
+                "overall_pnl_pct": "REAL NOT NULL",
+                "day_pnl": "REAL NOT NULL",
+                "day_pnl_pct": "REAL NOT NULL",
+                "created_at": "TEXT",
+            },
+            "primary_key": "(id)",
+        },
+        "transactions": {
+            "db": "myra_portfolio",
+            "columns": {
+                "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+                "symbol": "TEXT NOT NULL",
+                "action": "TEXT NOT NULL",
+                "qty": "INTEGER",
+                "price": "REAL",
+                "notes": "TEXT",
+                "created_at": "TEXT",
+            },
+            "primary_key": "(id)",
         },
     }
 

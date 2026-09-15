@@ -22,3 +22,13 @@ repos:
         types: [python]
         pass_filenames: false
         always_run: true
+
+      # 4. Schema drift guard: blocks commits when schema/*.sql or
+      #    schema/schema_manifest.json have drifted from the live DBs.
+      #    Read-only against the DBs; exits 0 silently when no live DBs exist.
+      - id: schema-drift-guard
+        name: "Schema drift guard (schema/ vs live DBs)"
+        entry: python scripts/check_schema_drift.py
+        language: system
+        pass_filenames: false
+        always_run: true

@@ -1,0 +1,3620 @@
+{
+  "calendar": {
+    "file": "myra_calendar.db",
+    "registered": true,
+    "tables": [
+      {
+        "columns": [
+          {
+            "name": "date",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "is_trading_day",
+            "notnull": true,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "holiday_name",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "session_type",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "market_calendar",
+        "row_count": 4383
+      }
+    ]
+  },
+  "governance": {
+    "file": "myra_governance.db",
+    "registered": true,
+    "tables": [
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "date",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "ias_score",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "ias_rank",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "tags",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "ias_history",
+        "row_count": 638
+      },
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "date",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "promoter_holding",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "pledged_pct",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "change_qoq",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          }
+        ],
+        "name": "pledged_history",
+        "row_count": 0
+      },
+      {
+        "columns": [
+          {
+            "name": "disclosure_id",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "date",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "acq_name",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "qty_pct",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "type",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "sast_disclosures",
+        "row_count": 60
+      },
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "date",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "fii_pct",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "dii_pct",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "promoter_pct",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          }
+        ],
+        "name": "shareholding_history",
+        "row_count": 0
+      }
+    ]
+  },
+  "institutional": {
+    "file": "myra_institutional.db",
+    "registered": true,
+    "tables": [
+      {
+        "columns": [
+          {
+            "name": "id",
+            "notnull": false,
+            "pk": true,
+            "type": "INTEGER"
+          },
+          {
+            "name": "symbol",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "date",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "security_name",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "client_name",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "buy_sell",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "quantity",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "price",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "trade_value",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "source",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "block_deals",
+        "row_count": 8556
+      },
+      {
+        "columns": [
+          {
+            "name": "id",
+            "notnull": false,
+            "pk": true,
+            "type": "INTEGER"
+          },
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "date",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "security_name",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "client_name",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "buy_sell",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "quantity",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "price",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "trade_value",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "source",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "block_deals_historical",
+        "row_count": 18250
+      },
+      {
+        "columns": [
+          {
+            "name": "id",
+            "notnull": false,
+            "pk": true,
+            "type": "INTEGER"
+          },
+          {
+            "name": "symbol",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "date",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "security_name",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "client_name",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "buy_sell",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "quantity",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "price",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "trade_value",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "source",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "bulk_deals",
+        "row_count": 3733
+      },
+      {
+        "columns": [
+          {
+            "name": "id",
+            "notnull": false,
+            "pk": true,
+            "type": "INTEGER"
+          },
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "date",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "security_name",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "client_name",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "buy_sell",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "quantity",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "price",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "trade_value",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "source",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "bulk_deals_historical",
+        "row_count": 227370
+      },
+      {
+        "columns": [
+          {
+            "name": "id",
+            "notnull": false,
+            "pk": true,
+            "type": "INTEGER"
+          },
+          {
+            "name": "symbol",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "date",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "security_name",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "action_type",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "ex_date",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "record_date",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "source",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "corporate_actions",
+        "row_count": 2018
+      },
+      {
+        "columns": [
+          {
+            "name": "date",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "fii_net_buy",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "dii_net_buy",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "source",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "fii_dii_daily",
+        "row_count": 14
+      },
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "date",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "fii_pct",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "dii_pct",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "promoter_pct",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "pledged_pct",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "fii_change",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "dii_change",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "car_ratio",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "is_hidden_accumulation",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          }
+        ],
+        "name": "fii_dii_history",
+        "row_count": 48
+      },
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "acq_name",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "category",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "type",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "mode",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "value_cr",
+            "notnull": false,
+            "pk": true,
+            "type": "REAL"
+          },
+          {
+            "name": "avg_price",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "date",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          }
+        ],
+        "name": "insider_trades",
+        "row_count": 2349
+      },
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "owner_name",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "owner_type",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "shares_held",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "pct_held",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "date",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          }
+        ],
+        "name": "institutional_owners",
+        "row_count": 0
+      },
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "type",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "client",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "buy_sell",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "qty",
+            "notnull": false,
+            "pk": true,
+            "type": "INTEGER"
+          },
+          {
+            "name": "price",
+            "notnull": false,
+            "pk": true,
+            "type": "REAL"
+          },
+          {
+            "name": "date",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "client_name",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "deal_type",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "value",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          }
+        ],
+        "name": "large_deals",
+        "row_count": 2703
+      },
+      {
+        "columns": [
+          {
+            "name": "key",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "value",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "updated_at",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "sync_metadata",
+        "row_count": 2
+      }
+    ]
+  },
+  "meta": {
+    "file": "myra_metadata.db",
+    "registered": true,
+    "tables": [
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "date",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "close",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          }
+        ],
+        "name": "benchmarks",
+        "row_count": 319
+      },
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "signal_date",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "floor_year_low",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "run_min_year_low",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "updated_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "bhm1_cooldown",
+        "row_count": 731
+      },
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "first_entry_date",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "last_tranche_date",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "n_tranches",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "blended_basis",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "updated_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "tranche_prices",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "bhm1_positions",
+        "row_count": 0
+      },
+      {
+        "columns": [
+          {
+            "name": "id",
+            "notnull": false,
+            "pk": true,
+            "type": "INTEGER"
+          },
+          {
+            "name": "when_utc",
+            "notnull": false,
+            "pk": false,
+            "type": "DATETIME"
+          },
+          {
+            "name": "issues_found",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "issues_fixed",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "issues_failed",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "critical_json",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "doctor_runs",
+        "row_count": 28
+      },
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "added_date",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "source",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "etf_blocklist",
+        "row_count": 350
+      },
+      {
+        "columns": [
+          {
+            "name": "id",
+            "notnull": false,
+            "pk": true,
+            "type": "INTEGER"
+          },
+          {
+            "name": "sync_date",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "source",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "count",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "status",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "etf_sync_log",
+        "row_count": 16
+      },
+      {
+        "columns": [
+          {
+            "name": "index_name",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "symbol",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "added_date",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "index_constituents",
+        "row_count": 799
+      },
+      {
+        "columns": [
+          {
+            "name": "index_name",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "symbol",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "from_date",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "to_date",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "index_membership_history",
+        "row_count": 503
+      },
+      {
+        "columns": [
+          {
+            "name": "dataset_name",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "fetch_time",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "source_url",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "rows_processed",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "status",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "transformations_applied",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "lineage_tracking",
+        "row_count": 1
+      },
+      {
+        "columns": [
+          {
+            "name": "key",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "value",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "metadata",
+        "row_count": 14
+      },
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "entry_date",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "entry_price",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "ever_activated",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "highest_close",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "updated_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "sb_positions",
+        "row_count": 0
+      },
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "first_seen",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "last_seen",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "in_active_universe",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "in_nifty500",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "sector",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "industry",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "raw_sector",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "raw_industry",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "source",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "confidence",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "last_updated_sector",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "sector_locked",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "is_active",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "instrument_type",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "last_fundamental_update",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "bse_scrip_code",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "name",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "symbols_master",
+        "row_count": 3610
+      },
+      {
+        "columns": [
+          {
+            "name": "task_name",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "last_run",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "last_status",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "error_message",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "progress_pct",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          }
+        ],
+        "name": "sync_log",
+        "row_count": 15
+      },
+      {
+        "columns": [
+          {
+            "name": "id",
+            "notnull": false,
+            "pk": true,
+            "type": "INTEGER"
+          },
+          {
+            "name": "name",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "status",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "message",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "progress",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "eta",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "task_type",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "safe_to_exit",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "started_at",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "updated_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "expiry",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "data",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "task_registry",
+        "row_count": 2250
+      }
+    ]
+  },
+  "myra_news": {
+    "file": "myra_news.db",
+    "registered": false,
+    "tables": [
+      {
+        "columns": [
+          {
+            "name": "id",
+            "notnull": false,
+            "pk": true,
+            "type": "INTEGER"
+          },
+          {
+            "name": "ticker",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "headline",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "source",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "published_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "sentiment_label",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "sentiment_score",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "created_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "url",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "language",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "tone",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "domain",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "company_name",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "news_sentiment",
+        "row_count": 0
+      }
+    ]
+  },
+  "myra_portfolio": {
+    "file": "myra_portfolio.db",
+    "registered": false,
+    "tables": [
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "pe",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "sector",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "market_cap",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "fetched_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "fundamental_cache",
+        "row_count": 17
+      },
+      {
+        "columns": [
+          {
+            "name": "id",
+            "notnull": false,
+            "pk": true,
+            "type": "INTEGER"
+          },
+          {
+            "name": "symbol",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "category",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "net_qty",
+            "notnull": true,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "avg_price",
+            "notnull": true,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "created_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "updated_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "holdings",
+        "row_count": 18
+      },
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "industry",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "yf_sector",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "fetched_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "industry_cache",
+        "row_count": 17
+      },
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "ltp",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "change",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "change_pct",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "previous_close",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "fetched_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "live_price_cache",
+        "row_count": 17
+      },
+      {
+        "columns": [
+          {
+            "name": "key",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "value",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "portfolio_meta",
+        "row_count": 3
+      },
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "latest_close",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "previous_close",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "latest_date",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "updated_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "price_cache",
+        "row_count": 17
+      },
+      {
+        "columns": [
+          {
+            "name": "id",
+            "notnull": false,
+            "pk": true,
+            "type": "INTEGER"
+          },
+          {
+            "name": "date",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "total_invested",
+            "notnull": true,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "total_current",
+            "notnull": true,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "overall_pnl",
+            "notnull": true,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "overall_pnl_pct",
+            "notnull": true,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "day_pnl",
+            "notnull": true,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "day_pnl_pct",
+            "notnull": true,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "created_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "snapshots",
+        "row_count": 46
+      },
+      {
+        "columns": [
+          {
+            "name": "id",
+            "notnull": false,
+            "pk": true,
+            "type": "INTEGER"
+          },
+          {
+            "name": "symbol",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "action",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "qty",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "price",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "notes",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "created_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "transactions",
+        "row_count": 52
+      }
+    ]
+  },
+  "network_cache": {
+    "file": "myra_cache_network.db",
+    "registered": true,
+    "tables": [
+      {
+        "columns": [
+          {
+            "name": "key",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "value",
+            "notnull": false,
+            "pk": false,
+            "type": "BLOB"
+          },
+          {
+            "name": "created_at",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "cache",
+        "row_count": 0
+      }
+    ]
+  },
+  "options": {
+    "file": "myra_options.db",
+    "registered": true,
+    "tables": [
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "kind",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "spot",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "pcr",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "regime",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "total_ce_oi",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "total_pe_oi",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "atm_strike",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "expiry",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "strike_count",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "raw_json",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "created_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "option_chain",
+        "row_count": 0
+      },
+      {
+        "columns": [
+          {
+            "name": "index_symbol",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "pcr",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "regime",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "spot",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "expiry",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "updated_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "pcr_snapshot",
+        "row_count": 0
+      }
+    ]
+  },
+  "scoring": {
+    "file": "myra_scoring.db",
+    "registered": true,
+    "tables": [
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "date",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "growth_score",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "quality_score",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "stability_score",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "risk_score",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "total_funda_score",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "grade",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "fundamental_scores",
+        "row_count": 632
+      },
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "date",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "mcap_cr",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "mcap_rank",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          }
+        ],
+        "name": "mcap_rank_daily",
+        "row_count": 7063
+      },
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "date",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "rank_nifty500",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "rank_sector",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          }
+        ],
+        "name": "ranking_history",
+        "row_count": 0
+      }
+    ]
+  },
+  "technical": {
+    "file": "myra_technical.db",
+    "registered": true,
+    "tables": [
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "date",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "reason",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "raw_values",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "timestamp",
+            "notnull": false,
+            "pk": false,
+            "type": "DATETIME"
+          }
+        ],
+        "name": "ingestion_rejects",
+        "row_count": 225
+      },
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "trigger_date",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "trigger_peak_price",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "digestion_low_price",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "digestion_low_date",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "launchpad_date",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "launchpad_close",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "breakout_date",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "breakout_close",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "return_pct",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "days_to_breakout",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "success",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "max_drawdown_pct",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "min_range_atr_ratio",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "min_vol_ratio",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          }
+        ],
+        "name": "launchpad_events",
+        "row_count": 0
+      },
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "trigger_date",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "breakout_date",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "return_pct",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "max_drawdown_pct",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "days_to_breakout",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "success",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "del_zscore_min",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "del_zscore_mean",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "range_atr_min",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "vol_ratio_min",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "digestion_days",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "close_min",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "vwap_min",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "volume_min",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "liquidity_min",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "fvg_freshness_min",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          }
+        ],
+        "name": "launchpad_features",
+        "row_count": 0
+      },
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "date",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "open",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "high",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "low",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "close",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "volume",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "delivery",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "trades",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "vwap",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "delivery_pct",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "delivery_ratio",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "delivery_qty",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "stock_return",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "market_return",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "delivery_divergence_score",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "volatility_compression_score",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "relative_volume_score",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "nifty_outperformance_score",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "delivery_source",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "bullish_fvg",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "bearish_fvg",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "fvg_top",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "fvg_bottom",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "fvg_boundary",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "fvg_freshness",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "swing_high",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "swing_low",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "liquidity_distance",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "htf_bullish",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "htf_bearish",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "mtf_bullish",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "mtf_bearish",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "trend_alignment",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "delivery_ma_60",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "has_bullish_fvg",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "sma_50",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "high_52w",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "low_52w",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          }
+        ],
+        "name": "technical_data",
+        "row_count": 7948198
+      }
+    ]
+  },
+  "valuation": {
+    "file": "myra_valuation.db",
+    "registered": true,
+    "tables": [
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "data_json",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "source",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "last_updated",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "full_fundamental_cache",
+        "row_count": 3
+      },
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "month",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "total_funds",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "large_funds",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "mid_funds",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "small_funds",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "multi_funds",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "other_funds",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "cross_buy_ratio",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "signal_tag",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "last_updated",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "fund_cross_buy",
+        "row_count": 1852
+      },
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "month",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "traction_score",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "number_of_funds",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "adds_new",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "reduces_closes",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "sma_30",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "month_end_close",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "close_latest",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "pct_vs_sma",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          }
+        ],
+        "name": "fund_traction",
+        "row_count": 2470
+      },
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "pe",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "roe",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "eps",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "book_value",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "market_cap",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "sector",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "last_updated",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "profit_growth",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "sales_growth",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "debt_to_equity",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "inst_holding",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "dividend_yield",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "date",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "sector_pe",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "face_value",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "issued_size",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "net_margin",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "roe_ttm",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "daily_volatility",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "annual_volatility",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "impact_cost",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "source_ms",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "source_nse",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "peRatio",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "priceToBook",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "priceToSales",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "earningsPerShare",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "bookValuePerShare",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "revenueGrowth",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "earningsGrowth",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "marketCap",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "enterpriseValue",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "debtToEquity",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "returnOnEquity",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "returnOnAssets",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "operatingMargin",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "grossMargin",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "netMargin",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "dividendYield",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "payoutRatio",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "currentRatio",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "quickRatio",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "freeCashFlowYield",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "beta",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "free_float_pct",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "free_float_market_cap",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "free_float_shares",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "insider_holding_pct",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "public_holding_pct",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "industry",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "shares_outstanding",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "promoter_holding_pct",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "last_fundamental_update",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "operating_margin",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "gross_margin",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "free_cash_flow_yield",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "current_ratio",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "quick_ratio",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          }
+        ],
+        "name": "fundamentals",
+        "row_count": 3900
+      },
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "report_date",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "revenue",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "net_profit",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "eps",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "opm_pct",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "period_end",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "quarterly_results",
+        "row_count": 7262
+      },
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "pbv",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "roce",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "last_updated",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "screener_fundamentals",
+        "row_count": 3
+      },
+      {
+        "columns": [
+          {
+            "name": "key",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "value",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "updated_at",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "sync_metadata",
+        "row_count": 1
+      },
+      {
+        "columns": [
+          {
+            "name": "isin",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "symbol",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "period",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "report_type",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "time_period",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "units_in",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "total_asset",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "total_liability",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "raw_json",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "fetched_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "upstox_balance_sheet",
+        "row_count": 8831
+      },
+      {
+        "columns": [
+          {
+            "name": "isin",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "endpoint",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "hash",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "data_json",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "last_updated",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "json_data",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "fetched_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "upstox_cache",
+        "row_count": 28060
+      },
+      {
+        "columns": [
+          {
+            "name": "isin",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "symbol",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "period",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "report_type",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "time_period",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "units_in",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "operating",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "investing",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "financing",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "operating_change",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "investing_change",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "financing_change",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "raw_json",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "fetched_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "upstox_cash_flow",
+        "row_count": 8822
+      },
+      {
+        "columns": [
+          {
+            "name": "isin",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "symbol",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "competitor_instrument_key",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "competitor_sector",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "company_profile",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "sector_market_cap_inr",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "raw_json",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "fetched_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "upstox_competitors",
+        "row_count": 30563
+      },
+      {
+        "columns": [
+          {
+            "name": "isin",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "symbol",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "name",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "expiry_date",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "amount",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "ratio",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "event_details_json",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "raw_json",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "fetched_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "upstox_corporate_actions",
+        "row_count": 2023
+      },
+      {
+        "columns": [
+          {
+            "name": "isin",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "symbol",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "period",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "report_type",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "time_period",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "units_in",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "revenue",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "operating_profit",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "net_profit",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "revenue_change",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "operating_profit_change",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "net_profit_change",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "raw_json",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "fetched_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "upstox_income_statement",
+        "row_count": 17771
+      }
+    ]
+  }
+}
