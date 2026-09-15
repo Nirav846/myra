@@ -62,7 +62,30 @@ const usePersistedState = <T,>(key: string, initialValue: T): [T, React.Dispatch
 
 
 const ChartItem = memo(({ sym, data, overlayToggles, paneToggles, perfToggles, settings, bucket, liqVoidSettings, smpSettings, crosshairEnabled }: any) => {
-    if (!data) return (
+    const [modulesReady, setModulesReady] = useState(false);
+
+    // Pre-load lazy indicator/trace/layout modules BEFORE ChartItemInner mounts,
+    // so its useMemos read a populated registry (sync getters never trigger loading).
+    useEffect(() => {
+        let mounted = true;
+        const loadModules = async () => {
+            try {
+                await Promise.all([
+                    ...INDICATOR_KEYS.map(k => chartRegistry.getIndicator(k)),
+                    ...TRACE_BUILDER_KEYS.map(k => chartRegistry.getTraceBuilder(k)),
+                    ...LAYOUT_BUILDER_KEYS.map(k => chartRegistry.getLayoutBuilder(k))
+                ]);
+                if (mounted) setModulesReady(true);
+            } catch (err) {
+                console.error('Failed to lazy-load chart modules:', err);
+                if (mounted) setModulesReady(true); // Continue even on error
+            }
+        };
+        loadModules();
+        return () => { mounted = false; };
+    }, []);
+
+    if (!data || !modulesReady) return (
         <div key={sym} className="bg-[#1a1c24] border border-[#ffffff1a] rounded flex flex-col h-[500px] chart-container relative overflow-hidden">
             <div className="h-10 bg-[#2a2c34]/50 animate-pulse border-b border-[#ffffff1a] flex items-center px-4 justify-between">
                 <div className="flex gap-2 items-center">
@@ -104,7 +127,6 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
     const hoveredIndex = useChartStore(state => state.hoveredIndex);
     const plotRef = useRef<any>(null);
     const overlayHandleRef = useRef<CrosshairOverlayHandle | null>(null);
-    const [modulesLoaded, setModulesLoaded] = useState(false);
     const [worker, setWorker] = useState<Comlink.Remote<IndicatorWorker> | null>(null);
 
     // Initialize Web Worker for heavy indicator calculations
@@ -130,25 +152,8 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
         };
     }, []);
 
-    // Pre-load lazy indicator modules on mount
-    useEffect(() => {
-        let mounted = true;
-        const loadModules = async () => {
-            try {
-                await Promise.all([
-                    ...INDICATOR_KEYS.map(k => chartRegistry.getIndicatorSync(k)),
-                    ...TRACE_BUILDER_KEYS.map(k => chartRegistry.getTraceBuilderSync(k)),
-                    ...LAYOUT_BUILDER_KEYS.map(k => chartRegistry.getLayoutBuilderSync(k))
-                ]);
-                if (mounted) setModulesLoaded(true);
-            } catch (err) {
-                console.error('Failed to lazy-load chart modules:', err);
-                if (mounted) setModulesLoaded(true); // Continue even on error
-            }
-        };
-        loadModules();
-        return () => { mounted = false; };
-    }, []);
+    // Pre-load is handled in ChartItem before ChartItemInner mounts (registry must be
+    // populated before any useMemo reads getIndicatorSync/getTraceBuilderSync).
 
     // Granular selector to avoid re-renders when other store properties change
     const chartStoreSelectors = useMemo(() => ({
@@ -1025,7 +1030,7 @@ const { delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoi
     }
     
     return {
-        smasTraces, rsiTraces, volProfileTraces, vwapTraces, swingsTraces, instBlocksTraces, delVwapBandsTraces, delAdTraces, niftyOutTraces, smartMoneyPrintsTraces, delIntensityCoreTraces, shapes, volumeTraces, deliveryTraces, annotations, profileResult, vpMaxVolume, deliveryOverlayTraces, deliveryObvTraces, trendShapes, smDivTraces, delClustersTraces, delAdjRsiTraces, ifiTraces
+        smasTraces, rsiTraces, volProfileTraces, vwapTraces, swingsTraces, instBlocksTraces, delVwapBandsTraces, delAdTraces, niftyOutTraces, smartMoneyPrintsTraces, delIntensityCoreTraces, shapes, volumeTraces, deliveryTraces, annotations, profileResult, vpMaxVolume, deliveryOverlayTraces, deliveryObvTraces, trendShapes, smDivTraces, delClustersTraces, delAdjRsiTraces, ifiTraces, deliveryTrendTraces, deliveryVolumeRatioTraces
     };
 }, [baseData, delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj, obObj, ehlObj, pdObj, bbObj, smDivData, delClustersData, delAdjRsiData, ifiData, paneLayout, deliveryObv, atr, atrPct, viewport, data, toggles]);
 
@@ -1036,7 +1041,7 @@ const {
 const { currentY, rsiDomain, delAdDomain, delDomain, volDomain, priceDomain, obvDomain } = paneLayout;
 
 const {
-    smasTraces, rsiTraces, volProfileTraces, vwapTraces, swingsTraces, instBlocksTraces, delVwapBandsTraces, delAdTraces, niftyOutTraces, smartMoneyPrintsTraces, delIntensityCoreTraces, shapes, volumeTraces, deliveryTraces, annotations, profileResult, vpMaxVolume, deliveryOverlayTraces, deliveryObvTraces, trendShapes, smDivTraces, delClustersTraces, delAdjRsiTraces, ifiTraces
+    smasTraces, rsiTraces, volProfileTraces, vwapTraces, swingsTraces, instBlocksTraces, delVwapBandsTraces, delAdTraces, niftyOutTraces, smartMoneyPrintsTraces, delIntensityCoreTraces, shapes, volumeTraces, deliveryTraces, annotations, profileResult, vpMaxVolume, deliveryOverlayTraces, deliveryObvTraces, trendShapes, smDivTraces, delClustersTraces, delAdjRsiTraces, ifiTraces, deliveryTrendTraces, deliveryVolumeRatioTraces
 } = computed;
 
 const allShapes = useMemo(() => [...shapes, ...trendShapes], [shapes, trendShapes]);

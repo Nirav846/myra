@@ -51,10 +51,6 @@ const traceBuilderLoaders: Record<string, () => Promise<TraceBuilder<any, any>>>
     'orderBlocks': () => import('./traces/orderBlocksBuilder').then(m => m.orderBlocksTraceBuilder),
     'equalHighsLows': () => import('./traces/equalHighsLowsBuilder').then(m => m.equalHighsLowsTraceBuilder),
     'premiumDiscount': () => import('./traces/premiumDiscountBuilder').then(m => m.premiumDiscountTraceBuilder),
-    'ifi': () => import('./traces/ifiBuilder').then(m => m.ifiTraceBuilder),
-    'smartMoneyDivergence': () => import('./traces/smartMoneyDivergenceBuilder').then(m => m.smartMoneyDivergenceTraceBuilder),
-    'deliveryClusters': () => import('./traces/deliveryClustersBuilder').then(m => m.deliveryClustersTraceBuilder),
-    'delAdjRsi': () => import('./traces/delAdjRsiBuilder').then(m => m.delAdjRsiTraceBuilder),
     'deliveryTrend': () => import('./traces/deliveryTrendBuilder').then(m => m.deliveryTrendTraceBuilder),
     'deliveryVolumeRatio': () => import('./traces/deliveryVolumeRatioBuilder').then(m => m.deliveryVolumeRatioTraceBuilder),
 };

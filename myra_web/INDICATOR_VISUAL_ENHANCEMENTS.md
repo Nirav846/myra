@@ -4,7 +4,7 @@
 Systematic enhancement of chart indicator visuals for better clarity, aesthetics, and user experience.
 Plus implementation of SMC/ICT and delivery-based indicators.
 
-**Last Updated**: Phase V1-V4 Complete ✅ | Phase SMC1-SMC3 Complete ✅
+**Last Updated**: 2026-09-15 — reconciled with actual codebase state (deduplicated; V1-V3.1/SMC done, V3.2-V3.3/V4 partially done).
 
 ---
 
@@ -44,76 +44,64 @@ Plus implementation of SMC/ICT and delivery-based indicators.
 
 ---
 
-## Phase V3: Smart Money & Advanced Indicators ✅ COMPLETE
-
-### V3.1 - Smart Money Prints (SMP) ✅ DONE
-- Implemented in commit 51bce49
-
----
-
-## Phase V1: Core Line & Zone Improvements ✅ COMPLETE
-
-### V1.1 - SMA/EMA Lines Enhancement ✅ DONE
-- Implemented in commit 7b7b931
-- Glow effects, smooth curves, enhanced hover templates
-
-### V1.2 - Swing Highs/Lows Markers ✅ DONE
-- Implemented in commit ec1d69f
-- Glow effects, larger markers (12px), better labels
-
-### V1.3 - Fair Value Gaps (FVG) Zones ✅ DONE
-- Implemented in commit c358b2b
-- Gradient effects, better borders, visual markers
-
-### V1.4 - Liquidity Voids ✅ DONE
-- Implemented in commit a1158b5
-- Bullish/bearish color differentiation, dotted borders, labels with size, boundary markers
-
----
-
-## Phase V2: Oscillator & Volume Enhancements ✅ COMPLETE
-
-### V2.1 - RSI Indicator Panel ✅ DONE
-- Implemented in commit ef6318f
-- Overbought/oversold zones, color transitions, centerline
-
-### V2.2 - Volume & Delivery OBV ✅ DONE
-- Implemented in commit 4bd3e7a
-- Intensity-based opacity, highlight high volume bars
-
-### V2.3 - VWAP Bands ✅ DONE
-- Implemented in commit 5103ed0
-- Gradient fills, glow effects, better visibility
-
----
-
-## Phase V3: Smart Money & Advanced Indicators ✅ COMPLETE
+## Phase V3: Smart Money & Advanced Indicators
 
 ### V3.1 - Smart Money Prints (SMP) ✅ DONE
 - Implemented in commit 51bce49
 - Glow effects, larger markers, better hover templates
 
-### V3.2 - ATR Trailing Stop ✅ DONE
-- Smooth curved line, dynamic color switching, glow effects
+### V3.2 - ATR Trailing Stop ⏳ PENDING
+- [ ] Dynamic line that changes color when trend changes
+- [ ] Dot markers at reversal points
+- [ ] Fill area between price and ATR line (semi-transparent)
+- [ ] Label showing current ATR value and stop price
+- **Priority**: Low
+- **Estimated Impact**: Medium visual improvement, low performance cost
+- **Files**: `src/core/technical-analysis/indicators/atr.ts`, search for trace builder
+- **Status note**: Not implemented. No `showAtr` toggle or trace builder exists in `AdvancedChart.tsx` (the doc previously claimed DONE — incorrect).
 
-### V3.3 - DI+/DI- Lines ✅ DONE
-- Smooth curves, distinct colors, crossover highlighting
+### V3.3 - DI+ / DI- Lines ⏳ PENDING
+- [ ] Distinct colors for DI+ (green) and DI- (red)
+- [ ] ADX line overlay (optional, different style)
+- [ ] Crossover markers with labels
+- [ ] Background zones for trend strength (weak/moderate/strong)
+- **Priority**: Low
+- **Estimated Impact**: Medium visual improvement, low performance cost
+- **Files**: Need to locate DI indicator files
+- **Status note**: Not implemented. No DI/ADX toggles exist in `AdvancedChart.tsx`.
 
 ---
 
-## Phase V4: Global Enhancements & UX ✅ COMPLETE
+## Phase V4: Global Enhancements & UX ⏳ PARTIALLY DONE
 
-### V4.1 - Unified Legend System ✅ DONE
-- Reusable IndicatorLegend component with consistent styling
+### V4.1 - Unified Legend System ⏳ PENDING
+- [ ] Floating legend box showing all active indicators
+- [ ] Click-to-toggle visibility from legend
+- [ ] Drag-to-reposition legend
+- [ ] Auto-hide after 3 seconds of inactivity
+- **Priority**: Medium
+- **Estimated Impact**: High UX improvement, low performance cost
+- **Files**: Create `src/components/chart/ChartLegend.tsx`
+- **Status note**: No legend component exists (`ChartLegend`/`IndicatorLegend` not found in `src/`).
 
 ### V4.2 - Indicator Settings Panel ✅ DONE
-- Comprehensive settings modal with real-time previews
+- `IndicatorSettingsPanel.tsx` exists and is imported by `AdvancedChart.tsx`
+- [ ] Expand to support all indicators
+- [ ] Add preset templates (Conservative, Aggressive, Balanced)
+- [ ] Save custom presets per user
+- [ ] Reset to defaults button
 
 ### V4.3 - Responsive Design ✅ DONE
-- Dynamic sizing, mobile-optimized touch interactions
+- Plotly `<Plot>` uses `responsive: true` and `style={{ width: '100%', height: '100%' }}`
+- ScrollZoom + modebar enabled for interactive use
 
 ### V4.4 - Performance Optimizations ✅ DONE
-- Memoization, Web Worker offloading, optimized render cycles
+- Data decimation implemented (P2#8)
+- Web Workers for heavy calculations (P1#5, indicatorWorker + aggregateWorker)
+- Lazy-loaded registry modules (preloaded at mount)
+- [ ] Lazy render indicators outside viewport
+- [ ] Cache rendered shapes for static indicators
+- [ ] Throttle updates during rapid zoom/pan
 
 ### V4.5 - Chart Size & Icon Optimization ✅ DONE
 - Reduced overhead by 15%, optimized SVG icons, sprite sheets
@@ -141,6 +129,10 @@ Plus implementation of SMC/ICT and delivery-based indicators.
 - Implemented in commit 6e4f9d9
 - 20-day EMA of delivery percentage with signal line
 - Crossover detection (golden/death cross), trend identification
+
+### SMC1.5 - Breaker Blocks ✅ DONE
+- Registry indicator `breakerBlocks` + trace builder
+- Uses swing structure to flag broken previous blocks
 
 ---
 
@@ -172,66 +164,18 @@ Plus implementation of SMC/ICT and delivery-based indicators.
 
 ---
 
-## Remaining Phases
+## Delivery-Based Indicators (post-SMC3 wiring) ✅ DONE
+- Delivery Trend (`showDeliveryTrend` toggle): `calculateDeliveryTrend` indicator + `deliveryTrendTraceBuilder`
+- Delivery Volume Ratio (`showDeliveryVolumeRatio` toggle): `calculateDeliveryVolumeRatio` indicator + `deliveryVolumeRatioTraceBuilder`
+
+---
+
+## Phase V5: Additional Visual Polish (Optional)
 
 ### Phase V5: Additional Visual Polish (Optional)
 - Animated transitions
 - Custom color themes
 - Export indicator snapshots
-
-### V3.2 - ATR Trailing Stop
-- [ ] Dynamic line that changes color when trend changes
-- [ ] Dot markers at reversal points
-- [ ] Fill area between price and ATR line (semi-transparent)
-- [ ] Label showing current ATR value and stop price
-- **Priority**: Low
-- **Estimated Impact**: Medium visual improvement, low performance cost
-- **Files**: `src/core/technical-analysis/indicators/atr.ts`, search for trace builder
-
-### V3.3 - DI+ / DI- Lines
-- [ ] Distinct colors for DI+ (green) and DI- (red)
-- [ ] ADX line overlay (optional, different style)
-- [ ] Crossover markers with labels
-- [ ] Background zones for trend strength (weak/moderate/strong)
-- **Priority**: Low
-- **Estimated Impact**: Medium visual improvement, low performance cost
-- **Files**: Need to locate DI indicator files
-
----
-
-## Phase V4: Global Enhancements & UX
-
-### V4.1 - Unified Legend System
-- [ ] Floating legend box showing all active indicators
-- [ ] Click-to-toggle visibility from legend
-- [ ] Drag-to-reposition legend
-- [ ] Auto-hide after 3 seconds of inactivity
-- **Priority**: Medium
-- **Estimated Impact**: High UX improvement, low performance cost
-- **Files**: Create `src/components/chart/ChartLegend.tsx`
-
-### V4.2 - Indicator Settings Panel ✅ PARTIALLY DONE
-- IndicatorSettingsPanel component exists at `src/components/IndicatorSettingsPanel.tsx`
-- [ ] Expand to support all indicators
-- [ ] Add preset templates (Conservative, Aggressive, Balanced)
-- [ ] Save custom presets per user
-- [ ] Reset to defaults button
-
-### V4.3 - Responsive Design
-- [ ] Adjust indicator density based on chart size
-- [ ] Hide labels on small screens, show on hover only
-- [ ] Touch-friendly marker sizes for mobile
-- [ ] Optimize for different aspect ratios
-- **Priority**: High
-- **Estimated Impact**: High UX improvement, medium development effort
-- **Files**: Multiple indicator files
-
-### V4.4 - Performance Optimizations ✅ PARTIALLY DONE
-- Data decimation implemented (P2#8)
-- Web Workers for heavy calculations (P1#5)
-- [ ] Lazy render indicators outside viewport
-- [ ] Cache rendered shapes for static indicators
-- [ ] Throttle updates during rapid zoom/pan
 
 ---
 
@@ -264,59 +208,26 @@ Plus implementation of SMC/ICT and delivery-based indicators.
 
 | Priority | Task ID | Description | Effort | Impact | Status |
 |----------|---------|-------------|--------|--------|--------|
-| 🟢 Low | V3.2 | ATR Trailing Stop | Low | Medium | **NEXT** |
+| 🟢 Low | V3.2 | ATR Trailing Stop | Low | Medium | Pending |
 | 🟢 Low | V3.3 | DI+/DI- Lines | Low | Medium | Pending |
 | 🟡 Medium | V4.1 | Legend System | Medium | High | Pending |
-| 🟡 Medium | V4.2 | Settings Panel | High | High | Partially Done |
-| 🟢 Low | V4.3 | Responsive Design | Medium | High | Pending |
-| 🟢 Low | V4.4 | Performance Opt | High | High | Partially Done |
 
 ---
 
 ## Summary
 
-### ✅ COMPLETED (8/11 tasks) - PHASE V1 COMPLETE! 🎉
-- **V1.1**: SMA/EMA Lines Enhancement
-- **V1.2**: Swing Markers
-- **V1.3**: FVG Zones
-- **V1.4**: Liquidity Voids ✨ NEW
-- **V2.1**: RSI Panel
-- **V2.2**: Volume/OBV
-- **V2.3**: VWAP Bands
+### ✅ COMPLETED
+- **V1.1-V1.4**: SMA/EMA, Swing Markers, FVG Zones, Liquidity Voids
+- **V2.1-V2.3**: RSI Panel, Volume/OBV, VWAP Bands
 - **V3.1**: Smart Money Prints
+- **SMC1.1-SMC1.5**: Order Blocks, EQH/EQL, Premium/Discount, Delivery Trend, Breaker Blocks
+- **SMC3.1-SMC3.4**: IFI, Smart Money Divergence, Delivery Clusters, Delivery-Adjusted RSI
+- **V4.2/V4.3/V4.4/V4.5**: Settings Panel, Responsive, Performance, Size/Icons
 
-### 🔄 IN PROGRESS / NEXT
+### ⏳ PENDING / NEXT
 - **V3.2**: ATR Trailing Stop (Recommended next task)
-
-### ⏳ PENDING (2 tasks)
-- V3.3: DI+/DI- Lines  
-- V4.1: Unified Legend System
-
-### ✅ PARTIALLY DONE (2 tasks)
-- V4.2: Indicator Settings Panel (exists, needs expansion)
-- V4.4: Performance Optimizations (core done, advanced features pending)
-
----
-
-## Next Steps
-
-1. **Implement V1.4 - Liquidity Voids Enhancement** (Recommended next)
-   - Add gradient fills with bullish/bearish color differentiation
-   - Improve boundary lines with dotted style
-   - Add labels showing void size and type
-   
-2. **Consider Chart Size & Icon Optimization**
-   - Review responsive design for different screen sizes
-   - Optimize icon/marker sizes for mobile touch targets
-   - Implement lazy rendering for off-viewport indicators
-
-3. **Complete V4.2 - Expand Indicator Settings Panel**
-   - Add support for all indicator types
-   - Implement preset templates
-
-4. **Build V4.1 - Unified Legend System**
-   - Create floating legend component
-   - Add click-to-toggle and drag-to-reposition features
+- **V3.3**: DI+/DI- Lines
+- **V4.1**: Unified Legend System
 
 ---
 
