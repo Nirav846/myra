@@ -618,12 +618,11 @@ const allIndicatorData = useMemo(() => ({
 const computed = useMemo(() => {
 const {
     opens, highs, lows, closes, volumes, vwap, deliveryFinal, deliveryPct, deliveryRatio, stockReturn, volComp, relVol, divScores, niftyOut, trendAlignment, volumeColors, deliveryColorsInverse,
-    currentY, rsiDomain, delAdDomain, delDomain, volDomain, priceDomain, obvDomain, deliveryObv, atr, atrPct
+    currentY, rsiDomain, delAdDomain, delDomain, volDomain, priceDomain, obvDomain
 } = {
     ...baseData,
     ...paneLayout,
     obvDomain: paneLayout.obvDomain,
-    deliveryObv, atr, atrPct
 };
 
 // Access indicator results from outer scope (they are already memoized)
