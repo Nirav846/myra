@@ -11,7 +11,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@google/genai": "^1.29.0",
+    "@google/genai": "^2.22.0",
     "@tailwindcss/vite": "^4.1.14",
     "@tanstack/react-virtual": "^3.14.12",
     "@types/plotly.js": "^3.0.10",
