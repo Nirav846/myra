@@ -578,6 +578,35 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
         return { ratios, signals: [] };
     }, [toggles.showDeliveryVolumeRatio, data]);
 
+// Pane layout calculations (no indicator dependencies — declare first)
+const paneLayout = useMemo(() => {
+    const gap = 0.04;
+    const activePanes = [toggles.showRsi, toggles.showDelAD, toggles.showDelivery, toggles.showVolume, toggles.showDeliveryObv].filter(Boolean).length;
+    const paneHeight = activePanes > 0 ? Math.min(0.16, Math.max(0.05, (0.6 - (activePanes * gap)) / activePanes)) : 0;
+
+    let currentY = 0;
+    const rsiDomain = toggles.showRsi ? [currentY, currentY + paneHeight] : [0, 0];
+    if (toggles.showRsi) currentY += paneHeight + gap;
+
+    const delAdDomain = toggles.showDelAD ? [currentY, currentY + paneHeight] : [0, 0];
+    if (toggles.showDelAD) currentY += paneHeight + gap;
+
+    const delDomain = toggles.showDelivery ? [currentY, currentY + paneHeight] : [0, 0];
+    if (toggles.showDelivery) currentY += paneHeight + gap;
+
+    const volDomain = toggles.showVolume ? [currentY, currentY + paneHeight] : [0, 0];
+    if (toggles.showVolume) currentY += paneHeight + gap;
+
+    const obvDomain = toggles.showDeliveryObv ? [currentY, currentY + paneHeight] : [0, 0];
+    if (toggles.showDeliveryObv) currentY += paneHeight + gap;
+
+    const totalPaneSpace = currentY;
+    const safeCurrentY = Math.min(0.65, totalPaneSpace);
+    const priceDomain = [safeCurrentY, 1.0];
+
+    return { currentY, rsiDomain, delAdDomain, delDomain, volDomain, obvDomain, priceDomain };
+}, [toggles.showRsi, toggles.showDelAD, toggles.showDelivery, toggles.showVolume, toggles.showDeliveryObv]);
+
 // Aggregate all indicator data for use in computed useMemo and ChartItemInner
 const allIndicatorData = useMemo(() => ({
     delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj,
@@ -585,35 +614,6 @@ const allIndicatorData = useMemo(() => ({
     deliveryTrendData, deliveryVolumeRatioData
 }), [delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoidsResult, smObj, diObj, ibObj, dbObj, daObj, deliveryObv, atr, atrPct, obObj, ehlObj, pdObj, bbObj, smDivData, delClustersData, delAdjRsiData, ifiData,
     deliveryTrendData, deliveryVolumeRatioData]);
-
-    // Pane layout calculations
-    const paneLayout = useMemo(() => {
-        const gap = 0.04;
-        const activePanes = [toggles.showRsi, toggles.showDelAD, toggles.showDelivery, toggles.showVolume, toggles.showDeliveryObv].filter(Boolean).length;
-        const paneHeight = activePanes > 0 ? Math.min(0.16, Math.max(0.05, (0.6 - (activePanes * gap)) / activePanes)) : 0;
-        
-        let currentY = 0;
-        const rsiDomain = toggles.showRsi ? [currentY, currentY + paneHeight] : [0, 0];
-        if (toggles.showRsi) currentY += paneHeight + gap;
-        
-        const delAdDomain = toggles.showDelAD ? [currentY, currentY + paneHeight] : [0, 0];
-        if (toggles.showDelAD) currentY += paneHeight + gap;
-        
-        const delDomain = toggles.showDelivery ? [currentY, currentY + paneHeight] : [0, 0];
-        if (toggles.showDelivery) currentY += paneHeight + gap;
-        
-        const volDomain = toggles.showVolume ? [currentY, currentY + paneHeight] : [0, 0];
-        if (toggles.showVolume) currentY += paneHeight + gap;
-        
-        const obvDomain = toggles.showDeliveryObv ? [currentY, currentY + paneHeight] : [0, 0];
-        if (toggles.showDeliveryObv) currentY += paneHeight + gap;
-        
-        const totalPaneSpace = currentY;
-        const safeCurrentY = Math.min(0.65, totalPaneSpace);
-        const priceDomain = [safeCurrentY, 1.0];
-
-        return { currentY, rsiDomain, delAdDomain, delDomain, volDomain, obvDomain, priceDomain };
-    }, [toggles.showRsi, toggles.showDelAD, toggles.showDelivery, toggles.showVolume, toggles.showDeliveryObv]);
 
 const computed = useMemo(() => {
 const {
