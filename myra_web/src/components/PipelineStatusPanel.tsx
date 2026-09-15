@@ -190,10 +190,12 @@ export default function PipelineStatusPanel() {
       aria-label="Pipeline status"
       className="bg-[#1a1c24] border border-[#ffffff1a] rounded-xl p-4 flex flex-col gap-3"
     >
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => setExpanded((v) => !v)}
-        className="flex items-center justify-between gap-2 w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 rounded"
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded((v) => !v); } }}
+        className="flex items-center justify-between gap-2 w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 rounded cursor-pointer"
         aria-expanded={expanded}
         aria-controls="pipeline-status-detail"
       >
@@ -233,7 +235,7 @@ export default function PipelineStatusPanel() {
             <ChevronDown size={14} className="text-[#888]" aria-hidden="true" />
           )}
         </div>
-      </button>
+      </div>
 
       {/* Auto-expand when there are problems so they're immediately visible. */}
       {hasIssues && !expanded && (

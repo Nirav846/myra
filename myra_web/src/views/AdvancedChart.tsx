@@ -667,9 +667,17 @@ const { delMaData, swingsObj, vwapObj, smaResults, rsiResult, activeFVGs, liqVoi
     }
 
     let smasTraces: any[] = [];
-    smaConfigs.forEach(cfg => {
-      if (cfg.toggle && smaResults[cfg.period]) {
-        smasTraces.push(...(chartRegistry.getTraceBuilderSync('sma')?.buildTraces(smaResults[cfg.period], traceCtx, { period: cfg.period, color: cfg.color, width: cfg.width, yaxis: 'y' }) || []));
+    const smaStyleMap: Record<number, { color: string; width: number }> = {
+      20:  { color: '#eab308', width: 1.5 },
+      50:  { color: '#0ea5e9', width: 1.5 },
+      150: { color: '#d946ef', width: 1.5 },
+      200: { color: '#f97316', width: 1.5 },
+    };
+    Object.entries(smaResults).forEach(([periodStr, result]) => {
+      const period = Number(periodStr);
+      const style = smaStyleMap[period];
+      if (result && style) {
+        smasTraces.push(...(chartRegistry.getTraceBuilderSync('sma')?.buildTraces(result, traceCtx, { period, color: style.color, width: style.width, yaxis: 'y' }) || []));
       }
     });
 
