@@ -16,6 +16,7 @@ const InstDOMView = lazy(() => import('./views/InstDOM'));
 const FiiDiiScannerView = lazy(() => import('./views/FiiDiiScanner'));
 const PriceDeliveryDivergenceScannerView = lazy(() => import('./views/PriceDeliveryDivergenceScanner'));
 import AdvancedChartView from './views/AdvancedChart';
+const ChartComparisonDevView = lazy(() => import('./views/ChartComparisonDev'));
 const ReversionEngineView = lazy(() => import('./views/ReversionEngine'));
 const ValueRankerView = lazy(() => import('./views/ValueRanker'));
 const InvisibleHandScannerView = lazy(() => import('./views/InvisibleHandScanner'));
@@ -269,6 +270,8 @@ export default function App() {
                 <Route path="/fvg-scanner" element={<LazyLoadView><FVGScannerView lib={librarian} /></LazyLoadView>} />
                 <Route path="/historical-search" element={<LazyLoadView><HistoricalSearchView lib={librarian} /></LazyLoadView>} />
                 <Route path="/chart" element={<AdvancedChartView lib={librarian} activeSymbol={globalSelectedTicker} />} />
+                {/* Dev-only route for visual comparison (Phase 1) - remove before production */}
+                <Route path="/chart-comparison-dev" element={<LazyLoadView component={ChartComparisonDevView} />} />
                 <Route path="/fundamentals" element={<LazyLoadView><FundamentalsView lib={librarian} /></LazyLoadView>} />
                 <Route path="/deep-fundamentals" element={<LazyLoadView><FullFundamentalsView lib={librarian} /></LazyLoadView>} />
                 <Route path="/sector-flow" element={<LazyLoadView><SectorFlowView lib={librarian} /></LazyLoadView>} />
