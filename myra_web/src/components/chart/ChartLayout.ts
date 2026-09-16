@@ -55,7 +55,8 @@ export function buildBaseLayout(config: Partial<ChartLayoutConfig> = {}): Layout
         color: cfg.textColor,
       },
       tickformat: '%Y-%m-%d',
-      tickangle: 0,
+      tickangle: -45,
+      nticks: 12,
       automargin: true,
     },
 

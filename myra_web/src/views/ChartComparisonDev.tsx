@@ -8,22 +8,86 @@
  */
 
 import { useState, useMemo } from 'react';
+import Plot from 'react-plotly.js';
+import type { PlotData, Layout } from 'plotly.js-dist-min';
 import { AdvancedChartV2 } from './AdvancedChartV2';
-// Import the existing chart component (will be wrapped to match V2 interface)
 import { defaultFixture, getAllFixtures, FixtureScenario } from '../components/chart/fixtures/chartFixtures';
-import { Candle } from '../core/technical-analysis/types';
+import { isDebug } from '../lib/debug';
 
 /**
- * Legacy chart wrapper - adapts old AdvancedChart to accept fixture data
- * Note: This is a simplified mock since the real AdvancedChart expects API data
+ * Legacy chart wrapper - renders fixture data with Plotly candlestick
+ * using the same styling approach as the old AdvancedChart for visual comparison.
  */
-function LegacyChartWrapper({ data, debug }: { data: Candle[]; debug?: boolean }) {
-  // For Phase 1 comparison, we'll use a placeholder that shows what the old chart would render
-  // In practice, you'd pass this data to the actual AdvancedChart component
+function LegacyChartWrapper({ data, debug }: { data: FixtureScenario['candles']; debug?: boolean }) {
+  const traces = useMemo(() => {
+    if (!data || data.length === 0) return [];
+
+    const dates = data.map(c => c.date);
+    const candleTrace = {
+      type: 'candlestick' as const,
+      x: dates,
+      open: data.map(c => c.open),
+      high: data.map(c => c.high),
+      low: data.map(c => c.low),
+      close: data.map(c => c.close),
+      increasing: { line: { color: '#26a69a' }, fillcolor: '#26a69a' },
+      decreasing: { line: { color: '#ef5350' }, fillcolor: '#ef5350' },
+      whiskerwidth: 0.5,
+      name: 'Price',
+    };
+
+    const volumeTrace = {
+      type: 'bar' as const,
+      x: dates,
+      y: data.map(c => c.volume),
+      marker: {
+        color: data.map(c => c.close >= c.open ? 'rgba(38,166,154,0.5)' : 'rgba(239,83,80,0.5)'),
+      },
+      name: 'Volume',
+      yaxis: 'y2',
+    };
+
+    return [candleTrace, volumeTrace];
+  }, [data]);
+
+  const layout = useMemo((): Partial<Layout> => ({
+    autosize: true,
+    paper_bgcolor: '#1a1c24',
+    plot_bgcolor: '#1a1c24',
+    margin: { l: 60, r: 60, t: 10, b: 50 },
+    xaxis: {
+      type: 'category',
+      tickangle: -45,
+      nticks: 12,
+      showgrid: true,
+      gridcolor: '#2a2c34',
+      tickfont: { size: 11, color: '#888899' },
+      automargin: true,
+    },
+    yaxis: {
+      showgrid: true,
+      gridcolor: '#2a2c34',
+      tickfont: { size: 11, color: '#888899' },
+      tickformat: '.2f',
+      automargin: true,
+      fixedrange: false,
+    },
+    yaxis2: {
+      overlaying: 'y',
+      side: 'right',
+      showgrid: false,
+      tickfont: { size: 10, color: '#888899' },
+      anchor: 'free',
+      position: 0.95,
+      fixedrange: true,
+    },
+    showlegend: false,
+    hovermode: 'x unified',
+    dragmode: 'zoom',
+  }), []);
 
   return (
     <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden">
-      {/* Header matching V2 style */}
       <div className="h-10 bg-[#2a2c34]/50 border-b border-[#ffffff1a] flex items-center px-4 justify-between">
         <div className="flex gap-2 items-center">
           <span className="font-semibold text-white">Legacy Chart</span>
@@ -33,24 +97,21 @@ function LegacyChartWrapper({ data, debug }: { data: Candle[]; debug?: boolean }
           {data[0]?.date} → {data[data.length - 1]?.date}
         </div>
       </div>
-
-      {/* Placeholder - in real comparison, this would render AdvancedChart */}
-      <div className="h-[440px] flex items-center justify-center text-gray-500">
-        <div className="text-center">
-          <div className="text-lg mb-2">📊 Legacy Chart Placeholder</div>
-          <div className="text-sm">
-            AdvancedChart.tsx would render here<br/>
-            (requires full data fetch setup)
-          </div>
-          {debug && (
-            <div className="mt-4 text-xs font-mono text-left bg-black/50 p-2 rounded">
-              <div>Data points: {data.length}</div>
-              <div>Date range: {data[0]?.date} - {data[data.length - 1]?.date}</div>
-              <div>Price range: {Math.min(...data.map(d => d.low)).toFixed(2)} - {Math.max(...data.map(d => d.high)).toFixed(2)}</div>
-            </div>
-          )}
-        </div>
+      <div style={{ height: '440px' }}>
+        <Plot
+          data={traces as PlotData[]}
+          layout={layout}
+          config={{ responsive: true, displayModeBar: false, scrollZoom: true }}
+          style={{ width: '100%', height: '100%' }}
+          useResizeHandler={true}
+        />
       </div>
+      {debug && (
+        <div className="px-4 py-2 text-xs font-mono text-gray-500 border-t border-[#ffffff1a]">
+          Price: {Math.min(...data.map(d => d.low)).toFixed(2)} – {Math.max(...data.map(d => d.high)).toFixed(2)} |
+          Avg Vol: {Math.round(data.reduce((a, c) => a + c.volume, 0) / data.length).toLocaleString()}
+        </div>
+      )}
     </div>
   );
 }

@@ -10,6 +10,7 @@
 import { useState, useMemo, memo, useCallback, useEffect } from 'react';
 import Plot from 'react-plotly.js';
 import type { PlotData, Layout } from 'plotly.js-dist-min';
+import { isDebug } from '../lib/debug';
 import { buildBaseLayout, DEFAULT_PLOTLY_CONFIG } from '../components/chart/ChartLayout';
 import { buildCandlestickTrace, extractDates, getPriceRange } from '../components/chart/CandlestickRenderer';
 import { buildVolumeDeliveryPane, buildVolumePaneLayout, getVolumeStats } from '../components/chart/panes/VolumeDeliveryPane';
@@ -502,8 +503,8 @@ export const AdvancedChartV2 = memo(({
           onToggleCollapse={() => setSettingsPanelOpen(prev => !prev)}
         />
 
-        {/* Debug overlay (optional) */}
-        {debug && (
+        {/* Debug overlay (only when global debug mode is on) */}
+        {isDebug() && (
           <div className="absolute top-2 left-2 bg-black/70 text-green-400 text-xs p-2 rounded font-mono">
             <div>V2 | {fixture.name}</div>
             <div>Candles: {fixture.candles.length}</div>
