@@ -20,8 +20,9 @@ export interface CandleData {
   low: number;
   close: number;
   volume: number;
-  delivery_quantity: number;
+  delivery?: number;
   delivery_pct?: number;
+  vwap?: number;
 }
 
 /**

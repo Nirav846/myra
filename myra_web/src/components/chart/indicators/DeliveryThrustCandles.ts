@@ -85,12 +85,12 @@ export function identifyThrustCandles(
 
   for (let i = config.smaPeriod - 1; i < candles.length; i++) {
     const candle = candles[i];
-    const deliveryVolume = candle.deliveryQuantity || 0;
+    const deliveryVolume = candle.delivery || 0;
 
     // Get historical delivery volumes for SMA calculation
     const historicalVolumes = candles
       .slice(0, i + 1)
-      .map((c) => c.deliveryQuantity || 0);
+      .map((c) => c.delivery || 0);
 
     const smaDelivery = calculateSMA(historicalVolumes, config.smaPeriod);
     const threshold = smaDelivery * config.thresholdMultiplier;

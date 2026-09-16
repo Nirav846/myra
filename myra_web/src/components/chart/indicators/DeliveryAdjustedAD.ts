@@ -76,7 +76,7 @@ export function calculateDAAD(
 
   for (const candle of candles) {
     const mfm = calculateMoneyFlowMultiplier(candle);
-    const deliveryVolume = candle.deliveryQuantity || 0;
+    const deliveryVolume = candle.delivery || 0;
     const deliveryMFV = mfm * deliveryVolume;
 
     cumulativeAD += deliveryMFV;

@@ -2,6 +2,8 @@
  * VWAP Overlay Indicator
  *
  * Volume Weighted Average Price rendered as a line overlay.
+ * Uses precomputed DB vwap when available (correct daily-reset behavior);
+ * falls back to client-side cumulative calculation for fixture/mock data.
  */
 
 import type { IndicatorConfig, IndicatorModule } from '../registry/IndicatorRegistry';
@@ -24,17 +26,37 @@ const DEFAULT_VWAP_CONFIG: VWAPConfig = {
 };
 
 /**
- * Calculate cumulative VWAP values
+ * Return VWAP values — prefers precomputed DB column, falls back to
+ * client-side daily-reset VWAP (resets at each new calendar day).
  */
 function calculateVWAP(candles: Candle[]): (number | null)[] {
+  const hasPrecomputed = candles.some(c => (c as any).vwap != null && (c as any).vwap !== 0);
+  if (hasPrecomputed) {
+    return candles.map(c => {
+      const v = (c as any).vwap;
+      return v != null && v !== 0 ? v : null;
+    });
+  }
+
+  // Fallback: daily-reset VWAP (resets cumulative at each new date)
   const result: (number | null)[] = [];
-  let cumulativePV = 0; // Price * Volume
-  let cumulativeV = 0;  // Volume
+  let cumulativePV = 0;
+  let cumulativeV = 0;
+  let prevDate = '';
 
   for (let i = 0; i < candles.length; i++) {
     const candle = candles[i];
+    const currentDate = candle.date.slice(0, 10);
+
+    // Reset at day boundary
+    if (currentDate !== prevDate) {
+      cumulativePV = 0;
+      cumulativeV = 0;
+      prevDate = currentDate;
+    }
+
     const typicalPrice = (candle.high + candle.low + candle.close) / 3;
-    const volume = candle.volume || candle.volume_final || 0;
+    const volume = candle.volume || (candle as any).volume_final || 0;
 
     cumulativePV += typicalPrice * volume;
     cumulativeV += volume;
