@@ -271,7 +271,7 @@ export default function App() {
                 <Route path="/historical-search" element={<LazyLoadView><HistoricalSearchView lib={librarian} /></LazyLoadView>} />
                 <Route path="/chart" element={<AdvancedChartView lib={librarian} activeSymbol={globalSelectedTicker} />} />
                 {/* Dev-only route for visual comparison (Phase 1) - remove before production */}
-                <Route path="/chart-comparison-dev" element={<LazyLoadView component={ChartComparisonDevView} />} />
+                <Route path="/chart-comparison-dev" element={<LazyLoadView><ChartComparisonDevView /></LazyLoadView>} />
                 <Route path="/fundamentals" element={<LazyLoadView><FundamentalsView lib={librarian} /></LazyLoadView>} />
                 <Route path="/deep-fundamentals" element={<LazyLoadView><FullFundamentalsView lib={librarian} /></LazyLoadView>} />
                 <Route path="/sector-flow" element={<LazyLoadView><SectorFlowView lib={librarian} /></LazyLoadView>} />
