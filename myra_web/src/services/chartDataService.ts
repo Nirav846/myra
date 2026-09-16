@@ -8,6 +8,7 @@
  */
 
 import { API_BASE } from '../config';
+import { isDebug } from '../lib/debug';
 
 /**
  * Candle data structure matching backend schema
@@ -80,14 +81,14 @@ export async function fetchChartData(
   // Check cache first
   const cached = chunkCache.get(cacheKey);
   if (cached) {
-    console.log('[ChartDataService] Cache hit for', cacheKey);
+    if (isDebug()) console.log('[ChartDataService] Cache hit for', cacheKey);
     return cached;
   }
 
   // Check if request is already pending
   const pending = pendingRequests.get(cacheKey);
   if (pending) {
-    console.log('[ChartDataService] Joining pending request for', cacheKey);
+    if (isDebug()) console.log('[ChartDataService] Joining pending request for', cacheKey);
     return pending;
   }
 
@@ -107,7 +108,7 @@ export async function fetchChartData(
   // Create fetch promise
   const fetchPromise = (async () => {
     try {
-      console.log('[ChartDataService] Fetching from API:', url.toString());
+      if (isDebug()) console.log('[ChartDataService] Fetching from API:', url.toString());
 
       const response = await fetch(url.toString(), {
         signal,
@@ -127,14 +128,14 @@ export async function fetchChartData(
         throw new Error('Invalid response format: missing candles array');
       }
 
-      console.log('[ChartDataService] Received', data.candles.length, 'candles');
+      if (isDebug()) console.log('[ChartDataService] Received', data.candles.length, 'candles');
 
       // Cache the result
       chunkCache.set(cacheKey, data.candles);
 
       return data.candles;
     } catch (error) {
-      console.error('[ChartDataService] Fetch failed:', error);
+      if (isDebug()) console.error('[ChartDataService] Fetch failed:', error);
       throw error;
     } finally {
       // Remove from pending
@@ -212,10 +213,10 @@ export function clearChartCache(symbol?: string): void {
       }
     });
     keysToRemove.forEach(key => chunkCache.delete(key));
-    console.log('[ChartDataService] Cleared cache for symbol:', symbol);
+    if (isDebug()) console.log('[ChartDataService] Cleared cache for symbol:', symbol);
   } else {
     chunkCache.clear();
-    console.log('[ChartDataService] Cleared all cache');
+    if (isDebug()) console.log('[ChartDataService] Cleared all cache');
   }
 }
 
@@ -250,7 +251,7 @@ export async function prepareChartData(
   // Dynamic import to avoid circular dependencies
   const { decimateOHLCVData } = await import('../utils/dataDecimator');
 
-  console.log('[ChartDataService] Decimating', data.length, 'points to max', maxPoints);
+  if (isDebug()) console.log('[ChartDataService] Decimating', data.length, 'points to max', maxPoints);
   return decimateOHLCVData(data, maxPoints);
 }
 

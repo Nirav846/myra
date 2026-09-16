@@ -17,6 +17,7 @@ import {
   type CandleData,
   type ChartQueryParams,
 } from '../services/chartDataService';
+import { isDebug } from '../lib/debug';
 
 /**
  * Hook state interface
@@ -119,7 +120,7 @@ export function useChartData(
         to_date: initialRange?.to_date,
       };
 
-      console.log('[useChartData] Fetching initial data for', symbol, params);
+      if (isDebug()) console.log('[useChartData] Fetching initial data for', symbol, params);
 
       const result = await fetchChartData(params, signal);
 
@@ -139,14 +140,14 @@ export function useChartData(
         setHasMore(!initialRange?.from_date || result[0].date > initialRange.from_date);
       }
 
-      console.log('[useChartData] Fetched', prepared.length, 'candles');
+      if (isDebug()) console.log('[useChartData] Fetched', prepared.length, 'candles');
     } catch (err: any) {
       if (signal.aborted) {
-        console.log('[useChartData] Fetch aborted');
+        if (isDebug()) console.log('[useChartData] Fetch aborted');
         return;
       }
 
-      console.error('[useChartData] Fetch failed:', err);
+      if (isDebug()) console.error('[useChartData] Fetch failed:', err);
       setError(err.message || 'Failed to fetch chart data');
     } finally {
       if (!signal.aborted) {
@@ -176,7 +177,7 @@ export function useChartData(
       return;
     }
 
-    console.log('[useChartData] Loading more historical data...', {
+    if (isDebug()) console.log('[useChartData] Loading more historical data...', {
       from: endDate.toISOString().split('T')[0],
       to: startDate.toISOString().split('T')[0],
     });
@@ -240,7 +241,7 @@ export function useChartData(
         setHasMore(false);
       }
     } catch (err: any) {
-      console.error('[useChartData] Failed to load more:', err);
+      if (isDebug()) console.error('[useChartData] Failed to load more:', err);
       setError(err.message || 'Failed to load historical data');
     }
   }, [hasMore, loading, symbol, chunkDays, enableDecimation, maxPoints]);
