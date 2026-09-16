@@ -16,6 +16,7 @@ const InstDOMView = lazy(() => import('./views/InstDOM'));
 const FiiDiiScannerView = lazy(() => import('./views/FiiDiiScanner'));
 const PriceDeliveryDivergenceScannerView = lazy(() => import('./views/PriceDeliveryDivergenceScanner'));
 import AdvancedChartView from './views/AdvancedChart';
+import { AdvancedChartV2WithData } from './views/AdvancedChartV2WithData';
 const ChartComparisonDevView = lazy(() => import('./views/ChartComparisonDev'));
 const ReversionEngineView = lazy(() => import('./views/ReversionEngine'));
 const ValueRankerView = lazy(() => import('./views/ValueRanker'));
@@ -130,6 +131,9 @@ export default function App() {
 
   const [globalSelectedTicker, setGlobalSelectedTicker] = useState<string | undefined>();
   const [showPresetsPanel, setShowPresetsPanel] = useState(false);
+  const [chartVersion, setChartVersion] = useState<'v1' | 'v2'>(() => {
+    try { return (localStorage.getItem('chart-version') as 'v1' | 'v2') || 'v1'; } catch { return 'v1'; }
+  });
   
   const { settings } = useSettings();
   const { health, coverage, isConnected } = useHealthStatus();
@@ -269,7 +273,43 @@ export default function App() {
                 <Route path="/price-delivery-divergence" element={<LazyLoadView><PriceDeliveryDivergenceScannerView lib={librarian} /></LazyLoadView>} />
                 <Route path="/fvg-scanner" element={<LazyLoadView><FVGScannerView lib={librarian} /></LazyLoadView>} />
                 <Route path="/historical-search" element={<LazyLoadView><HistoricalSearchView lib={librarian} /></LazyLoadView>} />
-                <Route path="/chart" element={<AdvancedChartView lib={librarian} activeSymbol={globalSelectedTicker} />} />
+                <Route path="/chart" element={
+                  <div className="flex flex-col h-full">
+                    <div className="flex items-center gap-2 px-4 py-2 border-b border-[#ffffff1a] bg-[#0e1117] shrink-0">
+                      <span className="text-xs text-gray-500">Chart:</span>
+                      <button
+                        onClick={() => { setChartVersion('v1'); try { localStorage.setItem('chart-version', 'v1'); } catch {} }}
+                        className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                          chartVersion === 'v1'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-[#2a2c34] text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        V1
+                      </button>
+                      <button
+                        onClick={() => { setChartVersion('v2'); try { localStorage.setItem('chart-version', 'v2'); } catch {} }}
+                        className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                          chartVersion === 'v2'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-[#2a2c34] text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        V2
+                      </button>
+                    </div>
+                    <div className="flex-1 min-h-0">
+                      {chartVersion === 'v1' ? (
+                        <AdvancedChartView lib={librarian} activeSymbol={globalSelectedTicker} />
+                      ) : (
+                        <AdvancedChartV2WithData
+                          symbol={globalSelectedTicker || 'RELIANCE'}
+                          range={settings.defaultChartRange}
+                        />
+                      )}
+                    </div>
+                  </div>
+                } />
                 {/* Dev-only route for visual comparison (Phase 1) - remove before production */}
                 <Route path="/chart-comparison-dev" element={<LazyLoadView><ChartComparisonDevView /></LazyLoadView>} />
                 <Route path="/fundamentals" element={<LazyLoadView><FundamentalsView lib={librarian} /></LazyLoadView>} />
