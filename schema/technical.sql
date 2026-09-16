@@ -88,7 +88,7 @@ CREATE TABLE technical_data (
     has_bullish_fvg INTEGER,
     sma_50 REAL,
     high_52w REAL,
-    low_52w REAL,
+    low_52w REAL, sma_5 REAL, sma_10 REAL, sma_15 REAL, sma_200 REAL,
     PRIMARY KEY (symbol, date)
 )
 
