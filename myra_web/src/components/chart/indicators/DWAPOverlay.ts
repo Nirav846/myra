@@ -55,7 +55,7 @@ export function calculateDWAP(
 
   for (const candle of candles) {
     const typicalPrice = (candle.high + candle.low + candle.close) / 3;
-    const deliveryVolume = candle.deliveryQuantity || 0;
+    const deliveryVolume = candle.delivery || 0;
 
     cumulativeTPxDV += typicalPrice * deliveryVolume;
     cumulativeDV += deliveryVolume;

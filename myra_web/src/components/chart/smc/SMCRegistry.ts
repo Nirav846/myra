@@ -11,6 +11,7 @@ import { detectOrderBlocksFromData, buildOrderBlockShapes, buildOrderBlockAnnota
 import { detectSwingPointsFromData, buildSwingPointMarkers, type SwingPoint } from './SwingPoints';
 import { detectFVGsFromData, buildFVGExtendedShapes, buildFVGExtendedAnnotations, type FairValueGap } from './FairValueGapsExtended';
 import { detectDivergencesFromData, buildDivergenceOscillatorTrace, buildDivergenceMarkers, type DivergenceSignal } from './DeliveryDivergence';
+import { detectLiquidityVoids, buildLiquidityVoidShapes, buildLiquidityVoidAnnotations, type LiquidityVoid, type LiquidityVoidsConfig, DEFAULT_CONFIG as DEFAULT_LIQUIDITY_VOIDS_CONFIG } from './LiquidityVoids';
 import { calculateDWAP, renderDWAP, renderDWAPBands, type DWAPConfig, DEFAULT_DWAP_CONFIG } from '../indicators/DWAPOverlay';
 import { identifyThrustCandles, renderDeliveryThrust, getThrustStatistics, type DeliveryThrustConfig, DEFAULT_DELIVERY_THRUST_CONFIG } from '../indicators/DeliveryThrustCandles';
 import { calculateDAAD, renderDAAD, detectDivergences as detectDAADDivergences, renderDivergences as renderDAADDivergences, type DAADConfig, DEFAULT_DAAD_CONFIG } from '../indicators/DeliveryAdjustedAD';
@@ -24,6 +25,10 @@ export interface SMCConfig {
   swingLookback: number;
   obLookback: number;
   fvgMinPercent: number;
+  // Liquidity Voids
+  showLiquidityVoids: boolean;
+  liquidityVoidsBucket: string;
+  liquidityVoidsConfig?: Partial<LiquidityVoidsConfig>;
   // Delivery-backed indicators
   showDWAP: boolean;
   showDWAPBands: boolean;
@@ -44,6 +49,10 @@ const DEFAULT_SMC_CONFIG: SMCConfig = {
   swingLookback: 5,
   obLookback: 5,
   fvgMinPercent: 0.001,
+  // Liquidity Voids defaults
+  showLiquidityVoids: false,
+  liquidityVoidsBucket: 'Broader Market (N500)',
+  liquidityVoidsConfig: {},
   // Delivery-backed indicators defaults
   showDWAP: false,
   showDWAPBands: false,
@@ -60,10 +69,12 @@ export interface SMCRenderResult {
   swingPoints: SwingPoint[];
   fvgZones: FairValueGap[];
   divergences: DivergenceSignal[];
+  liquidityVoids: LiquidityVoid[];
   // Delivery-backed indicator data
   dwapEnabled: boolean;
   thrustCandlesCount: number;
   daadEnabled: boolean;
+  liquidityVoidsEnabled: boolean;
 }
 
 /**
@@ -82,11 +93,13 @@ export function renderSMCIndicators(
   let swingPoints: SwingPoint[] = [];
   let fvgZones: FairValueGap[] = [];
   let divergences: DivergenceSignal[] = [];
+  let liquidityVoids: LiquidityVoid[] = [];
 
   // Delivery-backed indicator state
   let dwapEnabled = false;
   let thrustCandlesCount = 0;
   let daadEnabled = false;
+  let liquidityVoidsEnabled = false;
 
   if (!fullConfig.visible) {
     return {
@@ -97,9 +110,11 @@ export function renderSMCIndicators(
       swingPoints,
       fvgZones,
       divergences,
+      liquidityVoids,
       dwapEnabled,
       thrustCandlesCount,
       daadEnabled,
+      liquidityVoidsEnabled,
     };
   }
 
@@ -121,6 +136,17 @@ export function renderSMCIndicators(
   const fvgAnnotations = buildFVGExtendedAnnotations(fvgZones);
   shapes.push(...fvgShapes);
   annotations.push(...fvgAnnotations);
+
+  // Detect Liquidity Voids
+  if (fullConfig.showLiquidityVoids) {
+    liquidityVoidsEnabled = true;
+    const liqVoidsConfig = { ...DEFAULT_LIQUIDITY_VOIDS_CONFIG, ...fullConfig.liquidityVoidsConfig };
+    liquidityVoids = detectLiquidityVoids(candles, liqVoidsConfig, fullConfig.liquidityVoidsBucket);
+    const liqVoidShapes = buildLiquidityVoidShapes(liquidityVoids, candles.map(c => c.date), liqVoidsConfig);
+    const liqVoidAnnotations = buildLiquidityVoidAnnotations(liquidityVoids, candles.map(c => c.date), liqVoidsConfig);
+    shapes.push(...liqVoidShapes);
+    annotations.push(...liqVoidAnnotations);
+  }
 
   // Detect Divergences (only if enabled)
   if (fullConfig.showDivergence) {
@@ -173,9 +199,11 @@ export function renderSMCIndicators(
     swingPoints,
     fvgZones,
     divergences,
+    liquidityVoids,
     dwapEnabled,
     thrustCandlesCount,
     daadEnabled,
+    liquidityVoidsEnabled,
   };
 }
 

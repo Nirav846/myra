@@ -394,12 +394,32 @@ const paneLayout = useMemo(() => {
 - Both charts remain available; user choice persists across sessions.
 - Future: consider making V2 the default after sufficient real-world validation.
 
+**Current V2 Indicator Status (verified against live RELIANCE data):**
+
+| Indicator | Status | Source |
+|-----------|--------|--------|
+| SMA (20, 50, 200) | ✅ Working | V2 native (registry) |
+| VWAP | ✅ Working | V2 native (daily-reset fallback; DB column is NULL) |
+| FVG | ✅ Working | V2 native (registry) |
+| Price-Delivery Divergence Oscillator | ✅ Working | V2 native (SMCRegistry) |
+| Order Blocks | ✅ Working | V2 native (SMCRegistry) |
+| Swing Points | ✅ Working | V2 native (SMCRegistry) |
+| DA-AD | ✅ Working | V2 native (SMCRegistry) |
+| Delivery Thrust Candles | ✅ Working | V2 native (SMCRegistry) |
+| DWAP | ✅ Working | V2 native (fixed field name) |
+
+**V1 Indicators NOT yet ported to V2 (explicitly tracked):**
+- EMA, WMA, SMMA (moving average variants)
+- Bollinger Bands, Keltner Channel (volatility envelopes)
+- RSI (momentum oscillator in sub-pane)
+- Liquidity Voids (SMC — partially in V1 worker, not ported to V2)
+
 **Done Criteria**:
 - [x] V1/V2 toggle rendered on `/chart` route (commit `1f53683`).
 - [x] Toggle persists choice to localStorage (`chart-version` key).
 - [x] V2 receives real symbol + date range from global context.
 - [x] REST API returns delivery, delivery_pct, vwap alongside OHLCV (commit `57c35b6`).
-- [x] All 7 indicators verified against live data (SMA, FVG, Swing Points, VWAP, Delivery Thrust, Delivery Divergence, Order Blocks).
+- [x] 9 indicators verified against live data (SMA, VWAP, FVG, Price-Delivery Divergence, Order Blocks, Swing Points, DA-AD, Delivery Thrust, DWAP).
 
 **Files Modified**:
 - `myra_web/src/App.tsx` (toggle wiring)
@@ -409,6 +429,7 @@ const paneLayout = useMemo(() => {
 - `myra_web/src/components/chart/overlays/VWAPOverlay.ts` (daily-reset VWAP)
 - `myra_web/src/components/chart/indicators/DeliveryAdjustedAD.ts` (field fix)
 - `myra_web/src/components/chart/indicators/DeliveryThrustCandles.ts` (field fix)
+- `myra_web/src/components/chart/indicators/DWAPOverlay.ts` (field fix)
 
 ---
 
