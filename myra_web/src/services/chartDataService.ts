@@ -162,10 +162,22 @@ export async function fetchChartData(
 export async function fetchChartChunks(
   params: Omit<ChartQueryParams, 'from_date' | 'to_date'>,
   chunks: Array<{ from_date: string; to_date: string }>,
-  concurrency: number = 3
+  concurrency: number = 3,
+  externalSignal?: AbortSignal
 ): Promise<CandleData[]> {
   const results: CandleData[][] = [];
   const controller = new AbortController();
+
+  // If external signal aborts, cancel our internal controller too
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort(externalSignal.reason);
+    } else {
+      externalSignal.addEventListener('abort', () => {
+        controller.abort(externalSignal.reason);
+      }, { once: true });
+    }
+  }
 
   // Process chunks in batches
   for (let i = 0; i < chunks.length; i += concurrency) {
@@ -186,7 +198,7 @@ export async function fetchChartChunks(
       const batchResults = await Promise.all(batchPromises);
       results.push(...batchResults);
     } catch (error) {
-      controller.abort();
+      controller.abort('batch failed, cancelling remaining chunks');
       throw error;
     }
   }

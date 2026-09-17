@@ -93,6 +93,7 @@ export function useChartData(
 
   // Refs for tracking fetch state
   const controllerRef = useRef<AbortController | null>(null);
+  const loadMoreControllerRef = useRef<AbortController | null>(null);
   const fetchedRangeRef = useRef<{ from: string | null; to: string | null }>({
     from: null,
     to: null,
@@ -104,7 +105,7 @@ export function useChartData(
   const fetchData = useCallback(async () => {
     // Cancel any pending request
     if (controllerRef.current) {
-      controllerRef.current.abort();
+      controllerRef.current.abort('superseded by new request');
     }
 
     controllerRef.current = new AbortController();
@@ -142,8 +143,9 @@ export function useChartData(
 
       if (isDebug()) console.log('[useChartData] Fetched', prepared.length, 'candles');
     } catch (err: any) {
-      if (signal.aborted) {
-        if (isDebug()) console.log('[useChartData] Fetch aborted');
+      // Silently return on expected abort (superseded or unmounted)
+      if (err.name === 'AbortError' || signal.aborted) {
+        if (isDebug()) console.log('[useChartData] Fetch aborted:', signal.reason || 'superseded');
         return;
       }
 
@@ -164,6 +166,13 @@ export function useChartData(
 
     const currentFrom = fetchedRangeRef.current.from;
     if (!currentFrom) return;
+
+    // Cancel any in-flight loadMore
+    if (loadMoreControllerRef.current) {
+      loadMoreControllerRef.current.abort('superseded by new loadMore');
+    }
+    loadMoreControllerRef.current = new AbortController();
+    const signal = loadMoreControllerRef.current.signal;
 
     // Calculate previous chunk
     const startDate = new Date(currentFrom);
@@ -191,8 +200,16 @@ export function useChartData(
 
       const historicalData = await fetchChartChunks(
         { symbol },
-        chunks
+        chunks,
+        3,
+        signal
       );
+
+      // Check if this loadMore was cancelled while awaiting
+      if (signal.aborted) {
+        if (isDebug()) console.log('[useChartData] loadMore aborted:', signal.reason);
+        return;
+      }
 
       if (historicalData.length === 0) {
         setHasMore(false);
@@ -241,6 +258,10 @@ export function useChartData(
         setHasMore(false);
       }
     } catch (err: any) {
+      if (err.name === 'AbortError' || signal.aborted) {
+        if (isDebug()) console.log('[useChartData] loadMore aborted:', signal.reason || 'superseded');
+        return;
+      }
       if (isDebug()) console.error('[useChartData] Failed to load more:', err);
       setError(err.message || 'Failed to load historical data');
     }
@@ -264,7 +285,10 @@ export function useChartData(
     // Cleanup on unmount
     return () => {
       if (controllerRef.current) {
-        controllerRef.current.abort();
+        controllerRef.current.abort('component unmounted');
+      }
+      if (loadMoreControllerRef.current) {
+        loadMoreControllerRef.current.abort('component unmounted');
       }
     };
   }, [enabled, pauseRefresh, fetchData]);
