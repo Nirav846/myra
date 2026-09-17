@@ -19,6 +19,11 @@ htmlcov/
 .tox/
 .DS_Store
 Thumbs.db
+*.db
+*.db-shm
+*.db-wal
+*.sqlite-shm
+*.sqlite-wal
 *.log
 .env
 .env.*

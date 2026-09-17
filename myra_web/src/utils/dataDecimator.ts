@@ -150,7 +150,7 @@ export function decimateOHLCVData<T extends Record<string, any>>(
       return rest as T;
     });
   } else {
-    return stepDecimate(data, maxPoints);
+    return stepDecimate(data as unknown as DataPoint[], maxPoints) as unknown as T[];
   }
 }
 

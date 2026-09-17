@@ -511,7 +511,7 @@
           }
         ],
         "name": "corporate_actions",
-        "row_count": 2018
+        "row_count": 2019
       },
       {
         "columns": [
@@ -949,7 +949,7 @@
           }
         ],
         "name": "doctor_runs",
-        "row_count": 28
+        "row_count": 29
       },
       {
         "columns": [
@@ -1393,7 +1393,7 @@
           }
         ],
         "name": "task_registry",
-        "row_count": 2250
+        "row_count": 2258
       }
     ]
   },
@@ -1759,7 +1759,7 @@
           }
         ],
         "name": "snapshots",
-        "row_count": 46
+        "row_count": 47
       },
       {
         "columns": [
@@ -2053,7 +2053,7 @@
           }
         ],
         "name": "mcap_rank_daily",
-        "row_count": 7063
+        "row_count": 9428
       },
       {
         "columns": [
@@ -2566,10 +2566,34 @@
             "notnull": false,
             "pk": false,
             "type": "REAL"
+          },
+          {
+            "name": "sma_5",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "sma_10",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "sma_15",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "sma_200",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
           }
         ],
         "name": "technical_data",
-        "row_count": 7948198
+        "row_count": 7951752
       }
     ]
   },
@@ -3103,7 +3127,7 @@
           }
         ],
         "name": "fundamentals",
-        "row_count": 3900
+        "row_count": 3901
       },
       {
         "columns": [
