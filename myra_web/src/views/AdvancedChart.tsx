@@ -128,6 +128,7 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
     const plotRef = useRef<any>(null);
     const overlayHandleRef = useRef<CrosshairOverlayHandle | null>(null);
     const [worker, setWorker] = useState<Comlink.Remote<IndicatorWorker> | null>(null);
+    const workerInstanceRef = useRef<Worker | null>(null);
 
     // Initialize Web Worker for heavy indicator calculations
     useEffect(() => {
@@ -138,6 +139,7 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
                     new URL('../workers/indicatorWorker.ts', import.meta.url),
                     { type: 'module' }
                 );
+                workerInstanceRef.current = workerInstance;
                 const wrappedWorker = Comlink.wrap<IndicatorWorker>(workerInstance);
                 if (mounted) setWorker(wrappedWorker);
             } catch (err) {
@@ -148,7 +150,10 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
         initWorker();
         return () => {
             mounted = false;
-            // Worker will be terminated automatically when component unmounts
+            if (workerInstanceRef.current) {
+                workerInstanceRef.current.terminate();
+                workerInstanceRef.current = null;
+            }
         };
     }, []);
 
@@ -283,7 +288,18 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
 
     // Use worker for heavy calculations when available
     useEffect(() => {
-        if (!worker || !data || data.length === 0) return;
+        if (!worker || !data || !Array.isArray(data) || data.length === 0) return;
+        
+        // Guard: ensure data contains only structured-cloneable plain objects
+        // (comlink/postMessage uses structured clone which cannot handle Promises, functions, etc.)
+        const hasNonCloneable = data.some(d => {
+            if (!d || typeof d !== 'object') return false;
+            return Object.values(d).some(v => v !== null && typeof v === 'object' && 'then' in (v as object) && typeof (v as any).then === 'function');
+        });
+        if (hasNonCloneable) {
+            console.warn('[ChartItemInner] data contains non-cloneable values (e.g. Promises), falling back to main thread');
+            return;
+        }
         
         let cancelled = false;
         const requestId = Date.now();

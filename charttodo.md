@@ -520,3 +520,31 @@ Silent Accumulation Streak would benefit from a `trades` filter (declining parti
 ## Notes: Future Test Automation
 
 **Consideration for Later**: Adding Vitest as a lightweight test runner would enable automated regression testing. With the existing Vite setup, Vitest typically requires minimal configuration and no additional Babel/Jest infrastructure. This is outside the current chart task scope but worth evaluating post-launch for ongoing maintenance. See `_deferred_tests/` folder for test files ready for future implementation.
+
+---
+
+## V1 Defensive Fix (Unrelated to V2 Rebuild)
+
+**Date**: 2026-09-17
+**Commit**: `fix: V1 worker cleanup + cloneability guard (pre-existing bug, unrelated to V2 rebuild)`
+
+During the V1/V2 dual-chart work, a pre-existing bug in `AdvancedChart.tsx` surfaced: `DataCloneError: Failed to execute 'postMessage' on 'Worker': #<Promise> could not be cloned`.
+
+### Root Cause
+Two pre-existing issues in V1's indicator worker communication:
+1. **Worker leak on unmount**: The `indicatorWorker` was never `terminate()`d — the cleanup only set `mounted = false` with a comment "Worker will be terminated automatically" (incorrect; Workers are not garbage-collected).
+2. **No cloneability guard**: Before calling `worker.calculateIndicators(...)` via comlink (which uses `postMessage`/structured clone), there was no check that `data` contained only cloneable values. A timing race could leak a non-cloneable value (e.g. a Promise) into the data array.
+
+### Fix (18 lines added, 2 removed)
+- Added `workerInstanceRef` to track the raw Worker and explicitly `terminate()` it on unmount.
+- Added `Array.isArray(data)` check (stricter than existing `data.length === 0`).
+- Added cloneability guard: scans data objects for Promise-like values before sending to comlink/postMessage, falls back to main thread if detected.
+
+### Why This Is NOT V2 Scope Creep
+- `dataDecimator.ts` type-cast change is purely compile-time (zero runtime impact).
+- V1's `indicatorWorker.ts` and `aggregateWorker.ts` have **zero imports** — completely self-contained.
+- V1's `AdvancedChart.tsx` was never modified by the V2 rebuild.
+- The same Button/IconButton TS errors exist on main (pre-existing).
+
+### Performance
+Guard is O(N × P) where N = candles (~500), P = properties (~50). At typical data sizes: 25K comparisons of `typeof` checks, completing in <1ms. Runs once per data change (useEffect), not per frame. Negligible cost.
