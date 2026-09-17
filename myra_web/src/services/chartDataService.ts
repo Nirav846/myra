@@ -124,17 +124,18 @@ export async function fetchChartData(
 
       const data: ChartApiResponse = await response.json();
 
-      // Validate response
-      if (!data.candles || !Array.isArray(data.candles)) {
-        throw new Error('Invalid response format: missing candles array');
+      // Validate response — accept either 'candles' or 'data' field name
+      const candles = data.candles || (data as any).data;
+      if (!candles || !Array.isArray(candles)) {
+        throw new Error('Invalid response format: missing candles/data array');
       }
 
-      if (isDebug()) console.log('[ChartDataService] Received', data.candles.length, 'candles');
+      if (isDebug()) console.log('[ChartDataService] Received', candles.length, 'candles');
 
       // Cache the result
-      chunkCache.set(cacheKey, data.candles);
+      chunkCache.set(cacheKey, candles);
 
-      return data.candles;
+      return candles;
     } catch (error) {
       if (isDebug()) console.error('[ChartDataService] Fetch failed:', error);
       throw error;
