@@ -42,6 +42,7 @@ const INDICATOR_GROUPS = {
     { id: 'orderblocks', label: 'Order Blocks', type: 'smc_ob', color: '#22c55e' },
     { id: 'swings', label: 'Swing Points', type: 'smc_swings', color: '#a855f7' },
     { id: 'divergence', label: 'Price-Delivery Div', type: 'smc_div', color: '#f59e0b' },
+    { id: 'liquidity_voids', label: 'Liquidity Voids', type: 'smc_lv', color: '#06b6d4' },
   ],
   'Experimental (Unvalidated)': [
     { id: 'delivery_profile', label: 'Delivery Profile ⚡', type: 'smc_dp', color: '#06b6d4', experimental: true },
@@ -175,9 +176,12 @@ export const AdvancedChartV2 = memo(({
       if (!indicatorConfig) return;
 
       // Handle SMC indicators specially (they use a combined renderer)
-      if (['orderblocks', 'swings', 'divergence'].includes(indicatorId)) {
+      if (['orderblocks', 'swings', 'divergence', 'liquidity_voids'].includes(indicatorId)) {
         hasSMCIndicators = true;
         smcConfig.visible = true;
+        if (indicatorId === 'liquidity_voids') {
+          smcConfig.showLiquidityVoids = true;
+        }
         return;
       }
 
