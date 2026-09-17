@@ -448,6 +448,38 @@ const paneLayout = useMemo(() => {
 
 ---
 
+## Experimental Indicators — Calibration TODOs
+
+The three experimental indicators (Delivery Profile, Supply/Demand Zones, Silent Accumulation Streak) ship with **uncalibrated default thresholds**. They are labeled "Experimental / Unvalidated" in the UI. Calibration requires empirical backtesting using the existing scanner backtest infrastructure.
+
+### Delivery Profile
+- **Default thresholds**: numBuckets=40, lookbackPeriod=120
+- **Calibration needed**: Test bucket counts 20–80 on 50+ liquid NSE stocks; compare POC levels to known institutional accumulation zones (block deal data, promoter pledge changes); measure whether POC prices act as future support/resistance
+- **Key metric**: POC retest success rate (does price bounce at POC on first retest?)
+- **Calibration window**: 3+ years daily data
+
+### Delivery-Based Supply/Demand Zones
+- **Default thresholds**: deliveryIntensityThreshold=1.2, deliveryPctThreshold=55%, minZoneDays=3, priceFlatThreshold=2%
+- **Calibration needed**: Backtest on 100+ stocks across market cycles; tune intensity threshold 1.0–2.0 in 0.1 steps; tune minZoneDays 2–5; tune priceFlatThreshold 1%–5%
+- **Key metric**: Zone retest success rate (% of zones that hold on first retest)
+- **Calibration window**: 3+ years daily data
+
+### Silent Accumulation Streak
+- **Default thresholds**: deliveryPctThreshold=60%, priceFlatLookback=5, minStreakLength=3, maxStreakGap=2
+- **Calibration needed**: Test on 100+ stocks that subsequently had >20% rallies; measure what % of 3+ day streaks preceded meaningful moves (>10% in 60 days); tune deliveryPctThreshold 50%–75%; tune minStreakLength 2–5; test if `trades` filter (declining participation) improves signal
+- **Key metric**: Signal-to-noise ratio (% of streaks that preceded rallies vs. false positives)
+- **Calibration window**: 3+ years daily data
+
+### Open Question: `trades` Field
+Silent Accumulation Streak would benefit from a `trades` filter (declining participation = fewer total trades, higher delivery%). The `trades` column exists in `technical_data` DB but is not exposed via the REST API. Options:
+1. Add `trades` to the chart endpoint SELECT (requires API change)
+2. Compute a proxy client-side (delivery_qty / trades is available but trades not exposed)
+3. Skip the filter for now (current implementation works without it)
+
+**Recommendation**: Ship without the `trades` filter for now. Add it in a follow-up if calibration shows the filter improves signal quality.
+
+---
+
 ## Risks & Mitigations
 
 | Risk | Likelihood | Impact | Mitigation |

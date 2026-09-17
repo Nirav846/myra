@@ -15,6 +15,9 @@ import { detectLiquidityVoids, buildLiquidityVoidShapes, buildLiquidityVoidAnnot
 import { calculateDWAP, renderDWAP, renderDWAPBands, type DWAPConfig, DEFAULT_DWAP_CONFIG } from '../indicators/DWAPOverlay';
 import { identifyThrustCandles, renderDeliveryThrust, getThrustStatistics, type DeliveryThrustConfig, DEFAULT_DELIVERY_THRUST_CONFIG } from '../indicators/DeliveryThrustCandles';
 import { calculateDAAD, renderDAAD, detectDivergences as detectDAADDivergences, renderDivergences as renderDAADDivergences, type DAADConfig, DEFAULT_DAAD_CONFIG } from '../indicators/DeliveryAdjustedAD';
+import { calculateDeliveryProfile, buildDeliveryProfileTraces, type DeliveryProfileConfig, DEFAULT_CONFIG as DEFAULT_DELIVERY_PROFILE_CONFIG } from './DeliveryProfile';
+import { detectDeliveryZones, buildDeliveryZoneShapes, buildDeliveryZoneAnnotations, type DeliveryZonesConfig, DEFAULT_CONFIG as DEFAULT_DELIVERY_ZONES_CONFIG } from './DeliverySupplyDemandZones';
+import { detectAccumulationStreaks, buildAccumulationShapes, buildAccumulationAnnotations, type AccumulationStreakConfig, DEFAULT_CONFIG as DEFAULT_ACCUMULATION_CONFIG } from './SilentAccumulationStreak';
 
 export interface SMCConfig {
   id: string;
@@ -38,6 +41,13 @@ export interface SMCConfig {
   dwapConfig?: Partial<DWAPConfig>;
   thrustConfig?: Partial<DeliveryThrustConfig>;
   daadConfig?: Partial<DAADConfig>;
+  // Experimental indicators (UNVALIDATED — require calibration)
+  showDeliveryProfile: boolean;
+  deliveryProfileConfig?: Partial<DeliveryProfileConfig>;
+  showSupplyDemandZones: boolean;
+  supplyDemandZonesConfig?: Partial<DeliveryZonesConfig>;
+  showSilentAccumulation: boolean;
+  silentAccumulationConfig?: Partial<AccumulationStreakConfig>;
 }
 
 const DEFAULT_SMC_CONFIG: SMCConfig = {
@@ -59,6 +69,13 @@ const DEFAULT_SMC_CONFIG: SMCConfig = {
   showDeliveryThrust: false,
   showDAAD: false,
   showDAADHistogram: false,
+  // Experimental indicator defaults (UNVALIDATED)
+  showDeliveryProfile: false,
+  deliveryProfileConfig: {},
+  showSupplyDemandZones: false,
+  supplyDemandZonesConfig: {},
+  showSilentAccumulation: false,
+  silentAccumulationConfig: {},
 };
 
 export interface SMCRenderResult {
@@ -75,6 +92,10 @@ export interface SMCRenderResult {
   thrustCandlesCount: number;
   daadEnabled: boolean;
   liquidityVoidsEnabled: boolean;
+  // Experimental indicator data
+  deliveryProfileEnabled: boolean;
+  supplyDemandZonesEnabled: boolean;
+  silentAccumulationEnabled: boolean;
 }
 
 /**
@@ -101,6 +122,11 @@ export function renderSMCIndicators(
   let daadEnabled = false;
   let liquidityVoidsEnabled = false;
 
+  // Experimental indicator state
+  let deliveryProfileEnabled = false;
+  let supplyDemandZonesEnabled = false;
+  let silentAccumulationEnabled = false;
+
   if (!fullConfig.visible) {
     return {
       shapes,
@@ -115,6 +141,9 @@ export function renderSMCIndicators(
       thrustCandlesCount,
       daadEnabled,
       liquidityVoidsEnabled,
+      deliveryProfileEnabled,
+      supplyDemandZonesEnabled,
+      silentAccumulationEnabled,
     };
   }
 
@@ -191,6 +220,42 @@ export function renderSMCIndicators(
     }
   }
 
+  // EXPERIMENTAL: Delivery Profile
+  if (fullConfig.showDeliveryProfile) {
+    deliveryProfileEnabled = true;
+    const dpConfig = { ...DEFAULT_DELIVERY_PROFILE_CONFIG, ...fullConfig.deliveryProfileConfig };
+    const dpTraces = buildDeliveryProfileTraces(candles, dpConfig);
+    traces.push(...dpTraces);
+  }
+
+  // EXPERIMENTAL: Supply/Demand Zones
+  if (fullConfig.showSupplyDemandZones) {
+    supplyDemandZonesEnabled = true;
+    const sdConfig = { ...DEFAULT_DELIVERY_ZONES_CONFIG, ...fullConfig.supplyDemandZonesConfig };
+    const zones = detectDeliveryZones(candles, sdConfig);
+    const dates = candles.map(c => c.date);
+    const zoneShapes = buildDeliveryZoneShapes(zones, dates);
+    const zoneAnnotations = buildDeliveryZoneAnnotations(zones, dates);
+    shapes.push(...zoneShapes);
+    annotations.push(...zoneAnnotations);
+  }
+
+  // EXPERIMENTAL: Silent Accumulation Streak
+  if (fullConfig.showSilentAccumulation) {
+    silentAccumulationEnabled = true;
+    const saConfig = { ...DEFAULT_ACCUMULATION_CONFIG, ...fullConfig.silentAccumulationConfig };
+    const streaks = detectAccumulationStreaks(candles, saConfig);
+    const dates = candles.map(c => c.date);
+    const priceRange = {
+      min: Math.min(...candles.map(c => c.low)),
+      max: Math.max(...candles.map(c => c.high)),
+    };
+    const saShapes = buildAccumulationShapes(streaks, dates, priceRange);
+    const saAnnotations = buildAccumulationAnnotations(streaks, dates);
+    shapes.push(...saShapes);
+    annotations.push(...saAnnotations);
+  }
+
   return {
     shapes,
     annotations,
@@ -204,6 +269,9 @@ export function renderSMCIndicators(
     thrustCandlesCount,
     daadEnabled,
     liquidityVoidsEnabled,
+    deliveryProfileEnabled,
+    supplyDemandZonesEnabled,
+    silentAccumulationEnabled,
   };
 }
 

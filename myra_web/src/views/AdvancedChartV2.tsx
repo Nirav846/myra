@@ -43,6 +43,11 @@ const INDICATOR_GROUPS = {
     { id: 'swings', label: 'Swing Points', type: 'smc_swings', color: '#a855f7' },
     { id: 'divergence', label: 'Price-Delivery Div', type: 'smc_div', color: '#f59e0b' },
   ],
+  'Experimental (Unvalidated)': [
+    { id: 'delivery_profile', label: 'Delivery Profile ⚡', type: 'smc_dp', color: '#06b6d4', experimental: true },
+    { id: 'supply_demand_zones', label: 'Supply/Demand Zones ⚡', type: 'smc_sd', color: '#ec4899', experimental: true },
+    { id: 'silent_accumulation', label: 'Silent Accumulation ⚡', type: 'smc_sa', color: '#a855f7', experimental: true },
+  ],
 };
 
 /**
@@ -173,6 +178,26 @@ export const AdvancedChartV2 = memo(({
       if (['orderblocks', 'swings', 'divergence'].includes(indicatorId)) {
         hasSMCIndicators = true;
         smcConfig.visible = true;
+        return;
+      }
+
+      // Handle experimental indicators (also use SMC renderer)
+      if (indicatorId === 'delivery_profile') {
+        hasSMCIndicators = true;
+        smcConfig.visible = true;
+        smcConfig.showDeliveryProfile = true;
+        return;
+      }
+      if (indicatorId === 'supply_demand_zones') {
+        hasSMCIndicators = true;
+        smcConfig.visible = true;
+        smcConfig.showSupplyDemandZones = true;
+        return;
+      }
+      if (indicatorId === 'silent_accumulation') {
+        hasSMCIndicators = true;
+        smcConfig.visible = true;
+        smcConfig.showSilentAccumulation = true;
         return;
       }
 
