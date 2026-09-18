@@ -386,13 +386,14 @@ const paneLayout = useMemo(() => {
 ---
 
 ### Phase 8: Dual-Chart Integration
-**Goal**: V1 and V2 coexist permanently — user-selectable, same pattern as scanner tab selection. No deprecation planned.
+**Goal**: V1 and V2 coexist permanently as separate routes. No deprecation planned.
 
-**Scope**:
-- V1/V2 toggle on `/chart` route, persisted to localStorage.
-- V2 wired to real data via `useChartData` hook.
-- Both charts remain available; user choice persists across sessions.
-- Future: consider making V2 the default after sufficient real-world validation.
+**Routing (as of 2026-09-18)**:
+- `/chart` → V1 (`AdvancedChartView`) — original monolithic chart, receives `librarian` + `activeSymbol`
+- `/chartv2` → V2 (`AdvancedChartV2WithData`) — new modular chart, receives `symbol` + `range`
+- Both routes receive global context (selected ticker, chart range) from App.tsx
+- Nav entry "Chart V2" appears in Analysis category alongside "Technical Chart"
+- Previous toggle-based approach (V1/V2 buttons on `/chart`) has been replaced by separate routes
 
 **Current V2 Indicator Status (verified against live RELIANCE data):**
 
@@ -407,29 +408,36 @@ const paneLayout = useMemo(() => {
 | DA-AD | ✅ Working | V2 native (SMCRegistry) |
 | Delivery Thrust Candles | ✅ Working | V2 native (SMCRegistry) |
 | DWAP | ✅ Working | V2 native (fixed field name) |
+| Liquidity Voids | ✅ Working | V2 native (SMCRegistry) |
+| Delivery Profile | ✅ Working | V2 native (SMCRegistry, experimental) |
+| Supply/Demand Zones | ✅ Working | V2 native (SMCRegistry, experimental) |
+| Silent Accumulation Streak | ✅ Working | V2 native (SMCRegistry, experimental) |
 
 **V1 Indicators NOT yet ported to V2 (explicitly tracked):**
 - EMA, WMA, SMMA (moving average variants)
 - Bollinger Bands, Keltner Channel (volatility envelopes)
 - RSI (momentum oscillator in sub-pane)
-- Liquidity Voids (SMC — partially in V1 worker, not ported to V2)
 
 **Done Criteria**:
-- [x] V1/V2 toggle rendered on `/chart` route (commit `1f53683`).
-- [x] Toggle persists choice to localStorage (`chart-version` key).
-- [x] V2 receives real symbol + date range from global context.
-- [x] REST API returns delivery, delivery_pct, vwap alongside OHLCV (commit `57c35b6`).
-- [x] 9 indicators verified against live data (SMA, VWAP, FVG, Price-Delivery Divergence, Order Blocks, Swing Points, DA-AD, Delivery Thrust, DWAP).
+- [x] V1 at `/chart` route, V2 at `/chartv2` route — separate pages, no cross-interference
+- [x] "Chart V2" nav entry in Analysis category (App.tsx TABS array)
+- [x] V2 receives real symbol + date range from global context
+- [x] REST API returns delivery, delivery_pct, vwap alongside OHLCV
+- [x] 12 indicators verified against live data (SMA, VWAP, FVG, Price-Delivery Divergence, Order Blocks, Swing Points, DA-AD, Delivery Thrust, DWAP, Liquidity Voids, Delivery Profile, Supply/Demand Zones, Silent Accumulation)
+- [x] Backend `chart.py` uses `asyncio.to_thread()` for non-blocking SQLite access
+- [x] Frontend `chartDataService.ts` dedup cache fixed for React StrictMode compatibility
 
 **Files Modified**:
-- `myra_web/src/App.tsx` (toggle wiring)
-- `myra_web/src/views/AdvancedChartV2WithData.tsx` (new wrapper)
-- `myra_web/routes/chart.py` (import fix + extended SELECT + date range params)
-- `myra_web/src/services/chartDataService.ts` (CandleData type)
+- `myra_web/src/App.tsx` (routes: `/chart` → V1, `/chartv2` → V2; nav entry; removed toggle UI + localStorage state)
+- `myra_web/src/views/AdvancedChartV2WithData.tsx` (real data wrapper)
+- `myra_web/routes/chart.py` (import fix + extended SELECT + date range params + `asyncio.to_thread()`)
+- `myra_web/src/services/chartDataService.ts` (CandleData type + removed pendingRequests dedup)
+- `myra_web/src/hooks/useChartData.ts` (AbortController cleanup fixes)
 - `myra_web/src/components/chart/overlays/VWAPOverlay.ts` (daily-reset VWAP)
 - `myra_web/src/components/chart/indicators/DeliveryAdjustedAD.ts` (field fix)
 - `myra_web/src/components/chart/indicators/DeliveryThrustCandles.ts` (field fix)
 - `myra_web/src/components/chart/indicators/DWAPOverlay.ts` (field fix)
+- `myra_web/src/components/chart/smc/LiquidityVoids.ts` (V2 port)
 
 ---
 

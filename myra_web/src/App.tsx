@@ -90,6 +90,7 @@ const TABS = [
   { id: 'Leaderboard', path: '/leaderboard', icon: '📊', category: 'scanners', group: 'Overview' },
   { id: 'FVG Scanner', path: '/fvg-scanner', icon: '📡', category: 'scanners', group: 'Price Action' },
   { id: 'Technical Chart', path: '/chart', icon: '📈', category: 'analysis' },
+  { id: 'Chart V2', path: '/chartv2', icon: '📊', category: 'analysis' },
   { id: 'Fundamentals', path: '/fundamentals', icon: '📋', category: 'analysis' },
   { id: 'Deep Fundamentals', path: '/deep-fundamentals', icon: '🏛️', category: 'analysis' },
   { id: 'Delivery Volume Profile', path: '/inst-dom', icon: '🧱', category: 'analysis' },
@@ -131,9 +132,6 @@ export default function App() {
 
   const [globalSelectedTicker, setGlobalSelectedTicker] = useState<string | undefined>();
   const [showPresetsPanel, setShowPresetsPanel] = useState(false);
-  const [chartVersion, setChartVersion] = useState<'v1' | 'v2'>(() => {
-    try { return (localStorage.getItem('chart-version') as 'v1' | 'v2') || 'v1'; } catch { return 'v1'; }
-  });
   
   const { settings } = useSettings();
   const { health, coverage, isConnected } = useHealthStatus();
@@ -274,41 +272,13 @@ export default function App() {
                 <Route path="/fvg-scanner" element={<LazyLoadView><FVGScannerView lib={librarian} /></LazyLoadView>} />
                 <Route path="/historical-search" element={<LazyLoadView><HistoricalSearchView lib={librarian} /></LazyLoadView>} />
                 <Route path="/chart" element={
-                  <div className="flex flex-col h-full">
-                    <div className="flex items-center gap-2 px-4 py-2 border-b border-[#ffffff1a] bg-[#0e1117] shrink-0">
-                      <span className="text-xs text-gray-500">Chart:</span>
-                      <button
-                        onClick={() => { setChartVersion('v1'); try { localStorage.setItem('chart-version', 'v1'); } catch {} }}
-                        className={`px-2 py-0.5 text-xs rounded transition-colors ${
-                          chartVersion === 'v1'
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-[#2a2c34] text-gray-400 hover:text-white'
-                        }`}
-                      >
-                        V1
-                      </button>
-                      <button
-                        onClick={() => { setChartVersion('v2'); try { localStorage.setItem('chart-version', 'v2'); } catch {} }}
-                        className={`px-2 py-0.5 text-xs rounded transition-colors ${
-                          chartVersion === 'v2'
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-[#2a2c34] text-gray-400 hover:text-white'
-                        }`}
-                      >
-                        V2
-                      </button>
-                    </div>
-                    <div className="flex-1 min-h-0">
-                      {chartVersion === 'v1' ? (
-                        <AdvancedChartView lib={librarian} activeSymbol={globalSelectedTicker} />
-                      ) : (
-                        <AdvancedChartV2WithData
-                          symbol={globalSelectedTicker || 'RELIANCE'}
-                          range={settings.defaultChartRange}
-                        />
-                      )}
-                    </div>
-                  </div>
+                  <AdvancedChartView lib={librarian} activeSymbol={globalSelectedTicker} />
+                } />
+                <Route path="/chartv2" element={
+                  <AdvancedChartV2WithData
+                    symbol={globalSelectedTicker || 'RELIANCE'}
+                    range={settings.defaultChartRange}
+                  />
                 } />
                 {/* Dev-only route for visual comparison (Phase 1) - remove before production */}
                 <Route path="/chart-comparison-dev" element={<LazyLoadView><ChartComparisonDevView /></LazyLoadView>} />

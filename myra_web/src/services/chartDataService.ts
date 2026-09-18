@@ -55,11 +55,6 @@ export interface ChartQueryParams {
 const chunkCache = new Map<string, CandleData[]>();
 
 /**
- * Pending requests tracker to avoid duplicate fetches
- */
-const pendingRequests = new Map<string, Promise<CandleData[]>>();
-
-/**
  * Generate cache key from query params
  */
 function getCacheKey(params: ChartQueryParams): string {
@@ -84,13 +79,6 @@ export async function fetchChartData(
   if (cached) {
     if (isDebug()) console.log('[ChartDataService] Cache hit for', cacheKey);
     return cached;
-  }
-
-  // Check if request is already pending
-  const pending = pendingRequests.get(cacheKey);
-  if (pending) {
-    if (isDebug()) console.log('[ChartDataService] Joining pending request for', cacheKey);
-    return pending;
   }
 
   // Build URL
@@ -139,14 +127,8 @@ export async function fetchChartData(
     } catch (error) {
       if (isDebug()) console.error('[ChartDataService] Fetch failed:', error);
       throw error;
-    } finally {
-      // Remove from pending
-      pendingRequests.delete(cacheKey);
     }
   })();
-
-  // Track pending request
-  pendingRequests.set(cacheKey, fetchPromise);
 
   return fetchPromise;
 }
