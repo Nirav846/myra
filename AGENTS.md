@@ -71,6 +71,7 @@ All `*.db`, `*.db-shm`, and `*.db-wal` files (production DBs, fixture DBs, anyth
 - **Consolidation/backfill operations must be idempotent** — safe to re-run without duplicating or corrupting data (see the `UPDATE WHERE (canonical IS NULL OR canonical = 0) AND alias IS NOT NULL AND alias != 0` pattern).
 - **camelCase → snake_case mapping happens in `_merge_and_insert()`** at record-building time, not in the fetch layer — don't reintroduce mapping logic upstream.
 - **Calendar-vs-trading-day conversion uses factor 0.6** (conservative 5/7 ratio) — don't substitute a different constant without discussion.
+- **Report pre-existing issues explicitly, even if not caused by your change.** When you encounter an error, warning, lint failure, or type error that predates your work, you may note it's not yours — but you must still report it in your summary (what it is, where, severity) rather than silently ignoring it or treating "not mine" as a reason to omit it. Pre-existing issues get flagged, not buried.
 
 ## Testing & linting
 
