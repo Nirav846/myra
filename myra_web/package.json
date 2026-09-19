@@ -29,7 +29,7 @@
     "plotly.js-dist-min": "^4.1.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "react-plotly.js": "^2.6.0",
+    "react-plotly.js": "^4.1.0",
     "react-router-dom": "^7.18.3",
     "recharts": "^3.8.1",
     "stream-browserify": "^3.0.0",
