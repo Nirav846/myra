@@ -1,7 +1,7 @@
 # Security Policy
 
 ## Reporting a Vulnerability
-Please report security vulnerabilities by email to [your-email@example.com].
+Please report security vulnerabilities via [GitHub Private Vulnerability Reporting](../../security/advisories/new).
 Do not create public issues for security vulnerabilities.
 
 ## Supported Versions

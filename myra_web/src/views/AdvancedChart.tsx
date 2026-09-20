@@ -1360,7 +1360,7 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
   const [showSma50, setShowSma50] = usePersistedState('chart-showSma50', false);
   const [showSma150, setShowSma150] = usePersistedState('chart-showSma150', false);
   const [showSma200, setShowSma200] = usePersistedState('chart-showSma200', false);
-  const [showFvg, setShowFvg] = usePersistedState('chart-showFvg', true);
+  const [showFvg, setShowFvg] = usePersistedState('chart-showFvg', false);
   const [showFibonacci, setShowFibonacci] = usePersistedState('chart-showFibonacci', false);
 
   const [showVwap, setShowVwap] = usePersistedState('chart-showVwap', true);
@@ -1370,7 +1370,7 @@ export default function AdvancedChartView({ lib, activeSymbol }: { lib: Libraria
   const [showDeliveryProfile, setShowDeliveryProfile] = usePersistedState('chart-showDeliveryProfile', false);
   const [profileResolution, setProfileResolution] = usePersistedState('chart-profileResolution', 'auto');
   const [showDeliverySR, setShowDeliverySR] = usePersistedState('chart-showDeliverySR', false);
-  const [showSmartMoney, setShowSmartMoney] = usePersistedState('chart-showSmartMoney', true);
+  const [showSmartMoney, setShowSmartMoney] = usePersistedState('chart-showSmartMoney', false);
   const [showDelDivergence, setShowDelDivergence] = usePersistedState('chart-showDelDivergence', false);
 
   const [showDelAD, setShowDelAD] = usePersistedState('chart-showDelAD', false);

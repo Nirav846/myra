@@ -268,14 +268,20 @@ export function buildLiquidityVoidShapes(
     const opacity = opacities[vd.status];
     const color = vd.direction === 'bullish' ? `rgba(34,197,94,${opacity})` : `rgba(239,68,68,${opacity})`;
     const lineThick = vd.strength > 80 ? 2 : vd.strength > 50 ? 1 : 0;
+    const isOpen = vd.endDate === null;
 
     shapes.push({
       type: 'rect',
       xref: 'x', yref: 'y',
-      x0: x0i - 0.5, x1: x1i + 0.5,
+      x0: dates[x0i] ?? '',
+      x1: dates[x1i] ?? dates[x0i] ?? '',
       y0: vd.bottomPrice, y1: vd.topPrice,
       fillcolor: color,
-      line: { width: lineThick, color: color },
+      line: {
+        width: lineThick,
+        color: color,
+        dash: isOpen ? 'dash' : 'solid',
+      },
       layer: 'below',
     });
   });
@@ -300,11 +306,15 @@ export function buildLiquidityVoidAnnotations(
     const x0i = d2i.get(vd.startDate);
     if (x0i === undefined) return;
 
+    const isOpen = vd.endDate === null;
+    const strengthLabel = `${vd.direction[0].toUpperCase()}${Math.round(vd.strength)}`;
+    const label = isOpen ? `${strengthLabel} (open)` : strengthLabel;
+
     annotations.push({
-      x: x0i,
+      x: dates[x0i] ?? '',
       y: vd.topPrice,
       xref: 'x', yref: 'y',
-      text: `${vd.direction[0].toUpperCase()}${Math.round(vd.strength)}`,
+      text: label,
       showarrow: false,
       font: {
         size: 10,

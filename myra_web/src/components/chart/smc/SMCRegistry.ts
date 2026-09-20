@@ -149,20 +149,20 @@ export function renderSMCIndicators(
 
   // Detect Order Blocks
   orderBlocks = detectOrderBlocksFromData(candles, fullConfig.obLookback);
-  const obShapes = buildOrderBlockShapes(orderBlocks);
-  const obAnnotations = buildOrderBlockAnnotations(orderBlocks);
+  const obShapes = buildOrderBlockShapes(orderBlocks, candles);
+  const obAnnotations = buildOrderBlockAnnotations(orderBlocks, candles);
   shapes.push(...obShapes);
   annotations.push(...obAnnotations);
 
   // Detect Swing Points
   swingPoints = detectSwingPointsFromData(candles, fullConfig.swingLookback);
-  const swingTraces = buildSwingPointMarkers(swingPoints);
+  const swingTraces = buildSwingPointMarkers(swingPoints, candles);
   traces.push(...swingTraces);
 
   // Detect FVGs
   fvgZones = detectFVGsFromData(candles, fullConfig.fvgMinPercent);
-  const fvgShapes = buildFVGExtendedShapes(fvgZones);
-  const fvgAnnotations = buildFVGExtendedAnnotations(fvgZones);
+  const fvgShapes = buildFVGExtendedShapes(fvgZones, candles);
+  const fvgAnnotations = buildFVGExtendedAnnotations(fvgZones, candles);
   shapes.push(...fvgShapes);
   annotations.push(...fvgAnnotations);
 

@@ -18,6 +18,7 @@ export interface OrderBlock {
   lowPrice: number;
   convictionLevel: 'high' | 'medium' | 'low';
   deliveryMultiplier: number; // How many times above average delivery
+  isMitigated: boolean; // True if price has traded back through the block
 }
 
 /**
@@ -72,6 +73,7 @@ function detectOrderBlocks(candles: Candle[], lookback: number = 5): OrderBlock[
           lowPrice: currentCandle.low,
           convictionLevel,
           deliveryMultiplier,
+          isMitigated: calculateOBMitigation(candles, i, currentCandle.low, currentCandle.high, 'bullish'),
         });
       }
     }
@@ -118,12 +120,32 @@ function detectOrderBlocks(candles: Candle[], lookback: number = 5): OrderBlock[
           lowPrice: currentCandle.low,
           convictionLevel,
           deliveryMultiplier,
+          isMitigated: calculateOBMitigation(candles, i, currentCandle.low, currentCandle.high, 'bearish'),
         });
       }
     }
   }
 
   return blocks;
+}
+
+/**
+ * Check if an order block has been mitigated by subsequent price action.
+ * Bullish OB mitigated when price closes back below block low.
+ * Bearish OB mitigated when price closes back above block high.
+ */
+function calculateOBMitigation(
+  candles: Candle[],
+  obIndex: number,
+  lowPrice: number,
+  highPrice: number,
+  type: 'bullish' | 'bearish',
+): boolean {
+  const future = candles.slice(obIndex + 1);
+  if (type === 'bullish') {
+    return future.some(c => c.close < lowPrice);
+  }
+  return future.some(c => c.close > highPrice);
 }
 
 /**
@@ -142,20 +164,25 @@ function calculateAverageDelivery(candles: Candle[], currentIndex: number, perio
 /**
  * Build Order Block rectangle shapes for Plotly
  */
-export function buildOrderBlockShapes(blocks: OrderBlock[]) {
+export function buildOrderBlockShapes(blocks: OrderBlock[], candles: Candle[]) {
   const shapes: any[] = [];
 
   blocks.forEach(block => {
+    if (block.isMitigated) return;
+
     const color = block.type === 'bullish'
       ? getConvictionColor('bullish', block.convictionLevel)
       : getConvictionColor('bearish', block.convictionLevel);
 
+    const x0 = candles[block.startIdx]?.date ?? '';
+    const x1 = candles[Math.min(block.endIdx + 1, candles.length - 1)]?.date ?? x0;
+
     shapes.push({
       type: 'rect',
-      xref: 'paper',
+      xref: 'x',
       yref: 'y',
-      x0: block.startIdx - 0.5,
-      x1: block.endIdx + 0.5,
+      x0,
+      x1,
       y0: block.lowPrice,
       y1: block.highPrice,
       fillcolor: color.fill,
@@ -174,17 +201,19 @@ export function buildOrderBlockShapes(blocks: OrderBlock[]) {
 /**
  * Build Order Block annotations
  */
-export function buildOrderBlockAnnotations(blocks: OrderBlock[]) {
+export function buildOrderBlockAnnotations(blocks: OrderBlock[], candles: Candle[]) {
   const annotations: any[] = [];
 
   blocks.forEach(block => {
+    if (block.isMitigated) return;
+
     const midPrice = (block.highPrice + block.lowPrice) / 2;
     const label = block.convictionLevel === 'high'
       ? `OB ${block.type === 'bullish' ? 'B' : 'S'} ★`
       : `OB ${block.type === 'bullish' ? 'B' : 'S'}`;
 
     annotations.push({
-      x: block.startIdx,
+      x: candles[block.startIdx]?.date ?? '',
       y: midPrice,
       xref: 'x',
       yref: 'y',

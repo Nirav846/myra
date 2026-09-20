@@ -153,7 +153,7 @@ function calculateAverageRange(candles: Candle[], period: number): number {
 /**
  * Build swing point markers for Plotly
  */
-export function buildSwingPointMarkers(swings: SwingPoint[]) {
+export function buildSwingPointMarkers(swings: SwingPoint[], candles: Candle[]) {
   const traces: any[] = [];
 
   // Separate highs and lows
@@ -165,7 +165,7 @@ export function buildSwingPointMarkers(swings: SwingPoint[]) {
     traces.push({
       type: 'scatter',
       mode: 'markers',
-      x: highs.map(s => s.index),
+      x: highs.map(s => candles[s.index]?.date ?? ''),
       y: highs.map(s => s.price),
       name: 'Pivot High',
       marker: {
@@ -187,7 +187,7 @@ export function buildSwingPointMarkers(swings: SwingPoint[]) {
     traces.push({
       type: 'scatter',
       mode: 'markers',
-      x: lows.map(s => s.index),
+      x: lows.map(s => candles[s.index]?.date ?? ''),
       y: lows.map(s => s.price),
       name: 'Pivot Low',
       marker: {

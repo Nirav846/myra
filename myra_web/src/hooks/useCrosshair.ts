@@ -75,6 +75,7 @@ export function useCrosshair(
     price: number,
     snappedX: number,
     snappedY: number,
+    yAxisOffset: number = 40,
   ) => {
     if (!overlayHandleRef.current) return;
     const el = overlayHandleRef.current.refs;
@@ -94,8 +95,10 @@ export function useCrosshair(
         ? formatPriceFn(price)
         : price.toFixed(2);
       const ph = el.priceLabel.offsetHeight || 16;
+      const pw = el.priceLabel.offsetWidth || 60;
       const maxY = (el.priceLabel.parentElement?.offsetHeight || 0) - ph;
       el.priceLabel.style.top = `${Math.max(ph / 2, Math.min(snappedY, maxY + ph / 2))}px`;
+      el.priceLabel.style.left = `${Math.max(2, yAxisOffset - pw - 4)}px`;
     }
 
     if (el.dateLabel) {
@@ -156,7 +159,7 @@ export function useCrosshair(
       const priceYPixel = yaxis.d2p(coords.dataY);
       const priceY = gdRect.top + yaxis._offset + priceYPixel;
       const snappedY = priceY - overlayRect.top;
-      updateCrosshairFull(clampedIndex, coords.dataY, snappedX, snappedY);
+      updateCrosshairFull(clampedIndex, coords.dataY, snappedX, snappedY, yaxis._offset);
     } else {
       updateCrosshairVerticalOnly(clampedIndex, snappedX);
     }

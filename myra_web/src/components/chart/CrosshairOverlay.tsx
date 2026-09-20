@@ -69,7 +69,7 @@ const CrosshairOverlay = forwardRef<CrosshairOverlayHandle, {}>((_props, ref) =>
         ref={priceLabelRef}
         style={{
           position: 'absolute',
-          left: '2px',
+          left: '0px',
           padding: '1px 5px',
           fontSize: '10px',
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
@@ -79,6 +79,7 @@ const CrosshairOverlay = forwardRef<CrosshairOverlayHandle, {}>((_props, ref) =>
           whiteSpace: 'nowrap',
           display: 'none',
           transform: 'translateY(-50%)',
+          textAlign: 'right',
           pointerEvents: 'none',
           zIndex: 21,
         }}

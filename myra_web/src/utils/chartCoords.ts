@@ -11,7 +11,12 @@ export interface DataCoords {
 }
 
 export function getGraphDiv(plotRef: React.RefObject<any>): any | null {
-  return plotRef?.current?.el || plotRef?.current || null;
+  const ref = plotRef?.current;
+  if (!ref) return null;
+  if (ref._fullLayout) return ref;
+  if (ref.el?._fullLayout) return ref.el;
+  if (ref.el) return ref.el;
+  return ref;
 }
 
 export function getAxisRefs(gd: any): AxisRefs | null {

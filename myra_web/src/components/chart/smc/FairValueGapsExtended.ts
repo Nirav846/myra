@@ -144,18 +144,24 @@ function calculateGapEfficiency(
 /**
  * Build FVG rectangle shapes for Plotly
  */
-export function buildFVGExtendedShapes(gaps: FairValueGap[]) {
+export function buildFVGExtendedShapes(gaps: FairValueGap[], candles: Candle[]) {
   const shapes: any[] = [];
 
   gaps.forEach(gap => {
+    if (gap.isMitigated) return;
+    if (gap.gapPercent < 0.0005) return;
+
     const color = getFVGColor(gap.type, gap.isBullish, gap.efficiency);
+
+    const x0 = candles[gap.startIdx]?.date ?? '';
+    const x1 = candles[gap.endIdx]?.date ?? x0;
 
     shapes.push({
       type: 'rect',
-      xref: 'paper',
+      xref: 'x',
       yref: 'y',
-      x0: gap.startIdx - 0.5,
-      x1: gap.endIdx + 0.5,
+      x0,
+      x1,
       y0: Math.min(gap.startPrice, gap.endPrice),
       y1: Math.max(gap.startPrice, gap.endPrice),
       fillcolor: color.fill,
@@ -174,11 +180,12 @@ export function buildFVGExtendedShapes(gaps: FairValueGap[]) {
 /**
  * Build FVG annotations
  */
-export function buildFVGExtendedAnnotations(gaps: FairValueGap[]) {
+export function buildFVGExtendedAnnotations(gaps: FairValueGap[], candles: Candle[]) {
   const annotations: any[] = [];
 
   gaps.forEach(gap => {
-    if (gap.isMitigated) return; // Skip mitigated gaps
+    if (gap.isMitigated) return;
+    if (gap.gapPercent < 0.0005) return; // Would display as 0.00% — not useful
 
     const midIndex = (gap.startIdx + gap.endIdx) / 2;
     const midPrice = (gap.startPrice + gap.endPrice) / 2;
@@ -187,7 +194,7 @@ export function buildFVGExtendedAnnotations(gaps: FairValueGap[]) {
       : `FVG ${gap.gapPercent.toFixed(2)}%`;
 
     annotations.push({
-      x: midIndex,
+      x: candles[Math.round(midIndex)]?.date ?? '',
       y: midPrice,
       xref: 'x',
       yref: 'y',

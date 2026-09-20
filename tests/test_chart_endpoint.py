@@ -33,6 +33,19 @@ client = TestClient(app)
 # Override auth so tests don't need MYRA_API_SECRET header
 app.dependency_overrides = {}
 
+# Full set of columns the /api/chart endpoint selects
+_CHART_COLUMNS = {
+    "date",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "delivery",
+    "delivery_pct",
+    "vwap",
+}
+
 
 @pytest.fixture(autouse=True)
 def _override_auth():
@@ -68,7 +81,7 @@ class TestChartResponseShape:
         rows = resp.json()["data"]
         assert len(rows) <= 5
         for row in rows:
-            assert set(row.keys()) == {"date", "open", "high", "low", "close", "volume"}
+            assert set(row.keys()) == _CHART_COLUMNS
 
 
 # ===================================================================
@@ -125,29 +138,27 @@ class TestChartNotFound:
             conn.execute(
                 "CREATE TABLE technical_data ("
                 "symbol TEXT, date TEXT, open REAL, high REAL, low REAL, "
-                "close REAL, volume INTEGER)"
+                "close REAL, volume INTEGER, delivery REAL, delivery_pct REAL, vwap REAL)"
             )
             conn.commit()
             conn.close()
 
-            from myra_fastapi_server import get_db_path
+            import myra_web.routes.chart as chart_module
 
-            original = get_db_path
+            original = chart_module.get_db_path
 
             def fake_get_db_path(key):
                 if key == "technical":
                     return db_path
                 return original(key)
 
-            import myra_fastapi_server
-
-            myra_fastapi_server.get_db_path = fake_get_db_path
+            chart_module.get_db_path = fake_get_db_path
             try:
                 resp = client.get("/api/chart/ZZZZNONEXISTENT")
                 assert resp.status_code == 404
                 assert "Symbol not found" in resp.json()["detail"]
             finally:
-                myra_fastapi_server.get_db_path = original
+                chart_module.get_db_path = original
         finally:
             os.unlink(db_path)
 
@@ -169,43 +180,75 @@ class TestChartTempDB:
             conn.execute(
                 "CREATE TABLE technical_data ("
                 "symbol TEXT, date TEXT, open REAL, high REAL, low REAL, "
-                "close REAL, volume INTEGER)"
+                "close REAL, volume INTEGER, delivery REAL, delivery_pct REAL, vwap REAL)"
             )
             conn.executemany(
-                "INSERT INTO technical_data VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO technical_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [
-                    ("TESTSYM", "2025-01-01", 100, 110, 90, 105, 1000),
-                    ("TESTSYM", "2025-01-02", 105, 115, 95, 110, 1200),
-                    ("TESTSYM", "2025-01-03", 110, 120, 100, 115, 800),
+                    (
+                        "TESTSYM",
+                        "2025-01-01",
+                        100,
+                        110,
+                        90,
+                        105,
+                        1000,
+                        500,
+                        50.0,
+                        102.5,
+                    ),
+                    (
+                        "TESTSYM",
+                        "2025-01-02",
+                        105,
+                        115,
+                        95,
+                        110,
+                        1200,
+                        600,
+                        50.0,
+                        107.5,
+                    ),
+                    (
+                        "TESTSYM",
+                        "2025-01-03",
+                        110,
+                        120,
+                        100,
+                        115,
+                        800,
+                        400,
+                        50.0,
+                        112.5,
+                    ),
                 ],
             )
             conn.commit()
             conn.close()
 
-            # Monkeypatch get_db_path to point at temp DB
-            from myra_fastapi_server import get_db_path
+            import myra_web.routes.chart as chart_module
 
-            original = get_db_path
+            original = chart_module.get_db_path
 
             def fake_get_db_path(key):
                 if key == "technical":
                     return db_path
                 return original(key)
 
-            import myra_fastapi_server
-
-            myra_fastapi_server.get_db_path = fake_get_db_path
+            chart_module.get_db_path = fake_get_db_path
             try:
                 resp = client.get("/api/chart/TESTSYM")
                 assert resp.status_code == 200
                 body = resp.json()
                 assert body["symbol"] == "TESTSYM"
                 assert len(body["data"]) == 3
+                for row in body["data"]:
+                    assert set(row.keys()) == _CHART_COLUMNS
                 # Verify ascending order
                 dates = [r["date"] for r in body["data"]]
                 assert dates == ["2025-01-01", "2025-01-02", "2025-01-03"]
             finally:
-                myra_fastapi_server.get_db_path = original
+                chart_module.get_db_path = original
         finally:
             os.unlink(db_path)
 
@@ -218,34 +261,43 @@ class TestChartTempDB:
             conn.execute(
                 "CREATE TABLE technical_data ("
                 "symbol TEXT, date TEXT, open REAL, high REAL, low REAL, "
-                "close REAL, volume INTEGER)"
+                "close REAL, volume INTEGER, delivery REAL, delivery_pct REAL, vwap REAL)"
             )
             conn.executemany(
-                "INSERT INTO technical_data VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO technical_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [
-                    ("REALSYM", "2025-01-01", 100, 110, 90, 105, 1000),
+                    (
+                        "REALSYM",
+                        "2025-01-01",
+                        100,
+                        110,
+                        90,
+                        105,
+                        1000,
+                        500,
+                        50.0,
+                        102.5,
+                    ),
                 ],
             )
             conn.commit()
             conn.close()
 
-            from myra_fastapi_server import get_db_path
+            import myra_web.routes.chart as chart_module
 
-            original = get_db_path
+            original = chart_module.get_db_path
 
             def fake_get_db_path(key):
                 if key == "technical":
                     return db_path
                 return original(key)
 
-            import myra_fastapi_server
-
-            myra_fastapi_server.get_db_path = fake_get_db_path
+            chart_module.get_db_path = fake_get_db_path
             try:
                 resp = client.get("/api/chart/ZZZZNOPE")
                 assert resp.status_code == 404
             finally:
-                myra_fastapi_server.get_db_path = original
+                chart_module.get_db_path = original
         finally:
             os.unlink(db_path)
 
@@ -258,35 +310,44 @@ class TestChartTempDB:
             conn.execute(
                 "CREATE TABLE technical_data ("
                 "symbol TEXT, date TEXT, open REAL, high REAL, low REAL, "
-                "close REAL, volume INTEGER)"
+                "close REAL, volume INTEGER, delivery REAL, delivery_pct REAL, vwap REAL)"
             )
             rows = [
-                ("LIMSYM", f"2025-01-{d:02d}", 100, 110, 90, 105, 1000)
+                (
+                    "LIMSYM",
+                    f"2025-01-{d:02d}",
+                    100,
+                    110,
+                    90,
+                    105,
+                    1000,
+                    500,
+                    50.0,
+                    102.5,
+                )
                 for d in range(1, 21)
             ]
             conn.executemany(
-                "INSERT INTO technical_data VALUES (?, ?, ?, ?, ?, ?, ?)", rows
+                "INSERT INTO technical_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows
             )
             conn.commit()
             conn.close()
 
-            from myra_fastapi_server import get_db_path
+            import myra_web.routes.chart as chart_module
 
-            original = get_db_path
+            original = chart_module.get_db_path
 
             def fake_get_db_path(key):
                 if key == "technical":
                     return db_path
                 return original(key)
 
-            import myra_fastapi_server
-
-            myra_fastapi_server.get_db_path = fake_get_db_path
+            chart_module.get_db_path = fake_get_db_path
             try:
                 resp = client.get("/api/chart/LIMSYM?limit=5")
                 assert resp.status_code == 200
                 assert len(resp.json()["data"]) == 5
             finally:
-                myra_fastapi_server.get_db_path = original
+                chart_module.get_db_path = original
         finally:
             os.unlink(db_path)
