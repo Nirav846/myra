@@ -6,11 +6,11 @@ import {defineConfig, loadEnv} from 'vite';
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
-    root: __dirname,
+    root: import.meta.dirname,
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(import.meta.dirname, '.'),
         'buffer/': 'buffer',
         'stream': 'stream-browserify',
         'assert': 'assert',
@@ -19,12 +19,14 @@ export default defineConfig(({mode}) => {
     build: {
       target: ['es2022'],
       rollupOptions: {
-        input: path.resolve(__dirname, 'index.html'),
+        input: path.resolve(import.meta.dirname, 'index.html'),
       },
     },
     optimizeDeps: {
-      esbuildOptions: {
-        target: ['esnext'],
+      rolldownOptions: {
+        transform: {
+          target: 'esnext',
+        },
       },
     },
     define: {
