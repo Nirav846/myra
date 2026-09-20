@@ -148,44 +148,16 @@ function isAccumulationDay(
 }
 
 /**
- * Build Plotly marker traces for accumulation streaks
+ * Build Plotly marker traces for accumulation streaks.
+ * Shapes (buildAccumulationShapes) handle the visual display.
+ * Annotations provide the labels. Traces are not needed.
  */
 export function buildAccumulationTraces(
-  streaks: AccumulationStreak[],
-  dates: string[],
-  dateToIndex?: Map<string, number>
+  _streaks: AccumulationStreak[],
+  _dates: string[],
+  _dateToIndex?: Map<string, number>
 ): any[] {
-  if (streaks.length === 0) return [];
-
-  const d2i = dateToIndex ?? new Map(dates.map((d, i) => [d, i]));
-  const traces: any[] = [];
-
-  // Background highlight rectangles for each streak
-  for (const s of streaks) {
-    const x0i = d2i.get(s.startDate);
-    const x1i = d2i.get(s.endDate);
-    if (x0i === undefined || x1i === undefined) continue;
-
-    traces.push({
-      type: 'scatter',
-      mode: 'markers',
-      x: Array.from({ length: x1i - x0i + 1 }, (_, i) => x0i + i),
-      y: Array.from({ length: x1i - x0i + 1 }, () => 0), // Dummy y for shape overlay
-      marker: {
-        symbol: 'square',
-        size: 8,
-        color: 'rgba(168, 85, 247, 0.4)', // Purple for accumulation
-        line: { width: 1, color: '#a855f7' },
-      },
-      name: `Accum ${s.streakLength}d`,
-      hovertemplate: `Silent Accumulation: ${s.streakLength}d<br>Avg Delivery%: ${s.avgDeliveryPct.toFixed(1)}%<br>Price Δ: ${s.priceChangePct.toFixed(1)}%<extra></extra>`,
-      showlegend: false,
-      xaxis: 'x',
-      yaxis: 'y',
-    });
-  }
-
-  return traces;
+  return [];
 }
 
 /**

@@ -190,8 +190,8 @@ export function buildFVGExtendedAnnotations(gaps: FairValueGap[], candles: Candl
     const midIndex = (gap.startIdx + gap.endIdx) / 2;
     const midPrice = (gap.startPrice + gap.endPrice) / 2;
     const label = gap.type === 'liquidity_void'
-      ? `LV ${gap.gapPercent.toFixed(2)}%`
-      : `FVG ${gap.gapPercent.toFixed(2)}%`;
+      ? `LV ${(gap.gapPercent * 100).toFixed(2)}%`
+      : `FVG ${(gap.gapPercent * 100).toFixed(2)}%`;
 
     annotations.push({
       x: candles[Math.round(midIndex)]?.date ?? '',
