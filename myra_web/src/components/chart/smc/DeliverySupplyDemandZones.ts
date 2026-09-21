@@ -233,6 +233,12 @@ export function buildDeliveryZoneShapes(
   const d2i = dateToIndex ?? new Map(dates.map((d, i) => [d, i]));
 
   for (const z of zones) {
+    // NOTE: V1 uses xaxis type:'linear' with integer candleIndexes, V2 uses
+    // type:'category' with date strings (ChartLayout.ts + CandlestickRenderer.ts).
+    // This module is V2-only — integer positions via d2i work through Plotly's
+    // category-axis index fallback, but future SMC modules should pass date
+    // strings directly (as CandlestickRenderer does) to avoid the index/date
+    // confusion that caused the pivot/OB/FVG bugs earlier this session.
     const x0i = d2i.get(z.startDate);
     const x1i = d2i.get(z.endDate);
     if (x0i === undefined || x1i === undefined) continue;

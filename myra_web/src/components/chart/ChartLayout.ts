@@ -60,6 +60,21 @@ export function buildBaseLayout(config: Partial<ChartLayoutConfig> = {}): Layout
       automargin: true,
     },
 
+    // X2-axis — secondary linear axis for horizontal profiles (Volume/Delivery Profile)
+    // DeliveryProfile.ts emits traces on x2; V1 defines this explicitly at
+    // AdvancedChart.tsx:1106. Without it Plotly auto-creates x2 with a
+    // default range that does not match the chart, so the profile is invisible.
+    xaxis2: {
+      type: 'linear' as const,
+      overlaying: 'x' as const,
+      side: 'top' as const,
+      showgrid: false,
+      zeroline: false,
+      showticklabels: false,
+      range: [0, 100] as any,
+      anchor: 'y' as const,
+    } as any,
+
     // Y-axis (price)
     yaxis: {
       showgrid: cfg.showGrid,
