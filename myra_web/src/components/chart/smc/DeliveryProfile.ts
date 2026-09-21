@@ -140,6 +140,7 @@ export function buildDeliveryProfileTraces(
   const fullConfig = { ...DEFAULT_CONFIG, ...config };
   const traces: any[] = [];
 
+  const yMids = profile.buckets.map(b => (b.priceLow + b.priceHigh) / 2);
   const yLabels = profile.buckets.map(b =>
     `${b.priceLow.toFixed(0)}-${b.priceHigh.toFixed(0)}`
   );
@@ -151,12 +152,14 @@ export function buildDeliveryProfileTraces(
   const maxVal = Math.max(...xValues.filter(v => v > 0), 1);
   const normalized = xValues.map(v => (v / maxVal) * 100);
 
-  // Main bars
+  // Main bars — y is numeric mid-price so it lands on the linear price axis;
+  // the bucket-range string is kept for hover via customdata/text.
   traces.push({
     type: 'bar',
     orientation: 'h',
-    y: yLabels,
+    y: yMids,
     x: normalized,
+    customdata: yLabels,
     name: fullConfig.weightingMode === 'delivery_pct' ? 'Delivery Profile (%)' : 'Delivery Profile (Qty)',
     marker: {
       color: profile.buckets.map(b =>
@@ -169,22 +172,19 @@ export function buildDeliveryProfileTraces(
         color: profile.buckets.map(b => b.isPOC ? '#ffd700' : 'transparent'),
       },
     },
-    hovertemplate: '%{y}<br>Delivery: %{x:.1f}<extra></extra>',
-    xaxis: 'x2', // Secondary x-axis for profile
+    hovertemplate: '%{customdata}<br>Delivery: %{x:.1f}<extra></extra>',
+    xaxis: 'x2', // Secondary x-axis for profile (defined in ChartLayout.ts)
     yaxis: 'y',
     showlegend: false,
   });
 
-  // POC line
+  // POC line — horizontal at the numeric POC price
   if (fullConfig.showPOCLine) {
     traces.push({
       type: 'scatter',
       mode: 'lines',
       x: [0, 100],
-      y: [
-        `${profile.pocPrice.toFixed(0)}-${(profile.pocPrice + (profile.priceRange.max - profile.priceRange.min) / fullConfig.numBuckets).toFixed(0)}`,
-        `${profile.pocPrice.toFixed(0)}-${(profile.pocPrice + (profile.priceRange.max - profile.priceRange.min) / fullConfig.numBuckets).toFixed(0)}`,
-      ],
+      y: [profile.pocPrice, profile.pocPrice],
       name: 'POC',
       line: { color: '#ffd700', width: 2, dash: 'dash' },
       hoverinfo: 'skip',
