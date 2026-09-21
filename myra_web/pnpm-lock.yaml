@@ -908,8 +908,8 @@ packages:
   color-name@1.1.4:
     resolution: {integrity: sha512-dOy+3AuW3a2wNbZHIuMZpTcgjGuLU/uBL/ubcZF9OXbDo8ff4O8yVp5Bf0efS8uEoYo5q4Fx7dY9OgQGXgAsQA==}
 
-  color-normalize@1.5.0:
-    resolution: {integrity: sha512-rUT/HDXMr6RFffrR53oX3HGWkDOP9goSAQGBkUaAYKjOE2JxozccdGyufageWDlInRAjm/jYPrf/Y38oa+7obw==}
+  color-normalize@1.5.2:
+    resolution: {integrity: sha512-yYMIoyFJmUoKbCK6sBShljBWfkt8DXVfaZJn9/zvRJkF9eQJDbZhcYC6LdOVy40p4tfVwYYb9cXl8oqpu7pzBw==}
 
   color-parse@1.4.3:
     resolution: {integrity: sha512-BADfVl/FHkQkyo8sRBwMYBqemqsgnu7JZAwUgvBvuwwuNUZAhSvLTbsEErS5bQXzOjDR0dWzJ4vXN2Q+QoPx0A==}
@@ -3187,9 +3187,8 @@ snapshots:
 
   color-name@1.1.4: {}
 
-  color-normalize@1.5.0:
+  color-normalize@1.5.2:
     dependencies:
-      clamp: 1.0.1
       color-rgba: 2.4.0
       dtype: 2.0.0
 
@@ -3690,7 +3689,7 @@ snapshots:
   gl-text@1.4.0:
     dependencies:
       bit-twiddle: 1.0.2
-      color-normalize: 1.5.0
+      color-normalize: 1.5.2
       css-font: 1.2.0
       detect-kerning: 2.1.2
       es6-weak-map: 2.0.3
@@ -4446,7 +4445,7 @@ snapshots:
   regl-error2d@2.0.12:
     dependencies:
       array-bounds: 1.0.1
-      color-normalize: 1.5.0
+      color-normalize: 1.5.2
       flatten-vertex-data: 1.0.2
       object-assign: 4.1.1
       pick-by-alias: 1.2.0
@@ -4458,7 +4457,7 @@ snapshots:
       array-bounds: 1.0.1
       array-find-index: 1.0.2
       array-normalize: 1.1.4
-      color-normalize: 1.5.0
+      color-normalize: 1.5.2
       earcut: 2.2.4
       es6-weak-map: 2.0.3
       flatten-vertex-data: 1.0.2
@@ -4472,7 +4471,7 @@ snapshots:
       '@plotly/point-cluster': 3.1.9
       array-bounds: 1.0.1
       color-id: 1.1.0
-      color-normalize: 1.5.0
+      color-normalize: 1.5.2
       flatten-vertex-data: 1.0.2
       glslify: 7.1.1
       parse-rect: 1.2.0
