@@ -458,7 +458,7 @@ export default function ValueRankerView({ lib }: { lib: Librarian }) {
         {dataLoaded && displayData.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 shrink-0">
             {displayData.slice(0, 3).map((topDog, i) => (
-              <div key={topDog.symbol} onClick={() => window.open(`/#/chart?symbol=${encodeURIComponent(topDog.symbol)}`, '_blank')} className="bg-[#12141a] border border-[#ffffff1a] p-3 rounded-lg flex items-center justify-between hover:border-green-500/50 cursor-pointer group transition-colors shadow-sm">
+              <div key={topDog.symbol} onClick={() => window.open(`/#/chart?symbol=${encodeURIComponent(topDog.symbol)}`, '_blank')} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); window.open(`/#/chart?symbol=${encodeURIComponent(topDog.symbol)}`, '_blank'); } }} role="button" tabIndex={0} className="bg-[#12141a] border border-[#ffffff1a] p-3 rounded-lg flex items-center justify-between hover:border-green-500/50 cursor-pointer group transition-colors shadow-sm" aria-label={`Open ${topDog.symbol} chart`}>
                  <div>
                    <h3 className="font-bold text-white text-sm group-hover:text-green-400 inline-flex items-center gap-2">
                        <span className="text-green-500 opacity-50 px-1 py-0.5 bg-green-500/10 rounded text-[12px]">#{i+1}</span>
@@ -482,9 +482,10 @@ export default function ValueRankerView({ lib }: { lib: Librarian }) {
         <div className={`flex-1 border border-[#ffffff1a] rounded bg-black/40 overflow-hidden relative transition-opacity duration-300 ${isRefreshing || isLoading ? 'opacity-50' : 'opacity-100'}`}>
           <button
             onClick={handleCopy}
-            className="absolute top-2 right-2 p-1.5 bg-[#1a1c24] border border-[#ffffff1a] rounded text-[#888] hover:text-[#fff] hover:bg-[#ffffff1a] transition-colors z-10"
+className="absolute top-2 right-2 p-1.5 bg-[#1a1c24] border border-[#ffffff1a] rounded text-[#888] hover:text-[#fff] hover:bg-[#ffffff1a] transition-colors z-10"
             title="Copy Results"
-          >
+            aria-label="Copy Results"
+>
             {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
           </button>
 
