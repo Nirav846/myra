@@ -6,6 +6,7 @@ import { API_BASE } from '../config';
 import { Tooltip } from '../components/Tooltip';
 import ScrollableTable from '../components/ScrollableTable';
 import { HistoricalScanDatePicker } from '../components/HistoricalScanDatePicker';
+import SignalBadge from '../components/common/SignalBadge';
 
 interface Candidate {
   symbol: string;
@@ -433,13 +434,7 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
                         <td className="px-3 py-3 text-right text-purple-400 font-bold">₹{row.trigger_price.toFixed(2)}</td>
                         <td className="px-3 py-3 text-right text-[#ccc]">₹{row.last_close.toFixed(2)}</td>
                         <td className="px-3 py-3 text-right">
-                          <span className={
-                            row.dist_pct < 1 ? 'text-green-400' :
-                            row.dist_pct < 3 ? 'text-amber-400' :
-                            'text-[#888]'
-                          }>
-                            {row.dist_pct.toFixed(1)}%
-                          </span>
+                          <SignalBadge value={`${row.dist_pct.toFixed(1)}%`} band={row.dist_pct < 1 ? 'positive' : row.dist_pct < 3 ? 'neutral' : 'negative'} />
                         </td>
                         <td className="px-3 py-3 text-right">
                           <Tooltip content="Reference level: climax week low. A break that recovers is an averaging opportunity.">
@@ -449,9 +444,7 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.del_start.toFixed(1)}%</td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.del_end.toFixed(1)}%</td>
                         <td className="px-3 py-3 text-right">
-                          <span className={row.del_delta > 0 ? 'text-green-400' : 'text-red-400'}>
-                            +{row.del_delta.toFixed(1)}pp
-                          </span>
+                          <SignalBadge value={`+${row.del_delta.toFixed(1)}pp`} band={row.del_delta > 0 ? 'positive' : 'negative'} />
                         </td>
                         <td className="px-3 py-3 text-center">
                           {row.second_chance ? (

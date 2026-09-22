@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { ArrowLeft, ExternalLink, TrendingUp, TrendingDown, Minus, Loader2, AlertCircle, RefreshCw, Filter, ArrowUpDown } from 'lucide-react';
 import { API_BASE } from '../config';
+import SignalBadge from '../components/common/SignalBadge';
 
 interface TractionData {
   symbol: string;
@@ -403,13 +404,7 @@ export default function FundTractionReportView() {
                   </td>
                   <td className="px-3 py-2 text-right">
                     {d.dcb_discount != null ? (
-                      <span className={
-                        d.dcb_discount >= 15 ? 'text-green-400 font-semibold' :
-                        d.dcb_discount >= 5 ? 'text-yellow-400' :
-                        'text-[#888]'
-                      }>
-                        {d.dcb_discount.toFixed(1)}%
-                      </span>
+                      <SignalBadge value={`${d.dcb_discount.toFixed(1)}%`} band={d.dcb_discount >= 15 ? 'positive' : d.dcb_discount >= 5 ? 'neutral' : 'negative'} />
                     ) : (
                       <span className="text-[#555]">—</span>
                     )}
@@ -449,9 +444,7 @@ export default function FundTractionReportView() {
                     {summary.avgScore.toFixed(1)} avg
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <span className={summary.avgPct > 5 ? 'text-green-400' : summary.avgPct >= 0 ? 'text-yellow-400' : 'text-red-400'}>
-                      {summary.avgPct >= 0 ? '+' : ''}{summary.avgPct.toFixed(2)}% avg
-                    </span>
+                    <SignalBadge value={`${summary.avgPct >= 0 ? '+' : ''}${summary.avgPct.toFixed(2)}% avg`} band={summary.avgPct > 5 ? 'positive' : summary.avgPct >= 0 ? 'neutral' : 'negative'} />
                   </td>
                   <td className="px-3 py-2 text-right text-cyan-400 font-semibold">
                     {summary.totalFunds.toLocaleString()}

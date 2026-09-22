@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, RefreshCw, Download, ArrowUpDown, Filter, TrendingUp, TrendingDown, Minus, Loader2, BarChart3 } from 'lucide-react';
 import { API_BASE } from '../config';
+import SignalBadge from '../components/common/SignalBadge';
 
 interface Stock {
   symbol: string; month: string; traction_score: number | null;
@@ -48,8 +49,7 @@ function SmaBadge({ pct }: { pct: number | null }) {
 }
 function ScoreBadge({ score }: { score: number | null }) {
   if (score == null) return <span className="text-[#555]">{DASH}</span>;
-  const c = score >= 200 ? 'text-green-400' : score >= 100 ? 'text-yellow-400' : 'text-[#ccc]';
-  return <span className={`font-semibold ${c}`}>{fmt(score)}</span>;
+  return <SignalBadge value={fmt(score)} band={score >= 200 ? 'positive' : score >= 100 ? 'neutral' : 'negative'} />;
 }
 function MomentumBadge({ m }: { m: number | null }) {
   if (m == null) return <span className="text-[#555]">{DASH}</span>;

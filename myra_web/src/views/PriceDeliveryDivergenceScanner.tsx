@@ -8,6 +8,7 @@ import { useWatchlist } from '../lib/WatchlistContext';
 import { API_BASE } from '../config';
 import ScrollableTable from '../components/ScrollableTable';
 import { HistoricalScanDatePicker } from '../components/HistoricalScanDatePicker';
+import SignalBadge from '../components/common/SignalBadge';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -558,8 +559,8 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                       <td className="p-3 text-sm font-mono whitespace-nowrap text-right text-[#fafafa]">{d.divergence_strength.toFixed(2)}</td>
                       <td className="p-3 w-36">
                         <div className="flex items-center gap-2">
-                          <span className={`text-sm font-mono w-8 text-right font-semibold ${d.score >= 15 ? 'text-orange-400' : d.score >= 8 ? 'text-[#fafafa]' : 'text-[#888]'}`}>
-                            {d.score.toFixed(1)}
+                          <span className="text-sm font-mono w-8 text-right">
+                            <SignalBadge value={d.score.toFixed(1)} band={d.score >= 15 ? 'positive' : d.score >= 8 ? 'neutral' : 'negative'} />
                           </span>
                           <div className="flex-1 h-1.5 bg-[#ffffff1a] rounded overflow-hidden">
                             <div className="h-full bg-orange-500 rounded" style={{ width: `${Math.min(100, d.score * 4)}%` }} />

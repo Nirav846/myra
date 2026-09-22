@@ -7,6 +7,7 @@ import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
 import ScrollableTable from '../components/ScrollableTable';
+import SignalBadge from '../components/common/SignalBadge';
 
 interface Preset { name: string; minDelivery: number; maxDelivery: number; minRelVol: number; lookbackDays?: number; isTrigger?: boolean }
 const PRESETS: Preset[] = [
@@ -859,7 +860,7 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                                             </span>
                                         </td>
                                         <td className="p-3 text-sm font-mono whitespace-nowrap text-right">
-                                            <span className={d.avgDelivery > 50 ? 'text-green-400' : d.avgDelivery < 20 ? 'text-red-400' : 'text-[#ccc]'}>{d.avgDelivery.toFixed(1)}%</span>
+                                            <SignalBadge value={`${d.avgDelivery.toFixed(1)}%`} band={d.avgDelivery > 50 ? 'positive' : d.avgDelivery < 20 ? 'negative' : 'neutral'} />
                                         </td>
                                         <td className="p-3 text-sm font-mono whitespace-nowrap text-right">
                                             {d.avgStrength !== null ? (
