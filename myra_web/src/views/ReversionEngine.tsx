@@ -9,6 +9,8 @@ import { ReversionConfig } from '../lib/scannerPresets';
 import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
 import ScrollableTable from '../components/ScrollableTable';
+import ScannerLoadingState from '../components/common/ScannerLoadingState';
+import SignalBadge from '../components/common/SignalBadge';
 
 type SetupType = 'Exhaustion' | 'Divergence' | 'SpringCoil';
 
@@ -431,7 +433,12 @@ export default function ReversionEngineView({ lib }: { lib: Librarian }) {
             )}
         </div>
 
-        <div className={`transition-opacity duration-300 ${isRefreshing ? 'opacity-50' : 'opacity-100'}`}>
+        {isRefreshing ? (
+          <div className="bg-surface-panel rounded-lg border border-white/5 min-h-[250px]">
+            <ScannerLoadingState label="Scanning..." rowCount={8} />
+          </div>
+        ) : (
+        <div className="transition-opacity duration-300 opacity-100">
           <ScrollableTable className="min-h-[250px] bg-[#12141a] rounded-lg border border-white/5">
             <table className="w-full min-w-max whitespace-nowrap text-left font-mono text-xs" aria-label="Reversion engine candidates">
               <thead>
@@ -464,12 +471,11 @@ export default function ReversionEngineView({ lib }: { lib: Librarian }) {
                   <td className="py-3 px-3 text-[#888] truncate max-w-[120px]">{row.sector}</td>
                   <td className="py-3 px-3 text-right text-[#fafafa] font-medium">{row.close.toFixed(2)}</td>
                   <td className="py-3 px-3 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <div className="w-16 h-1.5 bg-[#ffffff1a] rounded-full overflow-hidden hidden sm:block shadow-inner">
-                         <div className="h-full rounded-full transition-all duration-500" style={{ width: `${row.score}%`, backgroundColor: row.score > 90 ? '#22c55e' : row.score > 80 ? '#3b82f6' : '#8b5cf6', boxShadow: `0 0 8px ${row.score > 90 ? '#22c55e' : row.score > 80 ? '#3b82f6' : '#8b5cf6'}` }}></div>
-                      </div>
-                      <span className={`font-bold ${row.score > 90 ? 'text-green-400' : row.score > 80 ? 'text-blue-400' : 'text-purple-400'}`}>{row.score.toFixed(1)}</span>
-                    </div>
+                    <SignalBadge
+                      value={row.score.toFixed(1)}
+                      band={row.score > 90 ? 'positive' : 'neutral'}
+                      label="Score"
+                    />
                   </td>
                   <td className="py-3 px-3 text-right text-gray-400 font-medium">{row.delPerc.toFixed(1)}%</td>
                   <td className="py-3 px-3 hidden md:table-cell">
@@ -497,6 +503,7 @@ export default function ReversionEngineView({ lib }: { lib: Librarian }) {
             )}
           </ScrollableTable>
         </div>
+        )}
       </div>
     </div>
   );

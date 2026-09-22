@@ -1,6 +1,33 @@
 @import "tailwindcss";
 
 /* ==========================================================================
+   MYRA Design Tokens (Tailwind v4 @theme)
+   Naming the existing ad-hoc colors used across scanner views so they can be
+   referenced as bg-surface-panel / text-signal-positive etc. instead of
+   repeating arbitrary-value classes. Full mapping: see DESIGN_TOKENS.md
+   (token -> hex -> the ad-hoc classes it consolidates).
+   ========================================================================== */
+@theme {
+  /* Surface levels - derived from the hex values already in use, not invented */
+  --color-surface-base: #0b0c10;       /* was bg-[#0b0c10] */
+  --color-surface-panel: #12141a;      /* was bg-[#12141a] */
+  --color-surface-elevated: #1a1c24;   /* was bg-[#1a1c24] (most common bg) */
+
+  /* Signal/status colors - one canonical shade per state, surveyed across views.
+     Hex values are the existing Tailwind palette defaults that already dominate
+     usage (green-400 / red-400 / yellow-400), and match the semantic vars
+     --success-text / --error-text / --warning-text declared in :root below. */
+  --color-signal-positive: #4ade80;    /* was text-green-400 / emerald-400 */
+  --color-signal-negative: #f87171;    /* was text-red-400 / red-500 */
+  --color-signal-neutral: #facc15;     /* was text-yellow-400 / amber-400 / orange-400 */
+
+  /* Muted text - the design system already declares --text-muted: #9da5b4
+     ("use this instead of #888"); views still use text-[#888] ad-hoc, so this
+     names that convention. */
+  --color-text-muted: #9da5b4;         /* was text-[#888] / text-[#ccc] */
+}
+
+/* ==========================================================================
    MYRA Design System - CSS Custom Properties
    Front-end only updates - No backend changes required
    ========================================================================== */
