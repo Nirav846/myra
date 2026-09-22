@@ -10,6 +10,7 @@ import { API_BASE } from '../config';
 import { Tooltip } from '../components/Tooltip';
 import ScrollableTable from '../components/ScrollableTable';
 import { HistoricalScanDatePicker } from '../components/HistoricalScanDatePicker';
+import SignalBadge from '../components/common/SignalBadge';
 
 const TIER_COLORS: Record<string, string> = {
   HIGH: 'bg-green-500/20 text-green-400 border-green-500/30',
@@ -908,13 +909,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                         <td className="px-3 py-3 text-right text-[#ccc]">{'\u20B9'}{row.dcb.toFixed(2)}</td>
                         {/* Price: Discount% */}
                         <td className="px-3 py-3 text-right">
-                          <span className={
-                            row.discount_pct >= 20 ? 'text-green-400' :
-                            row.discount_pct >= 15 ? 'text-amber-400' :
-                            'text-red-400'
-                          }>
-                            {row.discount_pct.toFixed(2)}%
-                          </span>
+                          <SignalBadge value={`${row.discount_pct.toFixed(2)}%`} band={row.discount_pct >= 20 ? 'positive' : row.discount_pct >= 15 ? 'neutral' : 'negative'} />
                         </td>
                         {/* Price: DCB Range */}
                         <td className="px-3 py-3 text-center">
@@ -949,23 +944,13 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                         </td>
                         {/* Quality: Score */}
                         <td className="px-3 py-3 text-right">
-                          <span className={
-                            row.score >= 20 ? 'text-green-400' :
-                            row.score >= 10 ? 'text-amber-400' :
-                            'text-[#888]'
-                          }>
-                            {row.score.toFixed(0)}
-                          </span>
+                          <SignalBadge value={row.score.toFixed(0)} band={row.score >= 20 ? 'positive' : row.score >= 10 ? 'neutral' : 'negative'} />
                         </td>
                         {/* Quality: Traction */}
                         <td className="px-3 py-3 text-right">
                           {row.traction_aggregated != null ? (
-                            <span className={
-                              row.traction_aggregated >= 30 ? 'text-green-400 font-semibold' :
-                              row.traction_aggregated >= 10 ? 'text-yellow-400' :
-                              'text-red-400'
-                            } title={row.traction_detail || undefined}>
-                              {row.traction_aggregated.toFixed(1)}
+                            <span title={row.traction_detail || undefined}>
+                              <SignalBadge value={row.traction_aggregated.toFixed(1)} band={row.traction_aggregated >= 30 ? 'positive' : row.traction_aggregated >= 10 ? 'neutral' : 'negative'} />
                             </span>
                           ) : (
                             <span className="text-[#555]">—</span>
@@ -998,9 +983,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
                         {/* Extra: Ckt Days */}
                         {showExtraCols && (
                           <td className="px-3 py-3 text-center">
-                            <span className={row.circuit_days_last_5 >= 3 ? 'text-red-400' : (row.circuit_days_last_5 ?? 0) >= 1 ? 'text-amber-400' : 'text-[#888]'}>
-                              {row.circuit_days_last_5 ?? 0}
-                            </span>
+                            <SignalBadge value={row.circuit_days_last_5 ?? 0} band={(row.circuit_days_last_5 ?? 0) >= 3 ? 'negative' : (row.circuit_days_last_5 ?? 0) >= 1 ? 'neutral' : 'positive'} />
                           </td>
                         )}
                         {/* Extra: DelAbs */}

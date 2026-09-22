@@ -10,6 +10,7 @@ import { API_BASE } from '../config';
 import { Tooltip } from '../components/Tooltip';
 import ScrollableTable from '../components/ScrollableTable';
 import { HistoricalScanDatePicker } from '../components/HistoricalScanDatePicker';
+import SignalBadge from '../components/common/SignalBadge';
 
 interface Candidate {
   symbol: string;
@@ -713,13 +714,7 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
                         </td>
                         <td className="px-3 py-3 text-center">
                           {row.quality_score != null ? (
-                            <span className={`px-2 py-0.5 rounded text-[12px] font-bold border ${
-                              row.quality_score >= 70 ? 'bg-green-500/20 text-green-400 border-green-500/30' :
-                              row.quality_score >= 40 ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' :
-                              'bg-red-500/20 text-red-400 border-red-500/30'
-                            }`}>
-                              {row.quality_score.toFixed(0)}
-                            </span>
+                            <SignalBadge value={row.quality_score.toFixed(0)} band={row.quality_score >= 70 ? 'positive' : row.quality_score >= 40 ? 'neutral' : 'negative'} />
                           ) : '—'}
                         </td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.market_cap_cr.toFixed(0)}</td>
@@ -729,13 +724,13 @@ export default function InvisibleHandScannerView({ lib }: { lib: Librarian }) {
                           </span>
                         </td>
                         <td className="px-3 py-3 text-right">
-                          <span className={row.ddas > 60 ? 'text-green-400' : row.ddas > 48 ? 'text-amber-400' : 'text-[#888]'}>{row.ddas.toFixed(1)}%</span>
+                          <SignalBadge value={`${row.ddas.toFixed(1)}%`} band={row.ddas > 60 ? 'positive' : row.ddas > 48 ? 'neutral' : 'negative'} />
                         </td>
                         <td className="px-3 py-3 text-right">
                           <span className={row.mean_del_pct > 55 ? 'text-green-400' : row.mean_del_pct > 45 ? 'text-amber-400' : 'text-[#888]'}>{row.mean_del_pct.toFixed(1)}%</span>
                         </td>
                         <td className="px-3 py-3 text-right">
-                          <span className={row.dcs_score > 70 ? 'text-green-400' : row.dcs_score > 50 ? 'text-amber-400' : 'text-[#888]'}>{row.dcs_score.toFixed(1)}</span>
+                          <SignalBadge value={row.dcs_score.toFixed(1)} band={row.dcs_score > 70 ? 'positive' : row.dcs_score > 50 ? 'neutral' : 'negative'} />
                         </td>
                         <td className="px-3 py-3 text-right">
                           <span className={row.qcd >= 8 ? 'text-green-400' : row.qcd >= 5 ? 'text-amber-400' : 'text-[#888]'}>{row.qcd}</span>

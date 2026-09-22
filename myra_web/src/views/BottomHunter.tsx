@@ -10,17 +10,18 @@ import { API_BASE } from '../config';
 import { Tooltip } from '../components/Tooltip';
 import ScrollableTable from '../components/ScrollableTable';
 import { HistoricalScanDatePicker } from '../components/HistoricalScanDatePicker';
+import SignalBadge, { type SignalBand } from '../components/common/SignalBadge';
 
-const TIER_COLORS: Record<string, string> = {
-  HIGH: 'bg-green-500/20 text-green-400 border-green-500/30',
-  MOD: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
-  LOW: 'bg-[#ffffff0a] text-[#888] border-[#ffffff1a]',
+const TIER_BANDS: Record<string, SignalBand> = {
+  HIGH: 'positive',
+  MOD: 'neutral',
+  LOW: 'negative',
 };
 
-const SECTOR_MOM_COLORS: Record<string, string> = {
-  TOP: 'bg-green-500/20 text-green-400 border-green-500/30',
-  MID: 'bg-[#ffffff0a] text-amber-400 border-amber-500/30',
-  BOTTOM: 'bg-red-500/20 text-red-400 border-red-500/30',
+const SECTOR_MOM_BANDS: Record<string, SignalBand> = {
+  TOP: 'positive',
+  MID: 'neutral',
+  BOTTOM: 'negative',
 };
 
 interface Candidate {
@@ -621,40 +622,22 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
                           {row.sector ?? '—'}
                         </td>
                         <td className="px-3 py-3 text-center">
-                          <span className={`px-2 py-0.5 rounded text-[12px] font-bold border ${SECTOR_MOM_COLORS[row.sector_mom_tier ?? ''] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
-                            {row.sector_mom_tier ?? '—'}
-                          </span>
+                          {row.sector_mom_tier ? (
+                            <SignalBadge value={row.sector_mom_tier} band={SECTOR_MOM_BANDS[row.sector_mom_tier] ?? 'neutral'} />
+                          ) : <span className="text-[#888]">—</span>}
                         </td>
                         <td className="px-3 py-3 text-center">
                           {row.quality_score != null ? (
-                            <span className={`px-2 py-0.5 rounded text-[12px] font-bold border ${
-                              row.quality_score >= 70 ? 'bg-green-500/20 text-green-400 border-green-500/30' :
-                              row.quality_score >= 40 ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' :
-                              'bg-red-500/20 text-red-400 border-red-500/30'
-                            }`}>
-                              {row.quality_score.toFixed(0)}
-                            </span>
+                            <SignalBadge value={row.quality_score.toFixed(0)} band={row.quality_score >= 70 ? 'positive' : row.quality_score >= 40 ? 'neutral' : 'negative'} />
                           ) : '—'}
                         </td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.close.toFixed(2)}</td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.market_cap_cr.toFixed(0)}</td>
                         <td className="px-3 py-3 text-right">
-                          <span className={
-                            row.delivery_absorption > 10 ? 'text-green-400' :
-                            row.delivery_absorption > 5 ? 'text-yellow-400' :
-                            'text-[#888]'
-                          }>
-                            {row.delivery_absorption.toFixed(2)}
-                          </span>
+                          <SignalBadge value={row.delivery_absorption.toFixed(2)} band={row.delivery_absorption > 10 ? 'positive' : row.delivery_absorption > 5 ? 'neutral' : 'negative'} />
                         </td>
                         <td className="px-3 py-3 text-right">
-                          <span className={
-                            row.pct_above_52w_low < 20 ? 'text-green-400' :
-                            row.pct_above_52w_low < 50 ? 'text-yellow-400' :
-                            'text-[#888]'
-                          }>
-                            {row.pct_above_52w_low.toFixed(2)}%
-                          </span>
+                          <SignalBadge value={`${row.pct_above_52w_low.toFixed(2)}%`} band={row.pct_above_52w_low < 20 ? 'positive' : row.pct_above_52w_low < 50 ? 'neutral' : 'negative'} />
                         </td>
                         <td className="px-3 py-3 text-[#ccc] text-[12px]">{row.entry_signal ?? '—'}</td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.adtv_cr.toFixed(2)}</td>
@@ -662,18 +645,10 @@ export default function BottomHunterView({ lib }: { lib: Librarian }) {
                         <td className="px-3 py-3 text-[#888] text-[12px]">{row.sl_type ?? '—'}</td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.swing_low_20d != null ? row.swing_low_20d.toFixed(2) : '—'}</td>
                         <td className="px-3 py-3 text-right">
-                          <span className={
-                            row.score >= 80 ? 'text-green-400' :
-                            row.score >= 50 ? 'text-yellow-400' :
-                            'text-[#888]'
-                          }>
-                            {row.score.toFixed(0)}
-                          </span>
+                          <SignalBadge value={row.score.toFixed(0)} band={row.score >= 80 ? 'positive' : row.score >= 50 ? 'neutral' : 'negative'} />
                         </td>
                         <td className="px-3 py-3 text-center">
-                          <span className={`px-2 py-0.5 rounded text-[12px] font-bold border ${TIER_COLORS[row.tier] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
-                            {row.tier}
-                          </span>
+                          <SignalBadge value={row.tier} band={TIER_BANDS[row.tier] ?? 'neutral'} />
                         </td>
                         <td className="px-3 py-3 text-center">
                           {row.delivery_spike_conf === true ? (

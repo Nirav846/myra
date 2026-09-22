@@ -10,6 +10,7 @@ import { API_BASE } from '../config';
 import { Tooltip } from '../components/Tooltip';
 import ScrollableTable from '../components/ScrollableTable';
 import { HistoricalScanDatePicker } from '../components/HistoricalScanDatePicker';
+import SignalBadge from '../components/common/SignalBadge';
 
 interface Candidate {
   symbol: string;
@@ -571,30 +572,18 @@ export default function SeasonalDeliveryHarvesterView({ lib }: { lib: Librarian 
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.hist_avg_del.toFixed(1)}%</td>
                         <td className="px-3 py-3 text-right">
                           {row.current_del != null
-                            ? <span className={row.current_del > row.hist_avg_del ? 'text-green-400' : 'text-[#888]'}>{row.current_del.toFixed(1)}%</span>
+                            ? <SignalBadge value={`${row.current_del.toFixed(1)}%`} band={row.current_del > row.hist_avg_del ? 'positive' : 'neutral'} />
                             : <span className="text-[#888]">—</span>
                           }
                         </td>
                         <td className="px-3 py-3 text-right">
                           {row.seasonal_edge != null
-                            ? <span className={
-                                row.seasonal_edge > 15 ? 'text-green-400' :
-                                row.seasonal_edge > 8 ? 'text-yellow-400' :
-                                'text-[#888]'
-                              }>
-                                +{row.seasonal_edge.toFixed(1)}pp
-                              </span>
+                            ? <SignalBadge value={`+${row.seasonal_edge.toFixed(1)}pp`} band={row.seasonal_edge > 15 ? 'positive' : row.seasonal_edge > 8 ? 'neutral' : 'negative'} />
                             : <span className="text-[#888]">—</span>
                           }
                         </td>
                         <td className="px-3 py-3 text-right">
-                          <span className={
-                            row.consistency_pct >= 80 ? 'text-green-400' :
-                            row.consistency_pct >= 60 ? 'text-yellow-400' :
-                            'text-[#888]'
-                          }>
-                            {row.consistency_pct.toFixed(0)}%
-                          </span>
+                          <SignalBadge value={`${row.consistency_pct.toFixed(0)}%`} band={row.consistency_pct >= 80 ? 'positive' : row.consistency_pct >= 60 ? 'neutral' : 'negative'} />
                         </td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.years_of_data}y</td>
                         <td className="px-3 py-3 text-center">

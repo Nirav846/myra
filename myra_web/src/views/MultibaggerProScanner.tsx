@@ -10,6 +10,7 @@ import { API_BASE } from '../config';
 import { Tooltip } from '../components/Tooltip';
 import { HistoricalScanDatePicker } from '../components/HistoricalScanDatePicker';
 import ScrollableTable from '../components/ScrollableTable';
+import SignalBadge from '../components/common/SignalBadge';
 
 interface Candidate {
   symbol: string;
@@ -988,9 +989,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
                           </span>
                         </td>}
                         {isVisible('composite_score') && <td className="px-4 py-3 text-right font-bold">
-                          <span className={row.composite_score >= 80 ? 'text-green-400' : row.composite_score >= 60 ? 'text-blue-400' : row.composite_score >= 40 ? 'text-yellow-400' : 'text-red-400'}>
-                            {row.composite_score.toFixed(1)}
-                          </span>
+                          <SignalBadge value={row.composite_score.toFixed(1)} band={row.composite_score >= 80 ? 'strong' : row.composite_score >= 60 ? 'positive' : row.composite_score >= 40 ? 'neutral' : 'negative'} />
                         </td>}
                         {isVisible('grade') && <td className="px-4 py-3 text-center">
                           <span className={`px-2 py-0.5 rounded text-[12px] font-bold border ${GRADE_COLORS[row.grade] || 'bg-[#ffffff1a] text-[#aaa]'}`}>
