@@ -7,9 +7,8 @@
  * @module AdvancedChartV2
  */
 
-import { useState, useMemo, memo, useCallback, useEffect } from 'react';
-import Plot from 'react-plotly.js';
-import type { PlotData, Layout } from 'plotly.js-dist-min';
+import { useState, useMemo, memo, useCallback, useEffect, lazy, Suspense } from 'react';
+import type { Data, Layout } from 'plotly.js-dist-min';
 import { isDebug } from '../lib/debug';
 import { buildBaseLayout, DEFAULT_PLOTLY_CONFIG } from '../components/chart/ChartLayout';
 import { buildCandlestickTrace, extractDates, getPriceRange } from '../components/chart/CandlestickRenderer';
@@ -24,6 +23,11 @@ import CrosshairOverlay from '../components/chart/CrosshairOverlay';
 import { AnnotationLayer, type Annotation } from '../components/chart/AnnotationLayer';
 import { ChartSettingsPanel, type ChartSettings, DEFAULT_THEMES } from '../components/chart/ChartSettingsPanel';
 import Crosshair from '../components/chart/Crosshair';
+
+const Plot = lazy(async () => {
+  const mod: any = await import('react-plotly.js');
+  return { default: (mod.default ?? mod) as React.ComponentType<any> };
+});
 
 /**
  * Indicator groupings for dropdown organization
@@ -492,15 +496,17 @@ export const AdvancedChartV2 = memo(({
 
       {/* Chart Canvas */}
       <div className="relative" style={{ height: '500px' }}>
-        <Plot
-          data={traces as PlotData[]}
-          layout={layout as Layout}
-          config={DEFAULT_PLOTLY_CONFIG}
-          style={{ width: '100%', height: '100%' }}
-          useResizeHandler={true}
-          onInitialized={handleInitialized}
-          onRelayout={handleRelayout}
-        />
+        <Suspense fallback={<div className="h-full flex items-center justify-center text-[#888] font-mono text-xs">Loading chart…</div>}>
+          <Plot
+            data={traces as Data[]}
+            layout={layout as Layout}
+            config={DEFAULT_PLOTLY_CONFIG}
+            style={{ width: '100%', height: '100%' }}
+            useResizeHandler={true}
+            onInitialized={handleInitialized}
+            onRelayout={handleRelayout}
+          />
+        </Suspense>
 
         {/* Crosshair Overlay */}
         {showCrosshair && crosshairPos && (

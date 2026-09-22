@@ -7,12 +7,16 @@
  * Purpose: Catch visual drift early during development.
  */
 
-import { useState, useMemo } from 'react';
-import Plot from 'react-plotly.js';
-import type { PlotData, Layout } from 'plotly.js-dist-min';
+import { useState, useMemo, lazy, Suspense } from 'react';
+import type { Data, Layout } from 'plotly.js-dist-min';
 import { AdvancedChartV2 } from './AdvancedChartV2';
 import { defaultFixture, getAllFixtures, FixtureScenario } from '../components/chart/fixtures/chartFixtures';
 import { isDebug } from '../lib/debug';
+
+const Plot = lazy(async () => {
+  const mod: any = await import('react-plotly.js');
+  return { default: (mod.default ?? mod) as React.ComponentType<any> };
+});
 
 /**
  * Legacy chart wrapper - renders fixture data with Plotly candlestick
@@ -98,13 +102,15 @@ function LegacyChartWrapper({ data, debug }: { data: FixtureScenario['candles'];
         </div>
       </div>
       <div style={{ height: '440px' }}>
-        <Plot
-          data={traces as PlotData[]}
-          layout={layout}
-          config={{ responsive: true, displayModeBar: false, scrollZoom: true }}
-          style={{ width: '100%', height: '100%' }}
-          useResizeHandler={true}
-        />
+        <Suspense fallback={<div className="h-full flex items-center justify-center text-gray-500">Loading chart…</div>}>
+          <Plot
+            data={traces as Data[]}
+            layout={layout}
+            config={{ responsive: true, displayModeBar: false, scrollZoom: true }}
+            style={{ width: '100%', height: '100%' }}
+            useResizeHandler={true}
+          />
+        </Suspense>
       </div>
       {debug && (
         <div className="px-4 py-2 text-xs font-mono text-gray-500 border-t border-[#ffffff1a]">

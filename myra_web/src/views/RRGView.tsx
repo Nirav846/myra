@@ -1,9 +1,13 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import Plot from 'react-plotly.js';
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import type { Data, Layout } from 'plotly.js';
 import { RefreshCw, Loader2, AlertTriangle, ChevronUp, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { API_BASE } from '../config';
 import { EmptyState } from '../components/ui';
+
+const Plot = lazy(async () => {
+  const mod: any = await import('react-plotly.js');
+  return { default: (mod.default ?? mod) as React.ComponentType<any> };
+});
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface IndexEntry {
@@ -485,13 +489,15 @@ export default function RRGView() {
               Select at least one sector to display.
             </div>
           ) : rrgData ? (
-            <Plot
-              data={traces}
-              layout={{ ...layout, autosize: true }}
-              config={{ responsive: true, displayModeBar: false, scrollZoom: true }}
-              style={{ width: '100%', height: '100%' }}
-              useResizeHandler
-            />
+            <Suspense fallback={<div className="flex items-center justify-center h-full text-[#888] font-mono text-xs">Loading chart…</div>}>
+              <Plot
+                data={traces}
+                layout={{ ...layout, autosize: true }}
+                config={{ responsive: true, displayModeBar: false, scrollZoom: true }}
+                style={{ width: '100%', height: '100%' }}
+                useResizeHandler
+              />
+            </Suspense>
           ) : (
             <div className="flex items-center justify-center h-full">
               <EmptyState 
