@@ -20,6 +20,9 @@
   --color-signal-positive: #4ade80;    /* was text-green-400 / emerald-400 */
   --color-signal-negative: #f87171;    /* was text-red-400 / red-500 */
   --color-signal-neutral: #facc15;     /* was text-yellow-400 / amber-400 / orange-400 */
+  /* 4th tier for A-D-grade / 4-bucket scores - deeper shade of positive
+     (was the #22c55e used in ReversionEngine's >90 score bar and --accent-green). */
+  --color-signal-strong: #22c55e;      /* was green-500 / text-green-500 */
 
   /* Muted text - the design system already declares --text-muted: #9da5b4
      ("use this instead of #888"); views still use text-[#888] ad-hoc, so this

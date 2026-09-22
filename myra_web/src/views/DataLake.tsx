@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { Copy, Check, RefreshCw, Database } from 'lucide-react';
 import { SymbolSearch } from '../components/SymbolSearch';
 import { EmptyState } from '../components/ui';
+import ScannerLoadingState from '../components/common/ScannerLoadingState';
 
 export default function DataLakeView({ lib }: { lib: Librarian }) {
   const [copied, setCopied] = useState(false);
@@ -125,7 +126,12 @@ export default function DataLakeView({ lib }: { lib: Librarian }) {
           </div>
         )}
 
-        <div className={`overflow-x-auto relative group transition-opacity duration-300 ${isRefreshing ? 'opacity-50' : 'opacity-100'}`}>
+        {isRefreshing ? (
+          <div className="bg-surface-panel rounded-lg border border-white/5 min-h-[250px]">
+            <ScannerLoadingState label="Scanning..." rowCount={8} />
+          </div>
+        ) : (
+        <div className="overflow-x-auto relative group transition-opacity duration-300 opacity-100">
           <button 
             onClick={handleCopy}
             disabled={apiData.length === 0}
@@ -196,6 +202,7 @@ export default function DataLakeView({ lib }: { lib: Librarian }) {
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   );

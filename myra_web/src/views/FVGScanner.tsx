@@ -7,6 +7,7 @@ import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
 import ScrollableTable from '../components/ScrollableTable';
 import FundTractionButton from '../components/FundTractionButton';
+import ScannerLoadingState from '../components/common/ScannerLoadingState';
 
 interface FVGRow {
   ticker: string;
@@ -187,7 +188,12 @@ export default function FVGScannerView({ lib }: { lib: Librarian }) {
           </div>
         )}
 
-        <div className={`relative transition-opacity duration-300 ${isRefreshing ? 'opacity-50' : 'opacity-100'}`}>
+        {isRefreshing ? (
+          <div className="bg-surface-panel rounded-lg border border-white/5 min-h-[250px]">
+            <ScannerLoadingState label="Scanning..." rowCount={8} />
+          </div>
+        ) : (
+        <div className="relative transition-opacity duration-300 opacity-100">
           <ScrollableTable>
             <button
               onClick={handleCopy}
@@ -236,6 +242,7 @@ export default function FVGScannerView({ lib }: { lib: Librarian }) {
             )}
           </ScrollableTable>
         </div>
+        )}
       </div>
     </div>
   );

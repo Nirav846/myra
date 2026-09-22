@@ -1,6 +1,6 @@
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, Zap } from 'lucide-react';
 
-export type SignalBand = 'positive' | 'negative' | 'neutral';
+export type SignalBand = 'strong' | 'positive' | 'neutral' | 'negative';
 
 export interface SignalBadgeProps {
   /** The score/signal value to render, e.g. "87.3". */
@@ -16,9 +16,10 @@ const BAND_META: Record<
   SignalBand,
   { textClass: string; icon: typeof TrendingUp; word: string }
 > = {
+  strong: { textClass: 'text-signal-strong', icon: Zap, word: 'strong' },
   positive: { textClass: 'text-signal-positive', icon: TrendingUp, word: 'positive' },
-  negative: { textClass: 'text-signal-negative', icon: TrendingDown, word: 'negative' },
   neutral: { textClass: 'text-signal-neutral', icon: Minus, word: 'neutral' },
+  negative: { textClass: 'text-signal-negative', icon: TrendingDown, word: 'negative' },
 };
 
 /**

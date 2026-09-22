@@ -6,6 +6,7 @@ import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
 import ScrollableTable from '../components/ScrollableTable';
 import { EmptyState } from '../components/ui';
+import ScannerLoadingState from '../components/common/ScannerLoadingState';
 
 interface LeaderboardRow {
   ticker: string;
@@ -209,7 +210,12 @@ export default function LeaderboardView({ lib }: { lib: Librarian }) {
            </button>
         </div>
 
-        <div className={`relative transition-opacity duration-300 ${isRefreshing ? 'opacity-50' : 'opacity-100'}`}>
+        {isRefreshing ? (
+          <div className="bg-surface-panel rounded-lg border border-white/5 min-h-[250px]">
+            <ScannerLoadingState label="Querying..." rowCount={8} />
+          </div>
+        ) : (
+        <div className="relative transition-opacity duration-300 opacity-100">
           <ScrollableTable>
             <button
               onClick={handleCopy}
@@ -266,6 +272,7 @@ export default function LeaderboardView({ lib }: { lib: Librarian }) {
             )}
           </ScrollableTable>
         </div>
+        )}
       </div>
     </div>
   );

@@ -8,6 +8,7 @@ import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
 import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
+import ScannerLoadingState from '../components/common/ScannerLoadingState';
 import ScrollableTable from '../components/ScrollableTable';
 
 interface RankerData {
@@ -479,7 +480,12 @@ export default function ValueRankerView({ lib }: { lib: Librarian }) {
           </div>
         )}
 
-        <div className={`flex-1 border border-[#ffffff1a] rounded bg-black/40 overflow-hidden relative transition-opacity duration-300 ${isRefreshing || isLoading ? 'opacity-50' : 'opacity-100'}`}>
+        {(isRefreshing || isLoading) ? (
+          <div className="flex-1 bg-surface-panel border border-white/5 rounded-lg overflow-hidden min-h-[250px]">
+            <ScannerLoadingState label="Scanning..." rowCount={8} />
+          </div>
+        ) : (
+        <div className="flex-1 border border-[#ffffff1a] rounded bg-black/40 overflow-hidden relative transition-opacity duration-300 opacity-100">
           <button
             onClick={handleCopy}
 className="absolute top-2 right-2 p-1.5 bg-[#1a1c24] border border-[#ffffff1a] rounded text-[#888] hover:text-[#fff] hover:bg-[#ffffff1a] transition-colors z-10"
@@ -540,6 +546,7 @@ className="absolute top-2 right-2 p-1.5 bg-[#1a1c24] border border-[#ffffff1a] r
             )}
           </ScrollableTable>
         </div>
+        )}
       </div>
     </div>
   );
