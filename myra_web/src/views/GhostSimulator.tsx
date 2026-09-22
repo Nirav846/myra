@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Librarian } from '../lib/Librarian';
 import { useWatchlist } from '../lib/WatchlistContext';
 import { Ghost, CheckCircle2, Play, Settings2, ShieldAlert, AlertTriangle, Star } from 'lucide-react';
+import SignalBadge from '../components/common/SignalBadge';
 
 interface SimulationResults {
   totalTrades: number;
@@ -179,7 +180,9 @@ export default function GhostSimulatorView({ lib }: { lib: Librarian }) {
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                  <div className="bg-[#1a1c24] p-4 rounded border border-[#ffffff1a]">
                     <div className="text-[#888] text-[12px] uppercase font-mono">Win Rate</div>
-                    <div className={`text-3xl font-bold mt-1 ${results.winRate > 50 ? 'text-green-400' : 'text-red-400'}`}>{results.winRate}%</div>
+                    <div className="flex justify-start">
+                        <SignalBadge value={`${results.winRate}%`} band={results.winRate > 50 ? 'positive' : 'negative'} className="text-3xl font-bold mt-1" />
+                    </div>
                  </div>
                  <div className="bg-[#1a1c24] p-4 rounded border border-[#ffffff1a]">
                     <div className="text-[#888] text-[12px] uppercase font-mono">Total Trades</div>

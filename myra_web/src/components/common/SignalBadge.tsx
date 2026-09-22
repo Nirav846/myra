@@ -1,6 +1,7 @@
 import { TrendingUp, TrendingDown, Minus, Zap } from 'lucide-react';
 
 export type SignalBand = 'strong' | 'positive' | 'neutral' | 'negative';
+export type SignalBadgeVariant = 'inline' | 'pill';
 
 export interface SignalBadgeProps {
   /** The score/signal value to render, e.g. "87.3". */
@@ -9,17 +10,19 @@ export interface SignalBadgeProps {
   band: SignalBand;
   /** Short descriptor, e.g. "Score" or "Del %". */
   label?: string;
+  /** 'inline' = colored text + icon (default); 'pill' = tinted bg + border badge. */
+  variant?: SignalBadgeVariant;
   className?: string;
 }
 
 const BAND_META: Record<
   SignalBand,
-  { textClass: string; icon: typeof TrendingUp; word: string }
+  { textClass: string; pillClass: string; icon: typeof TrendingUp; word: string }
 > = {
-  strong: { textClass: 'text-signal-strong', icon: Zap, word: 'strong' },
-  positive: { textClass: 'text-signal-positive', icon: TrendingUp, word: 'positive' },
-  neutral: { textClass: 'text-signal-neutral', icon: Minus, word: 'neutral' },
-  negative: { textClass: 'text-signal-negative', icon: TrendingDown, word: 'negative' },
+  strong: { textClass: 'text-signal-strong', pillClass: 'bg-green-500/10 text-green-400 border border-green-500/30', icon: Zap, word: 'strong' },
+  positive: { textClass: 'text-signal-positive', pillClass: 'bg-green-500/10 text-green-400 border border-green-500/20', icon: TrendingUp, word: 'positive' },
+  neutral: { textClass: 'text-signal-neutral', pillClass: 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20', icon: Minus, word: 'neutral' },
+  negative: { textClass: 'text-signal-negative', pillClass: 'bg-red-500/10 text-red-400 border border-red-500/20', icon: TrendingDown, word: 'negative' },
 };
 
 /**
@@ -30,15 +33,19 @@ export function SignalBadge({
   value,
   band,
   label,
+  variant = 'inline',
   className = '',
 }: SignalBadgeProps) {
   const meta = BAND_META[band];
   const Icon = meta.icon;
+  const isPill = variant === 'pill';
   const ariaLabel = label ? `${label}: ${value} (${meta.word})` : `${value} (${meta.word})`;
+  const toneClass = isPill ? meta.pillClass : meta.textClass;
+  const layoutClass = isPill ? 'px-2 py-0.5 rounded border' : '';
 
   return (
     <span
-      className={`inline-flex items-center justify-end gap-1 font-semibold ${meta.textClass} ${className}`}
+      className={`inline-flex items-center justify-end gap-1 font-semibold ${toneClass} ${layoutClass} ${className}`}
       role="img"
       aria-label={ariaLabel}
     >

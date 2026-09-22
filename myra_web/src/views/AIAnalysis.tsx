@@ -3,6 +3,7 @@ import { Librarian } from '../lib/Librarian';
 import { SymbolSearch } from '../components/SymbolSearch';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { API_BASE } from '../config';
+import SignalBadge from '../components/common/SignalBadge';
 
 interface FinStackAgent {
   name: string;
@@ -98,11 +99,11 @@ export default function AIAnalysisView({ lib }: { lib: Librarian }) {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 bg-[#ffffff05] p-3 rounded border border-[#ffffff0a]">
               <div className="bg-[#1a1c24] border border-[#ffffff0a] p-3 rounded">
                 <div className="text-[12px] text-[#888] font-mono uppercase">Consensus</div>
-                <div className={`text-lg font-bold ${
-                  result.consensus === 'BUY' || result.consensus === 'BULLISH' ? 'text-green-400' :
-                  result.consensus === 'SELL' || result.consensus === 'BEARISH' ? 'text-red-400' : 'text-yellow-400'
-                }`}>
-                  {result.consensus}
+                <div className="flex justify-start">
+                    <SignalBadge
+                      value={result.consensus}
+                      band={result.consensus === 'BUY' || result.consensus === 'BULLISH' ? 'positive' : result.consensus === 'SELL' || result.consensus === 'BEARISH' ? 'negative' : 'neutral'}
+                    />
                 </div>
               </div>
               <div className="bg-[#1a1c24] border border-[#ffffff0a] p-3 rounded">
@@ -132,13 +133,13 @@ export default function AIAnalysisView({ lib }: { lib: Librarian }) {
                        {expandedAgents[agent.name] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                        <span className="font-semibold text-white">{agent.name}</span>
                     </div>
-                    <span className={`px-2 py-0.5 rounded text-[12px] font-bold ${
-                       agent.signal === 'BULLISH' || agent.signal === 'BUY' ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
-                       agent.signal === 'BEARISH' || agent.signal === 'SELL' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
-                       'bg-gray-500/10 text-gray-400 border border-gray-500/20'
-                    }`}>
-                      {agent.signal}
-                    </span>
+<span className="inline-flex items-center">
+                       <SignalBadge
+                         value={agent.signal}
+                         variant="pill"
+                         band={agent.signal === 'BULLISH' || agent.signal === 'BUY' ? 'positive' : agent.signal === 'BEARISH' || agent.signal === 'SELL' ? 'negative' : 'neutral'}
+                       />
+                     </span>
                   </button>
                   {expandedAgents[agent.name] && (
                     <div className="px-4 pb-4 pt-1 border-t border-[#ffffff0a]">

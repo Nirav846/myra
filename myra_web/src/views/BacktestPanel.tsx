@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Librarian } from '../lib/Librarian';
 import { X } from 'lucide-react';
 import PositionSizer from './PositionSizer';
+import SignalBadge from '../components/common/SignalBadge';
 
 interface BacktestPanelProps {
     lib: Librarian;
@@ -166,20 +167,20 @@ export default function BacktestPanel({ lib, symbol, entryPrice, stopLossPrice, 
                                 </div>
                                 <div className="bg-[#2a2c34] border border-[#ffffff1a] rounded p-2.5 text-center">
                                     <div className="text-[12px] text-[#888] font-mono">Win Rate (21d)</div>
-                                    <div className={`text-lg font-semibold ${stats.winRate >= 60 ? 'text-green-400' : stats.winRate >= 40 ? 'text-yellow-400' : 'text-red-400'}`}>
-                                        {stats.winRate.toFixed(0)}%
+                                    <div className="flex justify-center">
+                                        <SignalBadge value={`${stats.winRate.toFixed(0)}%`} band={stats.winRate >= 60 ? 'positive' : stats.winRate >= 40 ? 'neutral' : 'negative'} />
                                     </div>
                                 </div>
                                 <div className="bg-[#2a2c34] border border-[#ffffff1a] rounded p-2.5 text-center">
                                     <div className="text-[12px] text-[#888] font-mono">Median 21d</div>
-                                    <div className={`text-lg font-semibold ${stats.median >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                        {stats.median > 0 ? '+' : ''}{stats.median.toFixed(1)}%
+                                    <div className="flex justify-center">
+                                        <SignalBadge value={`${stats.median > 0 ? '+' : ''}${stats.median.toFixed(1)}%`} band={stats.median >= 0 ? 'positive' : 'negative'} />
                                     </div>
                                 </div>
                                 <div className="bg-[#2a2c34] border border-[#ffffff1a] rounded p-2.5 text-center">
                                     <div className="text-[12px] text-[#888] font-mono">Mean 21d</div>
-                                    <div className={`text-lg font-semibold ${stats.mean >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                        {stats.mean > 0 ? '+' : ''}{stats.mean.toFixed(1)}%
+                                    <div className="flex justify-center">
+                                        <SignalBadge value={`${stats.mean > 0 ? '+' : ''}${stats.mean.toFixed(1)}%`} band={stats.mean >= 0 ? 'positive' : 'negative'} />
                                     </div>
                                 </div>
                                 <div className="bg-[#2a2c34] border border-[#ffffff1a] rounded p-2.5 text-center">
@@ -225,13 +226,11 @@ export default function BacktestPanel({ lib, symbol, entryPrice, stopLossPrice, 
                                             <td className="px-3 py-2 text-xs font-mono text-[#aaa] whitespace-nowrap">{inst.date?.slice(0, 10)}</td>
                                             <td className="px-3 py-2 text-xs font-mono text-[#fafafa] whitespace-nowrap text-right">{Number(inst.entry_price).toFixed(2)}</td>
                                             <td className="px-3 py-2 text-xs font-mono whitespace-nowrap text-right">
-                                                <span className={inst.del_change >= 0 ? 'text-green-400' : 'text-red-400'}>
-                                                    {inst.del_change > 0 ? '+' : ''}{Number(inst.del_change).toFixed(1)}
-                                                </span>
+                                                <SignalBadge value={`${inst.del_change > 0 ? '+' : ''}${Number(inst.del_change).toFixed(1)}`} band={inst.del_change >= 0 ? 'positive' : 'negative'} />
                                             </td>
                                             {[inst.ret_5d, inst.ret_10d, inst.ret_21d].map((ret, ci) => (
-                                                <td key={ci} className={`px-3 py-2 text-xs font-mono whitespace-nowrap text-right ${ret === null ? 'text-[#888]' : ret >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                                    {ret === null ? '\u2014' : `${ret > 0 ? '+' : ''}${ret.toFixed(1)}%`}
+                                                <td key={ci} className={`px-3 py-2 text-xs font-mono whitespace-nowrap text-right ${ret === null ? 'text-[#888]' : ''}`}>
+                                                    {ret === null ? '\u2014' : <SignalBadge value={`${ret > 0 ? '+' : ''}${ret.toFixed(1)}%`} band={ret >= 0 ? 'positive' : 'negative'} />}
                                                 </td>
                                             ))}
                                         </tr>
