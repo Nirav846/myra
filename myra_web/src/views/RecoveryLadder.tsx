@@ -3,6 +3,7 @@ import { AlertTriangle, Info, RefreshCw, XCircle } from 'lucide-react';
 import { API_BASE } from '../config';
 import { HistoricalScanDatePicker } from '../components/HistoricalScanDatePicker';
 import ScrollableTable from '../components/ScrollableTable';
+import VirtualizedRows from '../components/VirtualizedRows';
 import NearTriggerWatchlist from './NearTriggerWatchlist';
 import MyPositionsWithAlerts from './MyPositionsWithAlerts';
 
@@ -474,8 +475,9 @@ export default function RecoveryLadder() {
                   <th className="px-3 py-2">Tranches</th>
                 </tr>
               </thead>
-              <tbody>
-              {enrichedCandidates.map((c) => (
+<VirtualizedRows
+                data={enrichedCandidates}
+                renderRow={(c: (typeof enrichedCandidates)[number]) => (
                   <tr key={c.symbol} className="border-b border-[#ffffff0d] hover:bg-[#ffffff08]">
                     <td className="px-3 py-2 text-[#fafafa] font-semibold">{c.symbol}</td>
                     <td className="px-3 py-2">
@@ -519,9 +521,9 @@ export default function RecoveryLadder() {
                         ? '—'
                         : '1st'}
                     </td>
-                  </tr>
-                ))}
-              </tbody>
+</tr>
+                )}
+              />
             </table>
           </ScrollableTable>
         )}

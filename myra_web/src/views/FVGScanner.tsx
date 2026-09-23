@@ -1,11 +1,12 @@
 import { Librarian } from '../lib/Librarian';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Copy, Check, RefreshCw, AlertTriangle, ChartBar, Settings2, Star } from 'lucide-react';
 import { alertBus } from '../lib/AlertManager';
 import { useSettings } from '../lib/SettingsContext';
 import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
 import ScrollableTable from '../components/ScrollableTable';
+import VirtualizedRows from '../components/VirtualizedRows';
 import FundTractionButton from '../components/FundTractionButton';
 import ScannerLoadingState from '../components/common/ScannerLoadingState';
 
@@ -116,6 +117,14 @@ export default function FVGScannerView({ lib }: { lib: Librarian }) {
     fetchData();
   }, [fetchData]);
 
+  // Watchlist filter hoisted into the data source: VirtualizedRows only ever
+  // sees an already-filtered array. Windows over an UNfiltered array would
+  // compute row indices over the wrong dataset and padding math would break.
+  const filteredData = useMemo(() => {
+    if (!watchlistOnly) return apiData;
+    return apiData.filter((row) => isWatched(row.ticker));
+  }, [apiData, watchlistOnly, isWatched]);
+
   const handleCopy = () => {
     const header = "Ticker\tFVG_Type\tFreshness_Days\tPrice_Change_5d\tSignal";
     const rows = apiData.map(r => `${r.ticker}\t${r.fvg_type}\t${r.freshness_days}\t${r.price_change_5d.toFixed(2)}%\t${r.signal}`);
@@ -213,9 +222,11 @@ export default function FVGScannerView({ lib }: { lib: Librarian }) {
                 <th className="pb-2 px-2 font-medium uppercase">Signal</th>
               </tr>
             </thead>
-            <tbody className="text-[#ccc]">
-              {dataLoaded && apiData.filter(row => !watchlistOnly || isWatched(row.ticker)).map((row, idx) => (
-                  <tr key={idx} className="border-b border-[#ffffff0a] hover:bg-[#ffffff10] transition-colors">
+            <VirtualizedRows
+              data={filteredData}
+              className="text-[#ccc]"
+              renderRow={(row: FVGRow) => (
+                  <tr key={row.ticker} className="border-b border-[#ffffff0a] hover:bg-[#ffffff10] transition-colors">
                     <td className="py-2 px-2">
                       <div className="flex items-center gap-1.5">
                         <StarButton symbol={row.ticker} size={11} />
@@ -234,9 +245,9 @@ export default function FVGScannerView({ lib }: { lib: Librarian }) {
                       </span>
                     </td>
                   </tr>
-              ))}
-            </tbody>
-          </table>
+                )}
+              />
+            </table>
             {(!dataLoaded || apiData.length === 0) && !isRefreshing && (
               <div className="w-full py-8 text-center text-[#888] text-xs font-mono">No Active FVGs Found.</div>
             )}

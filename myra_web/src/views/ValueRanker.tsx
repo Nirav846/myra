@@ -10,6 +10,7 @@ import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
 import ScannerLoadingState from '../components/common/ScannerLoadingState';
 import ScrollableTable from '../components/ScrollableTable';
+import VirtualizedRows from '../components/VirtualizedRows';
 
 interface RankerData {
   symbol: string;
@@ -508,9 +509,11 @@ className="absolute top-2 right-2 p-1.5 bg-[#1a1c24] border border-[#ffffff1a] r
                     <th className="py-3 px-3 font-medium text-right text-nowrap">Score</th>
                   </tr>
                 </thead>
-                <tbody className="text-[#ccc] divide-y divide-[#ffffff0a]">
-                  {dataLoaded && displayData && displayData.map((row, idx) => (
-                    <tr key={idx} className="hover:bg-[#ffffff05] transition-colors group">
+                <VirtualizedRows
+                  data={dataLoaded ? displayData : []}
+                  className="text-[#ccc] divide-y divide-[#ffffff0a]"
+                  renderRow={(row: RankerData) => (
+                    <tr key={row.symbol} className="hover:bg-[#ffffff05] transition-colors group">
                       <td className="py-2.5 px-3">
                          <div className="flex items-center gap-1.5">
                            <StarButton symbol={row.symbol} size={11} />
@@ -535,8 +538,8 @@ className="absolute top-2 right-2 p-1.5 bg-[#1a1c24] border border-[#ffffff1a] r
                          </div>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
+                  )}
+                />
               </table>
             {dataLoaded && displayData.length === 0 && (
               <div className="w-full py-12 text-center text-[#888] text-xs font-mono flex flex-col items-center">
