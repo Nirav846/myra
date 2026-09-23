@@ -10,9 +10,9 @@ export interface SMAConfig {
 }
 
 export const calculateSMA = (data: Candle[], periodOrConfig: number | SMAConfig): number[] => {
-  const config = typeof periodOrConfig === 'number' 
-    ? { period: periodOrConfig, source: 'close' as const } 
-    : periodOrConfig;
+  const config = typeof periodOrConfig === 'number'
+    ? { period: periodOrConfig, source: 'close' as const }
+    : { period: 20, source: 'close' as const, ...periodOrConfig };
     
   const result: number[] = [];
   let sum = 0;
