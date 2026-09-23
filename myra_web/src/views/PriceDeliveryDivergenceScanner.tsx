@@ -321,7 +321,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
             {scanStatus?.last_scan ? `Last: ${relativeTime(scanStatus.last_scan)}` : 'Never scanned'}
             {isStale && <span className="text-yellow-500 ml-1">(stale)</span>}
           </span>
-          <HistoricalScanDatePicker value={scanDate} onChange={setScanDate} />
+          <HistoricalScanDatePicker selectedDate={scanDate} onSelect={setScanDate} />
           <button
             onClick={clearCache}
             className="bg-[#2a2c34] hover:bg-[#3a3c44] text-[#aaa] hover:text-white px-2 py-1 rounded border border-[#ffffff1a] transition-all text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50"

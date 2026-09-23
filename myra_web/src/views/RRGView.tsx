@@ -356,10 +356,12 @@ export default function RRGView() {
         { type: 'rect', x0: 0, x1: xMax, y0: yMin, y1: 0, fillcolor: 'rgba(245,158,11,0.04)', line: { width: 0 } },
         { type: 'rect', x0: xMin, x1: 0, y0: yMin, y1: 0, fillcolor: 'rgba(239,68,68,0.04)', line: { width: 0 } },
         { type: 'rect', x0: xMin, x1: 0, y0: 0, y1: yMax, fillcolor: 'rgba(59,130,246,0.04)', line: { width: 0 } },
-        { type: 'text', x: xMax * 0.65, y: yMax * 0.9, text: 'LEADING', showarrow: false, font: { size: 14, color: 'rgba(34,197,94,0.35)' } },
-        { type: 'text', x: xMax * 0.65, y: yMin * 0.9, text: 'WEAKENING', showarrow: false, font: { size: 14, color: 'rgba(245,158,11,0.35)' } },
-        { type: 'text', x: xMin * 0.65, y: yMin * 0.9, text: 'LAGGING', showarrow: false, font: { size: 14, color: 'rgba(239,68,68,0.35)' } },
-        { type: 'text', x: xMin * 0.65, y: yMax * 0.9, text: 'IMPROVING', showarrow: false, font: { size: 14, color: 'rgba(59,130,246,0.35)' } },
+      ],
+      annotations: [
+        { text: 'LEADING', x: xMax * 0.65, y: yMax * 0.9, showarrow: false, font: { size: 14, color: 'rgba(34,197,94,0.35)' } },
+        { text: 'WEAKENING', x: xMax * 0.65, y: yMin * 0.9, showarrow: false, font: { size: 14, color: 'rgba(245,158,11,0.35)' } },
+        { text: 'LAGGING', x: xMin * 0.65, y: yMin * 0.9, showarrow: false, font: { size: 14, color: 'rgba(239,68,68,0.35)' } },
+        { text: 'IMPROVING', x: xMin * 0.65, y: yMax * 0.9, showarrow: false, font: { size: 14, color: 'rgba(59,130,246,0.35)' } },
       ],
     };
 

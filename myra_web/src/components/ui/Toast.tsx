@@ -162,12 +162,11 @@ const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, removeToast }) 
       aria-live="polite"
       aria-atomic="true"
     >
-      {toasts.map((toast, index) => (
+      {toasts.map((toast) => (
         <ToastItem 
           key={toast.id} 
           toast={toast} 
           onDismiss={() => removeToast(toast.id)}
-          style={{ '--toast-index': index } as React.CSSProperties}
         />
       ))}
     </div>

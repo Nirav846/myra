@@ -26,10 +26,10 @@ type SortKey = 'traction_score' | 'pct_vs_sma' | 'fund_count' | 'adds_new' | 're
 const SECTORS = ['Healthcare','Financial Services','IT','Consumer Goods','Industrials','Energy','Chemicals','Automobile','Metals','Real Estate','Telecom','Power','Infrastructure','Media','Textiles'];
 
 const DASH = '\u2014';
-function fmt(v: number | null | undefined, d = 1) { return (v == null || v === '') ? DASH : Number(v).toFixed(d); }
-function fmtInt(v: number | null | undefined) { return (v == null || v === '') ? DASH : Number(v).toLocaleString(); }
+function fmt(v: number | null | undefined, d = 1) { return (v == null || Number.isNaN(v)) ? DASH : Number(v).toFixed(d); }
+function fmtInt(v: number | null | undefined) { return (v == null || Number.isNaN(v)) ? DASH : Number(v).toLocaleString(); }
 function fmtMcap(v: number | null | undefined) {
-  if (v == null || v === '') return DASH;
+  if (v == null || Number.isNaN(v)) return DASH;
   const cr = Number(v) / 1e7;
   return cr >= 1e5 ? `${(cr/1e3).toFixed(0)}K Cr` : `${cr.toFixed(0)} Cr`;
 }

@@ -263,7 +263,7 @@ export default function LeaderboardView({ lib }: { lib: Librarian }) {
                   description="No data is currently available. Please try refreshing or check back later."
                   action={{
                     label: 'Refresh Data',
-                    onClick: refreshData,
+                    onClick: fetchData,
                     variant: 'outline',
                     icon: <RefreshCw className="w-4 h-4" />,
                   }}

@@ -112,6 +112,9 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
   const [lpFetchingImportance, setLpFetchingImportance] = useState(false);
   const [lpImportance, setLpImportance] = useState<FeatureImportance[] | null>(null);
 
+  // --- PIPELINE STATUS STATE ---
+  const [pipelineStatus, setPipelineStatus] = useState<PipelineStatus | null>(null);
+
   // --- FACTOR IMPORTANCE STATE ---
   const [factorData, setFactorData] = useState<{ top_features: FeatureImportance[]; by_category: Record<string, FeatureImportance[]>; trained_at: string } | null>(null);
   const [factorLoading, setFactorLoading] = useState(false);
@@ -177,7 +180,6 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
       mountedRef.current = false;
       abortRefs.current.forEach(ac => ac.abort());
       abortRefs.current = [];
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
   }, [fetchStatus, fetchLpStatus, fetchConfig, fetchPipelineStatus]);
 
@@ -312,14 +314,6 @@ export default function MLLabView({ lib }: { lib: Librarian }) {
 
   return (
     <div className="flex flex-col h-full relative">
-
-      {toast && (
-        <div className={`absolute top-4 right-4 z-50 px-4 py-2 rounded text-sm font-mono shadow-lg border ${
-          toast.type === 'success' ? 'bg-green-900/50 border-green-500/50 text-green-300' : 'bg-red-900/50 border-red-500/50 text-red-300'
-        }`}>
-          {toast.message}
-        </div>
-      )}
 
       <div className="flex items-center gap-3 mb-2 p-4 pb-0">
         <div className="bg-indigo-500/20 p-2 rounded">

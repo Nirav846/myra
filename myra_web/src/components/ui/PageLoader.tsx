@@ -32,12 +32,12 @@ export function LazyLoadView({ children, fallbackMessage = 'Loading view...' }: 
 }
 
 // Helper to create lazy-loaded components with proper error handling
-export function createLazyComponent<T extends Record<string, any>>(
+export function createLazyComponent<T extends { default: React.ComponentType<any> }>(
   importFn: () => Promise<T>,
   componentName: string
 ) {
-  return lazy(() => 
-    importFn().catch((error) => {
+  return lazy<T['default']>(() =>
+    importFn().catch((error): T => {
       console.error(`Failed to load component ${componentName}:`, error);
       // Return a fallback component
       return {
@@ -47,7 +47,7 @@ export function createLazyComponent<T extends Record<string, any>>(
             <p className="text-sm text-text-secondary">Please refresh the page or try again later.</p>
           </div>
         )
-      };
+      } as unknown as T;
     })
   );
 }
