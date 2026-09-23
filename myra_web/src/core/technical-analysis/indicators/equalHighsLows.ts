@@ -1,4 +1,4 @@
-import { CandleData } from '../../types';
+import type { Candle } from '../types';
 
 export interface EqualHighLow {
   type: 'EQH' | 'EQL';
@@ -19,7 +19,7 @@ export interface EqualHighLowResult {
  * EQL: Multiple troughs at similar price levels (within tolerance)
  */
 export function detectEqualHighsLows(
-  data: CandleData[],
+  data: Candle[],
   tolerancePercent: number = 0.5,
   minTouches: number = 2
 ): EqualHighLowResult {

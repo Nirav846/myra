@@ -1,5 +1,4 @@
-import { CandleData } from '../../types';
-import { PlotlyTrace } from '../types';
+import { Candle } from '../../technical-analysis/types';
 
 export interface DivergencePoint {
   date: string;
@@ -14,9 +13,9 @@ export interface DivergencePoint {
  * Identifies bullish/bearish divergences between price action and institutional delivery flow
  */
 export function buildSmartMoneyDivergence(
-  data: CandleData[],
+  data: Candle[],
   lookback: number = 10
-): PlotlyTrace[] {
+): any[] {
   if (data.length < lookback * 2) return [];
 
   const divergencePoints: Array<{

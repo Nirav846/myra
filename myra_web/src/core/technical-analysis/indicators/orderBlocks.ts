@@ -1,4 +1,4 @@
-import { CandleData } from '../../types';
+import type { Candle } from '../types';
 
 export interface OrderBlock {
   type: 'bullish' | 'bearish';
@@ -21,7 +21,7 @@ export interface OrderBlockResult {
  * Bullish OB: Last down candle before strong upward move
  * Bearish OB: Last up candle before strong downward move
  */
-export function detectOrderBlocks(data: CandleData[], threshold: number = 1.5): OrderBlockResult {
+export function detectOrderBlocks(data: Candle[], threshold: number = 1.5): OrderBlockResult {
   const bullishBlocks: OrderBlock[] = [];
   const bearishBlocks: OrderBlock[] = [];
 

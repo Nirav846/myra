@@ -84,7 +84,7 @@ export function calculateDWAP(
 export function renderDWAP(
   candles: Candle[],
   config: DWAPConfig = DEFAULT_DWAP_CONFIG
-): Partial<Plotly.PlotData> {
+): Partial<Plotly.Data> {
   const points = calculateDWAP(candles, config);
 
   if (points.length === 0) {
@@ -183,7 +183,7 @@ export function renderDWAPBands(
   stdDevMultiplier: number = 2,
   lookbackPeriod: number = 20,
   fillColor: string = 'rgba(255, 107, 53, 0.1)'
-): Array<Partial<Plotly.PlotData>> {
+): Array<Partial<Plotly.Data>> {
   const bands = calculateDWAPBands(candles, stdDevMultiplier, lookbackPeriod);
 
   if (bands.length === 0) {
@@ -191,7 +191,7 @@ export function renderDWAPBands(
   }
 
   // Upper band
-  const upperTrace: Partial<Plotly.PlotData> = {
+  const upperTrace: Partial<Plotly.Data> = {
     x: bands.map((b) => b.date),
     y: bands.map((b) => b.upper),
     mode: 'lines',
@@ -203,7 +203,7 @@ export function renderDWAPBands(
   };
 
   // Lower band (reverse for area fill)
-  const lowerTrace: Partial<Plotly.PlotData> = {
+  const lowerTrace: Partial<Plotly.Data> = {
     x: [...bands.map((b) => b.date)].reverse(),
     y: [...bands.map((b) => b.lower)].reverse(),
     mode: 'lines',

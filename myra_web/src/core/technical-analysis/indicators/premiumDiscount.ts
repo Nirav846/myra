@@ -1,4 +1,4 @@
-import { CandleData } from '../../types';
+import type { Candle } from '../types';
 
 export interface PremiumDiscountZone {
   premiumStart: number;
@@ -22,7 +22,7 @@ export interface PremiumDiscountZone {
  * - Premium (50%-100%): Sell zone, price above fair value
  */
 export function calculatePremiumDiscount(
-  data: CandleData[],
+  data: Candle[],
   lookback: number = 50
 ): PremiumDiscountZone | null {
   if (data.length < lookback) {

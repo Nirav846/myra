@@ -1,4 +1,4 @@
-import { CandleData } from '../../types';
+import type { Candle } from '../types';
 
 export interface DeliveryTrendResult {
   deliveryPercentages: number[];
@@ -16,7 +16,7 @@ export interface DeliveryTrendResult {
  * Shows institutional accumulation/distribution over time
  * Uses 20-day EMA of delivery percentage with signal line
  */
-export function calculateDeliveryTrend(data: CandleData[]): DeliveryTrendResult {
+export function calculateDeliveryTrend(data: Candle[]): DeliveryTrendResult {
   const length = data.length;
   const deliveryPercentages: number[] = [];
   const ema20: (number | null)[] = [];
@@ -43,8 +43,8 @@ export function calculateDeliveryTrend(data: CandleData[]): DeliveryTrendResult 
         
         // Adjust for volume spike (proxy for institutional activity)
         if (i > 0) {
-          const avgVolume = data.slice(Math.max(0, i - 20), i).reduce((sum, c) => sum + c.volume, 0) / Math.min(i, 20);
-          if (candle.volume > avgVolume * 1.5) {
+          const avgVolume = data.slice(Math.max(0, i - 20), i).reduce((sum, c) => sum + (c.volume ?? 0), 0) / Math.min(i, 20);
+          if ((candle.volume ?? 0) > avgVolume * 1.5) {
             deliveryPercent += position > 0.5 ? 10 : -10;
           }
         }

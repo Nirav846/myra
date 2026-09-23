@@ -1,5 +1,4 @@
-import { CandleData } from '../../types';
-import { PlotlyTrace } from '../types';
+import { Candle } from '../../technical-analysis/types';
 
 export interface IFIDataPoint {
   date: string;
@@ -17,9 +16,9 @@ export interface IFIDataPoint {
  * <-50: Strong distribution (Red zone)
  */
 export function buildInstitutionalFlowIndex(
-  data: CandleData[],
+  data: Candle[],
   period: number = 20
-): PlotlyTrace[] {
+): any[] {
   if (data.length < period) return [];
 
   const ifiValues: number[] = [];
@@ -36,8 +35,8 @@ export function buildInstitutionalFlowIndex(
     const deliveryScore = (avgDeliveryPct - 50) * 2; // Normalize to -100 to +100
     
     // Volume Component (-100 to +100)
-    const avgVolume = slice.reduce((sum, c) => sum + c.volume, 0) / period;
-    const currentVolume = data[i].volume;
+    const avgVolume = slice.reduce((sum, c) => sum + (c.volume ?? 0), 0) / period;
+    const currentVolume = data[i].volume ?? 0;
     const volumeRatio = currentVolume / avgVolume;
     const volumeScore = Math.min(Math.max((volumeRatio - 1) * 100, -100), 100);
     

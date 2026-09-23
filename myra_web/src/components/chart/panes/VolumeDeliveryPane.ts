@@ -7,7 +7,7 @@
  * @module VolumeDeliveryPane
  */
 
-import type { PlotData } from 'plotly.js-dist-min';
+import type { Data } from 'plotly.js';
 import type { Candle } from '../../../core/technical-analysis/types';
 
 export interface VolumeDeliveryRenderOptions {
@@ -56,9 +56,9 @@ function calculateSMA(data: number[], period: number): (number | null)[] {
 export function buildVolumeDeliveryPane(
   candles: Candle[],
   options: Partial<VolumeDeliveryRenderOptions> = {}
-): PlotData[] {
+): Data[] {
   const opts = { ...DEFAULT_OPTIONS, ...options };
-  const traces: PlotData[] = [];
+  const traces: Data[] = [];
 
   if (candles.length === 0) return [];
 
@@ -115,7 +115,7 @@ export function buildVolumeDeliveryPane(
   });
 
   // Main volume bar trace
-  const volumeTrace: PlotData = {
+  const volumeTrace: Data = {
     type: 'bar',
     x: dates,
     y: volumes,
@@ -142,7 +142,7 @@ export function buildVolumeDeliveryPane(
   if (opts.showDeliverySMA) {
     const deliverySMA = calculateSMA(deliveries, 20);
 
-    const smaTrace: PlotData = {
+    const smaTrace: Data = {
       type: 'scatter',
       mode: 'lines',
       x: dates,
@@ -169,7 +169,7 @@ export function buildVolumeDeliveryPane(
       return isBullish ? '#22c55e' : '#ef4444';
     });
 
-    const deliveryTrace: PlotData = {
+    const deliveryTrace: Data = {
       type: 'bar',
       x: dates,
       y: deliveries,

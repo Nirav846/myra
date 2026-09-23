@@ -1,5 +1,4 @@
-import { CandleData } from '../../types';
-import { PlotlyTrace } from '../types';
+import { Candle } from '../../technical-analysis/types';
 
 export interface DeliveryCluster {
   startDate: string;
@@ -17,10 +16,10 @@ export interface DeliveryCluster {
  * Heat-map visualization showing institutional accumulation/distribution areas
  */
 export function buildDeliveryClusters(
-  data: CandleData[],
+  data: Candle[],
   minConsecutiveDays: number = 3,
   threshold: number = 60 // Delivery % threshold
-): PlotlyTrace[] {
+): any[] {
   if (data.length < minConsecutiveDays) return [];
 
   const clusters: DeliveryCluster[] = [];
@@ -90,7 +89,7 @@ export function buildDeliveryClusters(
   if (clusters.length === 0) return [];
 
   // Create heat-map rectangles for clusters
-  const shapes: Partial<PlotlyTrace>[] = clusters.map((cluster, idx) => {
+  const shapes: any[] = clusters.map((cluster, idx) => {
     const colorIntensity = cluster.avgDeliveryPct / 100;
     const baseColor = cluster.type === 'support' ? '16, 185, 129' : '239, 68, 68'; // emerald or red
     
@@ -117,12 +116,12 @@ export function buildDeliveryClusters(
         `Strength: ${cluster.clusterStrength}<br>` +
         `Price Range: ${cluster.startPrice.toFixed(2)} - ${cluster.endPrice.toFixed(2)}<br>` +
         `<extra></extra>`
-    } as Partial<PlotlyTrace>;
+    } as any;
   });
 
   // Add label markers for strong clusters
   const strongClusters = clusters.filter(c => c.clusterStrength === 'strong');
-  const labelTrace: PlotlyTrace = {
+  const labelTrace: any = {
     type: 'scatter',
     x: strongClusters.map(c => c.endDate),
     y: strongClusters.map(c => c.type === 'support' ? 
@@ -141,7 +140,7 @@ export function buildDeliveryClusters(
     hoverinfo: 'skip'
   };
 
-  return [...shapes as PlotlyTrace[], labelTrace];
+  return [...shapes, labelTrace];
 }
 
 export default buildDeliveryClusters;

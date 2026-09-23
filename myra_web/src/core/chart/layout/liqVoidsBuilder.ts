@@ -19,7 +19,7 @@ export const liqVoidsLayoutBuilder: LayoutBuilder<EnhancedLiqVoidsResult> = {
         
         if (!result || !result.voids) return shapes;
         
-        const { dateToIndex, candles } = context;
+        const { dateToIndex, data } = context;
 
         for (let i = 0; i < result.voids.length; i++) {
             const v = result.voids[i];
@@ -34,9 +34,9 @@ export const liqVoidsLayoutBuilder: LayoutBuilder<EnhancedLiqVoidsResult> = {
             let voidType: 'bullish' | 'bearish' = 'bullish';
             let voidSize = 0;
             
-            if (startIndex !== undefined && endIndex !== undefined && candles) {
-                const startCandle = candles[startIndex];
-                const endCandle = candles[endIndex];
+            if (startIndex !== undefined && endIndex !== undefined && data) {
+                const startCandle = data[startIndex];
+                const endCandle = data[endIndex];
                 
                 if (startCandle && endCandle) {
                     voidSize = Math.abs(endCandle.close - startCandle.close);

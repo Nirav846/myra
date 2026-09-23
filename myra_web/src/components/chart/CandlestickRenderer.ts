@@ -5,7 +5,7 @@
  * No React dependencies - can be used in workers or tests.
  */
 
-import type { PlotData } from 'plotly.js-dist-min';
+import type { Data } from 'plotly.js';
 import { Candle } from '../../core/technical-analysis/types';
 
 export interface CandlestickRenderOptions {
@@ -32,7 +32,7 @@ const DEFAULT_OPTIONS: CandlestickRenderOptions = {
 export function buildCandlestickTrace(
   candles: Candle[],
   options: Partial<CandlestickRenderOptions> = {}
-): PlotData[] {
+): Data[] {
   const opts = { ...DEFAULT_OPTIONS, ...options };
 
   if (candles.length === 0) return [];
@@ -53,7 +53,7 @@ export function buildCandlestickTrace(
   });
 
   // Build increasing candles (close >= open)
-  const increasing: PlotData = {
+  const increasing: Data = {
     type: 'candlestick' as const,
     x: xValues,
     open,
@@ -83,7 +83,7 @@ export function buildCandlestickTrace(
   };
 
   // Build decreasing candles (close < open)
-  const decreasing: PlotData = {
+  const decreasing: Data = {
     type: 'candlestick' as const,
     x: xValues,
     open,
@@ -106,7 +106,7 @@ export function buildCandlestickTrace(
   };
 
   // Optional: Add wick lines for better visibility
-  const wickTraces: PlotData[] = [];
+  const wickTraces: Data[] = [];
 
   if (opts.showWicks) {
     // Increasing wicks

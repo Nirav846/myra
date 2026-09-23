@@ -123,7 +123,7 @@ export function identifyThrustCandles(
 export function renderDeliveryThrust(
   candles: Candle[],
   config: DeliveryThrustConfig = DEFAULT_DELIVERY_THRUST_CONFIG
-): Array<Partial<Plotly.PlotData>> {
+): Array<Partial<Plotly.Data>> {
   const thrustCandles = identifyThrustCandles(candles, config);
 
   if (thrustCandles.length === 0) {
@@ -133,7 +133,7 @@ export function renderDeliveryThrust(
   const bullishCandles = thrustCandles.filter((t) => t.isBullish);
   const bearishCandles = thrustCandles.filter((t) => !t.isBullish);
 
-  const traces: Array<Partial<Plotly.PlotData>> = [];
+  const traces: Array<Partial<Plotly.Data>> = [];
 
   // Bullish thrust markers (above candles)
   if (bullishCandles.length > 0) {

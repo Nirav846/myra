@@ -1,5 +1,4 @@
-import { CandleData } from '../../types';
-import { PlotlyTrace } from '../types';
+import { Candle } from '../../technical-analysis/types';
 
 /**
  * Delivery-Adjusted RSI
@@ -7,10 +6,10 @@ import { PlotlyTrace } from '../types';
  * during institutional activity
  */
 export function buildDeliveryAdjustedRSI(
-  data: CandleData[],
+  data: Candle[],
   period: number = 14,
   deliveryWeight: number = 0.5 // Weight given to delivery-adjusted calculation
-): PlotlyTrace[] {
+): any[] {
   if (data.length < period + 1) return [];
 
   const rsiValues: number[] = [];

@@ -98,14 +98,14 @@ export function calculateDAAD(
 export function renderDAAD(
   candles: Candle[],
   config: DAADConfig = DEFAULT_DAAD_CONFIG
-): Array<Partial<Plotly.PlotData>> {
+): Array<Partial<Plotly.Data>> {
   const points = calculateDAAD(candles, config);
 
   if (points.length === 0) {
     return [];
   }
 
-  const traces: Array<Partial<Plotly.PlotData>> = [];
+  const traces: Array<Partial<Plotly.Data>> = [];
 
   // Main DA-AD line
   traces.push({
@@ -248,7 +248,7 @@ export function renderDivergences(
   candles: Candle[],
   lookbackPeriod: number = 10,
   config: DAADConfig = DEFAULT_DAAD_CONFIG
-): Array<Partial<Plotly.PlotData>> {
+): Array<Partial<Plotly.Data>> {
   const signals = detectDivergences(candles, lookbackPeriod, config);
 
   if (signals.length === 0) {
@@ -258,7 +258,7 @@ export function renderDivergences(
   const bullishSignals = signals.filter((s) => s.type === 'bullish');
   const bearishSignals = signals.filter((s) => s.type === 'bearish');
 
-  const traces: Array<Partial<Plotly.PlotData>> = [];
+  const traces: Array<Partial<Plotly.Data>> = [];
 
   // Bullish divergence markers
   if (bullishSignals.length > 0) {
