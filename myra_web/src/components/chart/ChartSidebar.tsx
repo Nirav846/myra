@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { PanelLeftClose, Settings2, Info, Search } from 'lucide-react';
 
 interface SidebarToggle {
@@ -32,6 +32,7 @@ export const ChartSidebar: React.FC<ChartSidebarProps> = ({
     setCandleTimeframe
 }) => {
     const [filter, setFilter] = useState('');
+    const listRef = useRef<HTMLDivElement>(null);
 
     const activeCount = useMemo(() => toggles.filter(t => t.state).length, [toggles]);
 
@@ -51,6 +52,19 @@ export const ChartSidebar: React.FC<ChartSidebarProps> = ({
         return map;
     }, [filteredToggles]);
 
+    const updateHeight = useCallback(() => {
+        if (!listRef.current) return;
+        const rect = listRef.current.getBoundingClientRect();
+        const available = window.innerHeight - rect.top - 16;
+        listRef.current.style.maxHeight = `${Math.max(available, 200)}px`;
+    }, []);
+
+    useEffect(() => {
+        updateHeight();
+        window.addEventListener('resize', updateHeight);
+        return () => window.removeEventListener('resize', updateHeight);
+    }, [updateHeight]);
+
     return (
         <div className={`flex flex-col border-r border-[#ffffff1a] transition-all duration-300 ${sidebarOpen ? 'w-64' : 'w-0 overflow-hidden'}`}>
             <div className="h-14 flex items-center justify-between px-4 border-b border-[#ffffff1a] shrink-0">
@@ -67,7 +81,8 @@ export const ChartSidebar: React.FC<ChartSidebarProps> = ({
                 </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar bg-[#16181d]">
+            <div className="flex-1 min-h-0 flex flex-col bg-[#16181d]">
+                <div className="shrink-0 px-4 pt-4 space-y-6">
                 {/* Search filter */}
                 <div className="relative">
                     <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
@@ -105,7 +120,9 @@ export const ChartSidebar: React.FC<ChartSidebarProps> = ({
                         <option value="1M">1M</option>
                     </select>
                 </div>
+                </div>
 
+                <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-4 space-y-6 custom-scrollbar" ref={listRef}>
                 {Object.entries(grouped).map(([groupName, groupToggles]) => (
                     <div key={groupName} className="space-y-3 mb-6">
                         <h3 className="text-[12px] font-bold text-gray-500 uppercase tracking-widest mb-4 border-b border-white/5 pb-2">{groupName}</h3>
@@ -160,8 +177,9 @@ export const ChartSidebar: React.FC<ChartSidebarProps> = ({
                         </div>
                     </div>
                 ))}
+                </div>
 
-                <div className="pt-4 border-t border-[#ffffff0a]">
+                <div className="shrink-0 px-4 pt-4 pb-4 border-t border-[#ffffff0a]">
                     <div className="p-3 bg-cyan-500/5 rounded-lg border border-cyan-500/10">
                         <div className="flex items-center gap-2 mb-2">
                             <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
