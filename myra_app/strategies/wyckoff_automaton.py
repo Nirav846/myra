@@ -395,7 +395,11 @@ class WyckoffAutomaton:
             vol_score = min(max(0, (1.0 - vol_ratio)) / 0.5 * 50, 50)
             # avg_del_pct is the average delivery % over the window; a low
             # delivery_pct relative to that baseline confirms sellers have left.
-            del_score = min(max(0, (1.0 - del_pct / avg_del_pct)) * 50, 50)
+            del_score = (
+                min(max(0, (1.0 - del_pct / avg_del_pct)) * 50, 50)
+                if avg_del_pct and avg_del_pct > 0
+                else 0.0
+            )
             return round(min(vol_score + del_score, 100), 1)
 
         elif event_type == "Spring":
@@ -430,6 +434,7 @@ class WyckoffAutomaton:
     def _detect_events(
         self, df: pd.DataFrame, symbol: str = "", as_on_date: str | None = None
     ) -> list[dict]:
+        df = df.assign(delivery_pct=pd.to_numeric(df["delivery_pct"], errors="coerce"))
         events = []
         n = len(df)
         if n < 55:
@@ -923,7 +928,11 @@ class WyckoffAutomaton:
             if len(df) < max(55, int(self.lookback_days * 0.6) + 5):
                 continue
 
-            events = self._detect_events(df, symbol=symbol, as_on_date=as_on_date)
+            try:
+                events = self._detect_events(df, symbol=symbol, as_on_date=as_on_date)
+            except Exception:
+                logger.exception("Wyckoff detect failed for %s", symbol)
+                continue
             if not events:
                 continue
 
