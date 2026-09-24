@@ -20,7 +20,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Body, HTTPException
 
-from myra_app.constants import MODELS_DIR
+from myra_app.constants import MODELS_DIR, DB_DIR
 from myra_web.utils import (
     _apply_tier_rank,
     _df_to_safe_records,
