@@ -76,7 +76,13 @@ class PerformanceVisitor(ast.NodeVisitor):
             attr_name = node.func.attr
 
             # Check for banned methods
-            if attr_name in BANNED_METHODS:
+            # Skip vectorized pandas accessors: `.dt.strftime()` on a Series is the
+            # recommended vectorized form and must not be flagged as a scalar call.
+            is_dt_accessor = (
+                isinstance(node.func.value, ast.Attribute)
+                and node.func.value.attr == "dt"
+            )
+            if attr_name in BANNED_METHODS and not is_dt_accessor:
                 if not self.has_noqa(node.lineno, attr_name):
                     suggestion = BANNED_METHODS[attr_name]
                     level = "CRITICAL"

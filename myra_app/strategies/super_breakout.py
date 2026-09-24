@@ -428,7 +428,8 @@ def run_super_breakout_backtest(
                 continue
             pos_prices = pos_prices.sort_values("date").reset_index(drop=True)
             # Verify first row is the entry day
-            first_date = pos_prices["date"].iloc[0].strftime("%Y-%m-%d")
+            # Scalar Timestamp — .dt accessor N/A; NaT-raise behavior is intentional here.
+            first_date = pos_prices["date"].iloc[0].strftime("%Y-%m-%d")  # noqa: PG-STRFTIME
             if first_date != day_iso:
                 # Find the entry row
                 date_strs = pos_prices["date"].dt.strftime("%Y-%m-%d").tolist()
@@ -458,7 +459,8 @@ def run_super_breakout_backtest(
                 )
 
             exit_price = float(pos_prices["close"].iloc[exit_idx])
-            exit_date = pos_prices["date"].iloc[exit_idx].strftime("%Y-%m-%d")
+            # Scalar Timestamp — .dt accessor N/A; NaT-raise behavior is intentional here.
+            exit_date = pos_prices["date"].iloc[exit_idx].strftime("%Y-%m-%d")  # noqa: PG-STRFTIME
             n_hold = exit_idx - entry_idx
 
             # P&L

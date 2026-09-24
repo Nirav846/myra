@@ -334,7 +334,8 @@ class SuperBreakoutScanner:
                 if exit_idx > 0:
                     # Position was held through some gap days
                     exit_price = float(pos_df["close"].iloc[exit_idx])
-                    exit_date_str = pos_df["date"].iloc[exit_idx].strftime("%Y-%m-%d")
+                    # Scalar Timestamp — .dt accessor N/A; NaT-raise behavior is intentional here.
+                    exit_date_str = pos_df["date"].iloc[exit_idx].strftime("%Y-%m-%d")  # noqa: PG-STRFTIME
 
                 # Determine if position survived to as_of
                 last_close = float(closes[-1])
@@ -347,7 +348,8 @@ class SuperBreakoutScanner:
                 if not exited_on_latest and reason_final != "ma_trail_eod":
                     # Exited somewhere in the gap — record the exit
                     exit_close = float(pos_df["close"].iloc[exit_idx_final])
-                    exit_d = pos_df["date"].iloc[exit_idx_final].strftime("%Y-%m-%d")
+                    # Scalar Timestamp — .dt accessor N/A; NaT-raise behavior is intentional here.
+                    exit_d = pos_df["date"].iloc[exit_idx_final].strftime("%Y-%m-%d")  # noqa: PG-STRFTIME
                     pnl_pct = (exit_close / entry_price - 1) * 100
                     candidates.append({
                         "symbol": sym,
