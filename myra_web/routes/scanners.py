@@ -1693,8 +1693,10 @@ _ALLOWED_CACHE_CLEAR = {
     "multibagger",
     "launchpad",
     "bottom-hunter",
+    "bottom-hunter-m1",
     "climax-accumulation",
     "dcb-bargain",
+    "smart-money-bargain",
     "delivery-divergence",
     "super-breakout",
 }
