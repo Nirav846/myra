@@ -1544,6 +1544,24 @@ _multibagger_result = {
 }
 
 
+def _multibagger_universe(val_conn, min_mcap, max_mcap):
+    rows = val_conn.execute(
+        """
+        SELECT f.symbol
+        FROM fundamentals f
+        INNER JOIN (
+            SELECT symbol, MAX(date) AS max_date
+            FROM fundamentals
+            WHERE COALESCE(market_cap, 0) > 0
+            GROUP BY symbol
+        ) latest ON f.symbol = latest.symbol AND f.date = latest.max_date
+        WHERE COALESCE(f.market_cap, 0) / 1e7 BETWEEN ? AND ?
+        """,
+        (min_mcap, max_mcap),
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
 @router.post("/multibagger/scan")
 async def multibagger_scan(payload: dict = Body(default={})):
     """Run Multibagger Pro scan and store results for status polling."""
@@ -1577,24 +1595,18 @@ async def multibagger_scan(payload: dict = Body(default={})):
             tech_path = os.path.join(DB_DIR, "myra_technical.db")
 
             val_conn = sqlite3.connect(val_path)
-            symbols = [
-                r[0]
-                for r in val_conn.execute(
-                    "SELECT symbol FROM fundamentals WHERE COALESCE(market_cap,0) BETWEEN ? AND ?",
-                    (min_mcap, max_mcap),
-                ).fetchall()
-            ]
+            symbols = _multibagger_universe(val_conn, min_mcap, max_mcap)
             val_conn.close()
 
             if not symbols:
-                symbols = [
-                    r[0]
-                    for r in sqlite3.connect(tech_path)
-                    .execute(
-                        "SELECT DISTINCT symbol FROM technical_data ORDER BY symbol"
-                    )
-                    .fetchall()
-                ][:500]
+                _multibagger_result = {
+                    "scan_status": "completed",
+                    "last_scan": datetime.now().isoformat(),
+                    "candidates": [],
+                    "message": "No symbols in the market-cap range",
+                }
+                val_conn.close()
+                return
 
             candidates = []
             tech_conn = sqlite3.connect(tech_path)
@@ -1617,7 +1629,8 @@ async def multibagger_scan(payload: dict = Body(default={})):
                     continue
 
                 row = val_conn2.execute(
-                    "SELECT * FROM fundamentals WHERE symbol=?", (sym,)
+                    "SELECT * FROM fundamentals WHERE symbol=? ORDER BY date DESC LIMIT 1",
+                    (sym,),
                 ).fetchone()
                 if row:
                     funda = dict(zip(funda_cols, row))
