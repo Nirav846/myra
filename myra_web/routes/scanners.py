@@ -116,7 +116,7 @@ def register_scanner(
 
         with lock:
             if state["scan_status"] == "scanning":
-                return {"detail": "Scan already in progress"}, 409
+                raise HTTPException(status_code=409, detail="Scan already in progress")
             state.update(
                 {
                     "scan_status": "scanning",
@@ -1375,7 +1375,7 @@ async def launchpad_scan_status():
 async def launchpad_scan(payload: dict = Body(default={})):
     with _launchpad_scan_lock:
         if _launchpad_scan_state["scan_status"] == "scanning":
-            return {"detail": "Scan already in progress"}, 409
+            raise HTTPException(status_code=409, detail="Scan already in progress")
         _launchpad_scan_state.update(
             {
                 "scan_status": "scanning",
