@@ -230,9 +230,13 @@ class DCBBargainScanner:
         up_mask = closes > opens
         down_mask = closes < opens
 
-        up_avg = float(np.nanmean(del_pcts[up_mask])) if np.any(up_mask) else 0.0
-        down_avg = float(np.nanmean(del_pcts[down_mask])) if np.any(down_mask) else 0.0
-        return up_avg - down_avg
+        up_vals = del_pcts[up_mask]
+        down_vals = del_pcts[down_mask]
+        up_vals = up_vals[~np.isnan(up_vals)]
+        down_vals = down_vals[~np.isnan(down_vals)]
+        if len(up_vals) == 0 or len(down_vals) == 0:
+            return 0.0
+        return float(np.mean(up_vals)) - float(np.mean(down_vals))
 
     @staticmethod
     def _compute_adtv_cr(df_daily) -> float:
