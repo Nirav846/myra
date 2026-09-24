@@ -18,6 +18,14 @@ export function buildSmartMoneyDivergence(
 ): any[] {
   if (data.length < lookback * 2) return [];
 
+  const getDeliveryPct = (c: Candle): number => {
+    if (typeof c.delivery_pct === 'number' && !isNaN(c.delivery_pct)) return c.delivery_pct;
+    if (typeof c.deliveryPercentage === 'number' && !isNaN(c.deliveryPercentage)) return c.deliveryPercentage;
+    const vol = Number(c.volume_final ?? c.volume ?? 0);
+    const del = Number(c.delivery_final ?? (c as any).delivery ?? 0);
+    return vol > 0 ? (del / vol) * 100 : 50;
+  };
+
   const divergencePoints: Array<{
     date: string;
     price: number;
@@ -41,8 +49,8 @@ export function buildSmartMoneyDivergence(
     const rightPriceHigh = Math.max(...rightSlice.map(c => c.high));
     
     // Find delivery percentage extremes
-    const leftDelivAvg = leftSlice.reduce((sum, c) => sum + (c.deliveryPercentage || 0), 0) / lookback;
-    const rightDelivAvg = rightSlice.reduce((sum, c) => sum + (c.deliveryPercentage || 0), 0) / lookback;
+    const leftDelivAvg = leftSlice.reduce((sum, c) => sum + getDeliveryPct(c), 0) / lookback;
+    const rightDelivAvg = rightSlice.reduce((sum, c) => sum + getDeliveryPct(c), 0) / lookback;
     
     // Bullish Divergence: Price makes lower low, Delivery makes higher low
     const isBullish = rightPriceLow < leftPriceLow && rightDelivAvg > leftDelivAvg;

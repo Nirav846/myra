@@ -31,6 +31,7 @@ import { buildSmartMoneyDivergence } from '../core/chart/traces/smartMoneyDiverg
 import { buildDeliveryClusters } from '../core/chart/traces/deliveryClustersBuilder';
 import { buildDeliveryAdjustedRSI } from '../core/chart/traces/delAdjRsiBuilder';
 import { buildInstitutionalFlowIndex } from '../core/chart/traces/ifiBuilder';
+import { toSwingPoints } from '../core/technical-analysis/indicators/swings';
 
 // Lazy-load indicator modules - preloaded on mount
 const INDICATOR_KEYS = ['sma', 'rsi', 'fvg', 'swings', 'volumeProfile', 'delIntensityCore', 'instBlocks', 'delAd', 'liqVoids', 'orderBlocks', 'equalHighsLows', 'breakerBlocks', 'premiumDiscount', 'deliveryTrend', 'deliveryVolumeRatio'];
@@ -544,7 +545,8 @@ const ChartItemInner = ({ sym, data, overlayToggles, paneToggles, perfToggles, s
     // Breaker Blocks (needs swings)
     const bbObj = useMemo(() => {
         if (!toggles.showBreakerBlocks || !data || !swingsObj) return null;
-        return chartRegistry.getIndicatorSync('breakerBlocks')?.calculate(data, { swings: swingsObj }) || null;
+        const swingPoints = toSwingPoints(swingsObj, data);
+        return chartRegistry.getIndicatorSync('breakerBlocks')?.calculate(data, { swings: swingPoints }) || null;
     }, [toggles.showBreakerBlocks, data, swingsObj]);
 
     // Smart Money Divergence (date-based → will adapt in computed)

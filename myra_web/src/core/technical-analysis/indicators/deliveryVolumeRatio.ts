@@ -1,4 +1,10 @@
-import type { Candle, DeliveryData } from '../types';
+import type { Candle } from '../types';
+
+export interface DeliveryData {
+  date: string;
+  deliveryPercent: number;
+  volume?: number;
+}
 
 export interface DeliveryVolumeRatioResult {
   ratios: number[];

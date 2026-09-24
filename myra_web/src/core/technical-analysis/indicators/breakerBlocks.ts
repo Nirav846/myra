@@ -70,10 +70,10 @@ export function detectBreakerBlocks(
             type: 'bearish',
             startIndex: obCandle.index,
             endIndex: currentSwing.index,
-            high: Math.max(candles[obCandle.index].h, candles[currentSwing.index].h),
-            low: obCandle.l,
-            open: candles[obCandle.index].o,
-            close: candles[currentSwing.index].c,
+            high: Math.max(candles[obCandle.index].high, candles[currentSwing.index].high),
+            low: obCandle.low,
+            open: candles[obCandle.index].open,
+            close: candles[currentSwing.index].close,
             mitigationPrice: isMitigated.price,
             isMitigated: isMitigated.status,
             sweptLiquidity: true,
@@ -103,10 +103,10 @@ export function detectBreakerBlocks(
             type: 'bullish',
             startIndex: obCandle.index,
             endIndex: currentSwing.index,
-            high: obCandle.h,
-            low: Math.min(candles[obCandle.index].l, candles[currentSwing.index].l),
-            open: candles[obCandle.index].o,
-            close: candles[currentSwing.index].c,
+            high: obCandle.high,
+            low: Math.min(candles[obCandle.index].low, candles[currentSwing.index].low),
+            open: candles[obCandle.index].open,
+            close: candles[currentSwing.index].close,
             mitigationPrice: isMitigated.price,
             isMitigated: isMitigated.status,
             sweptLiquidity: true,
@@ -133,8 +133,8 @@ function findReversalLow(candles: Candle[], startIndex: number, endIndex: number
   let lowestIndex = -1;
   
   for (let i = startIndex; i <= Math.min(endIndex, candles.length - 1); i++) {
-    if (candles[i].l < lowest) {
-      lowest = candles[i].l;
+    if (candles[i].low < lowest) {
+      lowest = candles[i].low;
       lowestIndex = i;
     }
   }
@@ -147,8 +147,8 @@ function findReversalHigh(candles: Candle[], startIndex: number, endIndex: numbe
   let highestIndex = -1;
   
   for (let i = startIndex; i <= Math.min(endIndex, candles.length - 1); i++) {
-    if (candles[i].h > highest) {
-      highest = candles[i].h;
+    if (candles[i].high > highest) {
+      highest = candles[i].high;
       highestIndex = i;
     }
   }
@@ -167,8 +167,8 @@ function findOriginatingOB(candles: Candle[], swingIndex: number, type: 'high' |
     let highestCandle: Candle | null = null;
     
     for (let i = start; i < swingIndex; i++) {
-      if (candles[i].h > highest) {
-        highest = candles[i].h;
+      if (candles[i].high > highest) {
+        highest = candles[i].high;
         highestCandle = { ...candles[i], index: i };
       }
     }
@@ -180,8 +180,8 @@ function findOriginatingOB(candles: Candle[], swingIndex: number, type: 'high' |
     let lowestCandle: Candle | null = null;
     
     for (let i = start; i < swingIndex; i++) {
-      if (candles[i].l < lowest) {
-        lowest = candles[i].l;
+      if (candles[i].low < lowest) {
+        lowest = candles[i].low;
         lowestCandle = { ...candles[i], index: i };
       }
     }
@@ -197,11 +197,11 @@ function checkMitigation(
   direction: 'up' | 'down'
 ): { status: boolean; price?: number } {
   for (let i = startIndex; i < candles.length; i++) {
-    if (direction === 'up' && candles[i].h >= level) {
-      return { status: true, price: candles[i].h };
+    if (direction === 'up' && candles[i].high >= level) {
+      return { status: true, price: candles[i].high };
     }
-    if (direction === 'down' && candles[i].l <= level) {
-      return { status: true, price: candles[i].l };
+    if (direction === 'down' && candles[i].low <= level) {
+      return { status: true, price: candles[i].low };
     }
   }
   return { status: false };
@@ -214,19 +214,19 @@ function calculateBreakerConfidence(candles: Candle[], obIndex: number, sweepInd
   let confidence = 50;
   
   // Higher confidence if sweep candle has large range
-  const sweepRange = sweepCandle.h - sweepCandle.l;
+  const sweepRange = sweepCandle.high - sweepCandle.low;
   const avgRange = (candles.slice(Math.max(0, sweepIndex - 10), sweepIndex + 1)
-    .reduce((sum, c) => sum + (c.h - c.l), 0) / 10);
+    .reduce((sum, c) => sum + (c.high - c.low), 0) / 10);
   
   if (sweepRange > avgRange * 1.5) confidence += 15;
   if (sweepRange > avgRange * 2) confidence += 25;
   
   // Higher confidence if reversal is strong
-  const reversalStrength = Math.abs(sweepCandle.c - sweepCandle.o);
+  const reversalStrength = Math.abs(sweepCandle.close - sweepCandle.open);
   if (reversalStrength > sweepRange * 0.6) confidence += 10;
   
   // Higher confidence if OB candle is significant
-  const obRange = obCandle.h - obCandle.l;
+  const obRange = obCandle.high - obCandle.low;
   if (obRange > avgRange * 1.3) confidence += 10;
   
   return Math.min(confidence, 100);

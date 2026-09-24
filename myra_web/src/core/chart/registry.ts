@@ -16,11 +16,11 @@ const indicatorLoaders: Record<string, () => Promise<IndicatorModule<any, any>>>
     'smartMoneyPrints': () => import('../technical-analysis/indicators/smartMoneyPrints').then(m => m.smartMoneyPrintsIndicator),
     'delIntensityCore': () => import('../technical-analysis/indicators/delIntensityCore').then(m => m.delIntensityCoreIndicator),
     'liqVoids': () => import('../technical-analysis/indicators/liqVoids').then(m => m.liqVoidsIndicator),
-    'orderBlocks': () => import('../technical-analysis/indicators/orderBlocks').then(m => ({ id: 'orderBlocks', defaults: {}, calculate: m.detectOrderBlocks }) as IndicatorModule<any, any>),
-    'equalHighsLows': () => import('../technical-analysis/indicators/equalHighsLows').then(m => ({ id: 'equalHighsLows', defaults: { tolerancePercent: 0.5, minTouches: 2 }, calculate: m.detectEqualHighsLows }) as IndicatorModule<any, any>),
-    'premiumDiscount': () => import('../technical-analysis/indicators/premiumDiscount').then(m => ({ id: 'premiumDiscount', defaults: { lookback: 50 }, calculate: m.calculatePremiumDiscount }) as IndicatorModule<any, any>),
+    'orderBlocks': () => import('../technical-analysis/indicators/orderBlocks').then(m => ({ id: 'orderBlocks', defaults: {}, calculate: (data, config) => m.detectOrderBlocks(data, config?.threshold ?? 1.5) }) as IndicatorModule<any, any>),
+    'equalHighsLows': () => import('../technical-analysis/indicators/equalHighsLows').then(m => ({ id: 'equalHighsLows', defaults: { tolerancePercent: 0.5, minTouches: 2 }, calculate: (data, config) => m.detectEqualHighsLows(data, config?.tolerancePercent ?? 0.5, config?.minTouches ?? 2) }) as IndicatorModule<any, any>),
+    'premiumDiscount': () => import('../technical-analysis/indicators/premiumDiscount').then(m => ({ id: 'premiumDiscount', defaults: { lookback: 50 }, calculate: (data, config) => m.calculatePremiumDiscount(data, config?.lookback ?? 50) }) as IndicatorModule<any, any>),
     'deliveryTrend': () => import('../technical-analysis/indicators/deliveryTrend').then(m => ({ id: 'deliveryTrend', defaults: {}, calculate: m.calculateDeliveryTrend }) as IndicatorModule<any, any>),
-    'breakerBlocks': () => import('../technical-analysis/indicators/breakerBlocks').then(m => ({ id: 'breakerBlocks', defaults: {}, calculate: m.detectBreakerBlocks }) as IndicatorModule<any, any>),
+    'breakerBlocks': () => import('../technical-analysis/indicators/breakerBlocks').then(m => ({ id: 'breakerBlocks', defaults: {}, calculate: (data, config) => m.detectBreakerBlocks(data, config?.swings ?? []) }) as IndicatorModule<any, any>),
     // Registered but not exposed in UI — overlaps with Order Blocks / Swings
     'marketStructureShift': () => import('../technical-analysis/indicators/marketStructureShift').then(m => ({ id: 'marketStructureShift', defaults: {}, calculate: m.detectMarketStructureShifts }) as IndicatorModule<any, any>),
     // Registered but not exposed in UI — overlaps with Order Blocks / Swings
@@ -52,6 +52,7 @@ const traceBuilderLoaders: Record<string, () => Promise<TraceBuilder<any, any>>>
     'equalHighsLows': () => import('./traces/equalHighsLowsBuilder').then(m => m.equalHighsLowsTraceBuilder),
     'premiumDiscount': () => import('./traces/premiumDiscountBuilder').then(m => m.premiumDiscountTraceBuilder),
     'deliveryTrend': () => import('./traces/deliveryTrendBuilder').then(m => m.deliveryTrendTraceBuilder),
+    'breakerBlocks': () => import('./traces/breakerBlocksBuilder').then(m => m.breakerBlocksTraceBuilder),
     'deliveryVolumeRatio': () => import('./traces/deliveryVolumeRatioBuilder').then(m => m.deliveryVolumeRatioTraceBuilder),
 };
 

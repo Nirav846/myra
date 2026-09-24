@@ -22,6 +22,14 @@ export function buildDeliveryClusters(
 ): any[] {
   if (data.length < minConsecutiveDays) return [];
 
+  const getDeliveryPct = (c: Candle): number => {
+    if (typeof c.delivery_pct === 'number' && !isNaN(c.delivery_pct)) return c.delivery_pct;
+    if (typeof c.deliveryPercentage === 'number' && !isNaN(c.deliveryPercentage)) return c.deliveryPercentage;
+    const vol = Number(c.volume_final ?? c.volume ?? 0);
+    const del = Number(c.delivery_final ?? (c as any).delivery ?? 0);
+    return vol > 0 ? (del / vol) * 100 : 0;
+  };
+
   const clusters: DeliveryCluster[] = [];
   let currentCluster: Partial<DeliveryCluster> & { count: number; prices: number[] } = {
     count: 0,
@@ -30,7 +38,7 @@ export function buildDeliveryClusters(
   };
 
   for (let i = 0; i < data.length; i++) {
-    const delivPct = data[i].deliveryPercentage || 0;
+    const delivPct = getDeliveryPct(data[i]);
     
     if (delivPct >= threshold) {
       // Continue or start cluster

@@ -12,6 +12,12 @@ export function buildDeliveryAdjustedRSI(
 ): any[] {
   if (data.length < period + 1) return [];
 
+  const getDeliveryPct = (c: Candle): number => {
+    if (typeof c.delivery_pct === 'number' && !isNaN(c.delivery_pct)) return c.delivery_pct;
+    if (typeof c.deliveryPercentage === 'number' && !isNaN(c.deliveryPercentage)) return c.deliveryPercentage;
+    return 50;
+  };
+
   const rsiValues: number[] = [];
   const delivRsiValues: number[] = [];
   const dates: string[] = [];
@@ -29,7 +35,7 @@ export function buildDeliveryAdjustedRSI(
     
     for (let j = 1; j < slice.length; j++) {
       const change = slice[j].close - slice[j - 1].close;
-      const delivPct = slice[j].deliveryPercentage || 50;
+      const delivPct = getDeliveryPct(slice[j]);
       const weight = 0.5 + (delivPct / 100) * deliveryWeight; // Weight: 0.5 to 1.0
       
       if (change > 0) {
@@ -56,58 +62,45 @@ export function buildDeliveryAdjustedRSI(
     dates.push(slice[period].date);
   }
 
-  // Create colors based on overbought/oversold zones
-  const rsiColors = rsiValues.map(val => {
-    if (val >= 70) return 'rgba(239, 68, 68, 0.8)'; // Overbought (red)
-    if (val <= 30) return 'rgba(16, 185, 129, 0.8)'; // Oversold (emerald)
-    return 'rgba(59, 130, 246, 0.6)'; // Neutral (blue)
+  // Marker per point only at overbought/oversold extremes to keep the pane readable
+  const delivSignals: Array<number | null> = delivRsiValues.map(val => {
+    if (val >= 70) return 70;
+    if (val <= 30) return 30;
+    return null;
   });
-
-  const delivRsiColors = delivRsiValues.map(val => {
-    if (val >= 70) return 'rgba(239, 68, 68, 0.9)'; // Overbought (red, more opaque)
-    if (val <= 30) return 'rgba(16, 185, 129, 0.9)'; // Oversold (emerald, more opaque)
-    return 'rgba(245, 158, 11, 0.7)'; // Neutral (amber, more opaque)
-  });
+  const signalIndices = delivSignals
+    .map((v, i) => (v !== null ? i : -1))
+    .filter(i => i !== -1);
+  const signalX = signalIndices.map(i => dates[i]);
+  const signalY = signalIndices.map(i => delivRsiValues[i]);
+  const signalLabels = signalIndices.map(i =>
+    delivRsiValues[i] >= 70 ? 'Overbought' : 'Oversold'
+  );
+  const signalColors = signalIndices.map(i =>
+    delivRsiValues[i] >= 70 ? '#ef4444' : '#22c55e'
+  );
 
   return [
-    // Standard RSI
+    // Standard RSI (thin reference)
     {
       type: 'scatter',
       x: dates,
       y: rsiValues,
-      name: 'RSI',
+      name: 'RSI (std)',
       mode: 'lines',
-      line: {
-        color: 'rgba(59, 130, 246, 0.5)',
-        width: 2,
-        shape: 'spline',
-        smoothing: 0.4
-      },
-      hovertemplate:
-        '<b>Standard RSI: %{y:.2f}</b><br>' +
-        'Date: %{x}<br>' +
-        '<extra></extra>',
+      line: { color: 'rgba(148, 163, 184, 0.45)', width: 1, shape: 'spline', smoothing: 0.4 },
+      hovertemplate: '<b>Standard RSI: %{y:.2f}</b><br>Date: %{x}<br><extra></extra>',
       yaxis: 'y2',
       showlegend: true
     },
-    // Delivery-Adjusted RSI
+    // Delivery-Adjusted RSI (clean line, signal markers only at extremes)
     {
       type: 'scatter',
       x: dates,
       y: delivRsiValues,
       name: 'Del-Adj RSI',
-      mode: 'lines+markers',
-      line: {
-        color: 'rgba(245, 158, 11, 0.9)',
-        width: 3,
-        shape: 'spline',
-        smoothing: 0.4
-      },
-      marker: {
-        size: 6,
-        color: delivRsiColors,
-        opacity: 0.8
-      },
+      mode: 'lines',
+      line: { color: '#f59e0b', width: 2, shape: 'spline', smoothing: 0.4 },
       hovertemplate:
         '<b>Delivery-Adj RSI: %{y:.2f}</b><br>' +
         'Date: %{x}<br>' +
@@ -121,17 +114,28 @@ export function buildDeliveryAdjustedRSI(
       yaxis: 'y2',
       showlegend: true
     },
+    // Extreme signal markers
+    {
+      type: 'scatter',
+      x: signalX,
+      y: signalY,
+      name: 'Extremes',
+      mode: 'markers',
+      marker: { size: 7, color: signalColors, symbol: 'circle', line: { color: '#fff', width: 1 }, opacity: 0.9 },
+      text: signalLabels,
+      textposition: 'top center',
+      textfont: { size: 10, color: signalColors, weight: 'bold' },
+      hovertemplate: '<b>%{text}</b><br>Del-Adj RSI: %{y:.2f}<br>Date: %{x}<br><extra></extra>',
+      yaxis: 'y2',
+      showlegend: false
+    },
     // Overbought Zone (70-100)
     {
       type: 'line',
       x: [dates[0], dates[dates.length - 1]],
       y: [70, 70],
       name: 'Overbought (70)',
-      line: {
-        color: 'rgba(239, 68, 68, 0.5)',
-        width: 2,
-        dash: 'dot'
-      },
+      line: { color: 'rgba(239, 68, 68, 0.5)', width: 2, dash: 'dot' },
       hoverinfo: 'skip',
       yaxis: 'y2',
       showlegend: false
@@ -142,11 +146,7 @@ export function buildDeliveryAdjustedRSI(
       x: [dates[0], dates[dates.length - 1]],
       y: [30, 30],
       name: 'Oversold (30)',
-      line: {
-        color: 'rgba(16, 185, 129, 0.5)',
-        width: 2,
-        dash: 'dot'
-      },
+      line: { color: 'rgba(16, 185, 129, 0.5)', width: 2, dash: 'dot' },
       hoverinfo: 'skip',
       yaxis: 'y2',
       showlegend: false
@@ -157,11 +157,7 @@ export function buildDeliveryAdjustedRSI(
       x: [dates[0], dates[dates.length - 1]],
       y: [50, 50],
       name: 'Centerline (50)',
-      line: {
-        color: 'rgba(255, 255, 255, 0.3)',
-        width: 1,
-        dash: 'solid'
-      },
+      line: { color: 'rgba(255, 255, 255, 0.25)', width: 1, dash: 'solid' },
       hoverinfo: 'skip',
       yaxis: 'y2',
       showlegend: false
@@ -169,11 +165,11 @@ export function buildDeliveryAdjustedRSI(
     // Shaded zones
     {
       type: 'scatter',
-      x: [...dates, ...dates.reverse()],
+      x: [...dates, ...[...dates].reverse()],
       y: [...Array(dates.length).fill(70), ...Array(dates.length).fill(100)],
       name: 'Overbought Zone',
       fill: 'toself',
-      fillcolor: 'rgba(239, 68, 68, 0.1)',
+      fillcolor: 'rgba(239, 68, 68, 0.08)',
       line: { width: 0 },
       hoverinfo: 'skip',
       yaxis: 'y2',
@@ -181,11 +177,11 @@ export function buildDeliveryAdjustedRSI(
     },
     {
       type: 'scatter',
-      x: [...dates, ...dates.reverse()],
+      x: [...dates, ...[...dates].reverse()],
       y: [...Array(dates.length).fill(0), ...Array(dates.length).fill(30)],
       name: 'Oversold Zone',
       fill: 'toself',
-      fillcolor: 'rgba(16, 185, 129, 0.1)',
+      fillcolor: 'rgba(16, 185, 129, 0.08)',
       line: { width: 0 },
       hoverinfo: 'skip',
       yaxis: 'y2',
