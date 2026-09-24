@@ -235,6 +235,18 @@ class DCBBargainScanner:
         return up_avg - down_avg
 
     @staticmethod
+    def _compute_adtv_cr(df_daily) -> float:
+        return (
+            float(
+                np.nanmean(
+                    df_daily["close"].values.astype(float)
+                    * df_daily["volume"].values.astype(float)
+                )
+            )
+            / 1e7
+        )
+
+    @staticmethod
     def _get_weekly_data(df_daily: pd.DataFrame) -> pd.DataFrame:
         """Aggregate daily OHLCV+delivery to weekly (Fri-aligned) candles.
 
@@ -683,15 +695,7 @@ class DCBBargainScanner:
                     continue
 
                 # ADTV in ₹ Cr
-                adtv_cr = (
-                    float(
-                        np.nanmean(
-                            work_df["close"].values.astype(float)
-                            * work_df["volume"].values.astype(float)
-                        )
-                    )
-                    / 1e7
-                )
+                adtv_cr = self._compute_adtv_cr(df)
                 if adtv_cr < self.min_adtv_cr:
                     continue
 
