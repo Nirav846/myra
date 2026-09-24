@@ -603,7 +603,12 @@ class InvisibleHandScanner:
     def _filter_corporate_actions(
         self, candidates: list[dict], as_on_date: str
     ) -> list[dict]:
-        """Remove symbols with bonus/split/rights in the last N days."""
+        """Remove symbols with bonus/split/rights in the last N days.
+
+        Performs case-insensitive matching on action_type to handle
+        inconsistent casing and variations (e.g. "Bonus 3:1") in the
+        corporate_actions table.
+        """
         if self.corporate_actions_exclude_days <= 0 or not candidates:
             return candidates
         try:
@@ -616,18 +621,36 @@ class InvisibleHandScanner:
             cutoff = f"{cutoff_dt:%Y-%m-%d}"
             syms = [c["symbol"] for c in candidates]
             placeholders = ",".join("?" for _ in syms)
+            # Keyword-based matching: catch variations like "Bonus 3:1",
+            # "Rights 5:78 @ Premium Rs 110/-", "Buy Back", etc.
+            exclude_keywords = ["bonus", "split", "rights", "buy back"]
+            dividend_keywords = ["dividend"]
             with sqlite3.connect(inst_db) as conn:
+                # Use the ISO `date` column (YYYY-MM-DD), not `ex_date` which
+                # is stored in NSE's DD-MMM-YYYY text format.  Text comparison
+                # against an ISO cutoff would mis-classify most rows because
+                # the month name sorts after any year-month-day string.
                 rows = conn.execute(
                     f"""
-                    SELECT DISTINCT symbol FROM corporate_actions
+                    SELECT DISTINCT symbol, action_type FROM corporate_actions
                     WHERE symbol IN ({placeholders})
-                      AND action_type IN ('Bonus', 'Split', 'Rights', 'Bonus Issue',
-                                          'Stock Split', 'Rights Issue')
-                      AND ex_date >= ?
+                      AND date >= ?
                     """,
                     (*syms, cutoff),
                 ).fetchall()
-            excluded = {r[0] for r in rows}
+            excluded: set[str] = set()
+            for symbol, action_type in rows:
+                if not action_type or not action_type.strip():
+                    continue
+                low = action_type.strip().lower()
+                if any(kw in low for kw in exclude_keywords):
+                    excluded.add(symbol)
+                elif not any(kw in low for kw in dividend_keywords):
+                    logger.debug(
+                        "CA filter: action_type '%s' for %s — not excluded",
+                        action_type,
+                        symbol,
+                    )
             if excluded:
                 logger.info(
                     "CA filter: excluding %d symbols with recent actions", len(excluded)
