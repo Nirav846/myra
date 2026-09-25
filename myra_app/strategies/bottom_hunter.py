@@ -19,38 +19,50 @@ from myra_app.db.bulk_loader import (
 logger = logging.getLogger(__name__)
 
 
-def compute_sector_momentum_tiers() -> dict[str, str]:
+def compute_sector_momentum_tiers(
+    symbol_sector: dict[str, str] | None = None,
+) -> dict[str, str]:
     """Compute 6-month ROC per sector and tier into TOP / MID / BOTTOM.
+
+    Args:
+        symbol_sector: optional pre-built symbol → sector map. When supplied,
+            Step 1's fundamentals query is skipped and the caller's map is
+            used, so callers that already loaded the map don't query twice.
+            When omitted, the map is built here as a fallback.
 
     Returns a dict mapping sector name → tier string.
     Falls back to returning an empty dict if data is insufficient.
     """
     tech_db = os.path.join(DB_DIR, LibrarianCore.DB_MAP["technical"])
-    val_db = os.path.join(DB_DIR, LibrarianCore.DB_MAP["valuation"])
 
-    if not os.path.exists(tech_db) or not os.path.exists(val_db):
+    if not os.path.exists(tech_db):
         return {}
 
-    # Step 1: Build symbol → sector map from fundamentals
-    symbol_sector: dict[str, str] = {}
-    try:
-        with sqlite3.connect(val_db) as conn:
-            rows = conn.execute(
-                """
-                SELECT f.symbol, f.sector
-                FROM fundamentals f
-                INNER JOIN (
-                    SELECT symbol, MAX(date) as max_date
-                    FROM fundamentals
-                    WHERE sector IS NOT NULL
-                    GROUP BY symbol
-                ) latest ON f.symbol = latest.symbol AND f.date = latest.max_date
-                WHERE f.sector IS NOT NULL
-                """
-            ).fetchall()
-            symbol_sector = {r[0].strip(): r[1] for r in rows}
-    except Exception:
-        return {}
+    if symbol_sector is None:
+        val_db = os.path.join(DB_DIR, LibrarianCore.DB_MAP["valuation"])
+
+        if not os.path.exists(val_db):
+            return {}
+
+        # Step 1: Build symbol → sector map from fundamentals
+        try:
+            with sqlite3.connect(val_db) as conn:
+                rows = conn.execute(
+                    """
+                    SELECT f.symbol, f.sector
+                    FROM fundamentals f
+                    INNER JOIN (
+                        SELECT symbol, MAX(date) as max_date
+                        FROM fundamentals
+                        WHERE sector IS NOT NULL
+                        GROUP BY symbol
+                    ) latest ON f.symbol = latest.symbol AND f.date = latest.max_date
+                    WHERE f.sector IS NOT NULL
+                    """
+                ).fetchall()
+                symbol_sector = {r[0].strip(): r[1] for r in rows}
+        except Exception:
+            return {}
 
     if not symbol_sector:
         return {}
@@ -65,25 +77,26 @@ def compute_sector_momentum_tiers() -> dict[str, str]:
             placeholders = ",".join("?" for _ in symbols)
             rows = conn.execute(
                 f"""
-                SELECT symbol, close, date FROM (
+                SELECT symbol, close, date, rn FROM (
                     SELECT symbol, close, date,
                            ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
                     FROM technical_data
                     WHERE symbol IN ({placeholders})
                 ) WHERE rn IN (1, 126)
+                ORDER BY symbol, rn
                 """,
                 symbols,
             ).fetchall()
 
-        # Group by symbol: rn=1 is latest, rn=126 is ~6mo ago
+        # Group by symbol: rn=1 is latest, rn=126 is ~6mo ago.
+        # Pair on the explicit rn value — never on arrival order, which the
+        # outer query's absence of ORDER BY used to leave undefined.
         sym_latest: dict[str, float] = {}
         sym_old: dict[str, float] = {}
-        for sym, close, _dt in rows:
-            # We get two rows per symbol; the one with rn=1 has the latest date
-            # Since we can't easily distinguish rn here, use a dict approach
-            if sym not in sym_latest:
+        for sym, close, _dt, rn in rows:
+            if rn == 1:
                 sym_latest[sym] = float(close)
-            else:
+            elif rn == 126:
                 sym_old[sym] = float(close)
 
         for sym in symbols:
@@ -369,7 +382,9 @@ class BottomHunter:
 
         # Compute sector momentum tiers
         try:
-            _sector_mom_tier: dict[str, str] = compute_sector_momentum_tiers()
+            _sector_mom_tier: dict[str, str] = compute_sector_momentum_tiers(
+                _sector_map
+            )
         except Exception:
             _sector_mom_tier = {}
 
@@ -437,10 +452,17 @@ class BottomHunter:
             up_days = last_n[last_n["close"] > last_n["open"]]
             down_days = last_n[last_n["close"] < last_n["open"]]
 
-            # Calculate delivery absorption
-            up_del_avg = up_days["delivery_pct"].mean() if len(up_days) > 0 else 0
-            down_del_avg = down_days["delivery_pct"].mean() if len(down_days) > 0 else 0
-            delivery_absorption = up_del_avg - down_del_avg
+            # Calculate delivery absorption.
+            # A missing side means the signal can't be computed, so score it 0 —
+            # defaulting the missing side to 0 would report maximal absorption
+            # (up_avg - 0) for a symbol with no down days at all.
+            # Matches DCBBargainScanner._compute_del_abs.
+            if len(up_days) == 0 or len(down_days) == 0:
+                delivery_absorption = 0.0
+            else:
+                delivery_absorption = (
+                    up_days["delivery_pct"].mean() - down_days["delivery_pct"].mean()
+                )
 
             # Calculate ADTV (average daily turnover in Cr) over last N periods
             adtv_cr = ((last_n["close"] * last_n["volume"]) / 1e7).mean()
