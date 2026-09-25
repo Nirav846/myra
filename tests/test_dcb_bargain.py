@@ -290,6 +290,41 @@ def test_compute_del_abs_all_up_days():
     assert result == pytest.approx(0.0, abs=0.01)
 
 
+def test_compute_del_abs_all_down_days():
+    """All bars have close < open -> no up days, so the signal is undefined.
+
+    Mirror of test_compute_del_abs_all_up_days: a missing side means
+    absorption can't be computed, so it scores 0.0 — NOT -down_avg.
+    """
+    closes = list(range(100, 120))  # 100..119
+    opens = [c + 2 for c in closes]  # all open > close -> all down days
+    delivery_pcts = [
+        10,
+        20,
+        30,
+        40,
+        50,
+        60,
+        70,
+        80,
+        90,
+        100,
+        10,
+        20,
+        30,
+        40,
+        50,
+        60,
+        70,
+        80,
+        90,
+        100,
+    ]
+    df = _make_tech_df(closes, delivery_pcts, opens=opens)
+    result = DCBBargainScanner._compute_del_abs(df, window=20)
+    assert result == pytest.approx(0.0, abs=0.01)
+
+
 def test_compute_del_abs_fewer_than_window():
     """DataFrame with fewer than window rows -> uses all rows, no crash."""
     closes = [100, 95, 98, 93, 96, 91, 94, 89, 92, 87]

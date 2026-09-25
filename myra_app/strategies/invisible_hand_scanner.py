@@ -240,7 +240,9 @@ class InvisibleHandScanner:
 
         # Compute sector momentum tiers
         try:
-            _sector_mom_tier: dict[str, str] = compute_sector_momentum_tiers()
+            _sector_mom_tier: dict[str, str] = compute_sector_momentum_tiers(
+                _sector_map
+            )
         except Exception:
             _sector_mom_tier = {}
 
