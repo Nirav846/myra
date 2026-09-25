@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { formatScannerCsv } from '../lib/scannerCsv';
 import { Librarian } from '../lib/Librarian';
 import { Box, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Star, BookOpen, ChevronRight, Info, Building2 } from 'lucide-react';
 import FundTractionButton from '../components/FundTractionButton';
@@ -170,6 +171,7 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
   const [sortAsc, setSortAsc] = useState(false);
 
   const mountedRef = useRef(true);
+  const scanParamsRef = useRef<Record<string, unknown> | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const clearPolling = useCallback(() => {
@@ -211,6 +213,19 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
     };
   }, [fetchStatus, clearPolling]);
 
+  const buildScanBody = (): Record<string, unknown> => {
+    const body: Record<string, unknown> = {};
+    if (mcapRange) {
+      body.min_mcap = mcapRange.min;
+      body.max_mcap = mcapRange.max;
+    }
+    body.restrict_to_traction_universe = restrictToHoldings;
+    if (scanDate.trim()) {
+      body.scan_date = scanDate;
+    }
+    return body;
+  };
+
   const triggerScan = useCallback(async () => {
     if (!mountedRef.current) return;
     setIsScanning(true);
@@ -218,15 +233,7 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
     clearPolling();
 
     try {
-      const body: Record<string, unknown> = {};
-      if (mcapRange) {
-        body.min_mcap = mcapRange.min;
-        body.max_mcap = mcapRange.max;
-      }
-      body.restrict_to_traction_universe = restrictToHoldings;
-      if (scanDate.trim()) {
-        body.scan_date = scanDate;
-      }
+      const body = buildScanBody();
       const res = await fetch(`${API_BASE}/wyckoff/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -238,6 +245,7 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
         setError(errData.detail || 'Scan failed');
         setIsScanning(false);
       } else {
+        scanParamsRef.current = { ...body };
         await fetchStatus();
         pollTimerRef.current = setInterval(fetchStatus, 2000);
       }
@@ -359,12 +367,18 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
       c.event_delivery_pct, c.vol_ratio, c.range_low_90, c.range_high_90,
       c.event_quality,
     ]);
-    const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const exportedAt = new Date().toISOString();
+    const csv = formatScannerCsv([headers.join(','), ...rows.map((r) => r.join(','))].join('\n'), {
+      scanner: 'wyckoff',
+      scanned_date: scanStatus?.scanned_date ?? scanStatus?.last_scan ?? '',
+      params: scanParamsRef.current ?? buildScanBody(),
+      exported_at: exportedAt,
+    });
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `wyckoff_automaton_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `wyckoff_automaton_${exportedAt.slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };

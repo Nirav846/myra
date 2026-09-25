@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, RefreshCw, Download, Handshake } from 'lucide-react';
 import { API_BASE } from '../config';
@@ -10,6 +10,7 @@ import {
   type TableColumn,
   type SortState
 } from '../components/ui/VirtualizedTable';
+import { formatScannerCsv } from '../lib/scannerCsv';
 
 interface CrossBuyStock {
   symbol: string; month: string;
@@ -46,9 +47,9 @@ export default function CrossBuyScannerView() {
   const [minTotalFunds, setMinTotalFunds] = useState(0);
   const [sortKey, setSortKey] = useState<SortKey>('cross_buy_ratio');
   const [sortAsc, setSortAsc] = useState(false);
+  const queryParamsRef = useRef<Record<string, unknown> | null>(null);
 
-  const fetchData = useCallback(() => {
-    setLoading(true); setError(null);
+  const buildQueryParams = useCallback(() => {
     const p = new URLSearchParams();
     if (month) p.set('month', month);
     p.set('limit', String(limit));
@@ -56,10 +57,21 @@ export default function CrossBuyScannerView() {
     if (signalTag) p.set('signal_tag', signalTag);
     if (stockCategory) p.set('stock_category', stockCategory);
     if (minTotalFunds > 0) p.set('min_total_funds', String(minTotalFunds));
-    fetch(`${API_BASE}/cross-buy/scanner?${p}`)
-      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-      .then(setData).catch(e => setError(e.message)).finally(() => setLoading(false));
+    return p;
   }, [month, limit, minRatio, signalTag, stockCategory, minTotalFunds]);
+
+  const fetchData = useCallback(() => {
+    setLoading(true); setError(null);
+    const p = buildQueryParams();
+    const queryParams = Object.fromEntries(p.entries());
+    fetch(`${API_BASE}/cross-buy/scanner?${p}`)
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        queryParamsRef.current = { ...queryParams };
+        return r.json();
+      })
+      .then(setData).catch(e => setError(e.message)).finally(() => setLoading(false));
+  }, [buildQueryParams]);
 
   useEffect(() => {
     fetch(`${API_BASE}/cross-buy/months`).then(r => r.json())
@@ -173,11 +185,18 @@ export default function CrossBuyScannerView() {
       s.stock_category || '', s.total_funds, s.large_funds, s.mid_funds, s.small_funds, s.multi_funds, s.other_funds,
       s.cross_buy_ratio != null ? (Number(s.cross_buy_ratio) * 100).toFixed(2) : '', s.signal_tag || '']);
     const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const csv = [h, ...rows].map(r => r.map(esc).join(',')).join('\n');
+    const exportedAt = new Date().toISOString();
+    const params = queryParamsRef.current ?? Object.fromEntries(buildQueryParams().entries());
+    const csv = formatScannerCsv([h, ...rows].map(r => r.map(esc).join(',')).join('\n'), {
+      scanner: 'cross-buy',
+      scanned_date: '',
+      params,
+      exported_at: exportedAt,
+    });
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url;
-    a.download = `cross_buy_${month || 'latest'}_${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+    a.download = `cross_buy_${month || 'latest'}_${exportedAt.slice(0, 10)}.csv`; a.click();
     URL.revokeObjectURL(url);
   };
 

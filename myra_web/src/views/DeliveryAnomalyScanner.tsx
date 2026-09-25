@@ -2,12 +2,13 @@ import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Librarian } from '../lib/Librarian';
 import { Box, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, ArrowUpDown, Download, X, List, LayoutGrid, Star } from 'lucide-react';
 import FundTractionButton from '../components/FundTractionButton';
-import { useDeliveryScanner, ScannerData, SummaryData } from '../hooks/useDeliveryScanner';
+import { useDeliveryScanner, normalizeLookbackDays, ScannerData, SummaryData } from '../hooks/useDeliveryScanner';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
 import ScrollableTable from '../components/ScrollableTable';
 import SignalBadge from '../components/common/SignalBadge';
+import { formatScannerCsv } from '../lib/scannerCsv';
 
 interface Preset { name: string; minDelivery: number; maxDelivery: number; minRelVol: number; lookbackDays?: number; isTrigger?: boolean }
 const PRESETS: Preset[] = [
@@ -141,6 +142,28 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
     }, [triggerSummaryData, summarySortCol, summarySortAsc]);
 
     const handleCSV = useCallback(() => {
+        const exportedAt = new Date().toISOString();
+        const effectiveLookbackDays = normalizeLookbackDays(lookbackDays);
+        const params: Record<string, unknown> = {
+            min_delivery_pct: minDeliveryPct,
+            max_delivery_pct: maxDeliveryPct,
+            min_rel_vol_score: minRelVolScore,
+            min_delivery_value_cr: minDeliveryValueCr,
+            min_volume_to_mcap: minVolumeToMcap,
+            filter_sector: filterSector,
+            symbol_search: symbolSearch,
+            filter_bucket: filterBucket,
+            ...(mcapRange && { mcap_min: mcapRange.min, mcap_max: mcapRange.max }),
+            trigger_mode: triggerMode,
+            trigger_max_days: triggerMaxDays,
+            trigger_min_strength: triggerMinStrength,
+            trigger_min_composite: triggerMinComposite,
+            trigger_min_return: triggerMinReturn,
+            trigger_require_persistence: triggerRequirePersistence,
+            lookback_days: effectiveLookbackDays,
+            ...(latestDataDate && { data_date: latestDataDate }),
+            view_mode: viewMode,
+        };
         if (viewMode === 'summary') {
             const data = triggerMode ? triggerSortedSummary : sortedSummary;
             if (data.length === 0) return;
@@ -151,12 +174,17 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                 r.avgStrength !== null ? r.avgStrength.toFixed(3) : '',
                 r.returnSinceEarliest.toFixed(1), r.close.toFixed(2), r.volume
             ].join(','));
-            const csv = [headers.join(','), ...rows].join('\n');
+            const csv = formatScannerCsv([headers.join(','), ...rows].join('\n'), {
+                scanner: 'delivery-anomaly',
+                scanned_date: latestDataDate ?? '',
+                params,
+                exported_at: exportedAt,
+            });
             const blob = new Blob([csv], { type: 'text/csv' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `delivery_anomaly_summary_${new Date().toISOString().split('T')[0]}.csv`;
+            a.download = `delivery_anomaly_summary_${exportedAt.split('T')[0]}.csv`;
             a.click();
             URL.revokeObjectURL(url);
         } else {
@@ -172,16 +200,21 @@ export default function DeliveryAnomalyScanner({ lib, onNavigate }: { lib: Libra
                 r.volume, r.sector,
                 r.delivery_value_cr.toFixed(2), r.volume_to_mcap_pct.toFixed(2)
             ].join(','));
-            const csv = [headers.join(','), ...rows].join('\n');
+            const csv = formatScannerCsv([headers.join(','), ...rows].join('\n'), {
+                scanner: 'delivery-anomaly',
+                scanned_date: latestDataDate ?? '',
+                params,
+                exported_at: exportedAt,
+            });
             const blob = new Blob([csv], { type: 'text/csv' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `delivery_anomaly_${new Date().toISOString().split('T')[0]}.csv`;
+            a.download = `delivery_anomaly_${exportedAt.split('T')[0]}.csv`;
             a.click();
             URL.revokeObjectURL(url);
         }
-    }, [viewMode, triggerMode, triggerSortedSummary, sortedSummary, triggerSortedData, sortedData]);
+    }, [viewMode, triggerMode, triggerSortedSummary, sortedSummary, triggerSortedData, sortedData, lookbackDays, latestDataDate, minDeliveryPct, maxDeliveryPct, minRelVolScore, minDeliveryValueCr, minVolumeToMcap, filterSector, symbolSearch, filterBucket, mcapRange, triggerMaxDays, triggerMinStrength, triggerMinComposite, triggerMinReturn, triggerRequirePersistence]);
 
     const applyPreset = (p: Preset) => {
         setMinDeliveryPct(p.minDelivery);

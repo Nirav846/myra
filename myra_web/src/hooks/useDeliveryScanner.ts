@@ -4,6 +4,11 @@ import { useSettings } from '../lib/SettingsContext';
 import { resolveBucket } from '../lib/bucketUtils';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
 
+/** Clamp a lookback window to the supported 1-90 day range. */
+export function normalizeLookbackDays(lookbackDays: number | string): number {
+  return Math.max(1, Math.min(90, Math.floor(Number(lookbackDays) || 30)));
+}
+
 export interface ScannerData {
     symbol: string;
     date: string;
@@ -194,7 +199,7 @@ export function useDeliveryScanner(lib: Librarian, mcapRange?: { min: number; ma
         setErrorMsg(null);
         setHasRun(true);
 
-        const safeDays = Math.max(1, Math.min(90, Math.floor(Number(lookbackDays) || 30)));
+        const safeDays = normalizeLookbackDays(lookbackDays);
 
         const anomalyQuery = `
             SELECT symbol, date, close as anomaly_close, high, low, delivery, delivery_pct,

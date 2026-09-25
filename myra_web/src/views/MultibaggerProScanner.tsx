@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { formatScannerCsv } from '../lib/scannerCsv';
 import { Librarian } from '../lib/Librarian';
 import { Rocket, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Star } from 'lucide-react';
 import FundTractionButton from '../components/FundTractionButton';
@@ -191,6 +192,7 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
   useEffect(() => { fetchMarketCapMap().then(m => mcapMapRef.current = m); }, []);
 
   const mountedRef = useRef(true);
+  const scanParamsRef = useRef<Record<string, unknown> | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const candidates = scanStatus?.candidates ?? [];
@@ -270,6 +272,15 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
     }
   }, [clearPolling]);
 
+  const buildScanBody = (): Record<string, unknown> => ({
+    base_days: baseDays,
+    min_dar: minDar,
+    target_dar: targetDar,
+    tightness_full_score_pct: tightnessFull,
+    tightness_zero_score_pct: tightnessZero,
+    ...(scanDate.trim() && { scan_date: scanDate }),
+  });
+
   const startScan = useCallback(async () => {
     if (!mountedRef.current) return;
     setIsScanning(true);
@@ -277,13 +288,15 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
     clearPolling();
 
     try {
+      const body = buildScanBody();
       const res = await fetch(`${API_BASE}/multibagger/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ base_days: baseDays, min_dar: minDar, target_dar: targetDar, tightness_full_score_pct: tightnessFull, tightness_zero_score_pct: tightnessZero, ...(scanDate.trim() && { scan_date: scanDate }) }),
+        body: JSON.stringify(body),
       });
       if (!mountedRef.current) return;
       if (res.ok) {
+        scanParamsRef.current = { ...body };
         await fetchScanStatus();
         pollTimerRef.current = setInterval(fetchScanStatus, 2000);
       } else {
@@ -318,12 +331,18 @@ export default function MultibaggerProScannerView({ lib }: { lib: Librarian }) {
       r.volume_ratio, r.delivery_slope, r.composite_score, r.grade,
       r.entry, r.sl, r.t1, r.t2, r.t3 ?? '', r.status,
     ].join(','));
-    const csv = [headers.join(','), ...rows].join('\n');
+    const exportedAt = new Date().toISOString();
+    const csv = formatScannerCsv([headers.join(','), ...rows].join('\n'), {
+      scanner: 'multibagger-pro-scanner',
+      scanned_date: scanStatus?.last_scan ?? '',
+      params: scanParamsRef.current ?? buildScanBody(),
+      exported_at: exportedAt,
+    });
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `multibagger_pro_${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `multibagger_pro_${exportedAt.split('T')[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };

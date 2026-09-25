@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { formatScannerCsv } from '../lib/scannerCsv';
 import { Librarian } from '../lib/Librarian';
 import { Box, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Star, Check, X, Info } from 'lucide-react';
 import FundTractionButton from '../components/FundTractionButton';
@@ -90,6 +91,7 @@ export default function OperatorFingerprintScannerView({ lib }: { lib: Librarian
   useEffect(() => { fetchMarketCapMap().then(m => mcapMapRef.current = m); }, []);
 
   const mountedRef = useRef(true);
+  const scanParamsRef = useRef<Record<string, unknown> | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const candidates = scanStatus?.candidates ?? [];
@@ -169,6 +171,12 @@ export default function OperatorFingerprintScannerView({ lib }: { lib: Librarian
     }
   }, [clearPolling]);
 
+  const buildScanBody = (): Record<string, unknown> => ({
+    min_mcap: mcapRange?.min ?? 200,
+    max_mcap: mcapRange?.max ?? 50000,
+    ...(scanDate.trim() && { scan_date: scanDate }),
+  });
+
   const startScan = useCallback(async () => {
     if (!mountedRef.current) return;
     setIsScanning(true);
@@ -176,17 +184,15 @@ export default function OperatorFingerprintScannerView({ lib }: { lib: Librarian
     clearPolling();
 
     try {
+      const body = buildScanBody();
       const res = await fetch(`${API_BASE}/operator-fingerprint/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          min_mcap: mcapRange?.min ?? 200,
-          max_mcap: mcapRange?.max ?? 50000,
-          ...(scanDate.trim() && { scan_date: scanDate }),
-        }),
+        body: JSON.stringify(body),
       });
       if (!mountedRef.current) return;
       if (res.ok) {
+        scanParamsRef.current = { ...body };
         await fetchScanStatus();
         pollTimerRef.current = setInterval(fetchScanStatus, 2000);
       } else {
@@ -225,12 +231,18 @@ export default function OperatorFingerprintScannerView({ lib }: { lib: Librarian
       r.quiet_accum_days, r.volume_staircase, r.base_duration_days, r.coil_tension_score,
       r.close, r.atr_old_pct, r.atr_new_pct, r.grade,
     ].join(','));
-    const csv = [headers.join(','), ...rows].join('\n');
+    const exportedAt = new Date().toISOString();
+    const csv = formatScannerCsv([headers.join(','), ...rows].join('\n'), {
+      scanner: 'operator-fingerprint',
+      scanned_date: scanStatus?.scanned_date ?? scanStatus?.last_scan ?? '',
+      params: scanParamsRef.current ?? buildScanBody(),
+      exported_at: exportedAt,
+    });
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `operator_fingerprint_${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `operator_fingerprint_${exportedAt.split('T')[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };

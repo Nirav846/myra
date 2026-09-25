@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { formatScannerCsv } from '../lib/scannerCsv';
 import { Librarian } from '../lib/Librarian';
 import { Box, AlertTriangle, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Info } from 'lucide-react';
 import FundTractionButton from '../components/FundTractionButton';
@@ -65,6 +66,7 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
   const [sortAsc, setSortAsc] = useState(false);
 
   const mountedRef = useRef(true);
+  const scanParamsRef = useRef<Record<string, unknown> | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startScanRef = useRef<(() => void) | null>(null);
 
@@ -128,6 +130,11 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
     }
   }, [clearPolling]);
 
+  const buildScanBody = (): Record<string, unknown> => ({
+    min_adtv_cr: Number(minAdtvCr) || 1.0,
+    ...(scanDate.trim() && { scan_date: scanDate }),
+  });
+
   const startScan = useCallback(async () => {
     if (!mountedRef.current) return;
     setIsScanning(true);
@@ -135,16 +142,15 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
     clearPolling();
 
     try {
+      const body = buildScanBody();
       const res = await fetch(`${API_BASE}/climax-accumulation/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          min_adtv_cr: Number(minAdtvCr) || 1.0,
-          ...(scanDate.trim() && { scan_date: scanDate }),
-        }),
+        body: JSON.stringify(body),
       });
       if (!mountedRef.current) return;
       if (res.ok) {
+        scanParamsRef.current = { ...body };
         await fetchScanStatus();
         pollTimerRef.current = setInterval(fetchScanStatus, 2000);
       } else {
@@ -184,12 +190,18 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
       r.second_chance ? 'YES' : '',
       r.days_to_lowest ?? '',
     ].join(','));
-    const csv = [headers.join(','), ...rows].join('\n');
+    const exportedAt = new Date().toISOString();
+    const csv = formatScannerCsv([headers.join(','), ...rows].join('\n'), {
+      scanner: 'climax-accumulation',
+      scanned_date: scanStatus?.scanned_date ?? scanStatus?.last_scan ?? '',
+      params: scanParamsRef.current ?? buildScanBody(),
+      exported_at: exportedAt,
+    });
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `climax_accumulation_${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `climax_accumulation_${exportedAt.split('T')[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };

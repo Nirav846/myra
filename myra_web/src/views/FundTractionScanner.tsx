@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, RefreshCw, Download, ArrowUpDown, Filter, TrendingUp, TrendingDown, Minus, Loader2, BarChart3 } from 'lucide-react';
 import { API_BASE } from '../config';
 import SignalBadge from '../components/common/SignalBadge';
+import { formatScannerCsv } from '../lib/scannerCsv';
 
 interface Stock {
   symbol: string; month: string; traction_score: number | null;
@@ -79,6 +80,7 @@ export default function FundTractionScannerView() {
   const [showQuality, setShowQuality] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('traction_score');
   const [sortAsc, setSortAsc] = useState(false);
+  const queryParamsRef = useRef<Record<string, unknown> | null>(null);
 
   const applyMcapPreset = (preset: string) => {
     setMcapPreset(preset);
@@ -88,8 +90,7 @@ export default function FundTractionScannerView() {
     else { setMcapMin(0); setMcapMax(0); }
   };
 
-  const fetchData = useCallback(() => {
-    setLoading(true); setError(null);
+  const buildQueryParams = useCallback(() => {
     const p = new URLSearchParams();
     if (month) p.set('month', month);
     p.set('limit', String(limit));
@@ -103,10 +104,21 @@ export default function FundTractionScannerView() {
     if (minRoe > 0) p.set('min_roe', String(minRoe));
     if (minMargin > 0) p.set('min_net_margin', String(minMargin));
     if (minMomentum > 0) p.set('min_momentum', String(minMomentum));
-    fetch(`${API_BASE}/fund-traction/scanner?${p}`)
-      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-      .then(setData).catch(e => setError(e.message)).finally(() => setLoading(false));
+    return p;
   }, [month, limit, minScore, minFunds, minAdds, selectedSectors, mcapMin, mcapMax, nifty500Only, minRoe, minMargin, minMomentum]);
+
+  const fetchData = useCallback(() => {
+    setLoading(true); setError(null);
+    const p = buildQueryParams();
+    const queryParams = Object.fromEntries(p.entries());
+    fetch(`${API_BASE}/fund-traction/scanner?${p}`)
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        queryParamsRef.current = { ...queryParams };
+        return r.json();
+      })
+      .then(setData).catch(e => setError(e.message)).finally(() => setLoading(false));
+  }, [buildQueryParams]);
 
   useEffect(() => {
     fetch(`${API_BASE}/fund-traction/months`).then(r => r.json())
@@ -147,7 +159,14 @@ export default function FundTractionScannerView() {
       s.reduces_closes, (s.adds_new ?? 0) - (s.reduces_closes ?? 0), s.close_latest, s.sma_30,
       s.market_cap ? (s.market_cap/1e7).toFixed(0) : '',
       s.sector||'', s.roe, s.net_margin, s.pe, s.quality_score]);
-    const csv = [h, ...rows].map(r => r.join(',')).join('\n');
+    const exportedAt = new Date().toISOString();
+    const params = queryParamsRef.current ?? Object.fromEntries(buildQueryParams().entries());
+    const csv = formatScannerCsv([h, ...rows].map(r => r.join(',')).join('\n'), {
+      scanner: 'fund-traction',
+      scanned_date: '',
+      params,
+      exported_at: exportedAt,
+    });
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `fund_traction_${month||'latest'}.csv`; a.click();

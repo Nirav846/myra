@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { formatScannerCsv } from '../lib/scannerCsv';
 import { RefreshCw, Download, ChevronUp, ChevronDown, ArrowUpDown, Settings2, Info, Zap, Target, Building2 } from 'lucide-react';
 import FundTractionButton from '../components/FundTractionButton';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
@@ -123,6 +124,7 @@ export default function SmartMoneyBargainView() {
   useEffect(() => { fetchMarketCapMap().then(m => mcapMapRef.current = m); }, []);
 
   const mountedRef = useRef(true);
+  const scanParamsRef = useRef<Record<string, unknown> | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const candidates = scanStatus?.candidates ?? [];
@@ -225,24 +227,29 @@ export default function SmartMoneyBargainView() {
     }
   }, [clearPolling]);
 
+  const buildScanBody = (): Record<string, unknown> => ({
+    min_discount_pct: showNearMisses ? 10 : minDiscountPct,
+    min_traction_score: showNearMisses ? 10 : minTractionScore,
+    max_pct_vs_sma: maxPctVsSma,
+    filter_pct_vs_sma: filterPctVsSma,
+    traction_window: tractionWindow,
+    traction_aggregation: tractionAggregation,
+    restrict_to_traction_universe: restrictToHoldings,
+  });
+
   const startScan = useCallback(async () => {
     setIsScanning(true);
     setError(null);
     try {
-      const payload = {
-        min_discount_pct: showNearMisses ? 10 : minDiscountPct,
-        min_traction_score: showNearMisses ? 10 : minTractionScore,
-        max_pct_vs_sma: maxPctVsSma,
-        filter_pct_vs_sma: filterPctVsSma,
-        traction_window: tractionWindow,
-        traction_aggregation: tractionAggregation,
-        restrict_to_traction_universe: restrictToHoldings,
-      };
-      await fetch(`${API_BASE}/smart-money-bargain/scan`, {
+      const body = buildScanBody();
+      const res = await fetch(`${API_BASE}/smart-money-bargain/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(body),
       });
+      if (res.ok) {
+        scanParamsRef.current = { ...body };
+      }
       // Start polling
       pollTimerRef.current = setInterval(fetchScanStatus, 2000);
       fetchScanStatus();
@@ -284,7 +291,13 @@ export default function SmartMoneyBargainView() {
       r.net_adds ?? '', r.pct_vs_sma_traction ?? r.pct_vs_sma ?? '', r.del_abs, r.adtv_cr,
       r.combined_score, r.tier,
     ]);
-    const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+    const exportedAt = new Date().toISOString();
+    const csv = formatScannerCsv([headers, ...rows].map(r => r.join(',')).join('\n'), {
+      scanner: 'smart-money-bargain',
+      scanned_date: scanStatus?.scanned_date ?? scanStatus?.last_scan ?? '',
+      params: scanParamsRef.current ?? buildScanBody(),
+      exported_at: exportedAt,
+    });
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');

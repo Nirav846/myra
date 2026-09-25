@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { formatScannerCsv } from '../lib/scannerCsv';
 import { Librarian } from '../lib/Librarian';
 import { GitCompare, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, ArrowUpDown, ArrowUpRight } from 'lucide-react';
 import FundTractionButton from '../components/FundTractionButton';
@@ -113,6 +114,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
   const [filtersVisible, setFiltersVisible] = useState(() => localStorage.getItem('pdd_filters_visible') !== 'false');
 
   const mountedRef = useRef(true);
+  const scanParamsRef = useRef<Record<string, unknown> | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startScanRef = useRef<(() => void) | null>(null);
   const mcapMapRef = useRef<Map<string, number>>(new Map());
@@ -219,6 +221,24 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
   }, [clearPolling]);
 
   // Start scan
+  const buildScanBody = (): Record<string, unknown> => {
+    const body: Record<string, unknown> = {};
+    if (horizon) body.horizon = horizon;
+    else {
+      body.price_lookback = priceLookback;
+      body.delivery_period = deliveryPeriod;
+      body.delivery_threshold = deliveryThreshold;
+    }
+    if (mcapRange) {
+      body.min_mcap = mcapRange.min;
+      body.max_mcap = mcapRange.max;
+    }
+    if (minAbsDeliveryPct > 0) body.min_abs_delivery_pct = minAbsDeliveryPct;
+    if (minAdtvCr > 0) body.min_adtv_cr = minAdtvCr;
+    if (scanDate.trim()) body.scan_date = scanDate;
+    return body;
+  };
+
   const startScan = useCallback(async () => {
     if (!mountedRef.current) return;
     setIsScanning(true);
@@ -226,21 +246,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
     clearPolling();
 
     try {
-      const body: Record<string, any> = {};
-      if (horizon) body.horizon = horizon;
-      else {
-        body.price_lookback = priceLookback;
-        body.delivery_period = deliveryPeriod;
-        body.delivery_threshold = deliveryThreshold;
-      }
-      if (mcapRange) {
-        body.min_mcap = mcapRange.min;
-        body.max_mcap = mcapRange.max;
-      }
-      if (minAbsDeliveryPct > 0) body.min_abs_delivery_pct = minAbsDeliveryPct;
-      if (minAdtvCr > 0) body.min_adtv_cr = minAdtvCr;
-      if (scanDate.trim()) body.scan_date = scanDate;
-
+      const body = buildScanBody();
       const res = await fetch(`${API_BASE}/delivery-divergence/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -248,6 +254,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
       });
       if (!mountedRef.current) return;
       if (res.ok) {
+        scanParamsRef.current = { ...body };
         await fetchScanStatus();
         pollTimerRef.current = setInterval(fetchScanStatus, 2000);
       } else {
@@ -281,15 +288,21 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
       d.delivery_change, d.divergence_strength, d.score, d.horizon,
       d.price_lookback, d.delivery_period, d.delivery_threshold,
     ]);
-    const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+    const exportedAt = new Date().toISOString();
+    const csv = formatScannerCsv([headers, ...rows].map(r => r.join(',')).join('\n'), {
+      scanner: 'price-delivery-divergence',
+      scanned_date: scanStatus?.scanned_date ?? scanStatus?.last_scan ?? '',
+      params: scanParamsRef.current ?? buildScanBody(),
+      exported_at: exportedAt,
+    });
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `divergence_scan_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `divergence_scan_${exportedAt.slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [filteredData]);
+  }, [filteredData, scanStatus, buildScanBody]);
 
   // Mount
   useEffect(() => {

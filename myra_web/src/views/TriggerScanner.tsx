@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { formatScannerCsv } from '../lib/scannerCsv';
 import { Librarian } from '../lib/Librarian';
 import { Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Star, Zap, BookOpen, ChevronRight, Info, ExternalLink, BarChart3, ListPlus } from 'lucide-react';
 import FundTractionButton from '../components/FundTractionButton';
@@ -102,6 +103,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
   useEffect(() => { fetchMarketCapMap().then(m => mcapMapRef.current = m); }, []);
 
   const mountedRef = useRef(true);
+  const scanParamsRef = useRef<Record<string, unknown> | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const candidates = scanStatus?.candidates ?? [];
@@ -182,6 +184,16 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
     }
   }, [clearPolling]);
 
+  const buildScanBody = (): Record<string, unknown> => ({
+    min_mcap: mcapRange?.min ?? 300,
+    max_mcap: mcapRange?.max ?? 50000,
+    min_float_util_pct: minFloatUtilPct,
+    vol_pinch_ratio: volPinchRatio,
+    price_range_max_pct: priceRangeMax,
+    min_smart_float_ratio: minSmartFloatRatio,
+    ...(scanDate.trim() && { scan_date: scanDate }),
+  });
+
   const startScan = useCallback(async () => {
     if (!mountedRef.current) return;
     setIsScanning(true);
@@ -189,21 +201,15 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
     clearPolling();
 
     try {
+      const body = buildScanBody();
       const res = await fetch(`${API_BASE}/trigger/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          min_mcap: mcapRange?.min ?? 300,
-          max_mcap: mcapRange?.max ?? 50000,
-          min_float_util_pct: minFloatUtilPct,
-          vol_pinch_ratio: volPinchRatio,
-          price_range_max_pct: priceRangeMax,
-          min_smart_float_ratio: minSmartFloatRatio,
-          ...(scanDate.trim() && { scan_date: scanDate }),
-        }),
+        body: JSON.stringify(body),
       });
       if (!mountedRef.current) return;
       if (res.ok) {
+        scanParamsRef.current = { ...body };
         await fetchScanStatus();
         pollTimerRef.current = setInterval(fetchScanStatus, 2000);
       } else {
@@ -242,12 +248,18 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
       r.base_duration, r.breakout_prox, r.trigger_score, r.grade,
       r.close, r.wk52_pos,
     ].join(','));
-    const csv = [headers.join(','), ...rows].join('\n');
+    const exportedAt = new Date().toISOString();
+    const csv = formatScannerCsv([headers.join(','), ...rows].join('\n'), {
+      scanner: 'trigger',
+      scanned_date: scanStatus?.scanned_date ?? scanStatus?.last_scan ?? '',
+      params: scanParamsRef.current ?? buildScanBody(),
+      exported_at: exportedAt,
+    });
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `trigger_${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `trigger_${exportedAt.split('T')[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };

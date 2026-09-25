@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { formatScannerCsv } from '../lib/scannerCsv';
 import { Librarian } from '../lib/Librarian';
 import { Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ChevronRight, ArrowUpDown, Star, Info, Target, Settings2, Building2 } from 'lucide-react';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
@@ -150,6 +151,7 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
   useEffect(() => { fetchMarketCapMap().then(m => mcapMapRef.current = m); }, []);
 
   const mountedRef = useRef(true);
+  const scanParamsRef = useRef<Record<string, unknown> | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const clearCacheTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startScanRef = useRef<(() => void) | null>(null);
@@ -229,6 +231,27 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
     }
   }, [clearPolling]);
 
+  const buildScanBody = (): Record<string, unknown> => ({
+    min_mcap: mcapRange?.min ?? 200,
+    max_mcap: mcapRange?.max ?? 50000,
+    dcb_window: dcbWindow,
+    min_discount_pct: minDiscountPct,
+    max_discount_pct: maxDiscountPct,
+    min_del_abs: minDelAbs,
+    min_adtv_cr: minAdtvCr,
+    min_high_del_days: minHighDelDays,
+    sanity_mult: sanityMult,
+    timeframe,
+    min_ff_mcap: minFfMcap,
+    exclude_circuits: excludeCircuits,
+    corporate_actions_exclude_days: caExcludeEnabled ? caExcludeDays : 0,
+    min_traction_score: 0,
+    restrict_to_traction_universe: restrictToHoldings,
+    traction_window: tractionWindow,
+    traction_aggregation: tractionAggregation,
+    ...(scanDate.trim() && { scan_date: scanDate }),
+  });
+
   const startScan = useCallback(async () => {
     if (!mountedRef.current) return;
     setIsScanning(true);
@@ -236,32 +259,15 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
     clearPolling();
 
     try {
+      const body = buildScanBody();
       const res = await fetch(`${API_BASE}/dcb-bargain/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          min_mcap: mcapRange?.min ?? 200,
-          max_mcap: mcapRange?.max ?? 50000,
-          dcb_window: dcbWindow,
-          min_discount_pct: minDiscountPct,
-          max_discount_pct: maxDiscountPct,
-          min_del_abs: minDelAbs,
-          min_adtv_cr: minAdtvCr,
-          min_high_del_days: minHighDelDays,
-          sanity_mult: sanityMult,
-          timeframe,
-          min_ff_mcap: minFfMcap,
-          exclude_circuits: excludeCircuits,
-          corporate_actions_exclude_days: caExcludeEnabled ? caExcludeDays : 0,
-          min_traction_score: 0,
-          restrict_to_traction_universe: restrictToHoldings,
-          traction_window: tractionWindow,
-          traction_aggregation: tractionAggregation,
-          ...(scanDate.trim() && { scan_date: scanDate }),
-        }),
+        body: JSON.stringify(body),
       });
       if (!mountedRef.current) return;
       if (res.ok) {
+        scanParamsRef.current = { ...body };
         await fetchScanStatus();
         pollTimerRef.current = setInterval(fetchScanStatus, 2000);
       } else {
@@ -358,15 +364,21 @@ export default function DCBBargainView({ lib }: { lib: Librarian }) {
       r.circuit_days_last_5 ?? 0,
       r.del_abs.toFixed(2), r.timeframe ?? 'daily',
     ].join(','));
-    const csv = [headers.join(','), ...rows].join('\n');
+    const exportedAt = new Date().toISOString();
+    const csv = formatScannerCsv([headers.join(','), ...rows].join('\n'), {
+      scanner: 'dcb-bargain',
+      scanned_date: scanStatus?.scanned_date ?? scanStatus?.last_scan ?? '',
+      params: scanParamsRef.current ?? buildScanBody(),
+      exported_at: exportedAt,
+    });
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `dcb_bargain_${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `dcb_bargain_${exportedAt.split('T')[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [filteredData]);
+  }, [filteredData, scanStatus, buildScanBody]);
 
   const progressPct = scanStatus?.progress ?? 0;
   const isIdle = scanStatus?.scan_status === 'idle' || !scanStatus;

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { formatScannerCsv } from '../lib/scannerCsv';
 import { Librarian } from '../lib/Librarian';
 import { Box, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock, XCircle, Download, ChevronUp, ChevronDown, ArrowUpDown, Star, Info } from 'lucide-react';
 import FundTractionButton from '../components/FundTractionButton';
@@ -115,6 +116,7 @@ export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
   useEffect(() => { fetchMarketCapMap().then(m => mcapMapRef.current = m); }, []);
 
   const mountedRef = useRef(true);
+  const scanParamsRef = useRef<Record<string, unknown> | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const presetScanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startScanRef = useRef<(() => void) | null>(null);
@@ -196,6 +198,13 @@ export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
     }
   }, [clearPolling]);
 
+  const buildScanBody = (): Record<string, unknown> => ({
+    ...PRESETS[activePreset],
+    min_mcap: mcapRange?.min ?? 200,
+    max_mcap: mcapRange?.max ?? 50000,
+    ...(scanDate.trim() && { scan_date: scanDate }),
+  });
+
   const startScan = useCallback(async () => {
     if (!mountedRef.current) return;
     setIsScanning(true);
@@ -203,19 +212,15 @@ export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
     clearPolling();
 
     try {
-      const preset = PRESETS[activePreset];
+      const body = buildScanBody();
       const res = await fetch(`${API_BASE}/liquidity-flip/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...preset,
-          min_mcap: mcapRange?.min ?? 200,
-          max_mcap: mcapRange?.max ?? 50000,
-          ...(scanDate.trim() && { scan_date: scanDate }),
-        }),
+        body: JSON.stringify(body),
       });
       if (!mountedRef.current) return;
       if (res.ok) {
+        scanParamsRef.current = { ...body };
         await fetchScanStatus();
         pollTimerRef.current = setInterval(fetchScanStatus, 2000);
       } else {
@@ -265,12 +270,18 @@ export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
       r.flip_type, r.prior_vol_rank, r.close,
       r.wk52_pos, r.flip_score, r.grade,
     ].join(','));
-    const csv = [headers.join(','), ...rows].join('\n');
+    const exportedAt = new Date().toISOString();
+    const csv = formatScannerCsv([headers.join(','), ...rows].join('\n'), {
+      scanner: 'liquidity-flip',
+      scanned_date: scanStatus?.scanned_date ?? scanStatus?.last_scan ?? '',
+      params: scanParamsRef.current ?? buildScanBody(),
+      exported_at: exportedAt,
+    });
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `liquidity_flip_${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `liquidity_flip_${exportedAt.split('T')[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
