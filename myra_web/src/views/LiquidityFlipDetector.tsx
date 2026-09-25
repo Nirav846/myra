@@ -30,7 +30,6 @@ interface Candidate {
   flip_type: string;
   flip_score: number;
   grade: string;
-  prior_vol_rank: number;
   close: number;
   wk52_pos: number;
   avg_del_value_cr?: number;
@@ -259,7 +258,7 @@ export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
     if (filteredData.length === 0) return;
     const headers = [
       'Symbol', 'Sector', 'Market Cap Cr', 'Confidence', 'Prior Del%', 'Current Del%', 'Jump(pp)',
-      'Del50 Days', 'Del Val (₹ Cr)', 'Consistency%', 'SMA-200', 'Flip Type', 'Vol Rank', 'Close',
+      'Del50 Days', 'Del Val (₹ Cr)', 'Consistency%', 'SMA-200', 'Flip Type', 'Close',
       '52W Pos%', 'Score', 'Grade',
     ];
     const rows = filteredData.map(r => [
@@ -267,7 +266,7 @@ export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
       r.del_jump_pp, r.del50_days,
       r.avg_del_value_cr?.toFixed(1) ?? '', r.flip_consistency ?? '',
       r.sma_200 != null ? ((r.close ?? 0) >= r.sma_200 ? 'Above' : 'Below') : '',
-      r.flip_type, r.prior_vol_rank, r.close,
+      r.flip_type, r.close,
       r.wk52_pos, r.flip_score, r.grade,
     ].join(','));
     const exportedAt = new Date().toISOString();
@@ -588,9 +587,6 @@ export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
                     <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-center cursor-pointer hover:text-white" onClick={() => handleSort('flip_type')} scope="col">
                       Flip Type <SortIcon column="flip_type" />
                     </th>
-                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('prior_vol_rank')} scope="col">
-                      <Tooltip content="Volume rank vs universe median. >1.5 = high volume churner — more meaningful when flip occurs.">Vol Rank <SortIcon column="prior_vol_rank" /></Tooltip>
-                    </th>
                     <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('close')} scope="col">
                       Close <SortIcon column="close" />
                     </th>
@@ -668,7 +664,6 @@ export default function LiquidityFlipDetectorView({ lib }: { lib: Librarian }) {
                             {row.flip_type === 'STRONG FLIP' ? 'STRONG' : row.flip_type === 'MODERATE FLIP' ? 'MOD' : row.flip_type === 'EARLY FLIP' ? 'EARLY' : row.flip_type}
                           </span>
                         </td>
-                        <td className="px-3 py-3 text-right text-[#ccc]">{row.prior_vol_rank.toFixed(2)}</td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.close.toFixed(2)}</td>
                         <td className="px-3 py-3 text-right">
                           <span className={row.wk52_pos < 80 ? 'text-green-400' : row.wk52_pos < 90 ? 'text-yellow-400' : 'text-[#888]'}>

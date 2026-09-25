@@ -291,11 +291,6 @@ class LiquidityFlipDetector:
                     np.sum(recent["delivery_pct"] > 50) / self.recent_window * 100
                 )
 
-                # Volume rank vs universe
-                prior_vol_rank = avg_vol_prior / (
-                    np.nanmean(prior_df["volume"].values.astype(float)) or 1
-                )
-
                 # Flip score
                 flip_score = (
                     (
@@ -358,7 +353,6 @@ class LiquidityFlipDetector:
                         "sma_200_factor": round(sma_200_factor, 2),
                         "flip_score": round(flip_score, 1),
                         "grade": grade,
-                        "prior_vol_rank": round(prior_vol_rank, 2),
                         "close": round(latest_close, 2),
                         "wk52_pos": round(wk52_pos, 1),
                     }
@@ -373,7 +367,6 @@ class LiquidityFlipDetector:
             "current_del_pct",
             "del_jump_pp",
             "flip_score",
-            "prior_vol_rank",
             "close",
             "wk52_pos",
             "avg_del_value_cr",
