@@ -251,7 +251,9 @@ class SuperBreakoutScanner:
             min_date = f"{(pd.Timestamp(as_of) - pd.Timedelta(days=545)):%Y-%m-%d}"
         else:
             min_date = self._db_min_date()
-        self._bulk_data = load_ohlcv_for_universe(min_date, as_of, list(u[0] for u in universe))
+        self._bulk_data = load_ohlcv_for_universe(
+            min_date, as_of, list(u[0] for u in universe)
+        )
 
         # ── Canonical signal detection (same function as backtest) ───
         tech_db = self._db_path("technical")
@@ -272,161 +274,178 @@ class SuperBreakoutScanner:
             conn_meta = connect_meta(self.state_db)
             persisted = load_positions(conn_meta)
 
-        # Detect new signals
-        univ_by_date: dict[str, list[str]] = {}
-        for sym, _, _ in universe:
-            # Collect all trading dates this symbol appears on
-            pass  # placeholder — signals are detected below per-symbol
-
         # Process each symbol
         candidates: list[dict] = []
         final_state: dict[str, dict] = {}
         exited_symbols: list[str] = []
 
         for sym, mcap_rank, mcap_cr in universe:
-            rows = self._get_tech_data(sym, min_date, max_date=as_of)
-            if len(rows) < SMA_SLOW + 1:
-                continue
-
-            dates = [r[0] for r in rows]
-            closes = np.array([r[4] for r in rows], dtype=float)
-            delivery_vals = np.array(
-                [float(r[6]) if r[6] is not None else 0.0 for r in rows], dtype=float
-            )
-
-            # Compute SMA(50) and SMA(200) for display and stop-level
-            sma50_arr = _rolling_mean(closes, SMA_FAST)
-            sma200_arr = _rolling_mean(closes, SMA_SLOW)
-            cur_sma50 = float(sma50_arr[-1]) if not np.isnan(sma50_arr[-1]) else None
-            cur_sma200 = float(sma200_arr[-1]) if not np.isnan(sma200_arr[-1]) else None
-            # Stop level = SMA(50) in both phases (protective + trailing both reference it)
-            stop_level = cur_sma50
-
-            # ── Gap replay for active positions (O3) ────────────────
-            pos = persisted.get(sym)
-            if pos and is_live:
-                entry_date = pos["entry_date"]
-                entry_price = pos["entry_price"]
-                ever_activated = pos["ever_activated"]
-                highest_close = pos["highest_close"]
-
-                # Find entry_idx in the loaded window
-                if entry_date in dates:
-                    entry_idx = dates.index(entry_date)
-                else:
-                    # Entry date not in window — position too old, skip
+            try:
+                rows = self._get_tech_data(sym, min_date, max_date=as_of)
+                if len(rows) < SMA_SLOW + 1:
                     continue
 
-                # Build a DataFrame for the exit evaluator
-                pos_df = pd.DataFrame({
-                    "date": pd.to_datetime(dates[entry_idx:]),
-                    "close": closes[entry_idx:],
-                    "high": np.array([r[2] for r in rows[entry_idx:]], dtype=float),
-                    "low": np.array([r[3] for r in rows[entry_idx:]], dtype=float),
-                })
+                dates = [r[0] for r in rows]
+                closes = np.array([r[4] for r in rows], dtype=float)
+                delivery_vals = np.array(
+                    [float(r[6]) if r[6] is not None else 0.0 for r in rows],
+                    dtype=float,
+                )
 
-                # Seed the evaluator's activation state by replaying
-                # If ever_activated is already True, the evaluator will
-                # re-discover it (harmless); if False, it checks whether
-                # activation happened in the gap.
-                exit_idx, reason = _exit_ma_trailing(pos_df, 0, SMA_FAST)
+                # Compute SMA(50) and SMA(200) for display and stop-level
+                sma50_arr = _rolling_mean(closes, SMA_FAST)
+                sma200_arr = _rolling_mean(closes, SMA_SLOW)
+                cur_sma50 = (
+                    float(sma50_arr[-1]) if not np.isnan(sma50_arr[-1]) else None
+                )
+                cur_sma200 = (
+                    float(sma200_arr[-1]) if not np.isnan(sma200_arr[-1]) else None
+                )
+                # Stop level = SMA(50) in both phases (protective + trailing both reference it)
+                stop_level = cur_sma50
 
-                if exit_idx > 0:
-                    # Position was held through some gap days
-                    exit_price = float(pos_df["close"].iloc[exit_idx])
-                    # Scalar Timestamp — .dt accessor N/A; NaT-raise behavior is intentional here.
-                    exit_date_str = pos_df["date"].iloc[exit_idx].strftime("%Y-%m-%d")  # noqa: PG-STRFTIME
+                # ── Gap replay for active positions (O3) ────────────────
+                pos = persisted.get(sym)
+                if pos and is_live:
+                    entry_date = pos["entry_date"]
+                    entry_price = pos["entry_price"]
+                    ever_activated = pos["ever_activated"]
+                    highest_close = pos["highest_close"]
 
-                # Determine if position survived to as_of
-                last_close = float(closes[-1])
-                last_date = dates[-1]
+                    # Find entry_idx in the loaded window
+                    if entry_date in dates:
+                        entry_idx = dates.index(entry_date)
+                    else:
+                        # Entry date not in window — position too old, skip
+                        continue
 
-                # Re-run evaluator to check final state
-                exit_idx_final, reason_final = _exit_ma_trailing(pos_df, 0, SMA_FAST)
-                exited_on_latest = (exit_idx_final == len(pos_df) - 1) and reason_final != "ma_trail_eod"
+                    # Build a DataFrame for the exit evaluator
+                    pos_df = pd.DataFrame(
+                        {
+                            "date": pd.to_datetime(dates[entry_idx:]),
+                            "close": closes[entry_idx:],
+                            "high": np.array(
+                                [r[2] for r in rows[entry_idx:]], dtype=float
+                            ),
+                            "low": np.array(
+                                [r[3] for r in rows[entry_idx:]], dtype=float
+                            ),
+                        }
+                    )
 
-                if not exited_on_latest and reason_final != "ma_trail_eod":
-                    # Exited somewhere in the gap — record the exit
-                    exit_close = float(pos_df["close"].iloc[exit_idx_final])
-                    # Scalar Timestamp — .dt accessor N/A; NaT-raise behavior is intentional here.
-                    exit_d = pos_df["date"].iloc[exit_idx_final].strftime("%Y-%m-%d")  # noqa: PG-STRFTIME
-                    pnl_pct = (exit_close / entry_price - 1) * 100
-                    candidates.append({
-                        "symbol": sym,
-                        "phase": "EXITED",
+                    # Determine if position survived to as_of
+                    last_close = float(closes[-1])
+                    last_date = dates[-1]
+
+                    # Run the exit evaluator to check the final state
+                    exit_idx, reason = _exit_ma_trailing(pos_df, 0, SMA_FAST)
+                    exited_on_latest = (
+                        exit_idx == len(pos_df) - 1
+                    ) and reason != "ma_trail_eod"
+
+                    if not exited_on_latest and reason != "ma_trail_eod":
+                        # Exited somewhere in the gap — record the exit
+                        exit_close = float(pos_df["close"].iloc[exit_idx])
+                        # Scalar Timestamp — .dt accessor N/A; NaT-raise behavior is intentional here.
+                        exit_date = pos_df["date"].iloc[exit_idx]
+                        exit_d = exit_date.strftime("%Y-%m-%d")  # noqa: PG-STRFTIME
+                        pnl_pct = (exit_close / entry_price - 1) * 100
+                        candidates.append(
+                            {
+                                "symbol": sym,
+                                "phase": "EXITED",
+                                "entry_date": entry_date,
+                                "entry_price": entry_price,
+                                "exit_date": exit_d,
+                                "exit_price": exit_close,
+                                "exit_reason": reason,
+                                "pnl_pct": round(pnl_pct, 2),
+                                "n_hold_days": (
+                                    pd.Timestamp(exit_d) - pd.Timestamp(entry_date)
+                                ).days,
+                                "delivery_value": float(delivery_vals[-1]),
+                                "mcap_rank": mcap_rank,
+                                "mcap_cr": mcap_cr,
+                            }
+                        )
+                        exited_symbols.append(sym)
+                        continue
+
+                    # Position still held — update state
+                    new_highest = max(highest_close, float(pos_df["close"].max()))
+                    # Check if ever activated during the gap
+                    activation_price = entry_price * 1.02
+                    activated_in_gap = bool(
+                        np.any(closes[entry_idx:] >= activation_price)
+                    )
+
+                    final_state[sym] = {
                         "entry_date": entry_date,
                         "entry_price": entry_price,
-                        "exit_date": exit_d,
-                        "exit_price": exit_close,
-                        "exit_reason": reason_final,
-                        "pnl_pct": round(pnl_pct, 2),
-                        "n_hold_days": (pd.Timestamp(exit_d) - pd.Timestamp(entry_date)).days,
-                        "delivery_value": float(delivery_vals[-1]),
-                        "mcap_rank": mcap_rank,
-                        "mcap_cr": mcap_cr,
-                    })
-                    exited_symbols.append(sym)
+                        "ever_activated": ever_activated or activated_in_gap,
+                        "highest_close": new_highest,
+                    }
+
+                    # Surface as candidate
+                    current_pnl = (last_close / entry_price - 1) * 100
+                    phase = (
+                        "TRAILING"
+                        if (ever_activated or activated_in_gap)
+                        else "PENDING"
+                    )
+                    candidates.append(
+                        {
+                            "symbol": sym,
+                            "phase": phase,
+                            "entry_date": entry_date,
+                            "entry_price": entry_price,
+                            "current_price": last_close,
+                            "activation_target": round(entry_price * 1.02, 2),
+                            "pnl_pct": round(current_pnl, 2),
+                            "n_hold_days": (
+                                pd.Timestamp(last_date) - pd.Timestamp(entry_date)
+                            ).days,
+                            "delivery_value": float(delivery_vals[-1]),
+                            "mcap_rank": mcap_rank,
+                            "mcap_cr": mcap_cr,
+                            "sma_50": round(cur_sma50, 2) if cur_sma50 else None,
+                            "sma_200": round(cur_sma200, 2) if cur_sma200 else None,
+                            "stop_level": round(stop_level, 2) if stop_level else None,
+                        }
+                    )
                     continue
 
-                # Position still held — update state
-                new_highest = max(highest_close, float(pos_df["close"].max()))
-                # Check if ever activated during the gap
-                activation_price = entry_price * 1.02
-                activated_in_gap = bool(np.any(closes[entry_idx:] >= activation_price))
+                # ── New signal detection (canonical, same as backtest) ────
+                # Skip if already in an active position (no re-entry)
+                if sym in persisted and is_live:
+                    continue
 
-                final_state[sym] = {
-                    "entry_date": entry_date,
-                    "entry_price": entry_price,
-                    "ever_activated": ever_activated or activated_in_gap,
-                    "highest_close": new_highest,
-                }
+                # Look up canonical signal for this symbol
+                signal_match = [s for s in scan_signals if s[0] == sym]
+                if not signal_match:
+                    continue
 
-                # Surface as candidate
-                current_pnl = (last_close / entry_price - 1) * 100
-                phase = "TRAILING" if (ever_activated or activated_in_gap) else "PENDING"
-                candidates.append({
-                    "symbol": sym,
-                    "phase": phase,
-                    "entry_date": entry_date,
-                    "entry_price": entry_price,
-                    "current_price": last_close,
-                    "activation_target": round(entry_price * 1.02, 2),
-                    "pnl_pct": round(current_pnl, 2),
-                    "n_hold_days": (pd.Timestamp(last_date) - pd.Timestamp(entry_date)).days,
-                    "delivery_value": float(delivery_vals[-1]),
-                    "mcap_rank": mcap_rank,
-                    "mcap_cr": mcap_cr,
-                    "sma_50": round(cur_sma50, 2) if cur_sma50 else None,
-                    "sma_200": round(cur_sma200, 2) if cur_sma200 else None,
-                    "stop_level": round(stop_level, 2) if stop_level else None,
-                })
+                _sym, score = signal_match[0]
+
+                candidates.append(
+                    {
+                        "symbol": sym,
+                        "phase": "NEW",
+                        "signal_date": as_of,
+                        "entry_price": round(float(closes[-1]), 2),
+                        "activation_target": round(float(closes[-1]) * 1.02, 2),
+                        "delivery_value": score,
+                        "mcap_rank": mcap_rank,
+                        "mcap_cr": mcap_cr,
+                        "sma_50": round(cur_sma50, 2) if cur_sma50 else None,
+                        "sma_200": round(cur_sma200, 2) if cur_sma200 else None,
+                        "stop_level": round(stop_level, 2) if stop_level else None,
+                    }
+                )
+
+            except Exception:
+                logger.exception("Super Breakout: %s failed", sym)
                 continue
-
-            # ── New signal detection (canonical, same as backtest) ────
-            # Skip if already in an active position (no re-entry)
-            if sym in persisted and is_live:
-                continue
-
-            # Look up canonical signal for this symbol
-            signal_match = [s for s in scan_signals if s[0] == sym]
-            if not signal_match:
-                continue
-
-            _sym, score = signal_match[0]
-
-            candidates.append({
-                "symbol": sym,
-                "phase": "NEW",
-                "signal_date": as_of,
-                "entry_price": round(float(closes[-1]), 2),
-                "activation_target": round(float(closes[-1]) * 1.02, 2),
-                "delivery_value": score,
-                "mcap_rank": mcap_rank,
-                "mcap_cr": mcap_cr,
-                "sma_50": round(cur_sma50, 2) if cur_sma50 else None,
-                "sma_200": round(cur_sma200, 2) if cur_sma200 else None,
-                "stop_level": round(stop_level, 2) if stop_level else None,
-            })
 
         # ── Persist state (live only) ────────────────────────────────
         if conn_meta is not None:
@@ -435,7 +454,8 @@ class SuperBreakoutScanner:
             # Upsert surviving positions
             for sym, state in final_state.items():
                 upsert_position(
-                    conn_meta, sym,
+                    conn_meta,
+                    sym,
                     entry_date=state["entry_date"],
                     entry_price=state["entry_price"],
                     ever_activated=state["ever_activated"],
@@ -463,14 +483,14 @@ class SuperBreakoutScanner:
                 )
             # Sort new signals by delivery_value (descending)
             if not new_signals.empty:
-                new_signals = new_signals.sort_values(
-                    "delivery_value", ascending=False
-                )
+                new_signals = new_signals.sort_values("delivery_value", ascending=False)
 
             result = pd.concat([active, new_signals, exited], ignore_index=True)
 
         n_pending = int((result["phase"] == "PENDING").sum()) if not result.empty else 0
-        n_trailing = int((result["phase"] == "TRAILING").sum()) if not result.empty else 0
+        n_trailing = (
+            int((result["phase"] == "TRAILING").sum()) if not result.empty else 0
+        )
         n_new = int((result["phase"] == "NEW").sum()) if not result.empty else 0
         logger.info(
             "Super Breakout scan complete: %d candidates "
@@ -551,8 +571,12 @@ class SuperBreakoutScanner:
 
             # Reuse canonical precondition + context check
             if not check_precondition_context(
-                close, float(sma5[-1]), float(sma10[-1]),
-                float(sma15[-1]), cur_sma50, cur_sma200,
+                close,
+                float(sma5[-1]),
+                float(sma10[-1]),
+                float(sma15[-1]),
+                cur_sma50,
+                cur_sma200,
             ):
                 continue
 
@@ -565,16 +589,18 @@ class SuperBreakoutScanner:
             if pct_to_trigger <= 0 or pct_to_trigger > band_pct:
                 continue
 
-            results.append({
-                "symbol": sym,
-                "close": round(close, 2),
-                "sma_50": round(cur_sma50, 2),
-                "sma_200": round(cur_sma200, 2),
-                "pct_to_trigger": round(pct_to_trigger, 2),
-                "delivery_value": round(float(delivery_vals[-1]), 0),
-                "mcap_rank": mcap_rank,
-                "mcap_cr": round(mcap_cr, 2),
-            })
+            results.append(
+                {
+                    "symbol": sym,
+                    "close": round(close, 2),
+                    "sma_50": round(cur_sma50, 2),
+                    "sma_200": round(cur_sma200, 2),
+                    "pct_to_trigger": round(pct_to_trigger, 2),
+                    "delivery_value": round(float(delivery_vals[-1]), 0),
+                    "mcap_rank": mcap_rank,
+                    "mcap_cr": round(mcap_cr, 2),
+                }
+            )
 
         df = pd.DataFrame(results)
         if not df.empty:
