@@ -352,15 +352,24 @@ class ClimaxAccumulationScanner:
             ]:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
 
-            # Filter: close > 50, then require minimum ADTV (₹ Cr).
+            # Gate: latest close > 50, then require minimum ADTV (₹ Cr).
+            # The gate is evaluated on the most recent bar only — it must NOT
+            # drop rows from the middle of the series, because _find_climax_days()
+            # (20-row rolling volume average) and _process_climax() (±2-day climax
+            # window, 3-15 day post-climax window) both assume df is contiguous in
+            # real trading days. Filtering on close > 50 used to delete every bar
+            # where price dipped to/below 50 anywhere in the window, silently
+            # compressing the time axis those positional windows run on.
+            #
             # ADTV = mean(close * volume) over the last 20 trading days,
             # same window used by the vol_sma20 in _find_climax_days().
             # ADTV is split-adjusted by construction (price * split-adjusted
             # volume is invariant across a corporate action), unlike a raw
             # share-volume threshold. Fallback: tail(20) automatically uses
             # the most recent available days if fewer than 20 remain.
-            df = df[df["close"] > 50]
             if len(df) < 30:
+                continue
+            if float(df["close"].iloc[-1]) <= 50:
                 continue
 
             last_20 = df.tail(20)
