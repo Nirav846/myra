@@ -491,198 +491,205 @@ class DarvasBoxScanner(AccumulationBaseScanner):
         )
 
         # Single bulk load replaces per-symbol sqlite connections.
-        # darvas calls _get_tech_data WITHOUT max_date -> effective max = today.
-        self._bulk_data = load_ohlcv_for_universe(min_date, date.today().isoformat())
+        # Upper bound is as_on_date, not today: a historical scan must never
+        # see bars after the date it is pretending to run as of.
+        self._bulk_data = load_ohlcv_for_universe(min_date, as_on_date)
 
         candidates: list[dict] = []
 
         for idx, (symbol, mcap, ff_pct, ff_mcap_col) in enumerate(rows):
-            symbol = symbol.strip()
-            mcap_cr = mcap / 1e7
-            tier = _tier_for_mcap(mcap_cr)
-            th = TIER_THRESHOLDS[tier]
+            try:
+                symbol = symbol.strip()
+                mcap_cr = mcap / 1e7
+                tier = _tier_for_mcap(mcap_cr)
+                th = TIER_THRESHOLDS[tier]
 
-            tech = self._get_tech_data(symbol, min_date)
-            if len(tech) < 30:
-                continue
+                tech = self._get_tech_data(symbol, min_date, max_date=as_on_date)
+                if len(tech) < 30:
+                    continue
 
-            col_count = len(tech[0]) if tech else 0
-            if col_count >= 12:
-                df = pd.DataFrame(
-                    tech,
-                    columns=[
-                        "date",
-                        "open",
-                        "high",
-                        "low",
-                        "close",
-                        "volume",
-                        "delivery",
-                        "delivery_pct",
-                        "nifty_outperformance_score",
-                        "sma_50",
-                        "high_52w",
-                        "low_52w",
-                    ],
-                )
-            else:
-                df = pd.DataFrame(
-                    tech,
-                    columns=[
-                        "date",
-                        "open",
-                        "high",
-                        "low",
-                        "close",
-                        "volume",
-                        "delivery",
-                        "delivery_pct",
-                        "nifty_outperformance_score",
-                    ],
-                )
-                df["sma_50"] = None
-                df["high_52w"] = None
-                df["low_52w"] = None
-            df["date"] = pd.to_datetime(df["date"])
-            df = df.sort_values("date").reset_index(drop=True)
-
-            box = self._detect_box(df)
-            if box is None:
-                continue
-
-            ff_mcap = (
-                float(ff_mcap_col)
-                if ff_mcap_col and float(ff_mcap_col) > 0
-                else mcap * ff_pct / 100.0
-            )
-            box_dar = self._compute_box_dar(
-                df,
-                box["box_start_idx"],
-                box["box_end_idx"],
-                ff_mcap,
-                ceiling=box["ceiling"],
-            )
-            dar_box_median = box_dar["dar_box_median"]
-            sar = box_dar["sar"]
-            breakout_dar = box_dar["breakout_dar"]
-            am = box_dar["am"]
-            ftc = box_dar["ftc"]
-            sar_z = box_dar["sar_z"]
-
-            # Skip candidates whose baseline DAR is too low.
-            if dar_box_median < self.min_dar:
-                continue
-
-            latest_close = float(df["close"].iloc[-1])
-            ceiling = box["ceiling"]
-            floor = box["floor"]
-            breakout_threshold = ceiling * (1.0 + ENTRY_BUFFER_PCT)
-
-            # Relative Strength: stock return vs Nifty return over the box period
-            box_df_rs = df.iloc[box["box_start_idx"] : box["box_end_idx"]]
-            nifty_scores = box_df_rs["nifty_outperformance_score"].values.astype(float)
-            rs_mean = float(np.mean(nifty_scores)) if len(nifty_scores) > 0 else 0.0
-
-            # Status decision tree — price position MUST be checked before
-            # tier validation, otherwise stocks still inside the box are
-            # marked "Failed Validation" because their breakout_dar is 0.0
-            # (no close has crossed the ceiling yet).
-            entry = None
-            sl = None
-            t1 = None
-            t2 = None
-            volume_ok = False
-            failure_reason = ""
-            validation_passed = False
-
-            if latest_close < floor:
-                status = "Invalidated"
-            elif latest_close <= ceiling:
-                # Still inside the box — display metrics, do not validate.
-                status = "In Box"
-            elif latest_close < breakout_threshold:
-                # Above the ceiling but the 0.5% buffer hasn't been reached
-                # yet. Display metrics, do not validate.
-                status = "Breakout Pending"
-            else:
-                # Price has confirmed the breakout — run tier validation
-                # and, if it passes, set up the trade.
-                validation_passed, failure_reason = self._passes_tier(
-                    am=am,
-                    sar=sar,
-                    breakout_dar=breakout_dar,
-                    box_age_days=box["box_age_days"],
-                    tier=tier,
-                )
-                if validation_passed:
-                    box_vols = df.iloc[box["box_start_idx"] : box["box_end_idx"] + 1][
-                        "volume"
-                    ].values.astype(float)
-                    breakout_volume = float(df["volume"].iloc[-1])
-                    trade = self._compute_entry_sl_targets(
-                        ceiling=ceiling,
-                        floor=floor,
-                        box_volumes=box_vols,
-                        breakout_volume=breakout_volume,
+                col_count = len(tech[0]) if tech else 0
+                if col_count >= 12:
+                    df = pd.DataFrame(
+                        tech,
+                        columns=[
+                            "date",
+                            "open",
+                            "high",
+                            "low",
+                            "close",
+                            "volume",
+                            "delivery",
+                            "delivery_pct",
+                            "nifty_outperformance_score",
+                            "sma_50",
+                            "high_52w",
+                            "low_52w",
+                        ],
                     )
-                    entry = trade["entry"]
-                    sl = trade["sl"]
-                    t1 = trade["t1"]
-                    t2 = trade["t2"]
-                    volume_ok = trade["volume_ok"]
-                    status = trade["status"]  # "Triggered" or "Low Volume"
                 else:
-                    status = "Failed Validation"
-
-            is_pre_breakout = status in ("In Box", "Breakout Pending")
-            composite_score, grade = self._composite_score(
-                am=am,
-                sar_z=sar_z,
-                ftc=ftc,
-                rs_mean=rs_mean,
-                box_range_pct=box["box_range_pct"],
-                tier=tier,
-                is_pre_breakout=is_pre_breakout,
-            )
-
-            candidates.append(  # noqa: PG-APPEND
-                {
-                    "symbol": symbol,
-                    "sector": _sector_map.get(symbol, "Unknown"),
-                    "market_cap_cr": round(mcap_cr, 1),
-                    "tier": tier,
-                    "ceiling_price": round(box["ceiling"], 2),
-                    "floor_price": round(box["floor"], 2),
-                    "ceiling_date": box["ceiling_date"],
-                    "floor_date": box["floor_date"],
-                    "box_age_days": box["box_age_days"],
-                    "box_range_pct": round(box["box_range_pct"], 2),
-                    "touches_ceiling": box["touches_ceiling"],
-                    "touches_floor": box["touches_floor"],
-                    "dist_to_ceiling_pct": round(
-                        (box["ceiling"] - latest_close) / latest_close * 100, 2
+                    df = pd.DataFrame(
+                        tech,
+                        columns=[
+                            "date",
+                            "open",
+                            "high",
+                            "low",
+                            "close",
+                            "volume",
+                            "delivery",
+                            "delivery_pct",
+                            "nifty_outperformance_score",
+                        ],
                     )
-                    if latest_close > 0 and latest_close <= box["ceiling"]
-                    else 0.0,
-                    "dar_box_median": round(dar_box_median, 3),
-                    "sar": round(sar, 3),
-                    "sar_z": round(sar_z, 3),
-                    "ftc": round(ftc, 3),
-                    "breakout_dar": round(breakout_dar, 3),
-                    "am": round(am, 3),
-                    "rs_mean": round(rs_mean, 2),
-                    "entry": round(entry, 2) if entry is not None else None,
-                    "sl": round(sl, 2) if sl is not None else None,
-                    "t1": round(t1, 2) if t1 is not None else None,
-                    "t2": round(t2, 2) if t2 is not None else None,
-                    "volume_ok": volume_ok,
-                    "close": round(latest_close, 2),
-                    "status": status,
-                    "failure_reason": failure_reason,
-                    "composite_score": round(composite_score, 1),
-                    "grade": grade,
-                }
-            )
+                    df["sma_50"] = None
+                    df["high_52w"] = None
+                    df["low_52w"] = None
+                df["date"] = pd.to_datetime(df["date"])
+                df = df.sort_values("date").reset_index(drop=True)
+
+                box = self._detect_box(df)
+                if box is None:
+                    continue
+
+                ff_mcap = (
+                    float(ff_mcap_col)
+                    if ff_mcap_col and float(ff_mcap_col) > 0
+                    else mcap * ff_pct / 100.0
+                )
+                box_dar = self._compute_box_dar(
+                    df,
+                    box["box_start_idx"],
+                    box["box_end_idx"],
+                    ff_mcap,
+                    ceiling=box["ceiling"],
+                )
+                dar_box_median = box_dar["dar_box_median"]
+                sar = box_dar["sar"]
+                breakout_dar = box_dar["breakout_dar"]
+                am = box_dar["am"]
+                ftc = box_dar["ftc"]
+                sar_z = box_dar["sar_z"]
+
+                # Skip candidates whose baseline DAR is too low.
+                if dar_box_median < self.min_dar:
+                    continue
+
+                latest_close = float(df["close"].iloc[-1])
+                ceiling = box["ceiling"]
+                floor = box["floor"]
+                breakout_threshold = ceiling * (1.0 + ENTRY_BUFFER_PCT)
+
+                # Relative Strength: stock return vs Nifty return over the box period
+                box_df_rs = df.iloc[box["box_start_idx"] : box["box_end_idx"]]
+                nifty_scores = box_df_rs["nifty_outperformance_score"].values.astype(
+                    float
+                )
+                rs_mean = float(np.mean(nifty_scores)) if len(nifty_scores) > 0 else 0.0
+
+                # Status decision tree — price position MUST be checked before
+                # tier validation, otherwise stocks still inside the box are
+                # marked "Failed Validation" because their breakout_dar is 0.0
+                # (no close has crossed the ceiling yet).
+                entry = None
+                sl = None
+                t1 = None
+                t2 = None
+                volume_ok = False
+                failure_reason = ""
+                validation_passed = False
+
+                if latest_close < floor:
+                    status = "Invalidated"
+                elif latest_close <= ceiling:
+                    # Still inside the box — display metrics, do not validate.
+                    status = "In Box"
+                elif latest_close < breakout_threshold:
+                    # Above the ceiling but the 0.5% buffer hasn't been reached
+                    # yet. Display metrics, do not validate.
+                    status = "Breakout Pending"
+                else:
+                    # Price has confirmed the breakout — run tier validation
+                    # and, if it passes, set up the trade.
+                    validation_passed, failure_reason = self._passes_tier(
+                        am=am,
+                        sar=sar,
+                        breakout_dar=breakout_dar,
+                        box_age_days=box["box_age_days"],
+                        tier=tier,
+                    )
+                    if validation_passed:
+                        box_vols = df.iloc[
+                            box["box_start_idx"] : box["box_end_idx"] + 1
+                        ]["volume"].values.astype(float)
+                        breakout_volume = float(df["volume"].iloc[-1])
+                        trade = self._compute_entry_sl_targets(
+                            ceiling=ceiling,
+                            floor=floor,
+                            box_volumes=box_vols,
+                            breakout_volume=breakout_volume,
+                        )
+                        entry = trade["entry"]
+                        sl = trade["sl"]
+                        t1 = trade["t1"]
+                        t2 = trade["t2"]
+                        volume_ok = trade["volume_ok"]
+                        status = trade["status"]  # "Triggered" or "Low Volume"
+                    else:
+                        status = "Failed Validation"
+
+                is_pre_breakout = status in ("In Box", "Breakout Pending")
+                composite_score, grade = self._composite_score(
+                    am=am,
+                    sar_z=sar_z,
+                    ftc=ftc,
+                    rs_mean=rs_mean,
+                    box_range_pct=box["box_range_pct"],
+                    tier=tier,
+                    is_pre_breakout=is_pre_breakout,
+                )
+
+                candidates.append(  # noqa: PG-APPEND
+                    {
+                        "symbol": symbol,
+                        "sector": _sector_map.get(symbol, "Unknown"),
+                        "market_cap_cr": round(mcap_cr, 1),
+                        "tier": tier,
+                        "ceiling_price": round(box["ceiling"], 2),
+                        "floor_price": round(box["floor"], 2),
+                        "ceiling_date": box["ceiling_date"],
+                        "floor_date": box["floor_date"],
+                        "box_age_days": box["box_age_days"],
+                        "box_range_pct": round(box["box_range_pct"], 2),
+                        "touches_ceiling": box["touches_ceiling"],
+                        "touches_floor": box["touches_floor"],
+                        "dist_to_ceiling_pct": round(
+                            (box["ceiling"] - latest_close) / latest_close * 100, 2
+                        )
+                        if latest_close > 0 and latest_close <= box["ceiling"]
+                        else 0.0,
+                        "dar_box_median": round(dar_box_median, 3),
+                        "sar": round(sar, 3),
+                        "sar_z": round(sar_z, 3),
+                        "ftc": round(ftc, 3),
+                        "breakout_dar": round(breakout_dar, 3),
+                        "am": round(am, 3),
+                        "rs_mean": round(rs_mean, 2),
+                        "entry": round(entry, 2) if entry is not None else None,
+                        "sl": round(sl, 2) if sl is not None else None,
+                        "t1": round(t1, 2) if t1 is not None else None,
+                        "t2": round(t2, 2) if t2 is not None else None,
+                        "volume_ok": volume_ok,
+                        "close": round(latest_close, 2),
+                        "status": status,
+                        "failure_reason": failure_reason,
+                        "composite_score": round(composite_score, 1),
+                        "grade": grade,
+                    }
+                )
+            except Exception:
+                logger.exception("Darvas: %s failed", symbol)
+                continue
 
         # Sanitize NaN/Inf for JSON compatibility.
         float_fields = [
