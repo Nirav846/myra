@@ -93,11 +93,9 @@ class SmartMoneyBargainScanner(DCBBargainScanner):
             latest_month = all_months[-1]
         # Filter to months <= latest_month and take the last N
         eligible = [m for m in all_months if m <= latest_month]
-        return eligible[-self.traction_window:]
+        return eligible[-self.traction_window :]
 
-    def _get_traction_data_multi(
-        self, months: list[str]
-    ) -> dict[str, list[dict]]:
+    def _get_traction_data_multi(self, months: list[str]) -> dict[str, list[dict]]:
         """Return {symbol: [{month, traction_score, ...}, ...]} for all rows
         across the given months, sorted by month ascending per symbol."""
         if not months:
@@ -186,14 +184,20 @@ class SmartMoneyBargainScanner(DCBBargainScanner):
             return dcb_df
 
         # Step 2: determine traction months and fetch multi-month data
-        latest_month = self._get_latest_traction_month()
+        # Bound by as_on_date so a historical scan never enriches on (or
+        # filters/ranks by) fund-holding data from months after that date.
+        # as_on_date is still None on the live path, which correctly falls
+        # back to the latest month overall.
+        latest_month = self._get_latest_traction_month(as_on_date)
         if not latest_month:
             logger.warning("Smart Money Bargain: no traction data available")
             return pd.DataFrame()
         window_months = self._get_traction_months(latest_month)
         logger.info(
             "Smart Money Bargain: traction window=%d months=%s method=%s",
-            self.traction_window, window_months, self.traction_aggregation,
+            self.traction_window,
+            window_months,
+            self.traction_aggregation,
         )
         multi_data = self._get_traction_data_multi(window_months)
         if not multi_data:
@@ -229,7 +233,9 @@ class SmartMoneyBargainScanner(DCBBargainScanner):
 
             rec = row.to_dict()
             # Original traction fields (from latest month)
-            rec["traction_score"] = round(float(latest_rec.get("traction_score") or 0), 2)
+            rec["traction_score"] = round(
+                float(latest_rec.get("traction_score") or 0), 2
+            )
             rec["traction_aggregated"] = agg_score
             rec["traction_method"] = self.traction_aggregation
             rec["traction_window"] = self.traction_window
@@ -250,9 +256,7 @@ class SmartMoneyBargainScanner(DCBBargainScanner):
             # Combined score: DCB discount * 0.4 + aggregated traction * 0.4 + del_abs * 0.2
             disc = float(rec.get("discount_pct", 0))
             dabs = float(rec.get("del_abs", 0))
-            rec["combined_score"] = round(
-                disc * 0.4 + agg_score * 0.4 + dabs * 0.2, 2
-            )
+            rec["combined_score"] = round(disc * 0.4 + agg_score * 0.4 + dabs * 0.2, 2)
             candidates.append(rec)
 
         if not candidates:

@@ -826,7 +826,7 @@ class DCBBargainScanner:
 
         # Traction enrichment — always attach traction data for display/sort.
         # Only filter when min_traction_score > 0.
-        candidates = self._enrich_traction(candidates)
+        candidates = self._enrich_traction(candidates, as_on_date)
 
         if self.min_traction_score > 0:
             before = len(candidates)
@@ -860,14 +860,31 @@ class DCBBargainScanner:
         except sqlite3.OperationalError:
             return []
 
-    def _get_latest_traction_month(self) -> str | None:
-        """Return the latest available traction month from the DB, or None."""
+    def _get_latest_traction_month(self, as_on_date: str | None = None) -> str | None:
+        """Return the latest traction month at or before `as_on_date`, or None.
+
+        `as_on_date` is a ``YYYY-MM-DD`` string; ``month`` is ``YYYY-MM``, so a
+        plain lexicographic ``month <= as_on_date`` compare is correct
+        ("2026-06" <= "2026-06-15" is True, "2026-09" is not).  No truncation
+        needed.  With ``as_on_date=None`` the latest month overall is returned,
+        which is the correct live-scan behaviour.  Bounding by the as-of date
+        is what keeps a historical scan from enriching on fund-holding data
+        that did not exist yet on that date.
+        """
         val_db = os.path.join(DB_DIR, "myra_valuation.db")
         if not os.path.exists(val_db):
             return None
         try:
             with sqlite3.connect(val_db) as conn:
-                row = conn.execute("SELECT MAX(month) FROM fund_traction").fetchone()
+                if as_on_date:
+                    row = conn.execute(
+                        "SELECT MAX(month) FROM fund_traction WHERE month <= ?",
+                        (as_on_date,),
+                    ).fetchone()
+                else:
+                    row = conn.execute(
+                        "SELECT MAX(month) FROM fund_traction"
+                    ).fetchone()
                 return row[0] if row and row[0] else None
         except sqlite3.OperationalError:
             return None
@@ -955,18 +972,23 @@ class DCBBargainScanner:
 
         return None, meta
 
-    def _enrich_traction(self, candidates: list[dict]) -> list[dict]:
+    def _enrich_traction(
+        self, candidates: list[dict], as_on_date: str | None = None
+    ) -> list[dict]:
         """Attach aggregated fund traction data to each candidate dict.
 
         Fetches the latest `traction_window` months of traction data and
         aggregates per the configured method.  Sets ``traction_aggregated``
         and ``traction_detail`` on every candidate that has traction data.
         Candidates without traction data get ``traction_aggregated = None``.
+
+        ``as_on_date`` bounds the traction window to months at or before that
+        date; pass None for live scans (latest month overall).
         """
         if not candidates:
             return candidates
 
-        latest_month = self._get_latest_traction_month()
+        latest_month = self._get_latest_traction_month(as_on_date)
         if not latest_month:
             logger.info("DCB traction enrich: no traction data available")
             return candidates
