@@ -255,7 +255,12 @@ def test_compute_del_abs_negative():
 
 
 def test_compute_del_abs_all_up_days():
-    """All bars have close > open -> down_avg = 0, del_abs = up_avg."""
+    """All bars have close > open -> no down days, so the signal is undefined.
+
+    A missing side means absorption can't be computed, so it scores 0.0 —
+    NOT up_avg (treating the absent down side as 0 delivery would report
+    maximal absorption). Same rule as BottomHunter's delivery_absorption.
+    """
     closes = list(range(100, 120))  # 100..119
     opens = [c - 2 for c in closes]  # all open < close -> all up days
     delivery_pcts = [
@@ -282,7 +287,7 @@ def test_compute_del_abs_all_up_days():
     ]
     df = _make_tech_df(closes, delivery_pcts, opens=opens)
     result = DCBBargainScanner._compute_del_abs(df, window=20)
-    assert result == pytest.approx(55.0, abs=0.01)
+    assert result == pytest.approx(0.0, abs=0.01)
 
 
 def test_compute_del_abs_fewer_than_window():
