@@ -22,6 +22,11 @@ class OperatorFingerprintScanner:
     _BULK_COLUMNS = COLUMNS_12
 
     def __init__(self, min_mcap=200, max_mcap=50000, lookback_days=45):
+        if lookback_days < 30:
+            raise ValueError(
+                "lookback_days must be >= 30 for the older-vs-newer ATR "
+                f"compression window to be valid, got {lookback_days}"
+            )
         self.min_mcap = min_mcap
         self.max_mcap = max_mcap
         self.lookback_days = lookback_days
