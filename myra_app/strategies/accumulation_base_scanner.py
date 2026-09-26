@@ -651,18 +651,6 @@ class AccumulationBaseScanner:
                 if f in c:
                     c[f] = AccumulationBaseScanner._sanitize_float(c[f])
 
-        # Debug: verify sectors
-        if candidates:
-            print(
-                f"[DEBUG] First candidate sector: {candidates[0].get('sector', 'MISSING')}"
-            )
-            eq_count = sum(1 for c in candidates if c.get("equal_lows"))
-            if eq_count > 0:
-                sample = next(c for c in candidates if c.get("equal_lows"))
-                print(
-                    f"[DEBUG] Equal lows sample: {sample['symbol']} level={sample.get('equal_lows_level')}"
-                )
-
         candidates.sort(key=lambda x: x["composite_score"], reverse=True)
         logger.info("Scan complete: %d candidates found", len(candidates))
         return pd.DataFrame(candidates)
