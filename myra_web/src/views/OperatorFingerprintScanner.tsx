@@ -16,6 +16,8 @@ interface Candidate {
   symbol: string;
   sector?: string;
   market_cap_cr: number;
+  ff_pct: number;
+  ff_mcap_cr: number;
   compression_ratio: number;
   delivery_drift: number;
   quiet_accum_days: number;
@@ -222,12 +224,12 @@ export default function OperatorFingerprintScannerView({ lib }: { lib: Librarian
   const handleCSV = () => {
     if (filteredData.length === 0) return;
     const headers = [
-      'Symbol', 'Sector', 'Market Cap Cr', 'Compression Ratio', 'Del Drift',
+      'Symbol', 'Sector', 'Market Cap Cr', 'FF %', 'FF MCap Cr', 'Compression Ratio', 'Del Drift',
       'Quiet Days', 'Staircase', 'Base Duration', 'Tension Score', 'Close',
       'ATR Old%', 'ATR New%', 'Grade',
     ];
     const rows = filteredData.map(r => [
-      r.symbol, r.sector ?? '', r.market_cap_cr, r.compression_ratio, r.delivery_drift,
+      r.symbol, r.sector ?? '', r.market_cap_cr, r.ff_pct, r.ff_mcap_cr, r.compression_ratio, r.delivery_drift,
       r.quiet_accum_days, r.volume_staircase, r.base_duration_days, r.coil_tension_score,
       r.close, r.atr_old_pct, r.atr_new_pct, r.grade,
     ].join(','));
@@ -505,6 +507,12 @@ export default function OperatorFingerprintScannerView({ lib }: { lib: Librarian
                     <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('market_cap_cr')} scope="col">
                       MCap (₹ Cr) <SortIcon column="market_cap_cr" />
                     </th>
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('ff_pct')} scope="col">
+                      <Tooltip content="Free float as % of market cap (from latest fundamentals). Defaults to 40% when the source value is missing.">FF % <SortIcon column="ff_pct" /></Tooltip>
+                    </th>
+                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('ff_mcap_cr')} scope="col">
+                      <Tooltip content="Free-float market cap = market cap x free float %. Useful for sizing against actual tradeable float.">FF MCap (₹ Cr) <SortIcon column="ff_mcap_cr" /></Tooltip>
+                    </th>
                     <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider text-right cursor-pointer hover:text-white" onClick={() => handleSort('compression_ratio')} scope="col">
                       <Tooltip content="ATR compression ratio (recent / older). <0.65 = highly compressed (good), <0.80 = compressing." good="<0.65: tight coil" bad="≥0.80: not compressing">Comp Ratio <SortIcon column="compression_ratio" /></Tooltip>
                     </th>
@@ -553,6 +561,8 @@ export default function OperatorFingerprintScannerView({ lib }: { lib: Librarian
                           {row.sector ?? '—'}
                         </td>
                         <td className="px-3 py-3 text-right text-[#ccc]">{row.market_cap_cr.toFixed(0)}</td>
+                        <td className="px-3 py-3 text-right text-[#ccc]">{row.ff_pct.toFixed(1)}%</td>
+                        <td className="px-3 py-3 text-right text-[#ccc]">{row.ff_mcap_cr.toFixed(0)}</td>
                         <td className="px-3 py-3 text-right">
                           <span className={
                             row.compression_ratio < 0.65 ? 'text-green-400' :

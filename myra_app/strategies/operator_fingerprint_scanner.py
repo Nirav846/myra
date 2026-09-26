@@ -138,6 +138,7 @@ class OperatorFingerprintScanner:
 
         for idx, (symbol, mcap, ff_pct) in enumerate(rows):
             symbol = symbol.strip()
+            ff_mcap = mcap * ff_pct / 100.0
 
             tech = self._get_tech_data(symbol, min_date, max_date=as_on_date)
             if len(tech) < max(35, int(self.lookback_days * 0.6) + 5):
@@ -230,12 +231,22 @@ class OperatorFingerprintScanner:
             full_close = df["close"].values.astype(float)
             # Map last20 indices back to full df positions
             last20_start = len(df) - len(last20_df)
-            prev_closes_l20 = np.array([
-                full_close[last20_start + i - 1] if last20_start + i > 0 else l20_close[i]
-                for i in range(len(last20_df))
-            ])
-            price_changes = np.abs(l20_close - prev_closes_l20) / np.where(prev_closes_l20 > 0, prev_closes_l20, 1.0) * 100
-            quiet_accum_days = int(np.sum((l20_del > avg_del_session) & (price_changes < 1.5)))
+            prev_closes_l20 = np.array(
+                [
+                    full_close[last20_start + i - 1]
+                    if last20_start + i > 0
+                    else l20_close[i]
+                    for i in range(len(last20_df))
+                ]
+            )
+            price_changes = (
+                np.abs(l20_close - prev_closes_l20)
+                / np.where(prev_closes_l20 > 0, prev_closes_l20, 1.0)
+                * 100
+            )
+            quiet_accum_days = int(
+                np.sum((l20_del > avg_del_session) & (price_changes < 1.5))
+            )
 
             # Volume staircase: 3 blocks of 5 sessions each
             vol_block_1 = float(np.nanmean(volumes[-5:])) if len(volumes) >= 5 else 0
@@ -255,7 +266,9 @@ class OperatorFingerprintScanner:
                 highs_arr = df["high"].values.astype(float)
                 lows_arr = df["low"].values.astype(float)
                 # Rolling 15-day mean daily range
-                ranges = np.where(lows_arr > 0, (highs_arr - lows_arr) / lows_arr * 100, 99.0)
+                ranges = np.where(
+                    lows_arr > 0, (highs_arr - lows_arr) / lows_arr * 100, 99.0
+                )
                 # Use convolution for rolling mean (faster than pandas rolling)
                 window = 15
                 if len(ranges) >= window:
@@ -300,6 +313,8 @@ class OperatorFingerprintScanner:
                     "symbol": symbol,
                     "sector": _sector_map.get(symbol, "Unknown"),
                     "market_cap_cr": round(mcap_cr, 1),
+                    "ff_pct": round(ff_pct, 1),
+                    "ff_mcap_cr": round(ff_mcap / 1e7, 1),
                     "compression_ratio": round(compression_ratio, 3),
                     "delivery_drift": round(delivery_drift, 4),
                     "quiet_accum_days": quiet_accum_days,
@@ -315,6 +330,8 @@ class OperatorFingerprintScanner:
 
         float_fields = [
             "market_cap_cr",
+            "ff_pct",
+            "ff_mcap_cr",
             "compression_ratio",
             "delivery_drift",
             "coil_tension_score",
