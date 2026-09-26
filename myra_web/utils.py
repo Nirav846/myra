@@ -1,6 +1,7 @@
 """MYRA web-layer shared utilities. Pure helpers extracted from myra_fastapi_server.py (Phase 1 of monolith refactor). No FastAPI state — deterministic functions and constants only."""
 
 import json
+import logging
 import math
 import os
 import sqlite3
@@ -8,6 +9,13 @@ from datetime import datetime, timedelta, timezone
 
 from myra_app.constants import DB_DIR, MODELS_DIR
 from myra_app.librarian_core import LibrarianCore
+
+logger = logging.getLogger(__name__)
+
+# Single same-date confluence snapshot, written by
+# myra_web.confluence_batch.run_confluence_batch(). Defined here (rather than
+# in confluence_batch) so both modules can reference it without a cycle.
+CONFLUENCE_SNAPSHOT_FILENAME = "confluence_snapshot.json"
 
 
 def _df_to_safe_records(df) -> list[dict]:
@@ -125,55 +133,65 @@ def _best_grade(candidates: list[dict]) -> str | None:
 
 
 def build_confluence_report() -> dict:
-    """Aggregate all scanner cache files into a confluence report.
+    """Aggregate the single same-date confluence snapshot into a report.
+
+    Source of truth is ``MODELS_DIR/confluence_snapshot.json``, written by
+    ``myra_web.confluence_batch.run_confluence_batch()``. Every scanner in
+    that snapshot ran against one identical ``as_on_date``, so a symbol
+    appearing under N scanners genuinely means N scanners agree on that
+    date — not "each flagged it at some point across a multi-week window of
+    independently-written per-scanner caches", which is what the previous
+    per-scanner-cache implementation actually computed.
 
     Only symbols flagged by 2+ distinct scanners are included.
     """
     IST = timezone(timedelta(hours=5, minutes=30))
 
-    # Collect all cache files that match our known names. This map is 1:1 —
-    # one filename per display name, each the file its route actually writes
-    # (see cache_file= in routes/scanners.py).
-    cache_files: dict[str, str] = {}  # display_name → filepath
+    snapshot_path = os.path.join(MODELS_DIR, CONFLUENCE_SNAPSHOT_FILENAME)
     try:
-        for fname in os.listdir(MODELS_DIR):
-            if fname not in _SCANNER_CACHE_MAP:
-                continue
-            cache_files[_SCANNER_CACHE_MAP[fname]] = os.path.join(MODELS_DIR, fname)
-    except Exception:
-        pass
+        with open(snapshot_path, encoding="utf-8") as fh:
+            snap = json.load(fh)
+    except FileNotFoundError:
+        return {
+            "generated_at": datetime.now(IST).isoformat(),
+            "as_on_date": None,
+            "scanner_errors": {},
+            "message": (
+                "No confluence snapshot yet — run POST /api/confluence/refresh "
+                "to scan every confluence scanner against the same date."
+            ),
+            "symbols": [],
+        }
+    except Exception as e:  # unreadable/corrupt snapshot — degrade, don't 500
+        logger.error("Confluence snapshot unreadable: %s", e)
+        return {
+            "generated_at": datetime.now(IST).isoformat(),
+            "as_on_date": None,
+            "scanner_errors": {},
+            "message": f"Confluence snapshot could not be read: {e}",
+            "symbols": [],
+        }
 
-    if len(cache_files) < 2:
-        return {"generated_at": datetime.now(IST).isoformat(), "symbols": []}
+    as_on_date = snap.get("as_on_date")
+    generated_at = snap.get("generated_at")
+    scanners = snap.get("scanners") or {}
 
     # --- Aggregate per-symbol data -------------------------------------------
-    # symbol → { sector, scanners: { display_name: candidate }, last_scan str }
+    # symbol → { sector, scanners: { display_name: candidate } }
     agg: dict[str, dict] = {}
+    scanner_errors: dict[str, str] = {}
 
-    for display_name, fpath in cache_files.items():
-        try:
-            with open(fpath, encoding="utf-8") as fh:
-                data = json.load(fh)
-        except Exception:
-            continue  # graceful degradation
-
-        last_scan = data.get("last_scan")
-        for cand in data.get("candidates", []):
+    for display_name, entry in scanners.items():
+        if entry.get("error"):
+            scanner_errors[display_name] = entry["error"]
+            continue
+        for cand in entry.get("candidates") or []:
             sym = cand.get("symbol")
             if not sym:
                 continue
             if sym not in agg:
-                agg[sym] = {
-                    "sector": cand.get("sector", ""),
-                    "scanners": {},
-                    "last_scan": last_scan,
-                }
+                agg[sym] = {"sector": cand.get("sector", ""), "scanners": {}}
             agg[sym]["scanners"][display_name] = cand
-            # Track the latest scan timestamp across all scanners
-            if last_scan and (
-                agg[sym]["last_scan"] is None or last_scan > agg[sym]["last_scan"]
-            ):
-                agg[sym]["last_scan"] = last_scan
             # Update sector if the new candidate has a value
             if cand.get("sector") and not agg[sym]["sector"]:
                 agg[sym]["sector"] = cand["sector"]
@@ -191,7 +209,7 @@ def build_confluence_report() -> dict:
                 "sector": info["sector"],
                 "scanner_count": len(scanner_names),
                 "scanners": scanner_names,
-                "last_scan": info["last_scan"],
+                "last_scan": generated_at,
                 "best_grade": _best_grade(cand_list),
             }
         )
@@ -200,7 +218,9 @@ def build_confluence_report() -> dict:
     symbols_out.sort(key=lambda x: (-x["scanner_count"], x["symbol"]))
 
     return {
-        "generated_at": datetime.now(IST).isoformat(),
+        "generated_at": generated_at or datetime.now(IST).isoformat(),
+        "as_on_date": as_on_date,
+        "scanner_errors": scanner_errors,
         "symbols": symbols_out,
     }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { RefreshCw, ExternalLink } from 'lucide-react';
 import { API_BASE } from '../config';
 import FundTractionButton from '../components/FundTractionButton';
@@ -18,7 +18,18 @@ interface ConfluenceSymbol {
 
 interface ConfluenceResponse {
   generated_at: string;
+  /** The single trading day every scanner in this snapshot ran against. */
+  as_on_date: string | null;
+  /** Scanners that failed during the batch; excluded from the aggregation. */
+  scanner_errors: Record<string, string>;
+  /** Set when no snapshot exists yet, or the snapshot could not be read. */
+  message?: string;
   symbols: ConfluenceSymbol[];
+}
+
+interface ConfluenceStatus {
+  scan_status: 'idle' | 'scanning' | 'completed' | 'error';
+  message: string;
 }
 
 type SortKey = 'scanner_count' | 'symbol' | 'sector' | 'best_grade';
@@ -100,6 +111,65 @@ export default function ConfluenceView() {
   const [error, setError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('scanner_count');
   const [sortAsc, setSortAsc] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Stable ref so the polling callback always calls the latest fetchData.
+  const fetchDataRef = useRef<(() => Promise<void>) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
+
+  /**
+   * Kick off POST /confluence/refresh and poll /confluence/status until the
+   * batch finishes, then reload the report. A full batch is 13 sequential
+   * full-universe scans (~20 min), so the button stays disabled throughout.
+   */
+  const startRefresh = useCallback(() => {
+    const ok = window.confirm(
+      'This runs every confluence scanner against the same date.\n\n' +
+        'It is 13 full scans over the whole universe and typically takes ' +
+        'around 20 minutes. The page can stay open — progress is shown below.\n\n' +
+        'Start a fresh confluence scan?',
+    );
+    if (!ok) return;
+
+    setIsRefreshing(true);
+    setError(null);
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/confluence/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        pollRef.current = setInterval(async () => {
+          try {
+            const sres = await fetch(`${API_BASE}/confluence/status`);
+            if (!sres.ok) return;
+            const st: ConfluenceStatus = await sres.json();
+            if (st.scan_status === 'scanning') return;
+            if (pollRef.current) {
+              clearInterval(pollRef.current);
+              pollRef.current = null;
+            }
+            setIsRefreshing(false);
+            if (st.scan_status === 'error') setError(st.message);
+            await fetchDataRef.current?.();
+          } catch {
+            /* transient poll failure — keep polling */
+          }
+        }, 5000);
+      } catch (err: unknown) {
+        setIsRefreshing(false);
+        setError(err instanceof Error ? err.message : 'Unknown error');
+      }
+    })();
+  }, []);
+
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -115,6 +185,10 @@ export default function ConfluenceView() {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    fetchDataRef.current = fetchData;
+  }, [fetchData]);
 
   useEffect(() => {
     fetchData();
@@ -172,6 +246,13 @@ export default function ConfluenceView() {
               ? `${data.symbols.length} symbol${data.symbols.length !== 1 ? 's' : ''} flagged by 2+ scanners`
               : 'Loading...'}
           </p>
+          {data?.as_on_date && (
+            <p className="text-xs mt-1 font-mono">
+              <span className="text-[#888]">All scanners as of </span>
+              <span className="text-emerald-400 font-semibold">{data.as_on_date}</span>
+              <span className="text-[#666]"> — one same-date snapshot</span>
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-3">
           {data && (
@@ -180,6 +261,18 @@ export default function ConfluenceView() {
             </span>
           )}
           <FundTractionButton symbols={sorted.map((s: any) => s.symbol)} />
+          <button
+            onClick={startRefresh}
+            disabled={isRefreshing}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-emerald-600/20 border border-emerald-500/40 rounded font-mono text-emerald-300 hover:bg-emerald-600/30 transition-colors disabled:opacity-40"
+            aria-label={isRefreshing ? 'Refreshing, please wait' : 'Run fresh confluence scan'}
+          >
+            {isRefreshing ? (
+              <><RefreshCw size={12} className="animate-spin" /> Scanning…</>
+            ) : (
+              <><RefreshCw size={12} /> Run Fresh Scan</>
+            )}
+          </button>
           <button
             onClick={fetchData}
             disabled={loading}
@@ -190,6 +283,37 @@ export default function ConfluenceView() {
           </button>
         </div>
       </div>
+
+      {/* Batch-in-progress notice */}
+      {isRefreshing && (
+        <div className="bg-emerald-950/30 border border-emerald-500/40 p-3 rounded-lg mb-3 text-emerald-300 text-xs font-mono shrink-0 flex items-center gap-2">
+          <RefreshCw size={12} className="animate-spin shrink-0" />
+          Running all 13 confluence scanners against one date — this takes
+          around 20 minutes. Results reload automatically when it finishes.
+        </div>
+      )}
+
+      {/* No-snapshot / unreadable-snapshot message */}
+      {data?.message && !isRefreshing && (
+        <div className="bg-amber-950/30 border border-amber-500/40 p-3 rounded-lg mb-3 text-amber-300 text-xs font-mono shrink-0">
+          {data.message}
+        </div>
+      )}
+
+      {/* Scanners that failed in the batch */}
+      {data && Object.keys(data.scanner_errors || {}).length > 0 && (
+        <div className="bg-red-950/30 border border-red-500/40 p-3 rounded-lg mb-3 text-red-300 text-xs font-mono shrink-0">
+          <p className="mb-1">
+            {Object.keys(data.scanner_errors).length} scanner(s) failed in this
+            snapshot and are excluded from the counts above:
+          </p>
+          <ul className="list-disc pl-4 space-y-0.5">
+            {Object.entries(data.scanner_errors).map(([name, err]) => (
+              <li key={name}>{name}: {err}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Error */}
       {error && (
@@ -204,7 +328,8 @@ export default function ConfluenceView() {
           <div className="flex flex-col items-center justify-center h-full py-16 text-center">
             <div className="text-3xl mb-3 opacity-30">🔗</div>
             <p className="text-sm text-[#888] font-mono">
-              No confluence symbols found — run at least 2 scanners first.
+              No confluence snapshot yet — use “Run Fresh Scan” to scan every
+              scanner against the same date.
             </p>
           </div>
         ) : (
