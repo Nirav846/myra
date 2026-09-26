@@ -20,11 +20,29 @@ CONFLUENCE_SNAPSHOT_FILENAME = "confluence_snapshot.json"
 # --- Confluence breadth classification ---------------------------------------
 # A scanner that flags a large share of the snapshot's symbol union carries
 # little discriminating information: its "agreement" is close to guaranteed.
-# Measured on the 2026-09-24 snapshot, Multibagger Pro covered 90.5% of the
-# union and Wyckoff Automaton 70.4% — both so broad that including them in a
-# headline "N scanners agree" count turns it into a restatement of those two
-# scanners existing. Scanners at or below this threshold are "selective" and
-# are the ones that actually evidence agreement.
+# Broad scanners are reported per symbol but excluded from the headline
+# count, so the count reflects agreement among selective scanners.
+#
+# This set is FIXED, not recomputed per snapshot. It was calibrated once with
+# tools/calibrate_confluence_breadth.py over 8 same-date snapshots spanning
+# 2025-09-24 .. 2026-09-24 (see models/calibration/). Deriving it per snapshot
+# made selective_scanner_count non-comparable across dates, because a quiet
+# date shrinks the union and inflates everyone's percentage — a scanner at 25%
+# on a busy day could read 80% on a quiet one, silently flipping its verdict
+# and changing what a given count means. Re-run that tool and update this
+# constant if the scanner set or its logic changes.
+BROAD_SCANNERS: frozenset[str] = frozenset(
+    {
+        # ~78-91% of the union on every date measured. Near-guaranteed flags.
+        "Multibagger Pro",
+        "Wyckoff Automaton",
+    }
+)
+
+# Threshold used by tools/calibrate_confluence_breadth.py to decide which
+# scanners belong in BROAD_SCANNERS, and reported to the frontend for
+# transparency. Runtime classification is BROAD_SCANNERS membership, not a
+# comparison against this number.
 BROAD_THRESHOLD = 40.0
 
 # Minimum number of *selective* scanners a symbol needs to appear in the
@@ -204,6 +222,7 @@ def build_confluence_report() -> dict:
             "as_on_date": None,
             "scanner_errors": {},
             "broad_threshold": BROAD_THRESHOLD,
+            "broad_scanners": sorted(BROAD_SCANNERS),
             "min_selective": MIN_SELECTIVE_FOR_INCLUSION,
             "scanner_breadth": {},
             "message": (
@@ -219,6 +238,7 @@ def build_confluence_report() -> dict:
             "as_on_date": None,
             "scanner_errors": {},
             "broad_threshold": BROAD_THRESHOLD,
+            "broad_scanners": sorted(BROAD_SCANNERS),
             "min_selective": MIN_SELECTIVE_FOR_INCLUSION,
             "scanner_breadth": {},
             "message": f"Confluence snapshot could not be read: {e}",
@@ -230,9 +250,13 @@ def build_confluence_report() -> dict:
     scanners = snap.get("scanners") or {}
 
     # --- Classify each scanner as selective or broad -------------------------
-    # Prefer the pct_of_universe persisted by the batch run; fall back to
-    # computing it from the candidate lists so snapshots written before this
-    # field existed (or hand-edited ones) still classify correctly.
+    # Classification is a membership check against the calibrated, fixed
+    # BROAD_SCANNERS set — deliberately NOT a per-snapshot percentage
+    # comparison, so selective_scanner_count means the same thing on every
+    # date. pct_of_universe is still computed and surfaced (both from the
+    # stored value and as a fallback for snapshots written before the field
+    # existed) because it is useful display context and the input the
+    # calibration tool re-derives BROAD_SCANNERS from.
     computed_breadth = compute_scanner_breadth(scanners)
     scanner_meta: dict[str, dict] = {}
     for name, entry in scanners.items():
@@ -241,7 +265,7 @@ def build_confluence_report() -> dict:
             pct = computed_breadth.get(name, 0.0)
         scanner_meta[name] = {
             "pct_of_universe": round(float(pct), 1),
-            "broad": float(pct) > BROAD_THRESHOLD,
+            "broad": name in BROAD_SCANNERS,
         }
 
     # --- Aggregate per-symbol data -------------------------------------------
@@ -307,6 +331,7 @@ def build_confluence_report() -> dict:
         "as_on_date": as_on_date,
         "scanner_errors": scanner_errors,
         "broad_threshold": BROAD_THRESHOLD,
+        "broad_scanners": sorted(BROAD_SCANNERS),
         "min_selective": MIN_SELECTIVE_FOR_INCLUSION,
         "scanner_breadth": {
             name: {

@@ -280,13 +280,19 @@ CONFLUENCE_SCANNERS: list[ScannerSpec] = [
 ]
 
 
-def run_confluence_batch(as_on_date: str | None = None) -> dict:
+def run_confluence_batch(
+    as_on_date: str | None = None, out_path: str | None = None
+) -> dict:
     """Run every confluence scanner against the SAME as_on_date and persist one
     combined snapshot to ``MODELS_DIR/confluence_snapshot.json``.
 
     Each scanner is wrapped in its own try/except: a failure records
     ``{"candidates": [], "error": "<message>"}`` for that scanner and the
     batch continues, so the snapshot always completes.
+
+    ``out_path`` overrides the destination file. Used by the breadth
+    calibration run to write one snapshot per historical date without
+    clobbering the live snapshot.
 
     Returns a summary: ``as_on_date``, ``generated_at``, and a per-scanner
     ``{status, count, error}`` breakdown.
@@ -351,7 +357,8 @@ def run_confluence_batch(as_on_date: str | None = None) -> dict:
         "scanners": snapshot,
     }
 
-    out_path = os.path.join(MODELS_DIR, CONFLUENCE_SNAPSHOT_FILENAME)
+    out_path = out_path or os.path.join(MODELS_DIR, CONFLUENCE_SNAPSHOT_FILENAME)
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     tmp_path = out_path + ".tmp"
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(_json_safe(payload), f, indent=2)
