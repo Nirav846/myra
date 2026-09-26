@@ -138,13 +138,25 @@ class SeasonalDeliveryHarvester:
         except Exception:
             pass
 
-        today = date.today()
-        current_month = (
-            self.target_month if self.target_month is not None else today.month
+        # Month/year context must come from the as-of date, not real today: the
+        # tech data below is bounded by as_on_date, so deriving "current month"
+        # from today would look for rows the bounded data cannot contain and
+        # silently return nothing for any historical scan.
+        effective_date = (
+            datetime.strptime(as_on_date, "%Y-%m-%d").date()
+            if as_on_date
+            else date.today()
         )
-        current_year = today.year
-        is_current_or_past = current_month < today.month or (
-            current_month == today.month and today.year >= current_year
+        current_month = (
+            self.target_month if self.target_month is not None else effective_date.month
+        )
+        current_year = effective_date.year
+        # Is the requested target month at or before the effective month?
+        # The old form compared target month against today.month with a
+        # tautological "today.year >= current_year" clause (current_year was
+        # assigned from today.year), so it reduced to exactly this test.
+        is_current_or_past = (
+            self.target_month is None or self.target_month <= effective_date.month
         )
 
         candidates: list[dict] = []
