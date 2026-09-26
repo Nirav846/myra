@@ -614,7 +614,11 @@ class AccumulationBaseScanner:
                     "Bear market detected (median nifty_outperformance=%.2f) — tightening criteria",
                     median_nifty,
                 )
-                effective_base_days = max(self.base_days, 30)
+                # NOTE: bear-market tightening currently adjusts only the DAR
+                # floor. Base-length tightening is not implemented: the base
+                # window is fixed at self.base_days for every symbol (short
+                # histories are skipped), so no candidate carries a differing
+                # base length to filter on. That would need a second pass.
                 effective_min_dar = max(self.min_dar, 0.4)
                 candidates = [
                     c for c in candidates if c["dar_median"] >= effective_min_dar
