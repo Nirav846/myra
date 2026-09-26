@@ -133,32 +133,15 @@ def build_confluence_report() -> dict:
     """
     IST = timezone(timedelta(hours=5, minutes=30))
 
-    # Collect all cache files that match our known names
+    # Collect all cache files that match our known names. This map is 1:1 —
+    # one filename per display name, each the file its route actually writes
+    # (see cache_file= in routes/scanners.py).
     cache_files: dict[str, str] = {}  # display_name → filepath
     try:
         for fname in os.listdir(MODELS_DIR):
             if fname not in _SCANNER_CACHE_MAP:
                 continue
-            display = _SCANNER_CACHE_MAP[fname]
-            # Handle darvas_scan_cache.json vs darvas_cache.json — prefer the
-            # one with more candidates; if both exist we'll resolve below.
-            fpath = os.path.join(MODELS_DIR, fname)
-            if display in cache_files:
-                # Already have one for this display name — keep the one with
-                # more candidates (lazy: replace if new file is larger).
-                try:
-                    with open(cache_files[display], encoding="utf-8") as f:
-                        existing = json.load(f)
-                    with open(fpath, encoding="utf-8") as f:
-                        new_data = json.load(f)
-                    if len(new_data.get("candidates", [])) > len(
-                        existing.get("candidates", [])
-                    ):
-                        cache_files[display] = fpath
-                except Exception:
-                    pass
-            else:
-                cache_files[display] = fpath
+            cache_files[_SCANNER_CACHE_MAP[fname]] = os.path.join(MODELS_DIR, fname)
     except Exception:
         pass
 
