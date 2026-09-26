@@ -64,7 +64,6 @@ _SCANNER_CACHE_MAP: dict[str, str] = {
     "darvas_cache.json": "Darvas Box Pro",
     "multibagger_cache.json": "Multibagger Pro",
     "climax_accumulation_cache.json": "Climax Accumulation",
-    "launchpad_scan_cache.json": "Launchpad Scanner",
     "bottom_hunter_m1_cache.json": "Recovery Ladder",
     "super_breakout_cache.json": "Super Breakout",
 }
@@ -84,7 +83,6 @@ _SCANNER_ROUTES: dict[str, str] = {
     "Darvas Box Pro": "/darvas-box-pro",
     "Multibagger Pro": "/multibagger-pro-scanner",
     "Climax Accumulation": "/climax-accumulation",
-    "Launchpad Scanner": "/launchpad-scanner",
 }
 
 _GRADE_RANK: dict[str, float] = {

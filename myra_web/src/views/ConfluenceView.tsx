@@ -41,7 +41,6 @@ const SCANNER_ROUTES: Record<string, string> = {
   'Darvas Box Pro': '/darvas-box-pro',
   'Multibagger Pro': '/multibagger-pro-scanner',
   'Climax Accumulation': '/climax-accumulation',
-  'Launchpad Scanner': '/launchpad-scanner',
 };
 
 /* ------------------------------------------------------------------ */
@@ -87,7 +86,6 @@ const SCANNER_COLORS: Record<string, string> = {
   'Darvas Box Pro': 'bg-orange-500/20 text-orange-300 border-orange-500/30',
   'Multibagger Pro': 'bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/30',
   'Climax Accumulation': 'bg-rose-500/20 text-rose-300 border-rose-500/30',
-  'Launchpad Scanner': 'bg-teal-500/20 text-teal-300 border-teal-500/30',
 };
 
 const DEFAULT_SCANNER_COLOR = 'bg-[#ffffff0a] text-[#aaa] border-[#ffffff1a]';
