@@ -17,6 +17,53 @@ logger = logging.getLogger(__name__)
 # in confluence_batch) so both modules can reference it without a cycle.
 CONFLUENCE_SNAPSHOT_FILENAME = "confluence_snapshot.json"
 
+# --- Confluence breadth classification ---------------------------------------
+# A scanner that flags a large share of the snapshot's symbol union carries
+# little discriminating information: its "agreement" is close to guaranteed.
+# Measured on the 2026-09-24 snapshot, Multibagger Pro covered 90.5% of the
+# union and Wyckoff Automaton 70.4% — both so broad that including them in a
+# headline "N scanners agree" count turns it into a restatement of those two
+# scanners existing. Scanners at or below this threshold are "selective" and
+# are the ones that actually evidence agreement.
+BROAD_THRESHOLD = 40.0
+
+# Minimum number of *selective* scanners a symbol needs to appear in the
+# confluence report at all. See build_confluence_report() for why a broad
+# scanner cannot substitute for a second selective one.
+MIN_SELECTIVE_FOR_INCLUSION = 2
+
+
+def compute_scanner_breadth(scanners: dict) -> dict[str, float]:
+    """Per-scanner coverage as a percentage of the snapshot's symbol union.
+
+    ``scanners`` is the snapshot's ``scanners`` mapping (display name ->
+    ``{"candidates": [...], ...}``). The denominator is the number of unique
+    symbols flagged by at least one scanner, so a scanner's percentage is
+    "share of everything confluence has to work with", not a share of the
+    whole market.
+
+    Returns a mapping of display name -> pct_of_universe (0.0 when the union
+    is empty). Scanners that errored are reported as 0.0 — they contributed
+    nothing, and counting them as broad would wrongly inflate every symbol
+    they did not appear in.
+    """
+    per_scanner: dict[str, set] = {}
+    union: set = set()
+    for name, entry in scanners.items():
+        syms = {
+            c.get("symbol")
+            for c in ((entry or {}).get("candidates") or [])
+            if isinstance(c, dict) and c.get("symbol")
+        }
+        per_scanner[name] = syms
+        union |= syms
+    if not union:
+        return {name: 0.0 for name in per_scanner}
+    return {
+        name: round(100.0 * len(syms) / len(union), 1)
+        for name, syms in per_scanner.items()
+    }
+
 
 def _df_to_safe_records(df) -> list[dict]:
     """Convert a DataFrame to a list of dicts, replacing NaN/Inf with None."""
@@ -156,6 +203,9 @@ def build_confluence_report() -> dict:
             "generated_at": datetime.now(IST).isoformat(),
             "as_on_date": None,
             "scanner_errors": {},
+            "broad_threshold": BROAD_THRESHOLD,
+            "min_selective": MIN_SELECTIVE_FOR_INCLUSION,
+            "scanner_breadth": {},
             "message": (
                 "No confluence snapshot yet — run POST /api/confluence/refresh "
                 "to scan every confluence scanner against the same date."
@@ -168,6 +218,9 @@ def build_confluence_report() -> dict:
             "generated_at": datetime.now(IST).isoformat(),
             "as_on_date": None,
             "scanner_errors": {},
+            "broad_threshold": BROAD_THRESHOLD,
+            "min_selective": MIN_SELECTIVE_FOR_INCLUSION,
+            "scanner_breadth": {},
             "message": f"Confluence snapshot could not be read: {e}",
             "symbols": [],
         }
@@ -175,6 +228,21 @@ def build_confluence_report() -> dict:
     as_on_date = snap.get("as_on_date")
     generated_at = snap.get("generated_at")
     scanners = snap.get("scanners") or {}
+
+    # --- Classify each scanner as selective or broad -------------------------
+    # Prefer the pct_of_universe persisted by the batch run; fall back to
+    # computing it from the candidate lists so snapshots written before this
+    # field existed (or hand-edited ones) still classify correctly.
+    computed_breadth = compute_scanner_breadth(scanners)
+    scanner_meta: dict[str, dict] = {}
+    for name, entry in scanners.items():
+        pct = (entry or {}).get("pct_of_universe")
+        if pct is None:
+            pct = computed_breadth.get(name, 0.0)
+        scanner_meta[name] = {
+            "pct_of_universe": round(float(pct), 1),
+            "broad": float(pct) > BROAD_THRESHOLD,
+        }
 
     # --- Aggregate per-symbol data -------------------------------------------
     # symbol → { sector, scanners: { display_name: candidate } }
@@ -196,31 +264,60 @@ def build_confluence_report() -> dict:
             if cand.get("sector") and not agg[sym]["sector"]:
                 agg[sym]["sector"] = cand["sector"]
 
-    # --- Filter to 2+ scanners and build output -----------------------------
+    # --- Build output, gated on SELECTIVE agreement --------------------------
+    # Inclusion rule: a symbol must be flagged by at least
+    # MIN_SELECTIVE_FOR_INCLUSION selective scanners. A broad scanner cannot
+    # substitute for a second selective one: Multibagger flags ~90% of the
+    # union, so "1 selective + Multibagger" is close to a coin flip on the
+    # broad side and admitting those rows would re-import exactly the noise
+    # this split exists to remove, just under a new name. Broad agreement is
+    # still reported per symbol (broad_scanners) — kept as context, excluded
+    # from the headline number.
     symbols_out: list[dict] = []
     for sym, info in agg.items():
         scanner_names = sorted(info["scanners"].keys())
-        if len(scanner_names) < 2:
+        selective = [n for n in scanner_names if not scanner_meta[n]["broad"]]
+        broad = [n for n in scanner_names if scanner_meta[n]["broad"]]
+        if len(selective) < MIN_SELECTIVE_FOR_INCLUSION:
             continue
         cand_list = [info["scanners"][n] for n in scanner_names]
         symbols_out.append(
             {
                 "symbol": sym,
                 "sector": info["sector"],
+                # Unchanged: every scanner that flagged this symbol.
                 "scanner_count": len(scanner_names),
+                # The number that reflects genuine agreement.
+                "selective_scanner_count": len(selective),
+                "selective_scanners": selective,
+                "broad_scanners": broad,
                 "scanners": scanner_names,
                 "last_scan": generated_at,
                 "best_grade": _best_grade(cand_list),
             }
         )
 
-    # Sort: scanner_count desc, then symbol asc
-    symbols_out.sort(key=lambda x: (-x["scanner_count"], x["symbol"]))
+    # Sort: selective agreement desc, then total agreement desc, then symbol asc
+    symbols_out.sort(
+        key=lambda x: (-x["selective_scanner_count"], -x["scanner_count"], x["symbol"])
+    )
 
     return {
         "generated_at": generated_at or datetime.now(IST).isoformat(),
         "as_on_date": as_on_date,
         "scanner_errors": scanner_errors,
+        "broad_threshold": BROAD_THRESHOLD,
+        "min_selective": MIN_SELECTIVE_FOR_INCLUSION,
+        "scanner_breadth": {
+            name: {
+                "pct_of_universe": meta["pct_of_universe"],
+                "broad": meta["broad"],
+                "count": len(scanners[name].get("candidates") or []),
+            }
+            for name, meta in sorted(
+                scanner_meta.items(), key=lambda kv: -kv[1]["pct_of_universe"]
+            )
+        },
         "symbols": symbols_out,
     }
 

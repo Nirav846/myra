@@ -45,7 +45,11 @@ from datetime import datetime
 from typing import Any, NamedTuple
 
 from myra_app.constants import DB_DIR, MODELS_DIR
-from myra_web.utils import CONFLUENCE_SNAPSHOT_FILENAME, _get_latest_trading_day_before
+from myra_web.utils import (
+    CONFLUENCE_SNAPSHOT_FILENAME,
+    _get_latest_trading_day_before,
+    compute_scanner_breadth,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -333,6 +337,13 @@ def run_confluence_batch(as_on_date: str | None = None) -> dict:
                 "error": err,
                 "seconds": round(time.time() - t0, 1),
             }
+
+    # Persist each scanner's coverage so the report can split selective from
+    # broad signals without recomputing. Needs every scanner's candidate list,
+    # so it can only be done once the whole loop has finished.
+    breadth = compute_scanner_breadth(snapshot)
+    for name, entry in snapshot.items():
+        entry["pct_of_universe"] = breadth.get(name, 0.0)
 
     payload = {
         "as_on_date": as_on,

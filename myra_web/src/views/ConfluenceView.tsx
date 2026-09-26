@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { RefreshCw, ExternalLink } from 'lucide-react';
+import { RefreshCw, ExternalLink, Info } from 'lucide-react';
 import { API_BASE } from '../config';
 import FundTractionButton from '../components/FundTractionButton';
 
@@ -10,10 +10,22 @@ import FundTractionButton from '../components/FundTractionButton';
 interface ConfluenceSymbol {
   symbol: string;
   sector: string;
+  /** Every scanner that flagged this symbol, broad ones included. */
   scanner_count: number;
+  /** Only the selective scanners — the number that means real agreement. */
+  selective_scanner_count: number;
+  selective_scanners: string[];
+  /** Broad scanners that also flagged it, listed but not counted. */
+  broad_scanners: string[];
   scanners: string[];
   last_scan: string | null;
   best_grade: string | null;
+}
+
+interface ScannerBreadth {
+  pct_of_universe: number;
+  broad: boolean;
+  count: number;
 }
 
 interface ConfluenceResponse {
@@ -22,6 +34,10 @@ interface ConfluenceResponse {
   as_on_date: string | null;
   /** Scanners that failed during the batch; excluded from the aggregation. */
   scanner_errors: Record<string, string>;
+  /** Coverage threshold above which a scanner is classed "broad". */
+  broad_threshold: number;
+  min_selective: number;
+  scanner_breadth: Record<string, ScannerBreadth>;
   /** Set when no snapshot exists yet, or the snapshot could not be read. */
   message?: string;
   symbols: ConfluenceSymbol[];
@@ -32,7 +48,7 @@ interface ConfluenceStatus {
   message: string;
 }
 
-type SortKey = 'scanner_count' | 'symbol' | 'sector' | 'best_grade';
+type SortKey = 'selective_scanner_count' | 'scanner_count' | 'symbol' | 'sector' | 'best_grade';
 
 /* ------------------------------------------------------------------ */
 /*  Scanner display-name → route mapping                               */
@@ -109,7 +125,7 @@ export default function ConfluenceView() {
   const [data, setData] = useState<ConfluenceResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sortKey, setSortKey] = useState<SortKey>('scanner_count');
+  const [sortKey, setSortKey] = useState<SortKey>('selective_scanner_count');
   const [sortAsc, setSortAsc] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -199,7 +215,11 @@ export default function ConfluenceView() {
     const rows = [...data.symbols];
     rows.sort((a, b) => {
       let cmp = 0;
-      if (sortKey === 'scanner_count') cmp = a.scanner_count - b.scanner_count;
+      if (sortKey === 'selective_scanner_count') {
+        cmp = a.selective_scanner_count - b.selective_scanner_count;
+        // Tie-break on total agreement, then symbol, for a stable order.
+        if (cmp === 0) cmp = a.scanner_count - b.scanner_count;
+      } else if (sortKey === 'scanner_count') cmp = a.scanner_count - b.scanner_count;
       else if (sortKey === 'best_grade') {
         // Sort A > B > C > D; nulls at bottom
         const rank = (g: string | null) => {
@@ -225,6 +245,25 @@ export default function ConfluenceView() {
     if (sortKey === key) setSortAsc(!sortAsc);
     else { setSortKey(key); setSortAsc(key === 'symbol'); }
   };
+
+  /** Names of scanners classed broad in this snapshot, with their coverage. */
+  const broadScannerNames = useMemo(
+    () =>
+      Object.entries(data?.scanner_breadth || {})
+        .filter(([, b]) => b.broad)
+        .sort((a, b) => b[1].pct_of_universe - a[1].pct_of_universe)
+        .map(([name, b]) => `${name} (${b.pct_of_universe}%)`),
+    [data],
+  );
+
+  const breadthTooltip =
+    `Broad scanners flag most of the universe, so counting them makes the ` +
+    `total mostly restate their own breadth. They are listed separately ` +
+    `and excluded from this count.\n\nCurrently broad: ${
+      broadScannerNames.length ? broadScannerNames.join(', ') : 'none'
+    }.\n\nA symbol is listed only when at least ${
+      data?.min_selective ?? 2
+    } selective scanners agree.`;
 
   const SortIndicator = ({ col }: { col: SortKey }) => (
     <span className="ml-1 text-[12px] opacity-50">
@@ -350,9 +389,16 @@ export default function ConfluenceView() {
                 </th>
                 <th
                   className="text-center px-3 py-2 text-[12px] text-[#888] uppercase tracking-wider cursor-pointer hover:text-white select-none"
-                  onClick={() => toggleSort('scanner_count')}
+                  onClick={() => toggleSort('selective_scanner_count')}
+                  title="Count of SELECTIVE scanners that flagged this symbol. Click to toggle; the total including broad scanners is shown in grey beside it."
                 >
-                  # Scanners <SortIndicator col="scanner_count" />
+                  <span className="inline-flex items-center gap-1">
+                    # Scanners
+                    <span title={breadthTooltip} aria-label="About broad scanners">
+                      <Info size={12} className="opacity-60 hover:opacity-100" />
+                    </span>
+                    <SortIndicator col="selective_scanner_count" />
+                  </span>
                 </th>
                 <th className="text-left px-3 py-2 text-[12px] text-[#888] uppercase tracking-wider">
                   Scanners
@@ -379,22 +425,42 @@ export default function ConfluenceView() {
                   <td className="px-3 py-2 text-center">
                     <span
                       className={`inline-flex items-center justify-center min-w-[20px] px-1.5 py-0.5 rounded text-[12px] font-bold ${
-                        row.scanner_count >= 4
+                        row.selective_scanner_count >= 4
                           ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                          : row.scanner_count >= 3
+                          : row.selective_scanner_count >= 3
                             ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
                             : 'bg-[#ffffff0a] text-[#aaa] border border-[#ffffff1a]'
                       }`}
                     >
-                      {row.scanner_count}
+                      {row.selective_scanner_count}
                     </span>
+                    {row.broad_scanners.length > 0 && (
+                      <span
+                        className="ml-1.5 text-[11px] text-[#666] font-mono"
+                        title={`Broad scanners also flag this symbol: ${row.broad_scanners.join(', ')}. Not counted, because they flag most of the universe.`}
+                      >
+                        (+{row.broad_scanners.length} broad)
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex flex-wrap gap-1">
-                      {row.scanners.map((name) => (
+                      {row.selective_scanners.map((name) => (
                         <span
                           key={name}
                           className={`inline-block px-1.5 py-0.5 rounded text-[12px] border ${
+                            SCANNER_COLORS[name] || DEFAULT_SCANNER_COLOR
+                          }`}
+                        >
+                          {name}
+                        </span>
+                      ))}
+                      {/* Broad scanners: kept visible, de-emphasised, uncounted. */}
+                      {row.broad_scanners.map((name) => (
+                        <span
+                          key={name}
+                          title={`${name} is a broad scanner (flags most of the universe) — shown for context, not counted.`}
+                          className={`inline-block px-1.5 py-0.5 rounded text-[12px] border opacity-40 ${
                             SCANNER_COLORS[name] || DEFAULT_SCANNER_COLOR
                           }`}
                         >
