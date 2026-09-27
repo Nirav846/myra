@@ -236,6 +236,37 @@ cost_adjusted_return = _wy.cost_adjusted_return
 
 
 # -- STEP 1: preflight --------------------------------------------------------
+def in_window(d: str, since: str | None, until: str | None) -> bool:
+    """Inclusive date-window test on a snapshot's as_on_date.
+
+    Strings compare correctly as YYYY-MM-DD, and inclusivity is asserted in
+    run_selftest() rather than assumed.
+    """
+    if since and d < since:
+        return False
+    if until and d > until:
+        return False
+    return True
+
+
+def filter_snapshots(paths, since, until):
+    """Resolve a window to (as_on_date, path) pairs.
+
+    Pooling two regimes hides a regime split rather than revealing it, so the
+    window must be applied BEFORE any forward-return maths, and the resolved
+    dates are printed rather than assumed.
+    """
+    out = []
+    for p in paths:
+        with open(p, encoding="utf-8") as fh:
+            d = json.load(fh).get("as_on_date")
+        if not d:
+            raise SystemExit(f"{p}: no as_on_date — refusing to guess the window")
+        if in_window(d, since, until):
+            out.append((d, p))
+    return sorted(out)
+
+
 def discover_snapshots() -> list[str]:
     """Glob calibration snapshots; fail loudly if none exist."""
     if not os.path.isdir(CAL_DIR):
@@ -526,6 +557,24 @@ def build_forward_rows(
 
 
 # -- STEP 4: print_summary ----------------------------------------------------
+def weighted_mean_excess(entries: list[dict]) -> float | None:
+    """n-weighted mean excess across bucket summaries, None-safe.
+
+    mean_excess is None whenever the benchmark is unavailable for that bucket
+    (e.g. a pre-2025 window: ^NSEI history starts 2025-05-29). Multiplying
+    None by n used to raise TypeError and abort the whole analysis, so a
+    missing benchmark crashed the run instead of reporting "n/a".
+    Weighted over the buckets that DO have an excess value.
+    """
+    usable = [
+        d for d in entries if d and d.get("mean_excess") is not None and d.get("n")
+    ]
+    if not usable:
+        return None
+    n = sum(d["n"] for d in usable)
+    return sum(d["mean_excess"] * d["n"] for d in usable) / n if n else None
+
+
 def summarise(rows: list[dict], horizon: int) -> dict:
     by_bucket: dict[str, list[dict]] = defaultdict(list)
     for r in rows:
@@ -600,7 +649,7 @@ def print_table(summary: dict, horizons: list[int], use_costs: bool) -> None:
         q5 = s.get("5+")
         ctl = [s[b] for b in CONTROL_BUCKETS if s.get(b)]
         ctl_n = sum(d["n"] for d in ctl)
-        ctl_exc = sum(d["mean_excess"] * d["n"] for d in ctl) / ctl_n if ctl_n else None
+        ctl_exc = weighted_mean_excess(ctl)
         ctl_wr = sum(d["win_rate"] * d["n"] for d in ctl) / ctl_n if ctl_n else None
         if q5 and ctl_exc is not None:
             print("-" * 108)
@@ -1130,6 +1179,37 @@ ROW_SCANNERS_CASES = [
     ("empty row", {}, []),
 ]
 
+# (description, as_on_date, since, until, expected)
+WINDOW_CASES = [
+    ("inside window", "2023-06-15", "2023-01-01", "2023-12-31", True),
+    ("start boundary is inclusive", "2023-01-01", "2023-01-01", "2023-12-31", True),
+    ("end boundary is inclusive", "2023-12-31", "2023-01-01", "2023-12-31", True),
+    ("before start excluded", "2022-12-30", "2023-01-01", "2023-12-31", False),
+    ("after end excluded", "2024-01-01", "2023-01-01", "2023-12-31", False),
+    ("no bounds keeps all", "2023-06-15", None, None, True),
+    ("since only", "2025-09-24", "2023-01-01", None, True),
+    ("until only excludes later", "2025-09-24", None, "2023-12-31", False),
+]
+
+
+# (description, bucket summaries, expected weighted mean excess or None)
+WEIGHTED_MEAN_CASES = [
+    ("single bucket", [{"mean_excess": -2.0, "n": 10}], -2.0),
+    (
+        "n-weighted, not mean-of-means",
+        [{"mean_excess": -2.0, "n": 10}, {"mean_excess": -4.0, "n": 30}],
+        -3.5,
+    ),
+    ("all None -> None (missing benchmark)", [{"mean_excess": None, "n": 10}], None),
+    (
+        "skips None buckets, weights only the rest",
+        [{"mean_excess": None, "n": 10}, {"mean_excess": -4.0, "n": 30}],
+        -4.0,
+    ),
+    ("empty -> None", [], None),
+    ("None entries dropped", [None, {"mean_excess": -1.0, "n": 5}], -1.0),
+]
+
 
 def run_selftest() -> bool:
     """Verify every comparator/grouping on hand-built cases with known answers."""
@@ -1168,6 +1248,15 @@ def run_selftest() -> bool:
         check(f"sole_scanner/{desc}", sole_scanner(row), want)
     for desc, row, want in ROW_SCANNERS_CASES:
         check(f"row_scanners/{desc}", row_scanners(row), want)
+    for desc, d, since, until, want in WINDOW_CASES:
+        check(f"in_window/{desc}", in_window(d, since, until), want)
+    for desc, entries, want in WEIGHTED_MEAN_CASES:
+        got = weighted_mean_excess(entries)
+        check(
+            f"weighted_mean_excess/{desc}",
+            None if got is None else round(got, 6),
+            want,
+        )
 
     print(f"\n  {len(failures)} failure(s)")
     if failures:
@@ -1490,6 +1579,15 @@ def parse_args(argv):
         help="run the Float Exhaustion decomposition (selftest, pair "
         "decomposition, (a)/(b)/(c) grouping, standalone profiles)",
     )
+    p.add_argument(
+        "--since",
+        help="only use snapshots with as_on_date >= this (YYYY-MM-DD). Applied "
+        "BEFORE any forward-return maths: pooling regimes would hide a split.",
+    )
+    p.add_argument(
+        "--until",
+        help="only use snapshots with as_on_date <= this (YYYY-MM-DD)",
+    )
     return p.parse_args(argv)
 
 
@@ -1503,7 +1601,22 @@ def main(argv=None) -> int:
         run_selftest()
     print_classification()
     paths = discover_snapshots()
-    print(f"Found {len(paths)} calibration snapshot(s) in {CAL_DIR}")
+    dated = filter_snapshots(paths, args.since, args.until)
+    if not dated:
+        have = sorted(
+            json.load(open(p, encoding="utf-8")).get("as_on_date", "?") for p in paths
+        )
+        raise SystemExit(
+            f"Date window --since {args.since} --until {args.until} matched 0 of "
+            f"{len(paths)} snapshot(s). Available as_on_date values: {have}. "
+            f"Refusing to report a window that contains no data."
+        )
+    paths = [p for _, p in dated]
+    print(
+        f"Found {len(paths)} calibration snapshot(s) in {CAL_DIR} "
+        f"| window {args.since or 'earliest'} .. {args.until or 'latest'}"
+    )
+    print(f"  Dates in window: {[d for d, _ in dated]}")
 
     all_rows: list[dict] = []
     unresolved: list[dict] = []
