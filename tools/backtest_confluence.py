@@ -79,6 +79,145 @@ DEFAULT_HORIZONS = [20, 40, 60, 90, 120, 180]
 BUCKET_LABELS = ["0", "1", "2", "3", "4", "5+"]
 CONTROL_BUCKETS = ("0", "1")
 
+STAGE_BUCKET_LABELS = ["0", "1", "2+"]
+
+# ---------------------------------------------------------------------------
+# STEP 1: early- vs late-stage scanner classification.
+#
+# The axis is: what must ALREADY be true in the price/volume/delivery record
+# for the gate to pass?
+#   "early" -> the gate permits or requires price to still be compressed /
+#              un-confirmed (tight range, contracting volume, no breakout), or
+#              measures a delivery/absorption signature with no price-structure
+#              requirement at all.
+#   "late"  -> the gate requires a completed price structure: a discrete
+#              crossover, a close above a box ceiling, a reclaimed low, a
+#              printed climax/distribution bar, or a completed advance.
+#
+# Every justification below cites the actual gating lines, not the scanner
+# name. This is a judgment call and is meant to be reviewed and overridden.
+# ---------------------------------------------------------------------------
+SCANNER_STAGE: dict[str, str] = {
+    "The Trigger": "early",
+    "Bottom Hunter": "early",
+    "Invisible Hand": "early",
+    "Liquidity Flip": "early",
+    "Operator Fingerprint": "early",
+    "Seasonal Delivery": "early",
+    "Recovery Ladder": "late",
+    "Super Breakout": "late",
+    "Float Exhaustion": "late",
+    "Darvas Box Pro": "late",
+    "Climax Accumulation": "late",
+    "Wyckoff Automaton": "late",  # broad; excluded from selective buckets
+    "Multibagger Pro": "early",  # broad; excluded from selective buckets
+}
+
+STAGE_JUSTIFICATION: dict[str, str] = {
+    "The Trigger": (
+        "gate3 REQUIRES compression: 5d/20d vol ratio < 0.75 AND 5d range < 10% "
+        "(trigger_scanner.py:313-316), so price must NOT have moved. 20d float "
+        "turnover >= 8% (L249) is accumulation, not confirmation."
+    ),
+    "Bottom Hunter": (
+        "only gate is a 20-session up-day vs down-day delivery_pct differential "
+        ">= 5pp plus ADTV (bottom_hunter.py:471-474). No price, trend, or 52w "
+        "requirement whatsoever -> price-neutral, cannot fire on extension."
+    ),
+    "Invisible Hand": (
+        "delivery-value-per-unit-price-drift ratio > 1.2 over a completed 20d "
+        "window, keyed on QUIET high-delivery days (del>50 & |ret|<1.5%), and "
+        "explicitly REJECTS extension via wk52_pos < 88 "
+        "(invisible_hand_scanner.py:456-465). Anti-late by construction."
+    ),
+    "Liquidity Flip": (
+        "30d mean delivery_pct must already have stepped up >= +8pp vs the prior "
+        "120d (liquidity_flip_detector.py:238-245). SMA200 and 52w position are "
+        "score multipliers, NOT gates (L271-305) -> no price structure required."
+    ),
+    "Operator Fingerprint": (
+        "the strongest early-stage gate in the set: last 14 sessions' mean "
+        "daily range must be < 80% of the older window (compression_ratio < 0.80, "
+        "operator_fingerprint_scanner.py:298) with delivery drift > 0. Requires "
+        "price to be coiling, i.e. the move has not started."
+    ),
+    "Seasonal Delivery": (
+        "needs only >= 3 sessions of the current calendar month whose mean "
+        "delivery_pct already exceeds that same month's multi-year norm "
+        "(seasonal_delivery_harvester.py:216-239). Structurally cannot see OHLCV "
+        "or volume (L83-92) -> no price confirmation possible."
+    ),
+    "Recovery Ladder": (
+        "close must have JUST crossed up through year_low(252d) * 1.20 on this "
+        "exact bar (bottom_hunter_m1_scanner.py:180). A discrete same-bar "
+        "recovery crossover -- the +20% off the low has already happened."
+    ),
+    "Super Breakout": (
+        "close must have JUST crossed up through SMA(50) on this exact bar "
+        "(super_breakout.py:180-183). Definitionally a breakout."
+    ),
+    "Float Exhaustion": (
+        "20 sessions of delivery must ALREADY have consumed >= 10% of free float "
+        "(float_exhaustion_scanner.py:240-241). LOWEST-CONFIDENCE call: there "
+        "is no price gate at all, so this is classified late purely on turnover "
+        "magnitude (advanced end-of-cycle state), not on any required price "
+        "structure. Override this one first if you disagree."
+    ),
+    "Darvas Box Pro": (
+        "precondition requires a COMPLETED advance: within 5% of the 52w high OR "
+        ">= +20% over 60 sessions (darvas_box_scanner.py:145-156). Emits "
+        "pre-breakout 'In Box'/'Breakout Pending' states too (L604-610), but "
+        "those are consolidations that FOLLOW a move, so the flagged names have "
+        "already run."
+    ),
+    "Climax Accumulation": (
+        "a >= 10x-volume, sub-15%-delivery distribution climax bar must ALREADY "
+        "have printed, with 3-15 sessions since and rising delivery across that "
+        "window (climax_accumulation.py:170-175, 204-250). The capitulation "
+        "event is definitionally late."
+    ),
+    "Wyckoff Automaton": (
+        "all five event detectors (SC/Spring/SOS/AR/ST) are post-hoc structures "
+        "already printed in the data (wyckoff_automaton.py:481, 522, 704, 764, "
+        "795). BROAD - excluded from selective buckets, classified for review "
+        "completeness only."
+    ),
+    "Multibagger Pro": (
+        "gate is `if score >= 0` (multibagger_early_detection.py:69), which is "
+        "ALWAYS TRUE because score is a sum of non-negative terms -- it fires on "
+        "every symbol with >= 30 bars. BROAD - excluded from selective buckets. "
+        "The vacuous gate is a pre-existing bug, flagged separately."
+    ),
+}
+
+
+def print_classification() -> None:
+    """Print the STEP 1 judgment call for review before any numbers are read."""
+    print("=" * 100)
+    print("STEP 1 -- EARLY- vs LATE-STAGE SCANNER CLASSIFICATION (judgment call)")
+    print("=" * 100)
+    for stage in ("early", "late"):
+        names = sorted(n for n, s in SCANNER_STAGE.items() if s == stage)
+        print(f"\n{stage.upper()}-STAGE ({len(names)}):")
+        for n in names:
+            broad = (
+                " [BROAD - excluded from selective buckets]"
+                if n in BROAD_SCANNERS
+                else ""
+            )
+            print(f"  {n}{broad}")
+            print(f"      {STAGE_JUSTIFICATION[n]}")
+    print()
+    sel_e = sum(
+        1 for n, s in SCANNER_STAGE.items() if s == "early" and n not in BROAD_SCANNERS
+    )
+    sel_l = sum(
+        1 for n, s in SCANNER_STAGE.items() if s == "late" and n not in BROAD_SCANNERS
+    )
+    print(f"Selective scanners: {sel_e} early-stage, {sel_l} late-stage")
+    print("=" * 100)
+
+
 # Reuse the reference tool's price/cost helpers verbatim rather than adding a
 # 5th copy (these are currently duplicated across 5 files in tools/; hoisting
 # them into a shared module is tracked as separate cleanup).
@@ -160,6 +299,10 @@ def bucket_label(count: int) -> str:
     return "5+" if count >= 5 else str(count)
 
 
+def stage_bucket_label(count: int) -> str:
+    return "2+" if count >= 2 else str(count)
+
+
 def collect_events(snap: dict) -> list[dict]:
     """Per-symbol bucket assignment for one snapshot.
 
@@ -194,12 +337,32 @@ def collect_events(snap: dict) -> list[dict]:
                 selective_counts[sym] += 1
                 selective_flagged[sym].add(name)
 
+    # Every selective scanner in a snapshot must be classified, else the stage
+    # split silently drops it and the counts stop summing.
+    all_selective_names: set[str] = set()
+    for names in selective_flagged.values():
+        all_selective_names |= names
+    unclassified = all_selective_names - set(SCANNER_STAGE)
+    if unclassified:
+        raise SystemExit(
+            f"{scan_date}: selective scanners missing a stage classification: "
+            f"{sorted(unclassified)} — refusing to report a stage split that "
+            "silently omits scanners"
+        )
+
     union = set(selective_counts) | set(broad_flagged)
     union_size = len(union)
 
     events: list[dict] = []
     for sym in union:
         n = selective_counts.get(sym, 0)
+        early = sorted(x for x in selective_flagged[sym] if SCANNER_STAGE[x] == "early")
+        late = sorted(x for x in selective_flagged[sym] if SCANNER_STAGE[x] == "late")
+        if len(early) + len(late) != n:
+            raise SystemExit(
+                f"{scan_date}/{sym}: early+late={len(early) + len(late)} != "
+                f"selective={n} — stage map is inconsistent"
+            )
         events.append(
             {
                 "symbol": sym,
@@ -210,6 +373,12 @@ def collect_events(snap: dict) -> list[dict]:
                 "union_size": union_size,
                 "bucket": bucket_label(n),
                 "in_report": n >= MIN_SELECTIVE_FOR_INCLUSION,
+                "early_count": len(early),
+                "late_count": len(late),
+                "early_scanners": early,
+                "late_scanners": late,
+                "early_bucket": stage_bucket_label(len(early)),
+                "late_bucket": stage_bucket_label(len(late)),
             }
         )
 
@@ -311,6 +480,10 @@ def build_forward_rows(
                     "horizon": h,
                     "bucket": e["bucket"],
                     "selective_scanner_count": e["selective_scanner_count"],
+                    "early_count": e["early_count"],
+                    "late_count": e["late_count"],
+                    "early_bucket": e["early_bucket"],
+                    "late_bucket": e["late_bucket"],
                     "in_report": e["in_report"],
                     "entry_close": round(entry, 2),
                     "exit_close": round(exit_px, 2),
@@ -415,6 +588,192 @@ def print_table(summary: dict, horizons: list[int], use_costs: bool) -> None:
             print(f"        (Q5 = bucket 5+, Q1 = pooled 0/1 control, n={ctl_n})")
 
 
+def _stats(rs: list[dict]) -> dict | None:
+    if not rs:
+        return None
+    rets = [r["return_pct"] for r in rs]
+    exc = [r["excess_return_pct"] for r in rs if r["excess_return_pct"] is not None]
+    return {
+        "n": len(rs),
+        "dates": len({r["scan_date"] for r in rs}),
+        "mean": sum(rets) / len(rets),
+        "mean_excess": (sum(exc) / len(exc)) if exc else None,
+        "win_rate": 100.0 * sum(1 for x in rets if x > 0) / len(rets),
+        "win_rate_vs_bench": (
+            100.0 * sum(1 for x in exc if x > 0) / len(exc) if exc else None
+        ),
+    }
+
+
+def summarise_stage(rows: list[dict], horizon: int, field: str) -> dict:
+    by: dict[str, list[dict]] = defaultdict(list)
+    for r in rows:
+        if r["horizon"] == horizon:
+            by[r[field]].append(r)
+    return {b: _stats(by.get(b) or []) for b in STAGE_BUCKET_LABELS}
+
+
+def print_stage_tables(rows: list[dict], horizons: list[int], use_costs: bool) -> None:
+    """STEP 3: early-stage and late-stage counts, each bucketed INDEPENDENTLY of
+    total selective_scanner_count.
+
+    Deliberately not overwriting the agreement-count table: that result stands
+    on its own and conflating the two would hide which one is driving what.
+    """
+    print()
+    print("#" * 108)
+    print("# STAGE SPLIT -- does the negative gradient come from LATE-STAGE scanners?")
+    print("# Same survivorship bias and cost assumptions as the table above.")
+    print("#" * 108)
+    for field, title in (
+        ("early_bucket", "EARLY-STAGE scanner count"),
+        ("late_bucket", "LATE-STAGE scanner count"),
+    ):
+        print(
+            f"\n{'=' * 108}\nBUCKETED BY {title} (independent of total agreement)\n{'=' * 108}"
+        )
+        for h in horizons:
+            s = summarise_stage(rows, h, field)
+            print(f"\n  horizon {h} trading days")
+            print("  " + "-" * 104)
+            print(
+                f"  {'bucket':<8}{'n':>8}{'dates':>7}{'mean':>10}"
+                f"{'mean excess':>14}{'win%':>8}{'win% vs NSEI':>16}"
+            )
+            print("  " + "-" * 104)
+            for b in STAGE_BUCKET_LABELS:
+                d = s.get(b)
+                if d is None:
+                    print(f"  {b:<8}{'no data':>8}")
+                    continue
+                print(
+                    f"  {b:<8}{d['n']:>8}{d['dates']:>7}{fmt(d['mean']):>10}"
+                    f"{fmt(d['mean_excess']):>14}{fmt(d['win_rate']):>8}"
+                    f"{fmt(d['win_rate_vs_bench']):>16}"
+                )
+            lo, hi = s.get("0"), s.get("2+")
+            if (
+                lo
+                and hi
+                and lo["mean_excess"] is not None
+                and hi["mean_excess"] is not None
+            ):
+                print(
+                    f"  {'2+ minus 0':<8}{'':>8}{'':>7}{'':>10}"
+                    f"{fmt(hi['mean_excess'] - lo['mean_excess']):>14}"
+                    f"{'':>8}{fmt(hi['win_rate'] - lo['win_rate']):>16}"
+                )
+
+
+def print_pair_test(rows: list[dict], horizons: list[int]) -> None:
+    """STEP 4: among symbols with exactly ONE late-stage flag, does adding an
+    early-stage co-flag help? This is the actionable question and is different
+    from raw agreement count: it isolates the late-stage signal as a constant
+    and varies only whether an earlier-stage condition was also present.
+    """
+    print()
+    print("#" * 108)
+    print("# PAIR TEST -- late-stage flag alone  vs  late-stage + early-stage co-flag")
+    print(
+        "# Population: symbols with EXACTLY 1 late-stage scanner flag. The late-stage"
+    )
+    print(
+        "# signal is held constant; only the presence of an early-stage co-flag varies."
+    )
+    print("#" * 108)
+    print(
+        f"\n{'h':>4}{'grp':>28}{'n':>8}{'dates':>7}{'mean':>10}"
+        f"{'mean excess':>14}{'win%':>8}{'win% vs NSEI':>16}"
+    )
+    print("-" * 108)
+    deltas: dict[int, tuple] = {}
+    for h in horizons:
+        for grp, sel in (
+            (
+                "late=1, early=0",
+                lambda r: r["late_count"] == 1 and r["early_count"] == 0,
+            ),
+            (
+                "late=1, early>=1",
+                lambda r: r["late_count"] == 1 and r["early_count"] >= 1,
+            ),
+        ):
+            rs = [r for r in rows if r["horizon"] == h and sel(r)]
+            d = _stats(rs)
+            if d is None:
+                print(f"{h:>4}{grp:>28}{'no data':>8}")
+                continue
+            print(
+                f"{h:>4}{grp:>28}{d['n']:>8}{d['dates']:>7}{fmt(d['mean']):>10}"
+                f"{fmt(d['mean_excess']):>14}{fmt(d['win_rate']):>8}"
+                f"{fmt(d['win_rate_vs_bench']):>16}"
+            )
+        a = [
+            r
+            for r in rows
+            if r["horizon"] == h and r["late_count"] == 1 and r["early_count"] == 0
+        ]
+        b = [
+            r
+            for r in rows
+            if r["horizon"] == h and r["late_count"] == 1 and r["early_count"] >= 1
+        ]
+        da, db = _stats(a), _stats(b)
+        if (
+            da
+            and db
+            and da["mean_excess"] is not None
+            and db["mean_excess"] is not None
+        ):
+            d_exc = db["mean_excess"] - da["mean_excess"]
+            d_wr = db["win_rate"] - da["win_rate"]
+            deltas[h] = (d_exc, d_wr, da["n"], db["n"])
+            print(
+                f"{'':>4}{'DELTA (+early)':>28}{'':>8}{'':>7}{'':>10}"
+                f"{fmt(d_exc):>14}{'':>8}{fmt(d_wr):>16}"
+            )
+        print("-" * 108)
+    if deltas:
+        print("\n  Reading: a POSITIVE delta means adding an early-stage co-flag to a")
+        print("  late-stage signal IMPROVED forward excess return. Negative means the")
+        print(
+            "  early-stage co-flag made it worse -- i.e. late-stage crowding dominates."
+        )
+
+
+def check_stage_invariants(rows: list[dict]) -> bool:
+    """Same class of arithmetic/assignment cross-check as the agreement table."""
+    ok = True
+    bad_sum = [
+        r
+        for r in rows
+        if r["early_count"] + r["late_count"] != r["selective_scanner_count"]
+    ]
+    if bad_sum:
+        print(f"  FAIL: early+late != selective on {len(bad_sum)} rows")
+        ok = False
+    for h in sorted({r["horizon"] for r in rows}):
+        hs = [r for r in rows if r["horizon"] == h]
+        for field, labels in (
+            ("early_bucket", STAGE_BUCKET_LABELS),
+            ("late_bucket", STAGE_BUCKET_LABELS),
+        ):
+            g: dict[str, list[float]] = defaultdict(list)
+            for r in hs:
+                g[r[field]].append(r["return_pct"])
+            tot = sum(len(v) for v in g.values())
+            if tot != len(hs):
+                print(f"  FAIL h={h} {field}: sum(bucket n)={tot} != rows={len(hs)}")
+                ok = False
+                continue
+            pooled = sum(sum(v) for v in g.values()) / tot
+            direct = sum(r["return_pct"] for r in hs) / len(hs)
+            if abs(pooled - direct) > 1e-9:
+                print(f"  FAIL h={h} {field}: pooled={pooled} != direct={direct}")
+                ok = False
+    return ok
+
+
 def write_csv(rows: list[dict], path: str) -> None:
     if not rows:
         print(f"\nNo rows to write to {path}")
@@ -442,6 +801,7 @@ def parse_args(argv):
 
 def main(argv=None) -> int:
     args = parse_args(argv)
+    print_classification()
     paths = discover_snapshots()
     print(f"Found {len(paths)} calibration snapshot(s) in {CAL_DIR}")
 
@@ -471,6 +831,12 @@ def main(argv=None) -> int:
     summary = {h: summarise(all_rows, h) for h in args.horizons}
 
     print_table(summary, args.horizons, not args.no_costs)
+
+    print_stage_tables(all_rows, args.horizons, not args.no_costs)
+    print_pair_test(all_rows, args.horizons)
+
+    print("\nSTAGE BUCKET INVARIANT CHECKS (early+late == selective; no rows lost):")
+    print("  PASSED" if check_stage_invariants(all_rows) else "  FAILED")
 
     if unresolved:
         by_reason: dict[str, int] = defaultdict(int)
