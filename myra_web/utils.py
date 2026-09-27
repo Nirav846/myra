@@ -245,6 +245,20 @@ def build_confluence_report() -> dict:
             "symbols": [],
         }
 
+    return build_report_from_snapshot(snap)
+
+
+def build_report_from_snapshot(snap: dict) -> dict:
+    """Aggregate an already-loaded snapshot dict into a confluence report.
+
+    Split out of :func:`build_confluence_report` so tools/backtest_confluence.py
+    can aggregate a *historical* calibration snapshot read from disk. Both
+    entry points run the identical aggregation and the identical
+    ``BROAD_SCANNERS`` membership test, so a backtest bucket can never
+    disagree with what the UI showed for that date — the scanner-parity
+    invariant from docs/BACKTEST_ENGINE.md §9 step 7.
+    """
+    IST = timezone(timedelta(hours=5, minutes=30))
     as_on_date = snap.get("as_on_date")
     generated_at = snap.get("generated_at")
     scanners = snap.get("scanners") or {}
