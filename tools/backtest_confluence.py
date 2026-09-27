@@ -505,6 +505,9 @@ def build_forward_rows(
                     "ambiguous_count": e["ambiguous_count"],
                     "early_bucket": e["early_bucket"],
                     "late_bucket": e["late_bucket"],
+                    "early_scanners": json.dumps(e["early_scanners"]),
+                    "late_scanners": json.dumps(e["late_scanners"]),
+                    "ambiguous_scanners": json.dumps(e["ambiguous_scanners"]),
                     "in_report": e["in_report"],
                     "entry_close": round(entry, 2),
                     "exit_close": round(exit_px, 2),
@@ -904,6 +907,566 @@ def write_csv(rows: list[dict], path: str) -> None:
     print(f"\nWrote {len(rows)} rows -> {path}")
 
 
+# =============================================================================
+# FLOAT EXHAUSTION DECOMPOSITION
+#
+# Read-only analysis. The early/late stage-mix result reversed when Float
+# Exhaustion was excluded, so the question is no longer "is mixed worse?" but
+# "what is Float Exhaustion actually contributing?".
+#
+# All comparators below are pure functions and are exercised against
+# hand-constructed toy cases (with the expected answer written down BEFORE
+# the comparator body) by run_selftest(), which main() runs before any real
+# data is touched. A comparator that silently returns the convenient answer is
+# exactly the failure mode already hit twice in this investigation.
+# =============================================================================
+
+FLOAT_SCANNER = "Float Exhaustion"
+THIN_N = 100  # below this, a bucket's mean is not interpretable
+MIN_DATES_FOR_PAIR_RANKING = 4
+
+
+def _max_dates(by_pair, horizon: int) -> int:
+    best = 0
+    for grp in by_pair.values():
+        st = _stats([r for r in grp if r["horizon"] == horizon])
+        if st:
+            best = max(best, st["dates"])
+    return best
+
+
+# -- comparators --------------------------------------------------------------
+# NOTE: expectations are declared first, on purpose.
+
+
+def mixed_worst_verdict(mixed: list[float], homo: list[float]) -> str:
+    """Does every mixed bucket lose to every homogeneous bucket?
+
+    Requires max(mixed) < min(homo). The earlier buggy version compared
+    max(homo) > min(mixed), i.e. the BEST homogeneous against the WORST mixed,
+    which reports "worst" whenever mixed beats only one of them.
+    """
+    if not mixed or not homo:
+        return "no data"
+    return "MIXED WORST" if max(mixed) < min(homo) else "mixed NOT worst"
+
+
+def both_underperform(candidates: list[float], reference: float) -> str:
+    """Do BOTH candidate buckets underperform the reference bucket?"""
+    if not candidates:
+        return "no data"
+    return "BOTH UNDERPERFORM" if all(c < reference for c in candidates) else "not both"
+
+
+# -- row -> pair / group ------------------------------------------------------
+
+
+def row_scanners(r: dict) -> list[str]:
+    """Contributing selective scanners, deduped and sorted.
+
+    Accepts JSON strings (forward-row/CSV form) or lists (event form).
+    """
+    names: list[str] = []
+    for key in ("early_scanners", "late_scanners", "ambiguous_scanners"):
+        raw = r.get(key)
+        if not raw:
+            continue
+        names.extend(json.loads(raw) if isinstance(raw, str) else list(raw))
+    return sorted(set(names))
+
+
+def float_group(r: dict) -> str | None:
+    """STEP 2 grouping for a total==2 row.
+
+    Independent of AMBIGUOUS_AS: Float Exhaustion is detected BY NAME and the
+    other scanner's stage is looked up, so the grouping cannot flip when the
+    ambiguous mapping changes. Verified in run_selftest().
+    """
+    if r.get("selective_scanner_count") != 2:
+        return None
+    names = row_scanners(r)
+    if len(names) != 2:
+        return None
+    has_float = FLOAT_SCANNER in names
+    others = [n for n in names if n != FLOAT_SCANNER]
+    if has_float:
+        if len(others) != 1:
+            return None  # Float+Float is impossible (one scanner, one flag)
+        st = stage_of(others[0])
+        return {"early": "b_early+float", "late": "c_late+float"}.get(st)
+    st = {stage_of(n) for n in others}
+    if st == {"early", "late"}:
+        return "a_early+late"
+    if st == {"early"}:
+        return "h_early+early"
+    if st == {"late"}:
+        return "h_late+late"
+    return None
+
+
+def sole_scanner(r: dict) -> str | None:
+    """STEP 3: the one contributing scanner of a total==1 row."""
+    if r.get("selective_scanner_count") != 1:
+        return None
+    names = row_scanners(r)
+    return names[0] if len(names) == 1 else None
+
+
+def pair_class(a: str, b: str) -> str:
+    """Compact stage class for a pair: e+e, e+l, e+F, l+l, l+F, ..."""
+
+    def tag(n: str) -> str:
+        return "F" if n == FLOAT_SCANNER else stage_of(n)[0]
+
+    return "".join(sorted([tag(a), tag(b)]))
+
+
+# -- self-test ----------------------------------------------------------------
+
+MIXED_WORST_CASES = [
+    # (description, mixed excesses, homogeneous excesses, expected)
+    ("mixed loses to both", [-3.0], [-1.0, -2.0], "MIXED WORST"),
+    ("mixed loses to both (2 mixes)", [-5.0, -4.0], [-1.0, -2.0], "MIXED WORST"),
+    ("mixed beats ONE homogeneous", [-3.0], [-4.0, -2.0], "mixed NOT worst"),
+    ("mixed beats both", [-1.0], [-3.0, -2.0], "mixed NOT worst"),
+    ("one mix better than homo", [-5.0, -1.0], [-3.0], "mixed NOT worst"),
+    ("ties are not 'worst'", [-2.0], [-2.0, -2.0], "mixed NOT worst"),
+    ("no mixed data", [], [-1.0], "no data"),
+    ("no homogeneous data", [-1.0], [], "no data"),
+    ("both empty", [], [], "no data"),
+]
+
+BOTH_UNDERPERFORM_CASES = [
+    # (description, candidates, reference, expected)
+    ("both under", [-3.0, -4.0], -1.0, "BOTH UNDERPERFORM"),
+    ("one under one over", [-3.0, 0.0], -1.0, "not both"),
+    ("both under, one marginal", [-3.0, -1.5], -1.0, "BOTH UNDERPERFORM"),
+    ("both over", [-1.0, -2.0], -3.0, "not both"),
+    ("single candidate under", [-3.0], -1.0, "BOTH UNDERPERFORM"),
+    ("no candidates", [], -1.0, "no data"),
+]
+
+
+def _toy_row(early=(), late=(), ambig=(), n=None) -> dict:
+    return {
+        "selective_scanner_count": n
+        if n is not None
+        else len(early) + len(late) + len(ambig),
+        "early_scanners": json.dumps(list(early)),
+        "late_scanners": json.dumps(list(late)),
+        "ambiguous_scanners": json.dumps(list(ambig)),
+    }
+
+
+FLOAT_GROUP_CASES = [
+    # (description, row, expected group)
+    (
+        "early+late, no float",
+        _toy_row(early=["Bottom Hunter"], late=["Super Breakout"]),
+        "a_early+late",
+    ),
+    (
+        "early+float",
+        _toy_row(early=["Bottom Hunter"], ambig=[FLOAT_SCANNER]),
+        "b_early+float",
+    ),
+    (
+        "late+float",
+        _toy_row(late=["Super Breakout"], ambig=[FLOAT_SCANNER]),
+        "c_late+float",
+    ),
+    (
+        "float's position in lists is irrelevant",
+        _toy_row(early=["Bottom Hunter", FLOAT_SCANNER], n=2),
+        "b_early+float",
+    ),
+    (
+        "early+early",
+        _toy_row(early=["Bottom Hunter", "Seasonal Delivery"]),
+        "h_early+early",
+    ),
+    ("late+late", _toy_row(late=["Super Breakout", "Darvas Box Pro"]), "h_late+late"),
+    ("float+float impossible -> None", _toy_row(ambig=[FLOAT_SCANNER], n=2), None),
+    (
+        "total != 2 -> None",
+        _toy_row(early=["Bottom Hunter", "Seasonal Delivery", "The Trigger"], n=3),
+        None,
+    ),
+    (
+        "total 2 but one distinct name -> None",
+        _toy_row(early=["Bottom Hunter", "Bottom Hunter"], n=2),
+        None,
+    ),
+]
+
+# An unknown scanner name must raise LOUDLY, not be silently bucketed: a silent
+# "unclassified" fallback is how a scanner quietly vanishes from a comparison.
+FLOAT_GROUP_RAISES = [
+    (
+        "unknown scanner name raises KeyError",
+        _toy_row(early=["Not A Real Scanner"], ambig=[FLOAT_SCANNER], n=2),
+        KeyError,
+    ),
+]
+
+SOLE_SCANNER_CASES = [
+    ("sole early", _toy_row(early=["Bottom Hunter"]), "Bottom Hunter"),
+    ("sole float", _toy_row(ambig=[FLOAT_SCANNER]), FLOAT_SCANNER),
+    ("total 2 -> None", _toy_row(early=["A"], late=["B"]), None),
+]
+
+ROW_SCANNERS_CASES = [
+    (
+        "merges all three lists",
+        _toy_row(early=["B"], late=["C"], ambig=[FLOAT_SCANNER]),
+        ["B", "C", FLOAT_SCANNER],
+    ),
+    ("dedupes", _toy_row(early=["A", "A"]), ["A"]),
+    (
+        "accepts list form",
+        {"selective_scanner_count": 1, "early_scanners": ["X"]},
+        ["X"],
+    ),
+    ("empty row", {}, []),
+]
+
+
+def run_selftest() -> bool:
+    """Verify every comparator/grouping on hand-built cases with known answers."""
+    global AMBIGUOUS_AS
+    print("#" * 108)
+    print("# SELF-TEST -- toy cases with known answers, run BEFORE any real data")
+    print("#" * 108)
+    failures: list[str] = []
+
+    def check(desc, got, want):
+        ok = got == want
+        print(f"  [{'PASS' if ok else 'FAIL'}] {desc}: got {got!r}, want {want!r}")
+        if not ok:
+            failures.append(desc)
+
+    for desc, mixed, homo, want in MIXED_WORST_CASES:
+        check(f"mixed_worst/{desc}", mixed_worst_verdict(mixed, homo), want)
+    for desc, cands, ref, want in BOTH_UNDERPERFORM_CASES:
+        check(f"both_underperform/{desc}", both_underperform(cands, ref), want)
+
+    saved = AMBIGUOUS_AS
+    for mode in ("exclude", "late", "early"):
+        AMBIGUOUS_AS = mode
+        for desc, row, want in FLOAT_GROUP_CASES:
+            check(f"float_group[{mode}]/{desc}", float_group(row), want)
+    AMBIGUOUS_AS = saved
+
+    for desc, row, want in FLOAT_GROUP_RAISES:
+        try:
+            got = float_group(row)
+        except Exception as exc:  # noqa: BLE001
+            got = type(exc)
+        check(f"float_group/raises/{desc}", got, want)
+
+    for desc, row, want in SOLE_SCANNER_CASES:
+        check(f"sole_scanner/{desc}", sole_scanner(row), want)
+    for desc, row, want in ROW_SCANNERS_CASES:
+        check(f"row_scanners/{desc}", row_scanners(row), want)
+
+    print(f"\n  {len(failures)} failure(s)")
+    if failures:
+        raise SystemExit(
+            "Self-test FAILED — refusing to run the analysis on real data with a "
+            f"comparator that does not do what it claims: {failures}"
+        )
+    print("  ALL PASSED — comparators verified, proceeding to real data\n")
+    return True
+
+
+def check_pair_invariants(rows: list[dict]) -> bool:
+    """Real-data cross-check of the pair/grouping plumbing."""
+    ok = True
+    total2 = [r for r in rows if r["selective_scanner_count"] == 2]
+    bad_len = [r for r in total2 if len(row_scanners(r)) != 2]
+    if bad_len:
+        print(f"  FAIL: {len(bad_len)} total==2 rows do not name exactly 2 scanners")
+        ok = False
+    bad_cnt = [
+        r
+        for r in total2
+        if r["early_count"] + r["late_count"] + r["ambiguous_count"] != 2
+    ]
+    if bad_cnt:
+        print(f"  FAIL: {len(bad_cnt)} total==2 rows have stage counts != 2")
+        ok = False
+    ungrouped = [r for r in total2 if float_group(r) is None]
+    if ungrouped:
+        print(
+            f"  NOTE: {len(ungrouped)} total==2 rows match no STEP-2 group "
+            f"(expected only float+float / unclassified) -- e.g. "
+            f"{row_scanners(ungrouped[0])}"
+        )
+    total1 = [r for r in rows if r["selective_scanner_count"] == 1]
+    bad_sole = [r for r in total1 if sole_scanner(r) is None]
+    if bad_sole:
+        print(f"  FAIL: {len(bad_sole)} total==1 rows do not name exactly 1 scanner")
+        ok = False
+    print("  PAIR INVARIANTS: " + ("PASSED" if ok else "FAILED"))
+    return ok
+
+
+# -- STEP 1: every actual pair -----------------------------------------------
+
+
+def print_pair_decomposition(rows, horizons, use_costs):
+    print()
+    print("#" * 108)
+    print("# STEP 1 -- PAIR DECOMPOSITION at total selective_scanner_count == 2")
+    print("# Every actual unordered PAIR of contributing scanners, not stage buckets.")
+    print(
+        f"# THIN (n<{THIN_N}) flags buckets whose mean is not interpretable. "
+        f"Costs: {'on' if use_costs else 'OFF'}."
+    )
+    print("#" * 108)
+    by_pair: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for r in rows:
+        if r["selective_scanner_count"] != 2:
+            continue
+        names = row_scanners(r)
+        if len(names) == 2:
+            by_pair[tuple(names)].append(r)
+
+    for h in horizons:
+        rows_h = [r for v in by_pair.values() for r in v if r["horizon"] == h]
+        groups: dict[tuple[str, str], list[dict]] = defaultdict(list)
+        for r in rows_h:
+            groups[tuple(row_scanners(r))].append(r)
+        print(f"\n{'=' * 108}\nHORIZON {h}d -- all pairs at total==2\n{'=' * 108}")
+        print(
+            f"{'pair':<52}{'class':<8}{'n':>6}{'dates':>7}{'mean':>9}{'mean exc':>10}{'win%':>8}  flag"
+        )
+        recs = []
+        for pk, grp in groups.items():
+            st = _stats(grp)
+            recs.append((st["n"], pk, pair_class(*pk), st))
+        for n, pk, cls, st in sorted(recs, key=lambda x: (-x[0], x[1])):
+            print(
+                f"{pk[0] + ' + ' + pk[1]:<52}{cls:<8}{st['n']:>6}{st['dates']:>7}"
+                f"{fmt(st['mean']):>9}{fmt(st['mean_excess']):>10}{fmt(st['win_rate']):>8}"
+                f"  {'THIN' if n < THIN_N else ''}"
+            )
+
+    # Adequate-n ranking across the full horizon set.
+    print(
+        f"\n{'=' * 108}\nADEQUATE-N PAIR RANKING (n>={THIN_N} at EVERY horizon), by mean excess\n{'=' * 108}"
+    )
+    print(f"{'pair':<52}{'class':<8}{'min n':>7}{'max n':>7}{'mean exc (avg h)':>19}")
+    ranking = []
+    for pk, grp in by_pair.items():
+        per_h = {}
+        for h in horizons:
+            st = _stats([r for r in grp if r["horizon"] == h])
+            per_h[h] = st
+        if any(st is None or st["n"] < THIN_N for st in per_h.values()):
+            continue
+        vals = [
+            st["mean_excess"] for st in per_h.values() if st["mean_excess"] is not None
+        ]
+        if not vals:
+            continue
+        ns = [st["n"] for st in per_h.values()]
+        ranking.append((sum(vals) / len(vals), pk, pair_class(*pk), min(ns), max(ns)))
+    for avg, pk, cls, nmin, nmax in sorted(ranking):
+        print(f"{pk[0] + ' + ' + pk[1]:<52}{cls:<8}{nmin:>7}{nmax:>7}{fmt(avg):>19}")
+    if not ranking:
+        max_d = (
+            max(
+                (_stats([r for r in v if r["horizon"] == max(horizons)]) or {}).get(
+                    "dates", 0
+                )
+                for v in by_pair.values()
+            )
+            if by_pair
+            else 0
+        )
+        print(
+            f"  (EMPTY -- no single pair reaches n>={THIN_N} at all {len(horizons)} "
+            f"horizons. The longest horizon rests on {max_d} distinct dates, so this "
+            f"is a data-coverage limit, not a zero result.)"
+        )
+
+    # The same ranking restricted to horizons with enough distinct dates to
+    # support a per-pair mean. Reporting the all-horizon table as empty and
+    # stopping there would bury every adequately-sized comparison.
+    dated = [
+        h for h in horizons if _max_dates(by_pair, h) >= MIN_DATES_FOR_PAIR_RANKING
+    ]
+    if dated and dated != horizons:
+        print(
+            f"\n{'=' * 108}\nADEQUATE-N PAIR RANKING over horizons with "
+            f">={MIN_DATES_FOR_PAIR_RANKING} distinct dates: h{dated[0]}-h{dated[-1]}\n{'=' * 108}"
+        )
+        print(
+            f"{'pair':<52}{'class':<8}{'min n':>7}{'max n':>7}{'mean exc (avg h)':>19}"
+        )
+        rank2 = []
+        for pk, grp in by_pair.items():
+            per_h = {h: _stats([r for r in grp if r["horizon"] == h]) for h in dated}
+            if any(st is None or st["n"] < THIN_N for st in per_h.values()):
+                continue
+            vals = [
+                st["mean_excess"]
+                for st in per_h.values()
+                if st["mean_excess"] is not None
+            ]
+            if not vals:
+                continue
+            ns = [st["n"] for st in per_h.values()]
+            rank2.append((sum(vals) / len(vals), pk, pair_class(*pk), min(ns), max(ns)))
+        for avg, pk, cls, nmin, nmax in sorted(rank2):
+            print(
+                f"{pk[0] + ' + ' + pk[1]:<52}{cls:<8}{nmin:>7}{nmax:>7}{fmt(avg):>19}"
+            )
+        if not rank2:
+            print(f"  (still empty at n>={THIN_N} over h{dated[0]}-h{dated[-1]})")
+
+
+# -- STEP 2: the three Float groupings ---------------------------------------
+
+
+def print_float_grouping(rows, horizons, use_costs):
+    print()
+    print("#" * 108)
+    print("# STEP 2 -- IS THE EFFECT SPECIFIC TO FLOAT EXHAUSTION?")
+    print(
+        "#   a_early+late    : one non-Float early + one non-Float late  <- reference"
+    )
+    print("#   b_early+float   : one non-Float early + Float Exhaustion")
+    print("#   c_late+float    : one non-Float late  + Float Exhaustion")
+    print("#   h_*             : homogeneous non-Float reference buckets")
+    print(
+        "# Grouping is by scanner NAME, so it is identical under every --ambiguous-as."
+    )
+    print("#" * 108)
+    order = [
+        "a_early+late",
+        "b_early+float",
+        "c_late+float",
+        "h_early+early",
+        "h_late+late",
+    ]
+    label = {
+        "a_early+late": "a  early+late (no float)",
+        "b_early+float": "b  early+float",
+        "c_late+float": "c  late+float",
+        "h_early+early": "-- early+early (homog)",
+        "h_late+late": "-- late+late (homog)",
+    }
+    for h in horizons:
+        groups = defaultdict(list)
+        for r in rows:
+            if r["horizon"] != h:
+                continue
+            g = float_group(r)
+            if g:
+                groups[g].append(r)
+        print(f"\n{'=' * 108}\nHORIZON {h}d, total==2\n{'=' * 108}")
+        print(
+            f"{'group':<32}{'n':>6}{'dates':>7}{'mean':>9}{'mean exc':>10}{'win%':>8}{'win%vsNSEI':>12}  flag"
+        )
+        stats = {}
+        for g in order:
+            st = _stats(groups.get(g) or [])
+            stats[g] = st
+            if st is None:
+                print(f"{label[g]:<32}{'no data':>6}")
+                continue
+            print(
+                f"{label[g]:<32}{st['n']:>6}{st['dates']:>7}{fmt(st['mean']):>9}"
+                f"{fmt(st['mean_excess']):>10}{fmt(st['win_rate']):>8}"
+                f"{fmt(st['win_rate_vs_bench']):>12}  {'THIN' if st['n'] < THIN_N else ''}"
+            )
+        # Conclusion criteria (b) and (c) vs (a), using ONLY adequately-sized buckets.
+        ref = stats.get("a_early+late")
+        cands = [
+            stats[g]["mean_excess"]
+            for g in ("b_early+float", "c_late+float")
+            if stats.get(g)
+            and stats[g]["mean_excess"] is not None
+            and stats[g]["n"] >= THIN_N
+        ]
+        thin = [
+            g
+            for g in ("b_early+float", "c_late+float")
+            if stats.get(g) and stats[g]["n"] < THIN_N
+        ]
+        if (
+            ref
+            and ref["mean_excess"] is not None
+            and ref["n"] >= THIN_N
+            and len(cands) == 2
+        ):
+            verdict = both_underperform(cands, ref["mean_excess"])
+            print(
+                f"{'':>4}-> b&c vs a (n>={THIN_N} only): {verdict}"
+                + (f"  [excluded as THIN: {thin}]" if thin else "")
+            )
+        else:
+            print(f"{'':>4}-> b&c vs a: no data (thin or missing reference)")
+
+
+# -- STEP 3: standalone profiles ---------------------------------------------
+
+
+def print_standalone(rows, horizons, use_costs):
+    print()
+    print("#" * 108)
+    print("# STEP 3 -- STANDALONE PROFILE per scanner (sole contributor, total==1)")
+    print("# Is Float Exhaustion weak on its own, or specifically bad when paired?")
+    print("#" * 108)
+    by_scanner: dict[str, list[dict]] = defaultdict(list)
+    for r in rows:
+        s = sole_scanner(r)
+        if s:
+            by_scanner[s].append(r)
+
+    curves: dict[str, dict[int, dict]] = {}
+    for sc, grp in by_scanner.items():
+        curves[sc] = {
+            h: _stats([r for r in grp if r["horizon"] == h]) for h in horizons
+        }
+
+    print(f"{'scanner':<24}" + "".join(f"{'h' + str(h):>18}" for h in horizons))
+    for sc in sorted(curves, key=lambda s: (s != FLOAT_SCANNER, s)):
+        cells = []
+        for h in horizons:
+            st = curves[sc][h]
+            cells.append(
+                f"{fmt(st['mean_excess']):>8}(n{st['n']:>4})"
+                if st
+                else f"{'-':>8}(n   0)"
+            )
+        mark = "  <== " if sc == FLOAT_SCANNER else ""
+        print(f"{sc:<24}" + "".join(cells) + mark)
+
+    print(
+        f"\n{'-' * 108}\nFloat vs the rest (mean excess across horizons with n>={THIN_N})"
+    )
+    means: dict[str, list[float]] = {}
+    for sc, per_h in curves.items():
+        vals = [
+            st["mean_excess"]
+            for h, st in per_h.items()
+            if st and st["n"] >= THIN_N and st["mean_excess"] is not None
+        ]
+        means[sc] = vals
+    for sc in sorted(
+        means, key=lambda s: (sum(means[s]) / len(means[s])) if means[s] else 0
+    ):
+        vals = means[sc]
+        avg = f"{sum(vals) / len(vals):.1f}%" if vals else "n/a (all horizons thin)"
+        mark = "  <== FLOAT" if sc == FLOAT_SCANNER else ""
+        # NB: no double space before "from" -- pycodestyle 6.x (pinned in
+        # pre-commit) reports E272 on "  from" even inside an f-string.
+        print(f"  {sc:<24}{avg:>10} over {len(vals)}/{len(horizons)} horizons{mark}")
+
+
 def parse_args(argv):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--no-costs", action="store_true", help="skip cost adjustment")
@@ -921,6 +1484,12 @@ def parse_args(argv):
         help="how to treat stage-ambiguous scanners (Float Exhaustion). 'late' "
         "reproduces the earlier forced classification, for comparison.",
     )
+    p.add_argument(
+        "--decompose-float",
+        action="store_true",
+        help="run the Float Exhaustion decomposition (selftest, pair "
+        "decomposition, (a)/(b)/(c) grouping, standalone profiles)",
+    )
     return p.parse_args(argv)
 
 
@@ -928,6 +1497,10 @@ def main(argv=None) -> int:
     args = parse_args(argv)
     global AMBIGUOUS_AS
     AMBIGUOUS_AS = args.ambiguous_as
+    if args.decompose_float:
+        # BEFORE touching any real data, and before printing any comparator
+        # output, so a broken comparator can never produce a headline number.
+        run_selftest()
     print_classification()
     paths = discover_snapshots()
     print(f"Found {len(paths)} calibration snapshot(s) in {CAL_DIR}")
@@ -965,6 +1538,13 @@ def main(argv=None) -> int:
 
     print("\nSTAGE BUCKET INVARIANT CHECKS (early+late == selective; no rows lost):")
     print("  PASSED" if check_stage_invariants(all_rows) else "  FAILED")
+
+    if args.decompose_float:
+        print("\nPAIR / GROUPING INVARIANT CHECKS:")
+        check_pair_invariants(all_rows)
+        print_pair_decomposition(all_rows, args.horizons, not args.no_costs)
+        print_float_grouping(all_rows, args.horizons, not args.no_costs)
+        print_standalone(all_rows, args.horizons, not args.no_costs)
 
     if unresolved:
         by_reason: dict[str, int] = defaultdict(int)
