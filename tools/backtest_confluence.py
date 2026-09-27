@@ -106,7 +106,7 @@ SCANNER_STAGE: dict[str, str] = {
     "Seasonal Delivery": "early",
     "Recovery Ladder": "late",
     "Super Breakout": "late",
-    "Float Exhaustion": "late",
+    "Float Exhaustion": "ambiguous",
     "Darvas Box Pro": "late",
     "Climax Accumulation": "late",
     "Wyckoff Automaton": "late",  # broad; excluded from selective buckets
@@ -157,11 +157,14 @@ STAGE_JUSTIFICATION: dict[str, str] = {
         "(super_breakout.py:180-183). Definitionally a breakout."
     ),
     "Float Exhaustion": (
-        "20 sessions of delivery must ALREADY have consumed >= 10% of free float "
-        "(float_exhaustion_scanner.py:240-241). LOWEST-CONFIDENCE call: there "
-        "is no price gate at all, so this is classified late purely on turnover "
-        "magnitude (advanced end-of-cycle state), not on any required price "
-        "structure. Override this one first if you disagree."
+        "AMBIGUOUS, not late. 20 sessions of delivery must ALREADY have consumed "
+        ">= 10% of free float (float_exhaustion_scanner.py:240-241) and NOTHING "
+        "else -- no price, volume, or range-position gate at all. 10% of float "
+        "turning over in 20 sessions occurs just as readily in quiet accumulation "
+        "as in a blow-off top, so the metric is stage-agnostic BY CONSTRUCTION. "
+        "Excluded from both stage counts rather than forced onto a side, because "
+        "a guess here would land it in the wrong column of the fixed-agreement "
+        "mix test and dilute the one comparison that matters."
     ),
     "Darvas Box Pro": (
         "precondition requires a COMPLETED advance: within 5% of the 52w high OR "
@@ -303,6 +306,19 @@ def stage_bucket_label(count: int) -> str:
     return "2+" if count >= 2 else str(count)
 
 
+# Ambiguous scanners are excluded from both stage counts by default. Set
+# AMBIGUOUS_AS to "late" to reproduce the earlier run that forced Float
+# Exhaustion onto the late side, so the two mappings can be compared directly.
+AMBIGUOUS_AS = "exclude"
+
+
+def stage_of(name: str) -> str:
+    s = SCANNER_STAGE[name]
+    if s == "ambiguous" and AMBIGUOUS_AS in ("late", "early"):
+        return AMBIGUOUS_AS
+    return s
+
+
 def collect_events(snap: dict) -> list[dict]:
     """Per-symbol bucket assignment for one snapshot.
 
@@ -356,12 +372,14 @@ def collect_events(snap: dict) -> list[dict]:
     events: list[dict] = []
     for sym in union:
         n = selective_counts.get(sym, 0)
-        early = sorted(x for x in selective_flagged[sym] if SCANNER_STAGE[x] == "early")
-        late = sorted(x for x in selective_flagged[sym] if SCANNER_STAGE[x] == "late")
-        if len(early) + len(late) != n:
+        early = sorted(x for x in selective_flagged[sym] if stage_of(x) == "early")
+        late = sorted(x for x in selective_flagged[sym] if stage_of(x) == "late")
+        ambig = sorted(x for x in selective_flagged[sym] if stage_of(x) == "ambiguous")
+        if len(early) + len(late) + len(ambig) != n:
             raise SystemExit(
-                f"{scan_date}/{sym}: early+late={len(early) + len(late)} != "
-                f"selective={n} — stage map is inconsistent"
+                f"{scan_date}/{sym}: early+late+ambiguous="
+                f"{len(early) + len(late) + len(ambig)} != selective={n} — "
+                "stage map is inconsistent"
             )
         events.append(
             {
@@ -375,8 +393,10 @@ def collect_events(snap: dict) -> list[dict]:
                 "in_report": n >= MIN_SELECTIVE_FOR_INCLUSION,
                 "early_count": len(early),
                 "late_count": len(late),
+                "ambiguous_count": len(ambig),
                 "early_scanners": early,
                 "late_scanners": late,
+                "ambiguous_scanners": ambig,
                 "early_bucket": stage_bucket_label(len(early)),
                 "late_bucket": stage_bucket_label(len(late)),
             }
@@ -482,6 +502,7 @@ def build_forward_rows(
                     "selective_scanner_count": e["selective_scanner_count"],
                     "early_count": e["early_count"],
                     "late_count": e["late_count"],
+                    "ambiguous_count": e["ambiguous_count"],
                     "early_bucket": e["early_bucket"],
                     "late_bucket": e["late_bucket"],
                     "in_report": e["in_report"],
@@ -741,16 +762,113 @@ def print_pair_test(rows: list[dict], horizons: list[int]) -> None:
         )
 
 
+def print_mix_test(rows: list[dict], horizons: list[int]) -> None:
+    """DECISIVE TEST: hold total agreement FIXED, vary only the early/late mix.
+
+    This is the comparison that removes the confound in the stage tables above,
+    whose bucket-0 is dominated by the control group. Within a single
+    selective_scanner_count, comparing the homogeneous mixes against the mixed
+    pair isolates stage composition from raw agreement.
+    """
+    print()
+    print("#" * 108)
+    print(f"# MIX TEST -- total agreement HELD FIXED, only the early/late mix varies")
+    print(f"# ambiguous-stage scanners: {AMBIGUOUS_AS} (Float Exhaustion)")
+    print("#" * 108)
+    for total in (2, 3):
+        print(f"\n{'=' * 100}\nselective_scanner_count == {total}\n{'=' * 100}")
+        print(
+            f"{'h':>4}{'mix':>18}{'n':>8}{'dates':>7}{'mean':>9}"
+            f"{'mean exc':>10}{'win%':>8}{'win%vsNSEI':>12}"
+        )
+        print("-" * 100)
+        for h in horizons:
+            base = [
+                r
+                for r in rows
+                if r["horizon"] == h and r["selective_scanner_count"] == total
+            ]
+            # (early, late) composition pairs, deduped: at total==2 both
+            # "mixed" labels describe the SAME bucket (1 early + 1 late), so
+            # listing both would double-count it and corrupt the comparison.
+            compositions = [
+                (total, 0),
+                (total - 1, 1),
+                (1, total - 1),
+                (0, total),
+            ]
+            mixes = []
+            for e_cnt, l_cnt in dict.fromkeys(compositions):
+                mixes.append(
+                    (
+                        f"early{e_cnt}/late{l_cnt}",
+                        (
+                            lambda e_cnt, l_cnt: (
+                                lambda r: r["early_count"] == e_cnt
+                                and r["late_count"] == l_cnt
+                            )
+                        )(e_cnt, l_cnt),
+                    )
+                )
+            mixed_labels = [
+                f"early{e}/late{l}"
+                for e, l in ((total - 1, 1),)
+                if (e, l) in compositions
+            ]
+            stats: dict[str, dict | None] = {}
+            for lab, sel in mixes:
+                g = [r for r in base if sel(r)]
+                d = _stats(g)
+                stats[lab] = d
+                if d is None:
+                    print(f"{h:>4}{lab:>18}{'no data':>8}")
+                    continue
+                print(
+                    f"{h:>4}{lab:>18}{d['n']:>8}{d['dates']:>7}{fmt(d['mean']):>9}"
+                    f"{fmt(d['mean_excess']):>10}{fmt(d['win_rate']):>8}"
+                    f"{fmt(d['win_rate_vs_bench']):>12}"
+                )
+            # Mixed is the worst of the two available mixes at this total?
+            mixed = [stats[k] for k in dict.fromkeys(mixed_labels) if stats.get(k)]
+            mixed = [d for d in mixed if d["mean_excess"] is not None]
+            worst_label = (
+                min(
+                    dict.fromkeys(mixed_labels),
+                    key=lambda k: stats[k]["mean_excess"],
+                )
+                if mixed
+                else "n/a"
+            )
+            homo = [
+                stats[k]["mean_excess"]
+                for k in (f"early{total}/late0", f"early0/late{total}")
+                if stats.get(k) and stats[k]["mean_excess"] is not None
+            ]
+            if homo and mixed:
+                # "Mixed is worst" requires mixed to lose to BOTH homogeneous
+                # groups: max(mixed) < min(homo). Comparing the best
+                # homogeneous against mixed instead would call mixed "worst"
+                # even when it beat one of them.
+                verdict = (
+                    "MIXED WORST"
+                    if max(d["mean_excess"] for d in mixed) < min(homo)
+                    else "mixed NOT worst"
+                )
+                print(f"{'':>4}{'-> ' + verdict:>18}  (worst mix: {worst_label})")
+            print("-" * 100)
+
+
 def check_stage_invariants(rows: list[dict]) -> bool:
     """Same class of arithmetic/assignment cross-check as the agreement table."""
     ok = True
     bad_sum = [
         r
         for r in rows
-        if r["early_count"] + r["late_count"] != r["selective_scanner_count"]
+        if r["early_count"] + r["late_count"] + r["ambiguous_count"]
+        != r["selective_scanner_count"]
     ]
     if bad_sum:
-        print(f"  FAIL: early+late != selective on {len(bad_sum)} rows")
+        print(f"  FAIL: early+late+ambiguous != selective on {len(bad_sum)} rows")
         ok = False
     for h in sorted({r["horizon"] for r in rows}):
         hs = [r for r in rows if r["horizon"] == h]
@@ -796,11 +914,20 @@ def parse_args(argv):
         default=DEFAULT_HORIZONS,
         help="trading-day forward horizons",
     )
+    p.add_argument(
+        "--ambiguous-as",
+        choices=["exclude", "late", "early"],
+        default="exclude",
+        help="how to treat stage-ambiguous scanners (Float Exhaustion). 'late' "
+        "reproduces the earlier forced classification, for comparison.",
+    )
     return p.parse_args(argv)
 
 
 def main(argv=None) -> int:
     args = parse_args(argv)
+    global AMBIGUOUS_AS
+    AMBIGUOUS_AS = args.ambiguous_as
     print_classification()
     paths = discover_snapshots()
     print(f"Found {len(paths)} calibration snapshot(s) in {CAL_DIR}")
@@ -834,6 +961,7 @@ def main(argv=None) -> int:
 
     print_stage_tables(all_rows, args.horizons, not args.no_costs)
     print_pair_test(all_rows, args.horizons)
+    print_mix_test(all_rows, args.horizons)
 
     print("\nSTAGE BUCKET INVARIANT CHECKS (early+late == selective; no rows lost):")
     print("  PASSED" if check_stage_invariants(all_rows) else "  FAILED")
