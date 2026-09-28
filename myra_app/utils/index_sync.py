@@ -13,19 +13,26 @@ import requests
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
+# Fallback floor for benchmark history when the technical DB cannot be read.
+# A backtest window older than this silently loses its benchmark: forward
+# excess comes back None rather than raising, so the run prints "n/a" instead
+# of failing, and the affected rows are easy to miss.
+BENCHMARK_FLOOR = "2015-01-01"
+BENCHMARK_SYMBOL = "^NSEI"
+
 INDEX_SOURCES = {
     "NIFTY 50": {
         "type": "csv",
-        "url": "https://www.niftyindices.com/IndexConstituent/ind_nifty50list.csv"
+        "url": "https://www.niftyindices.com/IndexConstituent/ind_nifty50list.csv",
     },
     "NIFTY 500": {
         "type": "csv",
-        "url": "https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv"
+        "url": "https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv",
     },
     "NIFTY SMALLCAP 250": {
         "type": "csv",
-        "url": "https://www.niftyindices.com/IndexConstituent/ind_niftysmallcap250list.csv"
-    }
+        "url": "https://www.niftyindices.com/IndexConstituent/ind_niftysmallcap250list.csv",
+    },
 }
 
 
@@ -124,8 +131,12 @@ def sync_index_constituents(index_name, force=False, task_id: int = None):
                     try:
                         session = requests.Session()
                         # First visit the main page to get cookies
-                        session.get("https://www.niftyindices.com/", headers=headers, timeout=10)
-                        response = session.get(source["url"], headers=headers, timeout=30)
+                        session.get(
+                            "https://www.niftyindices.com/", headers=headers, timeout=10
+                        )
+                        response = session.get(
+                            source["url"], headers=headers, timeout=30
+                        )
                         response.raise_for_status()
                         break
                     except Exception as e:
@@ -143,7 +154,9 @@ def sync_index_constituents(index_name, force=False, task_id: int = None):
                 else:
                     # Fallback: take first column
                     symbols = df.iloc[:, 0].dropna().astype(str).str.strip().tolist()
-                print(f"[Index Sync] Downloaded {len(symbols)} symbols from CSV for {index_name}")
+                print(
+                    f"[Index Sync] Downloaded {len(symbols)} symbols from CSV for {index_name}"
+                )
             except Exception as e:
                 print(f"[Index Sync] CSV download failed for {index_name}: {e}")
                 return False
@@ -277,36 +290,98 @@ def heal_index_if_stale(index_name, expected_count=None):
             sync_index_constituents(index_name, force=True)
 
 
+def _benchmark_start_date() -> str:
+    """Oldest date worth having a benchmark for: the technical-data range.
+
+    Derived rather than hardcoded so the benchmark always covers the data it
+    is used to excess-adjust. Falls back to BENCHMARK_FLOOR if the technical
+    DB is missing or unreadable, so a fresh setup still gets a usable span
+    instead of silently only a year of history.
+    """
+    try:
+        from myra_app.constants import DB_DIR
+
+        tech_db = os.path.join(DB_DIR, "myra_technical.db")
+        if not os.path.exists(tech_db):
+            return BENCHMARK_FLOOR
+        with sqlite3.connect(tech_db, timeout=30) as conn:
+            row = conn.execute("SELECT MIN(date) FROM technical_data").fetchone()
+        if row and row[0]:
+            return str(row[0])
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger(__name__).warning(
+            f"[Nifty Benchmarks] Could not read technical_data range "
+            f"({e}); falling back to {BENCHMARK_FLOOR}"
+        )
+    return BENCHMARK_FLOOR
+
+
 def sync_nifty_benchmarks():
-    """Fetch Nifty 50 daily closes from yfinance and store in benchmarks table."""
+    """Fetch Nifty 50 daily closes from yfinance and store in benchmarks table.
+
+    Backfills from the technical-data range forward, not just the last year:
+    an older backtest window used to resolve to no benchmark at all, and
+    because a missing benchmark yields excess_return_pct = None rather than an
+    exception, those windows reported "n/a" and looked like a thin-sample
+    problem instead of a data gap.
+
+    Idempotent: dates already stored are skipped, so a re-run inserts nothing
+    and is cheap to call on every sync. The trade-off is that a vendor revision
+    to an already-stored close will not be picked up without clearing the
+    table; pass force=True to rewrite the whole span.
+    """
     import yfinance as yf
 
     logger = logging.getLogger(__name__)
-    metadata_db_path = os.path.join(
-        os.path.dirname(os.path.dirname(__file__)), "db", "myra_metadata.db"
-    )
+    # Resolved through constants rather than a path built off __file__, so the
+    # DB location has one definition and a test can point it at a clean copy.
+    from myra_app.constants import DB_DIR
+
+    metadata_db_path = os.path.join(DB_DIR, "myra_metadata.db")
 
     try:
-        ticker = yf.Ticker("^NSEI")
-        df = ticker.history(period="1y")
-        if df.empty:
-            logger.warning("[Nifty Benchmarks] No data returned from yfinance")
+        start = _benchmark_start_date()
+        end = datetime.now(IST).date() + timedelta(days=1)
+        df = yf.Ticker(BENCHMARK_SYMBOL).history(start=start, end=end.isoformat())
+        if df is None or df.empty:
+            logger.warning(
+                f"[Nifty Benchmarks] No data returned from yfinance for "
+                f"{start}..{end.isoformat()}"
+            )
             return
 
         records = [
-            ("^NSEI", str(row.Index.date()), float(row.Close))
+            (BENCHMARK_SYMBOL, str(row.Index.date()), float(row.Close))
             for row in df.itertuples()
         ]
 
         os.makedirs(os.path.dirname(metadata_db_path), exist_ok=True)
         with sqlite3.connect(metadata_db_path, timeout=30) as conn:
+            stored = {
+                r[0]
+                for r in conn.execute(
+                    "SELECT date FROM benchmarks WHERE symbol = ?", (BENCHMARK_SYMBOL,)
+                )
+            }
+            fresh = [r for r in records if r[1] not in stored]
+            skipped = len(records) - len(fresh)
+            if not fresh:
+                logger.info(
+                    f"[Nifty Benchmarks] {BENCHMARK_SYMBOL} already current "
+                    f"({skipped} rows from {start}); nothing to insert"
+                )
+                return
             conn.executemany(
                 "INSERT OR REPLACE INTO benchmarks (symbol, date, close) VALUES (?, ?, ?)",
-                records,
+                fresh,
             )
             conn.commit()
 
-        logger.info(f"[Nifty Benchmarks] Synced {len(records)} rows for ^NSEI")
+        logger.info(
+            f"[Nifty Benchmarks] Synced {len(fresh)} new rows for "
+            f"{BENCHMARK_SYMBOL} (skipped {skipped} already stored, "
+            f"requested from {start})"
+        )
     except Exception as e:
         logger.error(f"[Nifty Benchmarks] Sync failed: {e}")
 
