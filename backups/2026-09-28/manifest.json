@@ -1,0 +1,60 @@
+{
+  "generated_at": "2026-09-28T15:22:29",
+  "purpose": "Protect fund_traction / fund_cross_buy: the upstream monthly JSONs are gone (404) and the sync reports success, so these local rows may be irreplaceable.",
+  "source_db": "D:\\01screener\\Myra\\myra_app\\db\\myra_valuation.db",
+  "source_db_mtime": "2026-09-27T11:41:07",
+  "source_opened": "read-only (sqlite mode=ro)",
+  "backup_dir": "backups\\2026-09-28",
+  "tables": [
+    {
+      "table": "fund_traction",
+      "csv_file": "fund_traction.csv",
+      "db_row_count": 2470,
+      "csv_row_count": 2470,
+      "rows_verified_match": true,
+      "expected_row_count": 2470,
+      "columns": [
+        "symbol",
+        "month",
+        "traction_score",
+        "number_of_funds",
+        "adds_new",
+        "reduces_closes",
+        "sma_30",
+        "month_end_close",
+        "close_latest",
+        "pct_vs_sma"
+      ],
+      "min_month": "2026-04",
+      "max_month": "2026-07",
+      "bytes": 209931,
+      "sha256": "ad7456e2e5d0b6899f322f7d1475d5de26c9e205ad5550f6c31b2bd964c1e8d9"
+    },
+    {
+      "table": "fund_cross_buy",
+      "csv_file": "fund_cross_buy.csv",
+      "db_row_count": 1852,
+      "csv_row_count": 1852,
+      "rows_verified_match": true,
+      "expected_row_count": 1852,
+      "columns": [
+        "symbol",
+        "month",
+        "total_funds",
+        "large_funds",
+        "mid_funds",
+        "small_funds",
+        "multi_funds",
+        "other_funds",
+        "cross_buy_ratio",
+        "signal_tag",
+        "last_updated"
+      ],
+      "min_month": "2026-07",
+      "max_month": "2026-08",
+      "bytes": 147910,
+      "sha256": "5bd7f92a1d350950de634beb4e646bfde50393dc4250a7cff24a336b509c2a22"
+    }
+  ],
+  "all_row_counts_verified": true
+}

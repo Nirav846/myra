@@ -27,3 +27,8 @@ Thumbs.db
 *.log
 .env
 .env.*
+
+# Backup payloads: large, regenerable, and may contain market data.
+# The manifest under backups/ stays tracked as the audit record.
+backups/**/*.csv
+backups/**/raw/
