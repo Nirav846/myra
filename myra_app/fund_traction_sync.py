@@ -59,6 +59,11 @@ _MONTH_MAP = {
 }
 _MONTH_NAMES = list(_MONTH_MAP.keys())
 
+# Earliest month this sync will import. Previously a local inside
+# _list_available_months(); promoted here so the expected-month range can be
+# computed and so a 404 can be reported. VALUE UNCHANGED.
+MIN_MONTH = "2026-04"
+
 # ── Table DDL ───────────────────────────────────────────────────────────────
 _CREATE_FUND_TRACTION = """
 CREATE TABLE IF NOT EXISTS fund_traction (
@@ -122,40 +127,61 @@ def _set_last_imported_month(conn: sqlite3.Connection, month: str) -> None:
     conn.commit()
 
 
-def _list_available_months(base_url: str) -> list[str]:
-    """Probe known month names with HEAD requests to find available JSONs.
+def _expected_months() -> list[str]:
+    """Months this run expects to find, from MIN_MONTH to the current month.
 
-    Generates candidate URLs for months from MIN_MONTH to current month,
-    sends HEAD requests, and returns the list of months that exist.
+    MIN_MONTH is deliberately unchanged; this only names the range so that a
+    month which is 404 can be reported instead of silently skipped.
     """
-    # Only sync months from 2026-04 onwards (pre-2026 data may be unreliable)
-    MIN_MONTH = "2026-04"
-
     today = date.today()
     min_year, min_m = (int(x) for x in MIN_MONTH.split("-"))
     candidates = []
-
-    # Generate months from MIN_MONTH to current month
     for year in range(min_year, today.year + 1):
         start_m = min_m if year == min_year else 1
         end_month = 12 if year < today.year else today.month
         for m in range(start_m, end_month + 1):
-            candidates.append(f"{year}-{m:02d}")  # noqa: PG-APPEND
+            candidates.append(f"{year}-{m:02d}")
+    return candidates
 
-    available = []
-    for month in candidates:
+
+def _probe_months(base_url: str, months: list[str]) -> tuple:
+    """HEAD-probe each month and report found / missing / network-error.
+
+    Returns (found, missing, errors) where missing is a list of
+    (month, status_code) and errors a list of (month, message).
+
+    The previous implementation returned only the months that responded 200
+    and discarded every 404 and every network error. That is what allowed a
+    fully-dead upstream to look like a clean, up-to-date run.
+    """
+    found: list[str] = []
+    missing: list[tuple] = []
+    errors: list[tuple] = []
+    for month in months:
         year, m = month.split("-")
         month_name = _MONTH_NAMES[int(m) - 1]
         url = f"{base_url}{month_name}_traction.json"
         try:
             r = requests.head(url, timeout=5)
-            if r.status_code == 200:
-                available.append(month)  # noqa: PG-APPEND
-                logger.debug(f"Found: {month} -> {url}")
-        except Exception:
-            pass  # network error — skip silently
+        except Exception as exc:
+            errors.append((month, f"{type(exc).__name__}: {exc}"))
+            continue
+        if r.status_code == 200:
+            found.append(month)
+        else:
+            missing.append((month, r.status_code))
+        logger.debug(f"Probed {month} -> {r.status_code}")
+    return found, missing, errors
 
-    return available
+
+def _list_available_months(base_url: str) -> list[str]:
+    """Months that responded 200. Kept for backwards compatibility.
+
+    Callers that need to know what was MISSING should use _probe_months
+    directly; this helper cannot express a 404.
+    """
+    found, _missing, _errors = _probe_months(base_url, _expected_months())
+    return found
 
 
 def _download_and_parse(url: str) -> list[dict]:
@@ -320,15 +346,44 @@ def sync_fund_traction(force: bool = False) -> dict:
     try:
         _ensure_tables(conn)
 
-        # Get available months by probing known URLs
+        # Probe the months we expect, keeping what is MISSING so a dead
+        # upstream cannot masquerade as an up-to-date run.
         logger.info("Fund traction: probing available months...")
-        available = _list_available_months(TRACTION_BASE_URL)
+        expected = _expected_months()
+        found, missing, errors = _probe_months(TRACTION_BASE_URL, expected)
+        available = list(found)
+
+        problems: list[str] = []
+        if missing:
+            detail = ", ".join(f"{m}({c})" for m, c in missing[:8])
+            more = f" +{len(missing) - 8} more" if len(missing) > 8 else ""
+            problems.append(
+                f"{len(missing)} of {len(expected)} expected month(s) are "
+                f"unavailable upstream (non-200): {detail}{more}"
+            )
+        if errors:
+            detail = ", ".join(f"{m}({e})" for m, e in errors[:5])
+            problems.append(f"{len(errors)} month probe(s) errored: {detail}")
+
         if not available:
-            result["error"] = "No months found at remote URL or URL not configured"
-            logger.warning("Fund traction: no months available at remote")
+            msg = "; ".join(problems) or "no months found at remote URL"
+            result["error"] = (
+                f"Fund traction upstream unusable: {msg}. Expected months "
+                f"{expected[0]}..{expected[-1]}."
+            )
+            logger.error("Fund traction: %s", result["error"])
             return result
 
-        logger.info(f"Fund traction: found {len(available)} months: {available}")
+        logger.info(
+            f"Fund traction: found {len(available)} of {len(expected)} "
+            f"expected months: {available}"
+        )
+        if problems:
+            # Import what IS reachable so no data is lost, but do not report a
+            # clean success while expected months are missing.
+            logger.error(
+                "Fund traction: upstream incomplete -- %s", "; ".join(problems)
+            )
 
         # Filter to only new months (unless force=True)
         last_imported = _get_last_imported_month(conn)
@@ -336,6 +391,13 @@ def sync_fund_traction(force: bool = False) -> dict:
             available = [m for m in available if m > last_imported]
 
         if not available:
+            if problems:
+                result["success"] = False
+                result["error"] = (
+                    "Fund traction: no new months imported AND upstream is "
+                    "incomplete -- " + "; ".join(problems)
+                )
+                return result
             result["success"] = True
             result["last_month"] = last_imported
             logger.info(f"Fund traction: already up to date (last: {last_imported})")
@@ -343,6 +405,7 @@ def sync_fund_traction(force: bool = False) -> dict:
 
         logger.info(f"Fund traction: syncing {len(available)} months: {available}")
 
+        failed_downloads: list[str] = []
         for month in available:
             year, m = month.split("-")
             month_name = _MONTH_NAMES[int(m) - 1]
@@ -351,6 +414,7 @@ def sync_fund_traction(force: bool = False) -> dict:
             stocks = _download_and_parse(url)
             if not stocks:
                 logger.warning(f"Fund traction: no data for month {month} at {url}")
+                failed_downloads.append(month)
                 continue
 
             count = _insert_rows(conn, stocks, month)
@@ -362,6 +426,18 @@ def sync_fund_traction(force: bool = False) -> dict:
         # Update the last imported month
         if result["last_month"]:
             _set_last_imported_month(conn, result["last_month"])
+
+        if problems or failed_downloads:
+            bits = list(problems)
+            if failed_downloads:
+                bits.append(
+                    f"download returned no usable rows for: "
+                    f"{', '.join(failed_downloads)}"
+                )
+            result["success"] = False
+            result["error"] = "Fund traction sync incomplete -- " + "; ".join(bits)
+            logger.error("Fund traction: %s", result["error"])
+            return result
 
         result["success"] = True
         return result
