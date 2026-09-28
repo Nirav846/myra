@@ -59,6 +59,11 @@ class LibrarianCore:
         "scoring": "myra_scoring.db",
         "calendar": "myra_calendar.db",
         "options": "myra_options.db",
+        # Append-only point-in-time archive (fundamentals snapshots + raw
+        # fund-traction capture). Separate from "valuation" on purpose:
+        # valuation is owned by the upstox fetcher and its writers are
+        # disabled, so the archive never writes to it.
+        "archive": "myra_archive.db",
     }
 
     def __init__(self, read_only=False, console=None):

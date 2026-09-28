@@ -120,4 +120,12 @@ TASKS: dict[str, TaskSpec] = {
         label="traction_sma_update",
         interval_days=1,
     ),
+    # Append-only point-in-time archive. Weekly is fine: it is a safety net
+    # for history that is otherwise overwritten in place (rolling
+    # fundamentals snapshot, year-less rolling traction file).
+    "point-in-time-archive": TaskSpec(
+        module="myra_app.tasks.archive",
+        label="point_in_time_archive",
+        interval_days=7,
+    ),
 }

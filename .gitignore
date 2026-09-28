@@ -31,4 +31,8 @@ Thumbs.db
 # Backup payloads: large, regenerable, and may contain market data.
 # The manifest under backups/ stays tracked as the audit record.
 backups/**/*.csv
+
+# Point-in-time archive raw payloads: lossless market data, not source.
+# The manifest rows in myra_archive.db stay auditable.
+archive/
 backups/**/raw/

@@ -1,4 +1,118 @@
 {
+  "archive": {
+    "file": "myra_archive.db",
+    "registered": true,
+    "tables": [
+      {
+        "columns": [
+          {
+            "name": "symbol",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "as_of_date",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "snapshot_id",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "source",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "captured_at",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "row_sha256",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "row_json",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "fundamentals_snapshots",
+        "row_count": 3917
+      },
+      {
+        "columns": [
+          {
+            "name": "id",
+            "notnull": false,
+            "pk": true,
+            "type": "INTEGER"
+          },
+          {
+            "name": "fetched_at",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "source_url",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "source_month",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "sha256",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "byte_size",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "symbol_count",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "raw_path",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "recorded_at",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "raw_traction_archive",
+        "row_count": 1
+      }
+    ]
+  },
   "calendar": {
     "file": "myra_calendar.db",
     "registered": true,
@@ -259,7 +373,7 @@
           }
         ],
         "name": "block_deals",
-        "row_count": 8556
+        "row_count": 8603
       },
       {
         "columns": [
@@ -391,7 +505,7 @@
           }
         ],
         "name": "bulk_deals",
-        "row_count": 3733
+        "row_count": 5753
       },
       {
         "columns": [
@@ -511,7 +625,7 @@
           }
         ],
         "name": "corporate_actions",
-        "row_count": 2019
+        "row_count": 2393
       },
       {
         "columns": [
@@ -541,7 +655,7 @@
           }
         ],
         "name": "fii_dii_daily",
-        "row_count": 14
+        "row_count": 16
       },
       {
         "columns": [
@@ -823,7 +937,7 @@
           }
         ],
         "name": "benchmarks",
-        "row_count": 319
+        "row_count": 4669
       },
       {
         "columns": [
@@ -859,7 +973,7 @@
           }
         ],
         "name": "bhm1_cooldown",
-        "row_count": 731
+        "row_count": 735
       },
       {
         "columns": [
@@ -949,7 +1063,7 @@
           }
         ],
         "name": "doctor_runs",
-        "row_count": 29
+        "row_count": 51
       },
       {
         "columns": [
@@ -973,7 +1087,7 @@
           }
         ],
         "name": "etf_blocklist",
-        "row_count": 350
+        "row_count": 351
       },
       {
         "columns": [
@@ -1009,7 +1123,7 @@
           }
         ],
         "name": "etf_sync_log",
-        "row_count": 16
+        "row_count": 18
       },
       {
         "columns": [
@@ -1393,7 +1507,7 @@
           }
         ],
         "name": "task_registry",
-        "row_count": 2258
+        "row_count": 2345
       }
     ]
   },
@@ -1759,7 +1873,7 @@
           }
         ],
         "name": "snapshots",
-        "row_count": 47
+        "row_count": 54
       },
       {
         "columns": [
@@ -2053,7 +2167,7 @@
           }
         ],
         "name": "mcap_rank_daily",
-        "row_count": 9428
+        "row_count": 25870
       },
       {
         "columns": [
@@ -2593,7 +2707,7 @@
           }
         ],
         "name": "technical_data",
-        "row_count": 7951752
+        "row_count": 7976972
       }
     ]
   },
@@ -3127,7 +3241,7 @@
           }
         ],
         "name": "fundamentals",
-        "row_count": 3901
+        "row_count": 3917
       },
       {
         "columns": [
