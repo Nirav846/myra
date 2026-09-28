@@ -539,6 +539,10 @@ def build_forward_rows(
                     "early_scanners": json.dumps(e["early_scanners"]),
                     "late_scanners": json.dumps(e["late_scanners"]),
                     "ambiguous_scanners": json.dumps(e["ambiguous_scanners"]),
+                    # Broad-scanner membership travels with the row so a
+                    # per-scanner ranking can cover ALL 13 scanners; without it
+                    # only the 11 selective ones are recoverable from a row.
+                    "broad_scanners": json.dumps(e["broad_scanners"]),
                     "in_report": e["in_report"],
                     "entry_close": round(entry, 2),
                     "exit_close": round(exit_px, 2),
