@@ -104,6 +104,8 @@ const GRADE_COLORS: Record<string, string> = {
 const SCANNER_COLORS: Record<string, string> = {
   'The Trigger': 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
   'Bottom Hunter': 'bg-green-500/20 text-green-300 border-green-500/30',
+  'Recovery Ladder': 'bg-teal-500/20 text-teal-300 border-teal-500/30',
+  'Super Breakout': 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
   'Invisible Hand': 'bg-purple-500/20 text-purple-300 border-purple-500/30',
   'Wyckoff Automaton': 'bg-blue-500/20 text-blue-300 border-blue-500/30',
   'Liquidity Flip': 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
