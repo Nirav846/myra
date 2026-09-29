@@ -20,7 +20,7 @@
     "assert": "^2.1.0",
     "buffer": "^6.0.3",
     "comlink": "^4.4.2",
-    "dotenv": "^17.2.3",
+    "dotenv": "^18.0.0",
     "express": "^5.2.1",
     "lucide-react": "^1.46.0",
     "motion": "^13.3.0",
