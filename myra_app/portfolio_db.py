@@ -409,7 +409,7 @@ def get_scanner_overlap(holdings):
         "Wyckoff": "wyckoff_cache.json",
         "OpFinger": "operator_fingerprint_cache.json",
         "LiqFlip": "liquidity_flip_cache.json",
-        "Darvas": "darvas_scan_cache.json",
+        "Darvas": "darvas_cache.json",
         "Launchpad": "launchpad_scan_cache.json",
         "SeasDel": "seasonal_delivery_cache.json",
     }
@@ -546,7 +546,9 @@ def get_concentration_risk():
             tech.close()
             if close_row:
                 val = qty * close_row[0]
-                holdings_with_value.append({"symbol": symbol, "value": val, "pct": 0})  # noqa: PG-APPEND
+                holdings_with_value.append(
+                    {"symbol": symbol, "value": val, "pct": 0}
+                )  # noqa: PG-APPEND
                 total_value += val
         except sqlite3.Error:
             pass
