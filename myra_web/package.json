@@ -16,7 +16,7 @@
     "@tanstack/react-virtual": "^3.14.13",
     "@types/plotly.js": "^3.0.10",
     "@types/react-plotly.js": "^2.6.4",
-    "@vitejs/plugin-react": "^5.0.4",
+    "@vitejs/plugin-react": "^6.1.1",
     "assert": "^2.1.0",
     "buffer": "^6.0.3",
     "comlink": "^4.4.2",
