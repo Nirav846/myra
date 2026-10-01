@@ -19,13 +19,13 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from myra_web.routes import fundamentals as fundamentals_route
-from myra_web.routes.fundamentals import (
+from myra_app.fundamentals_staleness import (
     FROZEN_SOURCE_FIELDS,
     STALENESS_MAX_AGE_DAYS,
-    _staleness_flags,
-    get_live_fundamentals,
+    staleness_flags,
 )
+from myra_web.routes import fundamentals as fundamentals_route
+from myra_web.routes.fundamentals import get_live_fundamentals
 
 NOW = datetime(2026, 9, 29, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -42,12 +42,12 @@ def _fresh():
     return _iso(NOW - timedelta(days=1))
 
 
-# --- unit level: _staleness_flags -----------------------------------------
+# --- unit level: staleness_flags -----------------------------------------
 
 
 def test_old_value_is_flagged_stale():
     merged = {"pb": 12.4, "roe": 18.2}
-    flags = _staleness_flags(merged, {"last_updated": _old()}, now=NOW)
+    flags = staleness_flags(merged, {"last_updated": _old()}, now=NOW)
 
     assert flags["pb_stale"] is True
     assert flags["roe_stale"] is True
@@ -56,7 +56,7 @@ def test_old_value_is_flagged_stale():
 def test_recently_refreshed_value_is_not_flagged_stale():
     """The whole point of an age-based flag: a real writer makes it self-clear."""
     merged = {"pb": 12.4, "roe": 18.2}
-    flags = _staleness_flags(merged, {"last_updated": _fresh()}, now=NOW)
+    flags = staleness_flags(merged, {"last_updated": _fresh()}, now=NOW)
 
     assert flags["pb_stale"] is False
     assert flags["roe_stale"] is False
@@ -65,7 +65,7 @@ def test_recently_refreshed_value_is_not_flagged_stale():
 def test_exactly_at_threshold_is_not_stale():
     """Boundary: only *older than* the threshold counts as stale."""
     edge = _iso(NOW - timedelta(days=STALENESS_MAX_AGE_DAYS))
-    flags = _staleness_flags({"pb": 1.0}, {"last_updated": edge}, now=NOW)
+    flags = staleness_flags({"pb": 1.0}, {"last_updated": edge}, now=NOW)
 
     assert flags["pb_stale"] is False
 
@@ -73,7 +73,7 @@ def test_exactly_at_threshold_is_not_stale():
 def test_null_value_is_never_stale():
     """Nothing is being served, so there is nothing misleading to flag."""
     merged = {"pb": None, "roe": None, "quick_ratio": None}
-    flags = _staleness_flags(merged, {"last_updated": _old()}, now=NOW)
+    flags = staleness_flags(merged, {"last_updated": _old()}, now=NOW)
 
     assert flags["pb_stale"] is False
     assert flags["roe_stale"] is False
@@ -82,27 +82,27 @@ def test_null_value_is_never_stale():
 
 def test_zero_value_is_still_evaluated():
     """0 is a real value, not missing data - it must not be skipped as falsy."""
-    flags = _staleness_flags({"pb": 0}, {"last_updated": _old()}, now=NOW)
+    flags = staleness_flags({"pb": 0}, {"last_updated": _old()}, now=NOW)
 
     assert flags["pb_stale"] is True
 
 
 def test_missing_timestamp_is_treated_as_stale():
     """Several legacy rows have last_updated IS NULL; we cannot claim currency."""
-    flags = _staleness_flags({"pb": 3.2}, {"last_updated": None}, now=NOW)
+    flags = staleness_flags({"pb": 3.2}, {"last_updated": None}, now=NOW)
 
     assert flags["pb_stale"] is True
 
 
 def test_unparseable_timestamp_is_treated_as_stale():
-    flags = _staleness_flags({"pb": 3.2}, {"last_updated": "not-a-date"}, now=NOW)
+    flags = staleness_flags({"pb": 3.2}, {"last_updated": "not-a-date"}, now=NOW)
 
     assert flags["pb_stale"] is True
 
 
 def test_every_frozen_field_gets_a_flag():
     merged = {f: 1.0 for f in FROZEN_SOURCE_FIELDS}
-    flags = _staleness_flags(merged, {"last_updated": _old()}, now=NOW)
+    flags = staleness_flags(merged, {"last_updated": _old()}, now=NOW)
 
     for field in FROZEN_SOURCE_FIELDS:
         assert f"{field}_stale" in flags
@@ -114,21 +114,21 @@ def test_every_frozen_field_gets_a_flag():
 def test_timestamp_formats_in_the_table_are_understood(raw):
     """The table holds offset-aware, naive and bare-date timestamps."""
     assert (
-        _staleness_flags({"pb": 1.0}, {"last_updated": raw}, now=NOW)["pb_stale"]
+        staleness_flags({"pb": 1.0}, {"last_updated": raw}, now=NOW)["pb_stale"]
         is False
     )
 
 
 def test_falls_back_to_last_fundamental_update():
     """last_updated can be absent while last_fundamental_update is populated."""
-    fresh = _staleness_flags(
+    fresh = staleness_flags(
         {"pb": 1.0},
         {"last_updated": None, "last_fundamental_update": _fresh()},
         now=NOW,
     )
     assert fresh["pb_stale"] is False
 
-    stale = _staleness_flags(
+    stale = staleness_flags(
         {"pb": 1.0}, {"last_updated": None, "last_fundamental_update": _old()}, now=NOW
     )
     assert stale["pb_stale"] is True
