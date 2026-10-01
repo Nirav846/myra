@@ -93,7 +93,8 @@ SectorManager (myra_app/sector_manager.py):
 
 ## KNOWN ISSUE: `fundamentals` legacy camelCase columns are now unwritten
 
-Recorded 2026-09-29. **Reader staleness signalling: done. Live source: still
+Recorded 2026-09-29, corrected 2026-09-30. **Reader: canonical-first source
+swap done (`48197c4`), staleness signalling: done. Live source: still
 open.** Verified against the live DB (`myra_valuation.db`, 3917 `fundamentals`
 rows) and `schema/valuation.sql`.
 
@@ -135,11 +136,12 @@ the canonical column**. Populated counts below are out of 3917, measured
 and `profit_growth` — because `MS_CANONICAL_MAP` maps them. They are simply
 empty, since Morningstar returns null for both (see below). At the time of the
 original 2026-09-29 measurement, `payout_ratio` and `pb` had no canonical column
-at all; `price_to_book` and `payout_ratio` have since been added to
-`MS_CANONICAL_MAP` and `schema_registry.py` (see the correction below — the
-`payout_ratio` addition immediately proved valuable, because Morningstar *does*
-return that field). All counts in the table above are the pre-fix 2026-09-29
-snapshot.
+at all; `price_to_book`, `payout_ratio`, and (as of `3ed5159`) `current_ratio`
+have since been added to `MS_CANONICAL_MAP` and `schema_registry.py` (see the
+correction below — the `payout_ratio` addition immediately proved valuable,
+because Morningstar *does* return that field). `current_ratio` was likewise
+already requested and extracted by the sync, so the map entry was the only thing
+missing. All counts in the table above are the pre-fix 2026-09-29 snapshot.
 
 **Why it got worse on 2026-09-29.** Commit `d2f0de6` in `D:\01screener\upstox_fetcher`
 removed the Upstox fundamentals write. The legacy columns that Upstox populated
@@ -193,6 +195,7 @@ MORNINGSTAR-sourced rows:
 |---|---|---|
 | `quick_ratio` | **3227** | live Morningstar |
 | `payout_ratio` | **3236** | live Morningstar |
+| `current_ratio` | 0 | live Morningstar in the raw payload; map entry added in `3ed5159`, not yet synced |
 | `price_to_book` (`priceToBook`) | 0 | none — MS still null |
 | `roe` (`returnOnEquity`) | 0 | none — 442 frozen Upstox rows remain |
 | `sales_growth` (`revenueGrowth`) | 0 | none |
@@ -215,30 +218,68 @@ already normalises `price_to_book` / `roe` / `revenue_growth` /
 Morningstar returns null for exactly this remaining subset is
 **uninvestigated** — see the open question below.
 
-**Data-quality flag on `quick_ratio` (unresolved).** The newly live
-`quick_ratio` values range **1.1e-05 to 13935.9, avg 10.9**. A quick ratio of
-13935 is not plausible for a listed company, so either the units are wrong
-(ratio vs percentage), the field is unrelated data reused under that name, or
-certain sectors produce nonsense. `payout_ratio` (0–16.67, avg 0.12) looks
-sane by comparison. Do not surface `quick_ratio` to users until the raw
-Morningstar field has been inspected for an extreme-value symbol.
+**Data-quality flag on `quick_ratio` (investigated and resolved).** The live
+values range **1.1e-05 to 13935.9, avg 10.9**, so a quick ratio of 13935 is not
+plausible for a listed company. Inspecting the raw Morningstar payload for the
+extreme symbols (WELINV, CONSOFINVT, ALFREDHE, UNIVPHOTO, and ~95 others)
+showed the values are **correctly scaled and internally consistent** —
+`quickRatio` tracks just below `currentRatio` for every sane row, and INFY/TCS
+land at 1.80/1.95 and 2.23/1.95 respectively. The explosions are a genuine
+**near-zero-current-liabilities** artefact, not a units mismatch and not an
+unrelated field: both ratios diverge together when the denominator collapses.
+A check for a sector-specific pattern found bad values across 10 of 11 sectors
+(Financial Services 46, Basic Materials 11, Industrials 11, Real Estate 10),
+which **ruled out a sector guard** as a remedy. Decision: suppress values above
+a hard bound of **10.0** via the shared `sanitize_ratio` helper
+(`myra_app/ratio_sanitize.py`, `DEFAULT_RATIO_MAX_BOUND`), applied to
+`quick_ratio` and `current_ratio` in both endpoints. `payout_ratio`
+(0–16.67, avg 0.12) looked sane and is **not** sanitized. Suppression returns
+`None` and logs a WARNING with the field and value, so the row ages into
+staleness disclosure rather than serving a number no one should trade on.
 
-**What was done (2026-09-29).** Rather than swap sources, the reader now
-*discloses* staleness. `/api/fundamentals/live/{symbol}` adds a sibling
-`<field>_stale` boolean next to each of the six values, plus one shared
-`data_as_of` timestamp, and `HistoricalSearch.tsx` renders a muted value with a
-`*` tooltip on stale ones. Staleness is **age-based**
-(`FROZEN_SOURCE_FIELDS` / `STALENESS_MAX_AGE_DAYS = 30` in
-`myra_web/routes/fundamentals.py`), not hardcoded — if a real writer ever
-lands and refreshes the row, `last_updated` advances and the flags clear on
-their own. A field with a null value is never flagged; there is nothing
-misleading to mark. Legacy column reads are deliberately unchanged.
+**What was done — corrected (2026-09-30, commits `16abcf4` → `48197c4`).**
+The section above originally described the shipped state as *staleness
+disclosure only*. That is now out of date. The current state is a
+**canonical-first source swap with staleness retained as a fallback signal**:
+
+- `myra_app/fundamentals_staleness.py` provides `canonical_or_legacy`, which
+  returns the canonical value and falls back to the legacy camelCase column
+  **only when the canonical value is NULL**. It tests `is not None`, never
+  truthiness, so a legitimate `0.0` (e.g. a company paying no dividend, whose
+  `payout_ratio` is 0.0 in live data) is served rather than silently replaced by
+  a frozen legacy value. This is mutation-tested in both directions.
+- Both `/api/fundamentals/live/{symbol}` **and** the portfolio endpoint now read
+  `quick_ratio`, `payout_ratio`, and `current_ratio` from the canonical
+  columns, falling back to `quickRatio` / `payoutRatio` / `currentRatio` only
+  when canonical is null. The portfolio endpoint previously served only the
+  frozen legacy values.
+- Staleness is still **age-based** (`FROZEN_SOURCE_FIELDS` /
+  `STALENESS_MAX_AGE_DAYS = 30`), but it is now computed from the *resolved*
+  value, so the ~3,227-row canonical majority stops being flagged as soon as
+  the row refreshes, and only the genuine legacy-fallback rows stay flagged. A
+  null value is never flagged; there is nothing misleading to mark.
+- UI: `HistoricalSearch.tsx` and `PortfolioView.tsx` both render a muted value
+  with a `*` tooltip on stale ratios.
+- `currentRatio` is now in `MS_CANONICAL_MAP` and `current_ratio` is in
+  `SchemaRegistry` (commit `3ed5159`, additive only, verified on a DB copy:
+  no columns added or dropped, row count unchanged). Morningstar requests and
+  extracts `currentRatio` already, so the next sync populates it.
+
+**Test-coverage gap (known, not a blocker).** The portfolio endpoint
+(`myra_web/routes/portfolio.py`) has **no end-to-end test** — there was no
+pre-existing test for it and the route needs a full holdings/prices/technicals
+fixture to exercise. What *is* tested is the shared logic it composes:
+`canonical_or_legacy`, `sanitize_ratio`, and `staleness_flags` each have direct
+unit tests, and `/api/fundamentals/live/{symbol}` is tested end-to-end against
+a temp valuation DB. The portfolio route's own composition of those helpers is
+not directly asserted, so treat the portfolio ratio path as *helpers verified,
+route composition unverified* rather than fully covered.
 
 **Open follow-up.** Investigate whether the null Morningstar data points are
 retired, renamed, or plan-gated (compare the raw response body against
-`full_fundamentals.py`'s normalisation). Only once a genuine source populates
-the canonical columns does a reader-side source swap make sense. Note
-`myra_app/ai_second_opinion.py:288` still does
+`full_fundamentals.py`'s normalisation). This still applies to the four
+concepts with no live source: `price_to_book`, `roe`, `sales_growth`,
+`profit_growth`. Note `myra_app/ai_second_opinion.py:288` still does
 `COALESCE(roe, returnOnEquity)` and is not covered by the staleness flag.
 
 `tools/consolidate_fundamentals_columns.py` is the existing consolidation
