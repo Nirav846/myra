@@ -305,6 +305,14 @@ class FundamentalSync:
         # Canonical mapping: Morningstar camelCase keys → snake_case column names
         # Columns with a canonical equivalent are consolidated here.
         # Columns without a canonical equivalent are dropped to prevent schema drift.
+        #
+        # priceToBook / payoutRatio / quickRatio were added 2026-09-29: they were
+        # unmapped, so the sync dropped them and left the API reading frozen
+        # Upstox-era legacy columns instead (docs/DB_CONTEXT.md). Their canonical
+        # columns are registered in schema_registry.py and added via ALTER TABLE
+        # ADD COLUMN. Morningstar returns null for all three today, so this maps
+        # nothing into them yet — it is forward wiring, not a fix, pending
+        # investigation into why those data points come back empty.
         MS_CANONICAL_MAP = {
             "peRatio": "pe",
             "earningsPerShare": "eps",
@@ -316,6 +324,9 @@ class FundamentalSync:
             "returnOnEquity": "roe",
             "netMargin": "net_margin",
             "dividendYield": "dividend_yield",
+            "priceToBook": "price_to_book",
+            "payoutRatio": "payout_ratio",
+            "quickRatio": "quick_ratio",
         }
 
         for symbol in all_symbols:

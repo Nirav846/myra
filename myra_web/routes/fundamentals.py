@@ -14,6 +14,7 @@ import logging
 import os
 import sqlite3
 import subprocess
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException
 
@@ -23,6 +24,105 @@ from myra_app.librarian_core import LibrarianCore
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/fundamentals", tags=["fundamentals"])
+
+
+# Fields whose only historical writer was the Upstox fundamentals fetcher, removed
+# in upstox_fetcher commit d2f0de6. Morningstar requests all of these data points
+# but returns null for every one of them (verified 2026-09-29: net_margin,
+# dividend_yield, sector and date all arrive on the very same request, these do
+# not), and the canonical columns that exist for some of them are byte-identical
+# mirrors of the same frozen values - Upstox wrote both - not independent fresher
+# ones. See docs/DB_CONTEXT.md for the measurements.
+#
+# So a non-null value for any of these is a real but frozen snapshot that nothing
+# in the pipeline will refresh. We keep serving it (it is genuine historical data
+# and removing it would lose information) but we flag its age instead of
+# presenting it as current. Keyed by the API field name the route returns; the
+# comment gives the concept name and the column it reads.
+FROZEN_SOURCE_FIELDS = (
+    "pb",  # price-to-book      <- priceToBook
+    "roe",  # return on equity    <- roe / returnOnEquity
+    "quick_ratio",  # quick ratio          <- quickRatio
+    "revenue_growth",  # sales growth        <- revenueGrowth
+    "earnings_growth",  # earnings growth   <- earningsGrowth
+    "payout_ratio",  # payout ratio        <- payoutRatio
+)
+
+# A served value whose row has not been refreshed within this many days is
+# reported as stale. Deliberately age-based rather than hardcoded "always stale":
+# if a real writer ever lands and refreshes the row, last_updated advances past
+# this threshold and the flag clears by itself with no code change.
+STALENESS_MAX_AGE_DAYS = 30
+
+# Row columns that can carry the timestamp, most specific first. `date` is
+# deliberately not used: it is the fundamentals period, not a refresh time.
+_TIMESTAMP_COLUMNS = ("last_updated", "last_fundamental_update")
+
+
+def _parse_timestamp(value):
+    """Parse a fundamentals timestamp, or return None if absent/unparseable.
+
+    Handles the formats actually present in the table: ISO with offset
+    ('2026-08-31T19:04:49.052692+00:00'), naive ISO ('2026-09-24T13:15:40.779946')
+    and bare date ('2026-04-04'). Naive values are read as UTC so that every
+    timestamp in the table is compared on the same clock.
+    """
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip())
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _row_as_of(row):
+    """Best available refresh timestamp for a fundamentals row, or None."""
+    for column in _TIMESTAMP_COLUMNS:
+        try:
+            parsed = _parse_timestamp(row.get(column))
+        except (AttributeError, TypeError):
+            continue
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _staleness_flags(merged, row, now=None):
+    """Build '<field>_stale' flags for FROZEN_SOURCE_FIELDS.
+
+    A field is stale when the route is serving a non-null value AND that value
+    cannot be trusted as current. That covers two cases:
+
+    * the row's refresh timestamp is older than STALENESS_MAX_AGE_DAYS, or
+    * the row carries no usable timestamp at all, in which case we cannot claim
+      the value is current and must say so (several legacy rows have
+      last_updated IS NULL).
+
+    A field whose value is null is never stale - nothing is being served, so
+    there is nothing misleading to flag.
+
+    Args:
+        merged: the fundamentals dict being returned (values are read from it).
+        row: the raw fundamentals row, used for the refresh timestamp.
+        now: override for the current time (tests); defaults to UTC now.
+
+    Returns:
+        dict of field name -> bool, e.g. {"pb_stale": True, "roe_stale": False}.
+    """
+    reference = now or datetime.now(timezone.utc)
+    as_of = _row_as_of(row)
+    cutoff = reference - timedelta(days=STALENESS_MAX_AGE_DAYS)
+
+    flags = {}
+    for field in FROZEN_SOURCE_FIELDS:
+        if merged.get(field) is None:
+            flags[f"{field}_stale"] = False
+            continue
+        flags[f"{field}_stale"] = as_of is None or as_of < cutoff
+    return flags
 
 
 def _db_path(db_key: str):
@@ -231,6 +331,12 @@ async def get_live_fundamentals(symbol: str):
                 "source": funda.get("source_ms") or funda.get("source_nse"),
                 "date": funda.get("date") or funda.get("last_updated"),
             }
+            # Sibling staleness flags for the fields whose writer was removed.
+            # Added as flat booleans to match this payload's existing shape
+            # rather than nesting a second value/stale structure inside it.
+            merged.update(_staleness_flags(merged, funda))
+            as_of = _row_as_of(funda)
+            merged["data_as_of"] = as_of.isoformat() if as_of else None
             result["fundamentals"] = merged
         conn.close()
 

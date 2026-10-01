@@ -335,7 +335,7 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
                           <h4 className="text-[12px] font-mono text-[#888] uppercase tracking-wider mb-2">Valuation</h4>
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                             <MetricCard label="PE Ratio" value={fundaData.fundamentals?.pe || fundaData.key_metrics?.pe} />
-                            <MetricCard label="PB Ratio" value={fundaData.fundamentals?.pb} />
+                            <MetricCard label="PB Ratio" value={fundaData.fundamentals?.pb} stale={!!fundaData.fundamentals?.pb_stale} staleAsOf={fundaData.fundamentals?.data_as_of} />
                             <MetricCard label="Market Cap" value={fundaData.key_metrics?.market_cap || fundaData.fundamentals?.market_cap} isString />
                             <MetricCard label="Face Value" value={fundaData.key_metrics?.face_value} isString />
                           </div>
@@ -345,7 +345,8 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
                         <div>
                           <h4 className="text-[12px] font-mono text-[#888] uppercase tracking-wider mb-2">Profitability</h4>
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                            <MetricCard label="ROE" value={fundaData.fundamentals?.roe || fundaData.key_metrics?.roe} suffix="%" />
+                            {/* ROE falls back to live screener.in data; only mark stale when the frozen fundamentals value is the one shown. */}
+                            <MetricCard label="ROE" value={fundaData.fundamentals?.roe || fundaData.key_metrics?.roe} suffix="%" stale={!!fundaData.fundamentals?.roe && !!fundaData.fundamentals?.roe_stale} staleAsOf={fundaData.fundamentals?.data_as_of} />
                             <MetricCard label="ROCE" value={fundaData.key_metrics?.roce} suffix="%" />
                             <MetricCard label="Net Margin" value={fundaData.fundamentals?.net_margin ? fundaData.fundamentals.net_margin * 100 : null} suffix="%" />
                             <MetricCard label="Op Margin" value={fundaData.fundamentals?.operating_margin ? fundaData.fundamentals.operating_margin * 100 : null} suffix="%" />
@@ -378,7 +379,7 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                             <MetricCard label="Debt/Equity" value={fundaData.fundamentals?.debt_equity} />
                             <MetricCard label="Current Ratio" value={fundaData.fundamentals?.current_ratio} />
-                            <MetricCard label="Quick Ratio" value={fundaData.fundamentals?.quick_ratio} />
+                            <MetricCard label="Quick Ratio" value={fundaData.fundamentals?.quick_ratio} stale={!!fundaData.fundamentals?.quick_ratio_stale} staleAsOf={fundaData.fundamentals?.data_as_of} />
                             <MetricCard label="FCF Yield" value={fundaData.fundamentals?.free_cash_flow_yield ? fundaData.fundamentals.free_cash_flow_yield * 100 : null} suffix="%" />
                           </div>
                         </div>
@@ -387,8 +388,8 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
                         <div>
                           <h4 className="text-[12px] font-mono text-[#888] uppercase tracking-wider mb-2">Growth</h4>
                           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                            <MetricCard label="Revenue Growth" value={fundaData.fundamentals?.revenue_growth ? fundaData.fundamentals.revenue_growth * 100 : null} suffix="%" color />
-                            <MetricCard label="Earnings Growth" value={fundaData.fundamentals?.earnings_growth ? fundaData.fundamentals.earnings_growth * 100 : null} suffix="%" color />
+                            <MetricCard label="Revenue Growth" value={fundaData.fundamentals?.revenue_growth ? fundaData.fundamentals.revenue_growth * 100 : null} suffix="%" color stale={!!fundaData.fundamentals?.revenue_growth_stale} staleAsOf={fundaData.fundamentals?.data_as_of} />
+                            <MetricCard label="Earnings Growth" value={fundaData.fundamentals?.earnings_growth ? fundaData.fundamentals.earnings_growth * 100 : null} suffix="%" color stale={!!fundaData.fundamentals?.earnings_growth_stale} staleAsOf={fundaData.fundamentals?.data_as_of} />
                             <MetricCard label="Div Yield" value={fundaData.fundamentals?.dividend_yield} suffix="%" />
                           </div>
                         </div>
@@ -582,14 +583,27 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
   );
 }
 
-function MetricCard({ label, value, suffix = '', isString = false, color = false, tooltip }: {
+function MetricCard({ label, value, suffix = '', isString = false, color = false, tooltip, stale = false, staleAsOf }: {
   label: string;
   value: number | string | null | undefined;
   suffix?: string;
   isString?: boolean;
   color?: boolean;
   tooltip?: string;
+  stale?: boolean;
+  staleAsOf?: string | null;
 }) {
+  // A stale value is muted regardless of its sign: the colour would otherwise
+  // imply the number is current, which is exactly what it may not be.
+  const staleMark = stale ? (
+    <span
+      className="text-[#888] cursor-help"
+      title={`Stale - last refreshed ${staleAsOf ? staleAsOf.slice(0, 10) : 'an unknown date'}. Nothing refreshes this field any more, so the value may be out of date.`}
+    >
+      *
+    </span>
+  ) : null;
+
   if (value === null || value === undefined || value === '') {
     return (
       <div className="bg-[#1a1c24] border border-[#ffffff0a] p-3 rounded">
@@ -600,6 +614,7 @@ function MetricCard({ label, value, suffix = '', isString = false, color = false
               <Info size={10} className="text-[#888] cursor-help" />
             </span>
           )}
+          {staleMark}
         </div>
         <div className="text-sm font-bold text-[#888]">—</div>
       </div>
@@ -608,9 +623,11 @@ function MetricCard({ label, value, suffix = '', isString = false, color = false
 
   const num = typeof value === 'string' ? parseFloat(value) : value;
   const display = isString ? value : (typeof num === 'number' ? num.toFixed(2) : value);
-  const colorClass = color
-    ? (Number(num) > 0 ? 'text-green-400' : Number(num) < 0 ? 'text-red-400' : 'text-[#fafafa]')
-    : 'text-[#fafafa]';
+  const colorClass = stale
+    ? 'text-[#888]'
+    : color
+      ? (Number(num) > 0 ? 'text-green-400' : Number(num) < 0 ? 'text-red-400' : 'text-[#fafafa]')
+      : 'text-[#fafafa]';
 
   return (
     <div className="bg-[#1a1c24] border border-[#ffffff0a] p-3 rounded">
@@ -621,6 +638,7 @@ function MetricCard({ label, value, suffix = '', isString = false, color = false
             <Info size={10} className="text-[#888] cursor-help" />
           </span>
         )}
+        {staleMark}
       </div>
       <div className={`text-sm font-bold ${colorClass}`}>
         {display}{suffix}

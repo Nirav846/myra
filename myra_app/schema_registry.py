@@ -167,6 +167,17 @@ class SchemaRegistry:
                 "shares_outstanding": "REAL",
                 "promoter_holding_pct": "REAL",
                 "last_fundamental_update": "TEXT",
+                # Canonical targets for Morningstar data points that previously had
+                # no canonical column and were therefore dropped by the sync.
+                # Additive only: SchemaRegistry never drops columns. `quick_ratio`
+                # already exists in the live DB (written by the retired Upstox
+                # fetcher) but was missing here, so its mapping had no registry
+                # backing. Morningstar currently returns null for all three, so
+                # these stay empty until that is investigated - see
+                # docs/DB_CONTEXT.md.
+                "price_to_book": "REAL",
+                "payout_ratio": "REAL",
+                "quick_ratio": "REAL",
             },
             "primary_key": "(symbol)",
         },

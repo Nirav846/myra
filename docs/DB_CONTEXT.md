@@ -90,3 +90,160 @@ SectorManager (myra_app/sector_manager.py):
 - CamelCase OHLCV in DataFrames (Open/High/Low/Close/Volume), lowercase in DB inserts
 - WAL mode must stay on — never set journal_mode=DELETE
 - Prefer `myra_app/db/bulk_loader.load_ohlcv_for_universe` for scanner data — never per-symbol SQLite connects
+
+## KNOWN ISSUE: `fundamentals` legacy camelCase columns are now unwritten
+
+Recorded 2026-09-29. **Reader staleness signalling: done. Live source: still
+open.** Verified against the live DB (`myra_valuation.db`, 3917 `fundamentals`
+rows) and `schema/valuation.sql`.
+
+**The columns.** `fundamentals` has 59 columns, **20 of them legacy camelCase**
+(`peRatio`, `priceToBook`, `revenueGrowth`, `marketCap`, `returnOnEquity`,
+`operatingMargin`, `grossMargin`, `netMargin`, `dividendYield`, `payoutRatio`,
+`currentRatio`, `quickRatio`, `freeCashFlowYield`, `returnOnAssets`,
+`debtToEquity`, `enterpriseValue`, `priceToSales`, `earningsPerShare`,
+`bookValuePerShare`, `earningsGrowth`) sitting alongside 39 canonical
+snake_case/lowercase ones. They are residue from pre-consolidation writes plus
+the Upstox fetcher, which wrote camelCase names.
+
+**Nobody writes them any more.** `myra_app/fundamental_sync.py` is the canonical
+writer and emits snake_case only — its `MS_CANONICAL_MAP` (line 308) maps the
+Morningstar camelCase keys onto canonical columns and *drops* unmapped ones
+("to prevent schema drift"). `myra_app/fetchers/full_fundamentals.py` likewise
+normalises (`data["roe"] = g("returnOnEquity")`, line 387) into its own cache
+table, not `fundamentals`. So this is a **reader** problem, not a writer problem.
+
+**The reader problem.** `myra_web/routes/fundamentals.py:208-233` (the
+`/api/fundamentals` payload) reads several legacy columns with **no fallback to
+the canonical column**. Populated counts below are out of 3917, measured
+2026-09-29:
+
+| API field | column read | populated | canonical column | canonical populated |
+|---|---|---|---|---|
+| `pb` | `priceToBook` | 448 | none | — |
+| `ps` | `priceToSales` | 0 | none | — |
+| `operating_margin` | `operatingMargin` | 7 | `operating_margin` | 0 |
+| `gross_margin` | `grossMargin` | 7 | `gross_margin` | 0 |
+| `current_ratio` | `currentRatio` | 7 | `current_ratio` | 0 |
+| `quick_ratio` | `quickRatio` | 120 | `quick_ratio` | 113 |
+| `free_cash_flow_yield` | `freeCashFlowYield` | 6 | `free_cash_flow_yield` | 0 |
+| `revenue_growth` | `revenueGrowth` | 0 | `sales_growth` | 0 |
+| `earnings_growth` | `earningsGrowth` | 0 | `profit_growth` | 0 |
+| `payout_ratio` | `payoutRatio` | 6 | **does not exist** | — |
+
+`revenueGrowth` / `earningsGrowth` *do* have canonical columns — `sales_growth`
+and `profit_growth` — because `MS_CANONICAL_MAP` maps them. They are simply
+empty, since Morningstar returns null for both (see below). At the time of the
+original 2026-09-29 measurement, `payout_ratio` and `pb` had no canonical column
+at all; `price_to_book` and `payout_ratio` have since been added to
+`MS_CANONICAL_MAP` and `schema_registry.py` (see the correction below — the
+`payout_ratio` addition immediately proved valuable, because Morningstar *does*
+return that field). All counts in the table above are the pre-fix 2026-09-29
+snapshot.
+
+**Why it got worse on 2026-09-29.** Commit `d2f0de6` in `D:\01screener\upstox_fetcher`
+removed the Upstox fundamentals write. The legacy columns that Upstox populated
+are now permanently frozen at their last sync:
+
+| legacy column | UPSTOX-sourced rows | last `last_updated` |
+|---|---|---|
+| `priceToBook` | 448 | 2026-09-01T03:49:59Z |
+| `returnOnEquity` | 442 | 2026-09-01T03:49:59Z |
+| `quickRatio` | 113 | 2026-09-01T03:49:59Z |
+
+`priceToBook` is the worst case: it is the *only* source of the API's `pb` field,
+it was the best-populated legacy column, and it will not be refreshed again. The
+`operatingMargin` / `grossMargin` / `currentRatio` / `freeCashFlowYield` /
+`payoutRatio` rows are older Morningstar writes with `last_updated IS NULL` and
+were already stale before this commit.
+
+**Also observed:** `marketCap` (8 rows, `last_updated 2026-04-04`,
+`source_ms IS NULL` — i.e. not Upstox-sourced) and `market_cap` (2936 rows)
+disagree on 2 rows. The same metric stored twice with different values; "which
+is right" needs a re-sync, not a coin flip.
+
+**Do not** add a new writer for these columns.
+
+**The canonical columns are not an independent fresher source.** This was
+checked before deciding how to fix the reader, and it rules out the obvious
+"just read the canonical column" fix for `roe` / `quick_ratio`. Where a
+canonical column is populated, it is a **byte-identical mirror** of the same
+frozen legacy value — Upstox wrote both columns:
+
+| pair | rows | same symbols | value disagreements |
+|---|---|---|---|
+| `returnOnEquity` (442) vs `roe` (443) | 442 match | 442 | **0** |
+| `quickRatio` (120) vs `quick_ratio` (113) | 113 match | 113 | **0** |
+
+So switching the reader to canonical-first would serve the *same* frozen
+2026-09-01 numbers while labelling them as Morningstar data on rows where
+`source_ms = 'UPSTOX'` — provenance laundering, and no gain in freshness.
+
+**CORRECTED 2026-10-01 — the claim below was wrong.** The earlier version of
+this note asserted that no live source existed for *any* of the six concepts.
+That was inferred from the state of the legacy columns, not measured against a
+live Morningstar sync, and it was wrong for two of the six. `quickRatio` and
+`payoutRatio` were never dead concepts — they were simply **absent from
+`MS_CANONICAL_MAP`**, so Morningstar's values were being *discarded* at the sync
+boundary and never had a canonical column to land in. Once the map entries were
+added, the very next sync populated them. Live counts on the 3355
+MORNINGSTAR-sourced rows:
+
+| concept | MS rows with data | source |
+|---|---|---|
+| `quick_ratio` | **3227** | live Morningstar |
+| `payout_ratio` | **3236** | live Morningstar |
+| `price_to_book` (`priceToBook`) | 0 | none — MS still null |
+| `roe` (`returnOnEquity`) | 0 | none — 442 frozen Upstox rows remain |
+| `sales_growth` (`revenueGrowth`) | 0 | none |
+| `profit_growth` (`earningsGrowth`) | 0 | none |
+
+So the open question is **four** concepts, not six. The rest of this section's
+evidence still holds: Morningstar requests all of them in the same
+`securityDataPoints` call, and the following come back null on a sync that is
+demonstrably working:
+
+```
+net_margin=3279  dividend_yield=1457  sector=3337  date=3339   <- arriving fine
+roe=0  roe_ttm=0  sales_growth=0  profit_growth=0
+eps=0  book_value=0  debt_to_equity=0                        <- all null
+```
+
+The only other candidate, `full_fundamental_cache` (the yfinance path, which
+already normalises `price_to_book` / `roe` / `revenue_growth` /
+`earnings_growth`), holds 3 rows and populates none of these fields. Why
+Morningstar returns null for exactly this remaining subset is
+**uninvestigated** — see the open question below.
+
+**Data-quality flag on `quick_ratio` (unresolved).** The newly live
+`quick_ratio` values range **1.1e-05 to 13935.9, avg 10.9**. A quick ratio of
+13935 is not plausible for a listed company, so either the units are wrong
+(ratio vs percentage), the field is unrelated data reused under that name, or
+certain sectors produce nonsense. `payout_ratio` (0–16.67, avg 0.12) looks
+sane by comparison. Do not surface `quick_ratio` to users until the raw
+Morningstar field has been inspected for an extreme-value symbol.
+
+**What was done (2026-09-29).** Rather than swap sources, the reader now
+*discloses* staleness. `/api/fundamentals/live/{symbol}` adds a sibling
+`<field>_stale` boolean next to each of the six values, plus one shared
+`data_as_of` timestamp, and `HistoricalSearch.tsx` renders a muted value with a
+`*` tooltip on stale ones. Staleness is **age-based**
+(`FROZEN_SOURCE_FIELDS` / `STALENESS_MAX_AGE_DAYS = 30` in
+`myra_web/routes/fundamentals.py`), not hardcoded — if a real writer ever
+lands and refreshes the row, `last_updated` advances and the flags clear on
+their own. A field with a null value is never flagged; there is nothing
+misleading to mark. Legacy column reads are deliberately unchanged.
+
+**Open follow-up.** Investigate whether the null Morningstar data points are
+retired, renamed, or plan-gated (compare the raw response body against
+`full_fundamentals.py`'s normalisation). Only once a genuine source populates
+the canonical columns does a reader-side source swap make sense. Note
+`myra_app/ai_second_opinion.py:288` still does
+`COALESCE(roe, returnOnEquity)` and is not covered by the staleness flag.
+
+`tools/consolidate_fundamentals_columns.py` is the existing consolidation
+backfill (idempotent: `WHERE (canonical IS NULL OR canonical = 0) AND alias IS
+NOT NULL AND alias != 0`). It is **not** a fix for this issue — copying legacy
+values into canonical columns would only make frozen data look canonical.
+Dropping the legacy columns is a separate decision — `SchemaRegistry` only
+ever adds, per `AGENTS.md`.
