@@ -327,6 +327,7 @@ class FundamentalSync:
             "priceToBook": "price_to_book",
             "payoutRatio": "payout_ratio",
             "quickRatio": "quick_ratio",
+            "currentRatio": "current_ratio",
         }
 
         for symbol in all_symbols:

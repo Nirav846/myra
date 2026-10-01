@@ -172,12 +172,16 @@ class SchemaRegistry:
                 # Additive only: SchemaRegistry never drops columns. `quick_ratio`
                 # already exists in the live DB (written by the retired Upstox
                 # fetcher) but was missing here, so its mapping had no registry
-                # backing. Morningstar currently returns null for all three, so
-                # these stay empty until that is investigated - see
-                # docs/DB_CONTEXT.md.
+                # backing. Morningstar now populates `payout_ratio` and
+                # `quick_ratio` (3,236 and 3,227 live rows as of 48197c4), and
+                # `current_ratio` as of this commit; `price_to_book` is still
+                # null from Morningstar. The API reads these canonical-first
+                # and falls back to the legacy camelCase column only when the
+                # canonical value is NULL - see myra_app.fundamentals_staleness.
                 "price_to_book": "REAL",
                 "payout_ratio": "REAL",
                 "quick_ratio": "REAL",
+                "current_ratio": "REAL",
             },
             "primary_key": "(symbol)",
         },
