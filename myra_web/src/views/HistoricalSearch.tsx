@@ -378,7 +378,7 @@ export default function HistoricalSearchView({ lib }: { lib: Librarian }) {
                           <h4 className="text-[12px] font-mono text-[#888] uppercase tracking-wider mb-2">Financial Health</h4>
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                             <MetricCard label="Debt/Equity" value={fundaData.fundamentals?.debt_equity} />
-                            <MetricCard label="Current Ratio" value={fundaData.fundamentals?.current_ratio} />
+                            <MetricCard label="Current Ratio" value={fundaData.fundamentals?.current_ratio} stale={!!fundaData.fundamentals?.current_ratio_stale} staleAsOf={fundaData.fundamentals?.data_as_of} />
                             <MetricCard label="Quick Ratio" value={fundaData.fundamentals?.quick_ratio} stale={!!fundaData.fundamentals?.quick_ratio_stale} staleAsOf={fundaData.fundamentals?.data_as_of} />
                             <MetricCard label="FCF Yield" value={fundaData.fundamentals?.free_cash_flow_yield ? fundaData.fundamentals.free_cash_flow_yield * 100 : null} suffix="%" />
                           </div>

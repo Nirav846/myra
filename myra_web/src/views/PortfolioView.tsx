@@ -127,6 +127,9 @@ interface Holding {
   current_ratio?: number | null;
   quick_ratio?: number | null;
   payout_ratio?: number | null;
+  current_ratio_stale?: boolean;
+  quick_ratio_stale?: boolean;
+  payout_ratio_stale?: boolean;
   promoter_holding?: number | null;
   market_cap?: number | null;
   beta?: number | null;
@@ -1364,8 +1367,16 @@ export default function PortfolioView() {
                       <td className={`${tdClass} ${promoterColor(h.promoter_holding)}`}>
                         {h.promoter_holding != null ? `${h.promoter_holding.toFixed(1)}%` : '\u2014'}
                       </td>
-                      <td className={`${tdClass} ${currentRatioColor(h.current_ratio)}`}>
-                        {h.current_ratio != null ? h.current_ratio.toFixed(2) : '\u2014'}
+                      <td className={`${tdClass} ${h.current_ratio_stale ? 'text-[#888]' : currentRatioColor(h.current_ratio)}`}>
+                        {h.current_ratio != null ? h.current_ratio.toFixed(2) : '—'}
+                        {h.current_ratio_stale && (
+                          <span
+                            className="text-[#888] cursor-help"
+                            title="Stale - this ratio fell back to a legacy column that no writer refreshes, so the value may be out of date."
+                          >
+                            *
+                          </span>
+                        )}
                       </td>
                       <td className={tdClass}>{formatMarketCap(h.market_cap)}</td>
                     </>

@@ -9,11 +9,14 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from myra_app.constants import DB_DIR
+from myra_app.fundamentals_staleness import canonical_or_legacy, staleness_flags
 from myra_app.librarian_core import LibrarianCore
+from myra_app.ratio_sanitize import sanitize_ratio
 from myra_web.background import _spawn_task
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
+
 
 @router.post("/refresh")
 async def refresh_portfolio():
@@ -32,7 +35,8 @@ async def refresh_portfolio():
     except Exception as e:
         logger.exception("portfolio refresh failed")
         return JSONResponse(
-            status_code=500, content={"status": "error", "message": "Internal server error"}
+            status_code=500,
+            content={"status": "error", "message": "Internal server error"},
         )
 
 
@@ -253,7 +257,9 @@ async def get_portfolio():
                 f"""SELECT symbol, pe, operatingMargin, grossMargin,
                             freeCashFlowYield, currentRatio, quickRatio,
                             payoutRatio, beta, promoter_holding_pct,
-                            sector, market_cap
+                            sector, market_cap,
+                            current_ratio, quick_ratio, payout_ratio,
+                            last_updated, last_fundamental_update
                      FROM fundamentals WHERE symbol IN ({placeholders})""",
                 symbols,
             ).fetchall():
@@ -321,6 +327,21 @@ async def get_portfolio():
             1 for f in FUNDA_FIELDS if vf.get(f) is not None
         )
 
+        # Staleness is computed from the resolved (canonical-first) values, so a
+        # freshly-synced row ages out and only the legacy fallback stays flagged.
+        ratio_values = {
+            "current_ratio": sanitize_ratio(
+                canonical_or_legacy(vf, "current_ratio", "currentRatio"),
+                field_name="current_ratio",
+            ),
+            "quick_ratio": sanitize_ratio(
+                canonical_or_legacy(vf, "quick_ratio", "quickRatio"),
+                field_name="quick_ratio",
+            ),
+            "payout_ratio": canonical_or_legacy(vf, "payout_ratio", "payoutRatio"),
+        }
+        ratio_flags = staleness_flags(ratio_values, vf)
+
         total_invested += invested
         total_current += current_value
         total_day_pnl += day_pnl
@@ -352,9 +373,18 @@ async def get_portfolio():
                 "operating_margin": vf.get("operatingMargin"),
                 "gross_margin": vf.get("grossMargin"),
                 "free_cash_flow_yield": vf.get("freeCashFlowYield"),
-                "current_ratio": vf.get("currentRatio"),
-                "quick_ratio": vf.get("quickRatio"),
-                "payout_ratio": vf.get("payoutRatio"),
+                # canonical-first, legacy only when canonical IS NULL, so the
+                # frozen pre-2026-09-01 camelCase value never wins over the live
+                # Morningstar one. See myra_app.fundamentals_staleness.
+                "current_ratio": ratio_values["current_ratio"],
+                "quick_ratio": ratio_values["quick_ratio"],
+                "payout_ratio": ratio_values["payout_ratio"],
+                # Legacy-fallback rows still carry a frozen value and stay
+                # flagged; the canonical-sourced majority ages out on its own
+                # once the row refreshes.
+                "current_ratio_stale": ratio_flags["current_ratio_stale"],
+                "quick_ratio_stale": ratio_flags["quick_ratio_stale"],
+                "payout_ratio_stale": ratio_flags["payout_ratio_stale"],
                 "promoter_holding": vf.get("promoter_holding_pct"),
                 "market_cap": vf.get("market_cap"),
                 "beta": vf.get("beta"),

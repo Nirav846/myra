@@ -18,8 +18,12 @@ import subprocess
 from fastapi import APIRouter, HTTPException
 
 from myra_app.constants import DB_DIR
+from myra_app.fundamentals_staleness import (
+    canonical_or_legacy as _canonical_or_legacy,
+)
 from myra_app.fundamentals_staleness import row_as_of, staleness_flags
 from myra_app.librarian_core import LibrarianCore
+from myra_app.ratio_sanitize import sanitize_ratio
 
 logger = logging.getLogger(__name__)
 
@@ -220,14 +224,25 @@ async def get_live_fundamentals(symbol: str):
                 "operating_margin": funda.get("operatingMargin"),
                 "gross_margin": funda.get("grossMargin"),
                 "debt_equity": funda.get("debt_to_equity") or funda.get("debtToEquity"),
-                "current_ratio": funda.get("currentRatio"),
-                "quick_ratio": funda.get("quickRatio"),
+                # canonical-first, legacy only when canonical IS NULL.
+                # `is not None` rather than `or` so a real 0.0 payout ratio
+                # survives instead of being treated as missing data.
+                "current_ratio": sanitize_ratio(
+                    _canonical_or_legacy(funda, "current_ratio", "currentRatio"),
+                    field_name="current_ratio",
+                ),
+                "quick_ratio": sanitize_ratio(
+                    _canonical_or_legacy(funda, "quick_ratio", "quickRatio"),
+                    field_name="quick_ratio",
+                ),
                 "dividend_yield": funda.get("dividend_yield")
                 or funda.get("dividendYield"),
                 "free_cash_flow_yield": funda.get("freeCashFlowYield"),
                 "revenue_growth": funda.get("revenueGrowth"),
                 "earnings_growth": funda.get("earningsGrowth"),
-                "payout_ratio": funda.get("payoutRatio"),
+                "payout_ratio": _canonical_or_legacy(
+                    funda, "payout_ratio", "payoutRatio"
+                ),
                 "beta": funda.get("beta"),
                 "source": funda.get("source_ms") or funda.get("source_nse"),
                 "date": funda.get("date") or funda.get("last_updated"),

@@ -1,14 +1,17 @@
-"""Shared staleness disclosure for fundamentals fields.
+"""Shared correctness helpers for reading fundamentals fields.
 
-Some fundamentals fields lost their only writer when the Upstox fundamentals
-write was removed (upstox_fetcher commit d2f0de6), and Morningstar does not
-return a substitute for several of them. Any non-null value the API serves for
-those fields is therefore a real-but-frozen snapshot. Rather than let it read as
-current, both `/api/fundamentals/live/{symbol}` and the portfolio endpoint flag
-per-field staleness with an age-based check.
+Two concerns, one home, because both are about not serving a misleading value
+and both have already gone wrong independently:
 
-Extracted from `myra_web/routes/fundamentals.py` so the portfolio route can
-share one implementation instead of re-deriving the age arithmetic.
+* **Column resolution** - `canonical_or_legacy` picks the right column. Several
+  fields have a canonical snake_case column that a live writer now populates,
+  sitting beside a legacy camelCase column holding a frozen pre-2026-09-01
+  value. Reading the legacy one serves stale data or nothing at all.
+* **Staleness disclosure** - `staleness_flags` flags what is still frozen, so
+  the value that is served cannot be mistaken for current.
+
+Extracted from `myra_web/routes/fundamentals.py` so the portfolio route shares
+one implementation instead of re-deriving the same arithmetic.
 
 Background and measurements: docs/DB_CONTEXT.md.
 """
@@ -19,6 +22,33 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
+
+
+def canonical_or_legacy(row, canonical_col, legacy_col):
+    """Return the canonical column's value, falling back to legacy only if NULL.
+
+    Prefers the canonical snake_case column because a live writer populates it;
+    the legacy camelCase column holds a value frozen when the Upstox writer was
+    removed and will never refresh.
+
+    The NULL test is ``is not None``, never truthiness. These are ratios where
+    0.0 is a real, reportable value (a company with no quick or current assets,
+    or no dividend paid) - an ``or`` chain would silently drop it and let the
+    frozen legacy value win.
+
+    Args:
+        row: a fundamentals row as a mapping (sqlite3.Row or dict).
+        canonical_col: preferred column name.
+        legacy_col: fallback column name, used only when canonical is NULL.
+
+    Returns:
+        The canonical value, else the legacy value, else None.
+    """
+    value = row.get(canonical_col)
+    if value is not None:
+        return value
+    return row.get(legacy_col)
+
 
 # API fields whose historical writer was removed, and which are therefore
 # candidates for a staleness flag. Keyed by the API field name the routes
