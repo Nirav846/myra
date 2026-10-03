@@ -6,6 +6,14 @@ import pytest
 import myra_app.constants as constants
 from myra_app.librarian_core import LibrarianCore
 
+# myra_app/fundamental_sync.py:32 reads this at import time via
+# os.environ[...] (bracket access, not .get()). Developers have a gitignored
+# .env so load_dotenv fills it locally; a clean CI runner has no .env, so the
+# unguarded read raises KeyError and aborts collection for every test in the
+# module. Seed a placeholder before any test module imports it. The suite
+# makes no Morningstar call, so the value is never transmitted.
+os.environ.setdefault("MORNINGSTAR_TOKEN", "test-placeholder")
+
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "slow: marks tests as slow")
