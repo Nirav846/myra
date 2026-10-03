@@ -41,10 +41,19 @@ jobs:
       - name: Build fixture DBs
         run: python tests/fixtures/build_fixture_db.py
 
+      # -rs prints skip reasons in the summary block. Without it, every
+      # conditionally-skipped test is invisible: a test that silently stops
+      # running looks identical to a test that passes.
       - name: Run tests
-        run: pytest tests/ -v
+        run: pytest tests/ -v -rs
         env:
           PYTHONPATH: ${{ github.workspace }}
+
+      # Diff against a local `pytest --collect-only -q` to catch tests that
+      # one environment collects and the other does not. Skips are runtime;
+      # collection happens earlier and is not visible in the pass count.
+      - name: Collect test IDs
+        run: pytest tests/ --collect-only -q
 
   frontend-build:
     runs-on: ubuntu-latest
