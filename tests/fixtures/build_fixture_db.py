@@ -17,6 +17,9 @@ Design notes:
     PRIMARY KEY / NOT NULL distinctness matters.
   * Deterministic generation: every row's valued columns are unique per row,
     so any composite PK is satisfied.
+  * Per-db_key override rows (_DB_OVERRIDE_ROWS / _DB_OVERRIDE_UPDATES) are
+    applied after the generic seeder, for shapes the generator cannot make
+    (NULL shares_outstanding, _SME/base pairs, non-equity junk symbols).
 """
 
 from __future__ import annotations
@@ -156,6 +159,173 @@ def _seed_table(conn: sqlite3.Connection, table: str) -> None:
     conn.executemany(sql, rows)
 
 
+# ---------------------------------------------------------------------------
+# Per-db_key override rows, applied after the generic seeder.
+#
+# The generator cannot express the shapes below: _QUANTITY_NAMES forces
+# shares_outstanding = i * 1000 (never NULL) and _SYMBOL_PREFIX forces
+# TESTSYM%02d symbols, so neither the null-share nor the SME/base-pair case can
+# be seeded.  They exist for tests/test_fundamentals_stale_filter.py.
+#
+# The staleness math is deliberate, so do not "fix" a row without re-reading
+# that test file: the stale set must be exactly 28 rows / 25 distinct tickers
+# (3 SME/base collisions), so the progress log lands on 25/25.
+# ---------------------------------------------------------------------------
+
+# Older / newer than the 90-day staleness window, independent of build date.
+OLD_LFU = "2020-01-01"
+FRESH_LFU = "2099-12-31"  # sentinel: always outside the staleness window
+
+
+def _fundamentals_row(
+    symbol: str,
+    *,
+    shares: float | None = None,
+    lfu: str = OLD_LFU,
+    source_ms: str = "MORNINGSTAR",
+    pe: float | None = None,
+    sector: str | None = None,
+    industry: str | None = None,
+    market_cap: float | None = None,
+) -> dict:
+    """One fundamentals override row (columns not listed stay NULL)."""
+    return {
+        "symbol": symbol,
+        "shares_outstanding": shares,
+        "last_fundamental_update": lfu,
+        "source_ms": source_ms,
+        "pe": pe,
+        "sector": sector,
+        "industry": industry,
+        "market_cap": market_cap,
+    }
+
+
+_FUNDAMENTALS_OVERRIDES: list[dict] = [
+    # -- non-equity junk (5): index pseudo-symbols with no Yahoo ticker -------
+    # At least one row per predicate branch; "NIFTY JUNK SPACE" hits two.
+    _fundamentals_row("FIX JUNK SPACE", source_ms="UPSTOX"),  # '% %'
+    _fundamentals_row("FIX JUNK SPACE2", source_ms="UPSTOX"),  # '% %'
+    _fundamentals_row("NIFTY JUNK SPACE", source_ms="UPSTOX"),  # '% %' + NIFTY%
+    _fundamentals_row("NIFTYJUNK1", source_ms="UPSTOX"),  # NIFTY%, no space
+    _fundamentals_row("NIFJUNK1", source_ms="UPSTOX"),  # NIF%, no space
+    # -- protected UPSTOX equities (4) ---------------------------------------
+    # Null share count, so stale by design -- but ordinary equities, and the
+    # non-equity predicate must not remove them.
+    _fundamentals_row(
+        "ARTEMISMED",
+        source_ms="UPSTOX",
+        pe=31.5,
+        sector="Healthcare",
+        industry="Hospitals",
+        market_cap=4.5e9,
+    ),
+    _fundamentals_row(
+        "DHANI",
+        source_ms="UPSTOX",
+        pe=24.0,
+        sector="Financial Services",
+        industry="Brokerage",
+        market_cap=2.1e9,
+    ),
+    _fundamentals_row(
+        "GUJRAFFIA",
+        source_ms="UPSTOX",
+        pe=18.25,
+        sector="Consumer Staples",
+        industry="Cement",
+        market_cap=6.0e9,
+    ),
+    _fundamentals_row(
+        "SINGERIND",
+        source_ms="UPSTOX",
+        pe=42.75,
+        sector="Consumer Durables",
+        industry="Appliances",
+        market_cap=1.4e9,
+    ),
+    # -- Case A: SME stale by date only, base already fresh --------------------
+    # Only the SME row is selected, so dedupe must fall back to the _SME row.
+    _fundamentals_row("FIXCASEA", shares=12_000_000, lfu=FRESH_LFU),
+    _fundamentals_row("FIXCASEA_SME", shares=12_000_000, source_ms="UPSTOX"),
+    # -- join path: base twin holds a valid Morningstar share count -----------
+    _fundamentals_row("FIXJOIN1", shares=9_500_000),
+    _fundamentals_row("FIXJOIN1_SME", source_ms="UPSTOX"),
+    # -- Case C: both sides stale, base twin has NO share count ---------------
+    # Nothing to copy locally: one fetch, written to the base row.
+    _fundamentals_row("FIXJOINC", shares=None),
+    _fundamentals_row("FIXJOINC_SME", source_ms="UPSTOX"),
+    # -- deliberately divergent metrics (pe/sector/industry/market_cap) ------
+    # The local join must copy shares_outstanding and nothing else.
+    _fundamentals_row(
+        "FIXDIVERGE",
+        shares=3_300_000,
+        pe=11.1,
+        sector="Industrials",
+        industry="Capital Goods",
+        market_cap=1.1e9,
+    ),
+    _fundamentals_row(
+        "FIXDIVERGE_SME",
+        source_ms="UPSTOX",
+        pe=99.9,
+        sector="Energy",
+        industry="Renewables",
+        market_cap=2.2e9,
+    ),
+    # -- standalone base twins with no share count (Case C shape) ------------
+    *[_fundamentals_row(f"FIXBASEC{i}") for i in range(1, 6)],
+]
+# -- standalone base twins that are already fresh: never selected -----------
+_FUNDAMENTALS_OVERRIDES += [
+    _fundamentals_row(f"FIXBASEB{i}", shares=1_000_000 * i, lfu=FRESH_LFU)
+    for i in range(1, 6)
+]
+# -- filler _SME rows (10 _SME rows in total) --------------------------------
+# Deliberately NOT stale, so they add no fetches and keep the stale set at
+# exactly 25 distinct tickers.
+_FUNDAMENTALS_OVERRIDES += [
+    _fundamentals_row(
+        f"FIXSMEM{i:02d}_SME", shares=2_000_000 * i, lfu=FRESH_LFU, source_ms="UPSTOX"
+    )
+    for i in range(1, 7)
+]
+
+# Rows the generic seeder cannot be asked to make stale (it writes a
+# non-date-shaped last_fundamental_update), so they are aged by UPDATE.
+_DB_OVERRIDE_UPDATES: dict[str, list[tuple[str, tuple]]] = {
+    "valuation": [
+        # The 12 ordinary equities every other test relies on must be *in* the
+        # stale set, otherwise "the filter kept them" proves nothing.
+        (
+            "UPDATE fundamentals SET last_fundamental_update = ? "
+            "WHERE symbol LIKE 'TESTSYM%'",
+            (OLD_LFU,),
+        ),
+    ],
+}
+
+_DB_OVERRIDE_ROWS: dict[str, dict[str, list[dict]]] = {
+    "valuation": {"fundamentals": _FUNDAMENTALS_OVERRIDES},
+}
+
+
+def _apply_overrides(conn: sqlite3.Connection, db_key: str) -> tuple[int, int]:
+    """Apply this db_key's override UPDATEs + INSERT rows.  Returns both counts."""
+    rows_added = 0
+    for sql, params in _DB_OVERRIDE_UPDATES.get(db_key, ()):
+        conn.execute(sql, params)
+    for table, rows in _DB_OVERRIDE_ROWS.get(db_key, {}).items():
+        if not rows:
+            continue
+        cols = list(rows[0])
+        placeholders = ", ".join("?" for _ in cols)
+        sql = f'INSERT INTO "{table}" ({", ".join(cols)}) VALUES ({placeholders})'
+        conn.executemany(sql, [tuple(r[c] for c in cols) for r in rows])
+        rows_added += len(rows)
+    return rows_added, len(_DB_OVERRIDE_UPDATES.get(db_key, ()))
+
+
 def build_one(db_key: str) -> str:
     ddl_path = os.path.join(SCHEMA_DIR, f"{db_key}.sql")
     if not os.path.exists(ddl_path):
@@ -180,6 +350,7 @@ def build_one(db_key: str) -> str:
                 continue
             _seed_table(conn, table)
             seeded.append(table)
+        added, aged = _apply_overrides(conn, db_key)
         conn.commit()
     finally:
         conn.close()
@@ -188,6 +359,11 @@ def build_one(db_key: str) -> str:
         f"[{db_key}] {os.path.basename(dest)}: seeded {len(seeded)} tables "
         f"({', '.join(seeded) or '-'}) | skipped {len(skipped)} "
         f"({', '.join(skipped) or '-'})"
+        + (
+            f" | +{added} override rows, {aged} override updates"
+            if added or aged
+            else ""
+        )
     )
     return dest
 

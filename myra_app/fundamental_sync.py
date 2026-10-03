@@ -655,8 +655,19 @@ class FundamentalSync:
     def _refresh_stale_shares_outstanding(self, cancel_event=None):
         """
         Fetch shares_outstanding from yfinance ONLY for symbols where it is
-        NULL or hasn't been updated in 90 days.  Typically <50 symbols.
+        NULL or hasn't been updated in 90 days.  ~791 symbols on the current
+        DB, of which 36 index pseudo-symbols are dropped and 277 SME rows are
+        filled locally, leaving ~504 rows / ~252 distinct tickers fetched.
         Retries once with a 2-second delay on transient failures.
+
+        Two pre-steps shrink that set without touching the network:
+          1. local join -- an _SME row copies shares_outstanding from its base
+             twin when the base already holds a valid Morningstar value;
+          2. non-equity exclusion -- "NIFTY 50" / "NIFTYBEES" have no ticker.
+
+        Only shares_outstanding and last_fundamental_update are ever written
+        here -- never pe/sector/industry/market_cap, which diverge between the
+        SME and base rows for the same company.
         """
         # DISABLE_FUNDAMENTAL_WRITERS: upstox_fetcher now owns fundamentals table
         if DISABLE_FUNDAMENTAL_WRITERS:
@@ -667,15 +678,58 @@ class FundamentalSync:
             return {"updated": 0, "total": 0, "skipped": "flag_disabled"}
         import yfinance as yf
 
+        from myra_app.symbols import NON_EQUITY_SQL, dedupe_tickers
+
         val_db = os.path.join(DB_DIR, "myra_valuation.db")
+
+        # Fill _SME rows from their base twin before anything hits the network.
+        # Idempotent: the SME row is only written while its own value is
+        # NULL/0, and EXISTS demands a real value on the base side, so the
+        # second run matches zero rows.  Its own connection -- `conn` below is
+        # closed before the fetch loop starts.
+        join_conn = sqlite3.connect(val_db)
+        try:
+            joined = join_conn.execute(  # noqa: PG-NPLUS1
+                """UPDATE fundamentals AS sme
+                   SET shares_outstanding = (
+                           SELECT base.shares_outstanding
+                           FROM fundamentals AS base
+                           WHERE base.symbol = replace(sme.symbol, '_SME', '')
+                             AND base.source_ms = 'MORNINGSTAR'
+                       ),
+                       last_fundamental_update = date('now')
+                   WHERE sme.symbol LIKE '%\\_SME' ESCAPE '\\'
+                     AND (sme.shares_outstanding IS NULL OR sme.shares_outstanding = 0)
+                     AND EXISTS (
+                           SELECT 1
+                           FROM fundamentals AS base
+                           WHERE base.symbol = replace(sme.symbol, '_SME', '')
+                             AND base.source_ms = 'MORNINGSTAR'
+                             AND base.shares_outstanding IS NOT NULL
+                             AND base.shares_outstanding > 0
+                       )"""
+            ).rowcount
+            join_conn.commit()
+        finally:
+            join_conn.close()
+        if joined:
+            logger.info(
+                f"[shares_outstanding] Filled {joined} SME rows from their base "
+                "twin (no network call)"
+            )
+
         conn = sqlite3.connect(val_db)
         try:
+            # The parentheses around the OR-chain are load-bearing: without
+            # them SQLite binds "AND NOT" to the last term only.
             stale = conn.execute(
-                """SELECT symbol FROM fundamentals
-                   WHERE shares_outstanding IS NULL
-                      OR shares_outstanding = 0
-                      OR last_fundamental_update IS NULL
-                      OR last_fundamental_update < date('now', '-90 days')"""
+                f"""SELECT symbol FROM fundamentals
+                    WHERE ( shares_outstanding IS NULL
+                         OR shares_outstanding = 0
+                         OR last_fundamental_update IS NULL
+                         OR last_fundamental_update < date('now', '-90 days') )
+                      AND NOT {NON_EQUITY_SQL}
+                    ORDER BY symbol"""
             ).fetchall()
         finally:
             conn.close()
@@ -687,31 +741,49 @@ class FundamentalSync:
             )
             return {"updated": 0, "total": 0}
 
+        # One Yahoo call per distinct ticker: an _SME row and its base twin
+        # are the same company.  `total` stays the raw row count for the
+        # return value; the progress denominator is the fetch count.
+        deduped = dedupe_tickers([symbol for (symbol,) in stale])
         logger.info(
-            f"[shares_outstanding] Found {total} stale/missing symbols to update"
+            f"[shares_outstanding] Found {total} stale/missing rows to update "
+            f"({len(deduped.order)} distinct tickers, "
+            f"{deduped.duplicates} SME/base duplicates collapsed)"
         )
 
         updated = 0
-        for i, (symbol,) in enumerate(stale):
+        fetch_attempted = 0
+        fetch_errored = 0
+        for i, ticker in enumerate(deduped.order):
             if cancel_event and cancel_event.is_set():
                 logger.info("[shares_outstanding] Cancelled by user")
                 break
+            target = deduped.row_for[ticker]
+            fetch_attempted += 1
             shares = None
             for attempt in range(2):
                 try:
-                    info = yf.Ticker(f"{symbol}.NS").info
+                    info = yf.Ticker(f"{ticker}.NS").info
                     shares = info.get("sharesOutstanding")
                     break
                 except Exception as e:
                     if attempt == 0:
                         logger.debug(
-                            f"[shares_outstanding] {symbol} fetch failed, retrying in 2s: {e}"
+                            f"[shares_outstanding] {ticker} fetch failed, retrying in 2s: {e}"
                         )
                         time.sleep(2.0)
                     else:
+                        # ONLY here -- `break` above fires on any successful
+                        # .info, including rows that answer with no
+                        # sharesOutstanding, so post-hoc inference from
+                        # `shares is None` would count those as errors and trip
+                        # the guard on every quiet run.
+                        fetch_errored += 1
                         logger.warning(
-                            f"[shares_outstanding] {symbol} fetch failed after retry: {e}"
+                            f"[shares_outstanding] {ticker} fetch failed after retry: {e}"
                         )
+            # Unchanged: a row that answers without shares must keep whatever
+            # valid value it already has.
             if shares and shares > 0:
                 try:
                     conn = sqlite3.connect(val_db)
@@ -720,7 +792,7 @@ class FundamentalSync:
                             """UPDATE fundamentals
                                SET shares_outstanding = ?, last_fundamental_update = date('now')
                                WHERE symbol = ?""",
-                            (shares, symbol),
+                            (shares, target),
                         )
                         conn.commit()
                     finally:
@@ -728,19 +800,20 @@ class FundamentalSync:
                     updated += 1
                 except Exception as e:
                     logger.warning(
-                        f"[shares_outstanding] Failed to persist {symbol}: {e}"
+                        f"[shares_outstanding] Failed to persist {target}: {e}"
                     )
             if (i + 1) % 25 == 0:
                 logger.info(
-                    f"[shares_outstanding] Progress: {i+1}/{total} — updated {updated}"
+                    f"[shares_outstanding] Progress: {i+1}/{len(deduped.order)} "
+                    f"— updated {updated}"
                 )
             time.sleep(0.3)
 
         logger.info(f"[shares_outstanding] Complete — updated {updated}/{total}")
-        if total > 0 and updated == 0:
+        if fetch_attempted > 0 and fetch_errored == fetch_attempted:
             raise RuntimeError(
-                f"Shares refresh failed: {total} stale symbols found but yfinance returned no data. "
-                "Check network or retry later."
+                f"Shares refresh failed: all {fetch_attempted} tickers raised "
+                "exceptions on both retry attempts. Check network or retry later."
             )
         return {"updated": updated, "total": total}
 

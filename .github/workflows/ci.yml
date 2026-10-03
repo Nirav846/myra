@@ -35,6 +35,12 @@ jobs:
           pip install -r requirements.txt
           pip install pytest
 
+      # Build fixture DBs before pytest. conftest.py skips any test requesting
+      # fixture_db_dir when a fixture file is absent, so without this step all
+      # fixture-based tests (incl. test_schema_contract.py) skip silently.
+      - name: Build fixture DBs
+        run: python tests/fixtures/build_fixture_db.py
+
       - name: Run tests
         run: pytest tests/ -v
         env:
