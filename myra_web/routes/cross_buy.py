@@ -17,6 +17,17 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/cross-buy", tags=["cross-buy"])
 
+# Size bucket derived from fundamentals.market_cap. Kept as a shared SQL snippet so
+# the WHERE clause and the SELECT projection cannot drift apart.
+_CATEGORY_CASE = """
+    CASE
+        WHEN f.market_cap IS NULL THEN 'Unknown'
+        WHEN f.market_cap >= 2e11 THEN 'Large'
+        WHEN f.market_cap >= 5e10 THEN 'Mid'
+        ELSE 'Small'
+    END
+"""
+
 
 def _get_db_path() -> str:
     return os.path.join(DB_DIR, "myra_valuation.db")
@@ -60,12 +71,21 @@ def cross_buy_scanner(
 ):
     """Cross-buy scanner over fund_cross_buy joined with fundamentals.
 
+    All filters are applied in SQL *before* LIMIT so that size/tag filters do not
+    silently truncate the result set.
+
+    Returns:
+        month: resolved month tag actually queried.
+        stocks: rows, capped at `limit`.
+        total: full number of rows matching the filters (pre-limit).
+        returned: len(stocks).
+
     Args:
         month: Month tag "YYYY-MM"; empty resolves to the latest month.
         min_cross_buy_ratio: Minimum cross_buy_ratio (SQL filter).
         signal_tag: Optional exact signal_tag match (SQL filter).
         min_total_funds: Minimum distinct funds holding the stock (SQL filter).
-        stock_category: Optional post-compute size filter (Large/Mid/Small).
+        stock_category: Optional size filter (Large/Mid/Small/Unknown).
         limit: Max rows returned (1-2000).
     """
     db_path = _get_db_path()
@@ -82,7 +102,7 @@ def cross_buy_scanner(
             row = conn.execute("SELECT MAX(month) as m FROM fund_cross_buy").fetchone()
             target_month = row["m"] if row and row["m"] else ""
             if not target_month:
-                return {"month": None, "stocks": [], "total": 0}
+                return {"month": None, "stocks": [], "total": 0, "returned": 0}
 
         conds = ["cb.month = ?"]
         params: list = [target_month]
@@ -96,56 +116,66 @@ def cross_buy_scanner(
         if min_total_funds > 0:
             conds.append("cb.total_funds >= ?")
             params.append(min_total_funds)
+        cat_filter = (
+            stock_category.strip().capitalize() if stock_category.strip() else ""
+        )
+        if cat_filter:
+            # Filtered in SQL (not post-LIMIT) so size filters do not silently
+            # truncate the result set.
+            conds.append(f"{_CATEGORY_CASE} = ?")
+            params.append(cat_filter)
         where = " AND ".join(conds)
+
+        from_clause = f"""
+            FROM fund_cross_buy cb
+            LEFT JOIN fundamentals f ON cb.symbol = f.symbol
+            WHERE {where}
+        """
+
+        total = conn.execute(
+            f"SELECT COUNT(*) AS cnt {from_clause}", list(params)
+        ).fetchone()["cnt"]
 
         query = f"""
             SELECT cb.symbol, cb.month, cb.total_funds,
                    cb.large_funds, cb.mid_funds, cb.small_funds,
                    cb.multi_funds, cb.other_funds,
                    cb.cross_buy_ratio, cb.signal_tag,
-                   CASE
-                       WHEN f.market_cap IS NULL THEN 'Unknown'
-                       WHEN f.market_cap >= 2e11 THEN 'Large'
-                       WHEN f.market_cap >= 5e10 THEN 'Mid'
-                       ELSE 'Small'
-                   END AS stock_category,
+                   {_CATEGORY_CASE} AS stock_category,
                    f.market_cap, f.sector
-            FROM fund_cross_buy cb
-            LEFT JOIN fundamentals f ON cb.symbol = f.symbol
-            WHERE {where}
+            {from_clause}
             ORDER BY cb.cross_buy_ratio DESC, cb.total_funds DESC
             LIMIT ?
         """
         params.append(limit)
         rows = conn.execute(query, params).fetchall()
 
-        cat_filter = (
-            stock_category.strip().capitalize() if stock_category.strip() else ""
-        )
-
         stocks = []
         for r in rows:
-            item = {
-                "symbol": r["symbol"],
-                "month": r["month"],
-                "total_funds": r["total_funds"],
-                "large_funds": r["large_funds"],
-                "mid_funds": r["mid_funds"],
-                "small_funds": r["small_funds"],
-                "multi_funds": r["multi_funds"],
-                "other_funds": r["other_funds"],
-                "cross_buy_ratio": _safe_float(r["cross_buy_ratio"]),
-                "signal_tag": r["signal_tag"] or None,
-                "stock_category": r["stock_category"] or "Unknown",
-                "market_cap": _safe_float(r["market_cap"]),
-                "sector": r["sector"] or None,
-            }
-            # Post-compute filter (computed field, cannot go in SQL WHERE)
-            if cat_filter and item["stock_category"] != cat_filter:
-                continue
-            stocks.append(item)
+            stocks.append(
+                {
+                    "symbol": r["symbol"],
+                    "month": r["month"],
+                    "total_funds": r["total_funds"],
+                    "large_funds": r["large_funds"],
+                    "mid_funds": r["mid_funds"],
+                    "small_funds": r["small_funds"],
+                    "multi_funds": r["multi_funds"],
+                    "other_funds": r["other_funds"],
+                    "cross_buy_ratio": _safe_float(r["cross_buy_ratio"]),
+                    "signal_tag": r["signal_tag"] or None,
+                    "stock_category": r["stock_category"] or "Unknown",
+                    "market_cap": _safe_float(r["market_cap"]),
+                    "sector": r["sector"] or None,
+                }
+            )
 
-        return {"month": target_month, "stocks": stocks, "total": len(stocks)}
+        return {
+            "month": target_month,
+            "stocks": stocks,
+            "total": total,
+            "returned": len(stocks),
+        }
 
     except Exception:
         logger.exception("Scanner query failed")

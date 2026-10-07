@@ -7,6 +7,7 @@ import {
   SignalBadge, 
   MiniBarCell, 
   FormatCurrency,
+  FormatInt,
   type TableColumn,
   type SortState
 } from '../components/ui/VirtualizedTable';
@@ -19,7 +20,10 @@ interface CrossBuyStock {
   cross_buy_ratio: number | null; signal_tag: string | null;
   stock_category: string | null; market_cap: number | null; sector: string | null;
 }
-interface ScannerResponse { month: string | null; stocks: CrossBuyStock[]; total: number; }
+/** `total` is the pre-limit match count; `stocks` is capped at `limit`. */
+interface ScannerResponse {
+  month: string | null; stocks: CrossBuyStock[]; total: number; returned?: number;
+}
 type SortKey = keyof CrossBuyStock;
 type SignalTag = 'STRONG_CROSS_BUY' | 'CROSS_BUY' | 'MIXED' | 'STYLE_CONCENTRATED';
 
@@ -48,6 +52,7 @@ export default function CrossBuyScannerView() {
   const [sortKey, setSortKey] = useState<SortKey>('cross_buy_ratio');
   const [sortAsc, setSortAsc] = useState(false);
   const queryParamsRef = useRef<Record<string, unknown> | null>(null);
+  const reqIdRef = useRef(0);
 
   const buildQueryParams = useCallback(() => {
     const p = new URLSearchParams();
@@ -61,16 +66,23 @@ export default function CrossBuyScannerView() {
   }, [month, limit, minRatio, signalTag, stockCategory, minTotalFunds]);
 
   const fetchData = useCallback(() => {
+    // Guard against out-of-order responses when filters change rapidly.
+    const reqId = ++reqIdRef.current;
     setLoading(true); setError(null);
     const p = buildQueryParams();
     const queryParams = Object.fromEntries(p.entries());
     fetch(`${API_BASE}/cross-buy/scanner?${p}`)
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        queryParamsRef.current = { ...queryParams };
         return r.json();
       })
-      .then(setData).catch(e => setError(e.message)).finally(() => setLoading(false));
+      .then(d => {
+        if (reqId !== reqIdRef.current) return;
+        queryParamsRef.current = { ...queryParams };
+        setData(d);
+      })
+      .catch(e => { if (reqId === reqIdRef.current) setError(e.message); })
+      .finally(() => { if (reqId === reqIdRef.current) setLoading(false); });
   }, [buildQueryParams]);
 
   useEffect(() => {
@@ -88,6 +100,10 @@ export default function CrossBuyScannerView() {
     if (sortKey === k) setSortAsc(!sortAsc); else { setSortKey(k); setSortAsc(false); }
   };
 
+  // Column order is grouped by decision flow:
+  //   identity (Symbol) -> verdict (Signal, Cross-Buy) -> scale (Funds)
+  //   -> style composition (Large..Other) -> size (MCap, Cap) -> context (Sector)
+  // Free-text Sector is last so it can't push the numeric columns off-screen.
   const columns: TableColumn<CrossBuyStock>[] = [
     { 
       key: 'symbol', 
@@ -104,59 +120,9 @@ export default function CrossBuyScannerView() {
         </a>
       )
     },
-    { key: 'sector', label: 'Sector', align: 'left' },
-    { 
-      key: 'market_cap', 
-      label: 'MCap', 
-      align: 'right',
-      render: (item) => <FormatCurrency value={item.market_cap} />
-    },
-    { key: 'stock_category', label: 'Cat.', align: 'left' },
-    { 
-      key: 'total_funds', 
-      label: 'Funds', 
-      align: 'right',
-      cellClassName: 'font-semibold text-text-primary'
-    },
-    { 
-      key: 'large_funds', 
-      label: 'Large', 
-      align: 'right',
-      cellClassName: 'text-purple-400'
-    },
-    { 
-      key: 'mid_funds', 
-      label: 'Mid', 
-      align: 'right',
-      cellClassName: 'text-blue-400'
-    },
-    { 
-      key: 'small_funds', 
-      label: 'Small', 
-      align: 'right',
-      cellClassName: 'text-yellow-400'
-    },
-    { 
-      key: 'multi_funds', 
-      label: 'Multi', 
-      align: 'right',
-      cellClassName: 'text-cyan-400'
-    },
-    { 
-      key: 'other_funds', 
-      label: 'Other', 
-      align: 'right',
-      cellClassName: 'text-text-tertiary'
-    },
-    { 
-      key: 'cross_buy_ratio', 
-      label: 'Cross-Buy', 
-      align: 'right',
-      render: (item) => <MiniBarCell value={item.cross_buy_ratio} colorClass="bg-accent-indigo/60" />
-    },
     { 
       key: 'signal_tag', 
-      label: 'Signal Tag', 
+      label: 'Signal', 
       align: 'left',
       render: (item) => (
         <SignalBadge 
@@ -165,6 +131,66 @@ export default function CrossBuyScannerView() {
         />
       )
     },
+    { 
+      key: 'cross_buy_ratio', 
+      label: 'Cross-Buy %', 
+      align: 'right',
+      render: (item) => (
+        // cross_buy_ratio is a 0-1 fraction, so the bar must be scaled by max=1.
+        // The default max=100 would render a 0.77 ratio as "1%".
+        <MiniBarCell value={item.cross_buy_ratio} max={1} colorClass="bg-accent-indigo/60" />
+      )
+    },
+    { 
+      key: 'total_funds', 
+      label: 'Total', 
+      align: 'right',
+      cellClassName: 'font-semibold text-text-primary whitespace-nowrap',
+      render: (item) => <FormatInt value={item.total_funds} />
+    },
+    { 
+      key: 'large_funds', 
+      label: 'Large', 
+      align: 'right',
+      cellClassName: 'text-purple-400',
+      render: (item) => <FormatInt value={item.large_funds} />
+    },
+    { 
+      key: 'mid_funds', 
+      label: 'Mid', 
+      align: 'right',
+      cellClassName: 'text-blue-400',
+      render: (item) => <FormatInt value={item.mid_funds} />
+    },
+    { 
+      key: 'small_funds', 
+      label: 'Small', 
+      align: 'right',
+      cellClassName: 'text-yellow-400',
+      render: (item) => <FormatInt value={item.small_funds} />
+    },
+    { 
+      key: 'multi_funds', 
+      label: 'Multi', 
+      align: 'right',
+      cellClassName: 'text-cyan-400',
+      render: (item) => <FormatInt value={item.multi_funds} />
+    },
+    { 
+      key: 'other_funds', 
+      label: 'Other', 
+      align: 'right',
+      cellClassName: 'text-text-tertiary',
+      render: (item) => <FormatInt value={item.other_funds} />
+    },
+    { 
+      key: 'market_cap', 
+      label: 'MCap', 
+      align: 'right',
+      render: (item) => <FormatCurrency value={item.market_cap} />
+    },
+    { key: 'stock_category', label: 'Cap', align: 'left' },
+    { key: 'sector', label: 'Sector', align: 'left' },
   ];
 
   const sortState: SortState<CrossBuyStock> = { sortKey, sortAsc };
@@ -172,11 +198,23 @@ export default function CrossBuyScannerView() {
   const summary = useMemo(() => {
     const stocks = data?.stocks ?? [];
     const n = stocks.length;
+    const totalMatched = data?.total ?? n;
     const avgRatio = n ? stocks.reduce((s, x) => s + (x.cross_buy_ratio ?? 0), 0) / n : 0;
     const tagCounts: Record<string, number> = {};
     for (const t of stocks.map(s => s.signal_tag || 'UNKNOWN')) tagCounts[t] = (tagCounts[t] || 0) + 1;
-    return { n, avgRatio, tagCounts };
+    return { n, totalMatched, truncated: n < totalMatched, avgRatio, tagCounts, month: data?.month ?? '' };
   }, [data]);
+
+  const handleReset = useCallback(() => {
+    setMinRatio(0);
+    setSignalTag('');
+    setStockCategory('');
+    setMinTotalFunds(0);
+    setLimit(500);
+    // Fall back to the newest month rather than pinning an empty string, which
+    // would render the month <select> blank.
+    setMonth(months[0] ?? '');
+  }, [months]);
 
   const handleCSV = () => {
     if (!data?.stocks.length) return;
@@ -189,7 +227,7 @@ export default function CrossBuyScannerView() {
     const params = queryParamsRef.current ?? Object.fromEntries(buildQueryParams().entries());
     const csv = formatScannerCsv([h, ...rows].map(r => r.map(esc).join(',')).join('\n'), {
       scanner: 'cross-buy',
-      scanned_date: '',
+      scanned_date: data?.month ?? '',
       params,
       exported_at: exportedAt,
     });
@@ -229,6 +267,7 @@ export default function CrossBuyScannerView() {
       <div className="flex items-center gap-3 mb-4 shrink-0 flex-wrap">
         <select value={month} onChange={e => setMonth(e.target.value)}
           className="px-2 py-1 bg-[#ffffff0a] border border-[#ffffff1a] rounded text-xs text-white">
+          {months.length === 0 && <option value="">No months</option>}
           {months.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
         <select value={limit} onChange={e => setLimit(Number(e.target.value))}
@@ -258,14 +297,22 @@ export default function CrossBuyScannerView() {
             onChange={e => setMinTotalFunds(Number(e.target.value) || 0)}
             className="w-14 px-1.5 py-0.5 bg-[#ffffff0a] border border-[#ffffff1a] rounded text-xs text-white text-right focus:outline-none focus:ring-1 focus:ring-indigo-500/50" />
         </div>
-        <button onClick={() => { setMinRatio(0); setSignalTag(''); setStockCategory(''); setMinTotalFunds(0); }}
+        <button onClick={handleReset}
           className="px-2 py-1 bg-[#ffffff0a] hover:bg-[#ffffff15] border border-[#ffffff1a] rounded text-xs text-error transition-colors">Reset</button>
       </div>
 
       {/* Summary strip */}
       {!loading && !error && data && (
         <div className="flex items-center gap-3 mb-3 px-3 py-2 bg-[#ffffff05] border border-[#ffffff0a] rounded text-xs shrink-0 flex-wrap">
-          <span className="text-text-secondary"><span className="text-white font-semibold">{summary.n}</span> stocks</span>
+          <span className="text-text-secondary">
+            <span className="text-white font-semibold">{summary.n}</span>
+            {summary.truncated && <> of <span className="text-white font-semibold">{summary.totalMatched}</span></>}
+            {' '}stocks
+          </span>
+          {summary.month && <>
+            <span className="text-border-default">|</span>
+            <span className="text-text-secondary">Month: <span className="text-white font-semibold">{summary.month}</span></span>
+          </>}
           <span className="text-border-default">|</span>
           <span className="text-accent-indigo">Avg Ratio: <b>{(summary.avgRatio * 100).toFixed(2)}%</b></span>
           {(Object.keys(summary.tagCounts).length > 0) && <>
@@ -286,15 +333,15 @@ export default function CrossBuyScannerView() {
 
       {error && <div className="bg-red-950/40 border border-red-500/50 rounded p-3 text-error text-sm mb-3">{error}</div>}
 
-      {/* Table */}
-      {data && (
+      {/* Table. Only mounted when there is something to render, otherwise the
+          table's own empty message would stack on top of the empty block below. */}
+      {(loading || (data && data.stocks.length > 0)) && (
         <VirtualizedTable<CrossBuyStock>
-          data={data.stocks}
+          data={data?.stocks ?? []}
           columns={columns}
           sortState={sortState}
           onSort={(k) => k && toggleSort(k)}
           loading={loading}
-          emptyMessage="No stocks match the current filters."
           rowKey={(item) => item.symbol}
           enableHover={true}
           enableStripes={true}
@@ -307,7 +354,7 @@ export default function CrossBuyScannerView() {
       {!loading && !error && data && data.stocks.length === 0 && (
         <div className="flex items-center justify-center h-48 text-text-tertiary flex-col gap-2">
           No stocks match the current filters.
-          <button onClick={() => { setMinRatio(0); setSignalTag(''); setStockCategory(''); setMinTotalFunds(0); }}
+          <button onClick={handleReset}
             className="text-xs text-accent-indigo hover:text-accent-indigo/80">Clear all filters</button>
         </div>
       )}

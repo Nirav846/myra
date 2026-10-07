@@ -58,7 +58,7 @@ EOD2 / BhavDesk CSVs                 Fund Traction (GitHub Pages)        RupeeVe
 ### Fund traction & cross-buy sync
 
 - **Fund Traction** (`fund_traction_sync.py`) — syncs `fund_traction` (PK `(symbol, month)`) into `myra_valuation.db` from GitHub Pages JSON (`TRACTION_BASE_URL = "https://nirav846.github.io/cross-fund-holdings-traction/data/"`), months `2026-04` onward. `update_traction_sma()` recomputes the SMA in a batch temp table.
-- **Cross-Buy** (`cross_buy_processor.py`) — builds `fund_cross_buy` (PK `(symbol, month)`) from local RupeeVest holdings CSVs under `cross-fund-holdings-traction/temp_holdings/`. Computes `cross_buy_ratio`, `signal_tag` (`STRONG_CROSS_BUY` ≥5 funds & ratio ≥0.7; `CROSS_BUY` ≥0.5; `MIXED` ≥0.25; else `STYLE_CONCENTRATED`). `DEFAULT_MONTHS = ["2026-04","2026-05","2026-06","2026-07"]`.
+- **Cross-Buy** (`cross_buy_processor.py`) — builds `fund_cross_buy` (PK `(symbol, month)`) from local RupeeVest holdings CSVs under `cross-fund-holdings-traction/temp_holdings/`. Computes `cross_buy_ratio`, `signal_tag` (`STRONG_CROSS_BUY` ≥5 funds & ratio ≥0.7; `CROSS_BUY` ≥0.5; `MIXED` ≥0.25; else `STYLE_CONCENTRATED`). `DEFAULT_MONTHS` was removed — months are discovered from the holdings folder, falling back to the months already in `fund_cross_buy` (no hardcoded month list to drift).
 
 ### RRG (Relative Rotation Graph)
 

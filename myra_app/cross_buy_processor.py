@@ -41,7 +41,6 @@ TRACTION_SRC = _TRACTION_DIR / "src"
 FUNDS_LIST_PATH = _TRACTION_DIR / "config" / "rupeevest_funds.txt"
 DOWNLOAD_SCRIPT_PATH = _TRACTION_DIR / "scripts" / "download_rupeevest_funds.py"
 KEEP_RAW = False
-DEFAULT_MONTHS: list[str] = ["2026-04", "2026-05", "2026-06", "2026-07"]
 DOWNLOAD_TIMEOUT_S = 600
 
 # mf_screener is pure stdlib and lives outside the package tree; add once.
@@ -61,6 +60,7 @@ _NORMALIZE_PUNCT_RE = re.compile(r"[.,\'()\-@#]+")
 _ABBREV_PERIOD_RE = re.compile(r"(?<=[A-Za-z])\.(?=[A-Za-z])")
 _WS_RE = re.compile(r"\s+")
 
+
 def normalize_company_name(name: str) -> str:
     """Normalize a company name for matching: lowercases, converts '&' to 'and',
     strips periods from abbreviations (J.K. → jk), removes punctuation,
@@ -77,7 +77,17 @@ def normalize_company_name(name: str) -> str:
     text = text.lower()
     if text.startswith("the "):
         text = text[4:]
-    suffixes = {"ltd", "limited", "inc", "corporation", "corp", "pvt", "private", "company", "co"}
+    suffixes = {
+        "ltd",
+        "limited",
+        "inc",
+        "corporation",
+        "corp",
+        "pvt",
+        "private",
+        "company",
+        "co",
+    }
     while text:
         words = text.split()
         if len(words) == 1:
@@ -88,6 +98,7 @@ def normalize_company_name(name: str) -> str:
         else:
             break
     return text
+
 
 # Blocklist for foreign companies (they have no NSE symbol)
 _FOREIGN_BLOCKLIST_RAW = {
@@ -105,13 +116,20 @@ _FOREIGN_BLOCKLIST_RAW = {
 _FOREIGN_BLOCKLIST = {normalize_company_name(name) for name in _FOREIGN_BLOCKLIST_RAW}
 
 # Path to manual overrides file (in project root config)
-MANUAL_OVERRIDES_PATH = Path(__file__).resolve().parents[1] / "config" / "nse_manual_overrides.csv"
+MANUAL_OVERRIDES_PATH = (
+    Path(__file__).resolve().parents[1] / "config" / "nse_manual_overrides.csv"
+)
 
 # Caches
 _NAME_TO_NSE_CACHE: dict[str, str] | None = None
 _MARKET_CAP_CACHE: dict[str, float] | None = None
-_SYMBOL_NAME_CACHE: dict[str, str] | None = None  # normalized name -> symbol (for fuzzy fallback)
-_NAMES_POPULATED: bool = False  # flag to indicate we have attempted to populate symbols_master.name
+_SYMBOL_NAME_CACHE: dict[
+    str, str
+] | None = None  # normalized name -> symbol (for fuzzy fallback)
+_NAMES_POPULATED: bool = (
+    False  # flag to indicate we have attempted to populate symbols_master.name
+)
+
 
 def _load_symbol_names_from_metadata() -> None:
     """Load symbol names from metadata.db into _SYMBOL_NAME_CACHE.
@@ -123,6 +141,7 @@ def _load_symbol_names_from_metadata() -> None:
         # Already loaded
         return
     import sqlite3
+
     db_path = os.path.join(DB_DIR, "myra_metadata.db")
     if not os.path.exists(db_path):
         logger.warning("Metadata DB not found at %s", db_path)
@@ -136,7 +155,9 @@ def _load_symbol_names_from_metadata() -> None:
         cursor.execute("PRAGMA table_info(symbols_master)")
         columns = [row[1] for row in cursor.fetchall()]
         if "name" not in columns:
-            logger.warning("symbols_master table lacks 'name' column; cannot load symbol names for fuzzy fallback")
+            logger.warning(
+                "symbols_master table lacks 'name' column; cannot load symbol names for fuzzy fallback"
+            )
             _SYMBOL_NAME_CACHE = None
             conn.close()
             return
@@ -171,11 +192,18 @@ def _load_symbol_names_from_metadata() -> None:
         if not key:
             continue
         if key in mapping:
-            logger.warning("Duplicate normalized name '%s' from symbols_master: keeping first symbol '%s', ignoring '%s'", key, mapping[key], symbol)
+            logger.warning(
+                "Duplicate normalized name '%s' from symbols_master: keeping first symbol '%s', ignoring '%s'",
+                key,
+                mapping[key],
+                symbol,
+            )
         else:
             mapping[key] = symbol
     _SYMBOL_NAME_CACHE = mapping
-    logger.debug("Loaded %d symbol names from metadata for fuzzy fallback", len(mapping))
+    logger.debug(
+        "Loaded %d symbol names from metadata for fuzzy fallback", len(mapping)
+    )
 
 
 def _populate_symbol_names_from_nse() -> None:
@@ -199,7 +227,9 @@ def _populate_symbol_names_from_nse() -> None:
     try:
         df_raw = csv.DictReader(StringIO(data))
         # Normalize column names: strip whitespace
-        df_raw.fieldnames = [name.strip() if name else name for name in df_raw.fieldnames]
+        df_raw.fieldnames = [
+            name.strip() if name else name for name in df_raw.fieldnames
+        ]
     except Exception as exc:
         logger.warning("Failed to parse NSE CSV: %s", exc)
         return
@@ -239,12 +269,14 @@ def _populate_symbol_names_from_nse() -> None:
         for sym, name in nse_name_map.items():
             cursor.execute(
                 "UPDATE symbols_master SET name=? WHERE symbol=? AND (name IS NULL OR name='')",
-                (name, sym)
+                (name, sym),
             )
             updated += cursor.rowcount
         conn.commit()
         conn.close()
-        logger.info("Populated names for %d symbols in symbols_master from NSE master", updated)
+        logger.info(
+            "Populated names for %d symbols in symbols_master from NSE master", updated
+        )
     except sqlite3.Error as exc:
         logger.warning("Failed to update symbols_master with names from NSE: %s", exc)
 
@@ -271,6 +303,7 @@ def _ensure_symbol_names_populated() -> None:
     # After population, try loading again
     _load_symbol_names_from_metadata()
     _NAMES_POPULATED = True
+
 
 _RE_SMALL_CAP = re.compile(r"small[\s_-]*cap", re.IGNORECASE)
 _RE_MID_CAP = re.compile(r"mid[\s_-]*cap|large\s*(?:&|and)\s*mid", re.IGNORECASE)
@@ -334,11 +367,38 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
         conn.execute(_DDL)
 
 
+def _months_in_db() -> list[str]:
+    """Ascending months already present in ``fund_cross_buy``.
+
+    Returns an empty list if the valuation DB or table is unavailable. Read-only;
+    never raises.
+    """
+    if not os.path.exists(VALUATION_DB_PATH):
+        return []
+    try:
+        conn = sqlite3.connect(VALUATION_DB_PATH)
+        try:
+            rows = conn.execute(
+                "SELECT DISTINCT month FROM fund_cross_buy ORDER BY month"
+            ).fetchall()
+        finally:
+            conn.close()
+        return [r[0] for r in rows if r[0]]
+    except sqlite3.Error as exc:
+        logger.warning(
+            "Could not read existing months from %s: %s", VALUATION_DB_PATH, exc
+        )
+        return []
+
+
 def detect_available_months() -> list[str]:
     """Detect months present in RAW_HOLDINGS_DIR from ``_MM_YY`` filename suffixes.
 
-    Returns ascending unique list of "YYYY-MM" strings; falls back to
-    DEFAULT_MONTHS when the folder is missing, unreadable, or empty.
+    Returns ascending unique list of "YYYY-MM" strings. When the folder is
+    missing, unreadable, or empty, falls back to the months already recorded in
+    ``fund_cross_buy`` so a degraded run refreshes known data instead of inventing
+    months. Returns ``[]`` when neither source yields anything; callers must treat
+    that as "nothing to do", not as a failure.
     """
     try:
         months: set[str] = set()
@@ -349,13 +409,16 @@ def detect_available_months() -> list[str]:
         if months:
             return sorted(months)
         logger.warning(
-            "No month-tagged CSVs in %s; using default months.", RAW_HOLDINGS_DIR
+            "No month-tagged CSVs in %s; falling back to months already in the DB.",
+            RAW_HOLDINGS_DIR,
         )
     except OSError as exc:
         logger.warning(
-            "Could not read %s (%s); using default months.", RAW_HOLDINGS_DIR, exc
+            "Could not read %s (%s); falling back to months already in the DB.",
+            RAW_HOLDINGS_DIR,
+            exc,
         )
-    return list(DEFAULT_MONTHS)
+    return _months_in_db()
 
 
 def download_holdings(month: str) -> bool:
@@ -484,9 +547,6 @@ def _get_market_cap_map() -> dict[str, float]:
     return caps
 
 
-
-
-
 def _load_name_to_nse() -> dict[str, str]:
     """Load config/name_to_nse.csv into {normalized_company_name: nse_symbol}.
     Also loads manual overrides from MANUAL_OVERRIDES_PATH (if exists) and
@@ -502,6 +562,7 @@ def _load_name_to_nse() -> dict[str, str]:
     mapping: dict[str, str] = {}
     try:
         import csv
+
         with NAME_TO_NSE_PATH.open("r", encoding="utf-8-sig", newline="") as fh:
             for rec in csv.DictReader(fh):
                 company = (rec.get("company_name") or "").strip()
@@ -511,7 +572,12 @@ def _load_name_to_nse() -> dict[str, str]:
                 key = normalize_company_name(company)
                 if key:
                     if key in mapping:
-                        logger.debug("Duplicate normalized key '%s' in name_to_nse.csv: keeping existing symbol '%s', ignoring '%s'", key, mapping[key], nse)
+                        logger.debug(
+                            "Duplicate normalized key '%s' in name_to_nse.csv: keeping existing symbol '%s', ignoring '%s'",
+                            key,
+                            mapping[key],
+                            nse,
+                        )
                     else:
                         mapping[key] = nse
     except OSError as exc:
@@ -519,25 +585,45 @@ def _load_name_to_nse() -> dict[str, str]:
     # Load manual overrides (if file exists)
     try:
         if MANUAL_OVERRIDES_PATH.exists():
-            with MANUAL_OVERRIDES_PATH.open("r", encoding="utf-8-sig", newline="") as fh:
+            with MANUAL_OVERRIDES_PATH.open(
+                "r", encoding="utf-8-sig", newline=""
+            ) as fh:
                 for rec in csv.DictReader(fh):
                     company = (rec.get("company_name") or "").strip()
-                    nse = (rec.get("nse") or rec.get("nse_symbol") or "").strip().upper()  # support both column names
+                    nse = (
+                        (rec.get("nse") or rec.get("nse_symbol") or "").strip().upper()
+                    )  # support both column names
                     if not company or not nse:
                         continue
                     key = normalize_company_name(company)
                     if key:
                         if key in mapping:
-                            logger.info("Manual override for '%s' (%s) replaces existing symbol '%s' with '%s'", company, key, mapping[key], nse)
+                            logger.info(
+                                "Manual override for '%s' (%s) replaces existing symbol '%s' with '%s'",
+                                company,
+                                key,
+                                mapping[key],
+                                nse,
+                            )
                         else:
-                            logger.info("Added manual override for '%s' (%s) -> '%s'", company, key, nse)
+                            logger.info(
+                                "Added manual override for '%s' (%s) -> '%s'",
+                                company,
+                                key,
+                                nse,
+                            )
                         mapping[key] = nse
                     else:
-                        logger.warning("Manual override company name '%s' normalizes to empty; skipping", company)
+                        logger.warning(
+                            "Manual override company name '%s' normalizes to empty; skipping",
+                            company,
+                        )
         else:
             logger.debug("Manual overrides file %s not found", MANUAL_OVERRIDES_PATH)
     except Exception as exc:
-        logger.warning("Failed to load manual overrides from %s: %s", MANUAL_OVERRIDES_PATH, exc)
+        logger.warning(
+            "Failed to load manual overrides from %s: %s", MANUAL_OVERRIDES_PATH, exc
+        )
     _NAME_TO_NSE_CACHE = mapping
     return mapping
 
@@ -626,10 +712,19 @@ def _resolve_symbol(row: Any, name_map: dict[str, str]) -> str | None:
         if match_type == "prefix":
             logger.warning("Fuzzy prefix match: %s -> %s", name_raw, symbol)
         else:  # token
-            logger.warning("Fuzzy token match (%.0f%%): %s -> %s", candidates[0][2]*100, name_raw, symbol)
+            logger.warning(
+                "Fuzzy token match (%.0f%%): %s -> %s",
+                candidates[0][2] * 100,
+                name_raw,
+                symbol,
+            )
         return symbol
     elif len(candidates) > 1:
-        logger.warning("Ambiguous fuzzy match for '%s': %d candidates (prefix/token)", name_raw, len(candidates))
+        logger.warning(
+            "Ambiguous fuzzy match for '%s': %d candidates (prefix/token)",
+            name_raw,
+            len(candidates),
+        )
         return None
     else:
         return None
