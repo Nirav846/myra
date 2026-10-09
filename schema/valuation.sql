@@ -35,8 +35,47 @@ CREATE TABLE fund_traction (
     sma_30          REAL,
     month_end_close REAL,
     close_latest    REAL,
-    pct_vs_sma      REAL,
+    pct_vs_sma      REAL, stock_key TEXT, name TEXT, nse TEXT, bse TEXT, sector TEXT, direction TEXT, median_share_change_pct REAL, median_weight_delta_pp REAL, breadth_active INTEGER, breadth_hold INTEGER,
     PRIMARY KEY (symbol, month)
+)
+
+CREATE TABLE fund_traction_funds (
+    symbol              TEXT    NOT NULL,
+    month               TEXT    NOT NULL,
+    fund_slug           TEXT,
+    fund_name           TEXT    NOT NULL,
+    activity            TEXT,
+    share_change_pct    REAL,
+    share_change_abs    REAL,
+    weight_delta_pp     REAL,
+    current_weight_pct  REAL,
+    is_new              INTEGER,
+    history_url         TEXT,
+    PRIMARY KEY (symbol, month, fund_name)
+)
+
+CREATE TABLE fund_traction_insights (
+    month           TEXT    NOT NULL,
+    kind            TEXT    NOT NULL,
+    item_id         TEXT    NOT NULL,
+    section         TEXT,
+    headline        TEXT,
+    action          TEXT,
+    stock_keys      TEXT,
+    body            TEXT,
+    citations_json  TEXT,
+    source          TEXT,
+    score           REAL,
+    fund_count      INTEGER,
+    PRIMARY KEY (month, kind, item_id)
+)
+
+CREATE TABLE fund_traction_watchlist (
+    stock_key   TEXT    NOT NULL PRIMARY KEY,
+    name        TEXT,
+    nse         TEXT,
+    pinned_at   TEXT,
+    source      TEXT
 )
 
 CREATE TABLE fundamentals (
@@ -156,6 +195,15 @@ CREATE TABLE upstox_income_statement (
             fetched_at TEXT,
             PRIMARY KEY (isin, period, report_type, time_period)
         )
+
+CREATE INDEX idx_fund_traction_funds_month
+    ON fund_traction_funds(month)
+
+CREATE INDEX idx_fund_traction_funds_symbol_month
+    ON fund_traction_funds(symbol, month)
+
+CREATE INDEX idx_fund_traction_insights_month
+    ON fund_traction_insights(month)
 
 CREATE INDEX idx_fund_traction_month ON fund_traction(month)
 

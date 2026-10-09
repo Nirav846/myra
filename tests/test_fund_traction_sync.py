@@ -153,3 +153,223 @@ def test_partial_404_imports_reachable_but_fails(val_db, monkeypatch):
 def test_min_month_value_unchanged():
     """A2 must not change the import floor."""
     assert fts.MIN_MONTH == "2026-04"
+
+
+# ── Traction Board read API ─────────────────────────────────────────────────
+
+
+def _seed_board_db(val_db):
+    """Two months of traction + funds + insights, wired via the module's own
+    parsers so the board reads exactly what the sync would have written."""
+    conn = sqlite3.connect(str(val_db))
+    fts._ensure_tables(conn)
+
+    june = {
+        "stock_key": "NAME:acme",
+        "name": "Acme Ltd",
+        "nse": "ACME",
+        "sector": "IT",
+        "direction": "increase",
+        "score": 10.0,
+        "fund_count": 2,
+        "new_entry_count": 1,
+        "breadth_exit": 0,
+        "breadth_active": 2,
+        "breadth_hold": 0,
+        "funds": [
+            {"fund_display_name": "Fund A", "activity": "add", "is_new": True},
+            {"fund_display_name": "Fund B", "activity": "add", "is_new": False},
+        ],
+    }
+    july = {
+        "stock_key": "NAME:acme",
+        "name": "Acme Ltd",
+        "nse": "ACME",
+        "sector": "IT",
+        "direction": "increase",
+        "score": 20.0,
+        "fund_count": 3,
+        "new_entry_count": 0,
+        "breadth_exit": 0,
+        "breadth_active": 3,
+        "breadth_hold": 0,
+        "funds": [
+            {"fund_display_name": "Fund A", "activity": "add", "is_new": False},
+            {"fund_display_name": "Fund B", "activity": "add", "is_new": False},
+            {"fund_display_name": "Fund C", "activity": "add", "is_new": True},
+        ],
+    }
+    beta_july = {
+        "stock_key": "NAME:beta",
+        "name": "Beta Ltd",
+        "nse": "BETA",
+        "sector": "Banking",
+        "direction": "decrease",
+        "score": 5.0,
+        "fund_count": 2,
+        "new_entry_count": 0,
+        "breadth_exit": 2,
+        "breadth_active": 0,
+        "breadth_hold": 0,
+        "funds": [
+            {"fund_display_name": "Fund A", "activity": "reduce", "is_new": False},
+            {"fund_display_name": "Fund C", "activity": "exit", "is_new": False},
+        ],
+    }
+    fts._insert_rows(conn, [june], "2026-06")
+    fts._insert_rows(conn, [july, beta_july], "2026-07")
+
+    fts._insert_insights_doc(
+        conn,
+        {
+            "monthId": "2026-07",
+            "source": "unit-test",
+            "topTraction": [
+                {"stockKey": "NAME:acme", "name": "Acme Ltd", "fundCount": 3}
+            ],
+            "insights": [
+                {
+                    "id": "ins_01",
+                    "headline": "Acme still adding",
+                    "action": "monitor",
+                    "stockKeys": ["NAME:acme"],
+                }
+            ],
+        },
+        "2026-07",
+    )
+    conn.close()
+
+
+def test_board_defaults_to_newest_month(val_db):
+    _seed_board_db(val_db)
+    res = fts.get_traction_board()
+    assert res["success"] is True
+    assert res["month"] == "2026-07"
+    assert res["months"] == ["2026-07", "2026-06"]
+    assert res["prior_month"] == "2026-06"
+    assert res["count"] == 2  # acme + beta
+
+
+def test_board_persistence_and_breakdown(val_db):
+    _seed_board_db(val_db)
+    res = fts.get_traction_board(month="2026-07", include_funds=True)
+    acme = next(r for r in res["rows"] if r["symbol"] == "ACME")
+    # june was all-adds -> july still-adding
+    assert acme["persistence"]["status"] == "still_adding"
+    assert len(acme["funds"]) == 3
+    assert acme["new_entry_count"] == 1
+    assert any(f["fund_name"] == "Fund C" for f in acme["adds"])
+
+
+def test_board_filters(val_db):
+    _seed_board_db(val_db)
+    added = fts.get_traction_board(board_filter="added")
+    assert {r["symbol"] for r in added["rows"]} == {"ACME"}
+    reduced = fts.get_traction_board(board_filter="reduced")
+    assert {r["symbol"] for r in reduced["rows"]} == {"BETA"}
+    still = fts.get_traction_board(board_filter="still_adding")
+    assert {r["symbol"] for r in still["rows"]} == {"ACME"}
+
+
+def test_board_stats_stable_across_filter(val_db):
+    _seed_board_db(val_db)
+    all_res = fts.get_traction_board()
+    filt = fts.get_traction_board(board_filter="reduced")
+    # Stats are computed on the full month set regardless of active filter.
+    assert filt["stats"]["total"] == all_res["stats"]["total"] == 2
+    assert filt["stats"]["reducing"] == 1
+    assert filt["count"] == 1
+
+
+def test_board_search(val_db):
+    _seed_board_db(val_db)
+    res = fts.get_traction_board(search="beta")
+    assert [r["symbol"] for r in res["rows"]] == ["BETA"]
+
+
+def test_board_watchlist_roundtrip(val_db):
+    _seed_board_db(val_db)
+    assert fts.pin_watchlist("NAME:acme")["pinned"] is True
+    res = fts.get_traction_board(board_filter="watchlist")
+    assert [r["symbol"] for r in res["rows"]] == ["ACME"]
+    # idempotent pin
+    assert fts.pin_watchlist("NAME:acme")["pinned"] is True
+    assert fts.unpin_watchlist("NAME:acme")["unpinned"] is True
+    assert fts.get_traction_board(board_filter="watchlist")["count"] == 0
+
+
+def test_board_empty_db_reports_error(val_db):
+    res = fts.get_traction_board()
+    assert res["success"] is False
+    assert "fund traction sync" in res["error"]
+
+
+def test_insights_and_top_traction(val_db):
+    _seed_board_db(val_db)
+    res = fts.get_traction_insights(month="2026-07")
+    assert res["success"] is True
+    assert res["source"] == "unit-test"
+    assert len(res["insights"]) == 1
+    assert res["insights"][0]["stock_keys"] == ["NAME:acme"]
+    assert len(res["top_traction"]) == 1
+    assert res["top_traction"][0]["fund_count"] == 3
+
+
+# ── Smart gate (has_unsynced_month) ─────────────────────────────────────────
+
+
+def _freeze_today(monkeypatch, year, month, day):
+    """Freeze the sync module's date.today() so the two-month probe is stable."""
+    from datetime import date as _date
+
+    class _Frozen(_date):
+        @classmethod
+        def today(cls):
+            return cls(year, month, day)
+
+    monkeypatch.setattr(fts, "date", _Frozen)
+
+
+def test_gate_reports_new_month(val_db, monkeypatch):
+    """A month upstream that is newer than our watermark is 'unsynced'."""
+    _freeze_today(monkeypatch, 2026, 10, 9)  # candidates: 2026-09, 2026-10
+    _stub_probe(monkeypatch, ok_months=["2026-09"])
+    _seed_last_month(val_db, "2026-07")
+
+    assert fts.has_unsynced_month() == ["2026-09"]
+
+
+def test_gate_empty_when_up_to_date(val_db, monkeypatch):
+    """Everything available is already at/below the watermark -> nothing new."""
+    _freeze_today(monkeypatch, 2026, 10, 9)
+    _stub_probe(monkeypatch, ok_months=["2026-09"])
+    _seed_last_month(val_db, "2026-09")
+
+    assert fts.has_unsynced_month() == []
+
+
+def test_gate_empty_when_upstream_has_nothing_new(val_db, monkeypatch):
+    """Neither candidate month is published yet (404) -> nothing new, no error."""
+    _freeze_today(monkeypatch, 2026, 10, 9)
+    _stub_probe(monkeypatch, ok_months=[])  # both candidates 404
+    _seed_last_month(val_db, "2026-07")
+
+    assert fts.has_unsynced_month() == []
+
+
+def test_gate_probes_only_two_candidate_months(val_db, monkeypatch):
+    """The gate must stay cheap: only prev+current month are HEAD-probed."""
+    _freeze_today(monkeypatch, 2026, 10, 9)
+    probed = []
+
+    def fake_head(url, timeout=5):
+        probed.append(url.rsplit("/", 1)[-1])
+        return _Resp(404)
+
+    monkeypatch.setattr(fts.requests, "head", fake_head)
+    _seed_last_month(val_db, "2026-01")
+
+    fts.has_unsynced_month()
+
+    assert sorted(probed) == ["october_traction.json", "september_traction.json"]

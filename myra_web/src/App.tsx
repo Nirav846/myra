@@ -55,6 +55,7 @@ const SmartMoneyBargainView = lazy(() => import('./views/SmartMoneyBargain'));
 const RRGView = lazy(() => import('./views/RRGView'));
 const FundTractionReportView = lazy(() => import('./views/FundTractionReport'));
 const FundTractionScannerView = lazy(() => import('./views/FundTractionScanner'));
+const TractionBoardView = lazy(() => import('./views/TractionBoard'));
 const CrossBuyScannerView = lazy(() => import('./views/CrossBuyScanner'));
 const NewsSentimentView = lazy(() => import('./views/NewsSentiment'));
 const FundamentalsView = lazy(() => import('./views/FundamentalsView'));
@@ -86,6 +87,7 @@ const TABS = [
   { id: 'Launchpad Scanner', path: '/launchpad-scanner', icon: <Rocket size={18} />, category: 'scanners', group: 'ML / Momentum' },
   { id: 'FII/DII Scanner', path: '/fii-dii-scanner', icon: '🏢', category: 'scanners', group: 'Institutional / Flow' },
   { id: 'Fund Traction', path: '/fund-traction', icon: '💰', category: 'scanners', group: 'Institutional / Flow' },
+  { id: 'Traction Board', path: '/traction-board', icon: '🧾', category: 'scanners', group: 'Institutional / Flow' },
   { id: 'Cross-Buy', path: '/cross-buy', icon: '🤝', category: 'scanners', group: 'Institutional / Flow' },
   { id: 'Leaderboard', path: '/leaderboard', icon: '📊', category: 'scanners', group: 'Overview' },
   { id: 'FVG Scanner', path: '/fvg-scanner', icon: '📡', category: 'scanners', group: 'Price Action' },
@@ -298,6 +300,7 @@ export default function App() {
                 <Route path="/inst-dom" element={<LazyLoadView><InstDOMView lib={librarian} /></LazyLoadView>} />
                 <Route path="/fii-dii-scanner" element={<LazyLoadView><FiiDiiScannerView lib={librarian} /></LazyLoadView>} />
                 <Route path="/fund-traction" element={<LazyLoadView><FundTractionScannerView /></LazyLoadView>} />
+                <Route path="/traction-board" element={<LazyLoadView><TractionBoardView /></LazyLoadView>} />
                 <Route path="/cross-buy" element={<LazyLoadView><CrossBuyScannerView /></LazyLoadView>} />
                 <Route path="/parquet-lake" element={<LazyLoadView><DataLakeView lib={librarian} /></LazyLoadView>} />
                 <Route path="/invisible-hand" element={<LazyLoadView><InvisibleHandScannerView lib={librarian} /></LazyLoadView>} />

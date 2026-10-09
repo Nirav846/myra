@@ -31,10 +31,26 @@ def main():
         logger.info("Screener.in fundamentals enricher completed.")
 
     if "--sync-fund-traction" in sys.argv:
-        logger.info("Running fund traction sync (manual)...")
-        from myra_app.fund_traction_sync import sync_fund_traction
+        # Smart by default: only sync when a newly-published month is available
+        # upstream but missing locally (cheap HEAD-only probe). Pass --force to
+        # re-download everything regardless.
+        force = "--force" in sys.argv
+        from myra_app.fund_traction_sync import has_unsynced_month, sync_fund_traction
 
-        result = sync_fund_traction(force=True)
+        if force:
+            logger.info("Running fund traction sync (manual, force)...")
+        else:
+            pending = has_unsynced_month()
+            if not pending:
+                logger.info(
+                    "Fund traction sync skipped: no new month upstream yet "
+                    "(use --force to re-sync anyway)."
+                )
+                return  # Exit after manual sync, don't start daemon
+            logger.info(
+                f"Running fund traction sync (manual) — new month(s): {pending}..."
+            )
+        result = sync_fund_traction(force=force)
         logger.info(f"Fund traction sync complete: {result}")
         return  # Exit after manual sync, don't start daemon
 

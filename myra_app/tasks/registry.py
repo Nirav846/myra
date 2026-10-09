@@ -103,10 +103,16 @@ TASKS: dict[str, TaskSpec] = {
         catchup=False,
         enabled=False,
     ),
+    # Smart-gated: the task probes HEAD-only for a newly-published month and
+    # no-ops (without marking) when there is nothing new, so the executor polls
+    # daily and the real sync fires ~within a day of a new month landing rather
+    # than on a fixed 30-day timer that always lagged (mark_on_success=False
+    # keeps the gate in charge of sync_log marking).
     "fund-traction-sync": TaskSpec(
         module="myra_app.tasks.fund_traction",
         label="fund_traction_sync",
-        interval_days=30,  # monthly per docstring/intent
+        interval_days=1,
+        mark_on_success=False,
     ),
     "cross-buy-sync": TaskSpec(
         module="myra_app.tasks.cross_buy",
