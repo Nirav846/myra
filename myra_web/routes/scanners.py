@@ -659,9 +659,11 @@ register_scanner(
 @router.get("/mf-smart-money/defaults")
 async def mf_smart_money_defaults():
     """Available months/modes and backend defaults for the MF Smart Money screen."""
+    from myra_app.librarian_core import LibrarianCore
+
     months: list = []
     try:
-        val_db = os.path.join(DB_DIR, "myra_valuation.db")
+        val_db = os.path.join(DB_DIR, LibrarianCore.DB_MAP["valuation"])
         with sqlite3.connect(f"file:{val_db}?mode=ro", uri=True) as conn:
             months = [
                 r[0]
