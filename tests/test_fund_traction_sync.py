@@ -373,3 +373,117 @@ def test_gate_probes_only_two_candidate_months(val_db, monkeypatch):
     fts.has_unsynced_month()
 
     assert sorted(probed) == ["october_traction.json", "september_traction.json"]
+
+
+# ── Per-fund breakdown repair ───────────────────────────────────────────────
+
+
+def _seed_traction_only(val_db, month, symbols=("AAA",)):
+    """Traction rows with NO fund_traction_funds rows (the pre-feature state)."""
+    conn = sqlite3.connect(str(val_db))
+    fts._ensure_tables(conn)
+    for sym in symbols:
+        conn.execute(
+            "INSERT OR REPLACE INTO fund_traction (symbol, month, traction_score) "
+            "VALUES (?, ?, 1.0)",
+            (sym, month),
+        )
+    conn.commit()
+    conn.close()
+
+
+def test_missing_breakdown_months_detected(val_db):
+    _seed_traction_only(val_db, "2026-07", ["AAA", "BBB"])
+    conn = sqlite3.connect(str(val_db))
+    assert fts._months_missing_fund_breakdown(conn) == ["2026-07"]
+    fts._insert_stock_funds(conn, "AAA", "2026-07", [{"fund_display_name": "Fund A"}])
+    fts._insert_stock_funds(conn, "BBB", "2026-07", [{"fund_display_name": "Fund A"}])
+    conn.commit()
+    assert fts._months_missing_fund_breakdown(conn) == []
+    conn.close()
+
+
+def test_backfill_fills_missing_breakdown(val_db, monkeypatch):
+    _seed_traction_only(val_db, "2026-07", ["AAA"])
+    _stub_probe(monkeypatch, ok_months=["2026-07"])
+    monkeypatch.setattr(
+        fts,
+        "_download_and_parse",
+        lambda url: [
+            {
+                "stock_key": "NAME:a",
+                "nse": "AAA",
+                "score": 1.0,
+                "funds": [
+                    {
+                        "fund_display_name": "Fund A",
+                        "activity": "new",
+                        "is_new": True,
+                    }
+                ],
+            }
+        ],
+    )
+
+    res = fts.backfill_fund_breakdown()
+
+    assert res["success"] is True
+    assert res["months_backfilled"] == ["2026-07"]
+    assert res["fund_rows"] == 1
+    conn = sqlite3.connect(str(val_db))
+    n = conn.execute(
+        "SELECT COUNT(*) FROM fund_traction_funds WHERE month = '2026-07'"
+    ).fetchone()[0]
+    conn.close()
+    assert n == 1
+
+
+def test_backfill_skips_month_no_longer_upstream(val_db, monkeypatch):
+    """gh-pages history can be force-orphaned: a 404 month is skipped, not fatal."""
+    _seed_traction_only(val_db, "2026-06", ["AAA"])
+    _stub_probe(monkeypatch, ok_months=[])  # 2026-06 now 404s
+    monkeypatch.setattr(
+        fts,
+        "_download_and_parse",
+        lambda url: [{"nse": "AAA", "funds": []}],
+    )
+
+    res = fts.backfill_fund_breakdown()
+
+    assert res["success"] is True
+    assert res["months_backfilled"] == []
+    assert res["fund_rows"] == 0
+
+
+def test_backfill_is_noop_when_complete(val_db, monkeypatch):
+    """A fully-populated DB must not trigger any network call."""
+    conn = sqlite3.connect(str(val_db))
+    fts._ensure_tables(conn)
+    fts._insert_rows(
+        conn,
+        [
+            {
+                "stock_key": "NAME:a",
+                "nse": "AAA",
+                "score": 1.0,
+                "funds": [{"fund_display_name": "Fund A"}],
+            }
+        ],
+        "2026-07",
+    )
+    conn.close()
+
+    def boom(*args, **kwargs):
+        raise AssertionError("no network expected when nothing is missing")
+
+    monkeypatch.setattr(fts, "_download_and_parse", boom)
+    monkeypatch.setattr(fts, "_probe_months", boom)
+
+    res = fts.backfill_fund_breakdown()
+
+    assert res == {
+        "success": True,
+        "months_backfilled": [],
+        "fund_rows": 0,
+        "error": None,
+    }

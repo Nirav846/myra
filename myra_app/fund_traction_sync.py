@@ -598,6 +598,92 @@ def _insert_stock_funds(
     return written
 
 
+def _months_missing_fund_breakdown(conn: sqlite3.Connection) -> list[str]:
+    """Months with traction rows but no (or partial) per-fund breakdown.
+
+    Months imported before the per-fund breakdown existed carry zero
+    ``fund_traction_funds`` rows even though upstream still publishes the full
+    ``funds`` array for every month. Those months are invisible to the MoM
+    cohort view, so surface them for an in-place repair.
+    """
+    rows = conn.execute(
+        """
+        SELECT t.month
+          FROM fund_traction t
+          LEFT JOIN fund_traction_funds f
+                 ON f.symbol = t.symbol AND f.month = t.month
+         GROUP BY t.month
+        HAVING COUNT(DISTINCT f.symbol) < COUNT(DISTINCT t.symbol)
+         ORDER BY t.month
+        """
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+def backfill_fund_breakdown(
+    months: list[str] | None = None,
+    *,
+    conn: sqlite3.Connection | None = None,
+    base_url: str | None = None,
+    max_months: int = 6,
+) -> dict:
+    """(Re)download already-imported months and fill their per-fund breakdown.
+
+    Idempotent: rows go through the same ``INSERT OR REPLACE`` path as the
+    monthly sync, so re-running never duplicates or corrupts data. Only months
+    whose breakdown is missing/partial are fetched, and months that no longer
+    exist upstream are skipped rather than reported as errors (the gh-pages
+    history was force-orphaned at least once, so older months can 404).
+
+    No-op (and no network) when every imported month already has its breakdown.
+
+    Returns ``{success, months_backfilled, fund_rows, error}``.
+    """
+    base = base_url or TRACTION_BASE_URL
+    result: dict = {
+        "success": True,
+        "months_backfilled": [],
+        "fund_rows": 0,
+        "error": None,
+    }
+    owns_conn = conn is None
+    conn = conn or sqlite3.connect(_get_db_path())
+    try:
+        _ensure_tables(conn)
+        targets = months if months is not None else _months_missing_fund_breakdown(conn)
+        targets = list(targets)[:max_months]
+        if not targets:
+            return result
+
+        found, _missing, _errors = _probe_months(base, targets)
+        reachable = set(found)
+        for month in targets:
+            if month not in reachable:
+                logger.info(
+                    "Fund traction repair: month %s no longer published upstream; skipped",
+                    month,
+                )
+                continue
+            month_name = _MONTH_NAMES[int(month.split("-")[1]) - 1]
+            stocks = _download_and_parse(f"{base}{month_name}_traction.json")
+            if not stocks:
+                continue
+            _insert_rows(conn, stocks, month)
+            result["fund_rows"] += conn.execute(
+                "SELECT COUNT(*) FROM fund_traction_funds WHERE month = ?",
+                (month,),
+            ).fetchone()[0]
+            result["months_backfilled"].append(month)
+        return result
+    except Exception as e:  # noqa: BLE001 - surfaced, never re-raised
+        result["success"] = False
+        result["error"] = str(e)
+        return result
+    finally:
+        if owns_conn:
+            conn.close()
+
+
 def _insert_insights_doc(
     conn: sqlite3.Connection, doc: dict, month: str
 ) -> dict[str, int]:

@@ -26,8 +26,27 @@ def run(ctx: TaskContext):
     if ctx.shutdown_event.is_set():
         return
 
+    from myra_app.fund_traction_sync import (
+        backfill_fund_breakdown,
+        has_unsynced_month,
+    )
+
+    # Self-heal ahead of the new-month gate: months imported before the per-fund
+    # breakdown feature existed have no fund_traction_funds rows, so the MoM
+    # cohort view cannot see them. Repair in place -- a no-op, with no network,
+    # once every imported month has its breakdown. Never fatal to the sync.
+    try:
+        repaired = backfill_fund_breakdown()
+        if repaired.get("months_backfilled"):
+            logger.info(
+                "[MYRA BG] Fund traction repair: backfilled per-fund breakdown "
+                "for %s",
+                ", ".join(repaired["months_backfilled"]),
+            )
+    except Exception as exc:  # noqa: BLE001 - repair must not block the sync
+        logger.warning("[MYRA BG] Fund traction repair skipped: %s", exc)
+
     # Cheap read-only gate: nothing new upstream since our watermark.
-    from myra_app.fund_traction_sync import has_unsynced_month
 
     pending = has_unsynced_month()
     if not pending:
