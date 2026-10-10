@@ -172,3 +172,79 @@ def _mark_task_run(
         )
     except Exception as e:
         logger.warning(f"[MYRA BG] Failed to mark task run for {task_name}: {e}")
+
+
+# ─── Attempt bookkeeping (cooldown only, never a freshness signal) ─────────────
+#
+# ``sync_log`` carries one row per task. For daily ingestion that row answers two
+# different questions: "how fresh is the data" (interval_days = 1) and "when did we
+# last try" (needs a much shorter cooldown). A hard error writes no success marker,
+# so a single row cannot express both — and reusing the freshness row as the
+# attempt clock either suppresses retries for 24h or, if nothing is written, lets
+# the scheduler hammer the upstream source every poll.
+#
+# Attempts therefore get their own row, named with INTERNAL_SYNC_LOG_SUFFIX and
+# carrying the status ATTEMPT_STATUS. It is bookkeeping ONLY:
+#   * it never advances metadata ``last_sync_date``;
+#   * it is filtered out of the human-facing sync_log listing;
+#   * it is normalised to a non-success state by pipeline_control.
+
+INTERNAL_SYNC_LOG_SUFFIX = "_attempt"
+ATTEMPT_STATUS = "attempted"
+
+
+def attempt_label(task_name: str) -> str:
+    """sync_log label used for a task's *attempt* bookkeeping row."""
+    return f"{task_name}{INTERNAL_SYNC_LOG_SUFFIX}"
+
+
+def is_internal_sync_log_label(task_name: str) -> bool:
+    """True for bookkeeping rows that must not surface as real tasks."""
+    return str(task_name or "").endswith(INTERNAL_SYNC_LOG_SUFFIX)
+
+
+def _mark_task_attempt(task_name: str) -> None:
+    """Record that an attempt started, regardless of its eventual outcome.
+
+    Written at the *start* of the attempt so an interrupted or crashed run still
+    leaves a cooldown timestamp behind.
+    """
+    label = attempt_label(task_name)
+    try:
+        timestamp = now_ist().isoformat()
+        with _WRITE_LOCK:
+            conn = _connect()
+            try:
+                conn.execute(
+                    "INSERT OR REPLACE INTO sync_log "
+                    "(task_name, last_run, last_status, error_message) "
+                    "VALUES (?, ?, ?, NULL)",
+                    (label, timestamp, ATTEMPT_STATUS),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        logger.debug(f"[MYRA BG] Marked {label} attempt at {timestamp}")
+    except Exception as e:
+        logger.warning(f"[MYRA BG] Failed to mark attempt for {task_name}: {e}")
+
+
+def _attempt_cooldown_elapsed(
+    task_name: str, minutes: int, now: datetime | None = None
+) -> bool:
+    """True when enough time has passed since the last *attempt*.
+
+    Shares one mechanism between the executor and the watchdog so the two
+    independent drivers can never both fire an attempt for the same window.
+    """
+    now = now or now_ist()
+    last = _get_last_run(attempt_label(task_name))
+    if last is None:
+        return True
+    try:
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=now.tzinfo)
+        return (now - last) >= timedelta(minutes=minutes)
+    except Exception as e:
+        logger.warning(f"[MYRA BG] Attempt cooldown check failed for {task_name}: {e}")
+        return True

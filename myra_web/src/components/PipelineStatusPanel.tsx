@@ -105,6 +105,12 @@ function statusLabel(row: SyncLogRow): { text: string; color: string; icon: Reac
     return { text: `${name} ran successfully`, color: 'text-green-400',
       icon: <CheckCircle2 size={12} className="text-green-400 shrink-0" aria-hidden="true" /> };
   }
+  if (s === 'no_new_data') {
+    // The task ran but inserted no rows; freshness was not established. This is
+    // deliberately distinct from 'success' so a stale DB is never shown green.
+    return { text: `${name} ran but ingested no rows`, color: 'text-yellow-400',
+      icon: <AlertTriangle size={12} className="text-yellow-400 shrink-0" aria-hidden="true" /> };
+  }
   if (s === 'failed') {
     const detail = row.error_message ? ` — ${row.error_message}` : '';
     return { text: `${name} failed${detail}`, color: 'text-red-400',

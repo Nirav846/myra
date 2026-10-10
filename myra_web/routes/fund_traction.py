@@ -380,6 +380,7 @@ def get_traction_board(
     ),
     search: str = Query("", description="Match name/symbol/NSE/sector"),
     include_funds: bool = Query(True, description="Include per-fund breakdown lines"),
+    mcap_bucket: str = Query("", description="Market cap bucket: large|mid|small|unknown"),
 ):
     """Traction Board payload: month tabs, filters, per-fund cards, stats."""
     from myra_app import fund_traction_sync as fts
@@ -390,6 +391,7 @@ def get_traction_board(
         sort_by=sort,
         search=search,
         include_funds=include_funds,
+        mcap_bucket=mcap_bucket,
     )
 
 

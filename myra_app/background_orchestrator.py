@@ -374,6 +374,62 @@ def _ensure_options_db():
         logger.warning(f"[MYRA BG] Failed to initialize options database: {e}")
 
 
+def _startup_ingest_catchup() -> str:
+    """Attempt a start-up ingestion catch-up if the DB is behind expectations.
+
+    Freshness is judged against the expected trading date (so weekends and
+    holidays do not trigger), the call is not forced (so
+    ``tasks.ingest.run`` keeps its own guards), and the ``stale_catchup``
+    marker is written **only** when the stored data date actually advanced.
+
+    Returns the outcome: ``"skipped"``, ``"deferred"``, ``"success"`` or
+    ``"no_new_data"``.
+    """
+    from myra_app.tasks.ingest import run as _run_daily_ingest
+    from myra_app.tasks.watchdog import (
+        _after_publication_window,
+        _db_latest_date,
+        _expected_trading_date,
+    )
+
+    expected = _expected_trading_date().isoformat()
+    db_latest = _db_latest_date()
+
+    if db_latest is not None and db_latest >= expected:
+        logger.info(
+            f"[MYRA BG] Start-up catch-up not needed (DB {db_latest} already at "
+            f"expected trading date {expected})."
+        )
+        return "skipped"
+
+    if not _after_publication_window():
+        logger.info(
+            f"[MYRA BG] Start-up catch-up deferred – before 18:30 IST; "
+            f"expected trading date is {expected}."
+        )
+        return "deferred"
+
+    logger.info(
+        f"[MYRA BG] Daily ingest behind expected trading date "
+        f"({db_latest or 'empty'} < {expected}) – running catch-up..."
+    )
+    _run_daily_ingest(_CTX)
+
+    after = _db_latest_date()
+    if after is not None and (db_latest is None or after > db_latest):
+        _mark_task_run("stale_catchup")
+        logger.info(f"[MYRA BG] Start-up catch-up advanced DB to {after}.")
+        return "success"
+
+    # Freshness NOT established – do not write a success marker. ingest.run has
+    # already recorded the attempt itself (success or no_new_data).
+    logger.info(
+        "[MYRA BG] Start-up catch-up did not advance the stored date; "
+        "freshness not established."
+    )
+    return "no_new_data"
+
+
 def start():
     """
     Call this from myra.py on startup.
@@ -404,14 +460,15 @@ def start():
     except Exception as e:
         logger.warning(f"Initial backup check failed: {e}")
 
-    # Catch-up: Run daily ingest immediately if overdue (>1 day)
+    # Catch-up: run daily ingest at startup if the stored data is behind the
+    # expected trading date and the after-close publication window has opened.
+    #
+    # Previously this fired on a raw 1-day calendar gap with force=True and
+    # marked `stale_catchup` unconditionally, so a restart before 18:30 (or on a
+    # weekend) recorded a freshness success that no ingestion had established.
     try:
         if _is_task_overdue("daily_ingest", days=1):
-            logger.info("[MYRA BG] Daily ingest overdue – running catch-up now...")
-            from myra_app.tasks.ingest import run as _run_daily_ingest
-
-            _run_daily_ingest(_CTX, force=True)
-            _mark_task_run("stale_catchup")
+            _startup_ingest_catchup()
     except Exception as e:
         logger.warning(f"[MYRA BG] Daily ingest catch-up failed: {e}")
 

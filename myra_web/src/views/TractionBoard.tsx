@@ -43,6 +43,11 @@ interface BoardRow {
   month_end_close: number | null;
   close_latest: number | null;
   new_entry_count: number;
+   price: number | null;
+   prev_month_close: number | null;
+   pct_vs_prev: number | null;
+   market_cap_cr: number | null;
+   mcap_bucket: string;
   adds: FundLine[];
   reduces: FundLine[];
   holds: FundLine[];
@@ -59,6 +64,10 @@ interface BoardStats {
   still_adding: number;
   reversed: number;
   watchlisted: number;
+  large: number;
+  mid: number;
+  small: number;
+  mcap_unknown: number;
 }
 
 interface BoardResponse {
@@ -118,6 +127,14 @@ const SORTS: { key: string; label: string }[] = [
   { key: 'name', label: 'Name' },
 ];
 
+const MCAP_FILTERS: { key: string; label: string }[] = [
+  { key: '', label: 'All Caps' },
+  { key: 'large', label: 'Large (≥20k Cr)' },
+  { key: 'mid', label: 'Mid (5k–20k Cr)' },
+  { key: 'small', label: 'Small (<5k Cr)' },
+  { key: 'unknown', label: 'Unknown' },
+];
+
 const PERSISTENCE_BADGES: Record<string, { label: string; cls: string }> = {
   new_this_month: { label: 'New', cls: 'bg-emerald-500/15 text-emerald-300' },
   still_adding: { label: 'Still Adding', cls: 'bg-green-500/15 text-green-300' },
@@ -156,6 +173,7 @@ export default function TractionBoard() {
   const [filter, setFilter] = useState('all');
   const [sort, setSort] = useState('score');
   const [search, setSearch] = useState('');
+   const [mcapBucket, setMcapBucket] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [pins, setPins] = useState<Set<string>>(new Set());
 
@@ -166,6 +184,7 @@ export default function TractionBoard() {
       const params = new URLSearchParams({ filter, sort });
       if (month) params.set('month', month);
       if (search.trim()) params.set('search', search.trim());
+       if (mcapBucket) params.set('mcap_bucket', mcapBucket);
       const res = await fetch(`${API_ROOT}/api/fund-traction/board?${params.toString()}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json: BoardResponse = await res.json();
@@ -181,7 +200,7 @@ export default function TractionBoard() {
     } finally {
       setLoading(false);
     }
-  }, [month, filter, sort, search]);
+  }, [month, filter, sort, search, mcapBucket]);
 
   const loadInsights = useCallback(async () => {
     try {
@@ -262,6 +281,10 @@ export default function TractionBoard() {
       { key: 'still_adding', label: 'Still Adding', value: s.still_adding },
       { key: 'reversed', label: 'Reversed', value: s.reversed },
       { key: 'watchlist', label: 'Watchlist', value: s.watchlisted },
+      { key: 'large', label: 'Large', value: s.large },
+      { key: 'mid', label: 'Mid', value: s.mid },
+      { key: 'small', label: 'Small', value: s.small },
+      { key: 'mcap_unknown', label: 'Unknown', value: s.mcap_unknown },
     ];
   }, [data]);
 
@@ -339,6 +362,17 @@ export default function TractionBoard() {
                   ? 'bg-indigo-600 text-white'
                   : 'bg-white/5 text-gray-300 hover:bg-white/10'
               }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {MCAP_FILTERS.map(f => (
+            <button
+              key={f.key}
+              onClick={() => setMcapBucket(f.key)}
+              className={`px-2.5 py-1 rounded-md text-xs transition-colors ${mcapBucket === f.key ? 'bg-indigo-600 text-white' : 'bg-white/5 text-gray-300 hover:bg-white/10'}`}
             >
               {f.label}
             </button>
@@ -505,6 +539,42 @@ export default function TractionBoard() {
                       className={(row.pct_vs_sma ?? 0) >= 0 ? 'text-green-300' : 'text-red-300'}
                     >
                       {fmtNum(row.pct_vs_sma, 2, '%')}
+                    </span>
+                  </span>
+                  <span>
+                    Price{' '}
+                    <span
+                      className={(row.price ?? 0) >= 0 ? 'text-green-300' : 'text-red-300' }
+                    >
+                      {fmtNum(row.price, 2)}
+                    </span>
+                  </span>
+                  <span>
+                    Prev Close{' '}
+                    <span
+                      className={(row.prev_month_close ?? 0) >= 0 ? 'text-green-300' : 'text-red-300' }
+                    >
+                      {fmtNum(row.prev_month_close, 2)}
+                    </span>
+                  </span>
+                  <span>
+                    Δ Prev{' '}
+                    <span
+                      className={(row.pct_vs_prev ?? 0) >= 0 ? 'text-green-300' : 'text-red-300' }
+                    >
+                      {fmtNum(row.pct_vs_prev, 2, '%')}
+                    </span>
+                  </span>
+                  <span>
+                    Market Cap{' '}
+                    <span className="text-gray-300">
+                      {fmtNum(row.market_cap_cr, 0)} Cr
+                    </span>
+                  </span>
+                  <span>
+                    MCAP{' '}
+                    <span className="text-gray-300">
+                      {row.mcap_bucket === 'large' ? 'Large' : row.mcap_bucket === 'mid' ? 'Mid' : row.mcap_bucket === 'small' ? 'Small' : 'Unknown'}
                     </span>
                   </span>
                 </div>

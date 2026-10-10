@@ -409,12 +409,19 @@ def _read_latest_doctor_run() -> dict:
 
 
 def _read_all_sync_log() -> list:
-    """Return every row in sync_log as a list of dicts, or [] on any
+    """Return every *task* row in sync_log as a list of dicts, or [] on any
     failure. Mirrors the schema_registry / task_ql._ensure_sync_log_table
-    column set; missing columns yield None per-row."""
+    column set; missing columns yield None per-row.
+
+    Internal bookkeeping rows (the ``*_attempt`` attempt-clamp rows written by
+    tasks/ingest) are excluded: they are not runnable tasks and must not appear
+    as independent entries in the UI.
+    """
     if not os.path.exists(_META_DB_PATH):
         return []
     try:
+        from myra_app.utils.task_utils import is_internal_sync_log_label
+
         conn = sqlite3.connect(_META_DB_PATH, timeout=5)
         try:
             rows = conn.execute(
@@ -431,6 +438,7 @@ def _read_all_sync_log() -> list:
                 "error_message": r[3],
             }
             for r in rows
+            if not is_internal_sync_log_label(r[0])
         ]
     except Exception as exc:
         logger.warning("read_all_sync_log failed: %s", exc)

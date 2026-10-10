@@ -17,6 +17,10 @@ DB_PATH = os.path.join(DB_DIR, LibrarianCore.DB_MAP["technical"])
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
+#: holiday_name written by the legacy zero-row path (see _mark_calendar_unproven).
+#: It records "this attempt inserted nothing", which is not proof of a holiday.
+HEURISTIC_HOLIDAY_REASON = "Likely holiday (zero rows)"
+
 NSE_HOLIDAYS_BASELINE = {
     "2025-02-26",
     "2025-03-14",
@@ -101,26 +105,111 @@ def get_db_row_count(db_path: str = None, target_date: str = None) -> int:
         return 0
 
 
+def _technical_db_path() -> str:
+    """Canonical technical_data path, resolved at call time."""
+    from myra_app.constants import DB_DIR as _DB_DIR
+
+    return os.path.join(_DB_DIR, LibrarianCore.DB_MAP["technical"])
+
+
+def _calendar_db_path() -> str:
+    """Canonical market_calendar path, resolved at call time."""
+    from myra_app.constants import DB_DIR as _DB_DIR
+
+    return os.path.join(_DB_DIR, LibrarianCore.DB_MAP["calendar"])
+
+
+# Read-only connections are cached per resolved path so repeated trading-day checks
+# (the backfill walk can ask hundreds of times) do not reopen the file each call.
+# Keyed by path, so a change of DB_DIR transparently opens the new database.
+_RO_CONNS: dict[str, sqlite3.Connection] = {}
+
+
+def _read_only_conn(path: str) -> sqlite3.Connection | None:
+    """Return a cached read-only connection, or None when the file is absent."""
+    if not os.path.exists(path):
+        return None
+    conn = _RO_CONNS.get(path)
+    if conn is None:
+        try:
+            conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+        except sqlite3.Error:
+            return None
+        _RO_CONNS[path] = conn
+    return conn
+
+
+def has_eod_evidence(date_str: str) -> bool:
+    """True when technical_data holds any EOD row for `date_str`.
+
+    Presence is the evidence, not a row-count threshold: rows only enter
+    technical_data via a successfully loaded bhavcopy, so any row proves the
+    exchange traded that session. Counting rows would answer a different
+    question (session completeness) and would need an arbitrary cutoff.
+    """
+    conn = _read_only_conn(_technical_db_path())
+    if conn is None:
+        return False
+    try:
+        return (
+            conn.execute(
+                "SELECT 1 FROM technical_data WHERE date = ? LIMIT 1", (date_str,)
+            ).fetchone()
+            is not None
+        )
+    except sqlite3.Error:
+        return False
+
+
+def calendar_classification(date_str: str) -> tuple[bool, str | None] | None:
+    """(is_trading_day, holiday_name) for `date_str`, or None when unrecorded."""
+    conn = _read_only_conn(_calendar_db_path())
+    if conn is None:
+        return None
+    try:
+        row = conn.execute(
+            "SELECT is_trading_day, holiday_name FROM market_calendar WHERE date = ?",
+            (date_str,),
+        ).fetchone()
+    except sqlite3.Error:
+        return None
+    if row is None:
+        return None
+    return bool(row[0]), (row[1] or None)
+
+
 def is_trading_day(dt: datetime) -> bool:
-    """Check if a given datetime is a trading day (not weekend, not holiday)."""
+    """Check if a given datetime is a trading day (not weekend, not holiday).
+
+    Authority order, weakest evidence first:
+      1. weekend            -> not a trading day
+      2. NSE_HOLIDAYS_BASELINE -> not a trading day
+      3. market_calendar    -> honour the record, EXCEPT when the record is the
+                               legacy zero-row *heuristic* and technical_data
+                               holds real rows for that date.
+
+    Step 3's exception exists because the legacy ingest path used to write
+    ``is_trading_day = 0`` whenever an attempt inserted zero rows — "we inserted
+    nothing" is not evidence that the exchange was closed. Such rows were then
+    excluded from :func:`calculate_missing_dates` forever, while EOD2 went on to
+    load the session normally. Only the heuristic reason is overridable; a named
+    exchange holiday (Gandhi Jayanti, Christmas) stays authoritative even when
+    rows happen to exist.
+    """
     if dt.weekday() >= 5:
         return False
     date_str = dt.date().isoformat()
     if date_str in NSE_HOLIDAYS_BASELINE:
         return False
-    calendar_db_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["calendar"])
-    if os.path.exists(calendar_db_path):
-        try:
-            with sqlite3.connect(calendar_db_path) as cal_conn:
-                cal_res = cal_conn.execute(
-                    "SELECT is_trading_day FROM market_calendar WHERE date = ?",
-                    (date_str,),
-                ).fetchone()
-                if cal_res and not cal_res[0]:
-                    return False
-        except Exception:
-            pass
-    return True
+    recorded = calendar_classification(date_str)
+    if recorded is None:
+        return True
+    is_trading, reason = recorded
+    if is_trading:
+        return True
+    if reason == HEURISTIC_HOLIDAY_REASON and has_eod_evidence(date_str):
+        return True
+    return False
 
 
 def get_next_trading_day(from_date: datetime, days_ahead: int = 1) -> datetime:
@@ -152,6 +241,51 @@ def calculate_missing_dates(db_latest_date: str, target_date: datetime) -> list:
     except Exception as e:
         print(f"[WARN] Could not calculate missing dates: {e}")
     return missing
+
+
+def _mark_calendar_unproven(current_date: datetime, db_before: int) -> bool:
+    """Record a zero-row attempt, but only when nothing contradicts a session.
+
+    A zero-row insert is *not* evidence that the exchange was closed. It can also
+    mean duplicate/already-present rows, an empty or unavailable source, or a parse
+    problem. This helper therefore refuses to downgrade a date that has any of:
+
+      * an existing ``is_trading_day = 1`` calendar record, or
+      * EOD rows already present for the date (``db_before`` / ``technical_data``).
+
+    The record is written with INSERT OR IGNORE semantics so an existing — correct
+    or explicitly curated — row is never overwritten. Idempotent: a second run
+    writes nothing. Returns True when a row was written.
+    """
+    date_str = current_date.date().isoformat()
+
+    # Strongest existing evidence wins: never overwrite a recorded trading day.
+    recorded = calendar_classification(date_str)
+    if recorded is not None and recorded[0]:
+        return False
+
+    # Real data for the date proves the exchange traded.
+    if db_before and db_before > 0:
+        return False
+    if has_eod_evidence(date_str):
+        return False
+
+    try:
+        conn = sqlite3.connect(_calendar_db_path(), timeout=5)
+        try:
+            # INSERT OR IGNORE, not REPLACE: an existing record (including a
+            # curated named holiday) must survive untouched.
+            conn.execute(
+                "INSERT OR IGNORE INTO market_calendar "
+                "(date, is_trading_day, holiday_name) VALUES (?, 0, ?)",
+                (date_str, HEURISTIC_HOLIDAY_REASON),
+            )
+            conn.commit()
+            return conn.total_changes > 0
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return False
 
 
 def run_daily_update_for_date(current_date: datetime, force: bool = False) -> dict:
@@ -442,18 +576,9 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
                         f"⚠️ WARNING: No new rows inserted for {current_date.date().isoformat()}"
                     )
                     conn.execute("ROLLBACK")
-                    try:
-                        calendar_db_path = os.path.join(
-                            DB_DIR, LibrarianCore.DB_MAP["calendar"]
-                        )
-                        if os.path.exists(calendar_db_path):
-                            with sqlite3.connect(calendar_db_path) as cal_conn:
-                                cal_conn.execute(
-                                    "INSERT OR REPLACE INTO market_calendar (date, is_trading_day, holiday_name) VALUES (?, 0, 'Likely holiday (zero rows)')",
-                                    (current_date.date().isoformat(),),
-                                )
-                    except Exception:
-                        pass
+                    # A zero-row attempt is not proof of a holiday: only record it
+                    # when neither the calendar nor the data contradicts a session.
+                    _mark_calendar_unproven(current_date, db_before)
                     result["success"] = False
                     result["error"] = "no_rows_inserted"
                     return result

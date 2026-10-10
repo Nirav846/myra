@@ -13,6 +13,7 @@ import time
 from myra_app.tasks.context import TaskContext
 from myra_app.tasks.registry import TaskSpec
 from myra_app.utils.task_utils import (
+    _attempt_cooldown_elapsed,
     _is_task_due,
     _is_task_overdue,
     _mark_task_run,
@@ -25,6 +26,18 @@ POLL_SECONDS = 60
 
 # Pause between staggered thread launches (orchestrator launch loop).
 STAGGER_SECONDS = 30
+
+
+def attempt_allowed(spec: TaskSpec) -> bool:
+    """Whether a new attempt of this task is outside its cooldown window.
+
+    Shared with the watchdog via ``_attempt_cooldown_elapsed`` so the two
+    independent drivers cannot both start an attempt for the same window. A
+    task with no cooldown configured is always allowed.
+    """
+    if not spec.attempt_cooldown_minutes:
+        return True
+    return _attempt_cooldown_elapsed(spec.label, spec.attempt_cooldown_minutes)
 
 
 def resolve_entrypoint(spec: TaskSpec):
@@ -109,18 +122,24 @@ def run_periodic(task_name: str, spec: TaskSpec, ctx: TaskContext) -> None:
         return
 
     # Startup catch-up: run immediately when overdue.
-    if spec.catchup and _is_task_overdue(spec.label, days=spec.interval_days):
+    if (
+        spec.catchup
+        and _is_task_overdue(spec.label, days=spec.interval_days)
+        and attempt_allowed(spec)
+    ):
         logger.info(f"[MYRA BG] Task {task_name} overdue – running catch-up now...")
         _execute_once(f"{task_name} (catch-up)", spec, fn, ctx)
 
     # Due-check poll loop.
     while not ctx.shutdown_event.is_set():
         try:
-            if _is_task_due(spec.label, interval_days=spec.interval_days):
+            if _is_task_due(
+                spec.label, interval_days=spec.interval_days
+            ) and attempt_allowed(spec):
                 logger.info(f"[MYRA BG] Task {task_name} due – running...")
                 _execute_once(task_name, spec, fn, ctx)
         except Exception as e:
             # Never let scheduling bookkeeping kill the thread.
             logger.error(f"[MYRA BG] Task {task_name} scheduling error: {e}")
-        if ctx.shutdown_event.wait(POLL_SECONDS):
+        if ctx.shutdown_event.wait(spec.poll_seconds or POLL_SECONDS):
             return

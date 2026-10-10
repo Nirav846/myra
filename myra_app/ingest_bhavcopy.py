@@ -55,10 +55,31 @@ def validate_calendar_date(canonical_date: str, lib: LibrarianCore) -> tuple[boo
         conn.close()
 
         if row:
-            is_trading_day, session_type = row
-            if is_trading_day == 0 and session_type is None:
-                print(f"[WARN] {canonical_date} is a full holiday. Skipping ingestion.")
-                return False, None
+            is_trading_day_flag, session_type = row
+            if is_trading_day_flag == 0 and session_type is None:
+                # The calendar may carry a legacy zero-row heuristic ("Likely
+                # holiday (zero rows)") for a session that really traded. Ask the
+                # shared authority, which overrides that heuristic when
+                # technical_data holds rows; named holidays and weekends stand.
+                from datetime import datetime as _dt, time as _time
+
+                from myra_app.daily_ingestor import is_trading_day as _is_trading_day
+
+                try:
+                    day = _dt.strptime(canonical_date, "%Y-%m-%d").date()
+                    session_open = bool(_is_trading_day(_dt.combine(day, _time(12, 0))))
+                except (ValueError, TypeError):
+                    session_open = False
+
+                if not session_open:
+                    print(
+                        f"[WARN] {canonical_date} is a full holiday. Skipping ingestion."
+                    )
+                    return False, None
+                print(
+                    f"[INFO] {canonical_date} flagged as likely holiday but EOD data "
+                    f"exists - ingesting anyway."
+                )
             elif session_type == "muhurat":
                 print(
                     f"[INFO] Muhurat session detected for {canonical_date}, ingesting with tag"

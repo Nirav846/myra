@@ -55,6 +55,24 @@ class TechnicalAudit:
             days_c = pd.read_sql(
                 "SELECT COUNT(*) FROM market_calendar WHERE is_trading_day=1", conn_c
             ).iloc[0, 0]
+            # Sessions flagged "Likely holiday (zero rows)" by one ingest attempt
+            # are still real sessions when technical_data holds rows for them;
+            # count them so the diagnostic reflects the real trading calendar.
+            try:
+                from myra_app.daily_ingestor import (
+                    HEURISTIC_HOLIDAY_REASON,
+                    has_eod_evidence,
+                )
+
+                flagged = pd.read_sql(
+                    "SELECT date FROM market_calendar WHERE is_trading_day=0 "
+                    "AND holiday_name = ?",
+                    conn_c,
+                    params=(HEURISTIC_HOLIDAY_REASON,),
+                )["date"].tolist()
+                days_c += sum(1 for d in flagged if has_eod_evidence(d))
+            except Exception as exc:
+                print(f"[info] Trading-day recovery skipped: {exc}")
 
             print(f"[*] Total Records: {rows_t}")
             print(f"[*] Total Symbols: {symbols}")

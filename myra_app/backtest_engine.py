@@ -872,6 +872,30 @@ def _preload_universe_by_date(
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+def _recovered_heuristic_days(
+    conn: sqlite3.Connection, start: str, end: str, known: set[str]
+) -> list[str]:
+    """Sessions the calendar flagged "likely holiday" that EOD data proves traded.
+
+    ``market_calendar`` can carry ``is_trading_day = 0`` with holiday_name
+    ``Likely holiday (zero rows)`` — recorded because one ingest attempt inserted
+    nothing, which is not proof the exchange was closed. Those dates would
+    otherwise drop out of a backtest window entirely. Only that exact heuristic
+    reason is reconsidered, and only when ``technical_data`` holds rows.
+    """
+    from myra_app.daily_ingestor import HEURISTIC_HOLIDAY_REASON, has_eod_evidence
+
+    try:
+        rows = conn.execute(
+            "SELECT date FROM market_calendar WHERE is_trading_day = 0 "
+            "AND holiday_name = ? AND date BETWEEN ? AND ? ORDER BY date",
+            (HEURISTIC_HOLIDAY_REASON, start, end),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    return [r[0] for r in rows if r[0] not in known and has_eod_evidence(r[0])]
+
+
 def _trading_days(conn: sqlite3.Connection, start: str, end: str) -> list[str]:
     """Return list of trading dates (ISO) within [start, end] from market_calendar
     if present, else from DISTINCT date in technical_data.
@@ -883,7 +907,9 @@ def _trading_days(conn: sqlite3.Connection, start: str, end: str) -> list[str]:
             (start, end),
         ).fetchall()
         if rows:
-            return [r[0] for r in rows]
+            days = [r[0] for r in rows]
+            days += _recovered_heuristic_days(conn, start, end, set(days))
+            return sorted(set(days))
     except sqlite3.OperationalError:
         pass
     rows = conn.execute(

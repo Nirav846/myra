@@ -1,932 +1,282 @@
-import { useState, useEffect, useRef } from 'react';
-import { 
-  Activity, 
-  BarChart2, 
-  BrainCircuit, 
-  Target, 
-  Database, 
-  RotateCw, 
-  Star,
-  TrendingUp,
-  TrendingDown,
-  Info
+/**
+ * MissionControlView — MYRA Pipeline Control Room.
+ *
+ * Purpose change (not a feature deletion): this page used to be a market-
+ * information dashboard (Morning Brief, Nifty Outlook, FII/Retail Divergence,
+ * Stock Brief/Timeline, Market Breadth, PCR, Tactical Command Grid, watchlist).
+ * Those widgets were removed *from this page only* — every scanner, analytical
+ * page, API endpoint and navigation entry remains reachable elsewhere in the app.
+ *
+ * This page is now the operational overview and manual task-control surface:
+ * what is happening right now, what completed, what failed and why, what is
+ * next, and the controls to run one task or the whole pipeline.
+ *
+ * Execution state comes from the single shared hook usePipeline, which both this
+ * page and Data Sync mount — there is exactly one execution path in the app.
+ */
+import { useEffect, useState } from 'react';
+import {
+  Activity, Play, Square, RefreshCw, Unplug, Server, CircleDot,
 } from 'lucide-react';
-import { Librarian } from '../lib/Librarian';
-import { useLazyWidgetData } from '../hooks/useLazyWidgetData';
-import { SymbolAutocomplete } from '../components/SymbolAutocomplete';
+import type { Librarian } from '../lib/Librarian';
 import ErrorBoundary from '../components/ErrorBoundary';
 import PipelineStatusPanel from '../components/PipelineStatusPanel';
-import { Card, CardHeader, CardTitle } from '../components/ui/Card';
-import { Skeleton } from '../components/ui/Skeleton';
-import { API_ROOT } from '../config';
-import { useWatchlist } from '../lib/WatchlistContext';
+import PipelineTaskList from '../components/PipelineTaskList';
+import { usePipeline } from '../hooks/usePipeline';
+import {
+  describeEvent,
+  formatClock,
+  formatElapsed,
+  runStatusVisual,
+  taskLabel,
+} from '../lib/pipeline';
 
+// Keeps the props contract App.tsx already uses; the market widgets that needed
+// `navigateTo` are gone from this page but the route signature is unchanged.
+export default function MissionControlView({ lib }: { lib: Librarian; navigateTo: (id: string) => void }) {
+  const { status, events, connected, loading, error, busy, startTask, cancel, refresh } = usePipeline();
 
+  const [stopOnFail, setStopOnFail] = useState(true);
+  const [elapsed, setElapsed] = useState(0);
 
-interface BreadthRes {
-  advances: number;
-  declines: number;
-  total: number;
-  date: string | null;
-}
+  const overall = status?.overall;
+  const isRunning = overall?.status === 'running';
+  const isCancelling = overall?.status === 'cancelling';
+  const activeTaskId = overall?.active_task_id ?? null;
 
-export default function MissionControlView({ lib, navigateTo }: { lib: Librarian, navigateTo: (id: string) => void }) {
-  const [fiiSymbol, setFiiSymbol] = useState('RELIANCE');
-  const [briefSymbol, setBriefSymbol] = useState('RELIANCE');
-  const [timelineSymbol, setTimelineSymbol] = useState('RELIANCE');
-
-  const breadthWidget = useLazyWidgetData<BreadthRes>('market_breadth', async () => {
-    const res = await fetch(`${API_ROOT}/api/market-breadth`);
-    if (!res.ok) throw new Error('Failed to load market breadth');
-    return res.json();
-  });
-
-  const pipelineWidget = useLazyWidgetData<any>('pipeline_status', async () => {
-    const res = await fetch(`${API_ROOT}/api/tools/status`);
-    if (!res.ok) throw new Error('Failed to load pipeline status');
-    return res.json();
-  });
-
-  const briefWidget = useLazyWidgetData<any>('morning_brief', async () => {
-    const res = await fetch(`${API_ROOT}/api/finstack/morning-brief`);
-    if (!res.ok) throw new Error('Failed to load morning brief');
-    return res.json();
-  });
-
-  const niftyWidget = useLazyWidgetData<any>('nifty_outlook', async () => {
-    const res = await fetch(`${API_ROOT}/api/finstack/nifty-outlook`);
-    if (!res.ok) throw new Error('Failed to load nifty outlook');
-    return res.json();
-  });
-
-  const divergenceWidget = useLazyWidgetData<any>('fii_divergence', async () => {
-    const sym = fiiSymbol || 'RELIANCE';
-    const res = await fetch(`${API_ROOT}/api/finstack/fii-retail-divergence?symbol=${sym}`);
-    if (!res.ok) throw new Error('Failed to load divergence data');
-    return res.json();
-  });
-
-  const stockBrief = useLazyWidgetData<any>('stock_brief', async () => {
-    const sym = briefSymbol || 'RELIANCE';
-    const res = await fetch(`${API_ROOT}/api/finstack/stock-brief?symbol=${sym}`);
-    if (!res.ok) throw new Error('Failed to load stock brief');
-    return res.json();
-  });
-
-  const timelineWidget = useLazyWidgetData<any>('stock_timeline', async () => {
-    const sym = timelineSymbol || 'RELIANCE';
-    const res = await fetch(`${API_ROOT}/api/finstack/stock-timeline?symbol=${sym}`);
-    if (!res.ok) throw new Error('Failed to load stock timeline');
-    return res.json();
-  });
-
-  const pcrWidget = useLazyWidgetData<any>('pcr_status', async () => {
-    const res = await fetch(`${API_ROOT}/api/pcr/status`);
-    if (!res.ok) throw new Error('Failed to load PCR data');
-    return res.json();
-  });
-
-  const { watchlist, toggle } = useWatchlist();
-
-  const fiiMount = useRef(true);
+  // Live elapsed clock — driven by the real start timestamp, never a fake timer.
   useEffect(() => {
-    if (fiiMount.current) { fiiMount.current = false; return; }
-    if (divergenceWidget.data !== null || divergenceWidget.autoRefresh) {
-      divergenceWidget.fetchData();
+    if (!isRunning || !overall?.started_at) {
+      setElapsed(0);
+      return;
     }
-  }, [fiiSymbol]);
+    const started = new Date(overall.started_at).getTime();
+    if (isNaN(started)) { setElapsed(0); return; }
+    const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - started) / 1000)));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [isRunning, overall?.started_at]);
 
-  const briefMount = useRef(true);
-  useEffect(() => {
-    if (briefMount.current) { briefMount.current = false; return; }
-    if (stockBrief.data !== null || stockBrief.autoRefresh) {
-      stockBrief.fetchData();
-    }
-  }, [briefSymbol]);
-
-  const timelineMount = useRef(true);
-  useEffect(() => {
-    if (timelineMount.current) { timelineMount.current = false; return; }
-    if (timelineWidget.data !== null || timelineWidget.autoRefresh) {
-      timelineWidget.fetchData();
-    }
-  }, [timelineSymbol]);
-
-  const ringColorMap: Record<string, string> = {
-    yellow: 'focus-within:ring-yellow-500/50',
-    fuchsia: 'focus-within:ring-fuchsia-500/50',
-    cyan: 'focus-within:ring-cyan-500/50',
-    green: 'focus-within:ring-green-500/50',
-  };
-
-  const categories = [
-    {
-      title: 'Technicals',
-      color: 'yellow',
-      borderColor: 'border-yellow-500/50',
-      bgColor: 'bg-yellow-500/10',
-      textColor: 'text-yellow-400',
-      icon: <Activity size={24} />,
-      items: [
-        { label: 'FVG Scanner', action: () => navigateTo('FVG Scanner') },
-        { label: 'Reversion Engine', action: () => navigateTo('Reversion Engine') },
-        { label: 'Sector Flow', action: () => navigateTo('Sector Flow') }
-      ]
-    },
-    {
-      title: 'Institutional',
-      color: 'fuchsia',
-      borderColor: 'border-fuchsia-500/50',
-      bgColor: 'bg-fuchsia-500/10',
-      textColor: 'text-fuchsia-400',
-      icon: <BarChart2 size={24} />,
-      items: [
-        { label: 'Deals Leaderboard', action: () => navigateTo('Leaderboard') },
-        { label: 'Delivery Volume Profile', action: () => navigateTo('Delivery Volume Profile') },
-        { label: 'Ghost Simulator', action: () => navigateTo('Ghost Simulator') }
-      ]
-    },
-    {
-      title: 'ML / EXP',
-      color: 'cyan',
-      borderColor: 'border-cyan-500/50',
-      bgColor: 'bg-cyan-500/10',
-      textColor: 'text-cyan-400',
-      icon: <BrainCircuit size={24} />,
-      items: [
-        { label: 'Multibagger Matrix', action: () => navigateTo('Multibagger Matrix') },
-        { label: 'Historical Search', action: () => navigateTo('Historical Search') },
-        { label: 'Data Lake', action: () => navigateTo('Parquet Lake') }
-      ]
-    },
-    {
-      title: 'Value',
-      color: 'green',
-      borderColor: 'border-green-500/50',
-      bgColor: 'bg-green-500/10',
-      textColor: 'text-green-400',
-      icon: <Target size={24} />,
-      items: [
-        { label: 'Value Ranker', action: () => navigateTo('Value Ranker') },
-        { label: 'Sector Analysis', action: () => navigateTo('Sector Flow') },
-        { label: 'Graham Model', action: null }
-      ]
-    }
-  ];
-
-  const isToday = (dateStr: string) => {
-    if (!dateStr || dateStr === 'Never') return false;
-    try {
-      const d = new Date(dateStr);
-      const today = new Date();
-      return d.getDate() === today.getDate() && 
-             d.getMonth() === today.getMonth() && 
-             d.getFullYear() === today.getFullYear();
-    } catch {
-      return false;
-    }
-  };
-
-  const isPipelineActive = pipelineWidget.data && isToday(pipelineWidget.data.ingest);
-
-  let advPct = 50;
-  let decPct = 50;
-  if (breadthWidget.data && breadthWidget.data.total > 0) {
-    advPct = Math.round((breadthWidget.data.advances / breadthWidget.data.total) * 100);
-    decPct = 100 - advPct;
-  }
-
-  const getValueColor = (val: any) => {
-    const num = typeof val === 'string' ? parseFloat(val) : val;
-    if (!isNaN(num) && typeof num === 'number') {
-      return num > 0 ? 'text-green-400' : num < 0 ? 'text-red-400' : 'text-[#fafafa]';
-    }
-    if (typeof val === 'string') {
-      const s = val.toLowerCase();
-      if (s.includes('bull') || s.includes('positive') || s.includes('buy') || s.includes('up')) return 'text-green-400';
-      if (s.includes('bear') || s.includes('negative') || s.includes('sell') || s.includes('down')) return 'text-red-400';
-    }
-    return 'text-[#fafafa]';
-  };
-
-  const getVixInterpretation = (vixObj: any) => {
-    if (!vixObj || !vixObj.interpretation) return "Interpretation unavailable";
-    const val = vixObj.current_vix;
-    if (val < 13) return vixObj.interpretation.below_13;
-    if (val < 18) return vixObj.interpretation['13_to_18'];
-    if (val < 25) return vixObj.interpretation['18_to_25'];
-    return vixObj.interpretation.above_25;
-  };
-
-  const timeAgo = (isoStr: string | null | undefined) => {
-    if (!isoStr) return '—';
-    try {
-      const diff = Date.now() - new Date(isoStr).getTime();
-      if (diff < 0) return 'just now';
-      const mins = Math.floor(diff / 60000);
-      if (mins < 1) return 'just now';
-      if (mins < 60) return `${mins}m ago`;
-      const hrs = Math.floor(mins / 60);
-      if (hrs < 24) return `${hrs}h ago`;
-      const days = Math.floor(hrs / 24);
-      return `${days}d ago`;
-    } catch {
-      return '—';
-    }
-  };
-
-  const formatSpot = (val: number | null) => {
-    if (val == null) return '—';
-    return '₹' + val.toLocaleString('en-IN');
-  };
+  const visual = runStatusVisual(overall?.status ?? 'idle');
 
   return (
-    <main className="flex flex-col gap-6" aria-label="Mission Control Dashboard">
-      {/* Screen-reader-only heading for document structure */}
-      <h1 className="sr-only">Mission Control</h1>
+    <div className="flex flex-col gap-4 p-4 max-w-5xl w-full mx-auto">
 
-      {/* Morning Brief Widget */}
-      <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded-xl p-4 text-red-400 text-xs font-mono" role="alert">Morning Brief widget crashed</div>}>
-      <section aria-label="Morning Brief" className="bg-[#1a1c24] border border-[#ffffff1a] rounded-xl p-4 flex flex-col gap-4">
-        <div className="flex items-center justify-between border-b border-[#ffffff1a] pb-3">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-[#888]">Morning Brief</h3>
-          <div className="flex items-center gap-2">
-            <button onClick={briefWidget.fetchData} disabled={briefWidget.loading} className="text-[#888] hover:text-[#fafafa] transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 rounded" title="Refresh Morning Brief" aria-label="Refresh Morning Brief">
-              <RotateCw size={14} className={briefWidget.loading ? 'animate-spin' : ''} aria-hidden="true" />
-            </button>
-            <label className="flex items-center gap-1 text-[12px] text-[#888] font-mono cursor-pointer select-none hover:text-[#888] transition-colors" aria-label="Toggle auto-refresh for morning brief">
-              <input id="morning-brief-autorefresh" name="auto-refresh" type="checkbox" checked={briefWidget.autoRefresh} onChange={e => briefWidget.setAutoRefresh(e.target.checked)} className="accent-yellow-500 w-2.5 h-2.5" />
-              Auto-refresh
-            </label>
-          </div>
+      {/* ── 1. Header + overall status ─────────────────────────────────── */}
+      <header className="bg-[#1a1c24] border border-[#ffffff1a] rounded-xl p-4 flex flex-col gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Activity size={16} className="text-yellow-500" aria-hidden="true" />
+          <h1 className="text-sm font-semibold uppercase tracking-wider font-mono text-[#fafafa]">
+            Pipeline Control Room
+          </h1>
+
+          <span
+            className={`flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider px-2 py-1 rounded border ${visual.cls}`}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${visual.dot}`} aria-hidden="true" />
+            {visual.label}
+          </span>
+
+          {/* Backend connection state */}
+          <span
+            className={`flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider px-2 py-1 rounded border ${
+              connected
+                ? 'text-green-400 border-green-500/40 bg-green-500/10'
+                : 'text-yellow-400 border-yellow-500/40 bg-yellow-500/10'
+            }`}
+            title={connected ? 'Live event stream connected' : 'Event stream unavailable — polling for status'}
+          >
+            {connected ? <Server size={11} aria-hidden="true" /> : <Unplug size={11} aria-hidden="true" />}
+            {connected ? 'Live' : 'Polling'}
+          </span>
+
+          <div className="flex-1" />
+
+          <button
+            type="button"
+            onClick={refresh}
+            className="flex items-center gap-1 text-[11px] font-mono px-2 py-1 rounded border
+                       border-[#ffffff1a] text-[#ccc] hover:text-white hover:bg-white/5 transition-colors"
+            title="Refresh pipeline status"
+          >
+            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} aria-hidden="true" />
+            Refresh
+          </button>
         </div>
-        {briefWidget.loading && !briefWidget.data ? (
-          <div className="text-sm text-[#ccc] py-8 text-center" role="status" aria-live="polite">Loading morning brief...</div>
-        ) : briefWidget.error ? (
-          <div className="text-[12px] text-red-400 font-mono text-center py-8" role="alert">{briefWidget.error}</div>
-        ) : !briefWidget.data?.indices ? (
-          <div className="text-sm text-[#888] py-8 text-center font-mono" role="status">Click Refresh to load morning brief</div>
-        ) : (
-          <>
-          {/* Top row: Index tiles */}
-          <div className="flex flex-row flex-wrap gap-2" role="group" aria-label="Index quotes">
-            <div className="flex-1 min-w-[120px] bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg transition-colors hover:border-[#ffffff30]">
-              <p className="text-[12px] text-[#888] font-mono uppercase tracking-wider">NIFTY 50</p>
-              <p className="text-xs font-mono font-bold tabular-nums text-[#fafafa]">{briefWidget.data.indices.nifty50?.value ?? '—'}</p>
-              <p className={`text-[12px] font-mono tabular-nums ${getValueColor(briefWidget.data.indices.nifty50?.change_pct)}`}>
-                {briefWidget.data.indices.nifty50?.change > 0 ? '+' : ''}{briefWidget.data.indices.nifty50?.change ?? '—'} ({briefWidget.data.indices.nifty50?.change_pct > 0 ? '+' : ''}{briefWidget.data.indices.nifty50?.change_pct ?? '—'}%)
-              </p>
-            </div>
-            <div className="flex-1 min-w-[120px] bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg transition-colors hover:border-[#ffffff30]">
-              <p className="text-[12px] text-[#888] font-mono uppercase tracking-wider">SENSEX</p>
-              <p className="text-xs font-mono font-bold tabular-nums text-[#fafafa]">{briefWidget.data.indices.sensex?.value ?? '—'}</p>
-              <p className={`text-[12px] font-mono tabular-nums ${getValueColor(briefWidget.data.indices.sensex?.change_pct)}`}>
-                {briefWidget.data.indices.sensex?.change > 0 ? '+' : ''}{briefWidget.data.indices.sensex?.change ?? '—'} ({briefWidget.data.indices.sensex?.change_pct > 0 ? '+' : ''}{briefWidget.data.indices.sensex?.change_pct ?? '—'}%)
-              </p>
-            </div>
-            <div className="flex-1 min-w-[120px] bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg transition-colors hover:border-[#ffffff30]">
-              <p className="text-[12px] text-[#888] font-mono uppercase tracking-wider">BANK NIFTY</p>
-              <p className="text-xs font-mono font-bold tabular-nums text-[#fafafa]">{briefWidget.data.indices.bank_nifty?.value ?? '—'}</p>
-              <p className={`text-[12px] font-mono tabular-nums ${getValueColor(briefWidget.data.indices.bank_nifty?.change_pct)}`}>
-                {briefWidget.data.indices.bank_nifty?.change > 0 ? '+' : ''}{briefWidget.data.indices.bank_nifty?.change ?? '—'} ({briefWidget.data.indices.bank_nifty?.change_pct > 0 ? '+' : ''}{briefWidget.data.indices.bank_nifty?.change_pct ?? '—'}%)
-              </p>
-            </div>
-            <div className="flex-1 min-w-[120px] bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg transition-colors hover:border-[#ffffff30]">
-              <p className="text-[12px] text-[#888] font-mono uppercase tracking-wider">INDIA VIX</p>
-              <p className="text-xs font-mono font-bold tabular-nums text-[#fafafa]">{briefWidget.data.pre_market?.india_vix?.current_vix ?? '—'}</p>
-              <p className="text-[12px] font-mono text-[#ccc] truncate" title={briefWidget.data.pre_market?.india_vix?.signal || ''}>{briefWidget.data.pre_market?.india_vix?.signal || '—'}</p>
-              <p className="text-[12px] font-mono text-[#888] truncate mt-0.5" title={getVixInterpretation(briefWidget.data.pre_market?.india_vix)}>
-                {getVixInterpretation(briefWidget.data.pre_market?.india_vix)}
-              </p>
-            </div>
-          </div>
 
-          <div className="border-t border-[#ffffff0a]"></div>
+        {/* Run All + stop-on-failure */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => startTask('all', stopOnFail)}
+            disabled={busy}
+            className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded
+                       bg-yellow-600 hover:bg-yellow-500 text-black font-semibold
+                       transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <Play size={13} aria-hidden="true" />
+            Run all 8 tasks
+          </button>
 
-          {/* Second row: 2-column grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {/* Left: Gainers + Losers */}
-            <div className="grid grid-cols-2 gap-2">
-              <div className="bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg">
-                <p className="text-[12px] text-green-400 font-mono uppercase tracking-wider mb-1">Gainers</p>
-                <div className="space-y-0.5" role="list" aria-label="Top gainers">
-                  {briefWidget.data.market_movers?.gainers?.slice(0, 5).map((g: any, i: number) => (
-                    <div key={i} className="flex justify-between text-[12px] font-mono" role="listitem">
-                      <span className="text-[#fafafa]">{g.symbol}</span>
-                      <span className="text-green-400">+{g.change_pct}%</span>
-                    </div>
-                  ))}
-                  {(!briefWidget.data.market_movers?.gainers || briefWidget.data.market_movers.gainers.length === 0) && (
-                    <div className="text-[12px] font-mono text-[#888]" role="status">—</div>
-                  )}
-                </div>
-              </div>
-              <div className="bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg">
-                <p className="text-[12px] text-red-400 font-mono uppercase tracking-wider mb-1">Losers</p>
-                <div className="space-y-0.5" role="list" aria-label="Top losers">
-                  {briefWidget.data.market_movers?.losers?.slice(0, 5).map((l: any, i: number) => (
-                    <div key={i} className="flex justify-between text-[12px] font-mono" role="listitem">
-                      <span className="text-[#fafafa]">{l.symbol}</span>
-                      <span className="text-red-400">{l.change_pct}%</span>
-                    </div>
-                  ))}
-                  {(!briefWidget.data.market_movers?.losers || briefWidget.data.market_movers.losers.length === 0) && (
-                    <div className="text-[12px] font-mono text-[#888]" role="status">—</div>
-                  )}
-                </div>
-              </div>
-            </div>
+          <label className="flex items-center gap-1.5 text-[11px] font-mono text-[#888] cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={stopOnFail}
+              onChange={(e) => setStopOnFail(e.target.checked)}
+              className="accent-yellow-600"
+            />
+            Stop on failure
+          </label>
 
-            {/* Right: Market Flows + Pre-market */}
-            <div className="space-y-2">
-              <div className="bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg">
-                <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider mb-1">Market Flows</div>
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px] font-mono border-b border-[#ffffff0a] pb-1 mb-1">
-                  {(() => {
-                    const fii = briefWidget.data?.institutional_flow?.data?.find((d: any) => d.category?.startsWith('FII'));
-                    const dii = briefWidget.data?.institutional_flow?.data?.find((d: any) => d.category === 'DII');
-                    return (
-                      <>
-                        {fii && <span>FII: <span className={parseFloat(fii.netValue) >= 0 ? 'text-green-400' : 'text-red-400'}>₹{fii.netValue} Cr</span></span>}
-                        {dii && <span>DII: <span className={parseFloat(dii.netValue) >= 0 ? 'text-green-400' : 'text-red-400'}>₹{dii.netValue} Cr</span></span>}
-                        {!fii && !dii && <span className="text-[#888]">—</span>}
-                      </>
-                    );
-                  })()}
-                </div>
-                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[12px] font-mono">
-                  {briefWidget.data.sector_performance?.sectors?.slice(0, 6).map((s: any, i: number) => (
-                    <span key={i} className="whitespace-nowrap">
-                      {s.sector} <span className={getValueColor(s.change_pct)}>{s.change_pct > 0 ? '+' : ''}{s.change_pct}%</span>
-                    </span>
-                  ))}
-                  {(!briefWidget.data.sector_performance?.sectors || briefWidget.data.sector_performance.sectors.length === 0) && (
-                    <span className="text-[#888]">—</span>
-                  )}
-                </div>
-              </div>
+          <div className="flex-1" />
 
-              <div className="bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg">
-                <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider mb-1">Pre-market</div>
-                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[12px] font-mono">
-                  {(() => {
-                    const giftNifty = briefWidget.data?.pre_market?.gift_nifty;
-                    const giftHasData = giftNifty && Object.keys(giftNifty).length > 0;
-                    return (
-                      <>
-                        <span>GIFT: <span className="text-[#fafafa]">{giftHasData ? (giftNifty.value || '—') : '—'}</span></span>
-                        <span>VIX: <span className="text-[#fafafa]">{briefWidget.data.pre_market?.india_vix?.current_vix ?? '—'}</span></span>
-                      </>
-                    );
-                  })()}
-                </div>
-                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[12px] font-mono mt-1">
-                  {briefWidget.data.pre_market?.nifty_direction && (
-                    <span className="whitespace-nowrap">
-                      Nifty: <span className={getValueColor(briefWidget.data.pre_market.nifty_direction.probability_up - 50)}>{briefWidget.data.pre_market.nifty_direction.probability_up}% ↑</span>
-                      ({briefWidget.data.pre_market.nifty_direction.signal})
-                    </span>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[12px] font-mono mt-1">
-                  {briefWidget.data.pre_market?.nifty_direction?.bull_factors && briefWidget.data.pre_market.nifty_direction.bull_factors.length > 0 && (
-                    <span className="text-green-400">Bull: {briefWidget.data.pre_market.nifty_direction.bull_factors.join(', ')}</span>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[12px] font-mono">
-                  {briefWidget.data.pre_market?.nifty_direction?.bear_factors && briefWidget.data.pre_market.nifty_direction.bear_factors.length > 0 && (
-                    <span className="text-red-400">Bear: {briefWidget.data.pre_market.nifty_direction.bear_factors.join(', ')}</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="border-t border-[#ffffff0a]"></div>
-
-          {/* Bottom row: collapsible Key Events & Briefing */}
-          {(briefWidget.data.key_events?.length > 0 || briefWidget.data.morning_text) && (
-            <details className="bg-[#0e1117] border border-[#ffffff0a] rounded-lg" aria-label="Key events and briefing details">
-              <summary className="cursor-pointer p-2 text-[12px] font-mono uppercase tracking-wider text-[#888] hover:text-[#ccc] transition-colors flex justify-between items-center list-none outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 rounded">
-                <span>Key Events & Briefing</span>
-                <span className="text-[#888]" aria-hidden="true">▼</span>
-              </summary>
-              <div className="px-2 pb-2 max-h-40 overflow-y-auto text-[12px] font-mono text-[#aaa] space-y-1">
-                {briefWidget.data.key_events && briefWidget.data.key_events.length > 0 ? (
-                  briefWidget.data.key_events.map((ev: string, i: number) => (
-                    <div key={i} className="flex gap-2"><span className="text-[#888] shrink-0" aria-hidden="true">•</span><span>{ev}</span></div>
-                  ))
-                ) : (
-                  <div className="whitespace-pre-wrap">{briefWidget.data.morning_text}</div>
-                )}
-              </div>
-            </details>
+          {(isRunning || isCancelling) && (
+            <button
+              type="button"
+              onClick={cancel}
+              disabled={isCancelling}
+              className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded
+                         border border-red-500/40 text-red-300 hover:bg-red-500/10
+                         transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Square size={12} aria-hidden="true" />
+              {isCancelling ? 'Cancelling…' : 'Cancel run'}
+            </button>
           )}
+        </div>
+
+        {error && (
+          <p className="text-[11px] font-mono text-red-300 bg-red-950/30 border border-red-500/30 rounded px-2 py-1">
+            {error}
+          </p>
+        )}
+      </header>
+
+      {/* ── 2. Current activity ────────────────────────────────────────── */}
+      <section
+        className="bg-[#1a1c24] border border-[#ffffff1a] rounded-xl p-4 flex flex-col gap-2"
+        aria-label="Current activity"
+      >
+        <h2 className="text-xs font-semibold uppercase tracking-wider font-mono text-[#888]">
+          Current activity
+        </h2>
+
+        {!status ? (
+          <p className="text-xs font-mono text-[#888]">Connecting to the backend…</p>
+        ) : isRunning || isCancelling ? (
+          <>
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <span className="text-lg font-mono text-[#fafafa] font-semibold">
+                {activeTaskId ? taskLabel(activeTaskId) : 'Starting…'}
+              </span>
+              {overall?.started_at && (
+                <span className="text-[11px] font-mono text-[#888]">
+                  started {formatClock(overall.started_at)} · {formatElapsed(elapsed)} elapsed
+                </span>
+              )}
+            </div>
+            <p className="text-xs font-mono text-blue-300">
+              {overall?.message || 'Working…'}
+            </p>
+            {overall?.progress_pct !== null && overall?.progress_pct !== undefined ? (
+              <div className="h-1.5 w-full max-w-md rounded-full bg-white/5 overflow-hidden">
+                <div className="h-full bg-blue-500 transition-[width] duration-300"
+                     style={{ width: `${Math.min(100, overall.progress_pct)}%` }} />
+              </div>
+            ) : (
+              <>
+                <div className="h-1.5 w-full max-w-md rounded-full bg-white/5 overflow-hidden">
+                  <div className="h-full w-1/3 bg-blue-400/70 animate-pulse rounded-full" />
+                </div>
+                <p className="text-[11px] font-mono text-[#666]">
+                  Progress unknown — this task reports stages, not item counts
+                </p>
+              </>
+            )}
+            {isCancelling && (
+              <p className="text-[11px] font-mono text-yellow-400">
+                Cancellation requested. The run stays “cancelling” until the task actually stops —
+                data may still be being written.
+              </p>
+            )}
           </>
+        ) : (
+          <div className="flex items-center gap-2">
+            <CircleDot size={14} className="text-[#555]" aria-hidden="true" />
+            <p className="text-xs font-mono text-[#888]">
+              No task is running.
+            </p>
+          </div>
+        )}
+
+        {/* Retained final result of the most recent run */}
+        {!busy && overall?.finished_at && (
+          <p className="text-[11px] font-mono text-[#666]">
+            Last run {visual.label.toLowerCase()} at {formatClock(overall.finished_at)}
+          </p>
         )}
       </section>
-      </ErrorBoundary>
 
-      {/* PCR / Market Regime Strip */}
-      <section aria-label="PCR Market Regime" className="bg-[#1a1c24] border border-[#ffffff1a] rounded-xl p-3">
+      {/* ── 3. Pipeline timeline / task list ────────────────────────────── */}
+      <section
+        className="bg-[#1a1c24] border border-[#ffffff1a] rounded-xl p-4"
+        aria-label="Pipeline tasks"
+      >
         <div className="flex items-center justify-between mb-2">
-          <h3 className="text-[12px] font-semibold uppercase tracking-wider text-[#888] font-mono">📊 PCR / Market Regime</h3>
-          <div className="flex items-center gap-2">
-            <button onClick={pcrWidget.fetchData} disabled={pcrWidget.loading} className="text-[#888] hover:text-[#fafafa] transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 rounded" title="Refresh PCR data" aria-label="Refresh PCR data">
-              <RotateCw size={12} className={pcrWidget.loading ? 'animate-spin' : ''} aria-hidden="true" />
-            </button>
-          </div>
+          <h2 className="text-xs font-semibold uppercase tracking-wider font-mono text-[#888]">
+            Pipeline
+          </h2>
+          <span className="text-[10px] font-mono text-[#555]">
+            {status?.order?.length ?? 0} tasks · run individually or as a sequence
+          </span>
         </div>
-        {pcrWidget.loading && !pcrWidget.data ? (
-          <div className="text-[12px] text-[#888] font-mono py-2" role="status" aria-live="polite">Loading PCR data…</div>
-        ) : pcrWidget.error || !pcrWidget.data?.snapshots?.length ? (
-          <div className="text-[12px] text-[#888] font-mono py-2" role="status">No PCR data yet — run refresh_pcr</div>
+        <PipelineTaskList
+          status={status}
+          busy={busy}
+          onRunTask={(task) => startTask(task, true)}
+          activeTaskId={activeTaskId}
+        />
+      </section>
+
+      {/* ── 4. Execution history ────────────────────────────────────────── */}
+      <section
+        className="bg-[#1a1c24] border border-[#ffffff1a] rounded-xl p-4 flex flex-col gap-2"
+        aria-label="Execution history"
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-semibold uppercase tracking-wider font-mono text-[#888]">
+            Execution history
+          </h2>
+          <span className="text-[10px] font-mono text-[#555]">most recent first</span>
+        </div>
+
+        {events.length === 0 ? (
+          <p className="text-xs font-mono text-[#666] py-2">
+            No run activity recorded yet. Start a task to populate this log.
+          </p>
         ) : (
-          <div className="flex flex-wrap gap-2" role="group" aria-label="PCR snapshots">
-            {pcrWidget.data.snapshots.map((snap: any) => {
-              const regimeColor =
-                snap.regime === 'BULLISH'
-                  ? 'text-green-400 border-green-500/30 bg-green-500/10'
-                  : snap.regime === 'BEARISH'
-                  ? 'text-red-400 border-red-500/30 bg-red-500/10'
-                  : 'text-[#888] border-[#ffffff1a] bg-[#ffffff05]';
+          <ul className="flex flex-col max-h-64 overflow-y-auto" role="list">
+            {events.map((ev, i) => {
+              const { text, cls } = describeEvent(ev);
               return (
-                <div key={snap.index_symbol} className="flex-1 min-w-[130px] bg-[#0e1117] border border-[#ffffff0a] p-2 rounded-lg transition-colors hover:border-[#ffffff30]">
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="text-[12px] text-[#888] font-mono uppercase tracking-wider">{snap.index_symbol}</p>
-                    <span className={`text-[12px] font-mono px-1.5 py-0.5 rounded border ${regimeColor}`}>{snap.regime}</span>
-                  </div>
-                  <p className="text-xs font-mono font-bold tabular-nums text-[#fafafa]">
-                    {snap.pcr != null ? snap.pcr.toFixed(2) : '—'}
-                  </p>
-                  <div className="flex items-center justify-between mt-0.5">
-                    <p className="text-[12px] font-mono text-[#ccc]">{formatSpot(snap.spot)}</p>
-                    {snap.expiry && <p className="text-[12px] font-mono text-[#888]">{snap.expiry}</p>}
-                  </div>
-                  <p className="text-[12px] font-mono text-[#888] mt-0.5">updated {timeAgo(snap.updated_at)}</p>
-                </div>
+                <li
+                  key={`${ev.time}-${i}`}
+                  className="flex items-baseline gap-2 text-[11px] font-mono py-0.5 border-b border-[#ffffff08] last:border-0"
+                >
+                  <span className="text-[#555] shrink-0 tabular-nums">{formatClock(ev.time)}</span>
+                  <span className={`break-words ${cls}`}>{text}</span>
+                </li>
               );
             })}
-          </div>
+          </ul>
         )}
       </section>
 
-      {/* Pipeline Status Panel (Phase 5) */}
-      <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded-xl p-4 text-red-400 text-xs font-mono" role="alert">Pipeline status widget crashed</div>}>
+      {/* ── 5. Compact system / API health ──────────────────────────────── */}
+      <ErrorBoundary>
         <PipelineStatusPanel />
       </ErrorBoundary>
-
-      {/* System Metrics Strip */}
-      <section aria-label="System Metrics" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        <ErrorBoundary fallback={<div className="bg-error-bg border border-error-border rounded-lg p-4 text-error text-[12px] font-mono" role="alert">Market Breadth crashed</div>}>
-        <Card variant="elevated" padding="md" className="flex flex-col justify-center min-h-[140px]">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <Activity size={16} className="text-text-tertiary" aria-hidden="true" />
-              <div className="text-[12px] text-text-secondary font-mono uppercase tracking-wider">Market Breadth (All NSE)</div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={breadthWidget.fetchData} 
-                disabled={breadthWidget.loading} 
-                className="text-text-tertiary hover:text-text-primary transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded p-1" 
-                title="Refresh Market Breadth" 
-                aria-label="Refresh Market Breadth"
-              >
-                <RotateCw size={14} className={breadthWidget.loading ? 'animate-spin' : ''} aria-hidden="true" />
-              </button>
-              <label className="flex items-center gap-1.5 text-[12px] text-text-secondary font-mono cursor-pointer select-none hover:text-text-primary transition-colors" aria-label="Toggle auto-refresh for market breadth">
-                <input type="checkbox" checked={breadthWidget.autoRefresh} onChange={e => breadthWidget.setAutoRefresh(e.target.checked)} className="accent-indigo-500 w-3 h-3 rounded" />
-                <span className="text-xs">Auto</span>
-              </label>
-            </div>
-          </div>
-          
-          {breadthWidget.loading && !breadthWidget.data ? (
-            <div className="space-y-2" role="status" aria-live="polite">
-              <Skeleton height="1.75rem" variant="rounded" />
-              <Skeleton height="0.5rem" variant="rounded" />
-            </div>
-          ) : breadthWidget.error ? (
-            <div className="text-[12px] text-error font-mono mt-1 flex items-center gap-2" role="alert">
-              <Info size={12} />
-              {breadthWidget.error}
-            </div>
-          ) : !breadthWidget.data ? (
-            <div className="text-sm text-text-tertiary py-2 font-mono flex items-center gap-2">
-              <Info size={14} />
-              Click refresh to load
-            </div>
-          ) : (
-            <>
-              <div className="text-2xl font-bold flex items-baseline gap-3">
-                <span className="text-success flex items-center gap-1">
-                  <TrendingUp size={16} className="opacity-75" aria-hidden="true" />
-                  {breadthWidget.data.advances}
-                  <span className="text-xs font-normal text-text-secondary ml-0.5">ADV</span>
-                </span>
-                <span className="text-border-default">|</span>
-                <span className="text-error flex items-center gap-1">
-                  <TrendingDown size={16} className="opacity-75" aria-hidden="true" />
-                  {breadthWidget.data.declines}
-                  <span className="text-xs font-normal text-text-secondary ml-0.5">DEC</span>
-                </span>
-              </div>
-              <div className="w-full h-2 bg-bg-tertiary mt-3 rounded-full overflow-hidden flex shadow-inner">
-                <div 
-                  className="h-full bg-gradient-to-r from-success to-success/80 transition-all duration-500 relative" 
-                  style={{ width: `${advPct}%` }}
-                  role="progressbar"
-                  aria-valuenow={advPct}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-label={`Advances: ${advPct}%`}
-                >
-                  <div className="absolute inset-0 bg-white/10 animate-pulse" />
-                </div>
-                <div 
-                  className="h-full bg-gradient-to-r from-error/80 to-error transition-all duration-500" 
-                  style={{ width: `${decPct}%` }}
-                  aria-hidden="true"
-                />
-              </div>
-              {breadthWidget.data.date && (
-                <p className="text-[11px] text-text-tertiary mt-2 font-mono">
-                  As of {new Date(breadthWidget.data.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                </p>
-              )}
-            </>
-          )}
-        </Card>
-        </ErrorBoundary>
-
-        {/* Nifty Outlook Widget */}
-        <ErrorBoundary fallback={<div className="bg-error-bg border border-error-border rounded-xl p-4 text-error-text text-[12px] font-mono" role="alert">Nifty Outlook crashed</div>}>
-        <Card variant="elevated" padding="md" className="flex flex-col justify-center min-h-[140px]">
-          <CardHeader>
-            <CardTitle>Nifty Outlook</CardTitle>
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={niftyWidget.fetchData} 
-                disabled={niftyWidget.loading} 
-                className="text-text-tertiary hover:text-text-primary transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded p-1" 
-                title="Refresh Nifty Outlook" 
-                aria-label="Refresh Nifty Outlook"
-              >
-                <RotateCw size={14} className={niftyWidget.loading ? 'animate-spin' : ''} aria-hidden="true" />
-              </button>
-              <label className="flex items-center gap-1.5 text-[12px] text-text-secondary font-mono cursor-pointer select-none hover:text-text-primary transition-colors" aria-label="Toggle auto-refresh for Nifty outlook">
-                <input type="checkbox" checked={niftyWidget.autoRefresh} onChange={e => niftyWidget.setAutoRefresh(e.target.checked)} className="accent-indigo-500 w-3 h-3 rounded" />
-                <span className="text-xs">Auto</span>
-              </label>
-            </div>
-          </CardHeader>
-          
-          {niftyWidget.loading && !niftyWidget.data ? (
-            <div className="space-y-2" role="status" aria-live="polite">
-              <Skeleton height="1rem" variant="rounded" />
-              <Skeleton height="3rem" variant="rounded" />
-            </div>
-          ) : niftyWidget.error ? (
-            <div className="text-[12px] text-error-text font-mono mt-1 flex items-center gap-2" role="alert">
-              <Info size={12} />
-              {niftyWidget.error}
-            </div>
-          ) : !niftyWidget.data ? (
-            <div className="text-sm text-text-tertiary py-2 font-mono flex items-center gap-2">
-              <Info size={14} />
-              Click refresh to load
-            </div>
-          ) : (
-            <>
-              <div className="flex items-center justify-between mb-3">
-                <span className={`text-sm font-bold font-mono ${getValueColor(niftyWidget.data.probability_up - 50)}`}>
-                  {niftyWidget.data.probability_up}% UP
-                </span>
-                <span className={`text-[12px] font-mono px-2 py-1 rounded-lg border ${
-                    niftyWidget.data.probability_up > 50 
-                      ? 'bg-success-bg text-success-text border-success-border' 
-                      : 'bg-error-bg text-error-text border-error-border'
-                 }`}>
-                  {niftyWidget.data.signal}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="text-[11px] text-text-tertiary font-mono uppercase tracking-wider pb-1.5">Bull Factors</div>
-                  <ul className="space-y-1 max-h-20 overflow-y-auto pr-1 scrollbar-thin" aria-label="Bull factors list" role="list">
-                    {niftyWidget.data.bull_factors?.map((f: string, i: number) => (
-                      <li key={i} className="text-[11px] text-success-text font-mono flex gap-1.5 leading-tight">
-                        <span className="shrink-0 mt-0.5" aria-hidden="true">
-                          <TrendingUp size={10} />
-                        </span>
-                        <span>{f}</span>
-                      </li>
-                    ))}
-                    {!niftyWidget.data.bull_factors?.length && <li className="text-[11px] text-text-tertiary font-mono" role="status">None</li>}
-                  </ul>
-                </div>
-                <div>
-                  <div className="text-[11px] text-text-tertiary font-mono uppercase tracking-wider pb-1.5">Bear Factors</div>
-                  <ul className="space-y-1 max-h-20 overflow-y-auto pr-1 scrollbar-thin" aria-label="Bear factors list" role="list">
-                    {niftyWidget.data.bear_factors?.map((f: string, i: number) => (
-                      <li key={i} className="text-[11px] text-error-text font-mono flex gap-1.5 leading-tight">
-                        <span className="shrink-0 mt-0.5" aria-hidden="true">
-                          <TrendingDown size={10} />
-                        </span>
-                        <span>{f}</span>
-                      </li>
-                    ))}
-                    {!niftyWidget.data.bear_factors?.length && <li className="text-[11px] text-text-tertiary font-mono" role="status">None</li>}
-                  </ul>
-                </div>
-              </div>
-            </>
-          )}
-        </Card>
-        </ErrorBoundary>
-
-        {/* FII/Retail Divergence Widget */}
-        <ErrorBoundary fallback={<div className="bg-error-bg border border-error-border rounded-xl p-4 text-error-text text-[12px] font-mono" role="alert">FII Divergence crashed</div>}>
-        <Card variant="elevated" padding="md" className="flex flex-col justify-center min-h-[140px]">
-          <CardHeader>
-            <CardTitle>Smart Money vs Retail</CardTitle>
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={divergenceWidget.fetchData} 
-                disabled={divergenceWidget.loading} 
-                className="text-text-tertiary hover:text-text-primary transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded p-1" 
-                title="Refresh Smart Money vs Retail" 
-                aria-label="Refresh Smart Money vs Retail"
-              >
-                <RotateCw size={14} className={divergenceWidget.loading ? 'animate-spin' : ''} aria-hidden="true" />
-              </button>
-              <label className="flex items-center gap-1.5 text-[12px] text-text-secondary font-mono cursor-pointer select-none hover:text-text-primary transition-colors" aria-label="Toggle auto-refresh for divergence">
-                <input type="checkbox" checked={divergenceWidget.autoRefresh} onChange={e => divergenceWidget.setAutoRefresh(e.target.checked)} className="accent-indigo-500 w-3 h-3 rounded" />
-                <span className="text-xs">Auto</span>
-              </label>
-            </div>
-          </CardHeader>
-          
-          <div className="mb-3">
-            <SymbolAutocomplete value={fiiSymbol} onSelect={setFiiSymbol} placeholder="Search symbol..." />
-          </div>
-          
-          {divergenceWidget.loading && !divergenceWidget.data ? (
-            <div className="space-y-2" role="status" aria-live="polite">
-              <Skeleton height="1rem" variant="rounded" />
-              <Skeleton height="2rem" variant="rounded" />
-            </div>
-          ) : divergenceWidget.error ? (
-            <div className="text-[12px] text-error-text font-mono mt-1 flex items-center gap-2" role="alert">
-              <Info size={12} />
-              {divergenceWidget.error}
-            </div>
-          ) : !divergenceWidget.data ? (
-            <div className="text-sm text-text-tertiary py-2 font-mono flex items-center gap-2">
-              <Info size={14} />
-              Click refresh to load
-            </div>
-          ) : (
-            <>
-              <div className="text-base font-bold text-text-primary mb-2">{divergenceWidget.data.signal || 'Neutral'}</div>
-              <div className="mt-1">
-                 <span className={`text-[12px] font-mono px-2.5 py-1 rounded-lg border ${
-                    divergenceWidget.data.confidence === 'High' 
-                      ? 'bg-success-bg text-success-text border-success-border' 
-                      : divergenceWidget.data.confidence === 'Medium' 
-                        ? 'bg-warning-bg text-warning-text border-warning-border'
-                        : 'bg-bg-tertiary text-text-tertiary border-border-default'
-                 }`}>
-                   {divergenceWidget.data.confidence} Confidence
-                 </span>
-              </div>
-            </>
-          )}
-        </Card>
-        </ErrorBoundary>
-
-        {/* Stock Brief (AI Multi‑Agent Debate) Widget */}
-        <ErrorBoundary fallback={<div className="bg-error-bg border border-error-border rounded-xl p-4 text-error-text text-[12px] font-mono" role="alert">Stock Brief crashed</div>}>
-        <Card variant="elevated" padding="md" className="flex flex-col justify-center min-h-[140px]">
-          <CardHeader>
-            <CardTitle>Stock Brief (AI Debate)</CardTitle>
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={stockBrief.fetchData} 
-                disabled={stockBrief.loading} 
-                className="text-text-tertiary hover:text-text-primary transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded p-1" 
-                title="Refresh Stock Brief" 
-                aria-label="Refresh Stock Brief"
-              >
-                <RotateCw size={14} className={stockBrief.loading ? 'animate-spin' : ''} aria-hidden="true" />
-              </button>
-              <label className="flex items-center gap-1.5 text-[12px] text-text-secondary font-mono cursor-pointer select-none hover:text-text-primary transition-colors" aria-label="Toggle auto-refresh for stock brief">
-                <input type="checkbox" checked={stockBrief.autoRefresh} onChange={e => stockBrief.setAutoRefresh(e.target.checked)} className="accent-indigo-500 w-3 h-3 rounded" />
-                <span className="text-xs">Auto</span>
-              </label>
-            </div>
-          </CardHeader>
-          
-          <div className="mb-3">
-            <SymbolAutocomplete value={briefSymbol} onSelect={setBriefSymbol} placeholder="Search symbol..." />
-          </div>
-          
-          {stockBrief.loading && !stockBrief.data ? (
-            <div className="space-y-2" role="status" aria-live="polite">
-              <Skeleton height="1rem" variant="rounded" />
-              <Skeleton height="3rem" variant="rounded" />
-            </div>
-          ) : stockBrief.error ? (
-            <div className="text-[12px] text-error-text font-mono mt-1 flex items-center gap-2" role="alert">
-              <Info size={12} />
-              {stockBrief.error}
-            </div>
-          ) : !stockBrief.data?.consensus ? (
-            <div className="text-sm text-text-tertiary py-2 font-mono flex items-center gap-2">
-              <Info size={14} />
-              Click refresh to load
-            </div>
-          ) : (
-            <>
-              <div className="flex items-center justify-between mb-3">
-                <span className={`text-sm font-bold font-mono ${getValueColor(stockBrief.data.consensus?.signal === 'BUY' ? 1 : stockBrief.data.consensus?.signal === 'SELL' ? -1 : 0)}`}>
-                  {stockBrief.data.consensus?.signal || 'HOLD'}
-                </span>
-                <span className={`text-[12px] font-mono px-2.5 py-1 rounded-lg border ${
-                  stockBrief.data.consensus?.strength === 'strong' 
-                    ? 'bg-success-bg text-success-text border-success-border' 
-                    : stockBrief.data.consensus?.strength === 'neutral' 
-                      ? 'bg-warning-bg text-warning-text border-warning-border'
-                      : 'bg-bg-tertiary text-text-tertiary border-border-default'
-                }`}>
-                  {stockBrief.data.consensus?.strength === 'strong' ? 'High' : stockBrief.data.consensus?.strength === 'neutral' ? 'Medium' : 'Low'} Confidence
-                </span>
-              </div>
-              <div className="text-[12px] text-text-secondary font-mono leading-relaxed max-h-24 overflow-y-auto pr-2 scrollbar-thin space-y-1.5">
-                {stockBrief.data.debate?.slice(0, 6).filter(Boolean).map((agent: any, idx: number) => (
-                  <div key={idx} className="flex items-start gap-2 text-[12px] text-text-secondary font-mono leading-snug">
-                    <span className="shrink-0 mt-0.5">{agent.verdict === 'BUY' ? '🟢' : agent.verdict === 'SELL' ? '🔴' : '🟡'}</span>
-                    <span><b className="text-text-primary">{agent.agent}:</b> {agent.one_liner || agent.verdict}</span>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </Card>
-        </ErrorBoundary>
-
-        {/* Stock Timeline Widget */}
-        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[12px] font-mono" role="alert">Stock Timeline crashed</div>}>
-        <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col justify-center">
-          <div className="flex items-center justify-between mb-1">
-            <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider">Stock Timeline</div>
-            <div className="flex items-center gap-2">
-              <button onClick={timelineWidget.fetchData} disabled={timelineWidget.loading} className="text-[#888] hover:text-[#fafafa] transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 rounded" title="Refresh Stock Timeline" aria-label="Refresh Stock Timeline">
-                <RotateCw size={14} className={timelineWidget.loading ? 'animate-spin' : ''} aria-hidden="true" />
-              </button>
-              <label className="flex items-center gap-1 text-[12px] text-[#888] font-mono cursor-pointer select-none hover:text-[#888] transition-colors" aria-label="Toggle auto-refresh for stock timeline">
-                <input type="checkbox" checked={timelineWidget.autoRefresh} onChange={e => timelineWidget.setAutoRefresh(e.target.checked)} className="accent-yellow-500 w-2.5 h-2.5" />
-                Auto-refresh
-              </label>
-            </div>
-          </div>
-          <div className="mb-2">
-            <SymbolAutocomplete value={timelineSymbol} onSelect={setTimelineSymbol} placeholder="Symbol..." />
-          </div>
-          {timelineWidget.loading && !timelineWidget.data ? (
-            <div className="text-sm text-[#ccc] py-1" role="status" aria-live="polite">Loading timeline...</div>
-          ) : timelineWidget.error ? (
-            <div className="text-[12px] text-red-400 font-mono mt-1" role="alert">{timelineWidget.error}</div>
-          ) : !timelineWidget.data ? (
-            <div className="text-sm text-[#888] py-1 font-mono" role="status">Click Refresh to load</div>
-          ) : (
-            <>
-              {Array.isArray(timelineWidget.data.events) && timelineWidget.data.events.length > 0 ? (
-                <div className="max-h-24 overflow-y-auto pr-1 space-y-1">
-                  {timelineWidget.data.events.map((ev: any, i: number) => (
-                    <div key={i} className="flex items-start gap-2 text-[12px] font-mono border-b border-[#ffffff1a] pb-1 last:border-0">
-                      <span className="shrink-0 text-[#888] mt-0.5">{ev.date || ''}</span>
-                      <span className="text-[#ccc] leading-tight">{ev.headline || ev.title || ev.detail || ''}</span>
-                      {ev.importance && (
-                        <span className={`shrink-0 px-1 rounded text-[12px] ${
-                          String(ev.importance).toLowerCase() === 'high' ? 'bg-red-500/10 text-red-400' :
-                          String(ev.importance).toLowerCase() === 'medium' ? 'bg-yellow-500/10 text-yellow-400' :
-                          'bg-[#ffffff0a] text-[#888]'
-                        }`}>{ev.importance}</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-[12px] text-[#888] font-mono mt-1">No timeline events</div>
-              )}
-            </>
-          )}
-        </div>
-        </ErrorBoundary>
-
-        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[12px] font-mono" role="alert">System Architecture crashed</div>}>
-        <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex items-center justify-between">
-          <div>
-            <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider mb-1">System Architecture</div>
-            <div className="text-xl font-bold text-[#fafafa]">Hybrid Local</div>
-            <div className="text-[12px] text-[#888] font-mono mt-2 flex flex-col sm:flex-row sm:items-center sm:gap-2">
-               <span>Mode: {!lib.isConnectedToLocalRepo ? 'Mock Simulation' : 'Connected to API'}</span>
-               <span className="hidden sm:block">|</span>
-               {pipelineWidget.loading ? (
-                 <span className="text-[#888]">Pipeline: ...</span>
-               ) : pipelineWidget.error ? (
-                 <span className="text-red-400">Pipeline: Error</span>
-               ) : (
-                 <span className={isPipelineActive ? 'text-green-400' : 'text-yellow-400'}>
-                   Pipeline: {isPipelineActive ? 'Active' : 'Stale'}
-                 </span>
-               )}
-            </div>
-          </div>
-          <Database size={32} className="text-[#888]" aria-hidden="true" />
-        </div>
-        </ErrorBoundary>
-
-        <ErrorBoundary fallback={<div className="bg-[#1a1c24] border border-red-500/20 rounded p-4 text-red-400 text-[12px] font-mono" role="alert">Watchlist crashed</div>}>
-        <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded p-4 flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <div className="text-[12px] text-[#888] font-mono uppercase tracking-wider flex items-center gap-1.5">
-              <Star size={11} className="text-yellow-400" fill="currentColor" />
-              Watchlist
-            </div>
-            <span className="text-[12px] font-mono text-yellow-400">{watchlist.length} symbols</span>
-          </div>
-          {watchlist.length === 0 ? (
-            <div className="text-[12px] font-mono text-[#888] py-2 text-center">
-              No symbols starred yet.<br />
-              <span className="text-[12px]">Star symbols in any scanner to add them.</span>
-            </div>
-          ) : (
-            <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
-              {watchlist.map(sym => (
-                <div key={sym} className="flex items-center gap-1 bg-yellow-500/10 border border-yellow-500/20 rounded px-1.5 py-0.5">
-                  <span className="text-[12px] font-mono font-bold text-yellow-300">{sym}</span>
-                  <button
-                    onClick={() => toggle(sym)}
-                    className="text-[#888] hover:text-red-400 transition-colors ml-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/50 rounded"
-                    title={`Remove ${sym} from watchlist`}
-                    aria-label={`Remove ${sym} from watchlist`}
-                  >
-                    <span className="text-[12px] leading-none" aria-hidden="true">×</span>
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        </ErrorBoundary>
-      </section>
-
-      {/* Tactical Command Grid */}
-      <section aria-label="Tactical Command Grid">
-      <h2 className="sr-only">Tactical Command Grid</h2>
-      <div className="text-sm font-semibold uppercase tracking-wider text-[#888] mt-2 border-b border-[#ffffff1a] pb-2" aria-hidden="true">
-        Tactical Command Grid
-      </div>
-      
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" role="navigation" aria-label="Tool navigation">
-        {categories.map((cat, idx) => (
-          <article key={idx} className={`bg-[#0e1117] border ${cat.borderColor} rounded-xl overflow-hidden flex flex-col transition-all hover:shadow-lg focus-within:ring-2 ${ringColorMap[cat.color]}`} aria-label={cat.title}>
-            {/* Header Banner */}
-            <div className={`${cat.bgColor} border-b ${cat.borderColor} p-4 flex items-center gap-3`}>
-              <div className={`${cat.textColor}`} aria-hidden="true">
-                {cat.icon}
-              </div>
-              <h3 className={`font-bold ${cat.textColor} tracking-wide`}>{cat.title}</h3>
-            </div>
-            {/* Command Links */}
-            <div className="flex flex-col p-2 space-y-1">
-              {cat.items.map((item, i) => (
-                <button 
-                  key={i} 
-                  onClick={() => item.action && item.action()}
-                  disabled={!item.action}
-                  className={`text-left px-3 py-2 text-sm text-[#ccc] rounded transition-colors group flex items-center justify-between focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 ${
-                    item.action 
-                      ? 'hover:text-white hover:bg-[#ffffff1a]' 
-                      : 'opacity-50 cursor-not-allowed'
-                  }`}
-                  title={!item.action ? 'Coming soon' : `Open ${item.label}`}
-                  aria-label={item.action ? `Navigate to ${item.label}` : `${item.label} – coming soon`}
-                >
-                  <span>{item.label} {!item.action && <span className="text-[12px] ml-1">(soon)</span>}</span>
-                  <span className={`text-[12px] font-mono ${item.action ? 'text-[#888] group-hover:text-[#888]' : 'text-transparent'}`} aria-hidden="true">{'>'}</span>
-                </button>
-              ))}
-            </div>
-          </article>
-        ))}
-      </div>
-      </section>
-
-
-    </main>
+    </div>
   );
 }

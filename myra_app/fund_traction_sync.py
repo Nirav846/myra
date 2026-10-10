@@ -1020,7 +1020,15 @@ def _mcap_bucket(mcap: float | None) -> str:
     return "small"
 
 
-def _enrich_board_market_data(rows: list[dict]) -> None:
+def _prev_month_label(year: int, month: int) -> str:
+    """Return the previous month in YYYY-MM format."""
+    if month == 1:
+        return f"{year - 1:04d}-12"
+    else:
+        return f"{year:04d}-{month - 1:02d}"
+
+
+def _enrich_board_market_data(rows: list[dict], target_month: str | None = None) -> None:
     """Attach latest close + market cap to board rows, in bulk. Mutates in place.
 
     Price comes from technical_data (latest close, one windowed query — the
@@ -1384,7 +1392,7 @@ def get_traction_board(
 
         rows = list(_board_rows(conn, target, prior).values())
         # Read-only enrichment: latest close + market cap (best-effort, bulk).
-        _enrich_board_market_data(rows)
+        _enrich_board_market_data(rows, target_month=target)
         pins = get_watchlist(conn)
 
         # Stats on the FULL month set (stable chips), before any filtering.

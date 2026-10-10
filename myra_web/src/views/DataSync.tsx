@@ -5,49 +5,17 @@ import {
   Download, Dna, List, BarChart3, TrendingUp, Coins, Building2
 } from 'lucide-react';
 import { useHealthStatus } from '../hooks/useHealthStatus';
+// Single execution state path — shared with Mission Control. Data Sync keeps the
+// database diagnostics + scheduling config; it does NOT own its own SSE/queue.
+import { usePipeline } from '../hooks/usePipeline';
+import { describeEvent } from '../lib/pipeline';
+import type { PipelineStatus } from '../lib/pipeline';
 import { API_BASE } from '../config';
 
 interface DBHealthStatus {
   connected: boolean;
   error?: string;
   count?: number;
-}
-
-interface TaskInfo {
-  last_run: string | null;
-  last_status: string;
-  error_message: string | null;
-  progress_pct: number;
-  current_status?: string;
-}
-
-interface SseEvent {
-  type: string;
-  _ts: string;
-  task_id?: string;
-  task_key?: string;
-  task_name?: string;
-  status?: string;
-  error?: string;
-  progress_pct?: number;
-  message?: string;
-  reason?: string;
-  wait_seconds?: number;
-  attempt?: number;
-}
-
-interface OverallStatus {
-  status: string;
-  active_task_id: string | null;
-  started_at: string | null;
-  message: string;
-  progress_pct: number;
-  run_type: string | null;
-}
-
-interface PipelineStatus {
-  overall: OverallStatus;
-  tasks: Record<string, TaskInfo>;
 }
 
 interface CheckItem {
@@ -102,9 +70,11 @@ function statusColor(status: string): string {
     case 'completed': return 'text-green-400';
     case 'running': return 'text-cyan-400';
     case 'failed': return 'text-red-400';
-    case 'crashed': return 'text-red-400';
+    case 'timed_out': return 'text-orange-400';
     case 'cancelled': return 'text-yellow-400';
-    case 'timeout': return 'text-red-400';
+    case 'queued': return 'text-[#888]';
+    case 'skipped': return 'text-[#666]';
+    case 'never': return 'text-[#666]';
     default: return 'text-[#888]';
   }
 }
@@ -114,9 +84,11 @@ function statusBg(status: string): string {
     case 'completed': return 'bg-green-500/20 border-green-500/30';
     case 'running': return 'bg-cyan-500/20 border-cyan-500/30';
     case 'failed': return 'bg-red-500/20 border-red-500/30';
-    case 'crashed': return 'bg-red-500/20 border-red-500/30';
+    case 'timed_out': return 'bg-orange-500/20 border-orange-500/30';
     case 'cancelled': return 'bg-yellow-500/20 border-yellow-500/30';
-    case 'timeout': return 'bg-red-500/20 border-red-500/30';
+    case 'queued': return 'bg-[#ffffff0a] border-[#ffffff1a]';
+    case 'skipped': return 'bg-[#ffffff0a] border-[#ffffff1a]';
+    case 'never': return 'bg-[#ffffff0a] border-[#ffffff1a]';
     default: return 'bg-[#ffffff0a] border-[#ffffff1a]';
   }
 }
@@ -126,78 +98,30 @@ function statusIcon(status: string) {
     case 'completed': return <CheckCircle size={14} className="text-green-400" />;
     case 'running': return <RefreshCw size={14} className="text-cyan-400 animate-spin" />;
     case 'failed': return <XCircle size={14} className="text-red-400" />;
-    case 'crashed': return <XCircle size={14} className="text-red-400" />;
+    case 'timed_out': return <AlertTriangle size={14} className="text-orange-400" />;
     case 'cancelled': return <StopCircle size={14} className="text-yellow-400" />;
-    case 'timeout': return <AlertTriangle size={14} className="text-red-400" />;
+    case 'queued': return <Clock size={14} className="text-[#888]" />;
+    case 'never': return <Clock size={14} className="text-[#555]" />;
     default: return <Clock size={14} className="text-[#888]" />;
-  }
-}
-
-function sseEventLabel(ev: SseEvent): { icon: string; text: string; colorClass: string } {
-  switch (ev.type) {
-    case 'connected':
-      return { icon: '◉', text: 'SSE connected', colorClass: 'text-green-400' };
-    case 'task_started':
-      return { icon: '▶', text: `${ev.task_name || ev.task_id || ev.task_key || ''}`, colorClass: 'text-cyan-400' };
-    case 'task_completed':
-      if (ev.status === 'completed') {
-        return { icon: '✓', text: `${(ev.task_id || ev.task_key || '').replace(/_/g, ' ')} — ok`, colorClass: 'text-green-400' };
-      }
-      return { icon: '✗', text: `${(ev.task_id || ev.task_key || '').replace(/_/g, ' ')} — ${ev.status}${ev.error ? ` (${ev.error.slice(0, 60)})` : ''}`, colorClass: 'text-red-400' };
-    case 'progress':
-      return { icon: '↑', text: `${(ev.task_id || '').replace(/_/g, ' ')} ${Math.round(ev.progress_pct || 0)}%`, colorClass: 'text-[#888]' };
-    case 'cancellation_requested':
-      return { icon: '■', text: 'Cancellation requested', colorClass: 'text-yellow-400' };
-    case 'all_stopped':
-      return { icon: '⛔', text: `Stopped at ${ev.task_id}: ${(ev.reason || '').slice(0, 60)}`, colorClass: 'text-red-400' };
-    case 'all_cancelled':
-      return { icon: '■', text: `Cancelled at ${ev.task_id}`, colorClass: 'text-yellow-400' };
-    case 'retry_scheduled':
-      return { icon: '↺', text: `Retry ${(ev.task_id || '').replace(/_/g, ' ')} in ${ev.wait_seconds}s (attempt ${ev.attempt})`, colorClass: 'text-orange-400' };
-    case 'schedule_updated':
-      return { icon: '⏱', text: 'Schedule config updated', colorClass: 'text-indigo-400' };
-    case 'shutdown':
-      return { icon: '○', text: 'Server shutting down', colorClass: 'text-red-400' };
-    default:
-      return { icon: '·', text: ev.type, colorClass: 'text-[#888]' };
   }
 }
 
 export default function DataSyncView() {
   const { health, coverage } = useHealthStatus();
-  const [status, setStatus] = useState<PipelineStatus | null>(null);
+  // Execution + live status come from the shared hook. This page deliberately
+  // owns no second SSE connection and no second run queue.
+  const {
+    status, events: sseEvents, connected, error, busy,
+    startTask, cancel, refresh: refreshPipeline,
+  } = usePipeline();
   const [checks, setChecks] = useState<PipelineChecks | null>(null);
-  const [runRequested, setRunRequested] = useState(false);
   const [checksCollapsed, setChecksCollapsed] = useState(() => localStorage.getItem('datasync_checks_collapsed') === 'true');
   const [dbHealthCollapsed, setDbHealthCollapsed] = useState(() => localStorage.getItem('datasync_dbhealth_collapsed') === 'true');
-  const [runStatus, setRunStatus] = useState<OverallStatus | null>(null);
   const [stopOnFail, setStopOnFail] = useState(true);
-  const [runningTask, setRunningTask] = useState<string | null>(null);
-  const [lastRunWasAll, setLastRunWasAll] = useState(false);
   const [scheduleConfig, setScheduleConfig] = useState<Record<string, any>>({});
   const [schedulePaused, setSchedulePaused] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [sseEvents, setSseEvents] = useState<SseEvent[]>([]);
-  const eventLogRef = useRef<HTMLDivElement>(null);
-  const [sseFailed, setSseFailed] = useState(false);
-  const requestingRef = useRef(false);
-  const sseRef = useRef<EventSource | null>(null);
-  const connectSSERef = useRef<(() => void) | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
   const mountedRef = useRef(true);
-
-  const fetchStatus = useCallback(async () => {
-    if (!mountedRef.current) return;
-    try {
-      const res = await fetch(`${API_BASE}/pipeline/status`);
-      if (!mountedRef.current) return;
-      if (res.ok) {
-        const data = await res.json();
-        if (!mountedRef.current) return;
-        setStatus(data);
-        setRunStatus(data.overall);
-      }
-    } catch { /* ignore */ }
-  }, []);
 
   const fetchChecks = useCallback(async () => {
     if (!mountedRef.current) return;
@@ -239,142 +163,32 @@ export default function DataSyncView() {
     } catch { /* ignore */ }
   };
 
-  // SSE connection – self-contained reconnect logic, stable ref
+  // Live status and execution now live in usePipeline, shared with Mission
+  // Control. This page keeps only the database diagnostics and the scheduling
+  // configuration, so there is exactly one SSE connection and one run queue.
+
+  // Initial load of the concerns this page owns
   useEffect(() => {
-    mountedRef.current = true;
-    let retryTimeout: any = null;
-    let retryDelay = 1000;
-
-    function connectSSE() {
-      if (!mountedRef.current) return;
-      const es = new EventSource(`${API_BASE}/pipeline/events`);
-      sseRef.current = es;
-
-      es.onmessage = (event) => {
-        if (!mountedRef.current) return;
-        try {
-          const data = JSON.parse(event.data);
-          setSseEvents(prev => [{ ...data, _ts: new Date().toISOString() }, ...prev.slice(0, 99)]);
-          if (data.type === 'connected' && data.state) {
-            setStatus(data.state);
-            setSseFailed(false);
-            retryDelay = 1000;
-          } else if (data.type === 'state_change' && data.state) {
-            setStatus((prev) => prev ? { ...prev, overall: data.state } : null);
-          } else if (data.type === 'task_started') {
-            setRunningTask(data.task_key || null);
-          } else if (data.type === 'task_completed') {
-            setRunningTask(null);
-            if (data.state) {
-              setStatus(data.state);
-            } else {
-              fetchStatus();
-            }
-          } else if (data.type === 'schedule_updated') {
-            setScheduleConfig(data.config || {});
-          } else if (data.type === 'retry_scheduled') {
-            // no state change needed — already captured in sseEvents above
-          } else if (data.type === 'progress') {
-            setStatus((prev) => {
-              if (!prev) return null;
-              return {
-                ...prev,
-                tasks: {
-                  ...prev.tasks,
-                  [data.task_id]: {
-                    ...prev.tasks[data.task_id],
-                    progress_pct: data.progress_pct,
-                    current_status: 'running',
-                  },
-                },
-                overall: {
-                  ...prev.overall,
-                  message: data.message || prev.overall.message,
-                  progress_pct: data.progress_pct,
-                },
-              };
-            });
-          } else if (data.type === 'shutdown') {
-            es.close();
-            setTimeout(connectSSE, 5000);
-          }
-        } catch { /* ignore */ }
-      };
-
-      es.onerror = () => {
-        es.close();
-        sseRef.current = null;
-        if (mountedRef.current) {
-          setSseFailed(true);
-          retryDelay = Math.min(retryDelay * 2, 30000);
-          retryTimeout = setTimeout(connectSSE, retryDelay);
-        }
-      };
-    }
-
-    connectSSE();
-    connectSSERef.current = connectSSE;
-
-    return () => {
-      mountedRef.current = false;
-      if (sseRef.current) sseRef.current.close();
-      if (retryTimeout) clearTimeout(retryTimeout);
-    };
-  }, []); // stable – only on mount
-
-  // Polling fallback when SSE fails
-  useEffect(() => {
-    if (!sseFailed) return;
-    const interval = setInterval(() => {
-      if (document.hidden) return;
-      fetchStatus();
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [sseFailed, fetchStatus]);
-
-  // Initial load
-  useEffect(() => {
-    fetchStatus();
     fetchChecks();
     fetchScheduleConfig();
     fetchSchedulePaused();
-  }, [fetchStatus, fetchChecks, fetchScheduleConfig, fetchSchedulePaused]);
+  }, [fetchChecks, fetchScheduleConfig, fetchSchedulePaused]);
 
-  const triggerRun = async (task: string) => {
-    if (requestingRef.current) return;
-    requestingRef.current = true;
-    setRunRequested(true);
-    setRunningTask(task);
-    setLastRunWasAll(task === 'all');
-    setError(null);
-    try {
-      const res = await fetch(`${API_BASE}/pipeline/run`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task, stop_on_fail: stopOnFail }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        setError(err.detail || 'Failed to start task');
-      }
-    } catch (e: any) {
-      setError(e.message || 'Network error');
-    } finally {
-      requestingRef.current = false;
-      setRunRequested(false);
-    }
-  };
+  const triggerRun = (task: string) => { setLocalError(null); return startTask(task, stopOnFail); };
+  const cancelRun = cancel;
 
-  const cancelRun = async () => {
-    try {
-      await fetch(`${API_BASE}/pipeline/cancel`, { method: 'POST' });
-    } catch { /* ignore */ }
-  };
-
+  // Force reset is refused by the backend (409) while a task is genuinely
+  // executing — it must never mark a live operation as idle.
   const forceReset = async () => {
     try {
-      await fetch(`${API_BASE}/pipeline/force-reset`, { method: 'POST' });
-      setTimeout(() => fetchStatus(), 500);
+      const res = await fetch(`${API_BASE}/pipeline/force-reset`, { method: 'POST' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setLocalError(body.detail ?? 'Force reset refused');
+      } else {
+        setLocalError(null);
+      }
+      await refreshPipeline();
     } catch { /* ignore */ }
   };
 
@@ -392,8 +206,9 @@ export default function DataSyncView() {
     } catch { /* ignore */ }
   };
 
-  const isRunning = status?.overall?.status === 'running';
-  const activeTaskId = status?.overall?.active_task_id;
+  const isRunning = status?.overall?.status === 'running' || status?.overall?.status === 'cancelling';
+  const activeTaskId = status?.overall?.active_task_id ?? null;
+  const shownError = error || localError;
 
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
@@ -424,7 +239,7 @@ export default function DataSyncView() {
             {isRunning
               ? `Running: ${TASK_META[activeTaskId || '']?.name || activeTaskId || '...'}`
               : status?.overall?.message || 'Idle'}
-            {sseFailed && <span className="ml-2 text-yellow-400">(polling mode)</span>}
+            {!connected && <span className="ml-2 text-yellow-400">(polling mode)</span>}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -450,10 +265,12 @@ export default function DataSyncView() {
           {isRunning ? (
             <button
               onClick={cancelRun}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/20 border border-red-500/30 rounded text-[12px] text-red-400 font-mono hover:bg-red-500/30 transition-colors"
+              disabled={status?.overall?.status === 'cancelling'}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/20 border border-red-500/30 rounded text-[12px] text-red-400 font-mono hover:bg-red-500/30 transition-colors disabled:opacity-40"
+              title="Requests cancellation. The run stays 'cancelling' until the task actually stops."
             >
               <StopCircle size={14} />
-              Cancel
+              {status?.overall?.status === 'cancelling' ? 'Cancelling...' : 'Cancel'}
             </button>
           ) : null}
           <button
@@ -467,15 +284,15 @@ export default function DataSyncView() {
           {!isRunning ? (
             <button
               onClick={() => triggerRun('all')}
-              disabled={runRequested || isRunning}
+              disabled={busy}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500/20 border border-cyan-500/30 rounded text-[12px] text-cyan-400 font-mono hover:bg-cyan-500/30 transition-colors disabled:opacity-40"
             >
-              <Play size={14} className={runningTask !== null ? 'animate-pulse' : ''} />
+              <Play size={14} className={busy ? 'animate-pulse' : ''} />
               Sync All
             </button>
           ) : null}
           <button
-            onClick={() => { fetchStatus(); fetchChecks(); }}
+            onClick={() => { refreshPipeline(); fetchChecks(); }}
             className="p-1.5 text-[#888] hover:text-white transition-colors"
             title="Refresh"
           >
@@ -484,12 +301,12 @@ export default function DataSyncView() {
         </div>
       </div>
 
-      {error && (
+      {shownError && (
         <div className="bg-red-950/40 border border-red-500/50 px-4 py-2 rounded-lg flex items-center gap-2 text-xs text-red-400 font-mono relative pr-8">
           <AlertTriangle size={14} />
-          <span className="flex-1">{error}</span>
+          <span className="flex-1">{shownError}</span>
           <button
-            onClick={() => setError(null)}
+            onClick={() => setLocalError(null)}
             className="absolute top-1 right-1 p-1 text-red-400 hover:text-white transition-colors"
             title="Dismiss"
           >
@@ -498,7 +315,8 @@ export default function DataSyncView() {
         </div>
       )}
 
-      {/* Run Progress Bar */}
+      {/* Run Progress — truthful: a real percentage when the backend reported
+          one, otherwise an explicitly indeterminate bar. */}
       {isRunning && (
         <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded-lg p-3">
           <div className="flex items-center justify-between mb-1.5">
@@ -507,19 +325,29 @@ export default function DataSyncView() {
             </span>
             <span className="text-[12px] font-mono text-[#888] flex items-center gap-2">
               {elapsed > 0 && <span>Running for {formatElapsed(elapsed)}</span>}
-              <span>{status?.overall?.progress_pct || 0}%</span>
+              {status?.overall?.progress_pct !== null &&
+                status?.overall?.progress_pct !== undefined && (
+                  <span>{Math.round(status.overall.progress_pct)}%</span>
+                )}
             </span>
           </div>
           <div className="w-full h-1.5 bg-[#333] rounded overflow-hidden">
-            {(status?.overall?.progress_pct || 0) > 0 ? (
+            {status?.overall?.progress_pct !== null &&
+            status?.overall?.progress_pct !== undefined ? (
               <div
                 className="h-full bg-cyan-400 rounded transition-all duration-500"
-                style={{ width: `${status?.overall?.progress_pct}%` }}
+                style={{ width: `${Math.min(100, status.overall.progress_pct)}%` }}
               />
             ) : (
-              <div className="h-full bg-cyan-400 rounded indeterminate-bar" />
+              <div className="h-full w-1/3 bg-cyan-400 rounded animate-pulse" />
             )}
           </div>
+          {status?.overall?.progress_pct === null ||
+          status?.overall?.progress_pct === undefined ? (
+            <p className="text-[11px] font-mono text-[#666] mt-1">
+              Progress unknown — this task reports stages, not item counts
+            </p>
+          ) : null}
         </div>
       )}
 
@@ -528,12 +356,9 @@ export default function DataSyncView() {
         {ORDER.map((taskKey) => {
           const meta = TASK_META[taskKey];
           const info = status?.tasks[taskKey];
-          let displayStatus = info?.current_status || info?.last_status || 'never';
-          if (displayStatus === 'unknown' && info?.last_run) {
-            displayStatus = 'completed';
-          }
-          const isThisRunning = isRunning && activeTaskId === taskKey;
-          const isFailedOrCrashed = ['failed', 'crashed', 'timeout'].includes(displayStatus);
+          const displayStatus = info?.current_status ?? 'never';
+          const isThisRunning = status?.overall?.status === 'running' && activeTaskId === taskKey;
+          const isFailedOrCrashed = ['failed', 'timed_out'].includes(displayStatus);
 
           return (
             <div
@@ -584,15 +409,26 @@ export default function DataSyncView() {
               </div>
 
               {isThisRunning && (
-                <div className="w-full h-1 bg-[#333] rounded overflow-hidden">
-                  <div
-                    className="h-full bg-cyan-400 rounded animate-pulse"
-                    style={{ width: `${info?.progress_pct || 30}%` }}
-                  />
-                </div>
+                info?.progress_pct !== null && info?.progress_pct !== undefined ? (
+                  <div className="w-full h-1 bg-[#333] rounded overflow-hidden">
+                    <div
+                      className="h-full bg-cyan-400 rounded transition-all duration-300"
+                      style={{ width: `${Math.min(100, info.progress_pct)}%` }}
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <div className="w-full h-1 bg-[#333] rounded overflow-hidden">
+                      <div className="h-full w-1/3 bg-cyan-400 rounded animate-pulse" />
+                    </div>
+                    <p className="text-[11px] font-mono text-[#666]">
+                      {info?.stage || 'Working — progress unknown'}
+                    </p>
+                  </>
+                )
               )}
 
-              {(displayStatus === 'failed' || displayStatus === 'timeout') && info?.error_message && (
+              {isFailedOrCrashed && info?.error_message && (
                 <div className="bg-red-950/30 border border-red-500/20 rounded px-2 py-1 text-[12px] font-mono text-red-400 truncate" title={info.error_message}>
                   <AlertTriangle size={10} className="inline mr-1" />
                   {info.error_message}
@@ -612,23 +448,8 @@ export default function DataSyncView() {
                 </label>
                 {isFailedOrCrashed && !isThisRunning ? (
                   <button
-                    onClick={() => {
-                      setStatus(prev => {
-                        if (!prev) return prev;
-                        return {
-                          ...prev,
-                          tasks: {
-                            ...prev.tasks,
-                            [taskKey]: {
-                              ...prev.tasks[taskKey],
-                              error_message: null,
-                            },
-                          },
-                        };
-                      });
-                      triggerRun(taskKey);
-                    }}
-                    disabled={runRequested || isRunning}
+                    onClick={() => triggerRun(taskKey)}
+                    disabled={busy}
                     className="flex items-center gap-1 px-2.5 py-1 bg-orange-500/20 border border-orange-500/30 rounded text-[12px] font-mono text-orange-400 hover:bg-orange-500/30 transition-colors disabled:opacity-40"
                   >
                     <RefreshCw size={11} />
@@ -637,9 +458,9 @@ export default function DataSyncView() {
                   </button>
                 ) : (
                   <button
-                    onClick={() => triggerRun(taskKey)}
-                    disabled={runRequested || isRunning}
-                    className="flex items-center gap-1 px-2.5 py-1 bg-[#ffffff0a] border border-[#ffffff1a] rounded text-[12px] font-mono text-[#ccc] hover:bg-[#ffffff15] hover:text-white transition-colors disabled:opacity-40"
+onClick={() => triggerRun(taskKey)}
+                  disabled={busy}
+                  className="flex items-center gap-1 px-2.5 py-1 bg-[#ffffff0a] border border-[#ffffff1a] rounded text-[12px] font-mono text-[#ccc] hover:bg-[#ffffff15] hover:text-white transition-colors disabled:opacity-40"
                   >
                     {isThisRunning ? 'Running...' : 'Sync Now'}
                     <ChevronRight size={11} />
@@ -799,44 +620,35 @@ export default function DataSyncView() {
         )}
       </div>
 
-      {/* SSE Event Log */}
+      {/* Live Event Stream — shared with Mission Control via usePipeline */}
       <div className="bg-[#1a1c24] border border-[#ffffff1a] rounded-lg p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-xs font-semibold text-[#888] uppercase tracking-wider flex items-center gap-2">
             <Server size={14} />
             Live Event Stream
+            {!connected && <span className="text-yellow-400 normal-case tracking-normal">(reconnecting…)</span>}
             {sseEvents.length > 0 && (
               <span className="text-[#888] font-normal normal-case tracking-normal">
                 ({sseEvents.length} events)
               </span>
             )}
           </h3>
-          <button
-            onClick={() => setSseEvents([])}
-            className="text-[12px] font-mono text-[#888] hover:text-[#888] transition-colors"
-          >
-            clear
-          </button>
         </div>
-        <div
-          ref={eventLogRef}
-          className="h-40 overflow-y-auto font-mono text-[12px] space-y-0.5"
-        >
+        <div className="h-40 overflow-y-auto font-mono text-[12px] space-y-0.5">
           {sseEvents.length === 0 ? (
             <p className="text-[#888] py-4 text-center">
               Waiting for events — run a task to see activity here
             </p>
           ) : (
             sseEvents.map((ev, i) => {
-              const { icon, text, colorClass } = sseEventLabel(ev);
-              const time = new Date(ev._ts).toLocaleTimeString('en-IN', {
+              const { text, cls } = describeEvent(ev);
+              const time = new Date(ev.time).toLocaleTimeString('en-IN', {
                 hour: '2-digit', minute: '2-digit', second: '2-digit',
               });
               return (
-                <div key={i} className="flex gap-2 py-0.5 border-b border-[#ffffff04] last:border-0">
+                <div key={`${ev.time}-${i}`} className="flex gap-2 py-0.5 border-b border-[#ffffff04] last:border-0">
                   <span className="text-[#888] shrink-0 w-16">{time}</span>
-                  <span className="text-[#888] shrink-0">{icon}</span>
-                  <span className={colorClass}>{text}</span>
+                  <span className={cls}>{text}</span>
                 </div>
               );
             })
