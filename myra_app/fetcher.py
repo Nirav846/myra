@@ -1098,9 +1098,17 @@ class DataFetcher:
     def unify_symbol(self, symbol):
         if not symbol:
             return ""
-        return (
-            str(symbol).split(":")[-1].split(".")[0].replace("_", "&").strip().upper()
-        )
+        sym = str(symbol).split(":")[-1].split(".")[0].strip().upper()
+        # MYRA stores SME-exchange tickers as "<TICKER>_SME". Upstream data
+        # sources only know the plain ticker, and the generic "_"->"&" rule
+        # below would turn "NAMOEWASTE_SME" into the non-existent
+        # "NAMOEWASTE&SME". Strip the exchange marker FIRST, then map any
+        # remaining underscore to an ampersand (M&M).
+        for suffix in ("_SME", "-SME"):
+            if sym.endswith(suffix):
+                sym = sym[: -len(suffix)]
+                break
+        return sym.replace("_", "&")
 
     def fetch_large_deals_v2(self):
         streams = self.registry.get("data_streams", {}).get(

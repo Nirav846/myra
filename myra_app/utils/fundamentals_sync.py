@@ -5,17 +5,42 @@ import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 
+from myra_app import constants
 from myra_app.fetcher import DataFetcher
 
 # --- UPDATED: Import FundamentalManager directly from myra_app ---
 from myra_app.fundamental_manager import FundamentalManager
-from myra_app.constants import DISABLE_FUNDAMENTAL_WRITERS
+from myra_app.librarian_core import LibrarianCore
 
 logger = logging.getLogger("myra.fundamentals_sync")
 
-_HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_DIR = os.path.join(_HERE, "db")
+# Sidecar paths resolve through constants.DB_DIR + LibrarianCore.DB_MAP at call
+# time. A module-local `os.path.join(_HERE, "db")` plus hardcoded filenames
+# happened to agree with them, but drifted the moment either changed.
 IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def _db(key):
+    """Absolute path of a MYRA sidecar (e.g. _db('valuation'))."""
+    return os.path.join(constants.DB_DIR, LibrarianCore.DB_MAP[key])
+
+
+def partition_index_rows(symbols):
+    """Split ``symbols`` into (equities, index_rows).
+
+    Indices and benchmarks (NIFTY 100, INDIA VIX, G-SEC indices) are not
+    companies: no upstream source has a fundamentals page for them, so they were
+    pure guaranteed-failure noise in the queue. NSE/BSE equity tickers never
+    contain whitespace, which makes that a safe discriminator -- and it keeps
+    'BSE', which is a real listed company.
+    """
+    equities, index_rows = [], []
+    for sym in symbols:
+        if any(ch.isspace() for ch in (sym or "")):
+            index_rows.append(sym)
+        else:
+            equities.append(sym)
+    return equities, index_rows
 
 
 def sync_fundamentals(force=False, task_id: int = None):
@@ -25,7 +50,7 @@ def sync_fundamentals(force=False, task_id: int = None):
     Resumable: survives shutdowns.
     """
     # DISABLE_FUNDAMENTAL_WRITERS: upstox_fetcher now owns the fundamentals table
-    if DISABLE_FUNDAMENTAL_WRITERS:
+    if constants.DISABLE_FUNDAMENTAL_WRITERS:
         logger.info(
             "sync_fundamentals skipped: DISABLE_FUNDAMENTAL_WRITERS=True "
             "(upstox_fetcher owns fundamentals)"
@@ -39,8 +64,7 @@ def sync_fundamentals(force=False, task_id: int = None):
     today = datetime.now(timezone.utc).astimezone(IST).date().isoformat()
 
     # --- 1. Progress tracking via myra_metadata.db ---
-    meta_path = os.path.join(DB_DIR, "myra_metadata.db")
-    meta_conn = sqlite3.connect(meta_path, timeout=10)
+    meta_conn = sqlite3.connect(_db("meta"), timeout=10)
     meta_conn.execute("PRAGMA journal_mode=WAL")
 
     # Read existing progress
@@ -77,8 +101,7 @@ def sync_fundamentals(force=False, task_id: int = None):
                 pass
 
     # --- 2. Get symbols that need fundamentals ---
-    val_path = os.path.join(DB_DIR, "myra_valuation.db")
-    val_conn = sqlite3.connect(val_path, timeout=10)
+    val_conn = sqlite3.connect(_db("valuation"), timeout=10)
 
     # Pick symbols where ANY fundamental column is NULL (not just sector)
     symbols_needed = [
@@ -89,6 +112,18 @@ def sync_fundamentals(force=False, task_id: int = None):
             "ORDER BY symbol"
         ).fetchall()
     ]
+
+    # Indices (NIFTY 100, INDIA VIX, G-SEC benchmarks…) are not companies: no
+    # upstream source has a fundamentals page for them, so they were pure
+    # guaranteed-failure noise in the queue.
+    equities, index_rows = partition_index_rows(symbols_needed)
+    if index_rows:
+        print(
+            f"[MYRA FUNDA] Skipping {len(index_rows)} index/benchmark rows "
+            f"(not companies): {', '.join(index_rows[:5])}"
+            + ("…" if len(index_rows) > 5 else "")
+        )
+        symbols_needed = equities
 
     if not symbols_needed:
         print("[MYRA FUNDA] All fundamentals up to date.")
@@ -121,7 +156,7 @@ def sync_fundamentals(force=False, task_id: int = None):
             update(task_id, f"Fetching fundamentals for {len(symbols_needed)} symbols…")
 
     # DEBUG: skip batch API for now (unreliable), go directly to multi-source fallback
-    mgr = FundamentalManager(db_dir=DB_DIR)
+    mgr = FundamentalManager(db_dir=constants.DB_DIR)
     mgr.set_fetcher(DataFetcher())
 
     meta_conn.execute(
@@ -150,7 +185,10 @@ def sync_fundamentals(force=False, task_id: int = None):
                     updated_fallback += 1
                     progress["updated_count"] += 1
                 else:
-                    print(f"  [FAIL] {symbol}: multi-source fallback exhausted")
+                    # Report WHY, not a fixed guess. Reporting every failure as
+                    # "multi-source fallback exhausted" is what hid a
+                    # wrong-DB-path bug behind a network-failure message.
+                    print(f"  [FAIL] {symbol}: {mgr.last_error or 'unknown failure'}")
                     failed_fallback += 1
                     progress["failed_count"] += 1
             except Exception as e:

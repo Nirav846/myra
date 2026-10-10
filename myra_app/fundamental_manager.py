@@ -1,5 +1,7 @@
 # myra_app/fundamental_manager.py
+import logging
 import os
+import re
 import sqlite3
 import sys
 from datetime import date, datetime, timedelta
@@ -7,7 +9,17 @@ from datetime import date, datetime, timedelta
 import pandas as pd
 
 from .data_sources import RateLimiter, SourceManager, normalize
+from myra_app import constants
 from myra_app.constants import DISABLE_FUNDAMENTAL_WRITERS
+from myra_app.librarian_core import LibrarianCore
+
+logger = logging.getLogger(__name__)
+
+#: `_fetch_google` labels its rows "Q-1".."Q-4" because Google Finance exposes no
+#: column headers we can date. Consumers order quarterly_results by
+#: `report_date DESC` lexicographically, where "Q-1" outranks a real "Sep 2025"
+#: row and would be read as the newest quarter.
+_PLACEHOLDER_REPORT_DATE = re.compile(r"^Q-\d+$", re.IGNORECASE)
 
 
 class FundamentalManager:
@@ -17,21 +29,28 @@ class FundamentalManager:
     """
 
     def __init__(self, db_dir=None, fetcher=None):
-        # 2. Implementation: The Absolute Path Anchor
-        if db_dir is None:
-            # Anchor to project root regardless of where the script is called from
-            BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            self.db_dir = os.path.join(BASE_DIR, "db")
-        else:
-            self.db_dir = db_dir
+        # 2. Implementation: The Absolute Path Anchor.
+        # constants.DB_DIR is the single source of truth for the sidecar
+        # directory. It is read at call time (not captured at import) so the
+        # test-isolation fixture that rebinds constants.DB_DIR also redirects
+        # this class. Deriving the path from __file__ pointed at
+        # <repo-root>/db, which does not exist.
+        self.db_dir = db_dir or constants.DB_DIR
 
         self.fetcher = fetcher
         self.limiter = RateLimiter(rate_per_sec=2)
         self.source_manager = SourceManager()
+        #: Human-readable reason the most recent fetch_fundamentals() call
+        #: returned False. Callers must report this instead of assuming the
+        #: data sources were at fault.
+        self.last_error = None
 
-        # Connections for sidecars
-        self.meta_db = os.path.join(self.db_dir, "meta.db")
-        self.val_db = os.path.join(self.db_dir, "valuation.db")
+        # Connections for sidecars. These MUST resolve through DB_MAP: the bare
+        # "meta.db"/"valuation.db" names are not MYRA sidecars, so every write
+        # silently went to a stray empty file and the INSERT failed with
+        # "no such table: quarterly_results".
+        self.meta_db = os.path.join(self.db_dir, LibrarianCore.DB_MAP["meta"])
+        self.val_db = os.path.join(self.db_dir, LibrarianCore.DB_MAP["valuation"])
 
     def set_connection(self, conn):
         """Legacy support for Librarian."""
@@ -95,7 +114,13 @@ class FundamentalManager:
             self.source_manager.mark_success(source_name)
             return data
         else:
-            self.source_manager.mark_failure("screener", is_rate_limit=True)
+            # The chain returned (None, None), which tells us neither WHICH
+            # source failed nor that it was rate limiting. Booking it against a
+            # non-existent "screener" key (the registry key is "screener_in")
+            # printed a "Cooling off for 60 mins" warning that had no effect on
+            # anything -- DataFetcher does its own prioritisation and never
+            # consults SourceManager. Record it honestly instead.
+            self.source_manager.mark_failure("screener_in")
             return None
 
     def fetch_fundamentals(self, symbol):
@@ -105,7 +130,24 @@ class FundamentalManager:
         """
         data = self._fetch_raw_data(symbol)
         if not data:
+            self.last_error = "multi-source fallback exhausted"
             return False
+
+        # Undateable rows are worse than no rows -- writing them would poison
+        # the lexicographic report_date ordering every consumer relies on.
+        dated = [
+            r
+            for r in data
+            if not _PLACEHOLDER_REPORT_DATE.match(str(r.get("report_date") or ""))
+        ]
+        if not dated:
+            self.last_error = "source returned only undated rows (google fallback)"
+            logger.warning(
+                "FundamentalManager: %s produced only undated rows; skipping write",
+                symbol,
+            )
+            return False
+        data = dated
 
         symbol_clean = symbol.split(".")[0].upper()
 
@@ -155,10 +197,12 @@ class FundamentalManager:
                     INSERT INTO fundamentals (symbol, pe, roe, eps, book_value, market_cap, sector, industry, promoter_holding_pct, public_holding_pct, free_float_pct, free_float_market_cap, last_updated)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT (symbol) DO UPDATE SET
-                        pe = EXCLUDED.pe,
-                        roe = EXCLUDED.roe,
-                        eps = EXCLUDED.eps,
-                        book_value = EXCLUDED.book_value,
+                        -- Every column is COALESCE'd: a partial payload must never
+                        -- null out a metric we already hold. New values still win.
+                        pe = COALESCE(EXCLUDED.pe, fundamentals.pe),
+                        roe = COALESCE(EXCLUDED.roe, fundamentals.roe),
+                        eps = COALESCE(EXCLUDED.eps, fundamentals.eps),
+                        book_value = COALESCE(EXCLUDED.book_value, fundamentals.book_value),
                         market_cap = COALESCE(EXCLUDED.market_cap, fundamentals.market_cap),
                         sector = COALESCE(EXCLUDED.sector, fundamentals.sector),
                         industry = COALESCE(EXCLUDED.industry, fundamentals.industry),
@@ -199,7 +243,15 @@ class FundamentalManager:
                 m_conn.close()
 
             return True
-        except Exception:
+        except Exception as exc:
+            # Never swallow this: a bare `return False` here is indistinguishable
+            # from "all sources failed", which is how a wrong-DB-path bug came
+            # to be reported as 1632 × "multi-source fallback exhausted".
+            logger.exception(
+                "FundamentalManager: failed to persist fundamentals for %s",
+                symbol_clean,
+            )
+            self.last_error = f"persist failed ({exc.__class__.__name__}: {exc})"
             return False
         finally:
             v_conn.close()
