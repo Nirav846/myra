@@ -1284,6 +1284,42 @@
       {
         "columns": [
           {
+            "name": "alias",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "canonical",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "source",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "confidence",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "updated_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "symbol_alias",
+        "row_count": 599
+      },
+      {
+        "columns": [
+          {
             "name": "symbol",
             "notnull": false,
             "pk": true,
@@ -1420,6 +1456,12 @@
             "notnull": false,
             "pk": false,
             "type": "TEXT"
+          },
+          {
+            "name": "progress_pct",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
           }
         ],
         "name": "sync_log",
@@ -1502,6 +1544,60 @@
         ],
         "name": "task_registry",
         "row_count": 2454
+      },
+      {
+        "columns": [
+          {
+            "name": "raw_key",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "resolved",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "source",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "status",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "attempts",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "last_attempt",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "last_error",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "updated_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "traction_symbol_state",
+        "row_count": 1423
       }
     ]
   },

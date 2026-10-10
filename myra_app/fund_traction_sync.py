@@ -202,6 +202,17 @@ def _get_db_path() -> str:
     return os.path.join(DB_DIR, "myra_valuation.db")
 
 
+def resolved_symbol_sql(alias: str) -> str:
+    """SQL expression for a row's canonical ticker: resolved ``nse`` else ``symbol``.
+
+    ``fund_traction.symbol`` is a name-derived key for rows where upstream gave
+    no NSE ticker; ``myra_app.traction_symbols`` fills ``nse`` with the real
+    ticker. Joining market data on this expression keeps both the resolved rows
+    and the not-yet-resolved ones (which fall back to ``symbol``).
+    """
+    return f"COALESCE(NULLIF({alias}.nse, ''), {alias}.symbol)"
+
+
 def _ensure_tables(conn: sqlite3.Connection) -> None:
     """Create fund_traction and sync_metadata tables if they don't exist.
 
@@ -464,7 +475,12 @@ def _parse_stock(stock: dict, month: str) -> dict | None:
         "pct_vs_sma": _float(entry.get("pct_vs_sma")),
         "stock_key": str(stock.get("stock_key") or ""),
         "name": str(stock.get("name") or ""),
-        "nse": str(stock.get("nse") or ""),
+        # entry_estimate.nse is the canonical ticker when upstream supplies one;
+        # the top-level nse field is usually empty. Prefer the former so the
+        # read path can join market data from day one.
+        "nse": str(
+            (stock.get("entry_estimate") or {}).get("nse") or stock.get("nse") or ""
+        ),
         "bse": str(stock.get("bse") or ""),
         "sector": str(stock.get("sector") or ""),
         "direction": str(stock.get("direction") or ""),
@@ -1028,7 +1044,9 @@ def _prev_month_label(year: int, month: int) -> str:
         return f"{year:04d}-{month - 1:02d}"
 
 
-def _enrich_board_market_data(rows: list[dict], target_month: str | None = None) -> None:
+def _enrich_board_market_data(
+    rows: list[dict], target_month: str | None = None
+) -> None:
     """Attach latest close + market cap to board rows, in bulk. Mutates in place.
 
     Price comes from technical_data (latest close, one windowed query — the
@@ -1038,7 +1056,9 @@ def _enrich_board_market_data(rows: list[dict], target_month: str | None = None)
     Best-effort by design: any DB miss or error leaves price / market_cap_cr
     as None so the board always renders (enrichment must never break it).
     """
-    symbols = sorted({r["symbol"] for r in rows if r.get("symbol")})
+    symbols = sorted(
+        {(r.get("resolved") or r["symbol"]) for r in rows if r.get("symbol")}
+    )
     if not symbols:
         return
 
@@ -1102,10 +1122,11 @@ def _enrich_board_market_data(rows: list[dict], target_month: str | None = None)
         price_map = {}
 
     for r in rows:
-        mc = mcap_map.get(r["symbol"])
+        key = r.get("resolved") or r["symbol"]
+        mc = mcap_map.get(key)
         r["market_cap_cr"] = round(mc / 1e7, 1) if mc else None
         r["mcap_bucket"] = _mcap_bucket(mc)
-        closes = price_map.get(r["symbol"], {})
+        closes = price_map.get(key, {})
         r["price"] = closes.get("latest")
         r["prev_month_close"] = closes.get("prior")
         latest = r["price"]
@@ -1114,6 +1135,7 @@ def _enrich_board_market_data(rows: list[dict], target_month: str | None = None)
             r["pct_vs_prev"] = round((latest - prior) / prior * 100, 2)
         else:
             r["pct_vs_prev"] = None
+
 
 def board_months(conn: sqlite3.Connection) -> list[str]:
     """Months that have traction rows, newest first."""
@@ -1259,6 +1281,9 @@ def _board_rows(
         reduce_count = len(reduce_lines) if funds else reduces_i
         out[symbol] = {
             "symbol": symbol,
+            # canonical ticker for market-data joins (nse once resolved, else the
+            # raw key so an unresolved stock still shows, just without market data)
+            "resolved": (nse or symbol),
             "stock_key": stock_key or "",
             "name": name or symbol,
             "nse": nse or "",

@@ -80,6 +80,14 @@ CREATE TABLE sb_positions (
     updated_at      TEXT
 )
 
+CREATE TABLE symbol_alias (
+            alias      TEXT PRIMARY KEY,
+            canonical  TEXT NOT NULL,
+            source     TEXT,
+            confidence REAL,
+            updated_at TEXT
+        )
+
 CREATE TABLE symbols_master (
                     symbol TEXT PRIMARY KEY,
                     first_seen TEXT,
@@ -99,7 +107,7 @@ CREATE TABLE symbols_master (
                     last_fundamental_update TEXT
                 , bse_scrip_code TEXT, name TEXT)
 
-CREATE TABLE sync_log (task_name TEXT PRIMARY KEY, last_run TEXT, last_status TEXT, error_message TEXT)
+CREATE TABLE sync_log (task_name TEXT PRIMARY KEY, last_run TEXT, last_status TEXT, error_message TEXT, progress_pct REAL DEFAULT 0)
 
 CREATE TABLE task_registry (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -115,6 +123,17 @@ CREATE TABLE task_registry (
                 expiry TEXT,
                 data TEXT DEFAULT '{}'
             )
+
+CREATE TABLE traction_symbol_state (
+            raw_key      TEXT PRIMARY KEY,
+            resolved     TEXT,
+            source       TEXT,
+            status       TEXT,
+            attempts     INTEGER DEFAULT 0,
+            last_attempt TEXT,
+            last_error   TEXT,
+            updated_at   TEXT
+        )
 
 CREATE INDEX idx_constituents_symbol ON index_constituents(symbol)
 

@@ -936,7 +936,7 @@ def test_other_tasks_keep_the_default_poll_interval():
 
     for name, spec in TASKS.items():
         # Tasks with a deliberate custom cadence.
-        if name in ("fund-traction-sync", "fundamentals-enrich"):
+        if name in ("fund-traction-sync", "fundamentals-enrich", "traction-symbols"):
             continue
         assert spec.poll_seconds is None, f"{name} unexpectedly got a custom interval"
     assert POLL_SECONDS == 60, "global default unchanged"

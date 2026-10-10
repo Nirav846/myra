@@ -169,6 +169,18 @@ TASKS: dict[str, TaskSpec] = {
         label="symbol_identity",
         interval_days=7,
     ),
+    # Automated fund_traction symbol resolution (name-key -> canonical NSE
+    # ticker) so the board can join price / market-cap. Local resolution is
+    # cheap; the yfinance fallback is retry-bounded and only touches
+    # still-unresolved keys. Hourly poll: nearly free when nothing is pending.
+    "traction-symbols": TaskSpec(
+        module="myra_app.tasks.traction_symbols",
+        label="traction_symbols",
+        interval_days=1,
+        catchup=True,
+        stagger=True,
+        poll_seconds=3600,
+    ),
     # Append-only point-in-time archive. Weekly is fine: it is a safety net
     # for history that is otherwise overwritten in place (rolling
     # fundamentals snapshot, year-less rolling traction file).
