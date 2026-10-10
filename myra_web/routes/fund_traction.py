@@ -408,6 +408,16 @@ def get_traction_board_insights(
     return fts.get_traction_insights(month=month)
 
 
+@router.get("/board/intelligence")
+def get_traction_board_intelligence(
+    month: str | None = Query(None, description="YYYY-MM; defaults to newest"),
+):
+    """Month-over-month cohorts + delivery-weighted entry price per symbol."""
+    from myra_app import traction_intelligence as ti
+
+    return ti.get_traction_intelligence(month=month)
+
+
 @router.get("/board/watchlist")
 def get_traction_board_watchlist():
     """Pinned stock_keys."""
