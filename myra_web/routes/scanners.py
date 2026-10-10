@@ -14,6 +14,7 @@ import copy
 import json
 import logging
 import os
+import sqlite3
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -584,6 +585,158 @@ register_scanner(
     status_extra="bear_market",
     label="Smart Money Bargain",
 )
+
+
+# --- MF Smart Money (complete held universe from MYRA's RupeeVest ingestion) ---
+_MF_MODES = ("all", "accumulating", "steady", "trimming", "bargain")
+_MF_SORT_KEYS = (
+    "traction_score",
+    "vs_dwap_pct",
+    "fund_count",
+    "aum_held_cr",
+    "share_change_pct",
+)
+
+
+def _mf_parse(payload: dict):
+    """Parse an MF Smart Money scan request."""
+    raw_date = payload.get("scan_date", "")
+    if raw_date and str(raw_date).strip():
+        effective_date = _get_latest_trading_day_before(str(raw_date).strip())
+    else:
+        effective_date = _get_latest_trading_day_before(
+            datetime.now().strftime("%Y-%m-%d")
+        )
+    mode = str(payload.get("mode", "all") or "all").strip().lower()
+    if mode not in _MF_MODES:
+        mode = "all"
+    sort_by = str(payload.get("sort_by", "traction_score") or "traction_score")
+    if sort_by not in _MF_SORT_KEYS:
+        sort_by = "traction_score"
+    kwargs = {
+        "month": (str(payload.get("month") or "").strip() or None),
+        "mode": mode,
+        "min_funds": int(payload.get("min_funds", 1) or 1),
+        "min_total_weight_pct": float(payload.get("min_total_weight_pct", 0.0) or 0.0),
+        "min_mcap_cr": float(payload.get("min_mcap_cr", 0.0) or 0.0),
+        "max_mcap_cr": float(payload.get("max_mcap_cr", 0.0) or 0.0),
+        "min_aum_held_cr": float(payload.get("min_aum_held_cr", 0.0) or 0.0),
+        "require_price": bool(payload.get("require_price", False)),
+        "sort_by": sort_by,
+    }
+    raw_vs = payload.get("max_vs_dwap_pct")
+    if raw_vs not in (None, ""):
+        kwargs["max_vs_dwap_pct"] = float(raw_vs)
+    if payload.get("limit"):
+        kwargs["limit"] = int(payload["limit"])
+    return kwargs, effective_date
+
+
+def _mf_build(kwargs, scan_date):
+    from myra_app.strategies.mf_smart_money import MFSmartMoneyScanner
+
+    return MFSmartMoneyScanner(**kwargs)
+
+
+register_scanner(
+    "mf-smart-money",
+    state_template={
+        "scan_status": "idle",
+        "last_scan": None,
+        "progress": 0,
+        "message": "Idle — click Scan to start",
+        "candidates": [],
+        "scanned_date": None,
+    },
+    cache_file="mf_smart_money_cache.json",
+    parse_payload=_mf_parse,
+    build_scanner=_mf_build,
+    result_mode="df",
+    label="MF Smart Money",
+)
+
+
+@router.get("/mf-smart-money/defaults")
+async def mf_smart_money_defaults():
+    """Available months/modes and backend defaults for the MF Smart Money screen."""
+    months: list = []
+    try:
+        val_db = os.path.join(DB_DIR, "myra_valuation.db")
+        with sqlite3.connect(f"file:{val_db}?mode=ro", uri=True) as conn:
+            months = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT DISTINCT month FROM mf_holding ORDER BY month DESC"
+                )
+            ]
+    except sqlite3.Error as exc:
+        logger.warning("mf-smart-money defaults: months unavailable (%s)", exc)
+    return {
+        "months": months,
+        "modes": list(_MF_MODES),
+        "sort_keys": list(_MF_SORT_KEYS),
+        "defaults": {
+            "mode": "all",
+            "min_funds": 1,
+            "min_total_weight_pct": 0.0,
+            "min_mcap_cr": 0.0,
+            "max_mcap_cr": 0.0,
+            "min_aum_held_cr": 0.0,
+            "require_price": False,
+            "sort_by": "traction_score",
+        },
+    }
+
+
+@router.post("/mf-smart-money/resolve")
+async def mf_smart_money_resolve(payload: dict = Body(default={})):
+    """Cache a user-supplied company -> NSE ticker mapping.
+
+    Some held companies are missing from ``symbols_master`` (e.g. HIND
+    RECTIFIERS, NAVA BHARAT VENTURES), so they list without price data.  A user
+    supplies the ticker once; it is stored in the additive ``symbol_alias``
+    bridge, which ``resolve_local`` consults *first*, so the mapping is cached
+    for every later scan (and the traction board) -- no schema change.
+    """
+    from myra_app.librarian_core import LibrarianCore
+    from myra_app.symbol_identity import write_aliases
+
+    company = str(payload.get("company") or "").strip()
+    symbol = str(payload.get("symbol") or "").strip().upper()
+    if not company or not symbol:
+        raise HTTPException(status_code=400, detail="company and symbol are required")
+
+    meta_db = os.path.join(DB_DIR, LibrarianCore.DB_MAP["meta"])
+    tech_db = os.path.join(DB_DIR, LibrarianCore.DB_MAP["technical"])
+    known = False
+    try:
+        with sqlite3.connect(f"file:{tech_db}?mode=ro", uri=True) as conn:
+            known = (
+                conn.execute(
+                    "SELECT 1 FROM technical_data WHERE symbol = ? LIMIT 1", (symbol,)
+                ).fetchone()
+                is not None
+            )
+    except sqlite3.Error as exc:
+        logger.warning("mf-smart-money resolve: ticker check failed (%s)", exc)
+
+    try:
+        with sqlite3.connect(meta_db) as conn:
+            write_aliases(conn, {company: symbol}, source="user", confidence=1.0)
+            conn.commit()
+    except sqlite3.Error as exc:
+        logger.error("mf-smart-money resolve: alias write failed (%s)", exc)
+        raise HTTPException(status_code=500, detail="Could not save mapping") from exc
+
+    return {
+        "status": "saved",
+        "company": company,
+        "symbol": symbol,
+        "has_price_data": known,
+        "note": None
+        if known
+        else "Mapping saved, but no price data for this ticker yet.",
+    }
 
 
 # --- Operator Fingerprint ---
@@ -1699,6 +1852,7 @@ _ALLOWED_CACHE_CLEAR = {
     "smart-money-bargain",
     "delivery-divergence",
     "super-breakout",
+    "mf-smart-money",
 }
 
 
