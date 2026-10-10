@@ -525,6 +525,9 @@ body {
    ========================================================================== */
 
 .scanner-table-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
   background: linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-tertiary) 100%);
   border-bottom: 2px solid var(--border-strong);
   padding: 0.875rem 1rem;

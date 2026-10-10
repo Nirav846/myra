@@ -1,9 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
 
 interface MarketCapRangeFilterProps {
     onChange: (range: { min: number; max: number } | null) => void;
     className?: string;
+    /** Render as a compact toggle that expands the sliders in a popover.
+     *  Default false keeps the original always-visible layout for other views. */
+    collapsible?: boolean;
 }
 
 function roundUpNice(val: number): number {
@@ -28,9 +32,14 @@ function roundDownNice(val: number): number {
     return Math.floor(cr / 1000) * 1000 * 1e7;
 }
 
-export default function MarketCapRangeFilter({ onChange, className = '' }: MarketCapRangeFilterProps) {
+export default function MarketCapRangeFilter({
+    onChange,
+    className = '',
+    collapsible = false,
+}: MarketCapRangeFilterProps) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
+    const [open, setOpen] = useState(false);
     const [minCr, setMinCr] = useState(0);
     const [maxCr, setMaxCr] = useState(100);
     const [absMinCr, setAbsMinCr] = useState(0);
@@ -180,10 +189,11 @@ export default function MarketCapRangeFilter({ onChange, className = '' }: Marke
         );
     }
 
-    return (
-        <div className={`flex flex-col flex-shrink-0 w-[230px] ${className}`}>
-            <label className="text-[12px] text-[#888] font-mono mb-1">Market Cap</label>
+    const isAll = minCr === absMinCr && maxCr === absMaxCr;
+    const rangeLabel = isAll ? 'All' : `₹${minCr}–${maxCr} Cr`;
 
+    const body = (
+        <>
             {/* Input row */}
             <div className="flex items-center gap-1.5 mb-1">
                 <span className="text-[12px] text-[#888] font-mono">Min ₹</span>
@@ -227,6 +237,67 @@ export default function MarketCapRangeFilter({ onChange, className = '' }: Marke
                 onChange={handleMaxSlider}
                 className="w-full accent-orange-500"
             />
+        </>
+    );
+
+    if (collapsible) {
+        return (
+            <div className={`relative flex-shrink-0 ${className}`}>
+                <button
+                    type="button"
+                    onClick={() => setOpen(o => !o)}
+                    onKeyDown={e => {
+                        if (e.key === 'Escape' && open) {
+                            e.stopPropagation();
+                            setOpen(false);
+                        }
+                    }}
+                    aria-expanded={open}
+                    aria-controls="mcap-range-panel"
+                    className={`flex items-center gap-1 bg-[#ffffff0a] border rounded px-2 py-1 text-xs ${
+                        isAll ? 'border-[#ffffff14] text-[#888]' : 'border-cyan-500/40 text-cyan-300'
+                    }`}
+                    title="Filter by market cap"
+                >
+                    Mcap <span className="font-mono">{rangeLabel}</span>
+                    <ChevronDown size={12} className={open ? 'rotate-180 transition-transform' : 'transition-transform'} />
+                </button>
+                {open && (
+                    <>
+                        {/* Backdrop closes the popover on any outside click. */}
+                        <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
+                        <div
+                            id="mcap-range-panel"
+                            role="dialog"
+                            aria-label="Market cap range"
+                            onKeyDown={e => {
+                                if (e.key === 'Escape') setOpen(false);
+                            }}
+                            className="absolute z-30 mt-1 w-[230px] bg-[#1a1c24] border border-[#ffffff1a] rounded p-2 shadow-lg"
+                        >
+                            <div className="flex items-center justify-between mb-1">
+                                <span className="text-[12px] text-[#888] font-mono">Market Cap</span>
+                                <button
+                                    type="button"
+                                    onClick={() => setOpen(false)}
+                                    className="text-[#888] hover:text-white text-sm leading-none"
+                                    aria-label="Close"
+                                >
+                                    ×
+                                </button>
+                            </div>
+                            {body}
+                        </div>
+                    </>
+                )}
+            </div>
+        );
+    }
+
+    return (
+        <div className={`flex flex-col flex-shrink-0 w-[230px] ${className}`}>
+            <label className="text-[12px] text-[#888] font-mono mb-1">Market Cap</label>
+            {body}
         </div>
     );
 }

@@ -7,7 +7,6 @@ import {
   ChevronDown,
   ArrowUpDown,
   Settings2,
-  Info,
   Plus,
 } from 'lucide-react';
 import FundTractionButton from '../components/FundTractionButton';
@@ -346,7 +345,7 @@ export default function MFSmartMoneyView() {
   ];
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="p-3 space-y-2.5">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-white">MF Smart Money</h1>
@@ -503,38 +502,38 @@ export default function MFSmartMoneyView() {
         </div>
       )}
 
-      {completedScan && !isScanning && (
-        <div className="bg-[#ffffff06] border border-[#ffffff14] rounded p-3 text-xs font-mono text-[#888] flex items-start gap-2">
-          <Info size={14} className="text-emerald-400 shrink-0 mt-0.5" />
-          <div>
-            <span className="text-white font-semibold">{MODES.find((m) => m.value === mode)?.label}</span>
-            {' '}· {defaults?.months?.includes(month) ? month : 'latest complete month'}.
-            {stats.n === 0 ? (
-              <span> <span className="text-red-400">0 stocks.</span> Try mode “All”.</span>
-            ) : (
-              <span> <span className="text-emerald-400">{stats.n} stocks</span> held.</span>
-            )}
-            {stats.unpriced > 0 && (
-              <span>
-                {' '}· <span className="text-amber-400">{stats.unpriced} without a ticker</span> (shown by name).
-              </span>
-            )}
-          </div>
-        </div>
-      )}
-
+      {/* Result summary — one compact strip (was a bordered box + a second row) */}
       {scanStatus?.scan_status !== 'scanning' && (
-        <div className="flex flex-wrap gap-3 text-xs text-[#888]">
-          <span className="bg-[#ffffff0a] px-2 py-1 rounded">{stats.n} stocks</span>
-          <span className="bg-[#ffffff0a] px-2 py-1 rounded">AUM footprint: ₹{stats.aum.toFixed(0)} Cr</span>
-          <span className="bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded">Fund adds: {stats.adds}</span>
-          <span className="bg-red-500/10 text-red-400 px-2 py-1 rounded">Fund trims: {stats.trims}</span>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#888]">
+          {completedScan && (
+            <span>
+              <span className="text-white font-semibold">
+                {MODES.find((m) => m.value === mode)?.label}
+              </span>
+              {' · '}
+              {defaults?.months?.includes(month) ? month : 'latest complete month'}
+            </span>
+          )}
+          <span className="bg-[#ffffff0a] px-2 py-0.5 rounded">{stats.n} stocks</span>
+          <span className="bg-[#ffffff0a] px-2 py-0.5 rounded">AUM ₹{stats.aum.toFixed(0)} Cr</span>
+          <span className="bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded">
+            Fund adds: {stats.adds}
+          </span>
+          <span className="bg-red-500/10 text-red-400 px-2 py-0.5 rounded">
+            Fund trims: {stats.trims}
+          </span>
+          {stats.unpriced > 0 && (
+            <span className="text-amber-400">{stats.unpriced} without a ticker (shown by name)</span>
+          )}
+          {completedScan && stats.n === 0 && (
+            <span className="text-red-400">0 stocks — try mode “All”.</span>
+          )}
         </div>
       )}
 
       {candidates.length > 0 && (
         <div className="flex flex-wrap gap-2 items-center text-xs">
-          <MarketCapRangeFilter onChange={setMcapRange} />
+          <MarketCapRangeFilter collapsible onChange={setMcapRange} />
           <select
             value={dirFilter}
             onChange={(e) => setDirFilter(e.target.value)}

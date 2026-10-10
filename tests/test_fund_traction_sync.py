@@ -487,3 +487,216 @@ def test_backfill_is_noop_when_complete(val_db, monkeypatch):
         "fund_rows": 0,
         "error": None,
     }
+
+
+# ── Board market-data enrichment (price / prev% / mcap) ─────────────────────
+
+
+def _seed_tech_db(tmp_path, closes_by_symbol):
+    """Create a minimal technical_data sidecar under the monkeypatched DB_DIR.
+
+    ``closes_by_symbol`` maps ticker -> list of (date, close).
+    """
+    conn = sqlite3.connect(str(tmp_path / "myra_technical.db"))
+    conn.execute("CREATE TABLE technical_data (symbol TEXT, date TEXT, close REAL)")
+    for sym, series in closes_by_symbol.items():
+        conn.executemany(
+            "INSERT INTO technical_data (symbol, date, close) VALUES (?, ?, ?)",
+            [(sym, d, c) for d, c in series],
+        )
+    conn.commit()
+    conn.close()
+
+
+def _seed_fundamentals(val_db, mcaps):
+    """Add a fundamentals(symbol, market_cap) table to the valuation DB."""
+    conn = sqlite3.connect(str(val_db))
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS fundamentals (symbol TEXT PRIMARY KEY, "
+        "market_cap REAL)"
+    )
+    conn.executemany(
+        "INSERT OR REPLACE INTO fundamentals (symbol, market_cap) VALUES (?, ?)",
+        list(mcaps.items()),
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_board_enriches_price_and_prev_from_tech_db(val_db, tmp_path):
+    """Regression: price/prev_month_close/pct_vs_prev must populate from
+    technical_data. The old windowed query referenced ``date``/``month`` in the
+    outer WHERE without exposing them, raised ``no such column: date``, and
+    silently blanked every price cell.
+    """
+    _seed_board_db(val_db)
+    _seed_tech_db(
+        tmp_path,
+        {
+            "ACME": [("2026-06-30", 100.0), ("2026-07-31", 110.0)],
+            "BETA": [("2026-06-30", 50.0), ("2026-07-31", 40.0)],
+        },
+    )
+    _seed_fundamentals(val_db, {"ACME": 2.5e11})
+
+    res = fts.get_traction_board(month="2026-07")
+    assert res["success"] is True
+    assert res["prior_month"] == "2026-06"
+
+    acme = next(r for r in res["rows"] if r["symbol"] == "ACME")
+    assert acme["price"] == pytest.approx(110.0)
+    assert acme["prev_month_close"] == pytest.approx(100.0)
+    assert acme["pct_vs_prev"] == pytest.approx(10.0)
+    assert acme["market_cap_cr"] == pytest.approx(25000.0)
+    assert acme["mcap_bucket"] == "large"
+
+    beta = next(r for r in res["rows"] if r["symbol"] == "BETA")
+    assert beta["price"] == pytest.approx(40.0)
+    assert beta["prev_month_close"] == pytest.approx(50.0)
+    assert beta["pct_vs_prev"] == pytest.approx(-20.0)
+    # No fundamentals row -> unknown bucket, no crash.
+    assert beta["market_cap_cr"] is None
+    assert beta["mcap_bucket"] == "unknown"
+
+
+def test_board_price_blank_when_no_tech_db(val_db):
+    """Missing technical sidecar is best-effort: price blanks, board still renders."""
+    _seed_board_db(val_db)
+    res = fts.get_traction_board(month="2026-07")
+    assert res["success"] is True
+    assert all(r["price"] is None for r in res["rows"])
+    assert all(r["pct_vs_prev"] is None for r in res["rows"])
+
+
+# ── SMA recompute uses the resolved ticker ──────────────────────────────────
+
+
+def test_update_traction_sma_uses_resolved_ticker(val_db, tmp_path):
+    """fund_traction.symbol is a name-derived key for unresolved rows; the SMA
+    must be looked up under the resolved ticker (nse) and written back to the
+    raw key. Before the fix only rows whose symbol happened to equal the ticker
+    received a value.
+    """
+    raw = "LIFEINSURANCECORPORATIONOF"
+    conn = sqlite3.connect(str(val_db))
+    fts._ensure_tables(conn)
+    conn.execute(
+        "INSERT INTO fund_traction (symbol, month, nse) VALUES (?, '2026-09', ?)",
+        (raw, "LICI"),
+    )
+    conn.commit()
+    conn.close()
+
+    # 30 closes for the *ticker* only; the raw key has no technical rows.
+    _seed_tech_db(
+        tmp_path,
+        {"LICI": [(f"2026-07-{i:02d}", float(i)) for i in range(1, 31)]},
+    )
+
+    res = fts.update_traction_sma()
+    assert res["success"] is True
+    assert res["updated"] == 1
+    assert res["skipped_no_sma"] == 0
+
+    conn = sqlite3.connect(str(val_db))
+    pct = conn.execute(
+        "SELECT pct_vs_sma FROM fund_traction WHERE symbol = ? AND month = '2026-09'",
+        (raw,),
+    ).fetchone()[0]
+    conn.close()
+    # sma = mean(1..30) = 15.5, latest = 30 -> +93.5484%
+    assert pct == pytest.approx(93.5484, abs=0.01)
+
+
+def test_update_traction_sma_fans_out_one_ticker_to_many_raw_keys(val_db, tmp_path):
+    """Several name-derived rows can resolve to one ticker; every one of them
+    must receive the SMA. Without the fan-out the extra rows stay NULL forever.
+    """
+    raws = ["LIFEINSURANCECORPORATIONOF", "LIFEINSURANCE_CORP", "LIC"]
+    conn = sqlite3.connect(str(val_db))
+    fts._ensure_tables(conn)
+    for raw in raws:
+        conn.execute(
+            "INSERT INTO fund_traction (symbol, month, nse) VALUES (?, '2026-09', ?)",
+            (raw, "LICI"),
+        )
+    conn.commit()
+    conn.close()
+
+    _seed_tech_db(
+        tmp_path,
+        {"LICI": [(f"2026-07-{i:02d}", float(i)) for i in range(1, 31)]},
+    )
+
+    res = fts.update_traction_sma()
+
+    assert res["updated"] == len(raws)
+    assert res["skipped_no_sma"] == 0
+    conn = sqlite3.connect(str(val_db))
+    pcts = [
+        conn.execute(
+            "SELECT pct_vs_sma FROM fund_traction WHERE symbol = ? AND month = '2026-09'",
+            (raw,),
+        ).fetchone()[0]
+        for raw in raws
+    ]
+    conn.close()
+    assert all(p is not None for p in pcts)
+    assert pcts == [pytest.approx(93.5484, abs=0.01)] * len(raws)
+
+
+def test_update_traction_sma_empty_nse_falls_back_to_raw_symbol(val_db, tmp_path):
+    """A genuinely unresolved row (nse = '') must still be looked up by its raw
+    symbol, so pre-resolution behaviour is preserved rather than regressed.
+    """
+    raw = "ZYDUSLIFESCIENCES"
+    conn = sqlite3.connect(str(val_db))
+    fts._ensure_tables(conn)
+    conn.execute(
+        "INSERT INTO fund_traction (symbol, month, nse) VALUES (?, '2026-09', '')",
+        (raw,),
+    )
+    conn.commit()
+    conn.close()
+
+    _seed_tech_db(
+        tmp_path,
+        {raw: [(f"2026-07-{i:02d}", float(i)) for i in range(1, 31)]},
+    )
+
+    res = fts.update_traction_sma()
+
+    assert res["updated"] == 1
+    conn = sqlite3.connect(str(val_db))
+    pct = conn.execute(
+        "SELECT pct_vs_sma FROM fund_traction WHERE symbol = ?", (raw,)
+    ).fetchone()[0]
+    conn.close()
+    assert pct == pytest.approx(93.5484, abs=0.01)
+
+
+def test_board_stale_symbol_gets_no_fabricated_zero_pct(val_db, tmp_path):
+    """A symbol whose last close falls in the PRIOR month must not report a flat
+    0.00% change: its latest row is also its prior-month row, so pct_vs_prev has
+    to stay None rather than pretend the stock did not move.
+    """
+    _seed_board_db(val_db)
+    # ACME: June close only (stale). BETA: a real July move.
+    _seed_tech_db(
+        tmp_path,
+        {
+            "ACME": [("2026-06-30", 100.0)],
+            "BETA": [("2026-06-30", 50.0), ("2026-07-31", 40.0)],
+        },
+    )
+
+    res = fts.get_traction_board(month="2026-07")
+    acme = next(r for r in res["rows"] if r["symbol"] == "ACME")
+    beta = next(r for r in res["rows"] if r["symbol"] == "BETA")
+
+    # Stale: latest close still shown, but no invented prior-month comparison.
+    assert acme["price"] == pytest.approx(100.0)
+    assert acme["prev_month_close"] is None
+    assert acme["pct_vs_prev"] is None
+    # Healthy row is unaffected.
+    assert beta["pct_vs_prev"] == pytest.approx(-20.0)

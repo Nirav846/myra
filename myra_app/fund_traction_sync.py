@@ -35,12 +35,12 @@ import json
 import logging
 import os
 import sqlite3
-import json
 from datetime import date, datetime
 
 import requests
 
 from myra_app.constants import DB_DIR, TRACTION_BASE_URL
+from myra_app.librarian_core import LibrarianCore
 
 logger = logging.getLogger(__name__)
 
@@ -199,7 +199,12 @@ CREATE TABLE IF NOT EXISTS fund_traction_watchlist (
 
 
 def _get_db_path() -> str:
-    return os.path.join(DB_DIR, "myra_valuation.db")
+    return os.path.join(DB_DIR, LibrarianCore.DB_MAP["valuation"])
+
+
+def _tech_db_path() -> str:
+    """Path to the technical-data sidecar (resolved via DB_MAP, never hardcoded)."""
+    return os.path.join(DB_DIR, LibrarianCore.DB_MAP["technical"])
 
 
 def resolved_symbol_sql(alias: str) -> str:
@@ -963,8 +968,8 @@ def update_traction_sma() -> dict:
     val_conn = None
     tech_conn = None
     try:
-        val_conn = sqlite3.connect(os.path.join(DB_DIR, "myra_valuation.db"))
-        tech_conn = sqlite3.connect(os.path.join(DB_DIR, "myra_technical.db"))
+        val_conn = sqlite3.connect(_get_db_path())
+        tech_conn = sqlite3.connect(f"file:{_tech_db_path()}?mode=ro", uri=True)
 
         # 1. Latest traction month
         row = val_conn.execute("SELECT MAX(month) FROM fund_traction").fetchone()
@@ -975,14 +980,19 @@ def update_traction_sma() -> dict:
             return result
         result["month"] = latest_month
 
-        # 2. Target symbols for that month
-        symbols = [
-            r[0]
-            for r in val_conn.execute(
-                "SELECT symbol FROM fund_traction WHERE month = ?", (latest_month,)
-            ).fetchall()
-        ]
-        if not symbols:
+        # 2. Target rows for that month: fund_traction.symbol is a name-derived
+        #    key for rows where upstream gave no ticker, so the SMA must be
+        #    computed against the *resolved* ticker (nse), then written back to
+        #    every raw key that resolves to it.
+        resolved_to_raw: dict[str, list[str]] = {}
+        for raw, resolved in val_conn.execute(
+            "SELECT symbol, COALESCE(NULLIF(TRIM(nse), ''), symbol) "
+            "FROM fund_traction WHERE month = ?",
+            (latest_month,),
+        ).fetchall():
+            resolved_to_raw.setdefault(resolved or raw, []).append(raw)
+        tickers = list(resolved_to_raw)
+        if not tickers:
             result["success"] = True
             logger.info("Traction SMA update: no symbols for month %s", latest_month)
             return result
@@ -994,7 +1004,7 @@ def update_traction_sma() -> dict:
         tech_conn.execute("DELETE FROM _ft_symbols")
         tech_conn.executemany(
             "INSERT OR IGNORE INTO _ft_symbols (symbol) VALUES (?)",
-            [(s,) for s in symbols],
+            [(s,) for s in tickers],
         )
         rows = tech_conn.execute(
             """
@@ -1012,7 +1022,7 @@ def update_traction_sma() -> dict:
         logger.info(
             "Traction SMA update: month=%s symbols=%d fetched_rows=%d",
             latest_month,
-            len(symbols),
+            len(tickers),
             len(rows),
         )
 
@@ -1026,23 +1036,25 @@ def update_traction_sma() -> dict:
         # 4. Reference SMA methodology in Python
         updates = []
         skipped = 0
-        for sym in symbols:
-            closes = closes_by_symbol.get(sym, [])
+        for ticker in tickers:
+            raw_symbols = resolved_to_raw.get(ticker, [ticker])
+            closes = closes_by_symbol.get(ticker, [])
             n = len(closes)
             if n >= 30:
                 window = closes[-30:]
             elif n >= 15:
                 window = closes
             else:
-                skipped += 1
+                skipped += len(raw_symbols)
                 continue
             sma = sum(window) / len(window)
             latest_close = closes[-1]
             if sma and sma > 0 and latest_close:
                 pct = round((latest_close - sma) / sma * 100, 4)
-                updates.append((pct, sym, latest_month))  # noqa: PG-APPEND
+                for raw in raw_symbols:
+                    updates.append((pct, raw, latest_month))  # noqa: PG-APPEND
             else:
-                skipped += 1
+                skipped += len(raw_symbols)
         result["skipped_no_sma"] = skipped
 
         # 5. Bulk UPDATE in ONE transaction (NULL sma rows never touched)
@@ -1170,10 +1182,11 @@ def _enrich_board_market_data(
     # Latest close + prior-month close from technical_data (read-only).
     price_map: dict[str, dict[str, float | None]] = {}
     try:
-        tech_path = os.path.join(DB_DIR, "myra_technical.db")
+        tech_path = _tech_db_path()
         if os.path.exists(tech_path):
-            tconn = sqlite3.connect(f"file:{tech_path}?mode=ro", uri=True)
+            tconn = None
             try:
+                tconn = sqlite3.connect(f"file:{tech_path}?mode=ro", uri=True)
                 prior_month = None
                 if target_month:
                     y, m = (int(x) for x in target_month.split("-"))
@@ -1181,9 +1194,13 @@ def _enrich_board_market_data(
                 for i in range(0, len(symbols), 500):
                     chunk = symbols[i : i + 500]
                     ph = ",".join("?" for _ in chunk)
-                    base = f"""
-                        SELECT symbol, close FROM (
+                    # The window columns and the month must be exposed by the
+                    # subquery -- referencing them in the outer WHERE otherwise
+                    # raises "no such column: date" and silently blanks price.
+                    sql = f"""
+                        SELECT symbol, close, month, rn_latest, rn_prior FROM (
                             SELECT symbol, close,
+                                   strftime('%Y-%m', date) AS month,
                                    ROW_NUMBER() OVER (
                                        PARTITION BY symbol ORDER BY date DESC
                                    ) AS rn_latest,
@@ -1194,17 +1211,29 @@ def _enrich_board_market_data(
                             FROM technical_data
                             WHERE symbol IN ({ph}) AND close IS NOT NULL
                         ) WHERE rn_latest = 1"""
+                    params = list(chunk)
                     if prior_month:
-                        base += f""" OR rn_prior = 1 AND strftime('%Y-%m', date) = {prior_month!r}"""
-                    for sym, close in tconn.execute(base, chunk).fetchall():
-                        if sym not in price_map:
-                            price_map[sym] = {}
-                        price_map[sym]["latest"] = close
-                        if prior_month and "prior" not in price_map[sym]:
-                            price_map[sym]["prior"] = close
+                        sql += " OR (rn_prior = 1 AND month = ?)"
+                        params.append(prior_month)
+                    for sym, close, row_month, rn_latest, rn_prior in tconn.execute(
+                        sql, params
+                    ).fetchall():
+                        entry = price_map.setdefault(sym, {})
+                        if rn_latest == 1:
+                            entry["latest"] = close
+                        # `elif`, not `if`: when a symbol has no close at or after
+                        # the target month, its last row is simultaneously the
+                        # latest AND the prior-month close. Treating it as both
+                        # would fabricate a flat pct_vs_prev of 0.00%.
+                        elif prior_month and rn_prior == 1 and row_month == prior_month:
+                            entry["prior"] = close
             finally:
-                tconn.close()
+                if tconn is not None:
+                    tconn.close()
     except sqlite3.Error:
+        # Never swallow silently — a query error here is exactly what made
+        # price/prev% look like "some stocks just have no price".
+        logger.exception("Traction board price enrichment failed; price left blank")
         price_map = {}
 
     for r in rows:

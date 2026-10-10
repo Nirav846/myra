@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowUpDown, ChevronUp, ChevronDown, LayoutGrid, Table2 } from 'lucide-react';
 import { API_ROOT } from '../config';
+import ScrollableTable from '../components/ScrollableTable';
 
 // Traction Board — Pages-parity view of cross-fund-holdings-traction, served
 // from our own DB via /api/fund-traction/board*. Monthly cadence only: data is
@@ -125,6 +126,7 @@ const SORTS: { key: string; label: string }[] = [
   { key: 'share_change', label: 'Share Δ%' },
   { key: 'weight_delta', label: 'Weight Δpp' },
   { key: 'pct_vs_sma', label: '% vs SMA' },
+  { key: 'mcap', label: 'MCap' },
   { key: 'name', label: 'Name' },
 ];
 
@@ -135,6 +137,15 @@ const MCAP_FILTERS: { key: string; label: string }[] = [
   { key: 'small', label: 'Small (<5k Cr)' },
   { key: 'unknown', label: 'Unknown' },
 ];
+
+// The mcap stats chips must drive the mcap_bucket control. Sending them through
+// the generic activity `filter` is a no-op the backend silently ignores.
+const MCAP_CHIP_TO_BUCKET: Record<string, string> = {
+  large: 'large',
+  mid: 'mid',
+  small: 'small',
+  mcap_unknown: 'unknown',
+};
 
 const PERSISTENCE_BADGES: Record<string, { label: string; cls: string }> = {
   new_this_month: { label: 'New', cls: 'bg-emerald-500/15 text-emerald-300' },
@@ -221,6 +232,7 @@ export default function TractionBoard() {
     }
   });
   const [tableSort, setTableSort] = useState<{ key: string; asc: boolean } | null>(null);
+  const [showInsights, setShowInsights] = useState(false);
 
   const selectView = useCallback((next: 'cards' | 'table') => {
     setView(next);
@@ -371,8 +383,13 @@ export default function TractionBoard() {
     );
   };
 
+  const hasInsights = !!(
+    insights &&
+    (insights.insights.length > 0 || insights.top_traction.length > 0)
+  );
+
   return (
-    <div className="p-4 space-y-4 text-gray-100">
+    <div className="p-3 space-y-3 text-gray-100">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
@@ -439,26 +456,38 @@ export default function TractionBoard() {
 
       {/* Stats chips */}
       {chips.length > 0 && (
-        <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
-          {chips.map(c => (
-            <button
-              key={c.key}
-              onClick={() => setFilter(c.key)}
-              className={`rounded-lg p-2 text-center transition-colors ${
-                filter === c.key
-                  ? 'bg-indigo-600/25 ring-1 ring-indigo-500/50'
-                  : 'bg-white/5 hover:bg-white/10'
-              }`}
-            >
-              <div className="text-lg font-bold">{c.value}</div>
-              <div className="text-[10px] uppercase tracking-wide text-gray-400">{c.label}</div>
-            </button>
-          ))}
+        <div className="flex gap-2 overflow-x-auto pb-1">
+{chips.map(c => {
+            const bucket = MCAP_CHIP_TO_BUCKET[c.key];
+            const active = bucket ? mcapBucket === bucket : filter === c.key;
+            return (
+              <button
+                key={c.key}
+                onClick={() => {
+                  if (bucket) setMcapBucket(cur => (cur === bucket ? '' : bucket));
+                  else setFilter(c.key);
+                }}
+                aria-pressed={active}
+                className={`shrink-0 min-w-[76px] rounded-lg px-2 py-1.5 text-center transition-colors ${
+                  active
+                    ? 'bg-indigo-600/25 ring-1 ring-indigo-500/50'
+                    : 'bg-white/5 hover:bg-white/10'
+                }`}
+              >
+                <div className="text-base font-bold leading-tight">{c.value}</div>
+                <div className="text-[10px] uppercase tracking-wide text-gray-400 whitespace-nowrap">
+                  {c.label}
+                </div>
+              </button>
+            );
+          })}
         </div>
       )}
 
-      {/* Filter + sort + search */}
-      <div className="flex flex-wrap items-center gap-2">
+{/* Filter + sort + search — sticky so it stays put while the results scroll.
+          `top-1` (not top-0): <main> reserves pt-9 (36px) but the fixed
+          HealthStatusBar is h-10 (40px), so top-0 would tuck 4px underneath it. */}
+      <div className="sticky top-1 z-20 -mx-3 px-3 py-2 bg-[#0e1117]/95 backdrop-blur border-b border-white/10 flex flex-wrap items-center gap-2">
         <div className="flex flex-wrap gap-1">
           {FILTERS.map(f => (
             <button
@@ -474,17 +503,18 @@ export default function TractionBoard() {
             </button>
           ))}
         </div>
-        <div className="flex flex-wrap gap-1">
+        <select
+          value={mcapBucket}
+          onChange={e => setMcapBucket(e.target.value)}
+          className="bg-white/5 rounded-md px-2 py-1 text-xs text-gray-200 outline-none"
+          title="Filter by market-cap class"
+        >
           {MCAP_FILTERS.map(f => (
-            <button
-              key={f.key}
-              onClick={() => setMcapBucket(f.key)}
-              className={`px-2.5 py-1 rounded-md text-xs transition-colors ${mcapBucket === f.key ? 'bg-indigo-600 text-white' : 'bg-white/5 text-gray-300 hover:bg-white/10'}`}
-            >
+            <option key={f.key} value={f.key}>
               {f.label}
-            </button>
+            </option>
           ))}
-        </div>
+        </select>
         <select
           value={sort}
           onChange={e => setSort(e.target.value)}
@@ -502,6 +532,21 @@ export default function TractionBoard() {
           placeholder="Search name / symbol / sector…"
           className="bg-white/5 rounded-md px-3 py-1 text-xs w-56 outline-none focus:ring-1 focus:ring-indigo-500/50"
         />
+<button
+          onClick={() => setShowInsights(s => !s)}
+          aria-expanded={showInsights}
+          disabled={!hasInsights}
+          title={hasInsights ? undefined : 'No insights for this month'}
+          className={`px-2.5 py-1 rounded-md text-xs transition-colors ${
+            !hasInsights
+              ? 'bg-white/5 text-gray-500 cursor-not-allowed'
+              : showInsights
+                ? 'bg-indigo-600 text-white'
+                : 'bg-white/5 text-gray-300 hover:bg-white/10'
+          }`}
+        >
+          {showInsights ? 'Hide insights' : 'Insights'}
+        </button>
         {data && (
           <span className="text-xs text-gray-500 ml-auto">
             {data.count} stock{data.count === 1 ? '' : 's'}
@@ -521,7 +566,7 @@ export default function TractionBoard() {
       )}
 
       {/* Insights + top traction panel */}
-      {insights && (insights.insights.length > 0 || insights.top_traction.length > 0) && (
+      {showInsights && hasInsights && insights && (
         <div className="grid md:grid-cols-2 gap-3">
           {insights.insights.length > 0 && (
             <div className="rounded-xl bg-white/5 p-3 space-y-2">
@@ -752,9 +797,13 @@ export default function TractionBoard() {
       {/* Sortable table view */}
       {!loading && !error && data && view === 'table' && (
         <div className="rounded-xl bg-white/5 ring-1 ring-white/10 overflow-hidden">
-          <div className="overflow-x-auto overflow-y-auto max-h-[70vh]">
+          {/* ScrollableTable gives an always-visible floating horizontal
+              scrollbar + viewport-height vertical scroll + sticky header —
+              the same treatment every other scanner table gets. Without it the
+              native h-scrollbar was invisible on dark/overlay-scrollbar setups. */}
+          <ScrollableTable>
             <table className="w-full text-xs border-collapse">
-              <thead className="sticky top-0 z-10 bg-[#12141b]">
+              <thead className="bg-[#12141b]">
                 <tr className="text-gray-400">
                   {TABLE_COLUMNS.map(col => (
                     <th
@@ -978,7 +1027,7 @@ export default function TractionBoard() {
                 )}
               </tbody>
             </table>
-          </div>
+          </ScrollableTable>
         </div>
       )}
     </div>
