@@ -35,6 +35,36 @@ def wait_if_paused(timeout_seconds: float = 5.0):
         resume_enrichment()
 
 
+class EnrichmentCancelled(Exception):
+    """Raised when the enrichment pipeline is cancelled by the operator.
+
+    Distinct from an ordinary error so callers can tell "stopped on purpose"
+    apart from "failed", and so cancellation is never masked as success.
+    """
+
+
+#: How often a paused/cancelled pipeline re-checks its control events.
+_CANCEL_POLL_SECONDS = 0.25
+
+
+def _checkpoint(cancel_event=None, pause_event=None):
+    """Cooperative cancel/pause control point.
+
+    * ``cancel_event`` set      -> raise :class:`EnrichmentCancelled`.
+    * ``pause_event`` cleared   -> block until it is set again (or cancelled).
+
+    Passing ``None`` for either event makes that control a no-op, so existing
+    callers keep their current behaviour.
+    """
+    if cancel_event is not None and cancel_event.is_set():
+        raise EnrichmentCancelled("enrichment cancelled by operator")
+    if pause_event is not None:
+        while not pause_event.is_set():
+            if cancel_event is not None and cancel_event.is_set():
+                raise EnrichmentCancelled("enrichment cancelled while paused")
+            time.sleep(_CANCEL_POLL_SECONDS)
+
+
 def enrich_features(df: pl.DataFrame, nifty_df: pl.DataFrame) -> pl.DataFrame:
     """
     Enrich raw market data with institutional dynamic baselines using Vectorized Polars.
@@ -137,10 +167,22 @@ def enrich_features(df: pl.DataFrame, nifty_df: pl.DataFrame) -> pl.DataFrame:
     return df
 
 
-def process_enrichment_pipeline(lib, conn, target_date=None):
+def process_enrichment_pipeline(
+    lib,
+    conn,
+    target_date=None,
+    cancel_event=None,
+    pause_event=None,
+    raise_on_error=False,
+):
     """
     Handles the DB transaction and applies the enrichment logic.
     If target_date is provided, only data from that date backward is processed.
+
+    ``cancel_event`` / ``pause_event`` enable cooperative operator control
+    (see :func:`_checkpoint`).  ``raise_on_error`` is False for best-effort
+    ingest callers and True for the manual pipeline, where a failure must be
+    reported instead of silently swallowed.  Cancellation is always re-raised.
     """
     from datetime import datetime
     from myra_app.task_tracker import register, update, unregister
@@ -148,6 +190,7 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
     tid = register("Enrichment pipeline", task_type="batch")
     start_time = datetime.now()
     try:
+        _checkpoint(cancel_event, pause_event)
         date_ref = (
             f"'{target_date}'"
             if target_date
@@ -314,6 +357,7 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
 
             # Add missing columns to technical_data table
             for i, col in enumerate(smc_columns):
+                _checkpoint(cancel_event, pause_event)
                 if col in smc_df.columns:
                     try:
                         conn.execute(  # noqa: PG-NPLUS1
@@ -343,6 +387,7 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
 
             # Batch update using executemany for performance
             for i, col in enumerate(smc_columns):
+                _checkpoint(cancel_event, pause_event)
                 if col in smc_today.columns:
                     # Add progress print every 5 columns
                     if i % 5 == 0:
@@ -409,13 +454,19 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
 
             # Check if enrichment should pause after processing all symbols
             wait_if_paused()
+            _checkpoint(cancel_event, pause_event)
 
             # --- 52-week high/low and SMA metrics ---
             update(tid, "Computing SMA metrics and 52-week high/low…")
             print("[MYRA Enrichment] Computing SMA metrics and 52-week high/low...")
             for col in [
-                "sma_5", "sma_10", "sma_15", "sma_50", "sma_200",
-                "high_52w", "low_52w",
+                "sma_5",
+                "sma_10",
+                "sma_15",
+                "sma_50",
+                "sma_200",
+                "high_52w",
+                "low_52w",
             ]:
                 try:
                     conn.execute(
@@ -463,8 +514,15 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
             update_rows = []
             for row in df_latest.iter_rows(named=True):
                 vals = []
-                for col in ["sma_5", "sma_10", "sma_15", "sma_50", "sma_200",
-                            "high_52w", "low_52w"]:
+                for col in [
+                    "sma_5",
+                    "sma_10",
+                    "sma_15",
+                    "sma_50",
+                    "sma_200",
+                    "high_52w",
+                    "low_52w",
+                ]:
                     v = row[col]
                     vals.append(float(v) if v is not None else None)
                 if any(v is not None for v in vals):
@@ -494,6 +552,7 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
         # pipeline (no SQL-window writer).  Non-fatal: the scanner falls
         # back to the fundamentals snapshot when the table is absent/stale.
         try:
+            _checkpoint(cancel_event, pause_event)
             latest_rank_date = (
                 target_date
                 or conn.execute("SELECT MAX(date) FROM technical_data").fetchone()[0]
@@ -518,10 +577,15 @@ def process_enrichment_pipeline(lib, conn, target_date=None):
             f"Enrichment completed in {total_elapsed:.1f}s ({int(total_elapsed // 60)}m {int(total_elapsed % 60)}s)"
         )
 
+    except EnrichmentCancelled:
+        logging.getLogger(__name__).warning("Enrichment cancelled by operator")
+        raise
     except Exception as e:
         import logging
 
         logging.getLogger(__name__).error(f"Enrichment pipeline failed: {e}")
+        if raise_on_error:
+            raise
     finally:
         unregister(tid)
 

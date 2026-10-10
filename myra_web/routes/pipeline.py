@@ -13,7 +13,8 @@ Response contract (consumed by both Mission Control and Data Sync)::
 
     {
       "overall": {status, active_task_id, started_at, finished_at, message,
-                  progress_pct, run_type, stop_on_fail, cancel_requested, busy},
+                  progress_pct, run_type, stop_on_fail, cancel_requested, busy,
+                  paused},
       "tasks":   {<task_key>: {current_status, stage, progress_pct,
                                error_message, last_run, started_at,
                                finished_at, duration_seconds}},
@@ -139,6 +140,19 @@ def run_pipeline(req: RunRequest):
 def cancel_pipeline():
     """Request cancellation. The run stays ``cancelling`` until the task exits."""
     return control.cancel()
+
+
+@router.post("/pause")
+def pause_pipeline():
+    """Pause a running pipeline (cooperative; takes effect at the next
+    checkpoint of a task that honours pause_event — currently enrichment)."""
+    return control.pause()
+
+
+@router.post("/resume")
+def resume_pipeline():
+    """Resume a paused pipeline."""
+    return control.resume()
 
 
 @router.post("/force-reset")

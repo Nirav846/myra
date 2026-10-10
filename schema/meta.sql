@@ -99,10 +99,7 @@ CREATE TABLE symbols_master (
                     last_fundamental_update TEXT
                 , bse_scrip_code TEXT, name TEXT)
 
-CREATE TABLE sync_log (
-                task_name   TEXT PRIMARY KEY,
-                last_run    TEXT
-            , last_status TEXT DEFAULT 'unknown', error_message TEXT DEFAULT NULL, progress_pct REAL DEFAULT 0)
+CREATE TABLE sync_log (task_name TEXT PRIMARY KEY, last_run TEXT, last_status TEXT, error_message TEXT)
 
 CREATE TABLE task_registry (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

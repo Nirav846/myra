@@ -101,10 +101,18 @@ def sync_market_cap():
     failures = 0
     cur = conn.cursor()
 
+    # Null/empty-guarded: a partial fetch must never erase an existing value.
+    update_sql = (
+        "UPDATE fundamentals SET "
+        "market_cap = COALESCE(?, market_cap), "
+        "sector = COALESCE(NULLIF(?, ''), sector), "
+        "pe = COALESCE(?, pe) "
+        "WHERE symbol = ?"
+    )
     for r in results:
-        if r["market_cap"] is not None:
+        if any(r.get(k) is not None for k in ("market_cap", "sector", "pe")):
             cur.execute(  # noqa: PG-NPLUS1
-                "UPDATE fundamentals SET market_cap = ?, sector = ?, pe = ? WHERE symbol = ?",
+                update_sql,
                 (r["market_cap"], r["sector"], r["pe"], r["symbol"]),
             )
             successes += 1

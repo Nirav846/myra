@@ -92,3 +92,29 @@ Commit the resulting `schema/*.sql` and `schema/schema_manifest.json` changes al
 - Consolidation backfill is idempotent: `UPDATE WHERE (canonical IS NULL OR canonical = 0) AND alias IS NOT NULL AND alias != 0`.
 - SchemaRegistry only ADD COLUMNS (ALTER TABLE), never drops.
 - Calendar-vs-trading-day conversion uses factor 0.6 (conservative 5/7 ratio).
+
+## Resilient enrichment pipeline (sources + control)
+
+- Network cache + cost-aware source fallback live in `myra_app/data_sources/`:
+  `cache.TtlCache` (never raises; stale-readable), `registry.SourceRegistry`
+  (cost-ordered `fast`→`slow`, cooldown-aware), `resolver.resolve/resolve_many`
+  (fallback chain + stale-cache last resort). Design + status:
+  `docs/ENRICHMENT_PIPELINE_PLAN.md`.
+- Source adapters + orchestrator live in `myra_app/enrichment_sources.py`
+  (`yfinance_fetch`/`screener_fetch`/`nse_shareholding_fetch`, `enrich_symbol`,
+  `enrich_batch`). **`enrich_symbol`/`enrich_batch` default to `dry_run=True`** —
+  they write to `fundamentals` only when a caller passes `dry_run=False`, and only
+  through `myra_app.safe_write`.
+- Cost order matters: try fast sources (yfinance / Morningstar bulk) before slow
+  HTML scrapes (Screener.in, ~1.5 s+/symbol). Screener.in is the only ROE/ROCE
+  source, so it is primary *for those metrics only*, behind a TTL cache.
+- **Safe writes:** use `myra_app.safe_write` (`update_fill_only`, `upsert_row`,
+  `sanitize_metrics`) for anything touching `fundamentals`. Never write null/0
+  over a valid metric. `symbol_alias` in `myra_metadata.db` is the additive
+  symbol-identity bridge (upstream alias → canonical NSE ticker).
+- **Pipeline control:** `POST /api/pipeline/{run,cancel,pause,resume}`;
+  `PipelineControl.get_status()["overall"]` includes `paused`.
+  `feature_enrichment.process_enrichment_pipeline` accepts
+  `cancel_event` / `pause_event` / `raise_on_error` and honours them at
+  `_checkpoint` sites (raises `EnrichmentCancelled`; never reports a cancelled
+  run as completed).

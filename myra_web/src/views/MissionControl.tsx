@@ -16,7 +16,7 @@
  */
 import { useEffect, useState } from 'react';
 import {
-  Activity, Play, Square, RefreshCw, Unplug, Server, CircleDot,
+  Activity, Play, Pause, Square, RefreshCw, Unplug, Server, CircleDot,
 } from 'lucide-react';
 import type { Librarian } from '../lib/Librarian';
 import ErrorBoundary from '../components/ErrorBoundary';
@@ -34,7 +34,7 @@ import {
 // Keeps the props contract App.tsx already uses; the market widgets that needed
 // `navigateTo` are gone from this page but the route signature is unchanged.
 export default function MissionControlView({ lib }: { lib: Librarian; navigateTo: (id: string) => void }) {
-  const { status, events, connected, loading, error, busy, startTask, cancel, refresh } = usePipeline();
+  const { status, events, connected, loading, error, busy, startTask, pause, resume, cancel, refresh } = usePipeline();
 
   const [stopOnFail, setStopOnFail] = useState(true);
   const [elapsed, setElapsed] = useState(0);
@@ -42,6 +42,7 @@ export default function MissionControlView({ lib }: { lib: Librarian; navigateTo
   const overall = status?.overall;
   const isRunning = overall?.status === 'running';
   const isCancelling = overall?.status === 'cancelling';
+  const isPaused = overall?.status === 'paused';
   const activeTaskId = overall?.active_task_id ?? null;
 
   // Live elapsed clock — driven by the real start timestamp, never a fake timer.
@@ -131,18 +132,33 @@ export default function MissionControlView({ lib }: { lib: Librarian; navigateTo
 
           <div className="flex-1" />
 
-          {(isRunning || isCancelling) && (
-            <button
-              type="button"
-              onClick={cancel}
-              disabled={isCancelling}
-              className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded
-                         border border-red-500/40 text-red-300 hover:bg-red-500/10
-                         transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <Square size={12} aria-hidden="true" />
-              {isCancelling ? 'Cancelling…' : 'Cancel run'}
-            </button>
+          {(isRunning || isCancelling || isPaused) && (
+            <>
+              {!isCancelling && (
+                <button
+                  type="button"
+                  onClick={isPaused ? resume : pause}
+                  className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded
+                             border border-amber-500/40 text-amber-300 hover:bg-amber-500/10
+                             transition-colors"
+                  title={isPaused ? 'Resume the run' : 'Pause at the next checkpoint'}
+                >
+                  {isPaused ? <Play size={12} aria-hidden="true" /> : <Pause size={12} aria-hidden="true" />}
+                  {isPaused ? 'Resume' : 'Pause'}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={cancel}
+                disabled={isCancelling}
+                className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded
+                           border border-red-500/40 text-red-300 hover:bg-red-500/10
+                           transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Square size={12} aria-hidden="true" />
+                {isCancelling ? 'Cancelling…' : 'Cancel run'}
+              </button>
+            </>
           )}
         </div>
 

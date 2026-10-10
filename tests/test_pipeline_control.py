@@ -173,7 +173,7 @@ def test_restored_run_state_is_normalised_and_never_looks_active(monkeypatch):
         PipelineControl._instance = None
 
 
-def test_order_is_the_eight_task_pipeline(control):
+def test_order_is_the_nine_task_pipeline(control):
     assert PIPELINE_ORDER == [
         "daily_ingest",
         "enrichment",
@@ -183,6 +183,7 @@ def test_order_is_the_eight_task_pipeline(control):
         "market_cap_sync",
         "shares_outstanding_sync",
         "institutional_sync",
+        "fundamentals_enrich",
     ]
 
 
@@ -934,7 +935,8 @@ def test_other_tasks_keep_the_default_poll_interval():
     from myra_app.tasks.registry import TASKS
 
     for name, spec in TASKS.items():
-        if name == "fund-traction-sync":
+        # Tasks with a deliberate custom cadence.
+        if name in ("fund-traction-sync", "fundamentals-enrich"):
             continue
         assert spec.poll_seconds is None, f"{name} unexpectedly got a custom interval"
     assert POLL_SECONDS == 60, "global default unchanged"

@@ -17,6 +17,7 @@ from myra_app.utils.task_utils import (
     _is_task_due,
     _is_task_overdue,
     _mark_task_run,
+    schedule_paused,
 )
 
 logger = logging.getLogger(__name__)
@@ -91,6 +92,20 @@ def _execute_once(name: str, spec: TaskSpec, fn, ctx: TaskContext) -> None:
             )
 
 
+def should_fire(spec: TaskSpec) -> bool:
+    """Whether a due task may start now.
+
+    Split out so the operator-pause brake is unit-testable without driving the
+    polling loop. A paused scheduler never fires and never marks, so resuming
+    simply continues where the schedule left off.
+    """
+    return (
+        not schedule_paused()
+        and _is_task_due(spec.label, interval_days=spec.interval_days)
+        and attempt_allowed(spec)
+    )
+
+
 def run_periodic(task_name: str, spec: TaskSpec, ctx: TaskContext) -> None:
     """
     Executor body for one background task thread.
@@ -124,6 +139,7 @@ def run_periodic(task_name: str, spec: TaskSpec, ctx: TaskContext) -> None:
     # Startup catch-up: run immediately when overdue.
     if (
         spec.catchup
+        and not schedule_paused()
         and _is_task_overdue(spec.label, days=spec.interval_days)
         and attempt_allowed(spec)
     ):
@@ -133,9 +149,7 @@ def run_periodic(task_name: str, spec: TaskSpec, ctx: TaskContext) -> None:
     # Due-check poll loop.
     while not ctx.shutdown_event.is_set():
         try:
-            if _is_task_due(
-                spec.label, interval_days=spec.interval_days
-            ) and attempt_allowed(spec):
+            if should_fire(spec):
                 logger.info(f"[MYRA BG] Task {task_name} due – running...")
                 _execute_once(task_name, spec, fn, ctx)
         except Exception as e:

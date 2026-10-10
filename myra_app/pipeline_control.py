@@ -116,7 +116,14 @@ def _run_enrichment(tr: "TaskRun") -> None:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
         tr.stage("Computing features")
-        process_enrichment_pipeline(lib, conn, target_date=None)
+        process_enrichment_pipeline(
+            lib,
+            conn,
+            target_date=None,
+            cancel_event=tr.ctx.shutdown_event,
+            pause_event=tr.ctx.pause_event,
+            raise_on_error=True,
+        )
         conn.commit()
     except Exception:
         try:
@@ -209,6 +216,38 @@ def _run_institutional_sync(tr: "TaskRun") -> None:
     tr.stage("Institutional sync complete")
 
 
+def _run_fundamentals_enrich(tr: "TaskRun") -> None:
+    from myra_app.tasks.fundamentals_enrich import (
+        _batch_limit,
+        _select_symbols,
+        enrich_symbols,
+    )
+
+    if DISABLE_FUNDAMENTAL_WRITERS:
+        tr.note("DISABLE_FUNDAMENTAL_WRITERS=True: enrichment skipped")
+        return
+
+    conn = sqlite3.connect(os.path.join(DB_DIR, "myra_valuation.db"), timeout=30)
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        tr.stage("Scanning fundamentals for gaps")
+        symbols = _select_symbols(conn, _batch_limit())
+        tr.stage(f"Enriching {len(symbols)} symbols from source fallbacks")
+        summary = enrich_symbols(conn, symbols, tr.ctx)
+        tr.stage(
+            "Enrichment complete — "
+            f"selected={summary.get('selected', 0)}, "
+            f"written={summary.get('written', 0)}, "
+            f"resolved={summary.get('resolved', 0)}, "
+            f"failed={summary.get('failed', 0)}"
+        )
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 # Ordered pipeline. Order 1 -> 2 is a genuine dependency: enrichment reads symbols
 # produced by daily ingest, so running it standalone against a stale DB silently
 # produces wrong features.
@@ -236,6 +275,12 @@ PIPELINE_TASKS: dict[str, PipelineTask] = {
     ),
     "institutional_sync": PipelineTask(
         "institutional_sync", "Institutional Sync", 900, _run_institutional_sync
+    ),
+    "fundamentals_enrich": PipelineTask(
+        "fundamentals_enrich",
+        "Fundamentals Enrich",
+        3600,
+        _run_fundamentals_enrich,
     ),
 }
 
@@ -297,6 +342,11 @@ class PipelineControl:
 
         self._worker: Optional[threading.Thread] = None
         self._cancel_event = threading.Event()
+        # Set == running, cleared == paused (matches feature_enrichment's
+        # pause_event convention). Reset on every new run.
+        self._pause_event = threading.Event()
+        self._pause_event.set()
+        self._busy_statuses = ("running", "paused", "cancelling")
         self._timeout_timer: Optional[threading.Timer] = None
 
         self._state: dict[str, Any] = {
@@ -566,6 +616,7 @@ class PipelineControl:
                 "run_type": self._state["run_type"],
                 "stop_on_fail": self._state["stop_on_fail"],
                 "cancel_requested": self._cancel_event.is_set(),
+                "paused": self._state["status"] == "paused",
                 "busy": self._worker is not None and self._worker.is_alive(),
             }
             tasks = {key: dict(state) for key, state in self._tasks.items()}
@@ -589,6 +640,8 @@ class PipelineControl:
             if self._worker is not None and self._worker.is_alive():
                 raise PipelineBusyError("A pipeline run is already in progress")
             self._cancel_event.clear()
+            # A new run always starts unpaused.
+            self._pause_event.set()
 
             # Mark queued vs running immediately: a task must never display its
             # previous status while it is being started.
@@ -672,7 +725,7 @@ class PipelineControl:
         ``cancelling`` until the underlying task actually returns.
         """
         with self._lock:
-            busy = self._state["status"] in ("running", "cancelling")
+            busy = self._state["status"] in self._busy_statuses
             if busy:
                 self._state["status"] = "cancelling"
                 self._state[
@@ -680,13 +733,52 @@ class PipelineControl:
                 ] = "Cancellation requested — waiting for the task to stop"
         if busy:
             self._cancel_event.set()
+            # Release a paused task so its checkpoint can observe the cancel.
+            self._pause_event.set()
             self._emit({"type": "cancellation_requested"})
         self._persist_run_state()
         return {"success": True, "cancel_requested": busy}
 
+    def pause(self) -> dict[str, Any]:
+        """Pause all background work (manual run + scheduler).
+
+        Clears the shared ``pause_event`` (a running task that honours it stops at
+        its next checkpoint) and persists the scheduler pause so the executor
+        (which may live in another process) stops firing due tasks too.
+        """
+        with self._lock:
+            busy = self._state["status"] in self._busy_statuses
+            if busy and self._state["status"] != "paused":
+                self._state["status"] = "paused"
+                self._state["message"] = "Run paused — resume or cancel"
+        self._pause_event.clear()
+        from myra_app.utils.task_utils import set_schedule_paused
+
+        set_schedule_paused(True)
+        if busy:
+            self._emit({"type": "run_paused"})
+        self._persist_run_state()
+        return {"success": True, "paused": busy}
+
+    def resume(self) -> dict[str, Any]:
+        """Resume a paused pipeline and re-enable the scheduler."""
+        with self._lock:
+            was_paused = self._state["status"] == "paused"
+            if was_paused:
+                self._state["status"] = "running"
+                self._state["message"] = "Run resumed"
+        self._pause_event.set()
+        from myra_app.utils.task_utils import set_schedule_paused
+
+        set_schedule_paused(False)
+        if was_paused:
+            self._emit({"type": "run_resumed"})
+        self._persist_run_state()
+        return {"success": True, "resumed": was_paused}
+
     def is_busy(self) -> bool:
         with self._lock:
-            return self._state["status"] in ("running", "cancelling")
+            return self._state["status"] in self._busy_statuses
 
     def shutting_down(self) -> bool:
         """True once :meth:`shutdown` has been called (lets SSE streams close)."""
@@ -731,6 +823,8 @@ class PipelineControl:
                 if self._cancel_event.is_set():
                     overall_status = "cancelled"
         finally:
+            # Never leave the pipeline paused once the worker exits.
+            self._pause_event.set()
             with self._lock:
                 # Retain the final result until the next run starts — do not
                 # blank the status back to "Idle".
@@ -806,7 +900,11 @@ class PipelineControl:
 
         # The task's TaskContext carries the SAME event the cancel endpoint sets,
         # so tasks that poll it stop cooperatively.
-        ctx = TaskContext(shutdown_event=self._cancel_event, logger=logger)
+        ctx = TaskContext(
+            shutdown_event=self._cancel_event,
+            logger=logger,
+            pause_event=self._pause_event,
+        )
         run_handle = TaskRun(self, ctx)
 
         error: Optional[str] = None
@@ -836,7 +934,10 @@ class PipelineControl:
         if timed_out.is_set():
             status = "timed_out"
             error = f"Task timed out after {spec.timeout}s"
-        elif self._cancel_event.is_set() and status == "completed":
+        elif self._cancel_event.is_set():
+            # A cancel lands as EnrichmentCancelled (or a task aborting on the
+            # shutdown event). Report it as cancelled, never as a bare failure
+            # or a success.
             status = "cancelled"
             error = "Cancelled by operator"
 
@@ -950,39 +1051,26 @@ class PipelineControl:
         return config
 
     def get_schedule_paused(self) -> bool:
-        import json
+        """Read the persisted scheduler pause flag (shared with the executor)."""
+        from myra_app.utils.task_utils import schedule_paused
 
-        try:
-            lib = LibrarianCore(read_only=True)
-            try:
-                row = lib._meta_conn.execute(
-                    "SELECT value FROM metadata WHERE key='pipeline_schedule_paused'"
-                ).fetchone()
-            finally:
-                lib.close()
-            if row and row[0]:
-                return bool(json.loads(row[0]))
-        except Exception:
-            pass
-        return False
+        return schedule_paused(fresh=True)
 
     def toggle_schedule_pause(self) -> bool:
-        import json
+        """Toggle the scheduler pause and mirror it onto the shared pause event.
 
-        paused = not self.get_schedule_paused()
-        try:
-            lib = LibrarianCore(read_only=False)
-            try:
-                lib._meta_conn.execute(
-                    "INSERT OR REPLACE INTO metadata (key, value) VALUES "
-                    "('pipeline_schedule_paused', ?)",
-                    (json.dumps(paused),),
-                )
-                lib._meta_conn.commit()
-            finally:
-                lib.close()
-        except Exception as exc:
-            logger.warning("PipelineControl: could not persist schedule pause: %s", exc)
+        The persisted flag is what the scheduler (possibly another process)
+        honours; the in-memory event additionally makes it immediate for
+        checkpoint-aware tasks.
+        """
+        from myra_app.utils.task_utils import schedule_paused, set_schedule_paused
+
+        paused = not schedule_paused(fresh=True)
+        set_schedule_paused(paused)
+        if paused:
+            self._pause_event.clear()
+        else:
+            self._pause_event.set()
         self._emit({"type": "schedule_updated", "config": {"paused": paused}})
         return paused
 

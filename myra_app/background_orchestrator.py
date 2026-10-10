@@ -46,6 +46,11 @@ _CTX = TaskContext(shutdown_event=_shutdown_event, logger=logger)
 _active_tasks: list[threading.Thread] = []
 _task_lock = threading.Lock()
 
+# Guards against a double ``start()`` inside one process. ``scheduler_lock``
+# additionally guards against a *second process* starting a scheduler.
+_start_lock = threading.Lock()
+_started = False
+
 # ─── Thread-local connection pool for metadata operations ─────────────────────
 # PERFORMANCE IMPROVEMENT: Reuse connections per thread to avoid repeated open/close
 _connection_pool: dict[str, LibrarianCore] = {}
@@ -87,6 +92,7 @@ def _graceful_shutdown(_signum=None, _frame=None):
     Signals all background tasks to stop and waits for them to finish
     their current DB write before exiting.
     """
+    global _started
     if _shutdown_event.is_set():
         return  # Already shutting down
     logger.info(
@@ -109,7 +115,58 @@ def _graceful_shutdown(_signum=None, _frame=None):
                 logger.warning(f"[MYRA BG] Failed to close pooled connection: {e}")
         _connection_pool.clear()
 
+    # Compact WAL logs so a clean stop leaves no large -wal backlog, then
+    # release the single-scheduler lock so the next start (or a headless
+    # run_pipeline.py) can take over.
+    try:
+        from myra_app.librarian_core import checkpoint_all_databases
+
+        checkpoint_all_databases()
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[MYRA BG] WAL checkpoint on shutdown skipped: {e}")
+    try:
+        from myra_app.utils.scheduler_lock import release as _release_lock
+
+        _release_lock()
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[MYRA BG] scheduler lock release skipped: {e}")
+
+    with _start_lock:
+        _started = False
     logger.info("[MYRA] All background tasks finished. DB is safe. Goodbye.")
+
+
+def request_shutdown():
+    """Public, idempotent request to stop all background tasks gracefully."""
+    _graceful_shutdown()
+
+
+def attach_pause_event(event: threading.Event) -> None:
+    """Share an external pause Event with every scheduled task.
+
+    Set == running, cleared == paused. The API process calls this so an operator
+    "Pause" from the frontend reaches the *scheduled* tasks, not just manual runs.
+    """
+    _CTX.pause_event = event
+
+
+def is_started() -> bool:
+    return _started
+
+
+def _claim_start() -> bool:
+    """Atomically claim the in-process start slot.
+
+    Returns ``False`` when this process already started the orchestrator (or is
+    starting it), so a double ``start()`` is a no-op. Split out so the
+    single-start guarantee is unit-testable without launching threads.
+    """
+    global _started
+    with _start_lock:
+        if _started:
+            return False
+        _started = True
+        return True
 
 
 # ─── Thin task wrappers ───────────────────────────────────────────────────────
@@ -430,12 +487,42 @@ def _startup_ingest_catchup() -> str:
     return "no_new_data"
 
 
-def start():
+def start(register_signals: bool = True) -> bool:
     """
-    Call this from myra.py on startup.
+    Call this from myra.py / run_fastapi.py on startup.
     Launches all background tasks as daemon threads.
+
+    Idempotent: a second call in the same process is ignored. If another *process*
+    already owns the scheduler lock, this call declines (returns ``False``) rather
+    than starting a competing scheduler. ``register_signals`` is ``False`` when an
+    embedding server (uvicorn) owns signal handling.
     """
-    _register_signals()
+    global _started
+    if not _claim_start():
+        logger.info(
+            "[MYRA BG] Orchestrator already started in this process; "
+            "ignoring duplicate start()."
+        )
+        return False
+
+    # Cross-process guard: never run a second scheduler against the same DBs.
+    try:
+        from myra_app.utils.scheduler_lock import acquire as _acquire_lock
+
+        acquired, existing = _acquire_lock()
+        if not acquired:
+            logger.warning(
+                f"[MYRA BG] Another MYRA scheduler (pid={existing}) is already "
+                "running; not starting a second one."
+            )
+            with _start_lock:
+                _started = False
+            return False
+    except Exception as e:  # noqa: BLE001 - advisory guard
+        logger.debug(f"[MYRA BG] scheduler lock check skipped: {e}")
+
+    if register_signals:
+        _register_signals()
 
     _ensure_sync_log_table()
     _ensure_calendar_db()
@@ -475,3 +562,4 @@ def start():
     _launch_background_threads()
 
     logger.info("[MYRA BG] Background orchestrator running.")
+    return True

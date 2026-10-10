@@ -27,7 +27,11 @@ export interface UsePipelineResult {
   error: string | null;
   /** True while the run is genuinely executing (not merely 'cancelling'). */
   busy: boolean;
+  /** True while the operator has paused the run. */
+  paused: boolean;
   startTask: (task: string, stopOnFail?: boolean) => Promise<boolean>;
+  pause: () => Promise<void>;
+  resume: () => Promise<void>;
   cancel: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -114,7 +118,8 @@ export function usePipeline(): UsePipelineResult {
         // status so per-task state is never inferred from a partial payload.
         if (data.type === 'task_started' || data.type === 'task_completed' ||
             data.type === 'run_finished' || data.type === 'tasks_skipped' ||
-            data.type === 'all_stopped' || data.type === 'cancellation_requested') {
+            data.type === 'all_stopped' || data.type === 'cancellation_requested' ||
+            data.type === 'run_paused' || data.type === 'run_resumed') {
           refresh();
         }
       };
@@ -187,9 +192,35 @@ export function usePipeline(): UsePipelineResult {
     }
   }, [refresh]);
 
+  const pause = useCallback(async () => {
+    setError(null);
+    try {
+      await fetch(`${API_BASE}/pipeline/pause`, { method: 'POST' });
+      await refresh();
+    } catch (e) {
+      if (mounted.current) setError(e instanceof Error ? e.message : 'Network error');
+    }
+  }, [refresh]);
+
+  const resume = useCallback(async () => {
+    setError(null);
+    try {
+      await fetch(`${API_BASE}/pipeline/resume`, { method: 'POST' });
+      await refresh();
+    } catch (e) {
+      if (mounted.current) setError(e instanceof Error ? e.message : 'Network error');
+    }
+  }, [refresh]);
+
+  const paused = status?.overall?.paused === true ||
+    status?.overall?.status === 'paused';
   const busy = status?.overall?.busy === true ||
     status?.overall?.status === 'running' ||
+    status?.overall?.status === 'paused' ||
     status?.overall?.status === 'cancelling';
 
-  return { status, events, connected, loading, error, busy, startTask, cancel, refresh };
+  return {
+    status, events, connected, loading, error, busy, paused,
+    startTask, pause, resume, cancel, refresh,
+  };
 }

@@ -9,6 +9,7 @@ import logging
 import os
 import sqlite3
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 from myra_app.constants import DB_DIR
@@ -248,3 +249,86 @@ def _attempt_cooldown_elapsed(
     except Exception as e:
         logger.warning(f"[MYRA BG] Attempt cooldown check failed for {task_name}: {e}")
         return True
+
+
+# ─── Operator schedule control (persisted, cross-process) ─────────────────────
+#
+# The frontend's "Pause" button is a *scheduler* control, not just a per-run
+# control: it must be able to stop the background tasks from firing. The API
+# process and the scheduler may or may not be the same process, so the flag is
+# persisted in the metadata table (the one thing both processes share) rather
+# than held only in memory. The executor polls it (cheaply, via a short cache)
+# before firing any due task; a paused scheduler simply waits.
+
+#: metadata key holding the persisted pause flag.
+SCHEDULE_PAUSE_META_KEY = "pipeline_schedule_paused"
+
+#: The executor re-checks its due condition every 60s; caching the flag for a
+#: few seconds keeps that from turning into a metadata-DB read storm while
+#: still making a pause take effect promptly.
+_SCHEDULE_PAUSE_TTL_SECONDS = 10.0
+_schedule_pause_lock = threading.Lock()
+_schedule_pause_cache: dict = {"at": 0.0, "value": False}
+
+
+def _read_schedule_pause() -> bool:
+    """Read the persisted pause flag. Any failure degrades to "not paused"."""
+    try:
+        conn = _connect(read_only=True)
+        try:
+            row = conn.execute(
+                "SELECT value FROM metadata WHERE key = ?",
+                (SCHEDULE_PAUSE_META_KEY,),
+            ).fetchone()
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.debug(f"[MYRA BG] schedule pause read failed: {e}")
+        return False
+    if not row or row[0] is None:
+        return False
+    raw = str(row[0]).strip().lower()
+    if raw in ("1", "true", "yes", "on"):
+        return True
+    if raw in ("0", "false", "no", "off", ""):
+        return False
+    return raw == "true"
+
+
+def schedule_paused(fresh: bool = False) -> bool:
+    """Whether the operator has paused the background scheduler.
+
+    Cached for ``_SCHEDULE_PAUSE_TTL_SECONDS`` so the executor's poll loop does
+    not hit the metadata DB every cycle. Pass ``fresh=True`` to bypass the cache
+    (used by the API when reporting current state).
+    """
+    now = time.time()
+    if not fresh:
+        with _schedule_pause_lock:
+            if now - _schedule_pause_cache["at"] < _SCHEDULE_PAUSE_TTL_SECONDS:
+                return _schedule_pause_cache["value"]
+    value = _read_schedule_pause()
+    with _schedule_pause_lock:
+        _schedule_pause_cache["at"] = now
+        _schedule_pause_cache["value"] = value
+    return value
+
+
+def set_schedule_paused(paused: bool) -> None:
+    """Persist the pause flag and refresh the local cache immediately."""
+    try:
+        conn = _connect()
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
+                (SCHEDULE_PAUSE_META_KEY, "true" if paused else "false"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.warning(f"[MYRA BG] schedule pause write failed: {e}")
+    finally:
+        with _schedule_pause_lock:
+            _schedule_pause_cache["at"] = time.time()
+            _schedule_pause_cache["value"] = bool(paused)

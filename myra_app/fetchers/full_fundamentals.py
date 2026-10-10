@@ -115,7 +115,9 @@ def _get_page(symbol: str):
         logger.warning("Scrapling fetch failed for %s: %s", symbol, e)
         return None
     if resp is None or getattr(resp, "status", 0) != 200:
-        logger.warning("Scrapling returned status %s for %s", getattr(resp, "status", None), symbol)
+        logger.warning(
+            "Scrapling returned status %s for %s", getattr(resp, "status", None), symbol
+        )
         return None
     _page_cache[symbol] = resp
     if len(_page_cache) > PAGE_CACHE_MAX:
@@ -126,6 +128,7 @@ def _get_page(symbol: str):
 # --------------------------------------------------------------------------- #
 # Scrapling page parsing helpers
 # --------------------------------------------------------------------------- #
+
 
 def _text(node) -> str:
     if node is None:
@@ -181,7 +184,13 @@ def _parse_top_ratios(page) -> dict:
         number = _text(_first(li.css("span.number")))
         if not name or not number:
             continue
-        key = name.lower().replace(" ", "_").replace("/", "_").replace("%", "").replace(".", "")
+        key = (
+            name.lower()
+            .replace(" ", "_")
+            .replace("/", "_")
+            .replace("%", "")
+            .replace(".", "")
+        )
         val = _to_float(number)
         if val is not None:
             metrics[key] = val
@@ -225,7 +234,10 @@ def _parse_ratios_table(page) -> dict:
     table = _first(page.css("#ratios table.data-table"))
     if table is None:
         return out
-    headers = [_to_float(th.attrib.get("data-date-key")) for th in table.css("th[data-date-key]")]
+    headers = [
+        _to_float(th.attrib.get("data-date-key"))
+        for th in table.css("th[data-date-key]")
+    ]
     dates = [th.attrib.get("data-date-key") for th in table.css("th[data-date-key]")]
     if not dates:
         return out
@@ -252,13 +264,18 @@ def _parse_ratios_table(page) -> dict:
 # Individual source fetchers
 # --------------------------------------------------------------------------- #
 
+
 def get_company_id(symbol: str) -> str:
     """Scrape the company page (via Scrapling) for the numeric company id."""
     page = _get_page(symbol)
     if page is None:
         return None
     body = page.body
-    raw = body.decode("utf-8", errors="replace") if isinstance(body, (bytes, bytearray)) else str(body)
+    raw = (
+        body.decode("utf-8", errors="replace")
+        if isinstance(body, (bytes, bytearray))
+        else str(body)
+    )
     m = re.search(r'data-company-id="(\d+)"', raw)
     if m:
         return m.group(1)
@@ -315,6 +332,7 @@ def fetch_screener_snapshot(symbol: str) -> dict:
     snapshot["company_id"] = get_company_id(symbol)
     return snapshot
 
+
 def fetch_screener_ratios(symbol: str) -> dict:
     """Scrape the #ratios annual table; returns {} when absent."""
     page = _get_page(symbol)
@@ -348,7 +366,9 @@ def fetch_timeseries(company_id: str, metric: str) -> list:
         series = []
         for item in values:
             if isinstance(item, (list, tuple)) and len(item) >= 2:
-                series.append({"date": str(item[0]), "value": _to_float(item[1])})  # noqa: PG-APPEND
+                series.append(
+                    {"date": str(item[0]), "value": _to_float(item[1])}
+                )  # noqa: PG-APPEND
             else:
                 val = _to_float(item)
                 if val is not None:
@@ -406,6 +426,9 @@ def fetch_yfinance_data(symbol: str) -> dict:
         data["total_cash"] = g("totalCash")
         data["free_cashflow"] = g("freeCashflow")
         data["shares_outstanding"] = g("sharesOutstanding", "impliedSharesOutstanding")
+        data["float_shares"] = g("floatShares")
+        data["held_percent_insiders"] = g("heldPercentInsiders")
+        data["held_percent_institutions"] = g("heldPercentInstitutions")
         try:
             recs = ticker.recommendations
             if recs is not None and len(recs) > 0:
@@ -425,6 +448,7 @@ def fetch_yfinance_data(symbol: str) -> dict:
 # --------------------------------------------------------------------------- #
 # Orchestrator + cache
 # --------------------------------------------------------------------------- #
+
 
 def _json_safe(value):
     """Recursively convert numpy/pandas/datetime values to JSON-safe types."""

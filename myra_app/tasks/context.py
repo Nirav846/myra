@@ -14,10 +14,15 @@ class TaskContext:
         shutdown_event: Event set by the orchestrator on shutdown; long-running
             tasks poll/wait on it to exit responsively.
         logger: Logger tasks write through.
+        pause_event: Optional operator pause control for cooperative tasks. When
+            present, the task should block while it is ``clear()`` and proceed
+            while it is ``set()``. ``None`` (the default) means "never paused",
+            so existing entrypoints keep their current behaviour.
     """
 
     shutdown_event: threading.Event
     logger: logging.Logger
+    pause_event: threading.Event | None = None
 
 
 _default_context: TaskContext | None = None

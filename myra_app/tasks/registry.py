@@ -147,6 +147,28 @@ TASKS: dict[str, TaskSpec] = {
         label="traction_sma_update",
         interval_days=1,
     ),
+    # Daily post-close gap-fill of the fundamentals table via the resilient
+    # source layer. The weekday/18:00-IST gate lives inside run(); it returns
+    # *without* marking before the gate so the executor retries later the same
+    # day (mark_on_success=False keeps the gate in charge of sync_log marking).
+    # Long poll: the off-hours no-op branch costs no network, and a 30-min
+    # re-check is ample to catch the gate opening.
+    "fundamentals-enrich": TaskSpec(
+        module="myra_app.tasks.fundamentals_enrich",
+        label="fundamentals_enrich",
+        interval_days=1,
+        catchup=True,
+        stagger=True,
+        mark_on_success=False,
+        poll_seconds=1800,
+    ),
+    # Symbol-identity bridge (alias -> canonical) from local name matching.
+    # Cheap and idempotent; weekly is plenty (the upstream artifact is monthly).
+    "symbol-identity": TaskSpec(
+        module="myra_app.tasks.symbol_identity",
+        label="symbol_identity",
+        interval_days=7,
+    ),
     # Append-only point-in-time archive. Weekly is fine: it is a safety net
     # for history that is otherwise overwritten in place (rolling
     # fundamentals snapshot, year-less rolling traction file).

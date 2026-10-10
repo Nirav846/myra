@@ -105,6 +105,11 @@ class LibrarianCore:
                 return None
             try:
                 conn = sqlite3.connect(path, check_same_thread=False)
+                # WAL keeps readers unblocked by a writer and survives an abrupt
+                # kill (committed frames are recovered on next open). A finite
+                # busy_timeout stops a transient cross-process lock from raising
+                # an immediate "database is locked" error.
+                conn.execute("PRAGMA busy_timeout=30000")
                 conn.execute("PRAGMA journal_mode=WAL")
                 conn.execute("PRAGMA synchronous=NORMAL")
                 return conn
@@ -229,3 +234,29 @@ class LibrarianCore:
             self._meta_conn.commit()
         except Exception as e:
             print(f"[MYRA] Failed to record lineage for {dataset}: {e}")
+
+
+def checkpoint_all_databases(timeout_ms: int = 5000) -> list[str]:
+    """Best-effort ``wal_checkpoint(TRUNCATE)`` on every existing sidecar.
+
+    Called on graceful shutdown so a normal stop leaves compact ``-wal`` files
+    instead of a large backlog for the next start to replay. It only touches
+    files that already exist and never raises — a checkpoint failure must not
+    prevent shutdown.
+    """
+    done: list[str] = []
+    for filename in set(LibrarianCore.DB_MAP.values()):
+        path = os.path.join(DB_DIR, filename)
+        if not os.path.exists(path):
+            continue
+        try:
+            conn = sqlite3.connect(path, timeout=timeout_ms / 1000)
+            try:
+                conn.execute(f"PRAGMA busy_timeout={int(timeout_ms)}")
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            finally:
+                conn.close()
+            done.append(filename)
+        except Exception as e:  # noqa: BLE001 - best effort
+            print(f"[MYRA] WAL checkpoint skipped for {filename}: {e}")
+    return done

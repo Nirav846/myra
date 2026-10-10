@@ -1,12 +1,30 @@
-# run_pipeline.py – stand‑alone MYRA data pipeline (fail‑proof, graceful shutdown)
+# run_pipeline.py – headless MYRA data pipeline + manual CLI enrichers.
+#
+# The web flow no longer needs this process: run_fastapi.py owns the scheduler
+# (see myra_web/myra_fastapi_server.py lifespan). This script remains for
+# headless use and one-shot manual commands (--enrich-ca, --sync-fund-traction,
+# ...). It refuses to start a *second* scheduler when one already runs.
 import os
 import sys
-import signal
-import time
-import logging
-import asyncio
-from myra_app.db.enrichers.corporate_actions_enricher import enrich_corporate_actions
-from myra_app.db.enrichers.screener_enricher import enrich_screener_fundamentals
+
+# ---- auto-activate virtual environment (must precede myra_app imports) ----
+VENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pkscreener_env")
+VENV_PYTHON = os.path.join(VENV_PATH, "Scripts", "python.exe")
+if os.path.exists(VENV_PYTHON) and sys.executable.lower() != VENV_PYTHON.lower():
+    print(f"[venv] Re-launching with {VENV_PYTHON}")
+    os.execv(VENV_PYTHON, [VENV_PYTHON] + sys.argv)
+# ---------------------------------------------------------------------------
+
+import logging  # noqa: E402
+import signal  # noqa: E402
+import time  # noqa: E402
+import asyncio  # noqa: E402
+from myra_app.db.enrichers.corporate_actions_enricher import (  # noqa: E402
+    enrich_corporate_actions,
+)
+from myra_app.db.enrichers.screener_enricher import (  # noqa: E402
+    enrich_screener_fundamentals,
+)
 
 
 def main():
@@ -97,19 +115,25 @@ def main():
     # Import the orchestrator module and start all background tasks
     import myra_app.background_orchestrator as orch
 
-    orch.start()  # launches all daemon threads (ingest, syncs, watchdog)
+    # Single-scheduler guard: if the web/API process (or another copy of this
+    # script) already owns the scheduler, decline rather than run a duplicate.
+    if not orch.start():  # launches all daemon threads (ingest, syncs, watchdog)
+        logger.warning(
+            "Another MYRA scheduler is already running — exiting to avoid a "
+            "duplicate. (The web flow is owned by run_fastapi.py.)"
+        )
+        return
 
     # Access the shutdown event that the orchestrator uses internally
     shutdown_event = orch._shutdown_event
 
     # ---------- Graceful shutdown handler ----------
     def handle_exit(signum=None, frame=None):
+        # Delegate to the orchestrator so threads are *joined* and the WAL is
+        # checkpointed before exit (a bare sys.exit here would skip both).
         logger.info("Received shutdown signal – stopping threads…")
-        shutdown_event.set()
-        # Give threads a moment to finish their current operation
-        time.sleep(2)
+        orch.request_shutdown()
         logger.info("Pipeline stopped cleanly.")
-        sys.exit(0)
 
     signal.signal(signal.SIGINT, handle_exit)  # Ctrl+C
     signal.signal(signal.SIGTERM, handle_exit)  # kill (non‑forced)

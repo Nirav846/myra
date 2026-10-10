@@ -13,13 +13,17 @@ import uvicorn
 import signal
 import sys
 
+
 def run():
+    # This process owns the one-and-only background scheduler for the web flow,
+    # so the frontend's start/pause/cancel controls actually reach it.
+    os.environ.setdefault("MYRA_EMBED_SCHEDULER", "1")
     # Disable reloader to avoid double-process issues on Windows
     config = uvicorn.Config(
         "myra_web.myra_fastapi_server:app",
         host="0.0.0.0",
         port=8000,
-        reload=False,       # reload is unstable on Windows with signals
+        reload=False,  # reload is unstable on Windows with signals
         log_level="info",
     )
     server = uvicorn.Server(config)
@@ -32,6 +36,7 @@ def run():
     signal.signal(signal.SIGTERM, handle_exit)
 
     server.run()
+
 
 if __name__ == "__main__":
     run()

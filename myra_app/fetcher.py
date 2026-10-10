@@ -32,8 +32,17 @@ import time
 
 
 class GhostSession:
+    #: Default lifetime for cached HTTP responses (30 days) — matches the
+    #: intent of the retired ``expire_seconds=2592000`` call sites.
+    DEFAULT_CACHE_TTL = 2592000
+
     def __init__(self, cache_path=None):
-        # Ignore cache for now (simpler)
+        self.cache_path = cache_path
+        # Lazily-opened connection to the network cache DB (also backs
+        # source_stats reliability tracking). Was previously referenced by
+        # _get_conn/_get_cache/_set_cache but never defined, so deep-history
+        # fetches raised AttributeError and reliability always read 0.5.
+        self._conn = None
         self.session = cloudscraper.create_scraper(
             browser={
                 "browser": "chrome",
@@ -90,7 +99,109 @@ class GhostSession:
     def get(self, url, headers=None, **kwargs):
         return self.request(url, method="GET", headers=headers)
 
+    # -- network cache / reliability connection -----------------------------
+
+    def _cache_path(self):
+        """Resolve the cache DB path, preferring an existing on-disk file."""
+        if self.cache_path and os.path.exists(self.cache_path):
+            return self.cache_path
+        from myra_app.constants import DB_DIR
+
+        return os.path.join(DB_DIR, "myra_cache_network.db")
+
+    def _get_conn(self):
+        """Return a shared SQLite connection to the network-cache database."""
+        if self._conn is None:
+            conn = sqlite3.connect(
+                self._cache_path(), timeout=30, check_same_thread=False
+            )
+            try:
+                conn.execute("PRAGMA journal_mode=WAL")
+            except sqlite3.Error:
+                pass
+            self._conn = conn
+        return self._conn
+
+    @staticmethod
+    def _age_seconds(created_at):
+        """Age of a cache row in seconds, or ``None`` if unparseable."""
+        if created_at is None:
+            return None
+        try:
+            return max(0.0, time.time() - float(created_at))
+        except (TypeError, ValueError):
+            pass
+        try:
+            parsed = datetime.strptime(str(created_at)[:19], "%Y-%m-%d %H:%M:%S")
+            return max(
+                0.0, time.time() - parsed.replace(tzinfo=timezone.utc).timestamp()
+            )
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _cache_key(key, params=None):
+        if not params:
+            return key
+        return f"{key}|{json.dumps(params, sort_keys=True, default=str)}"
+
+    def _ensure_cache_table(self, conn):
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS cache ("
+            "key TEXT PRIMARY KEY, value BLOB, "
+            "created_at TEXT NOT NULL DEFAULT (datetime('now')))"
+        )
+
+    def _get_cache(self, key, params=None, expire_seconds=None):
+        """Return the raw cached bytes for ``key``, or ``None`` if absent/expired."""
+        full_key = self._cache_key(key, params)
+        expire = self.DEFAULT_CACHE_TTL if expire_seconds is None else expire_seconds
+        try:
+            conn = self._get_conn()
+            self._ensure_cache_table(conn)
+            row = conn.execute(
+                "SELECT value, created_at FROM cache WHERE key = ?", (full_key,)
+            ).fetchone()
+        except Exception:
+            logger.debug("fetch cache read failed for %s", full_key, exc_info=True)
+            return None
+        if not row:
+            return None
+        age = self._age_seconds(row[1])
+        if expire is not None and (age is None or age > expire):
+            return None
+        value = row[0]
+        if isinstance(value, memoryview):
+            value = value.tobytes()
+        elif isinstance(value, str):
+            value = value.encode("utf-8")
+        return value
+
+    def _set_cache(self, key, value, params=None, expire_seconds=None):
+        """Persist raw response bytes for ``key``. Never raises."""
+        full_key = self._cache_key(key, params)
+        try:
+            conn = self._get_conn()
+            self._ensure_cache_table(conn)
+            if isinstance(value, str):
+                value = value.encode("utf-8")
+            conn.execute(
+                "INSERT INTO cache(key, value, created_at) VALUES(?,?,?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
+                "created_at = excluded.created_at",
+                (full_key, sqlite3.Binary(value), str(time.time())),
+            )
+            conn.commit()
+        except Exception:
+            logger.debug("fetch cache write failed for %s", full_key, exc_info=True)
+
     def close(self):
+        if self._conn is not None:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+            self._conn = None
         try:
             self.session.close()
         except Exception:

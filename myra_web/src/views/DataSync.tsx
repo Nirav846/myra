@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, ReactNode } from 'react';
 import {
   RefreshCw, Play, CheckCircle, XCircle, Clock, AlertTriangle,
   Database, HardDrive, Key, Server, StopCircle, X, ChevronRight, CalendarClock,
-  Download, Dna, List, BarChart3, TrendingUp, Coins, Building2
+  Download, Dna, List, BarChart3, TrendingUp, Coins, Building2, Pause
 } from 'lucide-react';
 import { useHealthStatus } from '../hooks/useHealthStatus';
 // Single execution state path — shared with Mission Control. Data Sync keeps the
@@ -112,7 +112,7 @@ export default function DataSyncView() {
   // owns no second SSE connection and no second run queue.
   const {
     status, events: sseEvents, connected, error, busy,
-    startTask, cancel, refresh: refreshPipeline,
+    startTask, pause, resume, cancel, refresh: refreshPipeline,
   } = usePipeline();
   const [checks, setChecks] = useState<PipelineChecks | null>(null);
   const [checksCollapsed, setChecksCollapsed] = useState(() => localStorage.getItem('datasync_checks_collapsed') === 'true');
@@ -207,6 +207,8 @@ export default function DataSyncView() {
   };
 
   const isRunning = status?.overall?.status === 'running' || status?.overall?.status === 'cancelling';
+  const isPaused = status?.overall?.status === 'paused';
+  const isActive = isRunning || isPaused;
   const activeTaskId = status?.overall?.active_task_id ?? null;
   const shownError = error || localError;
 
@@ -262,16 +264,37 @@ export default function DataSyncView() {
           >
             Auto-Sync: {schedulePaused ? 'OFF' : 'ON'}
           </button>
-          {isRunning ? (
-            <button
-              onClick={cancelRun}
-              disabled={status?.overall?.status === 'cancelling'}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/20 border border-red-500/30 rounded text-[12px] text-red-400 font-mono hover:bg-red-500/30 transition-colors disabled:opacity-40"
-              title="Requests cancellation. The run stays 'cancelling' until the task actually stops."
-            >
-              <StopCircle size={14} />
-              {status?.overall?.status === 'cancelling' ? 'Cancelling...' : 'Cancel'}
-            </button>
+          {isActive ? (
+            <>
+              {!isPaused ? (
+                <button
+                  onClick={pause}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/20 border border-amber-500/30 rounded text-[12px] text-amber-400 font-mono hover:bg-amber-500/30 transition-colors"
+                  title="Pause at the next checkpoint (enrichment honours this)."
+                >
+                  <Pause size={14} />
+                  Pause
+                </button>
+              ) : (
+                <button
+                  onClick={resume}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/20 border border-blue-500/30 rounded text-[12px] text-blue-400 font-mono hover:bg-blue-500/30 transition-colors"
+                  title="Resume the paused run."
+                >
+                  <Play size={14} />
+                  Resume
+                </button>
+              )}
+              <button
+                onClick={cancelRun}
+                disabled={status?.overall?.status === 'cancelling'}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/20 border border-red-500/30 rounded text-[12px] text-red-400 font-mono hover:bg-red-500/30 transition-colors disabled:opacity-40"
+                title="Requests cancellation. The run stays 'cancelling' until the task actually stops."
+              >
+                <StopCircle size={14} />
+                {status?.overall?.status === 'cancelling' ? 'Cancelling...' : 'Cancel'}
+              </button>
+            </>
           ) : null}
           <button
             onClick={forceReset}
@@ -281,7 +304,7 @@ export default function DataSyncView() {
             <RefreshCw size={14} />
             Force Reset
           </button>
-          {!isRunning ? (
+          {!isActive ? (
             <button
               onClick={() => triggerRun('all')}
               disabled={busy}

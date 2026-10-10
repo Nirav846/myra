@@ -109,6 +109,27 @@ class LibrarianSchemaMixin:
                 conn=self._meta_conn,
             )
 
+            # Symbol identity bridge: maps upstream / name-derived aliases to a
+            # canonical NSE ticker. Additive only; see
+            # docs/ENRICHMENT_PIPELINE_PLAN.md (Phase 0.8 / 2.5).
+            self.safe_execute(
+                """
+                CREATE TABLE IF NOT EXISTS symbol_alias (
+                    alias TEXT PRIMARY KEY,
+                    canonical TEXT NOT NULL,
+                    source TEXT,
+                    confidence REAL,
+                    updated_at TEXT
+                )
+                """,
+                conn=self._meta_conn,
+            )
+            self.safe_execute(
+                "CREATE INDEX IF NOT EXISTS idx_symbol_alias_canonical "
+                "ON symbol_alias (canonical)",
+                conn=self._meta_conn,
+            )
+
         # --- 2. TECHNICAL.DB (Price History) ---
         if self._tech_conn:
             self.safe_execute(

@@ -223,6 +223,20 @@ class SchemaRegistry:
             },
             "primary_key": "(symbol)",
         },
+        "symbol_alias": {
+            # Upstream / name-derived alias -> canonical NSE ticker mapping.
+            # Created explicitly in librarian_schema._create_tables (the registry
+            # only ADDs columns to existing tables). Additive only.
+            "db": "meta",
+            "columns": {
+                "alias": "TEXT PRIMARY KEY",
+                "canonical": "TEXT NOT NULL",
+                "source": "TEXT",
+                "confidence": "REAL",
+                "updated_at": "TEXT",
+            },
+            "primary_key": "(alias)",
+        },
         "index_constituents": {
             "db": "meta",
             "columns": {

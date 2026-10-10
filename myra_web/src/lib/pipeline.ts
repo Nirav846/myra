@@ -6,7 +6,7 @@
  */
 
 export type RunStatus =
-  | 'idle' | 'running' | 'cancelling' | 'completed' | 'failed' | 'cancelled';
+  | 'idle' | 'running' | 'paused' | 'cancelling' | 'completed' | 'failed' | 'cancelled';
 
 export type TaskStatus =
   | 'never' | 'queued' | 'running' | 'completed'
@@ -22,6 +22,7 @@ export interface OverallState {
   run_type: 'all' | 'single' | null;
   stop_on_fail: boolean;
   cancel_requested: boolean;
+  paused: boolean;
   busy: boolean;
 }
 
@@ -68,6 +69,7 @@ export const PIPELINE_ORDER = [
   'market_cap_sync',
   'shares_outstanding_sync',
   'institutional_sync',
+  'fundamentals_enrich',
 ] as const;
 
 export const TASK_LABELS: Record<string, string> = {
@@ -79,6 +81,7 @@ export const TASK_LABELS: Record<string, string> = {
   market_cap_sync: 'Market Cap Sync',
   shares_outstanding_sync: 'Shares Refresh',
   institutional_sync: 'Institutional Sync',
+  fundamentals_enrich: 'Fundamentals Enrich',
 };
 
 /** Tasks that gate the ones after them when running the full sequence. */
@@ -103,6 +106,8 @@ export function taskStatusVisual(status: TaskStatus | string): StatusVisual {
       return { label: 'Completed', cls: 'text-green-400 border-green-500/40 bg-green-500/10', dot: 'bg-green-400' };
     case 'running':
       return { label: 'Running', cls: 'text-blue-300 border-blue-500/40 bg-blue-500/10', dot: 'bg-blue-400 animate-pulse' };
+    case 'paused':
+      return { label: 'Paused', cls: 'text-amber-300 border-amber-500/40 bg-amber-500/10', dot: 'bg-amber-300' };
     case 'queued':
       return { label: 'Queued', cls: 'text-[#888] border-[#ffffff1a] bg-white/5', dot: 'bg-[#888]' };
     case 'failed':
@@ -206,6 +211,10 @@ export function describeEvent(ev: PipelineEvent): { text: string; cls: string } 
       return { text: `Remaining tasks ${ev.reason === 'cancelled' ? 'cancelled' : 'skipped'}`, cls: 'text-[#888]' };
     case 'cancellation_requested':
       return { text: 'Cancellation requested — waiting for the task to stop', cls: 'text-yellow-400' };
+    case 'run_paused':
+      return { text: 'Pipeline paused', cls: 'text-amber-300' };
+    case 'run_resumed':
+      return { text: 'Pipeline resumed', cls: 'text-blue-300' };
     case 'schedule_updated':
       return { text: 'Schedule configuration updated', cls: 'text-indigo-300' };
     default:
