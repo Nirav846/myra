@@ -147,6 +147,17 @@ TASKS: dict[str, TaskSpec] = {
         label="traction_sma_update",
         interval_days=1,
     ),
+    # RupeeVest full-portfolio sync (mf_fund / mf_holding / mf_fund_aum). The
+    # module owns its own "previous month fully reported" gate: once every fund
+    # has disclosed last month there is nothing new, so it no-ops and marks
+    # itself run. Daily cadence gives ~1-day detection latency for the monthly
+    # disclosure wave; mark_on_success=False keeps the gate in charge.
+    "mf-holdings-sync": TaskSpec(
+        module="myra_app.tasks.mf_holdings",
+        label="mf_holdings_sync",
+        interval_days=1,
+        mark_on_success=False,
+    ),
     # Daily post-close gap-fill of the fundamentals table via the resilient
     # source layer. The weekday/18:00-IST gate lives inside run(); it returns
     # *without* marking before the gate so the executor retries later the same

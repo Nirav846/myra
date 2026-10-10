@@ -89,6 +89,31 @@ CREATE TABLE fundamentals (
             last_updated TEXT
         , profit_growth REAL, sales_growth REAL, debt_to_equity REAL, inst_holding REAL, dividend_yield REAL, date TEXT, sector_pe REAL, face_value REAL, issued_size REAL, net_margin REAL, roe_ttm REAL, daily_volatility REAL, annual_volatility REAL, impact_cost REAL, source_ms TEXT, source_nse TEXT, peRatio REAL, priceToBook REAL, priceToSales REAL, earningsPerShare REAL, bookValuePerShare REAL, revenueGrowth REAL, earningsGrowth REAL, marketCap REAL, enterpriseValue REAL, debtToEquity REAL, returnOnEquity REAL, returnOnAssets REAL, operatingMargin REAL, grossMargin REAL, netMargin REAL, dividendYield REAL, payoutRatio REAL, currentRatio REAL, quickRatio REAL, freeCashFlowYield REAL, beta REAL, free_float_pct REAL, free_float_market_cap REAL, free_float_shares REAL, insider_holding_pct REAL, public_holding_pct REAL, industry TEXT, shares_outstanding REAL, promoter_holding_pct REAL, last_fundamental_update TEXT, operating_margin REAL, gross_margin REAL, free_cash_flow_yield REAL, current_ratio REAL, quick_ratio REAL, price_to_book REAL, payout_ratio REAL)
 
+CREATE TABLE mf_fund (
+    fund_slug    TEXT PRIMARY KEY,
+    display_name TEXT,
+    schemecode   TEXT,
+    category     TEXT,
+    updated_at   TEXT
+)
+
+CREATE TABLE mf_fund_aum (
+    fund_slug TEXT NOT NULL,
+    month     TEXT NOT NULL,
+    aum_cr    REAL,
+    PRIMARY KEY (fund_slug, month)
+)
+
+CREATE TABLE mf_holding (
+    fund_slug  TEXT NOT NULL,
+    month      TEXT NOT NULL,          -- YYYY-MM
+    fincode    TEXT NOT NULL,
+    company    TEXT NOT NULL,
+    weight_pct REAL,
+    shares     REAL,
+    PRIMARY KEY (fund_slug, month, fincode)
+)
+
 CREATE TABLE quarterly_results (
             symbol TEXT,
             report_date TEXT,
@@ -208,3 +233,7 @@ CREATE INDEX idx_fund_traction_insights_month
 CREATE INDEX idx_fund_traction_month ON fund_traction(month)
 
 CREATE INDEX idx_funda_sector ON fundamentals(sector)
+
+CREATE INDEX idx_mf_holding_fund ON mf_holding (fund_slug, month)
+
+CREATE INDEX idx_mf_holding_month ON mf_holding (month)

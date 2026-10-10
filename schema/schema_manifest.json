@@ -3103,7 +3103,7 @@
           }
         ],
         "name": "fund_traction_funds",
-        "row_count": 8410
+        "row_count": 12131
       },
       {
         "columns": [
@@ -3590,6 +3590,108 @@
         ],
         "name": "fundamentals",
         "row_count": 3946
+      },
+      {
+        "columns": [
+          {
+            "name": "fund_slug",
+            "notnull": false,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "display_name",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "schemecode",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "category",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "updated_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "mf_fund",
+        "row_count": 62
+      },
+      {
+        "columns": [
+          {
+            "name": "fund_slug",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "month",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "aum_cr",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          }
+        ],
+        "name": "mf_fund_aum",
+        "row_count": 240
+      },
+      {
+        "columns": [
+          {
+            "name": "fund_slug",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "month",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "fincode",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "company",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "weight_pct",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "shares",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          }
+        ],
+        "name": "mf_holding",
+        "row_count": 18476
       },
       {
         "columns": [
