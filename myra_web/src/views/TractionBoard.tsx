@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { ArrowUpDown, ChevronUp, ChevronDown, LayoutGrid, Table2 } from 'lucide-react';
 import { API_ROOT } from '../config';
 
 // Traction Board — Pages-parity view of cross-fund-holdings-traction, served
@@ -150,6 +151,42 @@ const ACTION_BADGES: Record<string, string> = {
   caution: 'bg-amber-500/15 text-amber-300',
 };
 
+interface TableColumn {
+  key: string;
+  label: string;
+  numeric: boolean;
+}
+
+const TABLE_COLUMNS: TableColumn[] = [
+  { key: 'name', label: 'Stock', numeric: false },
+  { key: 'sector', label: 'Sector', numeric: false },
+  { key: 'direction', label: 'Direction', numeric: false },
+  { key: 'persistence', label: 'Persistence', numeric: false },
+  { key: 'score', label: 'Score', numeric: true },
+  { key: 'fund_count', label: 'Funds', numeric: true },
+  { key: 'add_count', label: 'Adds', numeric: true },
+  { key: 'reduce_count', label: 'Reduces', numeric: true },
+  { key: 'new_entry_count', label: 'New', numeric: true },
+  { key: 'median_share_change_pct', label: 'Share Δ%', numeric: true },
+  { key: 'median_weight_delta_pp', label: 'Weight Δpp', numeric: true },
+  { key: 'pct_vs_sma', label: '% vs SMA', numeric: true },
+  { key: 'price', label: 'Price', numeric: true },
+  { key: 'pct_vs_prev', label: 'Δ Prev%', numeric: true },
+  { key: 'market_cap_cr', label: 'MCap Cr', numeric: true },
+  { key: 'mcap_bucket', label: 'Cap', numeric: false },
+];
+
+/** Resolve a sortable value for a column (strings for text, numbers for numeric). */
+function sortValue(row: BoardRow, key: string): number | string {
+  if (key === 'persistence') return row.persistence?.status ?? 'unknown';
+  if (key === 'name') return (row.name || row.nse || row.symbol || '').toLowerCase();
+  if (key === 'sector') return (row.sector || '').toLowerCase();
+  if (key === 'direction') return (row.direction || '').toLowerCase();
+  if (key === 'mcap_bucket') return row.mcap_bucket || 'unknown';
+  const v = (row as unknown as Record<string, unknown>)[key];
+  return typeof v === 'number' ? v : Number.NEGATIVE_INFINITY;
+}
+
 function fmtMonth(ym: string): string {
   if (!ym || ym.length !== 7) return ym;
   const [y, m] = ym.split('-');
@@ -176,6 +213,27 @@ export default function TractionBoard() {
    const [mcapBucket, setMcapBucket] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [pins, setPins] = useState<Set<string>>(new Set());
+  const [view, setView] = useState<'cards' | 'table'>(() => {
+    try {
+      return localStorage.getItem('traction_view') === 'table' ? 'table' : 'cards';
+    } catch {
+      return 'cards';
+    }
+  });
+  const [tableSort, setTableSort] = useState<{ key: string; asc: boolean } | null>(null);
+
+  const selectView = useCallback((next: 'cards' | 'table') => {
+    setView(next);
+    try {
+      localStorage.setItem('traction_view', next);
+    } catch {
+      // localStorage unavailable — view just won't persist.
+    }
+  }, []);
+
+  const handleTableSort = useCallback((key: string) => {
+    setTableSort(cur => (cur && cur.key === key ? { key, asc: !cur.asc } : { key, asc: false }));
+  }, []);
 
   const loadBoard = useCallback(async () => {
     setLoading(true);
@@ -288,6 +346,31 @@ export default function TractionBoard() {
     ];
   }, [data]);
 
+  // Client-side sort for the table view; falls back to the server order until a
+  // column header is clicked.
+  const tableRows = useMemo(() => {
+    const rows = data?.rows ?? [];
+    if (!tableSort) return rows;
+    const { key, asc } = tableSort;
+    return [...rows].sort((a, b) => {
+      const av = sortValue(a, key);
+      const bv = sortValue(b, key);
+      if (typeof av === 'number' && typeof bv === 'number') return asc ? av - bv : bv - av;
+      return String(av).localeCompare(String(bv)) * (asc ? 1 : -1);
+    });
+  }, [data, tableSort]);
+
+  const SortHead = ({ column }: { column: TableColumn }) => {
+    if (!tableSort || tableSort.key !== column.key) {
+      return <ArrowUpDown size={10} className="inline ml-1 opacity-30" />;
+    }
+    return tableSort.asc ? (
+      <ChevronUp size={10} className="inline ml-1 text-indigo-300" />
+    ) : (
+      <ChevronDown size={10} className="inline ml-1 text-indigo-300" />
+    );
+  };
+
   return (
     <div className="p-4 space-y-4 text-gray-100">
       {/* Header */}
@@ -299,16 +382,40 @@ export default function TractionBoard() {
             Daily-only app: refreshes on the monthly fund traction sync.
           </p>
         </div>
-        <button
-          onClick={() => {
-            loadBoard();
-            loadInsights();
-            loadWatchlist();
-          }}
-          className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-sm transition-colors"
-        >
-          ↻ Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-lg bg-white/5 p-0.5" role="group" aria-label="View mode">
+            <button
+              onClick={() => selectView('cards')}
+              aria-pressed={view === 'cards'}
+              title="Card view"
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs transition-colors ${
+                view === 'cards' ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-white/10'
+              }`}
+            >
+              <LayoutGrid size={12} /> Cards
+            </button>
+            <button
+              onClick={() => selectView('table')}
+              aria-pressed={view === 'table'}
+              title="Sortable table view"
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs transition-colors ${
+                view === 'table' ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-white/10'
+              }`}
+            >
+              <Table2 size={12} /> Table
+            </button>
+          </div>
+          <button
+            onClick={() => {
+              loadBoard();
+              loadInsights();
+              loadWatchlist();
+            }}
+            className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-sm transition-colors"
+          >
+            ↻ Refresh
+          </button>
+        </div>
       </div>
 
       {/* Month tabs */}
@@ -453,7 +560,7 @@ export default function TractionBoard() {
       )}
 
       {/* Stock cards */}
-      {!loading && !error && data && (
+      {!loading && !error && data && view === 'cards' && (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {data.rows.map(row => {
             const key = row.stock_key || row.symbol;
@@ -639,6 +746,239 @@ export default function TractionBoard() {
               No stocks match the current filter.
             </div>
           )}
+        </div>
+      )}
+
+      {/* Sortable table view */}
+      {!loading && !error && data && view === 'table' && (
+        <div className="rounded-xl bg-white/5 ring-1 ring-white/10 overflow-hidden">
+          <div className="overflow-x-auto overflow-y-auto max-h-[70vh]">
+            <table className="w-full text-xs border-collapse">
+              <thead className="sticky top-0 z-10 bg-[#12141b]">
+                <tr className="text-gray-400">
+                  {TABLE_COLUMNS.map(col => (
+                    <th
+                      key={col.key}
+                      className={`px-2.5 py-2 font-medium border-b border-white/10 whitespace-nowrap ${
+                        col.numeric ? 'text-right' : 'text-left'
+                      }`}
+                      aria-sort={
+                        tableSort?.key === col.key
+                          ? tableSort.asc
+                            ? 'ascending'
+                            : 'descending'
+                          : 'none'
+                      }
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleTableSort(col.key)}
+                        title={`Sort by ${col.label}`}
+                        className={`inline-flex items-center gap-0.5 cursor-pointer hover:text-white ${
+                          col.numeric ? 'flex-row-reverse' : ''
+                        }`}
+                      >
+                        {col.label}
+                        <SortHead column={col} />
+                      </button>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {tableRows.map(row => {
+                  const key = row.stock_key || row.symbol;
+                  const badge =
+                    PERSISTENCE_BADGES[row.persistence?.status] ?? PERSISTENCE_BADGES.unknown;
+                  const isOpen = !!expanded[key];
+                  const hasFunds =
+                    row.adds.length > 0 || row.reduces.length > 0 || row.holds.length > 0;
+                  return (
+                    <Fragment key={key}>
+                      <tr className="border-b border-white/5 hover:bg-white/5">
+                        {TABLE_COLUMNS.map(col => {
+                          switch (col.key) {
+                            case 'name':
+                              return (
+                                <td key={col.key} className="px-2.5 py-1.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      onClick={() => hasFunds && toggleExpand(key)}
+                                      disabled={!hasFunds}
+                                      className={`shrink-0 w-3 text-gray-500 ${
+                                        hasFunds ? 'hover:text-gray-200' : 'opacity-30 cursor-default'
+                                      }`}
+                                      title={hasFunds ? 'Show funds' : 'No per-fund breakdown'}
+                                    >
+                                      {isOpen ? '▾' : '▸'}
+                                    </button>
+                                    <span className="font-medium text-gray-100 truncate max-w-[16rem]">
+                                      {row.name || row.symbol}
+                                    </span>
+                                    <span className="text-gray-500 font-mono">
+                                      {row.nse || row.symbol}
+                                    </span>
+                                    <button
+                                      onClick={() => togglePin(row)}
+                                      title={pins.has(key) ? 'Unpin' : 'Pin to watchlist'}
+                                      className={`shrink-0 text-sm leading-none transition-colors ${
+                                        pins.has(key)
+                                          ? 'text-amber-400'
+                                          : 'text-gray-600 hover:text-gray-400'
+                                      }`}
+                                    >
+                                      {pins.has(key) ? '★' : '☆'}
+                                    </button>
+                                  </div>
+                                </td>
+                              );
+                            case 'persistence':
+                              return (
+                                <td key={col.key} className="px-2.5 py-1.5">
+                                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${badge.cls}`}>
+                                    {badge.label}
+                                  </span>
+                                </td>
+                              );
+                            case 'mcap_bucket':
+                              return (
+                                <td key={col.key} className="px-2.5 py-1.5 capitalize text-gray-400">
+                                  {row.mcap_bucket || 'unknown'}
+                                </td>
+                              );
+                            case 'sector':
+                            case 'direction':
+                              return (
+                                <td key={col.key} className="px-2.5 py-1.5 text-gray-400 capitalize">
+                                  {row[col.key as 'sector' | 'direction'] || '—'}
+                                </td>
+                              );
+                            case 'score':
+                              return (
+                                <td key={col.key} className="px-2.5 py-1.5 text-right font-bold text-indigo-300">
+                                  {fmtNum(row.score, 1)}
+                                </td>
+                              );
+                            case 'median_share_change_pct':
+                            case 'median_weight_delta_pp':
+                            case 'pct_vs_sma':
+                            case 'pct_vs_prev': {
+                              const v = row[col.key as keyof BoardRow] as number | null;
+                              const suffix =
+                                col.key === 'median_weight_delta_pp' ? 'pp' : '%';
+                              return (
+                                <td
+                                  key={col.key}
+                                  className={`px-2.5 py-1.5 text-right ${
+                                    (v ?? 0) >= 0 ? 'text-green-300' : 'text-red-300'
+                                  }`}
+                                >
+                                  {fmtNum(v, 2, suffix)}
+                                </td>
+                              );
+                            }
+                            case 'market_cap_cr':
+                              return (
+                                <td key={col.key} className="px-2.5 py-1.5 text-right text-gray-300">
+                                  {fmtNum(row.market_cap_cr, 0)}
+                                </td>
+                              );
+                            case 'add_count':
+                            case 'reduce_count':
+                            case 'new_entry_count': {
+                              const v = row[col.key as 'add_count' | 'reduce_count' | 'new_entry_count'];
+                              const cls =
+                                col.key === 'add_count'
+                                  ? 'text-green-300'
+                                  : col.key === 'reduce_count'
+                                    ? 'text-red-300'
+                                    : 'text-gray-300';
+                              return (
+                                <td key={col.key} className={`px-2.5 py-1.5 text-right ${cls}`}>
+                                  {col.key === 'new_entry_count' ? v : v > 0 ? `+${v}` : v}
+                                </td>
+                              );
+                            }
+                            case 'fund_count':
+                            case 'price':
+                              return (
+                                <td key={col.key} className="px-2.5 py-1.5 text-right text-gray-200">
+                                  {fmtNum(row[col.key as 'fund_count' | 'price'], col.key === 'fund_count' ? 0 : 2)}
+                                </td>
+                              );
+                            default:
+                              return (
+                                <td key={col.key} className="px-2.5 py-1.5 text-right text-gray-300">
+                                  {fmtNum(
+                                    row[col.key as keyof BoardRow] as number | null,
+                                    2,
+                                  )}
+                                </td>
+                              );
+                          }
+                        })}
+                      </tr>
+                      {isOpen && hasFunds && (
+                        <tr className="bg-black/20">
+                          <td colSpan={TABLE_COLUMNS.length} className="px-3 py-2">
+                            <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
+                              {row.funds.map((f, i) => (
+                                <div
+                                  key={`${f.fund_name}-${i}`}
+                                  className="flex items-center justify-between text-[11px] bg-white/5 rounded px-2 py-1"
+                                >
+                                  <span className="text-gray-200 truncate mr-2">{f.fund_name}</span>
+                                  <span className="flex items-center gap-2 shrink-0">
+                                    {f.share_change_pct != null && (
+                                      <span
+                                        className={
+                                          f.share_change_pct >= 0 ? 'text-green-300' : 'text-red-300'
+                                        }
+                                      >
+                                        {f.share_change_pct >= 0 ? '+' : ''}
+                                        {fmtNum(f.share_change_pct, 1, '%')}
+                                      </span>
+                                    )}
+                                    {f.weight_delta_pp != null && (
+                                      <span
+                                        className={
+                                          f.weight_delta_pp >= 0 ? 'text-green-300' : 'text-red-300'
+                                        }
+                                      >
+                                        {fmtNum(f.weight_delta_pp, 2, 'pp')}
+                                      </span>
+                                    )}
+                                    {f.is_new && (
+                                      <span className="px-1 rounded bg-emerald-500/15 text-emerald-300 text-[9px]">
+                                        NEW
+                                      </span>
+                                    )}
+                                    <span className="text-gray-500 w-14 text-right">
+                                      {fmtNum(f.current_weight_pct, 2, '%')}
+                                    </span>
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+                {tableRows.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={TABLE_COLUMNS.length}
+                      className="text-sm text-gray-400 py-8 text-center"
+                    >
+                      No stocks match the current filter.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

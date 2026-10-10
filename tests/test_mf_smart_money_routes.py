@@ -29,10 +29,25 @@ def client(tmp_path, monkeypatch):
 
     meta_db = tmp_path / LibrarianCore.DB_MAP["meta"]
     with sqlite3.connect(meta_db) as conn:
+        conn.execute("CREATE TABLE symbols_master (symbol TEXT, name TEXT)")
+        conn.executemany(
+            "INSERT INTO symbols_master VALUES (?,?)",
+            [
+                ("ALPHA", "Alpha Industries Ltd"),
+                ("ALPHACOM", "Alphacom Ltd"),
+                ("ALPHX", "Alphx Trading Ltd"),
+                ("BETA", "Beta Finance Ltd"),
+            ],
+        )
         conn.execute(
             "CREATE TABLE symbol_alias (alias TEXT PRIMARY KEY, canonical TEXT,"
             " source TEXT, confidence REAL, updated_at TEXT)"
         )
+
+    # Keep suggestion ranking deterministic (ignore the real curated CSV).
+    monkeypatch.setattr(
+        "myra_app.traction_symbols.load_name_to_nse", lambda *a, **k: []
+    )
 
     app = FastAPI()
     app.include_router(scanners_module.router)
@@ -84,3 +99,50 @@ def test_resolve_reports_price_data_when_ticker_known(client):
     assert r.status_code == 200
     assert r.json()["has_price_data"] is True
     assert r.json()["note"] is None
+
+
+def test_suggest_ranks_name_match_with_price_flag(client):
+    c, _ = client
+    r = c.get(
+        "/api/mf-smart-money/suggest", params={"company": "Alpha Industries Ltd."}
+    )
+    assert r.status_code == 200
+    suggestions = r.json()["suggestions"]
+    assert suggestions, "expected at least one suggestion"
+    assert suggestions[0]["symbol"] == "ALPHA"
+    assert suggestions[0]["has_price"] is True
+    # "Alphacom Ltd" (ratio ~0.77) clears the 0.6 floor and ranks below the exact
+    # match; "Alphx Trading Ltd" (ratio ~0.59) is dropped as noise.
+    assert [s["symbol"] for s in suggestions] == ["ALPHA", "ALPHACOM"]
+
+
+def test_suggest_drops_weak_name_matches(client):
+    c, _ = client
+    r = c.get("/api/mf-smart-money/suggest", params={"company": "Alphx Nonsense"})
+    symbols = [s["symbol"] for s in r.json()["suggestions"]]
+    # Nothing reaches the 0.6 floor for this name, so no noise is surfaced.
+    assert symbols == []
+
+
+def test_suggest_type_ahead_by_symbol_prefix(client):
+    c, _ = client
+    r = c.get(
+        "/api/mf-smart-money/suggest", params={"company": "Unmapped Co", "q": "BET"}
+    )
+    symbols = [s["symbol"] for s in r.json()["suggestions"]]
+    assert "BETA" in symbols
+    assert "ALPHA" not in symbols
+
+
+def test_suggest_empty_when_nothing_matches(client):
+    c, _ = client
+    r = c.get("/api/mf-smart-money/suggest", params={"company": "", "q": "NOPE"})
+    assert r.status_code == 200
+    assert r.json()["suggestions"] == []
+
+
+def test_suggest_without_company_or_query_is_empty(client):
+    c, _ = client
+    r = c.get("/api/mf-smart-money/suggest")
+    assert r.status_code == 200
+    assert r.json()["suggestions"] == []

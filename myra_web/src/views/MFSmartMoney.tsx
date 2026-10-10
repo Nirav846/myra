@@ -16,6 +16,7 @@ import { useWatchlist } from '../lib/WatchlistContext';
 import { API_BASE } from '../config';
 import ScrollableTable from '../components/ScrollableTable';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
+import { TickerSuggest } from '../components/TickerSuggest';
 
 interface Row {
   symbol: string;
@@ -109,6 +110,7 @@ export default function MFSmartMoneyView() {
   const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [defaults, setDefaults] = useState<Defaults | null>(null);
 
   const [month, setMonth] = useState<string>('');
@@ -259,25 +261,27 @@ export default function MFSmartMoneyView() {
     );
   };
 
+  const [resolving, setResolving] = useState<string | null>(null);
+  const cancelResolve = useCallback(() => setResolving(null), []);
+
   const resolveSymbol = useCallback(
-    async (row: Row) => {
-      const ticker = window.prompt(
-        `Enter the NSE ticker for:\n${row.company}\n\n(It will be cached for future scans.)`
-      );
-      if (!ticker || !ticker.trim()) return;
+    async (company: string, ticker: string) => {
+      setResolving(null);
+      setNotice(null);
+      if (!ticker.trim()) return;
       try {
         const res = await fetch(`${API_BASE}/mf-smart-money/resolve`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ company: row.company, symbol: ticker.trim() }),
+          body: JSON.stringify({ company, symbol: ticker.trim() }),
         });
         const body = await res.json().catch(() => null);
         if (!res.ok) {
           setError(body?.detail || 'Could not save mapping');
           return;
         }
-        if (body?.note) setError(body.note);
-        else setError(null);
+        setError(null);
+        setNotice(body?.note ?? `Mapping saved: ${company} → ${body?.symbol ?? ticker}. Rescanning…`);
         startScan();
       } catch {
         setError('Could not save mapping');
@@ -372,6 +376,18 @@ export default function MFSmartMoneyView() {
       </div>
 
       {error && <div className="text-red-400 text-sm bg-red-500/10 p-2 rounded">{error}</div>}
+      {notice && (
+        <div className="text-amber-300 text-sm bg-amber-500/10 p-2 rounded flex items-center justify-between gap-2">
+          <span>{notice}</span>
+          <button
+            onClick={() => setNotice(null)}
+            className="text-amber-400/70 hover:text-amber-300 shrink-0"
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {isScanning && scanStatus && (
         <div className="bg-[#ffffff0a] rounded p-3">
@@ -590,9 +606,15 @@ export default function MFSmartMoneyView() {
                         <span className="text-white">{r.symbol}</span>
                         <FundTractionButton symbols={[r.symbol]} size="xs" />
                       </span>
+                    ) : resolving === r.company ? (
+                      <TickerSuggest
+                        company={r.company}
+                        onPick={(sym) => resolveSymbol(r.company, sym)}
+                        onCancel={cancelResolve}
+                      />
                     ) : (
                       <button
-                        onClick={() => resolveSymbol(r)}
+                        onClick={() => setResolving(r.company)}
                         className="flex items-center gap-1 text-amber-400 hover:text-amber-300"
                         title="Add a ticker for this company (cached for future scans)"
                       >

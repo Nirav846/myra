@@ -741,6 +741,129 @@ async def mf_smart_money_resolve(payload: dict = Body(default={})):
     }
 
 
+@router.get("/mf-smart-money/suggest")
+async def mf_smart_money_suggest(company: str = "", q: str = "", limit: int = 10):
+    """Candidate NSE tickers for an unmapped MF holding.
+
+    A user supplies the one thing that could not be resolved automatically: the
+    ticker for a company the fund filings name.  Rather than a blind free-text
+    box, this ranks the local name sources (``symbols_master``, ``symbol_alias``,
+    ``name_to_nse.csv``) by similarity to the holding's company name, and also
+    supports type-ahead via ``q`` (symbol prefix / name substring).  Each
+    candidate reports ``has_price`` (present in ``technical_data``) so the UI can
+    prefer a mapping that will actually gain price context.
+    """
+    import difflib
+
+    from myra_app.librarian_core import LibrarianCore
+    from myra_app.symbol_identity import normalize_name
+    from myra_app.traction_symbols import load_name_to_nse
+
+    limit = max(1, min(int(limit or 10), 25))
+    company = (company or "").strip()
+    q_up = (q or "").strip().upper()
+
+    # Fund filings often carry parenthetical aliases, e.g.
+    # "NLC India Ltd. (Neyveli Lignite Corporation Ltd.)".  Score against the
+    # whole name *and* the leading segment before the bracket so the real name
+    # is not diluted by the alias.
+    company_keys: list = []
+    for variant in (company, company.split("(")[0]):
+        key = normalize_name(variant)
+        if key and key not in company_keys:
+            company_keys.append(key)
+
+    # ticker -> best-known display name
+    candidates: dict = {}
+    meta_db = os.path.join(DB_DIR, LibrarianCore.DB_MAP["meta"])
+    try:
+        with sqlite3.connect(f"file:{meta_db}?mode=ro", uri=True) as conn:
+            for sym, name in conn.execute("SELECT symbol, name FROM symbols_master"):
+                sym = (sym or "").strip().upper()
+                if sym:
+                    candidates.setdefault(sym, (name or "").strip())
+            try:
+                for alias, canonical in conn.execute(
+                    "SELECT alias, canonical FROM symbol_alias"
+                ):
+                    canon = (canonical or "").strip().upper()
+                    if canon:
+                        candidates.setdefault(canon, (alias or "").strip())
+            except sqlite3.Error:
+                pass
+    except sqlite3.Error as exc:
+        logger.warning("mf-smart-money suggest: meta unavailable (%s)", exc)
+
+    for name, code in load_name_to_nse():
+        code = (code or "").strip().upper()
+        if code:
+            candidates.setdefault(code, (name or "").strip())
+
+    if not company_keys and not q_up:
+        return {"company": company, "suggestions": []}
+
+    # With no typed query the list is a pure guess, so drop weak matches rather
+    # than presenting noise; a typed query is an explicit match, so keep all.
+    min_score = 0.0 if q_up else 0.6
+
+    scored: list = []
+    for sym, name in candidates.items():
+        score = 0.0
+        if company_keys:
+            name_key = normalize_name(name)
+            if name_key:
+                score = max(
+                    difflib.SequenceMatcher(None, ck, name_key).ratio()
+                    for ck in company_keys
+                )
+        if q_up:
+            if sym.startswith(q_up):
+                score += 1.0
+            elif q_up in sym:
+                score += 0.5
+            elif q_up in (name or "").upper():
+                score += 0.3
+            else:
+                continue  # type-ahead filters hard
+        elif score < min_score:
+            continue
+        scored.append((score, sym, name))
+
+    scored.sort(key=lambda t: (-t[0], len(t[2]), t[1]))
+    top = scored[:limit]
+
+    has_price: set = set()
+    if top:
+        tech_db = os.path.join(DB_DIR, LibrarianCore.DB_MAP["technical"])
+        syms = [t[1] for t in top]
+        placeholders = ",".join("?" for _ in syms)
+        try:
+            with sqlite3.connect(f"file:{tech_db}?mode=ro", uri=True) as conn:
+                has_price = {
+                    r[0]
+                    for r in conn.execute(
+                        f"SELECT DISTINCT symbol FROM technical_data "
+                        f"WHERE symbol IN ({placeholders})",
+                        syms,
+                    )
+                }
+        except sqlite3.Error as exc:
+            logger.warning("mf-smart-money suggest: price check failed (%s)", exc)
+
+    return {
+        "company": company,
+        "suggestions": [
+            {
+                "symbol": sym,
+                "name": name,
+                "score": round(score, 3),
+                "has_price": sym in has_price,
+            }
+            for score, sym, name in top
+        ],
+    }
+
+
 # --- Operator Fingerprint ---
 def _of_parse(payload: dict):
     min_mcap = int(payload.get("min_mcap", 200))
