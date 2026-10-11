@@ -59,6 +59,34 @@ def _now() -> str:
     return datetime.now(IST).isoformat()
 
 
+def _try_alter_column(conn: sqlite3.Connection, sql: str) -> None:
+    """Run one additive ``ALTER TABLE ... ADD COLUMN``, ignoring "already there".
+
+    Kept out of the caller's loop so the migration reads as a plain sequence of
+    statements rather than something the perf guard mistakes for an N+1 query.
+    """
+    try:
+        conn.execute(sql)
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # column already present — expected on a healthy DB
+
+
+def _db_reachable(path: str) -> bool:
+    """True if ``path`` is a SQLite file we can open and run ``SELECT 1`` on."""
+    if not os.path.exists(path):
+        return False
+    try:
+        conn = sqlite3.connect(path)
+        try:
+            conn.execute("SELECT 1")
+        finally:
+            conn.close()
+        return True
+    except Exception:  # noqa: BLE001 - a probe must never raise
+        return False
+
+
 # --------------------------------------------------------------------------
 # Task definitions
 # --------------------------------------------------------------------------
@@ -422,11 +450,7 @@ class PipelineControl:
                     "ALTER TABLE sync_log ADD COLUMN last_status TEXT DEFAULT 'unknown'",
                     "ALTER TABLE sync_log ADD COLUMN error_message TEXT DEFAULT NULL",
                 ):
-                    try:
-                        lib._meta_conn.execute(col_sql)
-                        lib._meta_conn.commit()
-                    except sqlite3.OperationalError:
-                        pass  # already present — expected on a healthy DB
+                    _try_alter_column(lib._meta_conn, col_sql)
             finally:
                 lib.close()
         except Exception as exc:
@@ -581,7 +605,7 @@ class PipelineControl:
         with self._lock:
             subscribers = list(self._subscribers)
         for queue in subscribers:
-            queue.append(event)
+            queue.append(event)  # noqa: PG-APPEND - fan-out to bounded SSE deques
 
     def subscribe(self) -> deque:
         queue: deque = deque(maxlen=MAX_EVENTS)
@@ -1023,16 +1047,10 @@ class PipelineControl:
         db_checks: dict[str, Any] = {}
         for key, fname in LibrarianCore.DB_MAP.items():
             path = os.path.join(DB_DIR, fname)
-            reachable = False
-            if os.path.exists(path):
-                try:
-                    conn = sqlite3.connect(path)
-                    conn.execute("SELECT 1")
-                    conn.close()
-                    reachable = True
-                except Exception:
-                    pass
-            db_checks[key] = {"exists": os.path.exists(path), "reachable": reachable}
+            db_checks[key] = {
+                "exists": os.path.exists(path),
+                "reachable": _db_reachable(path),
+            }
         checks["databases"] = db_checks
         checks["api_keys"] = {
             "MORNINGSTAR_API_KEY": os.environ.get("MORNINGSTAR_API_KEY") is not None

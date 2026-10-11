@@ -1178,6 +1178,14 @@ class DataFetcher:
         return None, None
 
     def fetch_deep_history(self, symbol):
+        # Screener.in deep history is Screener traffic; respect the operator
+        # switch (Data Sources panel) before the cache read so an off source
+        # serves neither fresh pages nor its cached rows.
+        from myra_app.data_sources import source_config
+
+        if not source_config.is_enabled("screener_in"):
+            logger.debug("fetch_deep_history: screener_in disabled by operator")
+            return None
         clean_symbol = self.unify_symbol(symbol)
         url = f"https://www.screener.in/company/{clean_symbol}/consolidated/"
         cached = self.session._get_cache(url + "_deep", params={"deep": True})
@@ -1277,10 +1285,7 @@ class DataFetcher:
         if parsed.get("sector"):
             carry["sector"] = parsed["sector"]
 
-        results = []
-        for row in quarters:
-            merged = {**carry, **row}
-            results.append(merged)
+        results = [{**carry, **row} for row in quarters]
         # Chronological, newest first — string sort put "Sep 2025" ahead of
         # "Mar 2026" and made the wrong quarter the "latest".
         results.sort(

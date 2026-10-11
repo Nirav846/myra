@@ -25,6 +25,9 @@ Thumbs.db
 *.sqlite-shm
 *.sqlite-wal
 *.log
+# Runtime artifacts written by the app at startup (e.g. the embedded
+# scheduler's lockfile under myra_app/db/). Never source.
+*.pid
 .env
 .env.*
 

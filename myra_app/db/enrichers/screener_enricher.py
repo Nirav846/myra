@@ -19,6 +19,18 @@ from bs4 import BeautifulSoup  # requires beautifulsoup4
 
 logger = logging.getLogger(__name__)
 
+
+def _source_enabled(name: str) -> bool:
+    """Operator switch for a data source (Data Sources panel). Fail-open: a
+    config-read error must never silently disable a whole fetch path."""
+    try:
+        from myra_app.data_sources import source_config
+
+        return source_config.is_enabled(name)
+    except Exception:  # noqa: BLE001 - fail open
+        return True
+
+
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "application/json",
@@ -130,6 +142,11 @@ def enrich_screener_fundamentals(force: bool = False):
     """
     if not force and not SCREENER_ENRICH_AUTO_ENABLED:
         logger.info("Screener enricher auto-run disabled. Use force=True to override.")
+        return
+    if not _source_enabled("screener_in"):
+        logger.info(
+            "Screener.in disabled in Data Sources — skipping screener enricher."
+        )
         return
     db_path = os.path.join(DB_DIR, "myra_valuation.db")
     conn = sqlite3.connect(db_path)

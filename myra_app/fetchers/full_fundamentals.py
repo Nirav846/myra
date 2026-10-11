@@ -30,6 +30,18 @@ import requests
 
 from myra_app.constants import DB_DIR
 
+
+def _source_enabled(name: str) -> bool:
+    """Operator switch for a data source (Data Sources panel). Fail-open: a
+    config-read error must never silently disable a whole fetch path."""
+    try:
+        from myra_app.data_sources import source_config
+
+        return source_config.is_enabled(name)
+    except Exception:  # noqa: BLE001 - fail open
+        return True
+
+
 try:
     from scrapling.fetchers import StealthyFetcher
 
@@ -363,17 +375,13 @@ def fetch_timeseries(company_id: str, metric: str) -> list:
         if not datasets:
             return []
         values = datasets[0].get("values", [])
-        series = []
-        for item in values:
+
+        def _point(item):
             if isinstance(item, (list, tuple)) and len(item) >= 2:
-                series.append(
-                    {"date": str(item[0]), "value": _to_float(item[1])}
-                )  # noqa: PG-APPEND
-            else:
-                val = _to_float(item)
-                if val is not None:
-                    series.append({"date": "", "value": val})  # noqa: PG-APPEND
-        return [p for p in series if p["value"] is not None]
+                return {"date": str(item[0]), "value": _to_float(item[1])}
+            return {"date": "", "value": _to_float(item)}
+
+        return [p for p in map(_point, values) if p["value"] is not None]
     except Exception as e:
         logger.debug("Chart API failed for %s/%s: %s", company_id, metric, e)
         return []
@@ -488,13 +496,23 @@ def fetch_full_fundamentals(symbol: str) -> dict:
     }
     warnings = []
 
-    company_id = None
-    try:
-        company_id = get_company_id(symbol)
-    except Exception as e:
-        warnings.append(f"Scrapling unavailable ({e})")
+    # Honour the operator's source switches (Data Sources panel): skip the
+    # Screener scrape/API when screener_in is off, and yfinance when it is off.
+    screener_on = _source_enabled("screener_in")
+    yfinance_on = _source_enabled("yfinance")
+    if not screener_on:
+        warnings.append("screener_in disabled in Data Sources")
+    if not yfinance_on:
+        warnings.append("yfinance disabled in Data Sources")
 
-    if company_id:
+    company_id = None
+    if screener_on:
+        try:
+            company_id = get_company_id(symbol)
+        except Exception as e:
+            warnings.append(f"Scrapling unavailable ({e})")
+
+    if screener_on and company_id:
         result["company_id"] = company_id
         try:
             snapshot = fetch_screener_snapshot(symbol)
@@ -518,7 +536,7 @@ def fetch_full_fundamentals(symbol: str) -> dict:
                 logger.debug("timeseries %s failed for %s: %s", key, symbol, e)
         if result["timeseries"]:
             result["sources"].append("screener-chart")
-    else:
+    elif screener_on:
         # Fallback: chart API (PBV/ROCE) + yfinance only.
         cid = _get_company_id_requests(symbol)
         if cid:
@@ -531,10 +549,11 @@ def fetch_full_fundamentals(symbol: str) -> dict:
                 result["sources"].append("screener-chart")
         warnings.append("Scrapling failed — using chart API + yfinance fallback")
 
-    ydata = fetch_yfinance_data(symbol)
-    if ydata:
-        result["yfinance"] = ydata
-        result["sources"].append("yfinance")
+    if yfinance_on:
+        ydata = fetch_yfinance_data(symbol)
+        if ydata:
+            result["yfinance"] = ydata
+            result["sources"].append("yfinance")
 
     if warnings:
         result["warning"] = "; ".join(dict.fromkeys(warnings))

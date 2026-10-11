@@ -12,6 +12,17 @@ from myra_app.fetcher import GhostSession
 from myra_app.librarian_core import LibrarianCore
 
 
+def _source_enabled(name: str) -> bool:
+    """Operator switch for a data source (Data Sources panel). Fail-open: a
+    config-read error must never silently disable a whole fetch path."""
+    try:
+        from myra_app.data_sources import source_config
+
+        return source_config.is_enabled(name)
+    except Exception:  # noqa: BLE001 - fail open
+        return True
+
+
 class SectorManager:
     """
     MYRA Sector Intelligence Manager (v3.0 Atomic)
@@ -106,43 +117,45 @@ class SectorManager:
     def fetch_symbol_fallback(self, symbol):
         """Fallback to Screener or yfinance for a single symbol."""
         # 1. Screener.in Fallback
-        try:
-            url = f"https://www.screener.in/company/{symbol}/consolidated/"
-            r = self.session.get(url)
-            if r.status_code == 200:
-                from bs4 import BeautifulSoup
+        if _source_enabled("screener_in"):
+            try:
+                url = f"https://www.screener.in/company/{symbol}/consolidated/"
+                r = self.session.get(url)
+                if r.status_code == 200:
+                    from bs4 import BeautifulSoup
 
-                soup = BeautifulSoup(r.text, "html.parser")
-                # Screener lists sector/industry in the top profile
-                p = soup.find("p", class_="sub")
-                if p:
-                    links = p.find_all("a")
-                    if len(links) >= 2:
-                        return {
-                            "raw_sector": links[0].get_text().strip(),
-                            "raw_industry": links[1].get_text().strip(),
-                            "source": "SCREENER",
-                            "confidence": 0.8,
-                        }
-        except:
-            pass
+                    soup = BeautifulSoup(r.text, "html.parser")
+                    # Screener lists sector/industry in the top profile
+                    p = soup.find("p", class_="sub")
+                    if p:
+                        links = p.find_all("a")
+                        if len(links) >= 2:
+                            return {
+                                "raw_sector": links[0].get_text().strip(),
+                                "raw_industry": links[1].get_text().strip(),
+                                "source": "SCREENER",
+                                "confidence": 0.8,
+                            }
+            except:
+                pass
 
         # 2. yfinance Fallback
-        try:
-            import yfinance as yf
+        if _source_enabled("yfinance"):
+            try:
+                import yfinance as yf
 
-            # Use a clean Ticker call without the GhostSession headers
-            t = yf.Ticker(f"{symbol}.NS")
-            info = t.info
-            if info.get("sector"):
-                return {
-                    "raw_sector": info.get("sector"),
-                    "raw_industry": info.get("industry"),
-                    "source": "YFINANCE",
-                    "confidence": 0.6,
-                }
-        except:
-            pass
+                # Use a clean Ticker call without the GhostSession headers
+                t = yf.Ticker(f"{symbol}.NS")
+                info = t.info
+                if info.get("sector"):
+                    return {
+                        "raw_sector": info.get("sector"),
+                        "raw_industry": info.get("industry"),
+                        "source": "YFINANCE",
+                        "confidence": 0.6,
+                    }
+            except:
+                pass
 
         return None
 
@@ -274,6 +287,9 @@ class SectorManager:
 
     def fetch_morningstar_bulk(self):
         """Fetches thousands of symbols via Morningstar Rest API (PKNSETools Path)."""
+        if not _source_enabled("morningstar"):
+            print("[MYRA] Morningstar disabled in Data Sources — skipping bulk fetch.")
+            return {}
         results = {}
         url = "https://lt.morningstar.com/api/rest.svc/g9vi2nsqjb/security/screener"
         # We'll fetch 4 pages of 1000 to cover 4000 symbols
@@ -354,9 +370,11 @@ class SectorManager:
 
         # 4. FALLBACK: Skip yfinance per-symbol fallback for bulk run (too slow for SMEs)
         if remaining:
-            print(f"[MYRA] {len(remaining)} symbols not found in bulk sources "
-                  f"(SME/unlisted) — skipping yfinance fallback. "
-                  f"These will show as 'Uncharted Sector' in UI.")
+            print(
+                f"[MYRA] {len(remaining)} symbols not found in bulk sources "
+                f"(SME/unlisted) — skipping yfinance fallback. "
+                f"These will show as 'Uncharted Sector' in UI."
+            )
 
         print("[MYRA] Sector Sync Logic complete.")
 
