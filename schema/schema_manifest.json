@@ -1063,7 +1063,7 @@
           }
         ],
         "name": "doctor_runs",
-        "row_count": 67
+        "row_count": 69
       },
       {
         "columns": [
@@ -1543,7 +1543,7 @@
           }
         ],
         "name": "task_registry",
-        "row_count": 2454
+        "row_count": 2458
       },
       {
         "columns": [
@@ -3223,6 +3223,30 @@
         "columns": [
           {
             "name": "symbol",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "source",
+            "notnull": true,
+            "pk": true,
+            "type": "TEXT"
+          },
+          {
+            "name": "last_success_at",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "fundamental_source_freshness",
+        "row_count": 0
+      },
+      {
+        "columns": [
+          {
+            "name": "symbol",
             "notnull": false,
             "pk": true,
             "type": "TEXT"
@@ -3586,6 +3610,12 @@
             "notnull": false,
             "pk": false,
             "type": "REAL"
+          },
+          {
+            "name": "pledged_pct",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
           }
         ],
         "name": "fundamentals",
@@ -3736,10 +3766,52 @@
             "notnull": false,
             "pk": false,
             "type": "TEXT"
+          },
+          {
+            "name": "expenses",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "operating_profit",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "other_income",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "interest",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "depreciation",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "profit_before_tax",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
+          },
+          {
+            "name": "tax_pct",
+            "notnull": false,
+            "pk": false,
+            "type": "REAL"
           }
         ],
         "name": "quarterly_results",
-        "row_count": 7262
+        "row_count": 7145
       },
       {
         "columns": [

@@ -456,6 +456,21 @@ def enrich_symbol(
 
     now = datetime.now().isoformat()
     writable = {k: v for k, v in values.items() if k in _WRITABLE}
+    # Source ownership: don't let a weaker source (yfinance/NSE/Morningstar)
+    # clobber a field Screener.in is still the authority for. Once Screener's
+    # claim on this symbol goes stale the guard lifts (see source_priority).
+    from myra_app import source_priority
+
+    if writable:
+        field_sources = {k: provenance.get(k) for k in writable}
+        allowed = set(source_priority.filter_writes(symbol, field_sources, conn=conn))
+        filtered = {k: v for k, v in writable.items() if k in allowed}
+        if not filtered:
+            # Every writable field is owned by a fresher, higher-priority source;
+            # report the veto rather than silently pretending the enrich succeeded.
+            report["blocked_by_source_priority"] = sorted(field_sources)
+            return report
+        writable = filtered
     # Stamp the row refresh time. Deliberately NOT ``last_fundamental_update``:
     # that column gates ``_refresh_stale_shares_outstanding`` ('' < date('now','-90 days')''),
     # so stamping it here would mark a row's shares as fresh and permanently
@@ -471,6 +486,9 @@ def enrich_symbol(
         writable,
         zero_guarded=FUNDAMENTALS_ZERO_GUARDED,
     )
+    if report["written"]:
+        for src in {provenance.get(k) for k in writable if k != "last_updated"}:
+            source_priority.record_source_success(symbol, src, conn=conn)
     return report
 
 

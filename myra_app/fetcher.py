@@ -412,6 +412,9 @@ class DataFetcher:
         }
         self.enforcer = SchemaContractEnforcer(self.contract)
         self.lineage = LineageTracker()
+        # Last HTTP status seen by a fundamentals fetch. Lets the enrichment
+        # caller back off harder on 429/403 than on a generic miss.
+        self.last_http_status = None
 
     def get_ist_now(self):
         """Returns current IST (UTC+5:30) independently of system timezone settings."""
@@ -1216,57 +1219,64 @@ class DataFetcher:
         url = f"https://www.screener.in/company/{symbol}/consolidated/"
         r = self.session.get(url, timeout=15)
         if not r or r.status_code != 200:
+            self.last_http_status = getattr(r, "status_code", None)
             return None
-        soup = BeautifulSoup(r.text, "html.parser")
+        self.last_http_status = 200
+        # One page, parsed once: top ratios + the whole quarterly P&L +
+        # the shareholding pattern. Previously only the top-ratios list and
+        # four P&L columns survived, and every other cell was thrown away.
+        from myra_app.data_sources.screener_parse import (
+            CRORE,
+            parse_company_page,
+            report_date_sort_key,
+        )
 
-        sector_val = None
-        sub_p = soup.find("p", class_="sub")
-        if sub_p:
-            links = sub_p.find_all("a")
-            if links:
-                sector_val = links[0].get_text().strip()
+        parsed = parse_company_page(r.text)
+        quarters = parsed["quarterly"]
+        if not quarters:
+            return None
 
-        top_metrics = {}
-        if sector_val:
-            top_metrics["sector"] = sector_val
+        # Page-level values that apply to every quarter row, since downstream
+        # (`normalize` + the manager) reads the newest row for the summary.
+        carry = {}
+        top = parsed["top"]
+        if top.get("market_cap_cr") is not None:
+            carry["market_cap_cr"] = top["market_cap_cr"]
+            # Screener shows Crores; fundamentals.market_cap is raw rupees.
+            carry["market_cap"] = top["market_cap_cr"] * CRORE
+        for key in (
+            "current_price",
+            "high",
+            "low",
+            "stock_pe",
+            "book_value",
+            "dividend_yield",
+            "roce",
+            "roe",
+            "face_value",
+            "debt_to_equity",
+        ):
+            if top.get(key) is not None:
+                carry[key] = top[key]
 
-        for li in soup.find_all("li", class_=re.compile(r"flex.*")):
-            n_tag, v_tag = li.find("span", class_="name"), li.find(
-                "span", class_="number"
-            )
-            if n_tag and v_tag:
-                top_metrics[self._normalize_field(n_tag.get_text())] = self._clean_num(
-                    v_tag.get_text()
-                )
-        data_map = {}
-        for table in soup.find_all("table"):
-            sect = table.find_parent("section")
-            if sect and "Quarterly" in sect.get_text():
-                rows = table.find_all("tr")
-                dates = [
-                    c.get_text().strip() for c in rows[0].find_all(["th", "td"])[1:]
-                ]
-                for i, d in enumerate(dates):
-                    if d not in data_map:
-                        data_map[d] = {"report_date": d}
-                    d_entry = data_map[d]
-                    for row in rows[1:]:
-                        m_tag = row.find(["th", "td"])
-                        if not m_tag:
-                            continue
-                        std_key = self._normalize_field(m_tag.get_text())
-                        cols = row.find_all("td")
-                        if i < len(cols):
-                            d_entry[std_key] = self._clean_num(cols[i].get_text())
-                break
+        holding = parsed["shareholding"]
+        carry.update(holding)
+        if holding.get("promoters") is not None:
+            carry["promoter_holding"] = holding["promoters"]
+        if holding.get("pledged") is not None:
+            carry["pledged_pct"] = holding["pledged"]
+        if parsed.get("sector"):
+            carry["sector"] = parsed["sector"]
 
-        results = [
-            {
-                **data_map[d],
-                **{k: v for k, v in top_metrics.items() if data_map[d].get(k) is None},
-            }
-            for d in sorted(data_map.keys(), reverse=True)
-        ]
+        results = []
+        for row in quarters:
+            merged = {**carry, **row}
+            results.append(merged)
+        # Chronological, newest first — string sort put "Sep 2025" ahead of
+        # "Mar 2026" and made the wrong quarter the "latest".
+        results.sort(
+            key=lambda item: report_date_sort_key(item["report_date"]), reverse=True
+        )
         return results
 
     def _fetch_google(self, symbol):

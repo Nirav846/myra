@@ -182,6 +182,11 @@ class SchemaRegistry:
                 "payout_ratio": "REAL",
                 "quick_ratio": "REAL",
                 "current_ratio": "REAL",
+                # Screener.in shareholding pattern, parsed from the SAME single
+                # company-page fetch used for the P&L tables below. `inst_holding`
+                # already exists for the FII+DII total; `pledged_pct` is the
+                # promoter pledge ratio, a distinct risk signal with no home yet.
+                "pledged_pct": "REAL",
             },
             "primary_key": "(symbol)",
         },
@@ -195,8 +200,32 @@ class SchemaRegistry:
                 "net_profit": "REAL",
                 "eps": "REAL",
                 "opm_pct": "REAL",
+                # The rest of Screener.in's quarterly P&L table. All of these
+                # arrive in the SAME response as revenue/net_profit; they were
+                # parsed and then discarded by normalize() before this.
+                "expenses": "REAL",
+                "operating_profit": "REAL",
+                "other_income": "REAL",
+                "interest": "REAL",
+                "depreciation": "REAL",
+                "profit_before_tax": "REAL",
+                "tax_pct": "REAL",
             },
             "primary_key": "(symbol, report_date)",
+        },
+        "fundamental_source_freshness": {
+            # Which source last refreshed which symbol, and when. Read by
+            # myra_app.source_priority to decide whether a lower-priority source
+            # may overwrite Screener.in-owned fields (see that module).
+            # Created explicitly in librarian_schema._create_tables; the registry
+            # only ADDs columns to existing tables. Additive only.
+            "db": "valuation",
+            "columns": {
+                "symbol": "TEXT NOT NULL",
+                "source": "TEXT NOT NULL",
+                "last_success_at": "TEXT",
+            },
+            "primary_key": "(symbol, source)",
         },
         # ── meta.db ───────────────────────────────────────────
         "symbols_master": {

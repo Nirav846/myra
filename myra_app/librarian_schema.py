@@ -295,6 +295,7 @@ class LibrarianSchemaMixin:
                     free_float_market_cap REAL,
                     free_float_shares REAL,
                     shares_outstanding REAL,
+                    pledged_pct REAL,
                     last_updated TEXT
                 )
             """,
@@ -310,7 +311,28 @@ class LibrarianSchemaMixin:
                     net_profit REAL,
                     eps REAL,
                     opm_pct REAL,
+                    expenses REAL,
+                    operating_profit REAL,
+                    other_income REAL,
+                    interest REAL,
+                    depreciation REAL,
+                    profit_before_tax REAL,
+                    tax_pct REAL,
                     PRIMARY KEY (symbol, report_date)
+                )
+            """,
+                conn=self._val_conn,
+            )
+            # Which source last refreshed which symbol, and when. Lets a
+            # lower-priority source fill gaps only once Screener.in's claim on
+            # that symbol has gone stale (see myra_app/source_priority.py).
+            self.safe_execute(
+                """
+                CREATE TABLE IF NOT EXISTS fundamental_source_freshness (
+                    symbol TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    last_success_at TEXT,
+                    PRIMARY KEY (symbol, source)
                 )
             """,
                 conn=self._val_conn,

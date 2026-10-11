@@ -170,8 +170,24 @@ def _run_market_cap_sync(tr: "TaskRun") -> None:
     from myra_app.utils.fundamentals_sync import sync_fundamentals
 
     tr.stage("Refreshing market capitalisation")
-    sync_fundamentals(force=True)
-    tr.stage("Market cap sync complete")
+
+    def _progress(done: int, total: int, _info: dict) -> None:
+        if total:
+            tr.progress(100.0 * done / total)
+
+    # Poll the SAME events the cancel/pause endpoints set, so an operator Stop
+    # actually stops this task (it used to ignore cancel and run to the end,
+    # leaving the UI stuck on "cancelling").
+    summary = sync_fundamentals(
+        force=True,
+        cancel_event=tr.ctx.shutdown_event,
+        pause_event=tr.ctx.pause_event,
+        progress_cb=_progress,
+    )
+    if isinstance(summary, dict) and summary.get("cancelled"):
+        tr.stage("Market cap sync cancelled — progress saved, will resume")
+    else:
+        tr.stage("Market cap sync complete")
 
 
 def _run_shares_outstanding_sync(tr: "TaskRun") -> None:

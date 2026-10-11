@@ -15,6 +15,13 @@ from myra_app.librarian_core import LibrarianCore
 
 logger = logging.getLogger(__name__)
 
+#: Requests-per-second for the fundamentals source chain. Screener.in is a
+#: volunteer-run scraper target; the daily job can afford to be slow, so we
+#: default well below one request per second and let operators tune it.
+FUNDAMENTALS_RATE_PER_SEC = float(
+    os.environ.get("MYRA_FUNDAMENTALS_RATE_PER_SEC", "0.5")
+)
+
 #: `_fetch_google` labels its rows "Q-1".."Q-4" because Google Finance exposes no
 #: column headers we can date. Consumers order quarterly_results by
 #: `report_date DESC` lexicographically, where "Q-1" outranks a real "Sep 2025"
@@ -38,12 +45,25 @@ class FundamentalManager:
         self.db_dir = db_dir or constants.DB_DIR
 
         self.fetcher = fetcher
-        self.limiter = RateLimiter(rate_per_sec=2)
+        self.limiter = RateLimiter(rate_per_sec=FUNDAMENTALS_RATE_PER_SEC)
         self.source_manager = SourceManager()
         #: Human-readable reason the most recent fetch_fundamentals() call
         #: returned False. Callers must report this instead of assuming the
         #: data sources were at fault.
         self.last_error = None
+        #: HTTP status of the most recent upstream fetch (None when unknown).
+        #: A 429/403 is the source asking us to slow down, not a missing page.
+        self.last_http_status = None
+        #: Registry name of the source that served the most recent successful
+        #: fetch (e.g. "screener_in"). Recorded as the freshness claim so other
+        #: enrichers can tell who owns this symbol's metrics.
+        self.last_source = None
+        #: Set of Screener-owned fields the most recent fetch actually produced
+        #: (non-null). A page can parse and still lack its top-ratios block, so a
+        #: successful fetch is not by itself proof that Screener owns P/E, sector,
+        #: etc. for this symbol -- callers use this to avoid stamping a claim that
+        #: would strand those fields for the whole takeover window.
+        self.last_owned_fields = frozenset()
 
         # Connections for sidecars. These MUST resolve through DB_MAP: the bare
         # "meta.db"/"valuation.db" names are not MYRA sidecars, so every write
@@ -105,8 +125,15 @@ class FundamentalManager:
         if not self.fetcher:
             return None
 
+        # Actually space the calls out. This limiter was constructed and then
+        # never used, so the bulk sync hit Screener.in as fast as the network
+        # allowed -- the "it should not hit screener.in hard" complaint.
+        self.limiter.wait()
+
         # DataFetcher handles its own internal prioritisation and returns (data, source_name)
         raw_data, source_name = self.fetcher.fetch_fundamentals(symbol)
+        self.last_http_status = getattr(self.fetcher, "last_http_status", None)
+        self.last_source = source_name if raw_data else None
 
         if raw_data:
             # We still normalize here using our unified schema
@@ -129,6 +156,8 @@ class FundamentalManager:
         Renamed to fetch_fundamentals as per v3.0 requirements.
         """
         data = self._fetch_raw_data(symbol)
+        # Reset per-call provenance so a failed fetch never carries a stale claim.
+        self.last_owned_fields = frozenset()
         if not data:
             self.last_error = "multi-source fallback exhausted"
             return False
@@ -163,6 +192,14 @@ class FundamentalManager:
                 "net_profit",
                 "eps",
                 "opm_pct",
+                # Rest of Screener's quarterly P&L — same page, same request.
+                "expenses",
+                "operating_profit",
+                "other_income",
+                "interest",
+                "depreciation",
+                "profit_before_tax",
+                "tax_pct",
             ]
             placeholders = ", ".join(["?" for _ in cols])
             col_names = ", ".join(cols)
@@ -184,9 +221,39 @@ class FundamentalManager:
             sect = latest.get("sector")
 
             promoter_pct = latest.get("promoter_holding")
+            # public_holding_pct keeps its established meaning (everything that
+            # is not promoter-held); the FII/DII split is added alongside it as
+            # inst_holding rather than redefining an existing column.
             public_pct = (100 - promoter_pct) if promoter_pct is not None else None
             ff_pct = public_pct  # free float = public holding in Indian market
             ff_mcap = (mcap * ff_pct / 100) if mcap and ff_pct else None
+            inst_pct = latest.get("inst_holding")
+            pledged_pct = latest.get("pledged_pct")
+
+            # Which Screener-authoritative fields did this page actually carry?
+            # A parse can succeed (quarterly rows present) while the top-ratios /
+            # shareholding blocks are missing, in which case stamping a Screener
+            # ownership claim would freeze those fields for the takeover window.
+            from myra_app.source_priority import SCREENER_OWNED_FIELDS
+
+            produced = {
+                "pe": pe,
+                "roe": roe,
+                "eps": eps,
+                "book_value": bv,
+                "market_cap": mcap,
+                "sector": sect,
+                "promoter_holding_pct": promoter_pct,
+                "public_holding_pct": public_pct,
+                "free_float_pct": ff_pct,
+                "free_float_market_cap": ff_mcap,
+                "inst_holding": inst_pct,
+                "pledged_pct": pledged_pct,
+            }
+            self.last_owned_fields = (
+                frozenset(k for k, v in produced.items() if v is not None)
+                & SCREENER_OWNED_FIELDS
+            )
 
             # DISABLE_FUNDAMENTAL_WRITERS: upstox_fetcher now owns the
             # `fundamentals` table.  Skip ONLY the fundamentals UPSERT;
@@ -194,8 +261,8 @@ class FundamentalManager:
             if not DISABLE_FUNDAMENTAL_WRITERS:
                 v_conn.execute(
                     """
-                    INSERT INTO fundamentals (symbol, pe, roe, eps, book_value, market_cap, sector, industry, promoter_holding_pct, public_holding_pct, free_float_pct, free_float_market_cap, last_updated)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO fundamentals (symbol, pe, roe, eps, book_value, market_cap, sector, industry, promoter_holding_pct, public_holding_pct, free_float_pct, free_float_market_cap, inst_holding, pledged_pct, last_updated)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT (symbol) DO UPDATE SET
                         -- Every column is COALESCE'd: a partial payload must never
                         -- null out a metric we already hold. New values still win.
@@ -210,6 +277,8 @@ class FundamentalManager:
                         public_holding_pct = COALESCE(EXCLUDED.public_holding_pct, fundamentals.public_holding_pct),
                         free_float_pct = COALESCE(EXCLUDED.free_float_pct, fundamentals.free_float_pct),
                         free_float_market_cap = COALESCE(EXCLUDED.free_float_market_cap, fundamentals.free_float_market_cap),
+                        inst_holding = COALESCE(EXCLUDED.inst_holding, fundamentals.inst_holding),
+                        pledged_pct = COALESCE(EXCLUDED.pledged_pct, fundamentals.pledged_pct),
                         last_updated = EXCLUDED.last_updated
                 """,
                     (
@@ -225,6 +294,8 @@ class FundamentalManager:
                         public_pct,
                         ff_pct,
                         ff_mcap,
+                        inst_pct,
+                        pledged_pct,
                         date.today().isoformat(),
                     ),
                 )

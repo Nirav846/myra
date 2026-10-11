@@ -23,6 +23,7 @@ import yfinance as yf
 from myra_app.constants import DB_DIR, DISABLE_FUNDAMENTAL_WRITERS
 from myra_app.background_orchestrator import _shutdown_event
 from myra_app.librarian_core import LibrarianCore
+from myra_app.source_priority import SCREENER_OWNED_FIELDS
 
 logger = logging.getLogger("myra.fundamental_sync")
 
@@ -302,6 +303,20 @@ class FundamentalSync:
         except Exception:
             pass
 
+        # Screener.in still owns the core metrics of any symbol it has refreshed
+        # recently; this sync must not overwrite those. One read-only connection
+        # is shared across the whole loop (a per-symbol connect would be ~3k
+        # connect cycles for no reason).
+        source_priority = None
+        fresh_conn = None
+        try:
+            import myra_app.source_priority as source_priority  # noqa: F811
+
+            fresh_conn = sqlite3.connect(db_path, timeout=10)
+        except Exception:
+            source_priority = None
+            fresh_conn = None
+
         # Canonical mapping: Morningstar camelCase keys → snake_case column names
         # Columns with a canonical equivalent are consolidated here.
         # Columns without a canonical equivalent are dropped to prevent schema drift.
@@ -330,54 +345,71 @@ class FundamentalSync:
             "currentRatio": "current_ratio",
         }
 
-        for symbol in all_symbols:
-            ms = ms_data.get(symbol, {})
-            nse = nse_data.get(symbol, {})
+        try:
+            for symbol in all_symbols:
+                ms = ms_data.get(symbol, {})
+                nse = nse_data.get(symbol, {})
 
-            # Build MS fields using canonical snake_case names only
-            ms_fields: dict[str, object] = {
-                "sector": ms.get("sector"),
-                "roe_ttm": ms.get("roeTTM"),
-            }
-            # Apply canonical mapping — camelCase values go into canonical columns
-            for camel_key, canonical_key in MS_CANONICAL_MAP.items():
-                val = ms.get(camel_key)
-                if val is not None:
-                    ms_fields[canonical_key] = val
+                # Build MS fields using canonical snake_case names only
+                ms_fields: dict[str, object] = {
+                    "sector": ms.get("sector"),
+                    "roe_ttm": ms.get("roeTTM"),
+                }
+                # Apply canonical mapping — camelCase values go into canonical columns
+                for camel_key, canonical_key in MS_CANONICAL_MAP.items():
+                    val = ms.get(camel_key)
+                    if val is not None:
+                        ms_fields[canonical_key] = val
 
-            record = {
-                "symbol": symbol,
-                "date": date_str,
-                # NSE fields
-                "pe": nse.get("pe"),
-                "sector_pe": nse.get("sector_pe"),
-                "market_cap": nse.get("market_cap"),
-                "face_value": nse.get("face_value"),
-                "issued_size": nse.get("issued_size"),
-                "shares_outstanding": nse.get("issued_size"),
-                "daily_volatility": nse.get("daily_volatility"),
-                "annual_volatility": nse.get("annual_volatility"),
-                "impact_cost": nse.get("impact_cost"),
-                "source_ms": "MORNINGSTAR" if ms else None,
-                "source_nse": "YFINANCE" if nse else None,
-                "last_updated": datetime.now().isoformat(),
-                # MS fields (canonical snake_case)
-                **ms_fields,
-            }
-            # Do NOT overwrite columns managed by separate backfills
-            existing = existing_values.get(symbol)
-            if existing:
-                if existing[0] is not None and existing[0] > 0:
-                    record["shares_outstanding"] = existing[0]
-                if existing[1] is not None and existing[1] > 0:
-                    record["market_cap"] = existing[1]
-                if existing[2] is not None and existing[2] > 0:
-                    record["promoter_holding_pct"] = existing[2]
-                if existing[3] is not None and existing[3] > 0:
-                    record["free_float_pct"] = existing[3]
-                if existing[4] is not None and existing[4] > 0:
-                    record["free_float_market_cap"] = existing[4]
-            records.append(record)  # noqa: PG-APPEND
+                record = {
+                    "symbol": symbol,
+                    "date": date_str,
+                    # NSE fields
+                    "pe": nse.get("pe"),
+                    "sector_pe": nse.get("sector_pe"),
+                    "market_cap": nse.get("market_cap"),
+                    "face_value": nse.get("face_value"),
+                    "issued_size": nse.get("issued_size"),
+                    "shares_outstanding": nse.get("issued_size"),
+                    "daily_volatility": nse.get("daily_volatility"),
+                    "annual_volatility": nse.get("annual_volatility"),
+                    "impact_cost": nse.get("impact_cost"),
+                    "source_ms": "MORNINGSTAR" if ms else None,
+                    "source_nse": "YFINANCE" if nse else None,
+                    "last_updated": datetime.now().isoformat(),
+                    # MS fields (canonical snake_case)
+                    **ms_fields,
+                }
+                # Do NOT overwrite columns managed by separate backfills
+                existing = existing_values.get(symbol)
+                if existing:
+                    if existing[0] is not None and existing[0] > 0:
+                        record["shares_outstanding"] = existing[0]
+                    if existing[1] is not None and existing[1] > 0:
+                        record["market_cap"] = existing[1]
+                    if existing[2] is not None and existing[2] > 0:
+                        record["promoter_holding_pct"] = existing[2]
+                    if existing[3] is not None and existing[3] > 0:
+                        record["free_float_pct"] = existing[3]
+                    if existing[4] is not None and existing[4] > 0:
+                        record["free_float_market_cap"] = existing[4]
+                # Respect source ownership: while Screener.in still owns this
+                # symbol's core metrics, Morningstar/NSE/yfinance must not overwrite
+                # them. Setting the column to None makes the COALESCE upsert a no-op
+                # for that column (the value already in the table survives). Once
+                # Screener's claim goes stale the guard lifts — see
+                # myra_app/source_priority.py.
+                if (
+                    source_priority is not None
+                    and source_priority.screener_claim_is_fresh(symbol, conn=fresh_conn)
+                ):
+                    for owned in SCREENER_OWNED_FIELDS:
+                        if owned in record:
+                            record[owned] = None
+                records.append(record)  # noqa: PG-APPEND
+        finally:
+            if fresh_conn is not None:
+                fresh_conn.close()
 
         if not records:
             logger.warning("[FundamentalSync] No records to insert")

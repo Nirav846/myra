@@ -27,13 +27,15 @@ _VAL_SCHEMA = """
 CREATE TABLE quarterly_results (
     symbol TEXT, report_date TEXT, period_end TEXT, revenue REAL,
     net_profit REAL, eps REAL, opm_pct REAL,
+    expenses REAL, operating_profit REAL, other_income REAL, interest REAL,
+    depreciation REAL, profit_before_tax REAL, tax_pct REAL,
     PRIMARY KEY (symbol, report_date)
 );
 CREATE TABLE fundamentals (
     symbol TEXT PRIMARY KEY, pe REAL, roe REAL, eps REAL, book_value REAL,
     market_cap REAL, sector TEXT, industry TEXT, promoter_holding_pct REAL,
     public_holding_pct REAL, free_float_pct REAL, free_float_market_cap REAL,
-    last_updated TEXT
+    inst_holding REAL, pledged_pct REAL, last_updated TEXT
 );
 """
 

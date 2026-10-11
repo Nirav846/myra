@@ -59,6 +59,15 @@ def normalize(data, source):
                 "revenue": safe_float(row.get("revenue")),
                 "net_profit": safe_float(row.get("net_profit")),
                 "eps": safe_float(row.get("eps")),
+                # Rest of the quarterly P&L. All of these are in the same
+                # Screener response as revenue/net_profit; keeping them costs
+                # no extra request.
+                "expenses": safe_float(row.get("expenses")),
+                "operating_profit": safe_float(row.get("operating_profit")),
+                "other_income": safe_float(row.get("other_income")),
+                "depreciation": safe_float(row.get("depreciation")),
+                "profit_before_tax": safe_float(row.get("profit_before_tax")),
+                "tax_pct": safe_float(row.get("tax_pct")),
                 "roce": safe_float(row.get("roce")),
                 "roe": safe_float(row.get("roe")),
                 "debt": safe_float(row.get("debt")),
@@ -71,6 +80,11 @@ def normalize(data, source):
                 "cwip": safe_float(row.get("cwip")),
                 "promoter_holding": safe_float(row.get("promoter_holding")),
                 "pledged_pct": safe_float(row.get("pledged_pct")),
+                # Shareholding pattern, also from the same page.
+                "fii": safe_float(row.get("fii")),
+                "dii": safe_float(row.get("dii")),
+                "public_holding": safe_float(row.get("public")),
+                "inst_holding": safe_float(row.get("inst_holding")),
                 "industry_pe": safe_float(row.get("industry_pe")),
                 "stock_pe": safe_float(row.get("stock_pe")),
                 "book_value": safe_float(row.get("book_value")),
