@@ -144,9 +144,13 @@ def _run_enrichment(tr: "TaskRun") -> None:
 
 
 def _run_fundamentals_sync(tr: "TaskRun") -> None:
-    from myra_app.fundamental_sync import FundamentalSync
+    from myra_app.fundamental_sync import FundamentalSync, _source_enabled
 
     sync = FundamentalSync()
+    # Surface an operator-disabled source instead of claiming a clean sync.
+    disabled = [n for n in ("morningstar", "yfinance") if not _source_enabled(n)]
+    if disabled:
+        tr.note("Disabled in Data Sources: " + ", ".join(disabled))
     tr.stage("Fetching Morningstar bulk data")
     ms_data = sync._fetch_morningstar_bulk()
     tr.stage("Resolving NIFTY 500 symbols")
@@ -163,7 +167,10 @@ def _run_fundamentals_sync(tr: "TaskRun") -> None:
     today = datetime.now(IST).date().isoformat()
     sync._merge_and_insert(ms_data, nse_data, today)
     sync._log_summary()
-    tr.stage("Fundamentals sync complete")
+    tr.stage(
+        "Fundamentals sync complete"
+        + (f" (sources off: {', '.join(disabled)})" if disabled else "")
+    )
 
 
 def _run_market_cap_sync(tr: "TaskRun") -> None:
@@ -186,6 +193,8 @@ def _run_market_cap_sync(tr: "TaskRun") -> None:
     )
     if isinstance(summary, dict) and summary.get("cancelled"):
         tr.stage("Market cap sync cancelled — progress saved, will resume")
+    elif isinstance(summary, dict) and summary.get("skipped") == "screener_disabled":
+        tr.stage("Market cap sync skipped — Screener.in is disabled in Data Sources")
     else:
         tr.stage("Market cap sync complete")
 
@@ -197,6 +206,10 @@ def _run_shares_outstanding_sync(tr: "TaskRun") -> None:
     result = FundamentalSync()._refresh_stale_shares_outstanding(
         cancel_event=tr.ctx.shutdown_event
     )
+    if isinstance(result, dict) and result.get("skipped") == "yfinance_disabled":
+        # Don't mark fundamentals as freshly updated when nothing was fetched.
+        tr.stage("Shares refresh skipped — yfinance is disabled in Data Sources")
+        return
     tr.stage(
         f"Shares refresh complete: {result.get('updated', 0)}/{result.get('total', 0)} updated"
     )

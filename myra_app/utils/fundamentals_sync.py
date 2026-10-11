@@ -268,6 +268,16 @@ def sync_fundamentals(
         )
         return {"skipped": "DISABLE_FUNDAMENTAL_WRITERS"}
 
+    # Respect the operator's source switches (Data Sources panel). This sync's
+    # workhorse is Screener.in; with it off there is nothing for it to do, so
+    # say so plainly instead of running the queue against no source.
+    from myra_app.data_sources import source_config
+
+    if not source_config.is_enabled("screener_in"):
+        logger.warning("sync_fundamentals skipped: screener_in disabled by operator")
+        _n("Screener.in is disabled — enable it in Data Sources to refresh.")
+        return {"skipped": "screener_disabled"}
+
     _n("Checking fundamentals freshness…")
     today = datetime.now(timezone.utc).astimezone(IST).date().isoformat()
 

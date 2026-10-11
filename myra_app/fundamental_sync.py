@@ -41,6 +41,17 @@ MORNINGSTAR_HEADERS = {
 }
 
 
+def _source_enabled(name: str) -> bool:
+    """Operator switch for a data source (Data Sources panel). Fail-open: a
+    config-read error must never silently disable a whole sync."""
+    try:
+        from myra_app.data_sources import source_config
+
+        return source_config.is_enabled(name)
+    except Exception:  # noqa: BLE001 - fail open
+        return True
+
+
 # ── Upsert policy (audit C2) ─────────────────────────────────────────────────
 # Conflict target is `symbol` — single-column PRIMARY KEY on `fundamentals`
 # (verified at librarian_schema.py:260 and schema_registry.py:166).
@@ -102,6 +113,12 @@ class FundamentalSync:
         Returns:
             Dict keyed by ticker: {ticker: {net_margin, roe_ttm, dividend_yield}}
         """
+        if not _source_enabled("morningstar"):
+            logger.info(
+                "[FundamentalSync] Morningstar disabled by operator — "
+                "skipping bulk fetch"
+            )
+            return {}
         logger.info("[FundamentalSync] Starting Morningstar bulk fetch...")
         result = {}
         page = 1
@@ -220,6 +237,8 @@ class FundamentalSync:
         Returns:
             Dict with yfinance fundamental data or empty dict on error.
         """
+        if not _source_enabled("yfinance"):
+            return {}
         result = {}
         try:
             ticker = yf.Ticker(f"{symbol}.NS")
@@ -250,6 +269,12 @@ class FundamentalSync:
         Returns:
             Dict keyed by symbol: {symbol: {pe, sector_pe, ...}}
         """
+        if not _source_enabled("yfinance"):
+            logger.info(
+                "[FundamentalSync] yfinance disabled by operator — "
+                "skipping per-symbol fetch"
+            )
+            return {}
         logger.info(
             f"[FundamentalSync] Starting yfinance fetch for {len(symbols)} symbols..."
         )
@@ -511,6 +536,11 @@ class FundamentalSync:
                 "DISABLE_FUNDAMENTAL_WRITERS=True"
             )
             return
+        if not _source_enabled("yfinance"):
+            logger.info(
+                "[FundamentalSync] market_cap backfill skipped: yfinance disabled"
+            )
+            return
         import yfinance as yf
         import time
 
@@ -566,6 +596,12 @@ class FundamentalSync:
             logger.info(
                 "[FundamentalSync] _backfill_shares_outstanding_from_yfinance skipped: "
                 "DISABLE_FUNDAMENTAL_WRITERS=True"
+            )
+            return
+        if not _source_enabled("yfinance"):
+            logger.info(
+                "[FundamentalSync] shares_outstanding backfill skipped: "
+                "yfinance disabled"
             )
             return
         import time
@@ -708,6 +744,9 @@ class FundamentalSync:
                 "DISABLE_FUNDAMENTAL_WRITERS=True"
             )
             return {"updated": 0, "total": 0, "skipped": "flag_disabled"}
+        if not _source_enabled("yfinance"):
+            logger.info("[shares_outstanding] skipped: yfinance disabled")
+            return {"updated": 0, "total": 0, "skipped": "yfinance_disabled"}
         import yfinance as yf
 
         from myra_app.symbols import NON_EQUITY_SQL, dedupe_tickers

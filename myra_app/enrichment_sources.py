@@ -273,12 +273,28 @@ _SPECS = (
 
 
 def default_registry() -> SourceRegistry:
-    """Fresh registry holding the production source specs."""
-    return SourceRegistry(_SPECS)
+    """Fresh registry built from the operator's source configuration.
+
+    The specs (rate/timeout/cache TTL/priority) and the enabled flags both come
+    from :mod:`myra_app.data_sources.source_config`, so a change made in the
+    Data Sources panel takes effect on the next resolve pass. Falls back to the
+    built-in specs if the catalogue ever yields nothing, so enrichment can never
+    be silently emptied by a bad config.
+    """
+    from myra_app.data_sources import source_config
+
+    specs = source_config.build_specs() or list(_SPECS)
+    registry = SourceRegistry(specs)
+    source_config.apply_to_registry(registry)
+    return registry
 
 
 def default_rate_limiters() -> dict[str, RateLimiter]:
-    return {spec.name: RateLimiter(rate_per_sec=spec.rate_per_sec) for spec in _SPECS}
+    """Rate limiters honouring each source's configured rate."""
+    from myra_app.data_sources import source_config
+
+    specs = source_config.build_specs() or list(_SPECS)
+    return {spec.name: RateLimiter(rate_per_sec=spec.rate_per_sec) for spec in specs}
 
 
 # --------------------------------------------------------------------------- #

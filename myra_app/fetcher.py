@@ -1153,16 +1153,25 @@ class DataFetcher:
     def fetch_fundamentals(self, symbol):
         clean_symbol = self.unify_symbol(symbol)
         streams = self.registry.get("data_streams", {}).get("fundamentals", [])
+        # Respect the operator's source switches (Data Sources panel). A source
+        # that is off is skipped here and in the resolver, so disabling it is
+        # honoured everywhere it is consulted.
+        from myra_app.data_sources import source_config
+
         for stream in streams:
+            name = stream["name"]
+            if not source_config.is_enabled(name):
+                logger.debug("fetch_fundamentals: source '%s' disabled", name)
+                continue
             try:
-                if stream["name"] == "screener_in":
+                if name == "screener_in":
                     res = self._fetch_screener(clean_symbol)
-                elif stream["name"] == "google_finance":
+                elif name == "google_finance":
                     res = self._fetch_google(clean_symbol)
                 else:
                     continue
                 if res:
-                    return res, stream["name"]
+                    return res, name
             except Exception:
                 logger.debug("Non-critical fetch error, skipping item", exc_info=True)
                 continue

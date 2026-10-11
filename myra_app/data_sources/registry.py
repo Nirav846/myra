@@ -81,6 +81,10 @@ class SourceRegistry:
         self._lock = threading.RLock()
         self._specs: dict[str, SourceSpec] = {}
         self._health: dict[str, dict] = {}
+        #: Names the operator has switched off. A disabled source is skipped by
+        #: candidate selection entirely (fresh fetch *and* stale-cache resort),
+        #: so turning one off is respected even when it holds a cached value.
+        self._disabled: set[str] = set()
         if specs:
             for spec in specs:
                 self.register(spec)
@@ -106,11 +110,29 @@ class SourceRegistry:
     def names(self) -> list[str]:
         return list(self._specs)
 
+    # -- enable / disable --------------------------------------------------
+
+    def set_enabled(self, name: str, enabled: bool) -> None:
+        """Turn a source on/off for candidate selection (unknown names ignored)."""
+        with self._lock:
+            if name not in self._specs:
+                return
+            if enabled:
+                self._disabled.discard(name)
+            else:
+                self._disabled.add(name)
+
+    def is_enabled(self, name: str) -> bool:
+        with self._lock:
+            return name not in self._disabled
+
     # -- candidate selection ----------------------------------------------
 
     def is_available(self, name: str, now: Optional[float] = None) -> bool:
         now = time.time() if now is None else now
         with self._lock:
+            if name in self._disabled:
+                return False
             entry = self._health.get(name)
             return entry is None or entry["cooldown_until"] <= now
 
@@ -122,6 +144,7 @@ class SourceRegistry:
                 spec
                 for spec in self._specs.values()
                 if capability in spec.capabilities
+                and spec.name not in self._disabled
                 and self._health.get(spec.name, {}).get("cooldown_until", 0.0) <= now
             ]
         out.sort(key=lambda s: (s.rank, s.priority, s.name))
@@ -135,6 +158,7 @@ class SourceRegistry:
                 spec
                 for spec in self._specs.values()
                 if spec.capabilities & wanted
+                and spec.name not in self._disabled
                 and self._health.get(spec.name, {}).get("cooldown_until", 0.0) <= now
             ]
         out.sort(key=lambda s: (s.rank, s.priority, s.name))
@@ -148,7 +172,9 @@ class SourceRegistry:
         """
         with self._lock:
             out = [
-                spec for spec in self._specs.values() if capability in spec.capabilities
+                spec
+                for spec in self._specs.values()
+                if capability in spec.capabilities and spec.name not in self._disabled
             ]
         out.sort(key=lambda s: (s.rank, s.priority, s.name))
         return out

@@ -22,6 +22,7 @@ import type { Librarian } from '../lib/Librarian';
 import ErrorBoundary from '../components/ErrorBoundary';
 import PipelineStatusPanel from '../components/PipelineStatusPanel';
 import PipelineTaskList from '../components/PipelineTaskList';
+import DataSourcesPanel from '../components/DataSourcesPanel';
 import { usePipeline } from '../hooks/usePipeline';
 import {
   describeEvent,
@@ -256,6 +257,13 @@ export default function MissionControlView({ lib }: { lib: Librarian; navigateTo
       </section>
 
       {/* ── 4. Execution history ────────────────────────────────────────── */}
+      {/* Data Sources management — collapsed by default so the page stays
+          scannable; toggle a source's on/off + tuning from here. */}
+      <ErrorBoundary>
+        <DataSourcesPanel />
+      </ErrorBoundary>
+
+      {/* ── 5. Execution history ────────────────────────────────────────── */}
       <section
         className="bg-[#1a1c24] border border-[#ffffff1a] rounded-xl p-4 flex flex-col gap-2"
         aria-label="Execution history"
@@ -289,7 +297,7 @@ export default function MissionControlView({ lib }: { lib: Librarian; navigateTo
         )}
       </section>
 
-      {/* ── 5. Compact system / API health ──────────────────────────────── */}
+      {/* ── 6. Compact system / API health ───────────────────────────────── */}
       <ErrorBoundary>
         <PipelineStatusPanel />
       </ErrorBoundary>
