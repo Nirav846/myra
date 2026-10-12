@@ -212,7 +212,7 @@ def _run_fundamentals_sync(tr: "TaskRun") -> None:
 def _run_market_cap_sync(tr: "TaskRun") -> None:
     from myra_app.utils.fundamentals_sync import sync_fundamentals
 
-    tr.stage("Refreshing market capitalisation")
+    tr.stage("Refreshing fundamentals from Screener.in")
 
     def _progress(done: int, total: int, _info: dict) -> None:
         if total:
@@ -228,11 +228,13 @@ def _run_market_cap_sync(tr: "TaskRun") -> None:
         progress_cb=_progress,
     )
     if isinstance(summary, dict) and summary.get("cancelled"):
-        tr.stage("Market cap sync cancelled — progress saved, will resume")
+        tr.stage("Screener fundamentals sync cancelled — progress saved, will resume")
     elif isinstance(summary, dict) and summary.get("skipped") == "screener_disabled":
-        tr.stage("Market cap sync skipped — Screener.in is disabled in Data Sources")
+        tr.stage(
+            "Screener fundamentals sync skipped — Screener.in is disabled in Data Sources"
+        )
     else:
-        tr.stage("Market cap sync complete")
+        tr.stage("Screener fundamentals sync complete")
 
 
 def _run_shares_outstanding_sync(tr: "TaskRun") -> None:
@@ -333,7 +335,7 @@ PIPELINE_TASKS: dict[str, PipelineTask] = {
         "fundamentals_sync", "Fundamentals Sync", 3600, _run_fundamentals_sync
     ),
     "market_cap_sync": PipelineTask(
-        "market_cap_sync", "Market Cap Sync", 900, _run_market_cap_sync
+        "market_cap_sync", "Screener Fundamentals", 1800, _run_market_cap_sync
     ),
     "shares_outstanding_sync": PipelineTask(
         "shares_outstanding_sync", "Shares Refresh", 900, _run_shares_outstanding_sync

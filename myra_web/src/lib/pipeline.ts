@@ -78,7 +78,7 @@ export const TASK_LABELS: Record<string, string> = {
   etf_sync: 'ETF Sync',
   index_sync: 'Index Sync',
   fundamentals_sync: 'Fundamentals Sync',
-  market_cap_sync: 'Market Cap Sync',
+  market_cap_sync: 'Screener Fundamentals',
   shares_outstanding_sync: 'Shares Refresh',
   institutional_sync: 'Institutional Sync',
   fundamentals_enrich: 'Fundamentals Enrich',

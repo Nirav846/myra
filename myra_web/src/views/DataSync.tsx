@@ -34,7 +34,7 @@ const TASK_META: Record<string, { name: string; key: string; duration: string; i
   etf_sync: { name: 'ETF Sync', key: 'etf_sync', duration: '1-2 min', icon: <List size={16} />, color: 'green' },
   index_sync: { name: 'Index Sync', key: 'index_sync', duration: '1-3 min', icon: <BarChart3 size={16} />, color: 'yellow' },
   fundamentals_sync: { name: 'Fundamentals Sync', key: 'fundamentals_sync', duration: '10-20 min', icon: <TrendingUp size={16} />, color: 'blue' },
-  market_cap_sync: { name: 'Market Cap Sync', key: 'market_cap_sync', duration: '3-5 min', icon: <Coins size={16} />, color: 'purple' },
+  market_cap_sync: { name: 'Screener Fundamentals', key: 'market_cap_sync', duration: '10-20 min', icon: <Coins size={16} />, color: 'purple' },
   shares_outstanding_sync: { name: 'Shares Refresh', key: 'shares_outstanding_sync', duration: '1-3 min', icon: <BarChart3 size={16} />, color: 'cyan' },
   institutional_sync: { name: 'Institutional Sync', key: 'institutional_sync', duration: '1-3 min', icon: <Building2 size={16} />, color: 'amber' },
 };
