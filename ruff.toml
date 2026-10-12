@@ -7,9 +7,3 @@ ignore = ["E501", "E402","F403","F405","E722","E712"]
 # Always autofix, but never try to fix `F401` (unused imports).
 fix = true
 unfixable = ["F401"]
-
-# Ignore 
-[per-file-ignores]
-"pkscreener/globals.py" =["F841", "E712"]
-"pkscreener/classes/StockScreener.py" =["F841"]
-"pkscreener/classes/Utility.py" = ["F401"]
