@@ -33,7 +33,7 @@ import logging
 import os
 import sqlite3
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Iterable, Optional
 
 from myra_app import constants
 from myra_app.librarian_core import LibrarianCore
@@ -189,6 +189,56 @@ def screener_claim_is_fresh(symbol: str, *, conn=None, now=None) -> bool:
     """True while Screener's claim on ``symbol`` is within the takeover window."""
     age = screener_claim_age_days(symbol, conn=conn)
     return age is not None and age < takeover_days()
+
+
+def screener_fresh_symbols(symbols: Iterable[str], *, conn=None, now=None) -> set[str]:
+    """The subset of ``symbols`` whose Screener.in claim is still fresh.
+
+    One connection for the whole list — a per-symbol :func:`screener_claim_is_fresh`
+    would be ~3k connect cycles on a full run. Returns the *original* input
+    strings that are fresh (so a caller can filter its own list directly, even if
+    it mixes casing). Callers use this to skip an expensive per-symbol fetch for
+    data Screener.in already owns and would not be overwritten anyway.
+    """
+    by_clean: dict[str, list[str]] = {}
+    for symbol in symbols:
+        if not symbol:
+            continue
+        # Grouping into a dict-of-lists (bounded by distinct symbols, each list
+        # tiny) — not the accumulating-list anti-pattern the guard targets.
+        by_clean.setdefault(_clean_symbol(symbol), []).append(symbol)  # noqa: PG-APPEND
+    if not by_clean:
+        return set()
+
+    own = conn is None
+    try:
+        if own:
+            conn = sqlite3.connect(_val_path(), timeout=15)
+            conn.execute("PRAGMA journal_mode=WAL")
+        ensure_table(conn)
+        placeholders = ",".join("?" * len(by_clean))
+        rows = conn.execute(
+            f"SELECT symbol, MAX(last_success_at) FROM {TABLE} "
+            f"WHERE source IN (?, ?) AND symbol IN ({placeholders}) "
+            f"GROUP BY symbol",
+            ("screener_in", "screener", *by_clean.keys()),
+        ).fetchall()
+    except sqlite3.Error:
+        return set()
+    finally:
+        if own and conn is not None:
+            conn.close()
+
+    cutoff = takeover_days()
+    now_dt = now or datetime.now(timezone.utc)
+    fresh: set[str] = set()
+    for symbol, ts in rows:
+        parsed = _parse(ts) if ts else None
+        if parsed is None:
+            continue
+        if (now_dt - parsed).total_seconds() / 86400.0 < cutoff:
+            fresh.update(by_clean.get(symbol, []))
+    return fresh
 
 
 def filter_owned_fields(

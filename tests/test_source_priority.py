@@ -115,6 +115,26 @@ def test_unknown_symbol_has_nothing_to_veto():
     )
 
 
+def test_screener_fresh_symbols_partitions_mixed_claims(monkeypatch):
+    conn = _conn()
+    now = datetime.now(timezone.utc)
+    sp.record_source_success("FRESH", "screener_in", conn=conn)
+    conn.execute(
+        "INSERT OR REPLACE INTO fundamental_source_freshness (symbol, source, last_success_at) "
+        "VALUES (?, ?, ?)",
+        ("STALE", "screener_in", (now - timedelta(days=90)).isoformat()),
+    )
+    monkeypatch.setattr(sp, "takeover_days", lambda: 60)
+
+    # Returns the original input strings, case-insensitively, and ignores
+    # symbols with no claim at all.
+    fresh = sp.screener_fresh_symbols(["FRESH", "STALE", "NEVER", "fresh"], conn=conn)
+    assert fresh == {"FRESH", "fresh"}
+
+    # Nothing in, nothing out — and no connection work for an empty list.
+    assert sp.screener_fresh_symbols([], conn=conn) == set()
+
+
 def test_describe_payload():
     conn = _conn()
     sp.record_source_success("RELIANCE", "screener_in", conn=conn)

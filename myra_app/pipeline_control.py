@@ -172,6 +172,7 @@ def _run_enrichment(tr: "TaskRun") -> None:
 
 
 def _run_fundamentals_sync(tr: "TaskRun") -> None:
+    from myra_app import source_priority
     from myra_app.fundamental_sync import FundamentalSync, _source_enabled
 
     sync = FundamentalSync()
@@ -183,14 +184,21 @@ def _run_fundamentals_sync(tr: "TaskRun") -> None:
     ms_data = sync._fetch_morningstar_bulk()
     tr.stage("Resolving NIFTY 500 symbols")
     nifty_symbols = sync._get_nifty_500_symbols()
-    tr.stage(
-        f"Fetching NSE data for {len(nifty_symbols) if nifty_symbols else 0} symbols"
-    )
-    nse_data = (
-        sync._fetch_nse_all(nifty_symbols, tr.ctx.shutdown_event)
-        if nifty_symbols
-        else {}
-    )
+    # Screener.in owns the core metrics of any symbol it refreshed recently, and
+    # this pass' only unique contribution is face_value; _merge_and_insert drops
+    # everything else it would overwrite. So skip the expensive per-symbol
+    # yfinance fetch (~0.8s each, ~6 min for NIFTY 500) for symbols Screener has
+    # already claimed rather than fetching data that is about to be discarded.
+    symbols = nifty_symbols or []
+    fresh = source_priority.screener_fresh_symbols(symbols)
+    to_fetch = [s for s in symbols if s not in fresh]
+    if fresh:
+        tr.note(
+            f"{len(fresh)} symbols skipped — Screener.in data is fresh "
+            "(would not be overwritten)"
+        )
+    tr.stage(f"Fetching NSE data for {len(to_fetch)} symbols")
+    nse_data = sync._fetch_nse_all(to_fetch, tr.ctx.shutdown_event) if to_fetch else {}
     tr.stage("Merging and inserting")
     today = datetime.now(IST).date().isoformat()
     sync._merge_and_insert(ms_data, nse_data, today)
