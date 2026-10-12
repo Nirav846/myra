@@ -14,8 +14,6 @@ requests
 rich
 scikit-learn>=1.5.0
 tensorflow
-torch
-transformers
 xgboost
 yfinance
 urllib3>=2.7.0

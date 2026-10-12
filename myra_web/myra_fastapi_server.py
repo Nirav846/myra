@@ -18,7 +18,6 @@ from fastapi.responses import JSONResponse
 
 from myra_web.routes.fundamentals import router as fundamentals_router
 from myra_web.routes.full_fundamentals import router as full_fundamentals_router
-from myra_web.routes.sentiment import router as sentiment_router
 from myra_web.routes.ai_opinion import router as ai_opinion_router
 from myra_web.routes.chart import router as chart_router
 from myra_web.routes.search import router as search_router
@@ -128,7 +127,6 @@ async def global_exception_handler(request, exc):
 
 app.include_router(fundamentals_router)
 app.include_router(full_fundamentals_router)
-app.include_router(sentiment_router)
 app.include_router(ai_opinion_router)
 app.include_router(chart_router)
 app.include_router(search_router)

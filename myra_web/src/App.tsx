@@ -58,7 +58,6 @@ const FundTractionScannerView = lazy(() => import('./views/FundTractionScanner')
 const TractionBoardView = lazy(() => import('./views/TractionBoard'));
 const MFSmartMoneyView = lazy(() => import('./views/MFSmartMoney'));
 const CrossBuyScannerView = lazy(() => import('./views/CrossBuyScanner'));
-const NewsSentimentView = lazy(() => import('./views/NewsSentiment'));
 const FundamentalsView = lazy(() => import('./views/FundamentalsView'));
 const FullFundamentalsView = lazy(() => import('./views/FullFundamentalsView'));
 import { AlertCircle, Settings as SettingsIcon, SlidersHorizontal, BrainCircuit, Rocket, Database, RotateCw, Eye, Zap } from 'lucide-react';
@@ -100,7 +99,6 @@ const TABS = [
   { id: 'Delivery Volume Profile', path: '/inst-dom', icon: '🧱', category: 'analysis' },
   { id: 'Multibagger Matrix', path: '/multibagger-matrix', icon: '🚀', category: 'analysis' },
   { id: 'Value Ranker', path: '/value-ranker', icon: '🎯', category: 'analysis' },
-  { id: 'News Sentiment', path: '/news-sentiment', icon: '📰', category: 'analysis' },
   { id: 'RRG', path: '/rrg', icon: '🎯', category: 'analysis' },
   { id: 'Historical Search', path: '/historical-search', icon: '🔍', category: 'analysis' },
   { id: 'Data Sync', path: '/data-sync', icon: <Database size={18} />, category: 'data' },
@@ -318,7 +316,6 @@ export default function App() {
                 <Route path="/climax-accumulation" element={<LazyLoadView><ClimaxAccumulationView lib={librarian} /></LazyLoadView>} />
                 <Route path="/dcb-bargain" element={<LazyLoadView><DCBBargainView lib={librarian} /></LazyLoadView>} />
                 <Route path="/smart-money-bargain" element={<LazyLoadView><SmartMoneyBargainView /></LazyLoadView>} />
-                <Route path="/news-sentiment" element={<LazyLoadView><NewsSentimentView /></LazyLoadView>} />
                 <Route path="/confluence" element={<LazyLoadView><ConfluenceView /></LazyLoadView>} />
                 <Route path="/rrg" element={<LazyLoadView><RRGView /></LazyLoadView>} />
                 <Route path="/fund-traction-report" element={<LazyLoadView><FundTractionReportView /></LazyLoadView>} />
