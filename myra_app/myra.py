@@ -15,7 +15,6 @@ if _PROJECT_ROOT not in sys.path:
 os.chdir(_PROJECT_ROOT)
 
 import argparse
-import threading
 from datetime import datetime
 
 import pandas as pd
@@ -25,7 +24,6 @@ from rich.theme import Theme
 
 from myra_app.background_orchestrator import start as start_background
 from myra_app.menu_navigation import MenuNavigator
-from myra_app.ml_engine import TrendForecaster
 from myra_app.screener import MYRAScreener
 from myra_app.telegram_notifier import TelegramNotifier
 from myra_app.UI_Manager import draw_dashboard
@@ -61,10 +59,6 @@ GLOSSARY = """
  [magenta]Hidden_Acc[/magenta]: Hidden Accumulation (Price down, but FII up).
  [magenta]Fair_Val[/magenta]: Morningstar Intrinsic Fair Value estimate.
  [green]Best Buy[/green]: Institutional Fair Value Gap (FVG) Zone.
-
-[bold cyan]ML-1 (AEON Evolutionary Agent):[/bold cyan]
- [magenta]Conviction[/magenta]: AI-ranked load levels (25%, 50%, 100%).
- [magenta]Stars[/magenta]: ML-Confidence rank.
 """
 
 
@@ -104,20 +98,6 @@ def main():
     # Automated Modular Sync (Atomic Trilogy)
     console.print("[dim][*] Initiating Background Data Sync...[/dim]")
     screener.lib.start_background_sync()
-
-    # Model Warmup Thread
-    forecaster = TrendForecaster(screener.lib)
-    forecast_data = {"result": None}
-
-    def warmup():
-        try:
-            if forecaster.setup_engine():
-                forecast_data["result"] = forecaster.get_forecast()
-        except Exception:
-            pass
-
-    warmup_thread = threading.Thread(target=warmup, daemon=True)
-    warmup_thread.start()
 
     if args.daily:
         console.print("[bold green][*] Running Automated Daily Routine...[/bold green]")
@@ -161,8 +141,6 @@ def main():
         "28": ("rs_momentum", "RS Momentum & Phelps Base", "Type"),
         "29": ("fakeout_analyzer", "Morning Fakeout Radar", "Type"),
         "30": ("smart_money_ignition", "Smart Money Ignition (SMC-1)", "Ignition_Dist"),
-        "31": ("aeon_agent_signals", "AEON Agent Signals (ML-1)", "AEON_Conviction"),
-        "32": ("dilated_cnn_forecast", "Dilated CNN Forecast (ML-2)", "Forecast_Move%"),
         "33": (
             "institutional_structural_flow",
             "Institutional Structural Flow (SMC-2)",
@@ -215,11 +193,7 @@ def main():
 
             if not startup_choice:
                 nav.push("Home")
-                console.print(
-                    draw_dashboard(
-                        screener.lib, breadth_text, forecast=forecast_data["result"]
-                    )
-                )
+                console.print(draw_dashboard(screener.lib, breadth_text))
                 raw_choice = console.input(
                     "\n[bold yellow]Select Option (or code e.g. 's SBIN') > [/bold yellow]"
                 ).strip()

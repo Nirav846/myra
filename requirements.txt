@@ -13,7 +13,6 @@ PyYAML
 requests
 rich
 scikit-learn>=1.5.0
-tensorflow
 xgboost
 yfinance
 urllib3>=2.7.0
