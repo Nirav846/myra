@@ -25,3 +25,10 @@ httpx>=0.27.0
 scrapling
 playwright
 patchright
+# Direct imports that were missing from this list (added during the
+# pkscreener_env audit so the manifest matches what the code actually imports).
+openpyxl
+ta
+tabulate
+pywin32
+pydantic
