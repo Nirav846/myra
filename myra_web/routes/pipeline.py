@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -42,6 +43,11 @@ from myra_app.pipeline_control import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
+
+#: Emit a heartbeat if the stream has been silent for this long, so a client can
+#: tell a dead connection from a quiet task (which would otherwise leave the UI
+#: frozen until the socket is torn down). The client watchdog sits above this.
+HEARTBEAT_S = 15.0
 
 
 class RunRequest(BaseModel):
@@ -83,6 +89,7 @@ async def pipeline_events():
         try:
             # Initial snapshot so a fresh client never renders an empty board.
             yield _sse({"type": "connected", "state": control.get_status()})
+            last_emit = time.monotonic()
             while not control.shutting_down():
                 event = None
                 with control._lock:  # noqa: SLF001 - same module family
@@ -90,8 +97,12 @@ async def pipeline_events():
                         event = queue.popleft()
                 if event is not None:
                     yield _sse(event)
+                    last_emit = time.monotonic()
                 else:
                     await asyncio.sleep(0.5)
+                    if time.monotonic() - last_emit >= HEARTBEAT_S:
+                        yield _sse({"type": "heartbeat"})
+                        last_emit = time.monotonic()
             # Tell clients why the stream ended so they reconnect knowingly.
             yield _sse({"type": "shutdown"})
         except asyncio.CancelledError:

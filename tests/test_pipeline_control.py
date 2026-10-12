@@ -652,6 +652,24 @@ def test_events_endpoint_is_a_real_sse_stream(control, monkeypatch):
     assert "shutdown" in seen, "stream must close on shutdown"
 
 
+def test_events_stream_emits_heartbeat_when_idle(control, monkeypatch):
+    """A quiet stream must still send heartbeats, so the client can tell a dead
+    connection from a slow task — without one the board freezes on a stalled
+    (but still "open") stream with no way to detect it."""
+    import myra_web.routes.pipeline as route_mod
+
+    monkeypatch.setattr(route_mod, "HEARTBEAT_S", 0.2)
+
+    seen, payloads = _drive_sse(control, monkeypatch, ["connected", "heartbeat"])
+
+    assert seen[0] == "connected"
+    assert "heartbeat" in seen, "an idle stream must emit heartbeats"
+    # Heartbeats carry no state for the client to patch.
+    hb = next(p for p in payloads if p["type"] == "heartbeat")
+    assert "state" not in hb
+    assert "shutdown" in seen
+
+
 def test_events_endpoint_is_not_plain_json(control, monkeypatch):
     """The old endpoint returned a JSON object; it must no longer do so."""
     import asyncio

@@ -14,10 +14,15 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { API_BASE } from '../config';
-import type { PipelineEvent, PipelineStatus } from '../lib/pipeline';
+import type { PipelineEvent, PipelineStatus, TaskStatus } from '../lib/pipeline';
 
 const POLL_MS = 5000;
 const MAX_EVENTS = 200;
+// If no SSE frame (event or heartbeat) arrives for this long, treat the stream
+// as dead even though the browser still reports it open, and reconnect. The
+// server sends a heartbeat well inside this window, so it only fires on a
+// genuinely stalled connection.
+const HEARTBEAT_TIMEOUT_MS = 30000;
 
 export interface UsePipelineResult {
   status: PipelineStatus | null;
@@ -55,6 +60,59 @@ export function usePipeline(): UsePipelineResult {
     }
   }, []);
 
+  // Patch the live status in place from stage/progress/terminal events so the
+  // running task's stage and the overall message advance immediately. Without
+  // this, `status` only changed on a terminal event (or the 5s poll, which is
+  // off while SSE is connected), so a long task looked frozen on its first
+  // stage for the whole run. Snapshot events use applySnapshot instead.
+  const applyEvent = useCallback((ev: PipelineEvent) => {
+    if (!mounted.current) return;
+    setStatus((prev) => {
+      if (!prev) return prev;
+      const key = ev.task_id;
+      if (!key || !prev.tasks[key]) return prev;
+
+      const tasks = { ...prev.tasks };
+      const overall = { ...prev.overall };
+      const task = { ...tasks[key] };
+
+      if (ev.type === 'stage' || ev.type === 'note') {
+        if (ev.message !== undefined) task.stage = ev.message;
+        if (overall.active_task_id === key && ev.message !== undefined) {
+          overall.message = ev.message;
+        }
+      } else if (ev.type === 'progress') {
+        if (typeof ev.progress_pct === 'number') {
+          task.progress_pct = ev.progress_pct;
+          if (overall.active_task_id === key) overall.progress_pct = ev.progress_pct;
+        }
+      } else if (ev.type === 'task_started') {
+        task.current_status = 'running';
+        task.stage = 'Starting';
+        task.progress_pct = null;
+        task.error_message = null;
+        task.started_at = ev.time;
+        task.finished_at = null;
+        task.duration_seconds = null;
+      } else if (ev.type === 'task_completed') {
+        const status = (ev.status as TaskStatus) ?? 'completed';
+        task.current_status = status;
+        task.stage = status === 'completed' ? null : task.stage;
+        task.error_message = ev.error ?? null;
+        if (ev.duration_seconds !== undefined) {
+          task.duration_seconds = ev.duration_seconds;
+        }
+        task.finished_at = ev.time;
+        task.progress_pct = status === 'completed' ? 100 : null;
+      } else {
+        return prev;
+      }
+
+      tasks[key] = task;
+      return { ...prev, overall, tasks };
+    });
+  }, []);
+
   const refresh = useCallback(async () => {
     if (!mounted.current) return;
     try {
@@ -77,9 +135,30 @@ export function usePipeline(): UsePipelineResult {
   useEffect(() => {
     mounted.current = true;
     let retry: ReturnType<typeof setTimeout> | undefined;
+    let watchdog: ReturnType<typeof setTimeout> | undefined;
     let delay = 1000;
 
-    const connect = () => {
+    function armWatchdog() {
+      if (watchdog) clearTimeout(watchdog);
+      watchdog = setTimeout(handleDrop, HEARTBEAT_TIMEOUT_MS);
+    }
+
+    // One teardown path for a transport error AND a stalled-but-"open" stream
+    // (no heartbeat). Guarding on esRef makes it idempotent, so the watchdog
+    // and onerror can never both schedule a reconnect.
+    function handleDrop() {
+      if (watchdog) clearTimeout(watchdog);
+      const es = esRef.current;
+      if (!es) return; // already handled
+      esRef.current = null;
+      es.close();
+      if (!mounted.current) return;
+      setConnected(false);
+      delay = Math.min(delay * 2, 30000);
+      retry = setTimeout(connect, delay);
+    }
+
+    function connect() {
       if (!mounted.current) return;
       const es = new EventSource(`${API_BASE}/pipeline/events`);
       esRef.current = es;
@@ -87,10 +166,12 @@ export function usePipeline(): UsePipelineResult {
       es.onopen = () => {
         delay = 1000;
         if (mounted.current) setConnected(true);
+        armWatchdog();
       };
 
       es.onmessage = (message) => {
         if (!mounted.current) return;
+        armWatchdog();
         let data: any;
         try {
           data = JSON.parse(message.data);
@@ -113,6 +194,8 @@ export function usePipeline(): UsePipelineResult {
 
         const event: PipelineEvent = { ...data, time: data.time ?? new Date().toISOString() };
         setEvents((prev) => [event, ...prev].slice(0, MAX_EVENTS));
+        // Advance the live board from the event itself (stage/progress/terminal).
+        applyEvent(event);
 
         // Terminal task events carry the authoritative outcome; pull the full
         // status so per-task state is never inferred from a partial payload.
@@ -124,23 +207,18 @@ export function usePipeline(): UsePipelineResult {
         }
       };
 
-      es.onerror = () => {
-        es.close();
-        esRef.current = null;
-        if (!mounted.current) return;
-        setConnected(false);
-        delay = Math.min(delay * 2, 30000);
-        retry = setTimeout(connect, delay);
-      };
-    };
+      es.onerror = () => handleDrop();
+    }
 
     connect();
     return () => {
       mounted.current = false;
+      if (watchdog) clearTimeout(watchdog);
       esRef.current?.close();
+      esRef.current = null;
       if (retry) clearTimeout(retry);
     };
-  }, [applySnapshot, refresh]);
+  }, [applySnapshot, applyEvent, refresh]);
 
   // --- Modest polling fallback, only while SSE is down ---------------------
   useEffect(() => {
