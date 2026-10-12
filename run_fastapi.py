@@ -12,6 +12,33 @@ if os.path.exists(VENV_PYTHON) and sys.executable.lower() != VENV_PYTHON.lower()
 import uvicorn
 import signal
 import sys
+import threading
+import time
+
+
+def _signal_pipeline_shutdown_on_exit(server: "uvicorn.Server") -> None:
+    """End long-lived pipeline SSE streams as soon as shutdown begins.
+
+    uvicorn starts graceful shutdown by waiting for existing connections to
+    finish *before* it runs the app lifespan teardown. The
+    ``/api/pipeline/events`` SSE response streams indefinitely by design, so it
+    never finishes on its own and uvicorn stalls on "Waiting for connections to
+    close" (CTRL+C to force quit). Flipping the pipeline control plane the
+    moment ``should_exit`` is set lets the SSE generator observe
+    ``shutting_down()`` and return promptly.
+    """
+
+    def _watch() -> None:
+        while not getattr(server, "should_exit", False):
+            time.sleep(0.1)
+        try:
+            from myra_app.pipeline_control import control
+
+            control.shutdown()
+        except Exception as exc:  # noqa: BLE001 - shutdown must never block
+            print(f"[FastAPI] Pipeline shutdown signal failed: {exc}")
+
+    threading.Thread(target=_watch, name="myra-shutdown-watch", daemon=True).start()
 
 
 def run():
@@ -25,6 +52,8 @@ def run():
         port=8000,
         reload=False,  # reload is unstable on Windows with signals
         log_level="info",
+        # Safety net: never let a stuck connection block shutdown forever.
+        timeout_graceful_shutdown=10,
     )
     server = uvicorn.Server(config)
 
@@ -35,6 +64,7 @@ def run():
     signal.signal(signal.SIGINT, handle_exit)
     signal.signal(signal.SIGTERM, handle_exit)
 
+    _signal_pipeline_shutdown_on_exit(server)
     server.run()
 
 
