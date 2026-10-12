@@ -147,4 +147,6 @@ CREATE INDEX idx_master_nifty500 ON symbols_master (in_nifty500)
 
 CREATE INDEX idx_master_sector ON symbols_master (sector)
 
+CREATE INDEX idx_symbol_alias_canonical ON symbol_alias (canonical)
+
 CREATE INDEX idx_symbols_sector ON symbols_master(sector)
