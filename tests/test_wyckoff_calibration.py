@@ -30,7 +30,6 @@ import backtest_wyckoff  # noqa: E402,F401  (calibration module imports it)
 import calibrate_wyckoff_weights as calib  # noqa: E402
 from myra_app.strategies.wyckoff_automaton import WyckoffAutomaton  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # Split logic
 # ---------------------------------------------------------------------------

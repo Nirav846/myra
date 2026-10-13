@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Fixtures & helpers
 # ---------------------------------------------------------------------------
@@ -321,15 +320,13 @@ class TestBuildTechnicalSummary:
 
         # Create technical_data table
         conn = sqlite3.connect(str(tech_db))
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE technical_data (
                 symbol TEXT, date TEXT, close REAL, delivery_pct REAL,
                 sma_50 REAL, high_52w REAL, low_52w REAL,
                 trend_alignment TEXT, relative_volume_score REAL
             )
-            """
-        )
+            """)
         conn.execute(
             "INSERT INTO technical_data VALUES ('RELIANCE','2025-01-15',2500.0,45.2,2480.0,2800.0,1900.0,'BULLISH',1.3)"
         )
@@ -338,15 +335,13 @@ class TestBuildTechnicalSummary:
 
         # Create fundamentals table
         conn = sqlite3.connect(str(val_db))
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE fundamentals (
                 symbol TEXT, pe REAL, roe REAL, sector TEXT,
                 promoter_holding_pct REAL, peRatio REAL, returnOnEquity REAL,
                 date TEXT
             )
-            """
-        )
+            """)
         conn.execute(
             "INSERT INTO fundamentals VALUES ('RELIANCE',28.5,14.2,'Energy',50.1,28.5,14.2,'2025-01-15')"
         )
@@ -369,28 +364,24 @@ class TestBuildTechnicalSummary:
         val_db = tmp_path / "myra_valuation.db"
 
         conn = sqlite3.connect(str(tech_db))
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE technical_data (
                 symbol TEXT, date TEXT, close REAL, delivery_pct REAL,
                 sma_50 REAL, high_52w REAL, low_52w REAL,
                 trend_alignment TEXT, relative_volume_score REAL
             )
-            """
-        )
+            """)
         conn.commit()
         conn.close()
 
         conn = sqlite3.connect(str(val_db))
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE fundamentals (
                 symbol TEXT, pe REAL, roe REAL, sector TEXT,
                 promoter_holding_pct REAL, peRatio REAL, returnOnEquity REAL,
                 date TEXT
             )
-            """
-        )
+            """)
         conn.commit()
         conn.close()
 

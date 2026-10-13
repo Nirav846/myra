@@ -1,4 +1,5 @@
 """Tests for institutional_sync.py — metadata tracking, idempotency, failure isolation."""
+
 import sqlite3
 import sys
 import tempfile

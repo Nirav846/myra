@@ -13,6 +13,7 @@ Sections:
   5. Train / holdout split     — train/holdout/all windows
   6. Signal registry           — 'random' / 'momentum' name → class mapping
 """
+
 from __future__ import annotations
 
 import math
@@ -54,7 +55,6 @@ from myra_app.backtest_engine import (
     run_backtest,
     total_round_trip_costs,
 )
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Fixtures + helpers (mirrors test_backtest_engine.py patterns; kept local so

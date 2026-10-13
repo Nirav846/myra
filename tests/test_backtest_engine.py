@@ -10,6 +10,7 @@ Covers:
   - Train/holdout/all window split
   - Signal registry + SignalFunction protocol
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -40,7 +41,6 @@ from myra_app.backtest_engine import (
     run_backtest,
     total_round_trip_costs,
 )
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Fixture: a small in-memory SQLite DB that mirrors the schema we need.

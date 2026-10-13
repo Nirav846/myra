@@ -10,7 +10,6 @@ from unittest.mock import MagicMock, patch
 
 from myra_app.strategies.base_strategy import MarketMoodHelper
 
-
 # ---------------------------------------------------------------------------
 # Helper: minimal mock lib that satisfies the VIX fallback path
 # ---------------------------------------------------------------------------

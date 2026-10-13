@@ -20,8 +20,7 @@ AS_OF = "2026-10-09"
 def _val_conn():
     """In-memory valuation DB with the tables the scanner reads."""
     c = sqlite3.connect(":memory:")
-    c.executescript(
-        """
+    c.executescript("""
         CREATE TABLE mf_holding (
             fund_slug TEXT, month TEXT, fincode TEXT, company TEXT,
             weight_pct REAL, shares REAL
@@ -36,8 +35,7 @@ def _val_conn():
             adds_new INTEGER, reduces_closes INTEGER, pct_vs_sma REAL,
             nse TEXT, name TEXT, direction TEXT
         );
-        """
-    )
+        """)
     holdings = [
         # (fund, month, fincode, company, weight, shares)
         # Alpha: two funds, everything flat -> steady

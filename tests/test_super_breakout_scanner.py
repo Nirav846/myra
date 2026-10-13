@@ -328,14 +328,12 @@ class TestCanonicalSignalDetection:
 
         db = str(tmp_path / "test_tech.db")
         conn = sq.connect(db)
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE technical_data (
                 symbol TEXT, date TEXT, close REAL,
                 delivery_qty REAL, delivery REAL
             )
-        """
-        )
+        """)
         # 260 bars total (need > 200 for SMA200)
         # Phase 1 (bars 0-199): flat at 100 — SMA200 ≈ 100
         # Phase 2 (bars 200-249): decline to 70 — SMA50 drops, SMA200 ~99
@@ -438,8 +436,8 @@ class TestSuperBreakoutNearTrigger:
 
         scanner = SuperBreakoutScanner(top_n=500, state_db=str(tmp_path / "meta.db"))
         scanner._get_universe = lambda: [("SYM_IN", 1, 1000.0)]
-        scanner._get_tech_data = (
-            lambda sym, min_date, max_date=None: rows if sym == "SYM_IN" else []
+        scanner._get_tech_data = lambda sym, min_date, max_date=None: (
+            rows if sym == "SYM_IN" else []
         )
         df = scanner.scan_near_trigger(band_pct=5.0)
         syms = df["symbol"].tolist() if not df.empty else []
@@ -460,8 +458,8 @@ class TestSuperBreakoutNearTrigger:
 
         scanner = SuperBreakoutScanner(top_n=500, state_db=str(tmp_path / "meta.db"))
         scanner._get_universe = lambda: [("SYM_OUT", 1, 1000.0)]
-        scanner._get_tech_data = (
-            lambda sym, min_date, max_date=None: rows if sym == "SYM_OUT" else []
+        scanner._get_tech_data = lambda sym, min_date, max_date=None: (
+            rows if sym == "SYM_OUT" else []
         )
         df = scanner.scan_near_trigger(band_pct=5.0)
         syms = df["symbol"].tolist() if not df.empty else []
@@ -495,8 +493,8 @@ class TestSuperBreakoutNearTrigger:
 
         scanner = SuperBreakoutScanner(top_n=500, state_db=str(tmp_path / "meta.db"))
         scanner._get_universe = lambda: [("SYM_HELD", 1, 1000.0)]
-        scanner._get_tech_data = (
-            lambda sym, min_date, max_date=None: rows if sym == "SYM_HELD" else []
+        scanner._get_tech_data = lambda sym, min_date, max_date=None: (
+            rows if sym == "SYM_HELD" else []
         )
         df = scanner.scan_near_trigger(band_pct=5.0)
         syms = df["symbol"].tolist() if not df.empty else []

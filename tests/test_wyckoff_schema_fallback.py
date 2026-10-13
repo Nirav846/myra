@@ -23,24 +23,20 @@ def legacy_tech_db(tmp_path, monkeypatch):
     db_path = os.path.join(str(tmp_path), "myra_technical.db")
     conn = sqlite3.connect(db_path)
     try:
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE technical_data (
                 symbol TEXT, date TEXT, open REAL, high REAL, low REAL,
                 close REAL, volume REAL, delivery REAL, delivery_pct REAL,
                 nifty_outperformance_score REAL, sma_50 REAL,
                 high_52w REAL, low_52w REAL
             )
-            """
-        )
-        conn.execute(
-            """
+            """)
+        conn.execute("""
             INSERT INTO technical_data VALUES (
                 'TEST', '2025-01-01', 101.0, 106.0, 100.0, 103.0,
                 50000.0, 15000.0, 30.0, 0.0, 102.0, 130.0, 95.0
             )
-            """
-        )
+            """)
         conn.commit()
     finally:
         conn.close()

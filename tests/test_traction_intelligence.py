@@ -10,27 +10,21 @@ from myra_app import traction_intelligence as ti
 
 def _val():
     conn = sqlite3.connect(":memory:")
-    conn.execute(
-        """CREATE TABLE fund_traction (
+    conn.execute("""CREATE TABLE fund_traction (
             symbol TEXT, month TEXT, name TEXT, nse TEXT, sector TEXT,
             traction_score REAL, number_of_funds INTEGER, adds_new INTEGER,
-            reduces_closes INTEGER, pct_vs_sma REAL)"""
-    )
-    conn.execute(
-        """CREATE TABLE fund_traction_funds (
+            reduces_closes INTEGER, pct_vs_sma REAL)""")
+    conn.execute("""CREATE TABLE fund_traction_funds (
             symbol TEXT, month TEXT, fund_slug TEXT, fund_name TEXT,
-            share_change_pct REAL)"""
-    )
+            share_change_pct REAL)""")
     return conn
 
 
 def _tech():
     conn = sqlite3.connect(":memory:")
-    conn.execute(
-        """CREATE TABLE technical_data (
+    conn.execute("""CREATE TABLE technical_data (
             symbol TEXT, date TEXT, high REAL, low REAL, close REAL,
-            delivery REAL)"""
-    )
+            delivery REAL)""")
     return conn
 
 

@@ -80,16 +80,14 @@ def test_missing_keys_are_tolerated():
 def valuation_db(tmp_path, monkeypatch):
     path = os.path.join(str(tmp_path), "myra_valuation.db")
     conn = sqlite3.connect(path)
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE fundamentals (
             symbol TEXT PRIMARY KEY,
             quickRatio REAL, payoutRatio REAL, currentRatio REAL,
             quick_ratio REAL, payout_ratio REAL, current_ratio REAL,
             source_ms TEXT, last_updated TEXT
         )
-        """
-    )
+        """)
     conn.commit()
     conn.close()
     monkeypatch.setattr(fundamentals_route, "DB_DIR", str(tmp_path))

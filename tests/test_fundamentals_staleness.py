@@ -142,8 +142,7 @@ def valuation_db(tmp_path, monkeypatch):
     """Temp valuation DB plus a patched DB_DIR, and no live `screener` CLI call."""
     path = os.path.join(str(tmp_path), "myra_valuation.db")
     conn = sqlite3.connect(path)
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE fundamentals (
             symbol TEXT PRIMARY KEY,
             priceToBook REAL,
@@ -155,8 +154,7 @@ def valuation_db(tmp_path, monkeypatch):
             source_ms TEXT,
             last_updated TEXT
         )
-        """
-    )
+        """)
     conn.commit()
     conn.close()
 
