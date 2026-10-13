@@ -121,3 +121,35 @@ It is kept for reference but removed from the main AGENTS.md to reduce context b
 - Consolidation backfill is idempotent: `UPDATE WHERE (canonical IS NULL OR canonical = 0) AND alias IS NOT NULL AND alias != 0`.
 - SchemaRegistry only ADD COLUMNS (ALTER TABLE), never drops.
 - Calendar-vs-trading-day conversion uses factor 0.6 (conservative 5/7 ratio).
+
+---
+
+## Phase 2 — security, dataflow & correctness audit (2026-10-13)
+
+Starting point: `d47ad4c` (Phase 1 on `origin/main`, suite 1111 passed). Full write-up in
+`docs/PHASE2_AUDIT.md`.
+
+- **Workstream 1 — security:** 3 open Dependabot alerts fixed; GitHub now reports **0 open / 26 fixed**.
+  `black` pinned `23.3.0 → 26.10.1` (24.x still hit PYSEC-2026-2120/2121), npm `source-map-js 1.2.2`
+  + `proxy-addr 2.0.8` (lockfile-only). `pip-audit` + `pnpm audit` clean. Commits `7be28e4`, `5a53b79`.
+- **Workstream 2 — dataflow:** mapped ingest → store → enrich → scan → rank → surface (daily/EOD only).
+  Freshness can't reuse `Librarian.get_expected_trading_day` (circular via `get_max_price_date`).
+- **Workstream 3 — defects fixed:**
+  - `fix(freshness)` `ec2c40f`: `/api/data-health` reported **calendar** days behind → false red every
+    Monday/post-holiday. Added `trading_day_freshness()` (`myra_web/utils.py`), `trading_days_behind`
+    + `expected_trading_date` fields, UI prefers the session count. +`tests/test_health_freshness.py` (8).
+  - `fix(ranking)` `94ce6a1`: `apply_global_ranking` raised `KeyError` on missing `Stage`/`Stars` and the
+    broad `except` swallowed it → silently unsorted output. Guarded access + warning log.
+    +`tests/test_results_manager.py` (10) — path previously had no tests.
+- **Workstream 4 — perf:** baseline = `pytest tests/test_bulk_loader.py` (~125 s module); documented in
+  `docs/PERFORMANCE.md`. Deferred (documented, not implemented): `confluence_batch.py` reloads the whole
+  universe once per scanner (~12x) — needs an ingest-invalidated shared cache.
+- **Verification:** full suite **1129 passed** / 0 errors (418.89 s, 41% cov); black 26.10.1 + flake8 clean;
+  `tsc` + `pnpm build` green; `pip-audit` clean.
+
+### Next up (Phase 3 candidates)
+
+1. Share one bulk load across the confluence batch (perf; needs mtime-invalidated cache + live test).
+2. Drop unused `express` from `myra_web/package.json`.
+3. Regression tests for `score_components_v2.py` and `positional_engine.py`.
+4. Clear Polars `min_periods` deprecation in `feature_enrichment.py`; standardise XGBoost save format.

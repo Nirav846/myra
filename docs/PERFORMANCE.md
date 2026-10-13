@@ -72,8 +72,31 @@ Typical wall-clock for a full-universe scan vs a holdings-filtered scan (local m
 
 ## Test-suite performance
 
-- 367 tests collect in ~20 s (`pytest tests/ --collect-only`).
+- The suite is **1129 tests** and runs green locally in ~7 min (418 s with `--cov`, 41% coverage).
 - CI runs the full `tests/` suite on Python 3.12 plus a frontend build (Node 22) on every push/PR to `main`.
+
+### Scanner baseline (Phase 2, 2026-10-13)
+
+The regression canary for scanner throughput is the parity suite, which runs real
+scanner `scan()` code against the live `myra_technical.db`:
+
+```powershell
+$env:PYTHONPATH="D:\01screener\Myra"
+python -m pytest tests/test_bulk_loader.py -q --durations=20
+```
+
+| Phase | Elapsed |
+|---|---|
+| `test_wyckoff_parity` | ~47 s |
+| `test_accumulation_base_parity` | ~30 s |
+| bulk universe load (module fixture, one-off) | ~29 s |
+| `test_trigger_parity` / `test_dcb_parity` | ~9 s / ~7 s |
+| whole module | ~125 s |
+
+Numbers scale with the live dataset, so treat them as a same-command canary, not an SLA.
+Known deferred win: `myra_web/confluence_batch.py` runs ~12 scanners that each call
+`load_ohlcv_for_universe` independently, so the full-universe query repeats once per
+scanner — see `docs/PHASE2_AUDIT.md` §4.
 
 ---
 
