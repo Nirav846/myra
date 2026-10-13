@@ -1,4 +1,5 @@
 import os
+import logging
 from datetime import datetime
 
 import numpy as np
@@ -9,6 +10,8 @@ from rich.table import Table
 from myra_app.strategies.alpha.position_sizer import KellySizer, VolatilityAdjustedSizer
 
 from .institutional_pipe import InstitutionalPipe
+
+logger = logging.getLogger(__name__)
 
 try:
     import matplotlib
@@ -84,12 +87,21 @@ class ResultsManager:
         try:
             # 1. Map Stage to Priority
             stage_order = {"Stage 2": 0, "Stage 1": 1, "Stage 3": 2, "Stage 4": 3}
-            # Extract "Stage X" part if it has arrows or other text
-            df["_stage_base"] = df["Stage"].astype(str).str.extract(r"(Stage \d)")
-            df["_stage_rank"] = df["_stage_base"].map(stage_order).fillna(4)
+            # Extract "Stage X" part if it has arrows or other text. A scan that
+            # never produced a Stage column must not disable ranking entirely -
+            # it sorts as "unknown stage" (lowest priority), not as an error.
+            if "Stage" in df.columns:
+                df["_stage_base"] = df["Stage"].astype(str).str.extract(r"(Stage \d)")
+                df["_stage_rank"] = df["_stage_base"].map(stage_order).fillna(4)
+            else:
+                df["_stage_base"] = None
+                df["_stage_rank"] = 4
 
-            # 2. Convert Star Rating to Numeric
-            df["_star_rank"] = df["Stars"].astype(str).str.count(r"\*").fillna(0)
+            # 2. Convert Star Rating to Numeric (absent column -> no stars)
+            if "Stars" in df.columns:
+                df["_star_rank"] = df["Stars"].astype(str).str.count(r"\*").fillna(0)
+            else:
+                df["_star_rank"] = 0
 
             # 3. AEON Conviction Rank
             if "AEON_Conviction" in df.columns:
@@ -159,7 +171,11 @@ class ResultsManager:
                 ]
             )
         except Exception:
-            # If ranking fails, return original to avoid losing data
+            # Ranking is best-effort: losing the sort beats losing the rows. Log
+            # it so a real failure is visible rather than silently unsorted.
+            logger.warning(
+                "apply_global_ranking failed; returning rows unsorted", exc_info=True
+            )
             return df
 
     def archive_results(self, results: list, scan_name: str, strategy_id: str = None):
@@ -412,9 +428,7 @@ class ResultsManager:
             rating = (
                 "[green]LOW[/green]"
                 if vol < 20
-                else "[yellow]MOD[/yellow]"
-                if vol < 40
-                else "[red]HIGH[/red]"
+                else "[yellow]MOD[/yellow]" if vol < 40 else "[red]HIGH[/red]"
             )
             t_risk.add_row(r["Stock"], f"{mdd:.1f}%", f"{vol:.1f}%", rating)
 
@@ -603,11 +617,7 @@ class ResultsManager:
             gc = (
                 "green"
                 if "A" in g
-                else "yellow"
-                if "B" in g
-                else "white"
-                if "C" in g
-                else "red"
+                else "yellow" if "B" in g else "white" if "C" in g else "red"
             )
 
             # Universal Formatting for standard numeric fields
@@ -687,9 +697,7 @@ class ResultsManager:
                 score_color = (
                     "bold green"
                     if score_v25 >= 70
-                    else "yellow"
-                    if score_v25 >= 50
-                    else "red"
+                    else "yellow" if score_v25 >= 50 else "red"
                 )
                 row = row + [f"[{score_color}]{s_sym}{score_v25}[/{score_color}]"]
 
@@ -706,16 +714,12 @@ class ResultsManager:
                             a_sym = (
                                 "↑ "
                                 if val_num >= 70
-                                else "↓ "
-                                if val_num < 40
-                                else "→ "
+                                else "↓ " if val_num < 40 else "→ "
                             )
                             acc_color = (
                                 "green"
                                 if val_num >= 70
-                                else "yellow"
-                                if val_num >= 40
-                                else "red"
+                                else "yellow" if val_num >= 40 else "red"
                             )
                         elif acc == "New":
                             a_sym = "✦ "
@@ -815,9 +819,7 @@ class ResultsManager:
                         color = (
                             "green"
                             if num_val > 1.1
-                            else "red"
-                            if num_val < 0.9
-                            else "yellow"
+                            else "red" if num_val < 0.9 else "yellow"
                         )
                         arrow = (
                             "↑ " if num_val > 1.1 else "↓ " if num_val < 0.9 else "→ "
@@ -828,9 +830,7 @@ class ResultsManager:
                         color = (
                             "green"
                             if num_val > 20
-                            else "red"
-                            if num_val < 10
-                            else "yellow"
+                            else "red" if num_val < 10 else "yellow"
                         )
                         colored_val = f"[{color}]{sym}{formatted_val}[/{color}]"
                     elif c == "SMC":
@@ -838,9 +838,7 @@ class ResultsManager:
                         color = (
                             "green"
                             if num_val > 20
-                            else "red"
-                            if num_val < 10
-                            else "yellow"
+                            else "red" if num_val < 10 else "yellow"
                         )
                         colored_val = f"[{color}]{sym}{formatted_val}[/{color}]"
                     elif c == "Absorp_Ratio" or c == "Absorption":
@@ -848,9 +846,7 @@ class ResultsManager:
                         color = (
                             "green"
                             if num_val > 1.5
-                            else "red"
-                            if num_val < 0.8
-                            else "yellow"
+                            else "red" if num_val < 0.8 else "yellow"
                         )
                         colored_val = f"[{color}]{sym}{formatted_val}[/{color}]"
                     elif c == "d_poc" or c == "D-POC":
@@ -863,9 +859,7 @@ class ResultsManager:
                         color = (
                             "green"
                             if num_val > 0.5
-                            else "red"
-                            if num_val < -0.5
-                            else "white"
+                            else "red" if num_val < -0.5 else "white"
                         )
                         arrow = (
                             "↑ " if num_val > 0.5 else "↓ " if num_val < -0.5 else "→ "
@@ -876,9 +870,7 @@ class ResultsManager:
                         color = (
                             "green"
                             if num_val < 2
-                            else "yellow"
-                            if num_val < 5
-                            else "red"
+                            else "yellow" if num_val < 5 else "red"
                         )
                         colored_val = f"[{color}]{sym}{formatted_val}[/{color}]"
                 except:
