@@ -194,7 +194,14 @@ Starting point: `9cb2a7d` (Phase 2 on `origin/main`, suite 1129 passed).
     applies (with fallback ranks) — the branch is dead.
   - Environment drift: venv now runs **xgboost 3.4.0** (notes previously said
     3.2.0); `save_model` accepts only `fname` (no `format` kwarg).
-- **Verification:** full suite **1147 passed** / 1 warning (256 s); black 26.10.1 +
+  - Order-dependent test isolation: `fixture_db_dir` (`tests/conftest.py:331`)
+    is **session-scoped** and redirects every `DB_DIR` binding to a synthetic DB
+    for the remainder of the session. Because collection is alphabetical,
+    `test_bulk_loader.py`/`test_chart_endpoint.py` run *before*
+    `test_db_isolation.py` and see the live DB; running `test_db_isolation.py`
+    first starves them (`bulk == {}` → 13 failures). Default order and CI are
+    unaffected, but the suite is order-sensitive.
+- **Verification:** full suite **1172 passed** / 0 warnings (234 s); black 26.10.1 +
   flake8 clean on touched files.
 
 ### Next up (Phase 4 candidates)
@@ -203,5 +210,6 @@ Starting point: `9cb2a7d` (Phase 2 on `origin/main`, suite 1129 passed).
    not, fix + retrain/re-rank (scoring semantics change — needs sign-off).
 2. Re-measure confluence batch wall-clock on a quiet machine before claiming any
    end-to-end speedup.
-3. Investigate the order-dependent cross-test failures seen when running an
-   arbitrary subset ordering (default collection order is green).
+3. Make `fixture_db_dir` order-independent (e.g. function-scoped restore, or an
+   autouse reset of `DB_DIR` bindings for modules that don't request the
+   fixture) so live-DB tests no longer depend on collection order.
