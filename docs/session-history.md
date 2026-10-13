@@ -144,12 +144,18 @@ Starting point: `d47ad4c` (Phase 1 on `origin/main`, suite 1111 passed). Full wr
 - **Workstream 4 — perf:** baseline = `pytest tests/test_bulk_loader.py` (~125 s module); documented in
   `docs/PERFORMANCE.md`. Deferred (documented, not implemented): `confluence_batch.py` reloads the whole
   universe once per scanner (~12x) — needs an ingest-invalidated shared cache.
+- **CI repaired (was red, never ran a test):** `test` died at `pip install` because `requirements.txt`
+  listed bare Windows-only `pywin32` (`9b61e05`). Once running, CI exposed three more real defects:
+  a Polars 2.0 hard crash (`min_periods` removed — fixed to `min_samples` in 10 calls, `4dcf517`),
+  a live-DB guard bypass where `_candidate_paths` did `lstrip("/")` and broke absolute POSIX URIs
+  (`c01d239`), and 11 tests that assumed live data (`ee00aa7`). **CI now green: test + lint +
+  frontend-build** (run 38377763169).
 - **Verification:** full suite **1129 passed** / 0 errors (418.89 s, 41% cov); black 26.10.1 + flake8 clean;
-  `tsc` + `pnpm build` green; `pip-audit` clean.
+  `tsc` + `pnpm build` green; `pip-audit` clean; CI green on ubuntu / py3.12 / polars 2.0.0.
 
 ### Next up (Phase 3 candidates)
 
 1. Share one bulk load across the confluence batch (perf; needs mtime-invalidated cache + live test).
 2. Drop unused `express` from `myra_web/package.json`.
 3. Regression tests for `score_components_v2.py` and `positional_engine.py`.
-4. Clear Polars `min_periods` deprecation in `feature_enrichment.py`; standardise XGBoost save format.
+4. Standardise the XGBoost model serialization format.

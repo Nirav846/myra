@@ -119,6 +119,44 @@ This path previously had **no tests at all**.
 
 ---
 
+### 3.3 CI install failure — Windows-only `pywin32` (fixed)
+
+`requirements.txt` listed a bare `pywin32`, which has no Linux wheel, so
+`pip install -r requirements.txt` failed on the ubuntu runner and the `test` job never
+reached pytest (only `lint` and `frontend-build` passed). Latent since the CI workflow
+was added: the job had never run a single test. Fixed with
+`pywin32; sys_platform == "win32"`.
+
+### 3.4 Polars 2.0 crash in enrichment (fixed)
+
+Once the install worked, five `test_feature_enrichment` tests failed with
+`ArgumentRemovedError: the argument 'min_periods' for 'Expr.rolling_mean' ... was
+deprecated in version 1.21.0 and has been removed in version 2.0` — a **real production
+bug**, not test noise. `myra_app/feature_enrichment.py` used the pre-1.21 `min_periods=`
+kwarg on 10 Polars rolling calls; locally (polars 1.40.1) it only warned, but the bare
+`polars` requirement resolves to 2.0.0 on CI, where enrichment would crash outright.
+All 10 calls renamed to `min_samples=`; `polars>=1.21` added to `requirements.txt`.
+
+### 3.5 Live-DB guard bypassed via `file:` URIs on POSIX (fixed)
+
+`tests/conftest.py::_candidate_paths` did `lstrip("/")` on the de-URI'd target, so
+`/home/runner/.../myra_metadata.db` became a *relative* string that never matched
+`LIVE_DB_DIR`; the guard silently failed to block live-DB access on Linux. It held on
+Windows only because `C:/...` has no leading slash to strip. Now parsed with `urlsplit`,
+absolute paths preserved, doubled leading slashes collapsed — which also fixes the three
+`test_db_isolation` failures that exposed it.
+
+### 3.6 Tests not portable to a DB-less runner (fixed)
+
+With tests finally running, 11 more failed for lack of live data: importing the app
+materialises an **empty** `myra_app/db/myra_technical.db`, so
+`skipif(not os.path.exists(TECH_DB))` guards passed and the chart / bottom-hunter tests
+hit `no such table: technical_data`. The chart tests now check for rows
+(`_has_technical_data()`); the bottom-hunter empty-universe test stubs
+`_resolve_as_on_date` like its siblings.
+
+---
+
 ## 4. Scanner performance baseline (Workstream 4)
 
 There is no dedicated benchmark harness in `tools/`, so the baseline uses the
@@ -181,13 +219,14 @@ All commands run locally on Windows / Python 3.12.10.
 | npm audit | `pnpm --dir myra_web audit` | 0 vulnerabilities |
 | Python audit | `pip-audit -r requirements-dev.txt` | No known vulnerabilities found |
 | Dependabot | `gh api .../dependabot/alerts` | 26 fixed, **0 open** |
+| CI (ubuntu / py3.12 / polars 2.0.0) | push to `main` | **test, lint, frontend-build all green** (run `38377763169`) |
 
 Test count grew from 1111 (end of Phase 1) to **1129** (+8 freshness, +10 ranking).
 
 ### Pre-existing issues observed (not introduced here, still reported)
 
-- `myra_app/feature_enrichment.py:138,143,148` — Polars `DeprecationWarning`:
-  `rolling_mean(min_periods=...)` renamed to `min_samples` (Polars >= 1.21).
+- ~~Polars `min_periods` in `feature_enrichment.py`~~ — **fixed** in `4dcf517`; it was a
+  hard crash on Polars 2.0, not merely a deprecation (§3.4).
 - `xgboost` emits `Unknown file format: 'xgb'. Using UBJSON ('ubj')` when loading the
   serialized booster — cosmetic, but the model file format should be standardised.
 - `test_wyckoff_parity` wall time swung 47 s → 111 s between runs on the live DB (I/O /
@@ -204,6 +243,10 @@ Test count grew from 1111 (end of Phase 1) to **1129** (+8 freshness, +10 rankin
 | `5a53b79` | `style(tests)`: reformat test suite for black 26.10.1 |
 | `ec2c40f` | `fix(freshness)`: measure staleness in trading sessions, not calendar days |
 | `94ce6a1` | `fix(ranking)`: keep final ranking working when optional columns are absent |
+| `9b61e05` | `fix(ci)`: mark pywin32 Windows-only so Linux CI can install deps |
+| `4dcf517` | `fix(enrichment)`: use min_samples so enrichment runs on Polars 2.0 |
+| `c01d239` | `fix(tests)`: stop file: URIs bypassing the live-DB guard on Linux |
+| `ee00aa7` | `test`: make live-DB tests safe on a DB-less runner |
 
 ---
 
@@ -214,5 +257,4 @@ Test count grew from 1111 (end of Phase 1) to **1129** (+8 freshness, +10 rankin
 2. Remove the unused `express` dependency in `myra_web/package.json`.
 3. Add regression tests for `score_components_v2.py` and `positional_engine.py` (identified
    as untested risk surfaces; not touched here).
-4. Standardise the XGBoost model serialization format; clear the Polars `min_periods`
-   deprecation in `feature_enrichment.py`.
+4. Standardise the XGBoost model serialization format.
