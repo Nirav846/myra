@@ -308,6 +308,25 @@ def test_live_db_fingerprint_detects_a_write(tmp_path, monkeypatch):
     assert after_mtime != after_data, "a file mtime change was not detected"
 
 
+def test_guard_message_names_the_changed_database(tmp_path, monkeypatch):
+    """The guard must name the modified file, not just emit opaque hashes."""
+    import tests.conftest as conftest_mod
+
+    fake = tmp_path / "fakedb3"
+    fake.mkdir()
+    tech = fake / "myra_technical.db"
+    tech.write_bytes(b"x")
+    monkeypatch.setattr(conftest_mod, "LIVE_DB_DIR", str(fake))
+
+    before = conftest_mod._db_signatures()
+    tech.write_bytes(b"xx")  # size changed -> signature must move
+    after = conftest_mod._db_signatures()
+
+    changed = conftest_mod._changed_databases(before, after)
+    assert len(changed) == 1, changed
+    assert "myra_technical.db" in changed[0]
+
+
 def test_fingerprint_ignores_wal_and_shm_transient_files(tmp_path, monkeypatch):
     """Reading a WAL-mode DB creates -shm; that must not look like a write."""
     import tests.conftest as conftest_mod

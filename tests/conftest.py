@@ -77,30 +77,55 @@ def _db_files() -> list[str]:
     ]
 
 
-def _live_db_fingerprint() -> str:
-    """Cheap, stable fingerprint of every live database file.
+def _db_signatures() -> dict[str, str]:
+    """Per-database signature, so a modified run can name the offending file(s).
 
-    Full content hashing is impossible here (technical.db is ~2 GB), so this
-    uses (size, mtime_ns) for every `.db` file plus a real content digest of
-    sync_log in myra_metadata.db, which is the database the original incident
-    damaged.
+    Full content hashing is impossible here (technical.db is ~2 GB), so each
+    signature is (size, mtime_ns) plus a real content digest of sync_log in
+    myra_metadata.db, which is the database the original incident damaged.
 
     Limitation, stated plainly: a write that lands only in the WAL and does not
     checkpoint would not change a `.db` file's mtime. For myra_metadata.db that
     case is still caught, because the sync_log digest is read through SQLite and
     therefore sees committed WAL content.
     """
-    parts: list[str] = []
+    signatures: dict[str, str] = {}
     for path in _db_files():
+        name = os.path.basename(path)
         try:
             stat = os.stat(path)
         except OSError:
-            parts.append(f"{os.path.basename(path)}:missing")
+            signatures[name] = "missing"
             continue
-        parts.append(f"{os.path.basename(path)}:{stat.st_size}:{stat.st_mtime_ns}")
-        if os.path.basename(path) == "myra_metadata.db":
-            parts.append(f"sync_log_digest:{_sync_log_digest(path)}")
-    return hashlib.sha256("|".join(parts).encode()).hexdigest()
+        signature = f"{stat.st_size}:{stat.st_mtime_ns}"
+        if name == "myra_metadata.db":
+            signature += f":sync_log_digest={_sync_log_digest(path)}"
+        signatures[name] = signature
+    return signatures
+
+
+def _fingerprint_of(signatures: dict[str, str]) -> str:
+    """Stable hash of a `_db_signatures()` map."""
+    blob = "|".join(f"{name}={sig}" for name, sig in sorted(signatures.items()))
+    return hashlib.sha256(blob.encode()).hexdigest()
+
+
+def _live_db_fingerprint() -> str:
+    """Cheap, stable fingerprint of every live database file.
+
+    Retained as a no-argument helper (the isolation regression suite calls it
+    directly); `_db_signatures()` carries the per-file detail.
+    """
+    return _fingerprint_of(_db_signatures())
+
+
+def _changed_databases(before: dict[str, str], after: dict[str, str]) -> list[str]:
+    """One readable line per database whose signature changed."""
+    return [
+        f"    {name}: {before.get(name)} -> {after.get(name)}"
+        for name in sorted(set(before) | set(after))
+        if before.get(name) != after.get(name)
+    ]
 
 
 def _sync_log_digest(metadata_path: str) -> str:
@@ -135,18 +160,22 @@ def live_db_guard():
     the "a test wrote to production" failure mode loud and immediate rather
     than discovered days later.
     """
-    before = _live_db_fingerprint()
+    before = _db_signatures()
     yield
-    after = _live_db_fingerprint()
+    after = _db_signatures()
     if before != after:
+        changed = "\n".join(_changed_databases(before, after))
         pytest.fail(
             "LIVE DATABASE MODIFIED DURING TEST RUN.\n"
-            f"  fingerprint before: {before}\n"
-            f"  fingerprint after : {after}\n"
+            f"  changed files:\n{changed}\n"
+            f"  fingerprint before: {_fingerprint_of(before)}\n"
+            f"  fingerprint after : {_fingerprint_of(after)}\n"
             f"  live dir          : {LIVE_DB_DIR}\n"
             "A test opened or wrote a production database. Request the "
             "`fixture_db_dir` fixture (tests/conftest.py) so DB_DIR and any "
-            "cached connections are redirected to a temporary directory."
+            "cached connections are redirected to a temporary directory. If "
+            "MYRA is running locally, stop it first: the app's scheduler also "
+            "writes to these files and will trip this guard."
         )
 
 
