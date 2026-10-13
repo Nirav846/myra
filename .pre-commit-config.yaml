@@ -1,7 +1,7 @@
 repos:
   # 1. Code Formatter: Ensures your code looks clean and consistent
   - repo: https://github.com/psf/black
-    rev: 23.3.0  # Updated to a more stable 2023 version
+    rev: 26.10.1  # >=26.3.1 required: clears CVE-2024-21503 + PYSEC-2026-2120/2121
     hooks:
       - id: black
 

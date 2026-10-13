@@ -5,5 +5,8 @@
 # so that CI and pre-commit agree on formatting.
 pytest>=8.0
 pytest-cov>=5.0
-black==23.3.0
+# black must be >=26.3.1: 24.3.0 only fixes the older CVE-2024-21503 (ReDoS);
+# 24.x is itself covered by PYSEC-2026-2120 / PYSEC-2026-2121 (fixed in
+# 26.3.0 / 26.3.1). Keep in lockstep with .pre-commit-config.yaml.
+black==26.10.1
 flake8==6.0.0
