@@ -14,6 +14,43 @@ welcome — new scanners, indicators, bug fixes, documentation, and tests.
 4. Verify syntax before committing: `python -c "import ast; ast.parse(open('changed_file.py').read()); print('OK')"`
 5. Open a Pull Request against `main`
 
+## Running Tests
+
+The suite uses `pytest` and runs against small synthetic databases in
+`tests/fixtures/` — never the live `myra_*.db` files (`tests/conftest.py`
+enforces this and fails the run if a live DB is touched). Build the fixtures
+once, then choose a path:
+
+```bash
+# one-time: build the synthetic fixture databases
+python tests/fixtures/build_fixture_db.py
+
+# FAST path — quick feedback while developing. Skips the long-running
+# live-DB scanner-parity tests. This is NOT full verification.
+pytest -m "not slow"
+
+# FULL path — everything; use before a milestone or release
+pytest
+```
+
+| Path | Command | Scope |
+|------|---------|-------|
+| Fast | `pytest -m "not slow"` | unit + integration; no multi-scanner parity |
+| Full | `pytest` | the complete suite |
+
+If the session guard reports **`LIVE DATABASE MODIFIED DURING TEST RUN`**, it
+names the affected file(s) under `myra_app/db/`. Stop any locally-running MYRA
+process (its scheduler also writes to those files) and re-run; if a *test* is
+responsible, make it request the `fixture_db_dir` fixture.
+
+Formatting and lint are enforced by pre-commit (`black`, `flake8`, the MYRA
+performance guard and the schema-drift guard). To run the test-suite checks
+manually:
+
+```bash
+black --check tests/ && flake8 tests/
+```
+
 ## Branch Naming
 
 | Type | Pattern | Example |
