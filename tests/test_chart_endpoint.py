@@ -20,6 +20,24 @@ from myra_app.librarian_core import LibrarianCore
 # ---------------------------------------------------------------------------
 TECH_DB = os.path.join(DB_DIR, LibrarianCore.DB_MAP["technical"])
 
+
+def _has_technical_data() -> bool:
+    """True only when the technical DB exists *and* holds rows.
+
+    A bare `os.path.exists(TECH_DB)` is not enough on CI: with no live data,
+    importing the app still materialises an empty ``myra_technical.db``, so the
+    file check passes and these tests then fail on `no such table`.
+    """
+    if not os.path.exists(TECH_DB):
+        return False
+    try:
+        with sqlite3.connect(f"file:{TECH_DB}?mode=ro", uri=True) as conn:
+            row = conn.execute("SELECT 1 FROM technical_data LIMIT 1").fetchone()
+            return row is not None
+    except sqlite3.Error:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Import the app under test
 # ---------------------------------------------------------------------------
@@ -65,7 +83,7 @@ def _override_auth():
 class TestChartResponseShape:
     """Verify 200 response has correct structure."""
 
-    @pytest.mark.skipif(not os.path.exists(TECH_DB), reason="tech DB missing")
+    @pytest.mark.skipif(not _has_technical_data(), reason="tech DB missing or empty")
     def test_200_top_level_keys(self):
         resp = client.get("/api/chart/HUHTAMAKI")
         assert resp.status_code == 200
@@ -74,7 +92,7 @@ class TestChartResponseShape:
         assert "data" in body
         assert body["symbol"] == "HUHTAMAKI"
 
-    @pytest.mark.skipif(not os.path.exists(TECH_DB), reason="tech DB missing")
+    @pytest.mark.skipif(not _has_technical_data(), reason="tech DB missing or empty")
     def test_200_row_shape(self):
         resp = client.get("/api/chart/HUHTAMAKI?limit=5")
         assert resp.status_code == 200
@@ -92,13 +110,13 @@ class TestChartResponseShape:
 class TestChartLimit:
     """Limit parameter caps the number of rows."""
 
-    @pytest.mark.skipif(not os.path.exists(TECH_DB), reason="tech DB missing")
+    @pytest.mark.skipif(not _has_technical_data(), reason="tech DB missing or empty")
     def test_limit_respected(self):
         resp = client.get("/api/chart/HUHTAMAKI?limit=10")
         assert resp.status_code == 200
         assert len(resp.json()["data"]) <= 10
 
-    @pytest.mark.skipif(not os.path.exists(TECH_DB), reason="tech DB missing")
+    @pytest.mark.skipif(not _has_technical_data(), reason="tech DB missing or empty")
     def test_limit_1_returns_one(self):
         resp = client.get("/api/chart/HUHTAMAKI?limit=1")
         assert resp.status_code == 200
@@ -113,7 +131,7 @@ class TestChartLimit:
 class TestChartOrder:
     """Rows must be returned in ascending date order."""
 
-    @pytest.mark.skipif(not os.path.exists(TECH_DB), reason="tech DB missing")
+    @pytest.mark.skipif(not _has_technical_data(), reason="tech DB missing or empty")
     def test_dates_ascending(self):
         resp = client.get("/api/chart/HUHTAMAKI?limit=50")
         assert resp.status_code == 200

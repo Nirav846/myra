@@ -373,6 +373,10 @@ def test_scan_stale_last_bar_suppressed(tmp_path):
 
 def test_scan_empty_universe_returns_empty_df(tmp_path):
     scanner = _make_scanner(tmp_path)
+    # Stub date resolution: the real one queries the technical DB, which is
+    # absent (or an empty shell) on a clean CI runner.  Sibling tests do the
+    # same; this case only cares about the empty-universe short-circuit.
+    scanner._resolve_as_on_date = lambda *a, **k: "2025-09-11"
     with (
         patch.object(scanner, "_get_universe", return_value=[]),
         patch(
