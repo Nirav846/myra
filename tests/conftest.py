@@ -26,9 +26,11 @@ Two layers of defence are implemented here:
 
 import hashlib
 import os
+import re
 import shutil
 import sqlite3
 import sys
+from urllib.parse import unquote, urlparse
 
 import pytest
 
@@ -266,6 +268,12 @@ def _candidate_paths(database) -> list[str]:
     Rather than trusting one interpretation of the target string (the failure
     mode that let `file:///C:/...` slip past a naive prefix check), return all
     of them and require every candidate to be outside the live directory.
+
+    The `file:` URI is parsed with urlsplit so the leading `/` of an absolute
+    POSIX path survives. An earlier version did `lstrip("/")`, which turned
+    `/home/runner/.../myra_metadata.db` into a *relative* path that matched no
+    live-directory prefix — silently disabling the guard on Linux CI while it
+    still passed on Windows, where the path is `C:/...` and has no leading `/`.
     """
     target = getattr(database, "path", database)
     if isinstance(target, (bytes, bytearray)):
@@ -276,15 +284,26 @@ def _candidate_paths(database) -> list[str]:
         return []
 
     candidates = [target]
-    stripped = target
-    if stripped.startswith("file:"):
-        stripped = stripped[len("file:") :]
-        # Drop the query string (?mode=ro etc.), then any authority/leading slashes.
-        stripped = stripped.split("?", 1)[0]
-        stripped = stripped.lstrip("/")
-        candidates.append(stripped)
+    # `file:////abs/path` yields a doubled leading slash; collapse it so the
+    # containment check sees the same string os.path.abspath produces.
+    collapsed = re.sub(r"^/{2,}", "/", target)
+    if collapsed != target:
+        candidates.append(collapsed)
+
+    if target.startswith("file:"):
+        parsed = urlparse(target)
+        uri_path = unquote(parsed.path)
+        # Keep the authority for UNC-style URIs (file://server/share).
+        if parsed.netloc and parsed.netloc not in ("", "localhost"):
+            uri_path = f"//{parsed.netloc}{uri_path}"
+        candidates.append(uri_path)
+        candidates.append(re.sub(r"^/{2,}", "/", uri_path))
+        # Naive variant retained for belt-and-braces coverage.
+        naive = target[len("file:") :].split("?", 1)[0].lstrip("/")
+        candidates.append(naive)
         if os.sep == "\\":
-            candidates.append(stripped.replace("/", "\\"))
+            candidates.append(uri_path.replace("/", "\\"))
+            candidates.append(naive.replace("/", "\\"))
     return [c for c in candidates if c]
 
 
