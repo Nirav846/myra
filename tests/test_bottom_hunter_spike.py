@@ -6,23 +6,30 @@ import pytest
 from myra_app.strategies.bottom_hunter import BottomHunter
 
 
-def _make_df(delivery_pcts: list[float], highs: list[float], lows: list[float], closes: list[float]) -> pd.DataFrame:
+def _make_df(
+    delivery_pcts: list[float],
+    highs: list[float],
+    lows: list[float],
+    closes: list[float],
+) -> pd.DataFrame:
     """Build a minimal DataFrame with the columns _check_delivery_spike reads."""
     n = len(delivery_pcts)
-    return pd.DataFrame({
-        "date": pd.date_range("2025-01-01", periods=n),
-        "open": [100.0] * n,
-        "high": highs,
-        "low": lows,
-        "close": closes,
-        "volume": [1_000_000] * n,
-        "delivery": [50_000] * n,
-        "delivery_pct": delivery_pcts,
-        "nifty_outperformance_score": [0.0] * n,
-        "sma_50": [100.0] * n,
-        "high_52w": [150.0] * n,
-        "low_52w": [50.0] * n,
-    })
+    return pd.DataFrame(
+        {
+            "date": pd.date_range("2025-01-01", periods=n),
+            "open": [100.0] * n,
+            "high": highs,
+            "low": lows,
+            "close": closes,
+            "volume": [1_000_000] * n,
+            "delivery": [50_000] * n,
+            "delivery_pct": delivery_pcts,
+            "nifty_outperformance_score": [0.0] * n,
+            "sma_50": [100.0] * n,
+            "high_52w": [150.0] * n,
+            "low_52w": [50.0] * n,
+        }
+    )
 
 
 class TestDeliverySpike:

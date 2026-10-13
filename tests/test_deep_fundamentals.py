@@ -11,12 +11,17 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "myra_web"))
-from routes.full_fundamentals import compute_graham_metrics, compute_piotroski_score, compute_dcf
+from routes.full_fundamentals import (
+    compute_graham_metrics,
+    compute_piotroski_score,
+    compute_dcf,
+)
 
 
 # =========================================================================== #
 # Graham Number + Defensive Criteria
 # =========================================================================== #
+
 
 class TestGrahamMetrics:
     """compute_graham_metrics: conservative intrinsic value + defensive checklist."""
@@ -53,12 +58,16 @@ class TestGrahamMetrics:
         assert r["graham_number"] is None
 
     def test_graham_number_none_when_eps_negative(self):
-        data = {"yfinance": {"trailing_eps": -5, "book_value": 200, "current_price": 1200}}
+        data = {
+            "yfinance": {"trailing_eps": -5, "book_value": 200, "current_price": 1200}
+        }
         r = compute_graham_metrics(data)
         assert r["graham_number"] is None
 
     def test_graham_number_none_when_book_value_zero(self):
-        data = {"yfinance": {"trailing_eps": 50, "book_value": 0, "current_price": 1200}}
+        data = {
+            "yfinance": {"trailing_eps": 50, "book_value": 0, "current_price": 1200}
+        }
         r = compute_graham_metrics(data)
         assert r["graham_number"] is None
 
@@ -121,7 +130,9 @@ class TestGrahamMetrics:
         assert any("P/E×P/B" in f for f in d["failures"])
 
     def test_defensive_skips_optional_criteria_when_missing(self):
-        data = {"yfinance": {"pe": 10, "price_to_book": 1.0}}  # no current_ratio, no D/E
+        data = {
+            "yfinance": {"pe": 10, "price_to_book": 1.0}
+        }  # no current_ratio, no D/E
         r = compute_graham_metrics(data)
         d = r["defensive"]
         assert "current_ratio_above_2" not in d
@@ -151,6 +162,7 @@ class TestGrahamMetrics:
 # =========================================================================== #
 # Piotroski F-Score
 # =========================================================================== #
+
 
 class TestPiotroskiScore:
     """compute_piotroski_score: simplified 6-criterion F-Score.
@@ -213,7 +225,9 @@ class TestPiotroskiScore:
         assert all(c["met"] for c in r["criteria"])
 
     def test_weak_score_none_met(self):
-        data = self._make_data(yfinance={"roa": -0.05, "operating_cashflow": -1e9, "net_income": 5e9})
+        data = self._make_data(
+            yfinance={"roa": -0.05, "operating_cashflow": -1e9, "net_income": 5e9}
+        )
         import pandas as pd
 
         fin = pd.DataFrame(
@@ -296,6 +310,7 @@ class TestPiotroskiScore:
 # =========================================================================== #
 # Two-Stage DCF Intrinsic Value
 # =========================================================================== #
+
 
 class TestDCF:
     """compute_dcf: two-stage discounted cash flow model."""

@@ -26,6 +26,7 @@ def mocked_capital_market():
 def sync_instance(tmp_path):
     """Create an InstitutionalSync instance with a temp DB."""
     from myra_app.utils.institutional_sync import InstitutionalSync
+
     db_path = str(tmp_path / "test_institutional.db")
     s = InstitutionalSync.__new__(InstitutionalSync)
     s.db_path = db_path
@@ -36,9 +37,12 @@ def sync_instance(tmp_path):
 def test_sync_metadata_table_exists(sync_instance):
     """sync_metadata table should be created by _ensure_tables."""
     conn = sqlite3.connect(sync_instance.db_path)
-    tables = [r[0] for r in conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'"
-    ).fetchall()]
+    tables = [
+        r[0]
+        for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    ]
     conn.close()
     assert "sync_metadata" in tables
 
@@ -80,6 +84,7 @@ def test_block_deals_failure_does_not_update_metadata(sync_instance):
 def test_bulk_deals_empty_result_updates_metadata(sync_instance):
     """If nselib returns empty DataFrame, sync date should still be updated."""
     import pandas as pd
+
     with mocked_capital_market() as mock_cm:
         mock_cm.bulk_deal_data.return_value = pd.DataFrame()
         result = sync_instance.sync_bulk_deals()
@@ -91,15 +96,18 @@ def test_bulk_deals_empty_result_updates_metadata(sync_instance):
 def test_bulk_deals_idempotent(sync_instance):
     """Running sync twice should not create duplicates."""
     import pandas as pd
-    fake_df = pd.DataFrame({
-        "Symbol": ["TESTCORP"],
-        "Date": ["21-Aug-2026"],
-        "SecurityName": ["Test Corp Ltd"],
-        "ClientName": ["Test Client"],
-        "Buy/Sell": ["Buy"],
-        "QuantityTraded": [1000],
-        "TradePrice/Wght.Avg.Price": [100.50],
-    })
+
+    fake_df = pd.DataFrame(
+        {
+            "Symbol": ["TESTCORP"],
+            "Date": ["21-Aug-2026"],
+            "SecurityName": ["Test Corp Ltd"],
+            "ClientName": ["Test Client"],
+            "Buy/Sell": ["Buy"],
+            "QuantityTraded": [1000],
+            "TradePrice/Wght.Avg.Price": [100.50],
+        }
+    )
     with mocked_capital_market() as mock_cm:
         mock_cm.bulk_deal_data.return_value = fake_df
         count1 = sync_instance.sync_bulk_deals()

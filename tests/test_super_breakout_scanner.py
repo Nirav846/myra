@@ -27,13 +27,19 @@ def _make_df(closes, dates=None):
     """Build a minimal OHLCV DataFrame from a list of closes."""
     n = len(closes)
     if dates is None:
-        dates = pd.date_range("2024-01-01", periods=n, freq="B").strftime("%Y-%m-%d").tolist()
-    return pd.DataFrame({
-        "date": pd.to_datetime(dates),
-        "close": np.array(closes, dtype=float),
-        "high": np.array(closes, dtype=float),
-        "low": np.array(closes, dtype=float),
-    })
+        dates = (
+            pd.date_range("2024-01-01", periods=n, freq="B")
+            .strftime("%Y-%m-%d")
+            .tolist()
+        )
+    return pd.DataFrame(
+        {
+            "date": pd.to_datetime(dates),
+            "close": np.array(closes, dtype=float),
+            "high": np.array(closes, dtype=float),
+            "low": np.array(closes, dtype=float),
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +70,7 @@ class TestExitMaTrailingUnit:
         actual bottom of the drop.
         """
         closes = [100.0] * 55  # SMA50 ≈ 100
-        closes += [102.5]       # activation (102.5 >= 100*1.02)
+        closes += [102.5]  # activation (102.5 >= 100*1.02)
         closes += [103.0, 102.0, 101.0, 100.0, 99.0]  # drop
         df = _make_df(closes)
         exit_idx, reason = _exit_ma_trailing(df, 0, SMA_FAST)
@@ -104,7 +110,7 @@ class TestExitMaTrailingUnit:
         """
         closes = [100.0] * 55  # SMA50 ≈ 100
         closes += [100.0, 100.0, 102.5, 103.0, 103.0]  # activation at bar 58
-        closes += [102.0, 101.0, 100.0, 99.0, 98.0]    # trailing exit
+        closes += [102.0, 101.0, 100.0, 99.0, 98.0]  # trailing exit
         df = _make_df(closes)
         exit_idx, reason = _exit_ma_trailing(df, 0, SMA_FAST)
         assert "ma_trail_sma" in reason
@@ -139,9 +145,12 @@ class TestSuperBreakoutState:
         db = str(tmp_path / "test_meta.db")
         conn = connect_meta(db)
         upsert_position(
-            conn, "RELIANCE",
-            entry_date="2024-01-02", entry_price=170.60,
-            ever_activated=False, highest_close=170.60,
+            conn,
+            "RELIANCE",
+            entry_date="2024-01-02",
+            entry_price=170.60,
+            ever_activated=False,
+            highest_close=170.60,
             updated_at="2024-01-02T10:00:00",
         )
         positions = load_positions(conn)
@@ -154,15 +163,21 @@ class TestSuperBreakoutState:
         db = str(tmp_path / "test_meta.db")
         conn = connect_meta(db)
         upsert_position(
-            conn, "RELIANCE",
-            entry_date="2024-01-02", entry_price=170.60,
-            ever_activated=False, highest_close=170.60,
+            conn,
+            "RELIANCE",
+            entry_date="2024-01-02",
+            entry_price=170.60,
+            ever_activated=False,
+            highest_close=170.60,
             updated_at="2024-01-02T10:00:00",
         )
         upsert_position(
-            conn, "RELIANCE",
-            entry_date="2024-01-02", entry_price=170.60,
-            ever_activated=True, highest_close=180.00,
+            conn,
+            "RELIANCE",
+            entry_date="2024-01-02",
+            entry_price=170.60,
+            ever_activated=True,
+            highest_close=180.00,
             updated_at="2024-01-10T10:00:00",
         )
         positions = load_positions(conn)
@@ -174,9 +189,12 @@ class TestSuperBreakoutState:
         db = str(tmp_path / "test_meta.db")
         conn = connect_meta(db)
         upsert_position(
-            conn, "RELIANCE",
-            entry_date="2024-01-02", entry_price=170.60,
-            ever_activated=False, highest_close=170.60,
+            conn,
+            "RELIANCE",
+            entry_date="2024-01-02",
+            entry_price=170.60,
+            ever_activated=False,
+            highest_close=170.60,
             updated_at="2024-01-02T10:00:00",
         )
         delete_position(conn, "RELIANCE")
@@ -215,12 +233,14 @@ class TestScannerGapReplay:
         closes += [100.0, 100.0, 100.0, 100.0, 100.0, 95.0, 105.0, 105.0]
         dates = pd.date_range("2024-01-01", periods=len(closes), freq="B")
 
-        df = pd.DataFrame({
-            "date": dates,
-            "close": np.array(closes, dtype=float),
-            "high": np.array(closes, dtype=float),
-            "low": np.array(closes, dtype=float),
-        })
+        df = pd.DataFrame(
+            {
+                "date": dates,
+                "close": np.array(closes, dtype=float),
+                "high": np.array(closes, dtype=float),
+                "low": np.array(closes, dtype=float),
+            }
+        )
 
         bt_exit_idx, bt_reason = _exit_ma_trailing(df, 0, SMA_FAST)
         sc_exit_idx, sc_reason = _exit_ma_trailing(df, 0, SMA_FAST)
@@ -235,16 +255,18 @@ class TestScannerGapReplay:
         """Full parity: 70-bar window, activation mid-window, trailing exit."""
         closes = [100.0] * 55  # build SMA50
         closes += [100.0, 100.0, 102.5, 103.0, 103.0]  # activation
-        closes += [102.0, 101.0, 100.0, 99.0, 98.0]    # trailing exit
+        closes += [102.0, 101.0, 100.0, 99.0, 98.0]  # trailing exit
         closes += [97.0, 96.0, 95.0]  # further decline
         dates = pd.date_range("2024-01-01", periods=len(closes), freq="B")
 
-        df = pd.DataFrame({
-            "date": dates,
-            "close": np.array(closes, dtype=float),
-            "high": np.array(closes, dtype=float),
-            "low": np.array(closes, dtype=float),
-        })
+        df = pd.DataFrame(
+            {
+                "date": dates,
+                "close": np.array(closes, dtype=float),
+                "high": np.array(closes, dtype=float),
+                "low": np.array(closes, dtype=float),
+            }
+        )
 
         bt_idx, bt_reason = _exit_ma_trailing(df, 0, SMA_FAST)
         sc_idx, sc_reason = _exit_ma_trailing(df, 0, SMA_FAST)
@@ -262,16 +284,18 @@ class TestScannerGapReplay:
         True (persisted from a previous scan), the trailing stop governs.
         """
         closes = [100.0] * 55  # build SMA50
-        closes += [102.5]       # activation
+        closes += [102.5]  # activation
         closes += [103.0, 102.0, 101.0, 100.0, 99.0]  # drop
         dates = pd.date_range("2024-01-01", periods=len(closes), freq="B")
 
-        df = pd.DataFrame({
-            "date": dates,
-            "close": np.array(closes, dtype=float),
-            "high": np.array(closes, dtype=float),
-            "low": np.array(closes, dtype=float),
-        })
+        df = pd.DataFrame(
+            {
+                "date": dates,
+                "close": np.array(closes, dtype=float),
+                "high": np.array(closes, dtype=float),
+                "low": np.array(closes, dtype=float),
+            }
+        )
 
         # Without seed: evaluator starts fresh, protective stop can fire
         # (but in this series, activation happens first, so trailing governs)
@@ -301,23 +325,26 @@ class TestCanonicalSignalDetection:
         uptick that crosses above SMA50 while SMA50 remains below SMA200.
         """
         import sqlite3 as sq
+
         db = str(tmp_path / "test_tech.db")
         conn = sq.connect(db)
-        conn.execute("""
+        conn.execute(
+            """
             CREATE TABLE technical_data (
                 symbol TEXT, date TEXT, close REAL,
                 delivery_qty REAL, delivery REAL
             )
-        """)
+        """
+        )
         # 260 bars total (need > 200 for SMA200)
         # Phase 1 (bars 0-199): flat at 100 — SMA200 ≈ 100
         # Phase 2 (bars 200-249): decline to 70 — SMA50 drops, SMA200 ~99
         # Phase 3 (bars 250-259): sharp rally — close crosses above SMA50
         #   while SMA50 < SMA200, and close > SMA5/10/15
         closes = [100.0] * 200  # SMA200 builds at ~100
-        closes += [90.0] * 50   # decline — SMA50 drops to ~90, SMA200 ~99
-        closes += [70.0]        # bar 250: sharp drop (SMA5/10/15 all > 70)
-        closes += [91.0] * 10   # bar 251+: sharp rally (close=91 > SMA5/10/15 ≈ 90)
+        closes += [90.0] * 50  # decline — SMA50 drops to ~90, SMA200 ~99
+        closes += [70.0]  # bar 250: sharp drop (SMA5/10/15 all > 70)
+        closes += [91.0] * 10  # bar 251+: sharp rally (close=91 > SMA5/10/15 ≈ 90)
 
         dates = pd.date_range("2023-01-01", periods=len(closes), freq="B")
         for d, c in zip(dates, closes):
@@ -345,6 +372,7 @@ class TestCanonicalSignalDetection:
         """
         import inspect
         from myra_app.strategies.super_breakout_scanner import SuperBreakoutScanner
+
         source = inspect.getsource(SuperBreakoutScanner.scan)
         # The inline SMA computation should NOT be present
         assert "sma50 = pd.Series(closes).rolling" not in source
@@ -368,17 +396,29 @@ class TestSuperBreakoutNearTrigger:
     def _build_rows(self, closes):
         """Build rows matching _get_tech_data output: (date, open, high, low, close, volume, delivery, delivery_pct, nifty_score, sma_50, high_52w, low_52w)."""
         import datetime as _dt
+
         base = _dt.date(2023, 1, 3)
         rows = []
         for c in closes:
             d = base
             while d.weekday() >= 5:
                 d += _dt.timedelta(days=1)
-            rows.append((
-                d.strftime("%Y-%m-%d"), c, c, c, c,  # date, open, high, low, close
-                100000, 100000.0, 0.0, 0.0,           # volume, delivery, delivery_pct, nifty_score
-                None, None, None,                      # sma_50, high_52w, low_52w
-            ))
+            rows.append(
+                (
+                    d.strftime("%Y-%m-%d"),
+                    c,
+                    c,
+                    c,
+                    c,  # date, open, high, low, close
+                    100000,
+                    100000.0,
+                    0.0,
+                    0.0,  # volume, delivery, delivery_pct, nifty_score
+                    None,
+                    None,
+                    None,  # sma_50, high_52w, low_52w
+                )
+            )
             base += _dt.timedelta(days=1)
         return rows
 
@@ -391,12 +431,16 @@ class TestSuperBreakoutNearTrigger:
         """
         from myra_app.strategies.super_breakout_scanner import SuperBreakoutScanner
 
-        closes = [100.0] * 195 + [75.0] * 12 + [76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86]
+        closes = (
+            [100.0] * 195 + [75.0] * 12 + [76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86]
+        )
         rows = self._build_rows(closes)
 
         scanner = SuperBreakoutScanner(top_n=500, state_db=str(tmp_path / "meta.db"))
         scanner._get_universe = lambda: [("SYM_IN", 1, 1000.0)]
-        scanner._get_tech_data = lambda sym, min_date, max_date=None: rows if sym == "SYM_IN" else []
+        scanner._get_tech_data = (
+            lambda sym, min_date, max_date=None: rows if sym == "SYM_IN" else []
+        )
         df = scanner.scan_near_trigger(band_pct=5.0)
         syms = df["symbol"].tolist() if not df.empty else []
         assert "SYM_IN" in syms, f"SYM_IN should be included, got {syms}"
@@ -416,10 +460,14 @@ class TestSuperBreakoutNearTrigger:
 
         scanner = SuperBreakoutScanner(top_n=500, state_db=str(tmp_path / "meta.db"))
         scanner._get_universe = lambda: [("SYM_OUT", 1, 1000.0)]
-        scanner._get_tech_data = lambda sym, min_date, max_date=None: rows if sym == "SYM_OUT" else []
+        scanner._get_tech_data = (
+            lambda sym, min_date, max_date=None: rows if sym == "SYM_OUT" else []
+        )
         df = scanner.scan_near_trigger(band_pct=5.0)
         syms = df["symbol"].tolist() if not df.empty else []
-        assert "SYM_OUT" not in syms, f"SYM_OUT should be excluded (too far from trigger), got {syms}"
+        assert (
+            "SYM_OUT" not in syms
+        ), f"SYM_OUT should be excluded (too far from trigger), got {syms}"
 
     def test_excluded_when_already_in_position(self, tmp_path):
         """Symbol in sb_positions (active entry) is excluded even if near trigger."""
@@ -435,19 +483,26 @@ class TestSuperBreakoutNearTrigger:
         # Insert into active positions
         meta_conn = connect_meta(str(tmp_path / "meta.db"))
         upsert_position(
-            meta_conn, "SYM_HELD",
-            entry_date="2024-01-02", entry_price=87.0,
-            ever_activated=False, highest_close=87.0,
+            meta_conn,
+            "SYM_HELD",
+            entry_date="2024-01-02",
+            entry_price=87.0,
+            ever_activated=False,
+            highest_close=87.0,
             updated_at="2024-01-02T10:00:00",
         )
         meta_conn.close()
 
         scanner = SuperBreakoutScanner(top_n=500, state_db=str(tmp_path / "meta.db"))
         scanner._get_universe = lambda: [("SYM_HELD", 1, 1000.0)]
-        scanner._get_tech_data = lambda sym, min_date, max_date=None: rows if sym == "SYM_HELD" else []
+        scanner._get_tech_data = (
+            lambda sym, min_date, max_date=None: rows if sym == "SYM_HELD" else []
+        )
         df = scanner.scan_near_trigger(band_pct=5.0)
         syms = df["symbol"].tolist() if not df.empty else []
-        assert "SYM_HELD" not in syms, f"SYM_HELD should be excluded (active position), got {syms}"
+        assert (
+            "SYM_HELD" not in syms
+        ), f"SYM_HELD should be excluded (active position), got {syms}"
 
     def test_precondition_context_reuse(self, tmp_path):
         """check_precondition_context returns True only when all conditions hold.

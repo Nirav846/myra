@@ -66,7 +66,11 @@ class TestSelectStarRejection:
     def test_select_star_technical_400(self):
         resp = client.post(
             "/api/query",
-            json={"db": "_tech_conn", "query": "SELECT * FROM technical_data", "params": []},
+            json={
+                "db": "_tech_conn",
+                "query": "SELECT * FROM technical_data",
+                "params": [],
+            },
         )
         assert resp.status_code == 400
         assert "SELECT *" in resp.json()["detail"]
@@ -75,7 +79,11 @@ class TestSelectStarRejection:
     def test_select_star_valuation_400(self):
         resp = client.post(
             "/api/query",
-            json={"db": "_val_conn", "query": "SELECT * FROM fundamentals", "params": []},
+            json={
+                "db": "_val_conn",
+                "query": "SELECT * FROM fundamentals",
+                "params": [],
+            },
         )
         assert resp.status_code == 400
         assert "SELECT *" in resp.json()["detail"]
@@ -229,7 +237,11 @@ class TestEndpointIntegration:
     def test_select_star_technical_via_endpoint_400(self):
         resp = client.post(
             "/api/query",
-            json={"db": "_tech_conn", "query": "SELECT * FROM technical_data", "params": []},
+            json={
+                "db": "_tech_conn",
+                "query": "SELECT * FROM technical_data",
+                "params": [],
+            },
         )
         assert resp.status_code == 400
         assert "SELECT *" in resp.json()["detail"]
@@ -237,7 +249,11 @@ class TestEndpointIntegration:
     def test_select_star_lowercase_via_endpoint_400(self):
         resp = client.post(
             "/api/query",
-            json={"db": "_tech_conn", "query": "select * from technical_data", "params": []},
+            json={
+                "db": "_tech_conn",
+                "query": "select * from technical_data",
+                "params": [],
+            },
         )
         assert resp.status_code == 400
 
@@ -259,7 +275,9 @@ class TestResponseSizeGuard:
             conn.execute("CREATE TABLE t (a TEXT, b TEXT)")
             # Each row ~200 bytes; need > 50k rows to exceed 10 MB
             big_val = "x" * 100
-            conn.executemany("INSERT INTO t VALUES (?, ?)", [(big_val, big_val)] * 60000)
+            conn.executemany(
+                "INSERT INTO t VALUES (?, ?)", [(big_val, big_val)] * 60000
+            )
             conn.commit()
             conn.close()
 

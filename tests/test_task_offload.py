@@ -100,7 +100,10 @@ def test_spawn_task_error_handling():
     # Task may already be cleaned up — that's fine. If still present, verify status.
     if task is not None:
         # status should be "error: ..." or task already cleaned
-        assert "error" in (task.get("status") or "").lower() or task.get("expiry") is not None
+        assert (
+            "error" in (task.get("status") or "").lower()
+            or task.get("expiry") is not None
+        )
 
 
 # ---------------------------------------------------------------------------

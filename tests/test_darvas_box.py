@@ -74,9 +74,7 @@ def _make_tech_df(
 
 
 def _scanner():
-    return DarvasBoxScanner(
-        base_days=120, min_dar=0.2, min_mcap=100, max_mcap=50000
-    )
+    return DarvasBoxScanner(base_days=120, min_dar=0.2, min_mcap=100, max_mcap=50000)
 
 
 # ---------------------------------------------------------------------------
@@ -126,9 +124,7 @@ class TestDetectBox:
         lows = [98.0] * n
         closes[-1] = 101.5
         highs[-1] = 102.0
-        df = _make_tech_df(
-            closes=closes, highs=highs, lows=lows, high_52w=102.0
-        )
+        df = _make_tech_df(closes=closes, highs=highs, lows=lows, high_52w=102.0)
         box = _scanner()._detect_box(df)
         assert box is not None
         assert box["box_age_days"] <= MAX_BOX_AGE_DAYS
@@ -140,9 +136,7 @@ class TestDetectBox:
         highs = [102.0] * n
         lows = [98.0] * n
         closes[-1] = 101.5
-        df = _make_tech_df(
-            closes=closes, highs=highs, lows=lows, high_52w=102.0
-        )
+        df = _make_tech_df(closes=closes, highs=highs, lows=lows, high_52w=102.0)
         box = _scanner()._detect_box(df)
         if box is not None:
             assert box["box_age_days"] <= MAX_BOX_AGE_DAYS
@@ -157,9 +151,7 @@ class TestDetectBox:
         highs[-1] = 105.0
 
         # Without precomputed: nanmax=105, (105-96)/105=8.57% > 5% -> fail
-        df_no_52w = _make_tech_df(
-            closes=closes, highs=highs, lows=lows, high_52w=None
-        )
+        df_no_52w = _make_tech_df(closes=closes, highs=highs, lows=lows, high_52w=None)
         box_no = _scanner()._detect_box(df_no_52w)
 
         # With precomputed: high_52w=100, (100-96)/100=4% <= 5% -> pass
@@ -230,9 +222,7 @@ class TestComputeBoxDar:
         volumes = [100000.0] * n
         closes[-1] = 103.0
         deliveries[-1] = 15000.0
-        df = _make_tech_df(
-            closes=closes, deliveries=deliveries, volumes=volumes
-        )
+        df = _make_tech_df(closes=closes, deliveries=deliveries, volumes=volumes)
         result = sc._compute_box_dar(df, 0, n - 1, 50000000.0, 102.0)
         assert 0.0 <= result["am"] <= 5.0
 
@@ -244,14 +234,10 @@ class TestComputeBoxDar:
         deliveries = [5000.0] * n
         volumes = [100000.0] * n
         ff_mcap = 5000000.0
-        df = _make_tech_df(
-            closes=closes, deliveries=deliveries, volumes=volumes
-        )
+        df = _make_tech_df(closes=closes, deliveries=deliveries, volumes=volumes)
         result = sc._compute_box_dar(df, 0, n - 1, ff_mcap, 102.0)
         expected_dar = (5000.0 * 100.0) / ff_mcap * 100
-        assert result["dar_box_median"] == pytest.approx(
-            expected_dar, rel=1e-6
-        )
+        assert result["dar_box_median"] == pytest.approx(expected_dar, rel=1e-6)
 
 
 # ---------------------------------------------------------------------------
@@ -262,84 +248,117 @@ class TestComputeBoxDar:
 class TestPassesTier:
     def test_small_cap_passes_with_high_am(self):
         passed, reason = DarvasBoxScanner._passes_tier(
-            am=5.0, sar=1.0, breakout_dar=2.0,
-            box_age_days=10, tier="small",
+            am=5.0,
+            sar=1.0,
+            breakout_dar=2.0,
+            box_age_days=10,
+            tier="small",
         )
         assert passed is True
 
     def test_small_cap_passes_with_high_breakout_dar(self):
         passed, reason = DarvasBoxScanner._passes_tier(
-            am=1.0, sar=1.0, breakout_dar=2.0,
-            box_age_days=10, tier="small",
+            am=1.0,
+            sar=1.0,
+            breakout_dar=2.0,
+            box_age_days=10,
+            tier="small",
         )
         assert passed is True
 
     def test_small_cap_fails_when_both_low(self):
         passed, reason = DarvasBoxScanner._passes_tier(
-            am=1.0, sar=1.0, breakout_dar=0.5,
-            box_age_days=10, tier="small",
+            am=1.0,
+            sar=1.0,
+            breakout_dar=0.5,
+            box_age_days=10,
+            tier="small",
         )
         assert passed is False
         assert "neither threshold" in reason
 
     def test_mid_cap_fails_low_am(self):
         passed, reason = DarvasBoxScanner._passes_tier(
-            am=1.5, sar=1.2, breakout_dar=0.0,
-            box_age_days=10, tier="mid",
+            am=1.5,
+            sar=1.2,
+            breakout_dar=0.0,
+            box_age_days=10,
+            tier="mid",
         )
         assert passed is False
         assert "AM" in reason
 
     def test_mid_cap_fails_low_sar(self):
         passed, reason = DarvasBoxScanner._passes_tier(
-            am=3.0, sar=1.0, breakout_dar=0.0,
-            box_age_days=10, tier="mid",
+            am=3.0,
+            sar=1.0,
+            breakout_dar=0.0,
+            box_age_days=10,
+            tier="mid",
         )
         assert passed is False
         assert "SAR" in reason
 
     def test_mid_cap_passes(self):
         passed, reason = DarvasBoxScanner._passes_tier(
-            am=3.0, sar=1.2, breakout_dar=0.0,
-            box_age_days=10, tier="mid",
+            am=3.0,
+            sar=1.2,
+            breakout_dar=0.0,
+            box_age_days=10,
+            tier="mid",
         )
         assert passed is True
 
     def test_large_cap_passes(self):
         passed, reason = DarvasBoxScanner._passes_tier(
-            am=2.0, sar=1.2, breakout_dar=0.0,
-            box_age_days=10, tier="large",
+            am=2.0,
+            sar=1.2,
+            breakout_dar=0.0,
+            box_age_days=10,
+            tier="large",
         )
         assert passed is True
 
     def test_large_cap_fails_low_am(self):
         passed, reason = DarvasBoxScanner._passes_tier(
-            am=1.0, sar=1.2, breakout_dar=0.0,
-            box_age_days=10, tier="large",
+            am=1.0,
+            sar=1.2,
+            breakout_dar=0.0,
+            box_age_days=10,
+            tier="large",
         )
         assert passed is False
 
     def test_box_age_too_low_small(self):
         """Blocker 2: box_age check lives in _passes_tier, not scan()."""
         passed, reason = DarvasBoxScanner._passes_tier(
-            am=5.0, sar=1.0, breakout_dar=2.0,
-            box_age_days=3, tier="small",
+            am=5.0,
+            sar=1.0,
+            breakout_dar=2.0,
+            box_age_days=3,
+            tier="small",
         )
         assert passed is False
         assert "Box age" in reason
 
     def test_box_age_too_low_mid(self):
         passed, reason = DarvasBoxScanner._passes_tier(
-            am=3.0, sar=1.2, breakout_dar=0.0,
-            box_age_days=4, tier="mid",
+            am=3.0,
+            sar=1.2,
+            breakout_dar=0.0,
+            box_age_days=4,
+            tier="mid",
         )
         assert passed is False
         assert "Box age" in reason
 
     def test_box_age_too_low_large(self):
         passed, reason = DarvasBoxScanner._passes_tier(
-            am=2.0, sar=1.2, breakout_dar=0.0,
-            box_age_days=5, tier="large",
+            am=2.0,
+            sar=1.2,
+            breakout_dar=0.0,
+            box_age_days=5,
+            tier="large",
         )
         assert passed is False
         assert "Box age" in reason
@@ -353,8 +372,13 @@ class TestPassesTier:
 class TestCompositeScore:
     def test_pre_breakout_returns_tuple(self):
         score, grade = DarvasBoxScanner._composite_score(
-            am=0.0, sar_z=1.0, ftc=0.6, rs_mean=0.5,
-            box_range_pct=5.0, tier="mid", is_pre_breakout=True,
+            am=0.0,
+            sar_z=1.0,
+            ftc=0.6,
+            rs_mean=0.5,
+            box_range_pct=5.0,
+            tier="mid",
+            is_pre_breakout=True,
         )
         assert isinstance(score, float)
         assert grade in ("A", "B", "C", "D")
@@ -362,8 +386,13 @@ class TestCompositeScore:
 
     def test_post_breakout_returns_tuple(self):
         score, grade = DarvasBoxScanner._composite_score(
-            am=3.0, sar_z=1.5, ftc=0.5, rs_mean=0.8,
-            box_range_pct=4.0, tier="mid", is_pre_breakout=False,
+            am=3.0,
+            sar_z=1.5,
+            ftc=0.5,
+            rs_mean=0.8,
+            box_range_pct=4.0,
+            tier="mid",
+            is_pre_breakout=False,
         )
         assert isinstance(score, float)
         assert grade in ("A", "B", "C", "D")
@@ -371,12 +400,22 @@ class TestCompositeScore:
 
     def test_high_am_yields_higher_score(self):
         score_low, _ = DarvasBoxScanner._composite_score(
-            am=1.0, sar_z=0.0, ftc=1.0, rs_mean=0.0,
-            box_range_pct=8.0, tier="mid", is_pre_breakout=False,
+            am=1.0,
+            sar_z=0.0,
+            ftc=1.0,
+            rs_mean=0.0,
+            box_range_pct=8.0,
+            tier="mid",
+            is_pre_breakout=False,
         )
         score_high, _ = DarvasBoxScanner._composite_score(
-            am=5.0, sar_z=0.0, ftc=1.0, rs_mean=0.0,
-            box_range_pct=8.0, tier="mid", is_pre_breakout=False,
+            am=5.0,
+            sar_z=0.0,
+            ftc=1.0,
+            rs_mean=0.0,
+            box_range_pct=8.0,
+            tier="mid",
+            is_pre_breakout=False,
         )
         assert score_high >= score_low
 
@@ -384,8 +423,13 @@ class TestCompositeScore:
         """Verify _composite_score uses _compute_grade internally."""
         # Score should produce grade consistent with _compute_grade thresholds
         _, grade = DarvasBoxScanner._composite_score(
-            am=3.0, sar_z=1.0, ftc=0.8, rs_mean=0.5,
-            box_range_pct=5.0, tier="mid", is_pre_breakout=False,
+            am=3.0,
+            sar_z=1.0,
+            ftc=0.8,
+            rs_mean=0.5,
+            box_range_pct=5.0,
+            tier="mid",
+            is_pre_breakout=False,
         )
         # Just verify grade is valid
         assert grade in ("A", "B", "C", "D")
