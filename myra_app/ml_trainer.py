@@ -260,7 +260,14 @@ class MLTrainer:
         test_acc = self.model.score(X_test, y_test)
 
         os.makedirs("models", exist_ok=True)
-        self.model.save_model(self.MODEL_PATH)
+        # Explicit format avoids XGBoost 3.x UBJSON warnings when saving with
+        # the legacy '.xgb' extension. The file is still loadable by
+        # `load_model()` in 3.2.0.
+        try:
+            self.model.save_model(self.MODEL_PATH, format="ubj")
+        except TypeError:
+            # Back-compat with older XGBoost versions lacking the format kwarg
+            self.model.save_model(self.MODEL_PATH)
         gc.collect()
 
         features = self.config["features"]

@@ -41,10 +41,11 @@ import sqlite3
 import threading
 import time
 from datetime import date as _date
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, NamedTuple
 
 from myra_app.constants import DB_DIR, MODELS_DIR
+from myra_app.db.bulk_loader import batch_snapshot_scope, latest_ohlcv_date
 from myra_web.utils import (
     CONFLUENCE_SNAPSHOT_FILENAME,
     _get_latest_trading_day_before,
@@ -52,6 +53,11 @@ from myra_web.utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Widest window any confluence scanner requests for a live run: Bottom Hunter M1
+# and Super Breakout fall back to the full history only when the run is
+# back-dated, and use 545 calendar days (~252 trading days + margin) otherwise.
+_LIVE_WINDOW_DAYS = 545
 
 
 class ScannerSpec(NamedTuple):
@@ -305,44 +311,59 @@ def run_confluence_batch(
     summary: dict[str, dict] = {}
     started = time.time()
 
-    for spec in CONFLUENCE_SCANNERS:
-        t0 = time.time()
-        try:
-            scanner_cls = _resolve(spec.target)
-            if spec.custom is not None:
-                cands = spec.custom(scanner_cls, as_on, **spec.kwargs)
-            else:
-                scanner = scanner_cls(**spec.kwargs)
-                scan_fn = getattr(scanner, "scan", None)
-                if not callable(scan_fn):
-                    raise AttributeError(
-                        f"{spec.name} ({spec.target}) has no callable scan()"
-                    )
-                cands = _normalize(scan_fn(as_on_date=as_on))
-            cands = _normalize(cands)
-            snapshot[spec.name] = {"candidates": cands, "error": None}
-            summary[spec.name] = {
-                "status": "ok",
-                "count": len(cands),
-                "error": None,
-                "seconds": round(time.time() - t0, 1),
-            }
-            logger.info(
-                "confluence batch: %s -> %d candidates (%.1fs)",
-                spec.name,
-                len(cands),
-                time.time() - t0,
-            )
-        except Exception as e:  # noqa: BLE001 - one scanner must not kill the batch
-            err = f"{type(e).__name__}: {e}"
-            logger.error("confluence batch: %s FAILED — %s", spec.name, err)
-            snapshot[spec.name] = {"candidates": [], "error": err}
-            summary[spec.name] = {
-                "status": "error",
-                "count": 0,
-                "error": err,
-                "seconds": round(time.time() - t0, 1),
-            }
+    # Share one OHLCV snapshot across the whole batch. The scanners overlap
+    # heavily (same as_on_date, five of them wanting the full universe), so
+    # without this each scanner re-reads substantially the same rows.
+    with batch_snapshot_scope(load_all_symbols=True) as scope:
+        # Pre-warming the live union turns ~11 overlapping loads into 1. Only
+        # safe to assume the 545-day window when the run is live; a back-dated
+        # run reaches the full history by widening the snapshot lazily instead.
+        latest = latest_ohlcv_date()
+        if latest is not None and latest <= as_on:
+            start = (
+                datetime.strptime(latest, "%Y-%m-%d")
+                - timedelta(days=_LIVE_WINDOW_DAYS)
+            ).strftime("%Y-%m-%d")
+            scope.prewarm(start, as_on)
+
+        for spec in CONFLUENCE_SCANNERS:
+            t0 = time.time()
+            try:
+                scanner_cls = _resolve(spec.target)
+                if spec.custom is not None:
+                    cands = spec.custom(scanner_cls, as_on, **spec.kwargs)
+                else:
+                    scanner = scanner_cls(**spec.kwargs)
+                    scan_fn = getattr(scanner, "scan", None)
+                    if not callable(scan_fn):
+                        raise AttributeError(
+                            f"{spec.name} ({spec.target}) has no callable scan()"
+                        )
+                    cands = _normalize(scan_fn(as_on_date=as_on))
+                cands = _normalize(cands)
+                snapshot[spec.name] = {"candidates": cands, "error": None}
+                summary[spec.name] = {
+                    "status": "ok",
+                    "count": len(cands),
+                    "error": None,
+                    "seconds": round(time.time() - t0, 1),
+                }
+                logger.info(
+                    "confluence batch: %s -> %d candidates (%.1fs)",
+                    spec.name,
+                    len(cands),
+                    time.time() - t0,
+                )
+            except Exception as e:  # noqa: BLE001 - one scanner must not kill the batch
+                err = f"{type(e).__name__}: {e}"
+                logger.error("confluence batch: %s FAILED — %s", spec.name, err)
+                snapshot[spec.name] = {"candidates": [], "error": err}
+                summary[spec.name] = {
+                    "status": "error",
+                    "count": 0,
+                    "error": err,
+                    "seconds": round(time.time() - t0, 1),
+                }
 
     # Persist each scanner's coverage so the report can split selective from
     # broad signals without recomputing. Needs every scanner's candidate list,

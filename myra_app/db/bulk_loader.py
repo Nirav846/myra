@@ -17,13 +17,187 @@ from __future__ import annotations
 import math
 import os
 import sqlite3
+import threading
+from contextlib import contextmanager
 from datetime import date
-from typing import Dict, Optional, Sequence
+from typing import Dict, Iterator, Optional, Sequence
 
 import pandas as pd
 
 from myra_app.constants import DB_DIR
 from myra_app.librarian_core import LibrarianCore
+
+# ---------------------------------------------------------------------------
+# Batch-scoped shared snapshot
+# ---------------------------------------------------------------------------
+# A confluence batch runs ~12 scanners that each call
+# ``load_ohlcv_for_universe`` for the same ``as_on_date``. Those calls overlap
+# heavily: for a live run the widest window any constituent scanner requests is
+# 545 calendar days (Bottom Hunter M1 / Super Breakout) and five of them ask for
+# the full symbol universe, so without sharing the batch reads the same OHLCV
+# rows from SQLite a dozen times.
+#
+# ``batch_snapshot_scope`` bounds that duplication to a single batch. While the
+# scope is open, ``load_ohlcv_for_universe`` serves any request that falls
+# inside an already-loaded window from one in-memory snapshot instead of
+# re-reading the DB. A request outside the window widens it (union of dates and
+# symbols) and reloads, so correctness is never traded for the optimisation.
+#
+# The state is *thread-local* and live only inside the explicit ``with`` block:
+# concurrent standalone scans on other threads (the FastAPI worker pool) always
+# take the untouched DB path, and the snapshot is released the moment the batch
+# ends. There is no persistent cache and therefore no invalidation window to
+# reason about -- a new batch re-reads the source and sees updated data.
+
+_local = threading.local()
+
+
+class _BatchSnapshot:
+    """One loaded universe window shared by every scan in a batch."""
+
+    __slots__ = ("start", "end", "symbols", "data")
+
+    def __init__(
+        self,
+        start: str,
+        end: str,
+        symbols: Optional[Sequence[str]],
+        data: Dict[str, pd.DataFrame],
+    ):
+        self.start = start
+        self.end = end
+        # None => the snapshot holds every symbol in the window.
+        self.symbols: Optional[set[str]] = None if not symbols else set(symbols)
+        self.data = data
+
+    def covers(self, start: str, end: str, symbols: Optional[Sequence[str]]) -> bool:
+        """True when the snapshot can answer the request without a reload."""
+        if start < self.start or end > self.end:
+            return False
+        if self.symbols is None:
+            return True
+        if not symbols:
+            # The caller wants every symbol, but this snapshot is a subset.
+            return False
+        return set(symbols) <= self.symbols
+
+    def slice(
+        self, start: str, end: str, symbols: Optional[Sequence[str]]
+    ) -> Dict[str, pd.DataFrame]:
+        """Per-symbol frames for ``[start, end]`` as fresh, independent copies.
+
+        Boolean-mask indexing plus ``reset_index`` yields a new frame, so a
+        scanner mutating what it receives can never reach the snapshot or
+        another scanner's view.
+        """
+        wanted = None if not symbols else set(symbols)
+        out: Dict[str, pd.DataFrame] = {}
+        for symbol, df in self.data.items():
+            if wanted is not None and symbol not in wanted:
+                continue
+            left = df["date"].searchsorted(start, side="left")
+            right = df["date"].searchsorted(end, side="right")
+            if left >= right:
+                continue
+            out[symbol] = df.iloc[left:right].reset_index(drop=True)
+        _match_request_dtypes(out)
+        return out
+
+
+def _match_request_dtypes(out: Dict[str, pd.DataFrame]) -> None:
+    """Match the dtypes a direct SQL read of this exact request would infer.
+
+    ``pd.read_sql_query`` infers each column's dtype from its *whole* result
+    set, and an all-NULL REAL column comes back as ``object``/None rather than
+    ``float64``/NaN. A snapshot slice must reproduce that, or a scanner reading
+    (say) ``swing_low`` for a single symbol with no swing-low data would see a
+    different dtype than the unshared path. Only columns that are entirely NA
+    across every returned symbol are recast -- one symbol with a value is
+    enough for the real query to infer a float column.
+    """
+    if not out:
+        return
+    first = next(iter(out.values()))
+    candidates = []
+    for column in first.columns:
+        if first[column].dtype.kind == "f":
+            candidates.append(column)
+    if not candidates:
+        return
+    for column in candidates:
+        if any(sub[column].dtype.kind != "f" for sub in out.values()):
+            continue
+        has_value = False
+        for sub in out.values():
+            if sub[column].notna().any():
+                has_value = True
+                break
+        if has_value:
+            continue
+        if all(sub[column].isna().all() for sub in out.values()):
+            for sub in out.values():
+                sub[column] = pd.Series(
+                    [None] * len(sub), index=sub.index, dtype=object
+                )
+
+
+class _Scope:
+    """Mutable state for one ``batch_snapshot_scope`` block."""
+
+    def __init__(self, load_all_symbols: bool):
+        self.load_all_symbols = load_all_symbols
+        self.snapshot: Optional[_BatchSnapshot] = None
+
+    def prewarm(self, start: str, end: str) -> None:
+        """Populate the snapshot up front with the batch's expected union."""
+        self.snapshot = _BatchSnapshot(start, end, None, _read_bulk(start, end, None))
+
+    def resolve(
+        self, start: str, end: str, symbols: Optional[Sequence[str]]
+    ) -> Dict[str, pd.DataFrame]:
+        snap = self.snapshot
+        if snap is not None and snap.covers(start, end, symbols):
+            return snap.slice(start, end, symbols)
+
+        if snap is None:
+            new_start, new_end = start, end
+            new_symbols = None if self.load_all_symbols else symbols
+        else:
+            new_start = min(start, snap.start)
+            new_end = max(end, snap.end)
+            if self.load_all_symbols or snap.symbols is None or not symbols:
+                new_symbols = None
+            else:
+                new_symbols = list(snap.symbols | set(symbols))
+
+        # Reload the widened union, then publish it only on success so a failed
+        # load leaves the previous snapshot intact.
+        self.snapshot = _BatchSnapshot(
+            new_start, new_end, new_symbols, _read_bulk(new_start, new_end, new_symbols)
+        )
+        return self.snapshot.slice(start, end, symbols)
+
+
+@contextmanager
+def batch_snapshot_scope(load_all_symbols: bool = True) -> Iterator[_Scope]:
+    """Share OHLCV loads across the scanners run inside this block.
+
+    ``load_all_symbols`` reflects whether the batch contains scanners that
+    request the full universe (true for the confluence batch: five of its
+    scanners pass no symbol filter). When true the snapshot is always the full
+    universe, so a filtered request is served as a subset rather than widening
+    the snapshot and triggering a reload.
+
+    Nested scopes are supported: the previous scope is restored on exit.
+    """
+    previous = getattr(_local, "scope", None)
+    scope = _Scope(load_all_symbols)
+    _local.scope = scope
+    try:
+        yield scope
+    finally:
+        _local.scope = previous
+
 
 # Superset of columns consumed by all scanners (12-col base, 13-col
 # wyckoff adds swing_low, 8-col climax/dcb use the first eight).
@@ -102,23 +276,32 @@ def _select_columns(conn) -> list[str]:
     return [c for c in TECH_COLUMNS if c in existing]
 
 
-def load_ohlcv_for_universe(
-    start_date: str,
-    end_date: str | None = None,
-    symbols: Optional[Sequence[str]] = None,
-) -> Dict[str, pd.DataFrame]:
-    """Load OHLCV + delivery rows for symbols in one query.
+def latest_ohlcv_date() -> str | None:
+    """Return the newest ``date`` present in ``technical_data``, else None.
 
-    Returns ``{symbol: DataFrame}`` with each frame ordered by ``date``
-    ascending and containing the columns that exist in the live schema
-    (subset of ``TECH_COLUMNS``).
-
-    ``end_date`` defaults to today when omitted.  When ``symbols`` is
-    provided (an iterable of symbol strings), only those symbols are
-    loaded via ``WHERE symbol IN (...)``.  When ``symbols`` is None or an
-    empty list, all symbols are loaded (backward-compatible behaviour).
+    Cheap (single indexed MAX) and used by the confluence batch to decide
+    whether a run is "live" -- i.e. whether the scanners that fall back to the
+    full history for back-dated runs will instead use their short window.
     """
-    end_date = end_date or date.today().isoformat()
+    tech_db = _tech_db_path()
+    if not os.path.exists(tech_db):
+        return None
+    try:
+        with sqlite3.connect(tech_db) as conn:
+            row = conn.execute("SELECT MAX(date) FROM technical_data").fetchone()
+    except sqlite3.OperationalError:
+        return None
+    if not row or row[0] is None:
+        return None
+    return str(row[0])
+
+
+def _read_bulk(
+    start_date: str,
+    end_date: str,
+    symbols: Optional[Sequence[str]],
+) -> Dict[str, pd.DataFrame]:
+    """Read OHLCV rows straight from SQLite (the unshared code path)."""
     tech_db = _tech_db_path()
     if not os.path.exists(tech_db):
         return {}
@@ -146,6 +329,33 @@ def load_ohlcv_for_universe(
         # Preserve the SQL `ORDER BY date ASC` contract per symbol.
         result[symbol] = group.sort_values("date").reset_index(drop=True)
     return result
+
+
+def load_ohlcv_for_universe(
+    start_date: str,
+    end_date: str | None = None,
+    symbols: Optional[Sequence[str]] = None,
+) -> Dict[str, pd.DataFrame]:
+    """Load OHLCV + delivery rows for symbols in one query.
+
+    Returns ``{symbol: DataFrame}`` with each frame ordered by ``date``
+    ascending and containing the columns that exist in the live schema
+    (subset of ``TECH_COLUMNS``).
+
+    ``end_date`` defaults to today when omitted.  When ``symbols`` is
+    provided (an iterable of symbol strings), only those symbols are
+    loaded via ``WHERE symbol IN (...)``.  When ``symbols`` is None or an
+    empty list, all symbols are loaded (backward-compatible behaviour).
+
+    When called inside a ``batch_snapshot_scope`` (see above) the request is
+    served from the batch's shared snapshot wherever the snapshot already
+    covers it; otherwise it hits the database exactly as before.
+    """
+    end_date = end_date or date.today().isoformat()
+    scope: Optional[_Scope] = getattr(_local, "scope", None)
+    if scope is not None:
+        return scope.resolve(start_date, end_date, symbols)
+    return _read_bulk(start_date, end_date, symbols)
 
 
 def get_df_for_symbol(
