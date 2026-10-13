@@ -7,7 +7,7 @@ nsepython
 numpy
 pandas
 pandas-ta
-polars
+polars>=1.21
 pytz
 PyYAML
 requests

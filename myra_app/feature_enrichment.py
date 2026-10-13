@@ -130,22 +130,24 @@ def enrich_features(df: pl.DataFrame, nifty_df: pl.DataFrame) -> pl.DataFrame:
         df = df.with_columns(pl.lit(0.0).alias("market_return"))
 
     # Core Institutional Metrics - Forced Calculation Block
-    # We use min_periods=5 to allow calculations to start early in a stock's history
+    # We use min_samples=5 to allow calculations to start early in a stock's history.
+    # (`min_periods` is the pre-1.21 Polars name; it was removed outright in
+    # Polars 2.0, so the modern kwarg is required for cross-version support.)
     df = df.with_columns(
         [
             (
                 pl.col("delivery")
-                / pl.col("delivery").rolling_mean(100, min_periods=5).over("symbol")
+                / pl.col("delivery").rolling_mean(100, min_samples=5).over("symbol")
             ).alias("delivery_divergence_score"),
             (
                 (pl.col("high") - pl.col("low"))
                 / (pl.col("high") - pl.col("low"))
-                .rolling_mean(50, min_periods=5)
+                .rolling_mean(50, min_samples=5)
                 .over("symbol")
             ).alias("volatility_compression_score"),
             (
                 pl.col("volume")
-                / pl.col("volume").rolling_mean(50, min_periods=5).over("symbol")
+                / pl.col("volume").rolling_mean(50, min_samples=5).over("symbol")
             ).alias("relative_volume_score"),
             (pl.col("stock_return") - pl.col("market_return")).alias(
                 "nifty_outperformance_score"
@@ -396,16 +398,18 @@ def process_enrichment_pipeline(
                     # Prepare batch data
                     update_data = [
                         (
-                            float(row[col]) if pd.notna(row[col]) else None,
-                            row["symbol"],
-                            str(row["date"]),
-                            target_date,
-                        )
-                        if target_date
-                        else (
-                            float(row[col]) if pd.notna(row[col]) else None,
-                            row["symbol"],
-                            str(row["date"]),
+                            (
+                                float(row[col]) if pd.notna(row[col]) else None,
+                                row["symbol"],
+                                str(row["date"]),
+                                target_date,
+                            )
+                            if target_date
+                            else (
+                                float(row[col]) if pd.notna(row[col]) else None,
+                                row["symbol"],
+                                str(row["date"]),
+                            )
                         )
                         for row in smc_today.to_pandas().to_dict("records")
                         if pd.notna(row[col])
@@ -479,31 +483,31 @@ def process_enrichment_pipeline(
             df_roll = df_roll.with_columns(
                 [
                     pl.col("close")
-                    .rolling_mean(5, min_periods=1)
+                    .rolling_mean(5, min_samples=1)
                     .over("symbol")
                     .alias("sma_5"),
                     pl.col("close")
-                    .rolling_mean(10, min_periods=1)
+                    .rolling_mean(10, min_samples=1)
                     .over("symbol")
                     .alias("sma_10"),
                     pl.col("close")
-                    .rolling_mean(15, min_periods=1)
+                    .rolling_mean(15, min_samples=1)
                     .over("symbol")
                     .alias("sma_15"),
                     pl.col("close")
-                    .rolling_mean(50, min_periods=1)
+                    .rolling_mean(50, min_samples=1)
                     .over("symbol")
                     .alias("sma_50"),
                     pl.col("close")
-                    .rolling_mean(200, min_periods=1)
+                    .rolling_mean(200, min_samples=1)
                     .over("symbol")
                     .alias("sma_200"),
                     pl.col("high")
-                    .rolling_max(252, min_periods=1)
+                    .rolling_max(252, min_samples=1)
                     .over("symbol")
                     .alias("high_52w"),
                     pl.col("low")
-                    .rolling_min(252, min_periods=1)
+                    .rolling_min(252, min_samples=1)
                     .over("symbol")
                     .alias("low_52w"),
                 ]
