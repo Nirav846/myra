@@ -1,0 +1,9 @@
+# Test + lint tooling. Install on top of requirements.txt:
+#   pip install -r requirements.txt -r requirements-dev.txt
+#
+# black/flake8 are pinned to the exact revisions used by .pre-commit-config.yaml
+# so that CI and pre-commit agree on formatting.
+pytest>=8.0
+pytest-cov>=5.0
+black==23.3.0
+flake8==6.0.0

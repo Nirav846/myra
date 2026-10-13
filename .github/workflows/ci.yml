@@ -12,9 +12,16 @@ on:
 permissions:
   contents: read
 
+# Cancel a superseded run for the same ref (rapid pushes / PR updates) so we
+# neither pay for stale runs nor wait behind them.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       matrix:
         python-version: ["3.12"]
@@ -28,12 +35,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest
+          pip install -r requirements.txt -r requirements-dev.txt
 
       # Build fixture DBs before pytest. conftest.py skips any test requesting
       # fixture_db_dir when a fixture file is absent, so without this step all
@@ -41,22 +48,44 @@ jobs:
       - name: Build fixture DBs
         run: python tests/fixtures/build_fixture_db.py
 
-      # -rs prints skip reasons in the summary block. Without it, every
-      # conditionally-skipped test is invisible: a test that silently stops
-      # running looks identical to a test that passes.
+      # Same command documented for local use (see CONTRIBUTING.md). -rs prints
+      # skip reasons, --durations surfaces the slowest tests, and the coverage
+      # report (informational — no threshold is enforced) flags untested paths.
       - name: Run tests
-        run: pytest tests/ -v -rs
+        run: pytest tests/ -rs --durations=15 --cov=myra_app --cov-report=term-missing:skip-covered
         env:
           PYTHONPATH: ${{ github.workspace }}
 
-      # Diff against a local `pytest --collect-only -q` to catch tests that
-      # one environment collects and the other does not. Skips are runtime;
-      # collection happens earlier and is not visible in the pass count.
-      - name: Collect test IDs
-        run: pytest tests/ --collect-only -q
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install lint tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      # Scoped to tests/: the rest of the tree carries legacy formatting that
+      # pre-commit fixes per-file. tests/ is kept clean as a hard gate, which
+      # matters because a `--no-verify` push bypasses the local hooks.
+      - name: black (tests/)
+        run: black --check tests/
+
+      - name: flake8 (tests/)
+        run: flake8 tests/
 
   frontend-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: myra_web
@@ -91,6 +120,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Type-check (tsc --noEmit)
+        run: pnpm lint
+
       - name: Build frontend
         run: pnpm build
 
@@ -103,6 +135,7 @@ jobs:
   audit:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
