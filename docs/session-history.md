@@ -101,7 +101,7 @@ It is kept for reference but removed from the main AGENTS.md to reduce context b
 | Registered scanners | 7 (Trigger, Float Exhaustion, Invisible Hand, Wyckoff, LFD, OFP, Seasonal Delivery) + 1 endpoint-only (DCB Bargain) |
 | Portfolio Tracker | ✅ | CLI tool with auto-refresh, scanner overlap, risk metrics, smart caching |
 | Scanner candidates (typical) | 2–623 per run |
-| ML models | 2 (forward_return.xgb + launchpad_xgb.joblib) |
+| ML models | 2 (forward_return.ubj + launchpad_xgb.joblib) |
 | Test suite | 413 passed + 1 skipped, all green |
 | CI | GitHub Actions (push/PR to main) |
 
@@ -153,9 +153,55 @@ Starting point: `d47ad4c` (Phase 1 on `origin/main`, suite 1111 passed). Full wr
 - **Verification:** full suite **1129 passed** / 0 errors (418.89 s, 41% cov); black 26.10.1 + flake8 clean;
   `tsc` + `pnpm build` green; `pip-audit` clean; CI green on ubuntu / py3.12 / polars 2.0.0.
 
-### Next up (Phase 3 candidates)
+---
 
-1. Share one bulk load across the confluence batch (perf; needs mtime-invalidated cache + live test).
-2. Drop unused `express` from `myra_web/package.json`.
-3. Regression tests for `score_components_v2.py` and `positional_engine.py`.
-4. Standardise the XGBoost model serialization format.
+## Phase 3 — confluence batch sharing, model format, regression tests (2026-10-13)
+
+Starting point: `9cb2a7d` (Phase 2 on `origin/main`, suite 1129 passed).
+
+- **Perf — shared confluence bulk load:** added a batch-scoped, thread-local OHLCV
+  snapshot to `myra_app/db/bulk_loader.py` (`_BatchSnapshot`, `_Scope`,
+  `batch_snapshot_scope`, `latest_ohlcv_date`) and wrapped the scanner loop in
+  `myra_web/confluence_batch.py`. Scanners that ask for an already-covered
+  window/symbol set are now served from one in-memory read; uncovered requests
+  widen the window (date/symbol union) and reload once, publishing only on
+  success. Live batches prewarm `[latest − 545d, as_on] × ALL`.
+  - **Measured (live DB, as_on=2026-10-12):** 11 universe loads → **1**; DB read
+    time **103.1 s → 48.6 s**. Wall-clock was flat (795.6 s → 810.3 s) because
+    slicing materialises per-request copies — the win is deterministic *work
+    reduction*, not wall-clock. Slicing switched from boolean-mask to
+    `searchsorted`+`iloc` (64.0 s → 14.65 s over the 9 windows).
+  - `+tests/test_bulk_loader_scope.py` (18) — sharing/widening, isolation,
+    lifecycle/errors, batch wiring, live parity.
+- **Model serialization:** canonical artifact is now `models/forward_return.ubj`
+  (`MLTrainer.MODEL_PATH`), with `LEGACY_MODEL_PATH` = `models/forward_return.xgb`
+  fallback in `_resolve_model_path()`. XGBoost picks the format from the
+  extension, so the `.ubj` name removes both the save ("UBJSON as default") and
+  load ("Unknown file format: `xgb`") UserWarnings. `/api/ml/status` accepts
+  either artifact. `+tests/test_ml_trainer_model_format.py` (5).
+- **Deps:** removed unused `express` / `@types/express` from `myra_web/package.json`
+  (lockfile −56 packages; `pnpm build` green).
+- **Regression tests:** `+tests/test_score_components_v2.py` (15) and
+  `+tests/test_positional_engine.py` (7) lock the current scoring numerics.
+- **Pre-existing issues found (not changed — would alter rankings):**
+  - `score_components_v2.precompute_ranks` uses
+    `rank(pct=True, na_option="bottom")` with a comment claiming missing data
+    gets the *lowest* rank. In pandas, `na_option="bottom"` assigns NaN the
+    *highest* percentile (1.0), so absent `roe`/`ProfitGrowth` are scored as
+    top-tier. Documented by `test_precompute_ranks_nan_gets_highest_pct_rank_current_behaviour`.
+  - `PositionalScorer.compute_score` guards `if f is not None`, but
+    `fundamental_score` never returns `None`, so the fundamentals blend always
+    applies (with fallback ranks) — the branch is dead.
+  - Environment drift: venv now runs **xgboost 3.4.0** (notes previously said
+    3.2.0); `save_model` accepts only `fname` (no `format` kwarg).
+- **Verification:** full suite **1147 passed** / 1 warning (256 s); black 26.10.1 +
+  flake8 clean on touched files.
+
+### Next up (Phase 4 candidates)
+
+1. Decide whether the `na_option="bottom"` missing-data ranking is intended; if
+   not, fix + retrain/re-rank (scoring semantics change — needs sign-off).
+2. Re-measure confluence batch wall-clock on a quiet machine before claiming any
+   end-to-end speedup.
+3. Investigate the order-dependent cross-test failures seen when running an
+   arbitrary subset ordering (default collection order is green).

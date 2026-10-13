@@ -108,13 +108,25 @@ LAUNCHPAD_DEFAULT_CONFIG = {
 
 
 class MLTrainer:
-    MODEL_PATH = "models/forward_return.xgb"
+    # XGBoost 3.x saves UBJSON by default; a '.ubj' extension lets
+    # ``load_model`` detect the format without the "Unknown file format:
+    # `xgb`" UserWarning. LEGACY_MODEL_PATH keeps older checkouts loadable.
+    MODEL_PATH = "models/forward_return.ubj"
+    LEGACY_MODEL_PATH = "models/forward_return.xgb"
     META_PATH = "models/model_metadata.json"
 
     def __init__(self, config: dict = None):
         self.config = self._load_config(config)
         self.model: xgb.XGBClassifier | None = None
         self.metadata: dict | None = None
+
+    # ------------------------------------------------------------------
+    def _resolve_model_path(self) -> str | None:
+        """Return the first existing artifact (new '.ubj', then legacy '.xgb')."""
+        for path in (self.MODEL_PATH, self.LEGACY_MODEL_PATH):
+            if os.path.exists(path):
+                return path
+        return None
 
     # ------------------------------------------------------------------
     def _load_config(self, config: dict = None) -> dict:
@@ -128,7 +140,7 @@ class MLTrainer:
 
     # ------------------------------------------------------------------
     def get_status(self) -> dict:
-        if not os.path.exists(self.MODEL_PATH):
+        if self._resolve_model_path() is None:
             return {
                 "exists": False,
                 "message": "No trained model found. Call /api/ml/train to train one.",
@@ -260,14 +272,11 @@ class MLTrainer:
         test_acc = self.model.score(X_test, y_test)
 
         os.makedirs("models", exist_ok=True)
-        # Explicit format avoids XGBoost 3.x UBJSON warnings when saving with
-        # the legacy '.xgb' extension. The file is still loadable by
-        # `load_model()` in 3.2.0.
-        try:
-            self.model.save_model(self.MODEL_PATH, format="ubj")
-        except TypeError:
-            # Back-compat with older XGBoost versions lacking the format kwarg
-            self.model.save_model(self.MODEL_PATH)
+        # XGBoost 3.x selects the serialization format from the file
+        # extension. Saving to the '.ubj' path keeps save/load free of the
+        # "Saving model in the UBJSON format as default" / "Unknown file
+        # format: `xgb`" UserWarnings that the legacy '.xgb' name emitted.
+        self.model.save_model(self.MODEL_PATH)
         gc.collect()
 
         features = self.config["features"]
@@ -303,14 +312,15 @@ class MLTrainer:
         """Load model from disk. Returns True on success."""
         if self.model:
             return True
-        if not os.path.exists(self.MODEL_PATH):
+        path = self._resolve_model_path()
+        if path is None:
             return False
         try:
             self.model = xgb.XGBClassifier()
-            self.model.load_model(self.MODEL_PATH)
+            self.model.load_model(path)
             return True
         except Exception as exc:
-            logger.error("Failed to load model from %s: %s", self.MODEL_PATH, exc)
+            logger.error("Failed to load model from %s: %s", path, exc)
             self.model = None
             return False
 

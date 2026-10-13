@@ -19,9 +19,11 @@ async def ml_status():
     """Check if a trained model exists and when it was last trained."""
     import os
 
-    model_path = "models/forward_return.xgb"
     metadata_path = "models/model_metadata.json"
-    if not os.path.exists(model_path):
+    if not any(
+        os.path.exists(p)
+        for p in ("models/forward_return.ubj", "models/forward_return.xgb")
+    ):
         return {
             "exists": False,
             "message": "No trained model found. Run /api/ml/train to train a model.",

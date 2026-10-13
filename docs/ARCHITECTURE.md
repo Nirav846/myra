@@ -183,7 +183,7 @@ Two XGBoost models are trained and serialized with `joblib`:
 
 | Model | File | Purpose |
 |-------|------|---------|
-| Forward Return | `models/forward_return.xgb` | Predicts n-day forward return |
+| Forward Return | `models/forward_return.ubj` | Predicts n-day forward return |
 | Launchpad | `models/launchpad_xgb.joblib` | Identifies breakout candidates in digestion phase |
 
 Training is triggered via `/api/ml/train` and `/api/ml/launchpad/train`. Feature importance is queryable via `/api/ml/feature-importance`.

@@ -28,7 +28,7 @@ If `schema/*.sql` looks stale or missing for a table you need, **stop and ask**,
 | Registered scanners | 7 (Trigger, Float Exhaustion, Invisible Hand, Wyckoff, LFD, OFP, Seasonal Delivery) + 1 endpoint-only (DCB Bargain) |
 | Portfolio Tracker | ✅ CLI tool with auto-refresh, scanner overlap, risk metrics, smart caching |
 | Scanner candidates (typical) | 2–623 per run |
-| ML models | 2 (forward_return.xgb + launchpad_xgb.joblib) |
+| ML models | 2 (forward_return.ubj + launchpad_xgb.joblib) |
 | Test suite | 413 passed + 1 skipped, all green |
 | CI | GitHub Actions (push/PR to main) |
 

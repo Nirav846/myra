@@ -72,7 +72,7 @@ Typical wall-clock for a full-universe scan vs a holdings-filtered scan (local m
 
 ## Test-suite performance
 
-- The suite is **1129 tests** and runs green locally in ~7 min (418 s with `--cov`, 41% coverage).
+- The suite is **1147 tests** and runs green locally in ~4.3 min (256 s; Phase 2 was 1129 in 418 s with `--cov`, 41% coverage).
 - CI runs the full `tests/` suite on Python 3.12 plus a frontend build (Node 22) on every push/PR to `main`.
 
 ### Scanner baseline (Phase 2, 2026-10-13)
@@ -94,9 +94,27 @@ python -m pytest tests/test_bulk_loader.py -q --durations=20
 | whole module | ~125 s |
 
 Numbers scale with the live dataset, so treat them as a same-command canary, not an SLA.
-Known deferred win: `myra_web/confluence_batch.py` runs ~12 scanners that each call
-`load_ohlcv_for_universe` independently, so the full-universe query repeats once per
-scanner — see `docs/PHASE2_AUDIT.md` §4.
+
+### Confluence batch sharing (Phase 3, 2026-10-13)
+
+`myra_web/confluence_batch.py` used to run ~12 scanners that each called
+`load_ohlcv_for_universe` independently, so the full-universe query repeated once
+per scanner (11 reads on the live DB). A thread-local, batch-scoped snapshot now
+serves covered requests from one in-memory read and widens on demand
+(`batch_snapshot_scope` in `myra_app/db/bulk_loader.py`). Live runs prewarm
+`[latest − 545d, as_on] × ALL`.
+
+| Metric (live DB, as_on=2026-10-12) | Before | After |
+|---|---|---|
+| `_read_bulk` universe reads in a batch | 11 | 1 |
+| DB read time | 103.1 s | 48.6 s |
+| Batch wall-clock | 795.6 s | 810.3 s |
+| Slice over the 9 windows (mask → `searchsorted`+`iloc`) | 64.0 s | 14.65 s |
+
+**The wall-clock did not improve** — serving requests still materialises
+per-request dataframe copies, which offsets the saved reads. The reliable win is
+the deterministic drop in redundant DB work (11 → 1), verified by counting
+`_read_bulk` calls in `tests/test_bulk_loader_scope.py`.
 
 ---
 
