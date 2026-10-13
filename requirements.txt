@@ -27,5 +27,7 @@ patchright
 openpyxl
 ta
 tabulate
-pywin32
+# pywin32 is Windows-only; without the marker `pip install -r requirements.txt`
+# fails outright on the Linux CI runner (and any Linux/macOS host).
+pywin32; sys_platform == "win32"
 pydantic
