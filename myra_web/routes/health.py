@@ -129,6 +129,29 @@ async def data_health():
                         result["days_behind"] = (ist_now - latest_date).days
                     except ValueError:
                         result["days_behind"] = None
+
+                    # Trading-session freshness: on a Monday, Friday's data is
+                    # 3 calendar days old but 0 sessions behind. Counting
+                    # calendar days flagged every Monday/post-holiday as stale.
+                    try:
+                        from myra_app.daily_ingestor import (
+                            is_trading_day as _is_trading_day,
+                        )
+                        from myra_web.utils import trading_day_freshness
+
+                        expected, tdb = trading_day_freshness(
+                            latest,
+                            datetime.now(IST),
+                            lambda d: _is_trading_day(
+                                datetime.combine(d, datetime.min.time())
+                            ),
+                        )
+                        result["expected_trading_date"] = expected
+                        result["trading_days_behind"] = tdb
+                    except Exception:
+                        logger.warning(
+                            "trading-day freshness unavailable", exc_info=True
+                        )
                     cnt = conn.execute(
                         "SELECT COUNT(*) FROM technical_data WHERE date = ?",
                         (latest,),

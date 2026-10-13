@@ -16,6 +16,8 @@ import {
 interface HealthData {
   latest_ohlcv_date: string | null;
   days_behind: number | null;
+  expected_trading_date: string | null;
+  trading_days_behind: number | null;
   ohlcv_symbols_today: number | null;
   enrichment_complete: boolean | null;
   fundamentals_total: number | null;
@@ -57,15 +59,15 @@ function pctColor(pct: number): string {
 
 function daysColor(days: number | null): string {
   if (days === null) return 'text-text-tertiary';
-  if (days <= 1) return 'text-success';
-  if (days === 2) return 'text-warning';
+  if (days <= 0) return 'text-success';
+  if (days === 1) return 'text-warning';
   return 'text-error';
 }
 
 function getDaysBadgeStyle(days: number | null): string {
   if (days === null) return 'bg-text-tertiary/20 text-text-tertiary';
-  if (days <= 1) return 'bg-success-bg text-success border border-success-border';
-  if (days === 2) return 'bg-warning-bg text-warning border border-warning-border';
+  if (days <= 0) return 'bg-success-bg text-success border border-success-border';
+  if (days === 1) return 'bg-warning-bg text-warning border border-warning-border';
   return 'bg-error-bg text-error border border-error-border';
 }
 
@@ -137,6 +139,9 @@ export default function HealthStatusBar() {
 
   if (!data) return null;
 
+  // Session-accurate freshness when the API provides it; a weekend or holiday
+  // must not read as staleness, so this is preferred over calendar `days_behind`.
+  const behind = data.trading_days_behind ?? data.days_behind;
   const promPct = data.fundamentals_total
     ? Math.round((data.fundamentals_with_promoter! / data.fundamentals_total) * 100)
     : 0;
@@ -166,14 +171,21 @@ export default function HealthStatusBar() {
       <span className="flex items-center gap-1.5 shrink-0">
         <Calendar size={12} className="text-text-tertiary" />
         <span className="text-text-secondary">Freshness:</span>
-        <span className={daysColor(data.days_behind)}>
+        <span
+          className={daysColor(behind)}
+          title={
+            data.expected_trading_date
+              ? `Expected latest session: ${data.expected_trading_date}`
+              : undefined
+          }
+        >
           {data.latest_ohlcv_date ? fmtDate(data.latest_ohlcv_date) : '—'}
         </span>
-        {data.days_behind !== null && data.days_behind > 0 && (
+        {behind !== null && behind > 0 && (
           <span
-            className={`px-2 py-0.5 rounded-full text-[11px] font-semibold leading-none ${getDaysBadgeStyle(data.days_behind)}`}
+            className={`px-2 py-0.5 rounded-full text-[11px] font-semibold leading-none ${getDaysBadgeStyle(behind)}`}
           >
-            {data.days_behind}d behind
+            {behind}d behind
           </span>
         )}
         {data.ohlcv_symbols_today !== null && (

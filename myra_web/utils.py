@@ -112,6 +112,75 @@ def _get_latest_trading_day_before(date_str: str) -> str:
     return date_str
 
 
+# After this IST time the day's session is expected to be ingested (the daily
+# bhavcopy cadence). Before it, today's own session is not yet "missing".
+DEFAULT_SESSION_READY: tuple[int, int] = (18, 30)
+
+
+def trading_day_freshness(
+    latest_date: str | None,
+    now: datetime,
+    is_trading_day_fn,
+    session_ready: tuple[int, int] = DEFAULT_SESSION_READY,
+    max_lookback_days: int = 14,
+):
+    """Measure how many *trading sessions* a dataset is behind.
+
+    Calendar-day gaps mislead. On a Monday the newest row is Friday's: three
+    calendar days back, but **zero** sessions behind. A calendar-days staleness
+    flag therefore paints every Monday, and every post-holiday morning, as stale
+    even when ingestion is perfectly current.
+
+    Args:
+        latest_date: ISO ``YYYY-MM-DD`` of the newest row, or None.
+        now: an aware datetime (IST) used as "today".
+        is_trading_day_fn: callable ``date -> bool`` answering whether the
+            exchange held a session on that date.
+        session_ready: ``(hour, minute)`` IST after which today's session is
+            expected to be ingested; before it, today is not yet expected.
+        max_lookback_days: safety bound while walking back to a session.
+
+    Returns:
+        ``(expected_trading_date_iso | None, trading_days_behind | None)``.
+        Both are None when the input is unusable, so callers can fall back
+        rather than serve a misleading number.
+    """
+    if not latest_date:
+        return None, None
+    try:
+        latest = datetime.strptime(latest_date, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None, None
+
+    today = now.date()
+    ready = (now.hour, now.minute) >= tuple(session_ready)
+
+    # The most recent session that should already be in the database.
+    if ready and is_trading_day_fn(today):
+        expected = today
+    else:
+        expected = None
+        probe = today - timedelta(days=1)
+        for _ in range(max_lookback_days + 1):
+            if is_trading_day_fn(probe):
+                expected = probe
+                break
+            probe -= timedelta(days=1)
+        if expected is None:
+            return None, None
+
+    # Count missed sessions strictly after the newest row, up to `expected`.
+    behind = 0
+    walk = latest + timedelta(days=1)
+    guard = 0
+    while walk <= expected and guard < 400:
+        if is_trading_day_fn(walk):
+            behind += 1
+        walk += timedelta(days=1)
+        guard += 1
+    return expected.isoformat(), behind
+
+
 # ---- tier rank helper (module-level for testability) ----
 _TIER_RANK_MAP = {"HIGH": 0, "MOD": 1, "LOW": 2}
 
