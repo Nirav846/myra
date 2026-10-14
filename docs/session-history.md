@@ -598,8 +598,9 @@ CI-crash fix — all traced from the running code.
 ## Phase 9 - data readiness, crash recovery & change-driven Mission Control (2026-10-14)
 
 Full write-up: `docs/PHASE9_DATA_READINESS_AND_MISSION_CONTROL.md`. Starting
-commit `6b9273b`. The governing rule: **a maximum date is not completeness** —
-latest stored date, expected trading date and coverage are three separate facts.
+commit `6b9273b`, final commit `7d0f585`. The governing rule: **a maximum date
+is not completeness** — latest stored date, expected trading date and coverage
+are three separate facts.
 
 - **WS1 (readiness).** New `myra_app/data_readiness.py` reuses the existing
   authorities instead of reimplementing them: `MAX(technical_data.date)`,
@@ -671,7 +672,9 @@ latest stored date, expected trading date and coverage are three separate facts.
   clean; `tsc --noEmit` + `npm run build` clean; performance guard **268 / 0
   CRITICAL** (baseline unchanged, neither new module flagged). Live DBs
   unchanged after the run: `technical_data` 8,009,058 rows, max 2026-10-12,
-  `PRAGMA quick_check: ok`.
+  `PRAGMA quick_check: ok`. CI run `38610543418` green (test 3.12: **1283 passed
+  / 21 skipped**, lint + frontend-build green, audit skipped as before); CodeQL
+  run `38610542589` green.
 - **Not changed (deliberately):** no new scheduler/router/service/framework, no
   second event transport, no background "is it ready yet" thread, no readiness
   auto-repair, no invented publication dates or progress percentages, no Phase 6

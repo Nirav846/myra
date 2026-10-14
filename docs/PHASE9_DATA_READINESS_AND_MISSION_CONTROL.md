@@ -14,10 +14,12 @@ completeness*. Everything below is built around keeping those two facts apart.
 |------|-------|
 | Branch | `main` |
 | Starting commit | `6b9273b` (`docs: record the Phase 8 final commit…`), `== origin/main`, clean tree |
-| Final commit | `HASH` (recorded by the follow-up `docs:` commit) |
-| Phase 9 commits | `C1` (readiness + recovery + UI) + `C2` (docs) |
+| Final commit | `7d0f585` (`feat(readiness): honest data-readiness on Mission Control; fix calendar bootstrap gap`) — recorded by the follow-up `docs:` commit |
+| Phase 9 commits | `7d0f585` (readiness + recovery + UI) + the follow-up `docs:` commit |
 | Full suite before | 1267 passed |
 | Full suite after | **1304 passed**, 0 failed (+37) |
+| CI (ubuntu) | **1283 passed / 21 skipped** (1283 + 21 = 1304) — `test (3.12)`, `lint`, `frontend-build` all green |
+| CodeQL | green |
 
 ---
 
@@ -306,7 +308,9 @@ Phase 7/8 protections preserved: `test_task_offload.py` still uses
 untouched and green; the shared task-tracker lock is unchanged; no pytest-xdist;
 readiness is strictly read-only (`mode=ro`).
 
-CI/CodeQL: see the Phase 9 section of `docs/session-history.md`.
+CI/CodeQL: run `38610543418` (CI) — `test (3.12)` **1283 passed / 21 skipped**,
+`lint` and `frontend-build` green, `audit` skipped (pre-existing); CodeQL run
+`38610542589` green.
 
 ---
 
