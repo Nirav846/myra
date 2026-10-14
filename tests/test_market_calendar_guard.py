@@ -30,6 +30,7 @@ import pytest
 import myra_app.constants as constants
 import myra_app.daily_ingestor as di
 from myra_app.librarian_core import LibrarianCore
+from tests.conftest import LIVE_DB_DIR
 
 IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
 
@@ -60,7 +61,7 @@ def _close_cached_connections():
 
 
 @pytest.fixture
-def cal(monkeypatch, tmp_path):
+def cal(monkeypatch, tmp_path, request):
     """A real market_calendar + technical_data pair, injected by path."""
     db_dir = tmp_path / "dbs"
     db_dir.mkdir()
@@ -102,6 +103,22 @@ def cal(monkeypatch, tmp_path):
         value = getattr(module, "DB_DIR", None)
         if isinstance(value, str) and os.path.abspath(value) != str(db_dir):
             monkeypatch.setattr(module, "DB_DIR", str(db_dir), raising=False)
+
+    # A module first imported *during* a test body (several tests here do a
+    # local ``from myra_app import ingest_bhavcopy``) is not in the list above,
+    # and it snapshots ``constants.DB_DIR`` — i.e. this temp directory — at
+    # import time. monkeypatch cannot restore a module it never patched, so the
+    # stale temp path would survive teardown and starve every later test that
+    # binds DB_DIR. Repair those late imports on teardown, the same way
+    # conftest._redirect_db_dir restores its own redirect.
+    @request.addfinalizer
+    def _release_stale_db_dir_bindings() -> None:
+        for _name, module in list(sys.modules.items()):
+            if module is None:
+                continue
+            value = getattr(module, "DB_DIR", None)
+            if isinstance(value, str) and os.path.abspath(value) == str(db_dir):
+                module.DB_DIR = LIVE_DB_DIR
 
     class Harness:
         pass

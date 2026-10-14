@@ -43,6 +43,31 @@ names the affected file(s) under `myra_app/db/`. Stop any locally-running MYRA
 process (its scheduler also writes to those files) and re-run; if a *test* is
 responsible, make it request the `fixture_db_dir` fixture.
 
+### DB isolation model (do not change the scopes)
+
+`fixture_db_dir` redirects `DB_DIR` for **one test at a time**. It is
+function-scoped on purpose; the pristine fixture *directory* it points at is
+session-scoped (`_pristine_fixture_dbs`) so its path stays stable.
+
+- A session-scoped redirect used to leak: every test that ran after the first
+  `fixture_db_dir` request saw the synthetic directory, so modules that resolve
+  DB paths at runtime (the bulk loader, `/api/chart`) silently read fixtures.
+  Alphabetical collection order hid it (`test_db_isolation` sorts after them).
+- The directory identity is stable across the session because callers cache
+  `LibrarianCore` instances by thread, not by path (the orchestrator / ingest /
+  watchdog `_connection_pool`s). Per-test directories would leave those caches
+  on an earlier temp dir.
+- Teardown restores `constants.DB_DIR`, every import-time `DB_DIR` binding, and
+  `sqlite3.connect` (the live-access guard). Tests that import a `DB_DIR`
+  consumer *during* a test body (not at import time) must also release the
+  binding they captured — see `cal` in `tests/test_market_calendar_guard.py`.
+- `_validate_fixture_dbs()` fails the run if a fixture DB is empty or missing a
+  key table, so an "exists but empty" fixture cannot make isolated tests pass
+  vacuously.
+
+Regression coverage lives in `tests/test_db_isolation_order.py`; it asserts the
+restore/no-leak contract and that the guard is re-armed after a test removes it.
+
 Formatting and lint are enforced by pre-commit (`black`, `flake8`, the MYRA
 performance guard and the schema-drift guard). To run the test-suite checks
 manually:

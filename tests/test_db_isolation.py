@@ -370,7 +370,6 @@ def test_uri_bypass_cannot_escape_the_guard(tmp_path, monkeypatch):
     sqlite3.connect(str(target)).close()
 
     monkeypatch.setattr(conftest_mod, "LIVE_DB_DIR", str(live))
-    real = conftest_mod.REAL_CONNECT
     conftest_mod._install_live_db_guard()
     try:
         for candidate in (
@@ -383,7 +382,13 @@ def test_uri_bypass_cannot_escape_the_guard(tmp_path, monkeypatch):
                 sqlite3.connect(candidate, uri=candidate.startswith("file:"))
             assert "Blocked test access" in str(exc.value), candidate
     finally:
-        sqlite3.connect = real
+        # Re-arm the guard rather than restoring a bare ``sqlite3.connect``.
+        # Restoring the real connect here would leave the process unguarded for
+        # every later test that runs without ``fixture_db_dir`` — an
+        # order-dependent hole (the guard is only installed by that fixture).
+        # ``guarded_connect`` resolves ``LIVE_DB_DIR`` at call time, so the real
+        # directory is protected again once monkeypatch undoes the override.
+        conftest_mod._install_live_db_guard()
 
 
 # ---------------------------------------------------------------------------

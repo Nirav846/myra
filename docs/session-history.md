@@ -213,3 +213,44 @@ Starting point: `9cb2a7d` (Phase 2 on `origin/main`, suite 1129 passed).
 3. Make `fixture_db_dir` order-independent (e.g. function-scoped restore, or an
    autouse reset of `DB_DIR` bindings for modules that don't request the
    fixture) so live-DB tests no longer depend on collection order.
+
+---
+
+## Phase 4 - order-independent DB test isolation (2026-10-14)
+
+Starting point: `7eae58d` (Phase 3 on `origin/main`, suite 1172 passed). Addresses
+Phase 3 "Next up" item 3. Full write-up in `docs/PHASE4_TEST_ISOLATION.md`.
+
+- **Root cause:** `fixture_db_dir` (`tests/conftest.py`) was **session-scoped**.
+  Its `_redirect_db_dir()` rewrites `constants.DB_DIR` and every import-time
+  `DB_DIR` binding, and its teardown ran only at session end - so every test
+  after the first `fixture_db_dir` request resolved `DB_DIR` to the synthetic
+  directory. Modules that resolve DB paths at *runtime*
+  (`myra_app.db.bulk_loader._tech_db_path()`, `/api/chart`) then read fixtures.
+  Alphabetical collection hid it (`test_db_isolation` sorts after them).
+- **Fix:** split the fixture. `_pristine_fixture_dbs` stays session-scoped (one
+  stable directory - several callers cache `LibrarianCore` by thread, not path,
+  so a per-test directory would strand those pools); `fixture_db_dir` is now
+  **function-scoped**: redirect + `_install_live_db_guard()` per requesting test,
+  full restore in teardown (`DB_DIR`, import-time bindings, `sqlite3.connect`,
+  cached connections).
+- **Latent bug fixed:** `test_uri_bypass_cannot_escape_the_guard` restored a bare
+  `sqlite3.connect` in its `finally`, leaving the process unguarded for the rest
+  of the session. It now re-arms the guard.
+- **Pre-existing leak surfaced & fixed:** the function-scoped `_assert_isolated`
+  (re-checked every isolated test) exposed `myra_app.ingest_bhavcopy.DB_DIR`
+  stuck on a deleted temp dir. Cause: `tests/test_market_calendar_guard.py`'s
+  `cal` fixture patched existing modules, but tests import `ingest_bhavcopy`
+  *inside* the test body, so it snapshotted the temp dir after the patch loop.
+  Added a teardown finalizer that releases any late `DB_DIR` binding.
+- **Fixture integrity:** `_validate_fixture_dbs()` fails the run if a fixture DB
+  has no tables or lacks a key table (`sync_log` / `technical_data` /
+  `fundamentals`), so an "exists but empty" fixture cannot pass vacuously.
+- **Regression tests:** `+tests/test_db_isolation_order.py` (7) pins the
+  restore/no-leak contract, re-arm-after-removal, directory stability, and
+  fixture non-emptiness. Confirmed failing (3) under the old session scope.
+- **Verification:** previously-failing order
+  (`test_db_isolation` + 8 starved modules) **13 failed/29 passed  132 passed**;
+  three-module order **13 failed/29 passed  42 passed**; alternate orders (A, B)
+  green; full suite **1179 passed** / 0 errors (255 s); black 26.10.1 + flake8
+  clean.

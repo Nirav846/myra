@@ -187,11 +187,21 @@ def live_db_guard():
 
 
 def _reset_cached_connections() -> None:
-    """Drop cached SQLite handles so nothing keeps a live DB open.
+    """Drop cached SQLite handles so nothing keeps a stale DB open.
 
-    `myra_app.task_tracker` memoises its connection in a module-level global
-    (`_conn`). Redirecting DB_DIR is not enough if that handle was already
-    created by an earlier test — it would keep pointing at the live file.
+    Two kinds of cached handle outlive a redirect:
+
+    * ``myra_app.task_tracker`` memoises its connection in a module-level global
+      (``_conn``). Redirecting DB_DIR is not enough if that handle was already
+      created by an earlier test — it would keep pointing at the live file.
+    * ``myra_app.background_orchestrator`` and the ``tasks.ingest`` /
+      ``tasks.watchdog`` modules keep thread-keyed ``LibrarianCore`` pools
+      (``_connection_pool``). A pool entry built while DB_DIR was redirected
+      would otherwise be reused *after* the redirect is undone, silently reading
+      the synthetic database from an unrelated test.
+
+    Only modules that are already imported are touched, so this never triggers
+    a heavy import during collection.
     """
     tracker = sys.modules.get("myra_app.task_tracker")
     if tracker is not None:
@@ -204,6 +214,22 @@ def _reset_cached_connections() -> None:
         tracker._conn = None
         tracker._use_fallback = False
         tracker._fallback_tasks = []
+
+    for mod_name in (
+        "myra_app.background_orchestrator",
+        "myra_app.tasks.ingest",
+        "myra_app.tasks.watchdog",
+    ):
+        module = sys.modules.get(mod_name)
+        pool = getattr(module, "_connection_pool", None) if module else None
+        if not isinstance(pool, dict):
+            continue
+        for lib in list(pool.values()):
+            try:
+                lib.close()
+            except Exception:
+                pass
+        pool.clear()
 
 
 def _modules_with_db_dir() -> list[tuple[str, object]]:
@@ -328,19 +354,61 @@ def _install_live_db_guard() -> None:
     sqlite3.connect = guarded_connect
 
 
+#: Fixture DB keys that must expose a specific table. An "exists but empty"
+#: fixture DB would let an isolated test read nothing and still pass — the
+#: exact shape of failure that let the original isolation defect hide.
+_REQUIRED_FIXTURE_TABLES = {
+    "meta": "sync_log",
+    "technical": "technical_data",
+    "valuation": "fundamentals",
+}
+
+
+def _validate_fixture_dbs(dest: str) -> None:
+    """Fail closed if a copied fixture DB is empty or missing a key table.
+
+    ``os.path.exists`` is not enough: a zero-table database file would make
+    every isolated test read nothing and could pass vacuously.
+    """
+    for db_key, filename in LibrarianCore.DB_MAP.items():
+        path = os.path.join(dest, filename)
+        try:
+            conn = REAL_CONNECT(f"file:{path}?mode=ro", uri=True)
+        except sqlite3.Error as exc:
+            pytest.fail(f"fixture DB {filename} is unreadable: {exc}")
+        try:
+            tables = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+        finally:
+            conn.close()
+        if not tables:
+            pytest.fail(
+                f"fixture DB {filename} has no tables; run "
+                "tests/fixtures/build_fixture_db.py (an empty DB would let "
+                "isolated tests pass vacuously)"
+            )
+        expected = _REQUIRED_FIXTURE_TABLES.get(db_key)
+        if expected and expected not in tables:
+            pytest.fail(
+                f"fixture DB {filename} is missing required table {expected!r} "
+                f"(tables: {sorted(tables)})"
+            )
+
+
 @pytest.fixture(scope="session")
-def fixture_db_dir(tmp_path_factory):
-    """Copy fixture DBs to a tmp dir and redirect **every** DB_DIR binding there.
+def _pristine_fixture_dbs(tmp_path_factory):
+    """One pristine copy of the fixture DBs, shared for the whole session.
 
-    Opt-in (non-autouse): tests that request it run against synthetic fixtures;
-    everything else keeps the production DB_DIR. Session-scoped so the copy and
-    redirect happen once per test run.
-
-    The redirect covers three escape routes that the previous implementation
-    missed:
-      * modules that bind ``from myra_app.constants import DB_DIR`` at import time
-      * cached connection singletons (``task_tracker._conn``)
-      * direct ``sqlite3.connect`` calls to a live path, which now raise
+    Deliberately a *session-scoped directory* rather than a session-scoped
+    redirect: several callers key cached resources by thread, not by path (the
+    thread-local ``LibrarianCore`` pools in ``background_orchestrator`` /
+    ``tasks.ingest`` / ``tasks.watchdog``), so a directory that changed on every
+    test could leave those caches pointing at an earlier temporary directory.
+    The directory identity is stable; only the DB_DIR *redirect* is scoped.
     """
     fixtures_src = os.path.join(constants.PROJECT_ROOT, "tests", "fixtures")
     dest = str(tmp_path_factory.mktemp("myra_fixture_dbs"))
@@ -353,7 +421,39 @@ def fixture_db_dir(tmp_path_factory):
             )
         shutil.copy2(src, os.path.join(dest, filename))
 
+    _validate_fixture_dbs(dest)
+    return dest
+
+
+@pytest.fixture
+def fixture_db_dir(_pristine_fixture_dbs):
+    """Redirect **every** DB_DIR binding to the fixtures for ONE test only.
+
+    Opt-in (non-autouse): tests that request it run against synthetic fixtures;
+    everything else keeps the production DB_DIR.
+
+    Function-scoped on purpose. When this fixture was session-scoped it
+    performed the redirect once and only undid it at session teardown, so
+    *every* test that ran afterwards — whether or not it asked for isolation —
+    resolved ``DB_DIR`` to the synthetic directory. Tests that resolve database
+    paths at runtime (the bulk loader, the ``/api/chart`` endpoint) then read
+    the fixture DB instead of the live one. Alphabetical collection order hid
+    it because ``test_db_isolation`` sorts after those modules. Scoping the
+    redirect to the requesting test means unrelated tests always see the real
+    ``DB_DIR`` again, and the live-access guard is (re)installed for each
+    isolated test instead of being left in whatever state a previous test left
+    it (``test_uri_bypass_cannot_escape_the_guard`` restores the real
+    ``sqlite3.connect`` when it finishes).
+
+    The redirect covers three escape routes:
+      * modules that bind ``from myra_app.constants import DB_DIR`` at import time
+      * cached connection singletons / thread-local pools (``task_tracker._conn``,
+        the orchestrator ``_connection_pool``s)
+      * direct ``sqlite3.connect`` calls to a live path, which now raise
+    """
+    dest = _pristine_fixture_dbs
     original_db_dir = constants.DB_DIR
+
     _redirect_db_dir(dest)
     _assert_isolated(dest, "fixture setup")
 
