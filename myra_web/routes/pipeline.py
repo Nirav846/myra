@@ -60,6 +60,39 @@ class ScheduleToggleRequest(BaseModel):
     enabled: bool
 
 
+@router.get("/readiness")
+def get_data_readiness(changed_only: bool = False, since: str | None = None):
+    """Data-readiness assessment for Mission Control.
+
+    Returns the latest market date, the expected trading date, coverage, EOD
+    source state, fundamental reporting/retrieval dates and an overall state
+    with a plain explanation. These are deliberately **separate fields**: a
+    recent ``MAX(date)`` is not evidence of completeness, and a fundamental's
+    retrieval time is not its reporting period.
+
+    ``changed_only=true`` (or ``since=<fingerprint>``) returns
+    ``{"changed": false}`` with no body when nothing decision-bearing has
+    changed, so a periodic caller can poll cheaply without re-rendering and
+    without the server rebuilding an identical payload.
+
+    Read-only: every underlying query opens with ``mode=ro``, so this endpoint
+    can never modify a database.
+    """
+    from myra_app.data_readiness import assess, fingerprint
+
+    try:
+        report = assess()
+    except Exception:
+        logger.exception("readiness assessment failed")
+        raise HTTPException(500, "Failed to assess data readiness")
+
+    current = fingerprint(report)
+    if changed_only or since is not None:
+        if since == current:
+            return {"changed": False, "fingerprint": current}
+    return {"changed": True, "fingerprint": current, "readiness": report}
+
+
 @router.get("/status")
 def get_pipeline_status():
     """Full run + per-task status. Never returns a partial success payload."""

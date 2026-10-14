@@ -640,6 +640,13 @@ class PipelineControl:
             state = self._tasks.get(task_key)
             if state is None:
                 return
+            # Phase 9: suppress a re-publish of an identical stage. A task that
+            # reports the same stage text on every iteration would otherwise
+            # drive an SSE frame (and a client re-render) each time for no new
+            # information. Notes are exempt: they are discrete, operator-facing
+            # messages, not a repeating level.
+            if not note and state.get("stage") == message:
+                return
             state["stage"] = message
             if self._state["active_task_id"] == task_key:
                 self._state["message"] = message
@@ -791,9 +798,9 @@ class PipelineControl:
             busy = self._state["status"] in self._busy_statuses
             if busy:
                 self._state["status"] = "cancelling"
-                self._state[
-                    "message"
-                ] = "Cancellation requested — waiting for the task to stop"
+                self._state["message"] = (
+                    "Cancellation requested — waiting for the task to stop"
+                )
         if busy:
             self._cancel_event.set()
             # Release a paused task so its checkpoint can observe the cancel.
@@ -1015,9 +1022,9 @@ class PipelineControl:
             self._tasks[key].update(
                 {
                     "current_status": status,
-                    "stage": self._tasks[key]["stage"]
-                    if status != "completed"
-                    else None,
+                    "stage": (
+                        self._tasks[key]["stage"] if status != "completed" else None
+                    ),
                     "error_message": error,
                     "finished_at": _now(),
                     "duration_seconds": duration,

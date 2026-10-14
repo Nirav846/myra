@@ -633,6 +633,15 @@ def sync_eod2_data() -> dict[str, Any]:
                 f"[EOD2] Inserted {result['rows_inserted']} rows for "
                 f"{result['symbols_updated']} symbols."
             )
+            # A new session just landed: drop the memoised source readiness so
+            # the next Mission Control read reflects the new state instead of a
+            # verdict computed before this ingest.
+            try:
+                from myra_app.data_readiness import invalidate_source_cache
+
+                invalidate_source_cache()
+            except Exception as exc:  # noqa: BLE001 - never fail an ingest for this
+                logger.debug(f"[EOD2] readiness cache invalidation skipped: {exc}")
             # Run enrichment for SMC / score columns
             _run_enrichment(conn)
         else:

@@ -158,7 +158,7 @@ def test_cooldown_boundary_is_inclusive():
 # ---------------------------------------------------------------------------
 
 
-def test_hard_error_writes_no_success_but_does_throttle(fixture_db_dir):
+def test_hard_error_writes_no_success_but_does_throttle(fixture_db_dir, monkeypatch):
     """Case 6 — the defect itself: error path must still advance the clock."""
     import myra_app.eod2_sync as eod2_sync
 
@@ -166,27 +166,32 @@ def test_hard_error_writes_no_success_but_does_throttle(fixture_db_dir):
     _age_row(now, minutes=0)  # pretend a real attempt just happened
 
     marks = []
-    orig_mark, orig_attempt = ingest_mod._mark_task_run, ingest_mod._mark_task_attempt
-    ingest_mod._mark_task_run = lambda *a, **k: marks.append(a)
-    ingest_mod._mark_task_attempt = lambda *a, **k: None
-    eod2_sync.sync_eod2_data = lambda: dict(
-        rows_inserted=0,
-        symbols_updated=0,
-        skipped=0,
-        rejected_rows=0,
-        rejected_symbols=0,
-        error="boom",
+    monkeypatch.setattr(ingest_mod, "_mark_task_run", lambda *a, **k: marks.append(a))
+    monkeypatch.setattr(ingest_mod, "_mark_task_attempt", lambda *a, **k: None)
+    # Phase 9: these two used to be assigned directly and never restored, which
+    # leaked a fake `sync_eod2_data` and `USE_EOD2_DATA=True` into every later
+    # test in the process (surfaced as an order-dependent failure in
+    # tests/test_recovery_reconciliation.py). monkeypatch restores both.
+    monkeypatch.setattr(
+        eod2_sync,
+        "sync_eod2_data",
+        lambda: dict(
+            rows_inserted=0,
+            symbols_updated=0,
+            skipped=0,
+            rejected_rows=0,
+            rejected_symbols=0,
+            error="boom",
+        ),
     )
-    try:
-        from myra_app import constants
 
-        constants.USE_EOD2_DATA = True
-        constants.ENABLE_DAILY_INGEST = True
-        ctx = TaskContext(shutdown_event=threading.Event(), logger=ingest_mod.logger)
-        ingest_mod.run(ctx, force=True)
-    finally:
-        ingest_mod._mark_task_run = orig_mark
-        ingest_mod._mark_task_attempt = orig_attempt
+    from myra_app import constants
+
+    monkeypatch.setattr(constants, "USE_EOD2_DATA", True)
+    monkeypatch.setattr(constants, "ENABLE_DAILY_INGEST", True)
+
+    ctx = TaskContext(shutdown_event=threading.Event(), logger=ingest_mod.logger)
+    ingest_mod.run(ctx, force=True)
 
     assert marks == [], "a hard error must not write a success marker"
     # And the attempt clock still blocks the next poll.

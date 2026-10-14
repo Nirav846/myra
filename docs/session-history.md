@@ -594,3 +594,85 @@ CI-crash fix — all traced from the running code.
 - **Unverified (documented):** the 1.86x backfill speed-up is synthetic (faked
   latency) + the exact 40 % request reduction; a real `limit=25` Screener.in run
   was not executed (live quota). `DEFAULT_MAX_WORKERS` left at a modest 4.
+
+## Phase 9 - data readiness, crash recovery & change-driven Mission Control (2026-10-14)
+
+Full write-up: `docs/PHASE9_DATA_READINESS_AND_MISSION_CONTROL.md`. Starting
+commit `6b9273b`. The governing rule: **a maximum date is not completeness** —
+latest stored date, expected trading date and coverage are three separate facts.
+
+- **WS1 (readiness).** New `myra_app/data_readiness.py` reuses the existing
+  authorities instead of reimplementing them: `MAX(technical_data.date)`,
+  `tasks/watchdog._expected_trading_date()`, `eod2_sync.assess_source_readiness()`
+  (Phase 8) and the `sync_log` row — so Mission Control and ingestion can never
+  disagree. States: `ready` / `waiting_for_eod` / `partial` / `stale` / `failed` /
+  `unknown`, each with a concrete explanation; missing evidence yields `unknown`,
+  never a false assurance. Fundamentals report **reporting period**
+  (`quarterly_results.period_end`) and **retrieval time**
+  (`fundamentals.last_updated`) as separate, separately-labelled fields.
+- **Calendar bootstrap defect (real, found by measurement).** `market_calendar`
+  marks every Oct-2026 session as `is_trading_day=0 "Likely holiday (zero rows)"`
+  — including 2026-10-12 which holds 3,200 rows. `is_trading_day` only lifts that
+  heuristic when `technical_data` already has rows, so a session that is real,
+  upstream, and *not yet ingested* stayed misclassified: the expected date read
+  `2026-10-12` while the source already held `2026-10-14`, and MYRA reported
+  itself **ready**. Added `daily_ingestor.has_source_evidence()` as a second
+  override arm (bounded ≤200-file sample, heuristic reason only, named NSE
+  holidays still authoritative). Expected date `2026-10-12` -> **`2026-10-14`**;
+  `_is_db_stale()` `False` -> **`True`**; the live verdict is now **`partial`**:
+  "Data is at 2026-10-12 but the EOD source already holds 2026-10-14".
+- **Cost.** `assess()` is ~3.4 s uncached (3.2 s of it reading ~3,770 EOD CSV
+  tails). The source scan is memoised against a validity token of (folder mtime,
+  **newest file mtime**, meta.json mtime+size) + a 60 s TTL backstop — the newest
+  file mtime matters because re-copying a session rewrites existing files without
+  moving the directory mtime. `sync_eod2_data` calls
+  `invalidate_source_cache()` right after a successful insert. Warm cost
+  **0.18 s**; unchanged responses are **221 B** with no React re-render.
+- **WS3 (live status) — mostly already correct, so documented not rebuilt.**
+  Traced the real path: `usePipeline.ts` already uses SSE as primary with a 5 s
+  poll *only while SSE is down and the tab is visible*, exponential reconnect
+  backoff and a heartbeat watchdog; `MissionControl` and `DataSync` are separate
+  routes so there is never a second concurrent connection; `get_status()` is
+  in-memory (**16 µs**, 2.5 KB). Measured: an idle system emits **0** events.
+  Fixed one real defect — `_publish_stage` re-emitted an identical stage on every
+  call (SSE frame + client re-render for no new information); it now returns
+  early on an unchanged stage. Readiness deliberately does **not** get a second
+  SSE stream: it is a slow-changing verdict, not a transition stream.
+- **WS4 (display).** New `DataReadinessPanel` on Mission Control (between the run
+  header and the task list), fed by `GET /api/pipeline/readiness?changed_only=1`.
+  Shows latest stored date, expected date, coverage, EOD source state, last
+  successful ingest, and fundamentals reporting period vs retrieval, with a state
+  chip and the backend's explanation. Unknown facts render "Not recorded". Manual
+  task controls, layout and navigation unchanged; `tsc --noEmit` and
+  `npm run build` clean.
+- **WS2 (recovery).** Verified all ten required scenarios with controlled fakes
+  (no live Screener.in): interruption keeps committed symbols, partial success
+  reports `updated`/`failed` and records `partial` in `sync_log`, 429 is
+  bounded-retry and slows the *shared* pacer, restarts skip cached symbols, a
+  locked DB is counted as failed (never as an update), a status-write failure
+  leaves committed rows intact, late/duplicate/partial EOD files reconcile with
+  nothing lost. **New: cross-process duplicate protection**
+  (`myra_app/utils/task_lock.py`) — Phase 8's guard was in-process only, so
+  `run_pipeline.py --enrich-screener` alongside the API server would have
+  double-fetched every symbol.
+- **WS5/6 (regression protection) — a pre-existing leak found and fixed.**
+  `tests/test_ingest_attempt_cooldown.py` assigned `eod2_sync.sync_eod2_data`,
+  `constants.USE_EOD2_DATA` and `constants.ENABLE_DAILY_INGEST` **directly** and
+  restored only two other names in its `finally`, so a fake `sync_eod2_data`
+  returning `error="boom"` leaked into every later test in the process. Phase 9
+  surfaced it as an order-dependent failure; now `monkeypatch`-based, with
+  `test_ingest_tests_do_not_leak_a_fake_eod_sync` pinning it. Phase 7/8
+  protections otherwise untouched: `test_task_offload.py` still isolated, the
+  WAL-aware guard and `DB_DIR` tests green, the task-tracker lock unchanged, no
+  pytest-xdist, readiness strictly read-only.
+- **Tests / verification:** `+tests/test_data_readiness.py` (21) and
+  `+tests/test_recovery_reconciliation.py` (16). Focused run **223 passed**; full
+  suite **1304 passed / 0 failed** (was 1267, +37). `black` 26.10.1 + `flake8`
+  clean; `tsc --noEmit` + `npm run build` clean; performance guard **268 / 0
+  CRITICAL** (baseline unchanged, neither new module flagged). Live DBs
+  unchanged after the run: `technical_data` 8,009,058 rows, max 2026-10-12,
+  `PRAGMA quick_check: ok`.
+- **Not changed (deliberately):** no new scheduler/router/service/framework, no
+  second event transport, no background "is it ready yet" thread, no readiness
+  auto-repair, no invented publication dates or progress percentages, no Phase 6
+  promotion and no scoring-weight change.

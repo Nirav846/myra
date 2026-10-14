@@ -467,6 +467,28 @@ def enrich_screener_fundamentals(
             "elapsed_s": 0.0,
             "reason": "already_running",
         }
+
+    # Phase 9: the in-process lock above cannot see a *second OS process*. The
+    # manual entry points are separate processes (run_pipeline.py vs the API
+    # server), so a cross-process lock is required to honour "no duplicate
+    # simultaneous runs of the same logical task" across every entry point.
+    cross_acquired, owner_pid = _acquire_cross_process_lock()
+    if not cross_acquired:
+        logger.warning(
+            "Screener enrichment is already running in another process "
+            f"(pid={owner_pid}) — refusing a duplicate run."
+        )
+        _RUN_LOCK.release()
+        return {
+            "total": 0,
+            "updated": 0,
+            "failed": 0,
+            "skipped": 0,
+            "partial": False,
+            "cancelled": False,
+            "elapsed_s": 0.0,
+            "reason": "already_running_other_process",
+        }
     _RUN_ACTIVE.set()
 
     try:
@@ -479,7 +501,32 @@ def enrich_screener_fundamentals(
         )
     finally:
         _RUN_ACTIVE.clear()
+        if cross_acquired:
+            _release_cross_process_lock()
         _RUN_LOCK.release()
+
+
+LOCK_NAME = "screener_enrich"
+
+
+def _acquire_cross_process_lock() -> tuple[bool, Optional[int]]:
+    """Advisory cross-process lock for the backfill. Never raises."""
+    try:
+        from myra_app.utils import task_lock
+
+        return task_lock.acquire(LOCK_NAME)
+    except Exception as exc:  # noqa: BLE001 - advisory guard
+        logger.debug(f"cross-process lock unavailable: {exc}")
+        return True, None
+
+
+def _release_cross_process_lock() -> None:
+    try:
+        from myra_app.utils import task_lock
+
+        task_lock.release(LOCK_NAME)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(f"cross-process lock release skipped: {exc}")
 
 
 def _run_locked(

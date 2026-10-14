@@ -22,6 +22,7 @@ import type { Librarian } from '../lib/Librarian';
 import ErrorBoundary from '../components/ErrorBoundary';
 import PipelineStatusPanel from '../components/PipelineStatusPanel';
 import PipelineTaskList from '../components/PipelineTaskList';
+import DataReadinessPanel from '../components/DataReadinessPanel';
 import DataSourcesPanel from '../components/DataSourcesPanel';
 import { usePipeline } from '../hooks/usePipeline';
 import {
@@ -235,7 +236,14 @@ export default function MissionControlView({ lib }: { lib: Librarian; navigateTo
         )}
       </section>
 
-      {/* ── 3. Pipeline timeline / task list ────────────────────────────── */}
+      {/* ── 3. Data readiness: what the database actually contains ─────── */}
+      {/* Placed directly under the run header so "is the data good enough to
+          screen?" is the first substantive question the page answers. */}
+      <ErrorBoundary>
+        <DataReadinessPanel busy={busy} />
+      </ErrorBoundary>
+
+      {/* ── 4. Pipeline timeline / task list ────────────────────────────── */}
       <section
         className="bg-[#1a1c24] border border-[#ffffff1a] rounded-xl p-4"
         aria-label="Pipeline tasks"
@@ -256,14 +264,14 @@ export default function MissionControlView({ lib }: { lib: Librarian; navigateTo
         />
       </section>
 
-      {/* ── 4. Execution history ────────────────────────────────────────── */}
+      {/* ── 5. Data sources ────────────────────────────────────────────── */}
       {/* Data Sources management — collapsed by default so the page stays
           scannable; toggle a source's on/off + tuning from here. */}
       <ErrorBoundary>
         <DataSourcesPanel />
       </ErrorBoundary>
 
-      {/* ── 5. Execution history ────────────────────────────────────────── */}
+      {/* ── 6. Execution history ────────────────────────────────────────── */}
       <section
         className="bg-[#1a1c24] border border-[#ffffff1a] rounded-xl p-4 flex flex-col gap-2"
         aria-label="Execution history"
@@ -297,7 +305,7 @@ export default function MissionControlView({ lib }: { lib: Librarian; navigateTo
         )}
       </section>
 
-      {/* ── 6. Compact system / API health ───────────────────────────────── */}
+      {/* ── 7. Compact system / API health ───────────────────────────────── */}
       <ErrorBoundary>
         <PipelineStatusPanel />
       </ErrorBoundary>

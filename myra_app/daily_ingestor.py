@@ -178,6 +178,61 @@ def calendar_classification(date_str: str) -> tuple[bool, str | None] | None:
     return bool(row[0]), (row[1] or None)
 
 
+def has_source_evidence(date_str: str, min_fraction: float = 0.20) -> bool:
+    """True when the upstream EOD source demonstrably carries ``date_str``.
+
+    Closes the bootstrapping gap in :func:`is_trading_day`. The database-truth
+    override there can only lift a "Likely holiday (zero rows)" record once the
+    session has actually been *ingested* - so for a session that is real, has
+    landed upstream, and has not been ingested yet, the calendar's heuristic
+    still says "holiday". That makes MYRA look fresh while it is behind, and
+    stops the watchdog from ever asking for the missing session.
+
+    The EOD source folder is independent evidence: if a real share of per-symbol
+    files end on ``date_str``, the exchange traded that session. Only the
+    heuristic reason is overridable here (a named NSE holiday stays
+    authoritative), and a genuine source-unavailable case returns False, which
+    preserves the previous behaviour exactly.
+    """
+    try:
+        from myra_app.eod2_sync import _find_eod2_daily
+
+        daily = _find_eod2_daily()
+    except Exception:
+        return False
+    if not daily or not os.path.isdir(daily):
+        return False
+    try:
+        names = [f for f in os.listdir(daily) if f.endswith(".csv")]
+    except OSError:
+        return False
+    if not names:
+        return False
+    matched = 0
+    sampled = 0
+    # Sample a bounded number of files: this runs on the readiness path, so it
+    # must stay cheap even with thousands of symbols. Any reasonable sample
+    # settles a session-level question.
+    step = max(1, len(names) // 200)
+    for name in names[::step]:
+        sampled += 1
+        try:
+            with open(os.path.join(daily, name), "rb") as fh:
+                try:
+                    fh.seek(-256, os.SEEK_END)
+                except OSError:
+                    pass
+                tail = fh.read().decode("utf-8", "replace").strip().splitlines()
+        except OSError:
+            continue
+        rows = [r for r in tail if r and not r.startswith("Date,")]
+        if rows and rows[-1].split(",")[0] == date_str:
+            matched += 1
+    if sampled == 0:
+        return False
+    return (matched / sampled) >= min_fraction
+
+
 def is_trading_day(dt: datetime) -> bool:
     """Check if a given datetime is a trading day (not weekend, not holiday).
 
@@ -185,8 +240,11 @@ def is_trading_day(dt: datetime) -> bool:
       1. weekend            -> not a trading day
       2. NSE_HOLIDAYS_BASELINE -> not a trading day
       3. market_calendar    -> honour the record, EXCEPT when the record is the
-                               legacy zero-row *heuristic* and technical_data
-                               holds real rows for that date.
+                               legacy zero-row *heuristic* and either
+                               technical_data holds real rows for that date
+                               (:func:`has_eod_evidence`) or the upstream EOD
+                               source already carries it
+                               (:func:`has_source_evidence`).
 
     Step 3's exception exists because the legacy ingest path used to write
     ``is_trading_day = 0`` whenever an attempt inserted zero rows — "we inserted
@@ -195,6 +253,9 @@ def is_trading_day(dt: datetime) -> bool:
     load the session normally. Only the heuristic reason is overridable; a named
     exchange holiday (Gandhi Jayanti, Christmas) stays authoritative even when
     rows happen to exist.
+
+    The source-evidence arm additionally covers the not-yet-ingested session,
+    which the database arm cannot see.
     """
     if dt.weekday() >= 5:
         return False
@@ -207,8 +268,11 @@ def is_trading_day(dt: datetime) -> bool:
     is_trading, reason = recorded
     if is_trading:
         return True
-    if reason == HEURISTIC_HOLIDAY_REASON and has_eod_evidence(date_str):
-        return True
+    if reason == HEURISTIC_HOLIDAY_REASON:
+        if has_eod_evidence(date_str):
+            return True
+        if has_source_evidence(date_str):
+            return True
     return False
 
 
@@ -458,14 +522,12 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
             conn.isolation_level = None  # Manual transaction control
             cursor = conn.cursor()
 
-            cursor.execute(
-                """
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS ingestion_rejects (
                     symbol TEXT, date TEXT, reason TEXT, raw_values TEXT,
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            """
-            )
+            """)
 
             cursor = lib.safe_execute("PRAGMA table_info(technical_data)", conn=conn)
             valid_cols = [info[1] for info in cursor.fetchall()]
