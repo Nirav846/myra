@@ -346,13 +346,20 @@ class MYRAScreener:
             sym = r["Stock"]
 
             # NO FUNDAMENTALS: Skip all fundamental data fetching
-            # Set default values for display compatibility
+            # Set default values for display compatibility.
+            # Fill gaps only: a real value already supplied upstream must never
+            # be overwritten with a placeholder sentinel (invariant: never
+            # clobber a valid metric with null/0/NA). With fundamentals
+            # disabled upstream these keys are still None/0, so the emitted
+            # row is byte-identical to the previous unconditional assignment.
             r["PE"] = "-"
-            r["ROE"] = "-"
+            if r.get("ROE") is None:
+                r["ROE"] = "-"
             r["Sector"] = "Unknown"
             r["MCap"] = 0
             r["ROCE"] = 0
-            r["ProfitGrowth"] = 0
+            if r.get("ProfitGrowth") is None:
+                r["ProfitGrowth"] = 0
 
             if not (is_smc_scan or is_aeon_scan):
                 # Use strategy-provided Grade if present, otherwise default
@@ -383,11 +390,7 @@ class MYRAScreener:
                         stars_count = (
                             5
                             if s_score >= 80
-                            else 4
-                            if s_score >= 65
-                            else 3
-                            if s_score >= 50
-                            else 2
+                            else 4 if s_score >= 65 else 3 if s_score >= 50 else 2
                         )
                     else:
                         stars_count = 4 if r.get("smc_phase") == 2 else 3

@@ -318,3 +318,99 @@ missing inputs.
   `avg_volume_20d`, `smart_money_score`, `roe`, `ProfitGrowth`) on the real scan
   path so the now-correct rank semantics discriminate candidates, with a
   shadow-mode ordering comparison first.
+
+---
+
+## Phase 6 - live ranking-input integration, shadow mode (2026-10-14)
+
+Starting point: `b2957e6` (Phase 5 on `origin/main`, suite 1197 passed). Resolves
+the Phase 5 "Next phase" item. Full write-up in
+`docs/PHASE6_LIVE_RANKING_INTEGRATION.md`. Directive: connect only
+legitimately-produced sources; integrate nothing that would require inventing a
+metric; keep the populated ordering **non-authoritative** behind an opt-in
+switch; measure before shipping.
+
+- **Audit - three of the five `precompute_ranks` inputs had no producer.**
+  `avg_volume_20d`, `avg_delivery_20d` and `smart_money_score` were only ever
+  *read* (with a `0` default) in `universe_loader`. `avg_delivery_20d` did have a
+  producer once: `90d2cc1` wrote `SMA20(Delivery_qty)` / `SMA20(Volume)` into the
+  Parquet indicator lake, then `aa7016e` (2026-04-17, "Refactor
+  precompute_indicators method") dropped both and renamed delivery to
+  `avg_deliv_20d` (still quantity). Evidence it once ran:
+  `myra_reports/scan_rs_rating.csv` carries `avg_delivery_20d` at delivery
+  *quantity* scale (295734.1, 7166426.3) - a legacy latent bug, since delivery
+  quantity is a company-size proxy that double-counts volume. `smart_money_score`
+  has no producer and no definition (consumers only: `worker_pool.py:285`,
+  `strategies/smart_money.py:63,64,91`, `results_manager.py:310`) - left **absent**
+  rather than faked from `ias`/`rdv`.
+- **Definitions locked (documented with rationale).** `avg_volume_20d` = mean
+  `technical_data.volume` over 20 **trading sessions**; `avg_delivery_20d` = mean
+  daily **`delivery_pct`** (NSE `DELIV_PER`, 0-100) over 20 sessions - the
+  definition `myra_app/ml_trainer.py` already uses (`AVG(delivery_pct) OVER w20`) -
+  deriving `delivery*100/volume` only when `delivery_pct` is NULL (mirrors
+  `tools/db_doctor.py:604`, `mass_backfill.py:217`); `roe` = `fundamentals.roe`
+  percent, passed through with stored `0` preserved and only SQL `NULL` -> `None`.
+  A full window is required, otherwise the metric is **absent** and the scorer
+  applies its Phase 5 neutral fallback (never a shortened average ranked as a
+  20-day one). `as_of_date` bounds the window so no future session is read.
+- **Integration is opt-in and defaults off.** New `myra_app/ranking_inputs.py`
+  (`compute_ranking_inputs`, `compute_fundamental_inputs`, `attach_ranking_inputs`,
+  `ranking_inputs_enabled`, `ENV_FLAG = MYRA_V25_RANKING_INPUTS`).
+  `load_universe(..., populate_ranking_inputs=None)` merges the metrics into
+  `funda_map`, which `worker_pool.py:273` already spreads into every result row,
+  so they reach `precompute_ranks` with no scanner/worker/scorer signature change.
+  `screener.py`'s `ROE`/`ProfitGrowth` placeholders became gap-fill-only so a real
+  value can never be clobbered by `-`/`0` (with the flag off the row is
+  byte-identical).
+- **`ProfitGrowth` could not be integrated.** Live `fundamentals` (read-only
+  probe): 3948 rows, `roe` non-null 691 (percent scale, SME-heavy), `profit_growth`
+  **0**, `earningsGrowth` **0**, `revenueGrowth`/`sales_growth` 0. The column
+  mapping is correct (`fundamental_sync` `earningsGrowth -> profit_growth`); the
+  values are simply absent. Documented as unavailable, with the
+  `COALESCE(profit_growth, earningsGrowth)` bridge noted for when the sync lands.
+- **Perf finding + fix.** The naive windowed query (`symbol IN (...)`,
+  `ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC)`) made SQLite scan
+  the whole ~8 M-row table: **27.4 s** for 938 symbols. Anchoring the window to
+  the real trading dates (`date >= lower AND date <= upper`) lets it use
+  `idx_tech_symbol_date`: **2.14 s** (as-of) / 1.75 s (latest). Value impact
+  measured, not assumed: 793 -> 785 symbols emit inputs; the 14 that drop out
+  (e.g. `HEG` 5, `SANGINITA` 9, `SELMC` 5 sessions in the recent 20 market dates)
+  are exactly the ones whose "last 20 sessions" would have spanned months.
+- **Shadow measurement (historical snapshots + live read-only DBs, not fixtures).**
+  `scan_rs_rating.csv` (938 candidates): Spearman **0.6698**, top-20 overlap
+  **13/20**, coverage `roe=71 / ProfitGrowth=0 / avg_delivery_20d=654 /
+  avg_volume_20d=654`. `scan_multibagger_early.csv` (385): Spearman **0.8855**,
+  overlap 14/20. New `tools/compare_v25_orderings.py` (opens every DB with a
+  `file:...?mode=ro` URI - cannot write or create WAL sidecars) and
+  `myra_app/shadow_ranking.py` (`compare_orderings` builds **both** orderings from
+  one result set, so the comparison cannot come from two different snapshots).
+  Caveat recorded in the doc: the snapshots are degenerate (713/938 rows share a
+  single score; only 225 rows carry any technical input; `pct_above_ma50_60d` and
+  `atr_pct` are single-valued and `F_Score` is absent), so `moved 931 / max delta
+  739` is largely tie-breaking - the rank correlation and top-20 overlap are the
+  load-bearing numbers, and **no improvement claim is made**.
+- **Coverage explanations (verified, not guessed):** the `avg_*` coverage tracks
+  symbol presence in `technical_data` (3423 symbols; 656 of the 938 snapshot
+  symbols present; 654 with a full window), not the window logic; the low `roe`
+  coverage is a fundamentals-population gap (0 dotted symbols in the table, so the
+  join is not missing rows).
+- **Tests:** `+tests/test_ranking_inputs.py` (14: full/short window, derived
+  delivery %, all-NULL delivery, `as_of_date` look-ahead guard, case-insensitive
+  alignment, empty inputs, fundamental passthrough incl. stored `0` kept,
+  attach purity/no-clobber, flag resolution incl. explicit-beats-env,
+  `_populate_ranking_inputs` end-to-end) and `+tests/test_shadow_ranking.py` (6:
+  empty results, `inputs={}` -> identical ordering + Spearman 1.0, coverage,
+  determinism, top-N overlap).
+- **Verification:** full suite **1217 passed** / 0 failed / 0 skipped (1197 + 20
+  new); `black` 26.10.1 + `flake8` clean on all touched files; performance guard
+  **268 violations / 0 CRITICAL** = the pre-existing baseline (new files add none).
+- **Deferred (documented):** `smart_money_score` still undefined (so
+  `delivery_score`'s 0.6 leg stays neutral); `ProfitGrowth` unpopulated; `roe`
+  coverage 7.6% on a large-cap universe; `technical_data` session gaps (282/938
+  snapshot symbols absent entirely); no `last_fundamental_update` staleness guard;
+  ranks remain within-scan; `universe_loader` still `0`-defaults ~40 cache
+  columns.
+- **Next phase:** fund the data, not the scoring - populate `profit_growth`,
+  widen `roe`, add a freshness guard, and investigate the `technical_data` session
+  gaps before promoting the populated ordering to the default (with out-of-sample
+  evidence rather than an in-sample correlation).

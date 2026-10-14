@@ -5,6 +5,13 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
+from myra_app.ranking_inputs import (
+    attach_ranking_inputs,
+    compute_fundamental_inputs,
+    compute_ranking_inputs,
+    ranking_inputs_enabled,
+)
+
 
 def is_vix_stable(lib):
     try:
@@ -28,11 +35,17 @@ def is_vix_stable(lib):
         return True
 
 
-def load_universe(lib, symbols, as_of_date, silent=False):
+def load_universe(lib, symbols, as_of_date, silent=False, populate_ranking_inputs=None):
     """
     Builds funda_map, insider_map, deal_map for the full universe.
     Returns (cache_df, regime, mood, vix_stable, funda_map, insider_map, deal_map).
     If len(symbols) < 10, returns empty dicts immediately (fast path).
+
+    ``populate_ranking_inputs`` is the Phase 6 opt-in switch: when enabled
+    (explicitly, or via ``MYRA_V25_RANKING_INPUTS``) the v2.5 scorer's
+    cross-sectional inputs (``avg_volume_20d`` / ``avg_delivery_20d`` /
+    ``roe``) are merged into ``funda_map`` from their authoritative sources.
+    Left disabled by default so the production ordering path is unchanged.
     """
     if len(symbols) < 10:
         cache_df = pd.DataFrame()
@@ -305,4 +318,40 @@ def load_universe(lib, symbols, as_of_date, silent=False):
             "avg_buy_60d": i.get("avg_buy_60d", 0) or 0,
         }
 
+    if ranking_inputs_enabled(populate_ranking_inputs) and funda_map:
+        _populate_ranking_inputs(lib, symbols, as_of_date, funda_map)
+
     return cache_df, regime, mood, vix_stable, funda_map, insider_map, deal_map
+
+
+def _populate_ranking_inputs(lib, symbols, as_of_date, funda_map):
+    """Merge real ``avg_volume_20d`` / ``avg_delivery_20d`` / ``roe`` into funda_map.
+
+    Best-effort: a source failure leaves the metric absent (the scorer then
+    applies its neutral fallback) instead of aborting the scan or fabricating a
+    value.
+    """
+    target_symbols = [str(s).split(".")[0].upper() for s in symbols or []]
+
+    try:
+        technical = compute_ranking_inputs(
+            lib._tech_conn, target_symbols, as_of_date=as_of_date
+        )
+    except Exception:
+        technical = {}
+
+    try:
+        fundamentals = compute_fundamental_inputs(lib._val_conn, target_symbols)
+    except Exception:
+        fundamentals = {}
+
+    merged_inputs = {}
+    for symbol in set(technical) | set(fundamentals):
+        merged_inputs[symbol] = {
+            **technical.get(symbol, {}),
+            **fundamentals.get(symbol, {}),
+        }
+
+    rows = [funda_map[s] for s in merged_inputs if s in funda_map]
+    for row in attach_ranking_inputs(rows, merged_inputs, symbol_key="symbol"):
+        funda_map[row["symbol"]] = row
