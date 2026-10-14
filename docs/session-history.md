@@ -259,4 +259,5 @@ Phase 3 "Next up" item 3. Full write-up in `docs/PHASE4_TEST_ISOLATION.md`.
   (`test_db_isolation` + 8 starved modules) **13 failed/29 passed  132 passed**;
   three-module order **13 failed/29 passed  42 passed**; alternate orders (A, B)
   green; full suite **1179 passed** / 0 errors (255 s); black 26.10.1 + flake8
-  clean.
+  clean. CI (ubuntu, no live DBs) **1158 passed, 21 skipped, 0 failed**; CodeQL
+  green (commit `76504b5`).

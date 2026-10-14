@@ -132,8 +132,10 @@ not re-armed).
 | Order A (regression module first) | - | 30 passed |
 | Order B (chart + db_isolation + bulk) | - | 42 passed |
 | Full suite | 1172 passed | **1179 passed** / 0 errors (255 s) |
+| CI (ubuntu, no live DBs) | 1151 passed, 21 skipped | **1158 passed, 21 skipped, 0 failed** |
 
-`black` 26.10.1 and `flake8` clean on `tests/`.
+`black` 26.10.1 and `flake8` clean on `tests/`. CI (`test` + `lint` +
+`frontend-build`) and CodeQL green on `76504b5`.
 
 ## Remaining limitations
 
@@ -142,3 +144,5 @@ not re-armed).
 - The suite remains single-process. Enabling `pytest-xdist` is still gated on
   proving worker-level safety for the thread-keyed connection pools and the
   module-global `sqlite3.connect` guard; not attempted here.
+- CI reports 1 `Pandas4Warning` from third-party `pandas_ta/__init__.py`
+  (`mode.copy_on_write` deprecated). Pre-existing, not caused by this work.
