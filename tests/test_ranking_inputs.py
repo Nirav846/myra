@@ -7,6 +7,7 @@ production ordering path unchanged.
 
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 
 import pytest
@@ -216,3 +217,57 @@ def test_populate_ranking_inputs_merges_into_funda_map(tmp_path, tech_db):
     assert "avg_volume_20d" not in funda_map["SHORT"]
     assert "roe" not in funda_map["SHORT"]
     val.close()
+
+
+# ---------------------------------------------------------------------------
+# 4. Phase 7 validation: read-only diagnostics, no duplicate joins
+# ---------------------------------------------------------------------------
+
+
+def _main_file_digest(path):
+    """Digest of the database file bytes (sidecars excluded on purpose)."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_diagnostics_run_read_only_and_write_nothing(tmp_path):
+    """The shadow diagnostics must work over `mode=ro` and change no bytes.
+
+    `tools/compare_v25_orderings.py` opens the live databases read-only; if any
+    of the input queries needed to write, that diagnostic could not run (or
+    worse, would mutate production). This proves both halves.
+    """
+    tech = tmp_path / "tech.db"
+    conn = sqlite3.connect(str(tech))
+    conn.execute(
+        "CREATE TABLE technical_data (symbol TEXT, date TEXT, volume INTEGER, "
+        "delivery REAL, delivery_pct REAL)"
+    )
+    conn.executemany(
+        "INSERT INTO technical_data VALUES (?, ?, ?, ?, ?)",
+        _sessions("FULL", [(1000 + 10 * i, 100.0, 10.0) for i in range(20)]),
+    )
+    conn.commit()
+    conn.close()
+
+    before = _main_file_digest(tech)
+    ro = sqlite3.connect(f"file:{tech}?mode=ro", uri=True)
+    try:
+        out = compute_ranking_inputs(ro, ["FULL"])
+    finally:
+        ro.close()
+
+    assert out["FULL"]["avg_volume_20d"] == pytest.approx(1095.0)
+    assert _main_file_digest(tech) == before, "a read-only diagnostic wrote bytes"
+
+
+def test_duplicate_symbols_produce_one_entry_and_no_row_multiplication(tech_db):
+    """A duplicate symbol list must not double-count, nor multiply result rows."""
+    out = compute_ranking_inputs(tech_db, ["FULL", "full", "FULL", "FULL"])
+    assert list(out) == ["FULL"], "duplicate symbols produced duplicate entries"
+    assert out["FULL"]["volume_obs"] == 20, "duplicate symbols inflated the window"
+
+    results = [{"Stock": "FULL"}, {"Stock": "FULL"}, {"Stock": "MISSING"}]
+    merged = attach_ranking_inputs(results, out)
+    assert len(merged) == len(results), "attach changed the number of result rows"
+    assert merged[0] is not merged[1], "attach shared a row object between entries"
+    assert merged[2] == {"Stock": "MISSING"}, "a symbol without inputs was altered"

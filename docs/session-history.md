@@ -419,3 +419,89 @@ switch; measure before shipping.
   widen `roe`, add a freshness guard, and investigate the `technical_data` session
   gaps before promoting the populated ordering to the default (with out-of-sample
   evidence rather than an in-sample correlation).
+
+## Phase 7 - data integrity, technical coverage & fundamental freshness (2026-10-14)
+
+Full write-up: `docs/PHASE7_DATA_INTEGRITY_AND_COVERAGE.md`. Starting commit
+`768852e`; four work-streams; the only code fix was a real reader crash.
+
+- **WS1 (metadata-DB write) - root cause found and fixed.** The suite really did
+  write production: **`tests/test_task_offload.py`** calls `_spawn_task` ->
+  `task_tracker.register` -> `INSERT INTO task_registry`, and the module never
+  requested `fixture_db_dir` (which is opt-in), so `DB_DIR` stayed live and the
+  module wrote the live `myra_metadata.db` - **3 rows per full-suite run**
+  (`task_registry` 2529 -> 2532). A row-digesting per-test probe pinned the exact
+  three tests. It stayed hidden because (a) `fixture_db_dir` only redirects tests
+  that ask for it, (b) the write is **WAL-only** so size/mtime were unchanged, (c)
+  the mtime moved only at process exit when SQLite checkpointed the WAL - the
+  Phase 6 signal - and (d) the first probe compared row *counts* from behind the
+  live-access guard, so it returned equal error sentinels ("0 changes").
+  **Fixes (no app code changed):** the module now has an autouse
+  `_isolated_db(fixture_db_dir)` fixture; `tests/conftest.py` counts committed WAL
+  frames (`_wal_committed_frames()` on the WAL header, magics `0x377F0682/3`,
+  appended to `_db_signatures()` as `:wal_frames=N` when `N > 0`) so the guard can
+  finally see such a write - it caught this one as `wal_frames=12`; and a new
+  section-8 test requires every module that calls `_spawn_task` to request
+  `fixture_db_dir`. No remaining uncertainty (the 3 residual production rows are
+  expired `Done` rows the app purges itself).
+- **WS2 (technical coverage) - measured, one real bug fixed.** `technical_data` =
+  **8,009,058 rows** (AGENTS.md's "~2.25 M" is wrong), 3,423 symbols, 7,858 dates,
+  1995-01-02..2026-10-12, ~3,165-3,231 rows on each of the last 25 dates, 39
+  complete sessions since 2026-08-17 with **no missing trading date**. Snapshot
+  universe `scan_rs_rating.csv` (938): **639** full 20-session symbols, 458
+  partial, 292 absent; histogram `{0:292,5:2,9:1,11:1,17:1,19:2,20:639}`.
+  `open/high/low/close/volume/delivery/delivery_pct` are 100% populated;
+  `vwap`/`delivery_qty`/`stock_return` are NULL across all 8.0 M rows;
+  `delivery_ratio`/`trades` exist only from 2026-08-17. `delivery` =
+  `delivery_pct*volume/100` exactly (i.e. `delivery` **is** the quantity, and
+  `delivery_qty` is an orphan). 1,191 of 3,610 `symbols_master` symbols have zero
+  technical rows (ETFs, `-RE` rights, SME-base tickers). Root causes confirmed
+  (IPOs / illiquid-SME / universe inflation / dead + new columns); none
+  unexplained; no data back-filled (that would be fabrication). **Bug fixed:**
+  `myra_app/portfolio_db.get_delivery_alerts` selected the never-populated
+  `delivery_qty` and divided it by volume -> `TypeError` its `except
+  sqlite3.Error` missed -> `tools/portfolio.py` crash and web delivery alerts
+  silently never firing (`myra_web/routes/portfolio.py` swallows it). Fixed with
+  `COALESCE(delivery_qty, delivery)` (+ `close`); `+tests/test_portfolio_delivery_alerts.py`.
+- **WS3 (fundamentals) - diagnosis only, nothing integrated.** `fundamentals` =
+  3,948 rows / 3,948 symbols. Coverage: `sector` 98.9%, `net_margin` 83.8%,
+  `pe` 83.0% (39 zeros), `market_cap` 82.2%, `shares_outstanding` 84.1%,
+  `promoter_holding_pct` 81.0% (56 zeros), `free_float_pct` 67.9%,
+  `dividend_yield` 38.2% (37 zeros), `inst_holding` 18.4% (267 zeros,
+  **untrustworthy** - values ~0.5-4.7 tagged `UPSTOX`), `roe` **17.5%**, `eps`
+  11.1%, `book_value` 11.0%, `face_value` 1 row; **0 rows** for
+  `profit_growth`/`sales_growth`/`debt_to_equity`/`roe_ttm`/`operating_margin`/
+  `pledged_pct`/`beta`. Unit traps: `roe` is a **percent** but `net_margin` is a
+  **fraction**; `market_cap` is absolute INR. Freshness is three overlapping
+  columns - `date` = source date, `last_updated`/`last_fundamental_update` =
+  ingestion - so a staleness guard must key on `date` (none exists today). 992 of
+  3,948 fundamental symbols (~25%, incl. 527 `_SME`) are not in `symbols_master`.
+  `quarterly_results` (9,095 rows / 745 symbols) is the one legitimate provenance
+  for `profit_growth` (`(np_t - np_{t-4})/|np_{t-4}|*100`) but was **deliberately
+  not integrated** - it would be a new metric definition feeding the score.
+- **WS4 (validate the Phase 6 opt-in) - validated, not promoted.**
+  `ranking_inputs_enabled()` = `False` by default; the gate at
+  `myra_app/universe_loader.py:321` is inert unless switched on.
+  `tools/compare_v25_orderings.py` ran end-to-end and left every live DB's
+  main-file size/mtime **unchanged** (sig-hashed before/after). Re-measured:
+  Spearman **0.6625**, top-20 overlap **13/20**, coverage `roe=71 /
+  ProfitGrowth=0 / avg_delivery_20d=639 / avg_volume_20d=639` - same conclusion as
+  Phase 6 (moderate re-ordering, **no improvement claim**). Added
+  `+test_diagnostics_run_read_only_and_write_nothing` (SHA-256 unchanged over a
+  `mode=ro` connection) and `+test_duplicate_symbols_produce_one_entry_and_no_row_multiplication`.
+- **Integrity:** all 15 `.db` files under `myra_app/db/` pass
+  `PRAGMA quick_check` (technical 59.8 s, valuation 11.1 s); no corruption. Three
+  pre-existing **empty stray** files (`myra_meta.db`, `technical.db`,
+  `valuation.db`) are not in `DB_MAP` and are left untouched (deleting live-dir
+  files is out of scope) - recommended for owner-confirmed removal.
+- **Tests / verification:** new `tests/test_portfolio_delivery_alerts.py` (+1),
+  `+2` in `tests/test_ranking_inputs.py`, `+3` in `tests/test_db_isolation.py`
+  (2 WAL + 1 task-registry isolation), the `tests/test_task_offload.py` fix, and
+  the WAL guard in `tests/conftest.py`. Focused runs: **51 passed** (14.49 s) and
+  **48 passed** (18.59 s). Full suite **1223 passed / 0 failed** (265 s) with the
+  guard clean. `black` 26.10.1 + `flake8` clean; performance guard **268 / 0
+  CRITICAL** (baseline unchanged).
+- **Explicit:** default ranking order and scoring weights are **unchanged**
+  (0.25/0.15/0.20/0.10/0.10 + 0.30; regime 1.15/0.9; dd 0.8/0.95; `_BULL` 71.1,
+  EXTREME FEAR 81.8, EXTREME GREED 64.0, dd0.3 67.5, dd0.5 56.9, `{"close":1}`
+  20.3) - the only code fix repaired a crash in a non-scoring alert reader.

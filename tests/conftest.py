@@ -53,6 +53,13 @@ LIVE_DB_DIR = os.path.abspath(constants.DB_DIR)
 #: guard; test code must go through the guarded sqlite3.connect.
 REAL_CONNECT = sqlite3.connect
 
+#: SQLite WAL file layout, used to tell a real pending write apart from junk.
+#: Header is 32 bytes (magic 0-3, big-endian page size at 8-11); every frame is
+#: a 24-byte frame header followed by one page.
+_WAL_MAGICS = (0x377F0682, 0x377F0683)
+_WAL_HEADER_BYTES = 32
+_WAL_FRAME_HEADER_BYTES = 24
+
 
 def _is_inside(path: str, root: str) -> bool:
     """True when `path` resolves inside `root` (the containment test we rely on)."""
@@ -86,10 +93,15 @@ def _db_signatures() -> dict[str, str]:
     signature is (size, mtime_ns) plus a real content digest of sync_log in
     myra_metadata.db, which is the database the original incident damaged.
 
-    Limitation, stated plainly: a write that lands only in the WAL and does not
-    checkpoint would not change a `.db` file's mtime. For myra_metadata.db that
-    case is still caught, because the sync_log digest is read through SQLite and
-    therefore sees committed WAL content.
+    A commit in WAL mode is written to the ``-wal`` sidecar, not to the ``.db``
+    file: neither the file's size nor its mtime moves until a checkpoint runs.
+    That is why the signature also carries the count of committed frames in the
+    `-wal` sidecar (``_wal_committed_frames``) — a real pending write is visible
+    there for every database, not just the one carrying a content digest.
+
+    An empty or junk `-wal` is *not* counted: a read-only open creates a 0-byte
+    `-wal`, and treating that as a modification would make the guard fire on
+    every read (the same false positive that excluded `-shm`).
     """
     signatures: dict[str, str] = {}
     for path in _db_files():
@@ -100,10 +112,43 @@ def _db_signatures() -> dict[str, str]:
             signatures[name] = "missing"
             continue
         signature = f"{stat.st_size}:{stat.st_mtime_ns}"
+        wal_frames = _wal_committed_frames(path + "-wal")
+        if wal_frames > 0:
+            signature += f":wal_frames={wal_frames}"
         if name == "myra_metadata.db":
             signature += f":sync_log_digest={_sync_log_digest(path)}"
         signatures[name] = signature
     return signatures
+
+
+def _wal_committed_frames(wal_path: str) -> int:
+    """Committed frames in a `-wal` sidecar, or 0 when there is no real WAL.
+
+    This is the only cheap way to see a committed-but-uncheckpointed write: in
+    WAL mode the row lands in the `-wal`, and the `.db` file (which the rest of
+    `_db_signatures` inspects) is untouched until the next checkpoint.
+
+    Only files carrying a valid SQLite WAL header are counted. A 0-byte file, a
+    truncated file, or arbitrary bytes (all of which a read or a careless tool
+    can leave behind) report 0 frames rather than a phantom write.
+    """
+    try:
+        size = os.path.getsize(wal_path)
+        with open(wal_path, "rb") as handle:
+            header = handle.read(_WAL_HEADER_BYTES)
+    except OSError:
+        return 0
+    if len(header) < _WAL_HEADER_BYTES:
+        return 0
+    if int.from_bytes(header[0:4], "big") not in _WAL_MAGICS:
+        return 0
+    page_size = int.from_bytes(header[8:12], "big")
+    if page_size == 1:  # the on-disk encoding of a 64 KiB page
+        page_size = 65536
+    if not 512 <= page_size <= 65536:
+        return 0
+    frame_bytes = _WAL_FRAME_HEADER_BYTES + page_size
+    return max((size - _WAL_HEADER_BYTES) // frame_bytes, 0)
 
 
 def _fingerprint_of(signatures: dict[str, str]) -> str:

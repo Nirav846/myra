@@ -392,6 +392,120 @@ def test_uri_bypass_cannot_escape_the_guard(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# 7. The guard sees a write that never reaches the main `.db` file
+# ---------------------------------------------------------------------------
+
+
+def test_wal_only_write_is_detected(tmp_path, monkeypatch):
+    """A commit that stays in `-wal` must still fail the session guard.
+
+    In WAL mode an INSERT is written to the ``-wal`` sidecar; the ``.db`` file's
+    size and mtime do not move until a checkpoint runs. A guard that only stats
+    the ``.db`` file — the shape `live_db_guard` had — is therefore blind to a
+    committed write that has not been checkpointed.
+
+    The write deliberately targets a table other than ``sync_log``: ``sync_log``
+    has its own content digest, so a write there would be detected even without
+    the WAL term, and would not actually exercise it.
+    """
+    import tests.conftest as conftest_mod
+
+    fake = tmp_path / "fakedb_wal"
+    fake.mkdir()
+    meta = fake / "myra_metadata.db"
+
+    setup = REAL_CONNECT(str(meta))
+    try:
+        setup.execute("PRAGMA journal_mode=WAL")
+        setup.execute(
+            "CREATE TABLE sync_log (task_name TEXT PRIMARY KEY, last_run TEXT, "
+            "last_status TEXT, error_message TEXT)"
+        )
+        setup.execute("CREATE TABLE other_state (key TEXT PRIMARY KEY, value TEXT)")
+        setup.commit()
+    finally:
+        setup.close()
+
+    # A second connection holds the WAL open so the commit is never
+    # checkpointed into the main file during the assertion.
+    keeper = REAL_CONNECT(str(meta))
+    try:
+        monkeypatch.setattr(conftest_mod, "LIVE_DB_DIR", str(fake))
+        before = conftest_mod._live_db_fingerprint()
+
+        keeper.execute("INSERT INTO other_state VALUES ('w', 'pending')")
+        keeper.commit()
+
+        frames = conftest_mod._wal_committed_frames(str(meta) + "-wal")
+        after = conftest_mod._live_db_fingerprint()
+    finally:
+        keeper.close()
+
+    assert frames > 0, "setup fault: the write was checkpointed, not left in the WAL"
+    assert after != before, "a committed WAL-only write was not detected"
+
+
+def test_wal_frames_ignore_empty_and_junk_sidecars(tmp_path, monkeypatch):
+    """A read-only open's empty `-wal`, or stray junk bytes, is not a write."""
+    import tests.conftest as conftest_mod
+
+    fake = tmp_path / "fakedb_waljunk"
+    fake.mkdir()
+    tech = fake / "myra_technical.db"
+    tech.write_bytes(b"x")
+    monkeypatch.setattr(conftest_mod, "LIVE_DB_DIR", str(fake))
+
+    before = conftest_mod._live_db_fingerprint()
+    wal = tech.parent / (tech.name + "-wal")
+
+    assert conftest_mod._wal_committed_frames(str(wal)) == 0, "absent WAL counted"
+
+    wal.write_bytes(b"")  # what a read-only open leaves behind
+    assert conftest_mod._wal_committed_frames(str(wal)) == 0, "empty WAL counted"
+
+    wal.write_bytes(b"\x00" * 16)  # a truncated/garbage sidecar
+    assert conftest_mod._wal_committed_frames(str(wal)) == 0, "junk WAL counted"
+
+    assert (
+        conftest_mod._live_db_fingerprint() == before
+    ), "an empty/junk WAL was reported as a live-database modification"
+
+
+# ---------------------------------------------------------------------------
+# 8. A module that writes the task registry must isolate itself
+# ---------------------------------------------------------------------------
+
+#: Calling `_spawn_task` registers a row via `myra_app.task_tracker.register`.
+#: Only this marker is checked (not bare `task_tracker` mentions) because other
+#: modules monkeypatch the tracker and never reach the database.
+_TASK_WRITE_MARKER = "_spawn_task("
+
+
+def test_task_registry_writer_modules_request_isolation():
+    """The Phase 7 WS1 defect: a test module wrote the production task_registry.
+
+    `task_tracker.register` INSERTs a row; a module that calls `_spawn_task`
+    without requesting `fixture_db_dir` therefore resolves the live `DB_DIR` and
+    writes `myra_metadata.db` (observed: 3 rows per full-suite run, invisible
+    until the guard learned to count committed WAL frames). The session guard
+    would eventually catch it; this fails fast and names the offending module.
+    """
+    tests_dir = os.path.join(constants.PROJECT_ROOT, "tests")
+    offenders = []
+    for name in sorted(os.listdir(tests_dir)):
+        if not (name.startswith("test_") and name.endswith(".py")):
+            continue
+        with open(os.path.join(tests_dir, name), encoding="utf-8") as fh:
+            source = fh.read()
+        if _TASK_WRITE_MARKER in source and "fixture_db_dir" not in source:
+            offenders.append(name)
+    assert not offenders, (
+        "these test modules call `_spawn_task` (which inserts into the live "
+        f"task_registry) without requesting `fixture_db_dir`: {offenders}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
 

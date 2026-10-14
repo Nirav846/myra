@@ -28,8 +28,7 @@ def get_connection():
 
 def init_db():
     conn = get_connection()
-    conn.executescript(
-        """
+    conn.executescript("""
         CREATE TABLE IF NOT EXISTS holdings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol TEXT NOT NULL UNIQUE,
@@ -61,11 +60,9 @@ def init_db():
             notes TEXT,
             created_at TEXT DEFAULT (datetime('now','localtime'))
         );
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS price_cache (
             symbol TEXT PRIMARY KEY,
             latest_close REAL,
@@ -73,11 +70,9 @@ def init_db():
             latest_date TEXT,
             updated_at TEXT DEFAULT (datetime('now','localtime'))
         )
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS fundamental_cache (
             symbol TEXT PRIMARY KEY,
             pe REAL,
@@ -85,28 +80,23 @@ def init_db():
             market_cap REAL,
             fetched_at TEXT DEFAULT (datetime('now','localtime'))
         )
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS portfolio_meta (
             key TEXT PRIMARY KEY,
             value TEXT
         )
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS industry_cache (
             symbol TEXT PRIMARY KEY,
             industry TEXT,
             yf_sector TEXT,
             fetched_at TEXT DEFAULT (datetime('now','localtime'))
         )
-    """
-    )
+    """)
     conn.commit()
     conn.close()
 
@@ -476,7 +466,12 @@ def get_delivery_alerts(holdings):
             try:
                 conn_tech = sqlite3.connect(path)
                 rows = conn_tech.execute(  # noqa: PG-NPLUS1
-                    "SELECT date, delivery_qty, volume, close FROM technical_data "
+                    # `delivery` is the delivery quantity; `delivery_qty` is a
+                    # legacy duplicate that is never populated (0 rows live), so
+                    # read whichever exists — the same COALESCE idiom used by
+                    # strategies/super_breakout.py.
+                    "SELECT date, COALESCE(delivery_qty, delivery) AS del_qty, "
+                    "volume, close FROM technical_data "
                     "WHERE symbol=? AND delivery IS NOT NULL AND volume > 0 "
                     "ORDER BY date DESC LIMIT 5",
                     (h["symbol"],),

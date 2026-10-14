@@ -39,6 +39,20 @@ def _override_auth():
     app.dependency_overrides.clear()
 
 
+@pytest.fixture(autouse=True)
+def _isolated_db(fixture_db_dir):
+    """Run every test in this module against the synthetic fixture DBs.
+
+    ``_spawn_task`` -> ``myra_app.task_tracker.register`` inserts a
+    ``task_registry`` row. Without this fixture the module resolved the *live*
+    ``DB_DIR`` (``task_tracker`` re-reads it per call but caches the connection)
+    and silently wrote three rows into the production ``myra_metadata.db`` on
+    every run - the Phase 7 WS1 defect. Redirecting DB_DIR (and resetting the
+    cached ``task_tracker._conn``) keeps those writes inside the temp copy.
+    """
+    return fixture_db_dir
+
+
 # ---------------------------------------------------------------------------
 # Test 1: _spawn_task registers a task and runs the function in a thread
 # ---------------------------------------------------------------------------
