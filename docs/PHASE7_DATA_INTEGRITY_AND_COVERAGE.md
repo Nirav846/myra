@@ -21,7 +21,7 @@ evidence it was **not** made, and the limitation is recorded in sections 7/11.
 |------|-------|
 | Branch | `main` |
 | Phase 7 **starting** commit | `768852e` (`docs: correct the Phase 6 window-anchoring impact numbers`), `== origin/main`, clean tree |
-| Phase 7 **final** commit | recorded by the follow-up `docs:` commit (the Phase 7 commit is its parent) |
+| Phase 7 **final** commit | `9575853` (`fix(data-integrity): stop tests writing the live metadata DB; Phase 7 audit`) - recorded by the follow-up `docs:` commit |
 | Working tree at start | clean (`git status --short` empty) |
 | Python / pandas / numpy / polars / pytest | 3.12.10 / 2.2.3 / 1.26.4 / 1.40.1 / 9.0.3 |
 | Live DBs present | yes - `myra_app/db/myra_technical.db` (2,053,451,776 B), `myra_valuation.db` (262,062,080 B), `myra_metadata.db` (2,228,224 B), + 12 more (`quick_check` all `ok`, section 4) |

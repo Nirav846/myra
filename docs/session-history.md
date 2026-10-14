@@ -423,7 +423,8 @@ switch; measure before shipping.
 ## Phase 7 - data integrity, technical coverage & fundamental freshness (2026-10-14)
 
 Full write-up: `docs/PHASE7_DATA_INTEGRITY_AND_COVERAGE.md`. Starting commit
-`768852e`; four work-streams; the only code fix was a real reader crash.
+`768852e`, final commit `9575853`. Four work-streams; the only *application* fix
+was a real reader crash (the metadata-write fix is entirely in the test harness).
 
 - **WS1 (metadata-DB write) - root cause found and fixed.** The suite really did
   write production: **`tests/test_task_offload.py`** calls `_spawn_task` ->
