@@ -250,15 +250,23 @@ def _reset_cached_connections() -> None:
     """
     tracker = sys.modules.get("myra_app.task_tracker")
     if tracker is not None:
-        conn = getattr(tracker, "_conn", None)
-        if conn is not None:
-            try:
-                conn.close()
-            except Exception:
-                pass
-        tracker._conn = None
-        tracker._use_fallback = False
-        tracker._fallback_tasks = []
+        # Delegate to the module's own reset: it swaps the handle AND closes it
+        # under the same lock every writer takes. Closing `_conn` from here while
+        # a background thread is mid-`execute` on it frees the underlying SQLite
+        # handle and segfaults the interpreter (observed on CI, exit 139).
+        reset = getattr(tracker, "reset_connection", None)
+        if reset is not None:
+            reset()
+        else:  # pragma: no cover - only if the module is ever rolled back
+            conn = getattr(tracker, "_conn", None)
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            tracker._conn = None
+            tracker._use_fallback = False
+            tracker._fallback_tasks = []
 
     for mod_name in (
         "myra_app.background_orchestrator",

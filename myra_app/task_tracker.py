@@ -9,12 +9,41 @@ from myra_app.constants import DB_DIR
 
 logger = logging.getLogger(__name__)
 
-_lock = threading.Lock()
+#: Reentrant: the public helpers call ``_get_conn()`` *while already holding*
+#: the lock, so that the connection lookup and the statement that uses it are one
+#: atomic step. That is what stops ``reset_connection()`` (test isolation) from
+#: closing a handle another thread is executing on.
+_lock = threading.RLock()
 
 _conn = None
 _use_fallback = False
 
 _fallback_tasks = []
+
+
+def reset_connection() -> None:
+    """Drop the cached connection, closing it under ``_lock``.
+
+    Test isolation calls this between tests (``tests/conftest.py``). SQLite
+    connections created with ``check_same_thread=False`` may be *used* from any
+    thread, but closing one while another thread is mid-``execute`` frees the
+    underlying handle and segfaults the interpreter. Doing the swap **and** the
+    close under the same lock the writers take makes that impossible.
+
+    Keeping this in the module (instead of conftest closing ``_conn`` directly)
+    is what preserves the Phase 7 guarantee: the cached handle is still dropped
+    so it can never keep pointing at a live database.
+    """
+    global _conn, _use_fallback
+    with _lock:
+        conn, _conn = _conn, None
+        _use_fallback = False
+        _fallback_tasks.clear()
+    if conn is not None:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001 - cleanup must never raise
+            pass
 
 
 def _get_conn():
@@ -28,8 +57,7 @@ def _get_conn():
         c = sqlite3.connect(meta_path, check_same_thread=False)
         c.execute("PRAGMA journal_mode=WAL")
         c.execute("PRAGMA synchronous=NORMAL")
-        c.execute(
-            """
+        c.execute("""
             CREATE TABLE IF NOT EXISTS task_registry (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -44,8 +72,7 @@ def _get_conn():
                 expiry TEXT,
                 data TEXT DEFAULT '{}'
             )
-        """
-        )
+        """)
         _conn = c
         return _conn
     except Exception as e:
@@ -55,9 +82,9 @@ def _get_conn():
 
 
 def register(name, status="starting", task_type="indefinite"):
-    conn = _get_conn()
-    if conn is not None:
-        with _lock:
+    with _lock:
+        conn = _get_conn()
+        if conn is not None:
             now = datetime.now().isoformat()
             safe = 1 if task_type in ("indefinite",) else 0
             cur = conn.execute(
@@ -68,7 +95,6 @@ def register(name, status="starting", task_type="indefinite"):
             )
             conn.commit()
             return cur.lastrowid
-    with _lock:
         tid = len(_fallback_tasks) + 1
         task = {
             "id": tid,
@@ -85,9 +111,9 @@ def register(name, status="starting", task_type="indefinite"):
 
 
 def update(tid, status=None, progress=None, eta=None):
-    conn = _get_conn()
-    if conn is not None:
-        with _lock:
+    with _lock:
+        conn = _get_conn()
+        if conn is not None:
             now = datetime.now().isoformat()
             updates = ["updated_at = ?"]
             params = [now]
@@ -110,8 +136,7 @@ def update(tid, status=None, progress=None, eta=None):
                 params,
             )
             conn.commit()
-        return
-    with _lock:
+            return
         for t in _fallback_tasks:
             if t["id"] == tid:
                 if status is not None:
@@ -126,9 +151,9 @@ def update(tid, status=None, progress=None, eta=None):
 
 
 def unregister(tid):
-    conn = _get_conn()
-    if conn is not None:
-        with _lock:
+    with _lock:
+        conn = _get_conn()
+        if conn is not None:
             now = datetime.now().isoformat()
             expiry = (datetime.now() + timedelta(seconds=5)).isoformat()
             conn.execute(
@@ -136,8 +161,7 @@ def unregister(tid):
                 (now, expiry, tid),
             )
             conn.commit()
-        return
-    with _lock:
+            return
         for t in _fallback_tasks[:]:
             if t["id"] == tid:
                 t["status"] = "Done"
@@ -146,21 +170,19 @@ def unregister(tid):
 
 
 def get_active_tasks():
-    conn = _get_conn()
-    if conn is not None:
-        with _lock:
+    with _lock:
+        conn = _get_conn()
+        if conn is not None:
             now = datetime.now().isoformat()
             conn.execute(
                 "DELETE FROM task_registry WHERE expiry IS NOT NULL AND expiry < ?",
                 (now,),
             )
             conn.commit()
-            rows = conn.execute(
-                """SELECT id, name, status, message, progress, eta,
+            rows = conn.execute("""SELECT id, name, status, message, progress, eta,
                           task_type, started_at, expiry
                    FROM task_registry
-                   ORDER BY id DESC LIMIT 50"""
-            ).fetchall()
+                   ORDER BY id DESC LIMIT 50""").fetchall()
             result = []
             for r in rows:
                 task = {
@@ -175,7 +197,6 @@ def get_active_tasks():
                 }
                 result.append(task)  # noqa: PG-APPEND
             return result
-    with _lock:
         now = datetime.now()
         for t in _fallback_tasks[:]:
             if "expiry" in t and now > t["expiry"]:
@@ -197,9 +218,9 @@ def create_task(name):
 
 
 def get_task(tid):
-    conn = _get_conn()
-    if conn is not None:
-        with _lock:
+    with _lock:
+        conn = _get_conn()
+        if conn is not None:
             row = conn.execute(
                 """SELECT id, name, status, message, progress, eta,
                           task_type, started_at, updated_at, expiry, data
@@ -221,7 +242,6 @@ def get_task(tid):
                 "expiry": row[9],
                 "data": json.loads(row[10]) if row[10] else {},
             }
-    with _lock:
         for t in _fallback_tasks:
             if t["id"] == tid:
                 return {
@@ -241,9 +261,9 @@ def get_task(tid):
 
 
 def list_tasks(limit=50):
-    conn = _get_conn()
-    if conn is not None:
-        with _lock:
+    with _lock:
+        conn = _get_conn()
+        if conn is not None:
             rows = conn.execute(
                 """SELECT id, name, status, message, progress, eta,
                           task_type, started_at, updated_at, data
@@ -265,7 +285,6 @@ def list_tasks(limit=50):
                 }
                 for r in rows
             ]
-    with _lock:
         return [
             {
                 "id": t["id"],
