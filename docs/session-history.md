@@ -373,9 +373,14 @@ switch; measure before shipping.
   the whole ~8 M-row table: **27.4 s** for 938 symbols. Anchoring the window to
   the real trading dates (`date >= lower AND date <= upper`) lets it use
   `idx_tech_symbol_date`: **2.14 s** (as-of) / 1.75 s (latest). Value impact
-  measured, not assumed: 793 -> 785 symbols emit inputs; the 14 that drop out
-  (e.g. `HEG` 5, `SANGINITA` 9, `SELMC` 5 sessions in the recent 20 market dates)
-  are exactly the ones whose "last 20 sessions" would have spanned months.
+  measured, not assumed: 793 -> 785 symbols emit inputs and 14 change behaviour -
+  in every case the rolling means become **absent** rather than changing value
+  (8 drop out of the merged map entirely - `UMANGDAIRY`, `IWEL`, `PEL`,
+  `UDAICEMENT`, `ISEC`, `IEL`, `HINDMOTORS`, `MANGCHEFER`; 6 keep a partial
+  window, e.g. `SHIVAUM`/`MASKINVEST`/`NKIND`/`PANSARI`/`MODTHREAD` at 19
+  sessions, plus `JPASSOCIAT` whose technical rows dropped out while its
+  fundamentals row remained). Those are exactly the names whose "last 20
+  sessions" would have spanned months.
 - **Shadow measurement (historical snapshots + live read-only DBs, not fixtures).**
   `scan_rs_rating.csv` (938 candidates): Spearman **0.6698**, top-20 overlap
   **13/20**, coverage `roe=71 / ProfitGrowth=0 / avg_delivery_20d=654 /

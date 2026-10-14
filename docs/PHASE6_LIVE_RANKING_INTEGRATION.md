@@ -245,14 +245,21 @@ SQLite use the existing `idx_tech_symbol_date` index (`EXPLAIN QUERY PLAN` ->
 `SEARCH technical_data USING INDEX idx_tech_symbol_date`) instead of walking
 every historical session of every requested symbol.
 
-It is not *value*-neutral, and the difference was measured rather than assumed:
-over the 938-symbol snapshot universe, 793 symbols produced inputs before the
-change and 785 after - **14 symbols lost coverage** (e.g. `HEG` had 5 sessions,
-`SANGINITA` 9, `SELMC` 5, in the most recent 20 market dates). Those are exactly
-the names whose "last 20 sessions" would otherwise have spanned months, letting a
-stale average compete in a cross-sectional rank against fresh 20-day averages.
-The stricter definition is deliberate (section 3) and the trade-off is recorded
-in section 9.
+It is not *value*-neutral, and the difference was measured rather than assumed.
+Over the 938-symbol snapshot universe, 793 symbols produced inputs before the
+change and 785 after; **14 changed behaviour, and in every case the rolling means
+became absent rather than changing value**:
+
+* 8 dropped out of the merged input map entirely - `UMANGDAIRY`, `IWEL`, `PEL`,
+  `UDAICEMENT`, `ISEC`, `IEL`, `HINDMOTORS`, `MANGCHEFER`;
+* 6 kept a partial window - `SHIVAUM`, `MASKINVEST`, `NKIND`, `PANSARI`,
+  `MODTHREAD` (19 sessions each) and `JPASSOCIAT`, whose technical rows dropped
+  out while its `fundamentals` row remained.
+
+Those are exactly the names whose "last 20 sessions" would otherwise have spanned
+months, letting a stale average compete in a cross-sectional rank against fresh
+20-day averages. The stricter definition is deliberate (section 3) and the
+trade-off is recorded in section 9.
 
 ## 7. Shadow-comparison measurement (real data)
 
@@ -349,10 +356,11 @@ What the 20 new tests pin:
   correctly, and is deterministic.
 
 **Outcomes:** new tests 20 passed; full local suite **1217 passed**
-(1197 + 20 new) / 0 failed / 0 skipped; `black` 26.10.1 clean, `flake8` clean on
-all touched files; `tools/performance_guard.py` reports **268 violations, 0
-CRITICAL** - exactly the pre-existing baseline, i.e. the new files add no
-performance-guard warnings.
+(1197 + 20 new) / 0 failed / 0 skipped; CI (ubuntu, no live DBs) **1196 passed /
+21 skipped**, which is the 1176-passed Phase 5 baseline plus the 20 new tests;
+CodeQL green; `black` 26.10.1 clean, `flake8` clean on all touched files;
+`tools/performance_guard.py` reports **268 violations, 0 CRITICAL** - exactly the
+pre-existing baseline, i.e. the new files add no performance-guard warnings.
 
 ## 9. Limitations
 
@@ -370,8 +378,9 @@ performance-guard warnings.
    most recent 20 market dates). This is upstream of the scorer and is the
    dominant driver of the coverage numbers above.
 5. **The calendar-anchored window tightened coverage** from 793 to 785 symbols on
-   the measured universe (section 6). Deliberate, but it is a definition change
-   and should be reviewed against the "20 sessions" semantics used elsewhere.
+   the measured universe, changing 14 symbols' behaviour (section 6). Deliberate,
+   but it is a definition change and should be reviewed against the "20 sessions"
+   semantics used elsewhere.
 6. **Freshness is not enforced.** `fundamentals.last_fundamental_update` exists
    but no staleness cutoff is applied, so an old-but-present ROE is treated the
    same as a fresh one.
