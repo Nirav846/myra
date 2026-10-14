@@ -246,6 +246,12 @@ Phase 3 "Next up" item 3. Full write-up in `docs/PHASE4_TEST_ISOLATION.md`.
 - **Fixture integrity:** `_validate_fixture_dbs()` fails the run if a fixture DB
   has no tables or lacks a key table (`sync_log` / `technical_data` /
   `fundamentals`), so an "exists but empty" fixture cannot pass vacuously.
+- **Tests that only passed because of the leak:** removing it broke 5 tests on
+  CI (no live DBs) that pass locally (live DBs present):
+  `test_query_endpoint.py::TestEndpointIntegration` (2) and
+  `test_super_breakout_scanner.py::TestSuperBreakoutNearTrigger` (3) - both read
+  the technical DB that the leak had redirected to fixtures. Both now request
+  `fixture_db_dir` explicitly.
 - **Regression tests:** `+tests/test_db_isolation_order.py` (7) pins the
   restore/no-leak contract, re-arm-after-removal, directory stability, and
   fixture non-emptiness. Confirmed failing (3) under the old session scope.

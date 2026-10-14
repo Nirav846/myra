@@ -87,7 +87,24 @@ still points at the fixture directory.
 3. **Fixture integrity.** `_validate_fixture_dbs()` now fails the run if a
    fixture DB has no tables or is missing a key table (`sync_log`,
    `technical_data`, `fundamentals`), so an "exists but empty" fixture cannot
-   make isolated tests pass vacuously.
+  make isolated tests pass vacuously.
+
+4. **Tests that only passed because of the leak (CI-only failures).**
+   Removing the leak made five tests fail on CI (where the live DBs do not
+   exist) while still passing locally (where they do):
+
+   - `tests/test_query_endpoint.py::TestEndpointIntegration` (2) - the endpoint
+     resolves `DB_DIR` at runtime, so the session-scoped redirect had been
+     feeding it the *fixture* technical DB.
+   - `tests/test_super_breakout_scanner.py::TestSuperBreakoutNearTrigger` (3) -
+     the tests inject bars via `_get_tech_data`, but `_resolve_as_on_date()`
+     still opens the technical DB, which the leak had redirected to fixtures.
+
+   Both modules now request `fixture_db_dir` explicitly (and the
+   `os.path.exists(TECH_DB)` skipif guards, which gated on the *live* path, are
+   dropped - the fixture already skips when a fixture DB is missing). This is
+   the honest dependency: they run against synthetic data on every runner
+   instead of accidentally depending on the leak.
 
 ## Regression coverage
 

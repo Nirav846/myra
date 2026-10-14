@@ -196,8 +196,9 @@ class TestRunQuery:
 class TestEndpointIntegration:
     """Full endpoint tests using TestClient."""
 
-    @pytest.mark.skipif(not os.path.exists(TECH_DB), reason="tech DB missing")
-    def test_valid_limited_query_200(self):
+    def test_valid_limited_query_200(self, fixture_db_dir):
+        """Request the synthetic DB explicitly: previously this only passed
+        because a session-scoped fixture had redirected DB_DIR globally."""
         resp = client.post(
             "/api/query",
             json={
@@ -212,8 +213,7 @@ class TestEndpointIntegration:
         assert "rows_affected" in data
         assert len(data["data"]) <= 5
 
-    @pytest.mark.skipif(not os.path.exists(TECH_DB), reason="tech DB missing")
-    def test_query_without_limit_gets_auto_limit(self):
+    def test_query_without_limit_gets_auto_limit(self, fixture_db_dir):
         """A SELECT without LIMIT should succeed (auto-appended) and return ≤ 5000 rows."""
         resp = client.post(
             "/api/query",

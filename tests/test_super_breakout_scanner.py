@@ -420,12 +420,15 @@ class TestSuperBreakoutNearTrigger:
             base += _dt.timedelta(days=1)
         return rows
 
-    def test_included_when_within_band(self, tmp_path):
+    def test_included_when_within_band(self, tmp_path, fixture_db_dir):
         """Symbol satisfying precondition + context + within band% → included.
 
         Data: 195 bars at 100 (builds SMA200≈97, SMA50≈90), 12 bars at 75
         (drops SMA5/10/15), 11 bars rising to 86 (close=86 > SMA5/10/15 but
         < SMA50 which still includes high bars).  pct_to_trigger ≈ 4.4%.
+
+        ``fixture_db_dir`` is required because ``_resolve_as_on_date`` opens the
+        technical DB even though this test injects the bars via ``_get_tech_data``.
         """
         from myra_app.strategies.super_breakout_scanner import SuperBreakoutScanner
 
@@ -446,7 +449,7 @@ class TestSuperBreakoutNearTrigger:
         assert row["pct_to_trigger"] > 0
         assert row["pct_to_trigger"] <= 5.0
 
-    def test_excluded_when_outside_band(self, tmp_path):
+    def test_excluded_when_outside_band(self, tmp_path, fixture_db_dir):
         """Symbol satisfying precondition + context but > band_pct% from SMA(50) → excluded.
 
         Data: same structure, but close = 80 (11% below SMA50=90) — outside 5% band.
@@ -467,7 +470,7 @@ class TestSuperBreakoutNearTrigger:
             "SYM_OUT" not in syms
         ), f"SYM_OUT should be excluded (too far from trigger), got {syms}"
 
-    def test_excluded_when_already_in_position(self, tmp_path):
+    def test_excluded_when_already_in_position(self, tmp_path, fixture_db_dir):
         """Symbol in sb_positions (active entry) is excluded even if near trigger."""
         from myra_app.strategies.super_breakout_scanner import SuperBreakoutScanner
         from myra_app.strategies.super_breakout_state import (
