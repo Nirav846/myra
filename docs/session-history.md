@@ -509,9 +509,10 @@ was a real reader crash (the metadata-write fix is entirely in the test harness)
 
 ## Phase 8 - pipeline orchestration, parallel execution & failure recovery (2026-10-14)
 
-Full write-up: `docs/PHASE8_PIPELINE_ORCHESTRATION.md`. Starting commit `f22fdbc`.
-Four changes: two data-integrity/reliability fixes and one measured concurrency
-improvement, all traced from the running code.
+Full write-up: `docs/PHASE8_PIPELINE_ORCHESTRATION.md`. Starting commit `f22fdbc`,
+final commit `2b3f42e` (Phase 8 = `4e85e06` + `2b3f42e`). Four changes: two
+data-integrity/reliability fixes, one measured concurrency improvement, and one
+CI-crash fix — all traced from the running code.
 
 - **WS1 (dependency map).** The scheduled layer is **already concurrent** - each
   enabled `TaskSpec` in `myra_app/tasks/registry.py` runs as its own daemon
@@ -569,11 +570,23 @@ improvement, all traced from the running code.
   with a precise predicate and the DB re-verified (`quick_check: ok`,
   **8,009,058 rows** - identical to the Phase 7 baseline, max date 2026-10-12).
   Every EOD2 test since runs through `fixture_db_dir`.
-- **Tests:** `+tests/test_eod2_sync.py` (15) and `+tests/test_screener_enricher.py`
-  (25); no live network, no production DB. Both fixes proven load-bearing by
-  temporarily reverting (the partial-set test fails with the global cutoff). Full
-  suite **1263 passed** (was 1223, +40), 0 failed. `black` 26.10.1 + `flake8`
-  clean; performance guard **268 / 0 CRITICAL** (baseline unchanged).
+- **Tests:** `+tests/test_eod2_sync.py` (15), `+tests/test_screener_enricher.py`
+  (25), `+tests/test_task_tracker_concurrency.py` (4). No live network, no
+  production DB. Both pipeline fixes proven load-bearing by temporarily reverting
+  them. Full suite **1267 passed** locally (was 1223, +44), 0 failed; **CI
+  1246 passed / 21 skipped**; CodeQL green. `black` 26.10.1 + `flake8` clean;
+  performance guard **268 / 0 CRITICAL** (baseline unchanged). Live DBs
+  unchanged after the full run (technical 8,009,058 rows / max 2026-10-12).
+- **CI segfault (WS6, second commit `2b3f42e`).** The first push failed CI with a
+  **segmentation fault (exit 139)** even though all tests passed locally. Cause:
+  `task_tracker` caches a `check_same_thread=False` SQLite connection in a module
+  global; conftest's `_reset_cached_connections()` closed it from the main thread
+  while a `myra_web/background.py` task thread was mid-`execute` on it (SQLite
+  forbids use-while-close). A latent race the new Phase 8 threads exposed. Fix
+  that **preserves the Phase 7 guarantee**: `_lock` is now an `RLock` and every
+  helper resolves `_get_conn()` while holding it; new
+  `task_tracker.reset_connection()` swaps+closes under that lock; conftest
+  delegates to it. Pinned by the 4 new concurrency tests.
 - **Not changed (deliberately):** no scheduler, broker, new service, schema, or
   status contract; no parallelization of `daily_ingest` (prerequisite for
   `enrichment`); no `pytest-xdist`; screening rules / ranking weights / the

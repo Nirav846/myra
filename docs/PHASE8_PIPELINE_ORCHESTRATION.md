@@ -16,6 +16,8 @@ rather than duplicated.
 |------|-------|
 | Branch | `main` |
 | Phase 8 **starting** commit | `f22fdbc` (`docs: record the Phase 7 commit hash…`), `== origin/main`, clean tree |
+| Phase 8 **final** commit | `2b3f42e` (`fix(isolation): stop task_tracker connection reset from segfaulting CI`) — recorded by the follow-up `docs:` commit |
+| Phase 8 commits | `4e85e06` (pipeline fixes) + `2b3f42e` (CI segfault fix) |
 | Live EOD source | `eod2/src/eod2_data/daily/` — 3,769 per-symbol CSVs + `meta.json` (BhavDesk submodule) |
 | Active ingest path | `constants.USE_EOD2_DATA = True` → `myra_app.eod2_sync.sync_eod2_data` (the legacy bhavcopy path is dead code today) |
 | `DISABLE_FUNDAMENTAL_WRITERS` | `False` (so the fundamentals writers are live) |
@@ -255,6 +257,43 @@ rate-limit abort) are unchanged and were verified as the model to follow.
 
 ---
 
+### 6.1 A latent cross-thread crash the Phase 8 threads exposed (WS6)
+
+The first Phase 8 push **failed CI with a segmentation fault (exit 139)** while
+every test — including all 40 new ones — passed locally. The thread dump:
+
+```
+Current thread ... myra_app/task_tracker.py:134 in unregister
+Thread ...         myra_web/background.py:25 in _wrapped
+Thread ...         tests/conftest.py:256 in _reset_cached_connections
+```
+
+`task_tracker` caches its SQLite connection in a module global opened with
+`check_same_thread=False`. SQLite allows such a handle to be *used* from any
+thread, but **closing it while another thread is inside `execute()` frees the
+underlying handle and kills the process**. Test isolation resets that cache
+between tests, so a still-running background task thread could be executing on
+the handle at the moment conftest closed it. This is a pre-existing latent race
+that the extra threads in the Phase 8 tests made reachable — not caused by, but
+surfaced by, this phase.
+
+Fix (`2b3f42e`), which **preserves the Phase 7 isolation guarantee** (the cached
+handle is still dropped, so it can never keep pointing at a live database):
+
+* `task_tracker._lock` is now an `RLock`, and every public helper resolves
+  `_get_conn()` *while holding* it, so the lookup and the statement that uses
+  the connection are one atomic step.
+* New `task_tracker.reset_connection()` performs the swap **and** the close under
+  that same lock, making use-while-close impossible.
+* `tests/conftest._reset_cached_connections()` delegates to it instead of
+  closing the private `_conn` itself.
+
+Pinned by `tests/test_task_tracker_concurrency.py` (4 tests): reentrant lock,
+reset clears state, the reset/use race hammered with 4 writers + 1 resetter, and
+an idempotent reset.
+
+---
+
 ## 7. Partial-success semantics (WS3/WS5)
 
 The Screener.in backfill now returns a truth-bearing summary and records it into
@@ -365,11 +404,14 @@ No new router, scheduler, or status contract was introduced.
 ### Verification
 | Check | Result |
 |-------|--------|
-| New tests | **40 passed** (15 eod2 + 25 screener) |
+| New tests | **44 passed** (15 eod2 + 25 screener + 4 task_tracker concurrency) |
 | Focused isolation/orchestration tests | **123 passed** (incl. Phase 7 isolation + WAL-guard tests) |
-| **Full suite** | **1263 passed**, 0 failed (was 1223; +40 new) |
+| **Full suite (local)** | **1267 passed**, 0 failed (was 1223; +44 new) |
+| **CI (ubuntu, no live DBs)** | **1246 passed / 21 skipped** (1246+21 = 1267; the 21 skips are the live-DB tests) |
 | `black` 26.10.1 / `flake8` | clean on all touched files |
 | Performance guard | **268 violations / 0 CRITICAL** = the pre-existing baseline (new code adds none) |
+| CodeQL | green |
+| Live DBs after the full run | unchanged: `technical_data` 8,009,058 rows / max 2026-10-12, `fundamentals` 3,948, `metadata.sync_log` 17, `task_registry` 2,532 |
 
 DB-isolation (WS6): all new tests use `fixture_db_dir`; the Phase 7 live-DB
 guard and committed-WAL-frame detection are untouched and green; no
