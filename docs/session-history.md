@@ -506,3 +506,78 @@ was a real reader crash (the metadata-write fix is entirely in the test harness)
   (0.25/0.15/0.20/0.10/0.10 + 0.30; regime 1.15/0.9; dd 0.8/0.95; `_BULL` 71.1,
   EXTREME FEAR 81.8, EXTREME GREED 64.0, dd0.3 67.5, dd0.5 56.9, `{"close":1}`
   20.3) - the only code fix repaired a crash in a non-scoring alert reader.
+
+## Phase 8 - pipeline orchestration, parallel execution & failure recovery (2026-10-14)
+
+Full write-up: `docs/PHASE8_PIPELINE_ORCHESTRATION.md`. Starting commit `f22fdbc`.
+Four changes: two data-integrity/reliability fixes and one measured concurrency
+improvement, all traced from the running code.
+
+- **WS1 (dependency map).** The scheduled layer is **already concurrent** - each
+  enabled `TaskSpec` in `myra_app/tasks/registry.py` runs as its own daemon
+  thread (30 s stagger). The manual `PipelineControl` sequence is **sequential**
+  by design and the **only** hard `depends_on` edge is `daily_ingest ->
+  enrichment` (enrichment reads symbols produced by ingest). Shared-resource
+  audit: `myra_technical.db` has one writer (daily-ingest, `_INGEST_LOCK`);
+  `myra_valuation.db` has several (`fundamentals_*`, `market_cap_sync`,
+  `shares_outstanding_sync`) serialized by WAL + `timeout=30`, all fill-only via
+  `safe_write`; metadata (`sync_log`/`task_registry`) is intentionally
+  multi-writer with thread-local connections.
+- **WS2 (Screener.in, the slow enrichment).** Manual `--enrich-screener`
+  (`db/enrichers/screener_enricher.py`) issued **5 requests/symbol** (fresh
+  `Session` per call + a "prime" GET per metric) then a flat `sleep(1.5)` per
+  symbol, single-threaded, with **one write transaction held for the whole
+  multi-hour run**. Fix: **per-symbol commit** (thread-local connection opened /
+  used / closed per symbol), **bounded `ThreadPoolExecutor` (4 workers, clamped
+  to 16)**, a **global thread-safe `_RequestPacer`** that reproduces the
+  original aggregate budget (**0.3 s/request** = 5 req / 1.5 s, so the request
+  rate is *unchanged* - only idle time is absorbed), a shared thread-local
+  `requests.Session` that removes the prime GET (**5 -> 3 requests/symbol,
+  -40 %**), duplicate-run refusal (`_RUN_LOCK`), fill-only `safe_write.upsert_row`
+  (inserts new symbols, never NULLs an existing metric), and **bounded retry with
+  exp backoff** (transient/429/5xx retried; 404 permanent). Measured (local fake,
+  40 symbols, 50 ms latency, real request counts): **70.4 s -> 37.8 s (1.86x),
+  200 -> 120 requests**. The mature daily `sync_fundamentals` path already had
+  per-symbol commits / cancel / backoff / parking and was left untouched.
+- **WS4 (manual EOD CSV - the highest-value fix).** The active ingest
+  (`constants.USE_EOD2_DATA = True` -> `eod2_sync.sync_eod2_data`) used a single
+  **global `MAX(date)`** cutoff. With the manual copy workflow, a half-copied
+  folder advances the global cutoff with the first ready file and every symbol
+  still catching up is dropped **forever** - reproduced (temp DB): run 1
+  inserted 3/10, run 2 (after the other 7 copied) inserted **0; 7 symbols
+  permanently lost that day, silently**. Fix: **per-symbol cutoff** (one grouped
+  query; `INSERT OR REPLACE` keeps it idempotent) + a correct "nothing to do"
+  bail (least-advanced symbol at/past newest source date), plus
+  `assess_source_readiness` that reports a partial / still-being-written /
+  delivery-pending source set (per-file mtime stability, `DLV_PENDING_DATES`,
+  fraction-at-newest-date) and **skips a file that is still changing** so a torn
+  row is never stored. Threshold calibrated from the real source (94.7 % of
+  files on a normal day; the 30 % repro fails it). Result now carries a
+  `readiness` dict. Manual workflow itself is preserved - nothing auto-downloads.
+- **WS3/WS5 (truthful status).** No new status system. The Screener.in backfill
+  records `partial` (with `updated`/`failed` counts) or `failed` into the
+  existing `sync_log` vocabulary via `_mark_task_run`; `tasks/ingest` keeps its
+  `no_new_data` (ran, 0 rows, freshness not established) vs `success` model.
+  `PipelineControl` is unchanged. EOD2 logs `INPUT DEGRADED: <reason>` when the
+  source set is partial.
+- **WS6 (DB isolation).** All new tests use `fixture_db_dir`; the Phase 7
+  live-DB guard + committed-WAL-frame detection are untouched and green; no
+  pytest-xdist. Added `test_sync_writes_only_to_the_redirected_database` after a
+  **self-inflicted incident**: an early ad-hoc repro patched
+  `myra_app.constants.DB_DIR` but `eod2_sync` binds `DB_DIR` by value at import,
+  so it wrote 3 synthetic rows to the live `myra_technical.db`; they were removed
+  with a precise predicate and the DB re-verified (`quick_check: ok`,
+  **8,009,058 rows** - identical to the Phase 7 baseline, max date 2026-10-12).
+  Every EOD2 test since runs through `fixture_db_dir`.
+- **Tests:** `+tests/test_eod2_sync.py` (15) and `+tests/test_screener_enricher.py`
+  (25); no live network, no production DB. Both fixes proven load-bearing by
+  temporarily reverting (the partial-set test fails with the global cutoff). Full
+  suite **1263 passed** (was 1223, +40), 0 failed. `black` 26.10.1 + `flake8`
+  clean; performance guard **268 / 0 CRITICAL** (baseline unchanged).
+- **Not changed (deliberately):** no scheduler, broker, new service, schema, or
+  status contract; no parallelization of `daily_ingest` (prerequisite for
+  `enrichment`); no `pytest-xdist`; screening rules / ranking weights / the
+  Phase 6 default-off setting untouched.
+- **Unverified (documented):** the 1.86x backfill speed-up is synthetic (faked
+  latency) + the exact 40 % request reduction; a real `limit=25` Screener.in run
+  was not executed (live quota). `DEFAULT_MAX_WORKERS` left at a modest 4.

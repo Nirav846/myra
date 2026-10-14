@@ -15,8 +15,9 @@ import json
 import logging
 import os
 import sqlite3
+import time
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
@@ -329,12 +330,150 @@ def _run_enrichment(conn: sqlite3.Connection) -> None:
         logger.warning(f"[EOD2] Enrichment pipeline skipped: {exc}")
 
 
+# ── Input-readiness assessment (WS4) ──────────────────────────────────────────
+#: Minimum fraction of a *full* trading session that must already sit in the DB
+#: before a partial source set is treated as "complete". Set from the live shape
+#: of the source: on a normal day ~3,570 of 3,769 per-symbol files carry the
+#: session date (the rest are delisted / non-trading names). A set in which only
+#: a small fraction has advanced is almost always a half-copied folder, not a
+#: real market session, and must not silently advance the stored cutoff.
+MIN_SESSION_COMPLETENESS = 0.5
+
+#: Guard against reading a file that is still being written/copied. A file whose
+#: mtime is this close to "now" is in flux; skip it rather than parse a torn row.
+_STABLE_AFTER_SECONDS = 30.0
+
+
+def _is_file_stable(path: str, now: Optional[float] = None) -> bool:
+    """True when ``path`` has not been modified for a moment (finished copying)."""
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return False
+    return (now if now is not None else time.time()) - mtime >= _STABLE_AFTER_SECONDS
+
+
+def assess_source_readiness(
+    eod2_daily: str, db_latest: Optional[str], *, now: Optional[float] = None
+) -> dict[str, Any]:
+    """Decide whether the CSVs form a complete, finished trading session.
+
+    Uses only facts already on disk: the per-file last date, the fraction of
+    files that have reached the newest date, the ``meta.json`` delivery-pending
+    list, and file mtimes. Returns a dict with:
+
+    * ``ready``          – bool: the set is complete enough to ingest
+    * ``reason``         – human-readable explanation when not ready
+    * ``complete``       – file count already at the newest session date
+    * ``total_files``    – number of per-symbol CSVs considered
+    * ``last_date``      – newest date observed across files
+    * ``delivery_pending`` – ``meta.json`` ``DLV_PENDING_DATES`` entries
+    * ``unstable_files`` – files still being written (mtime within the window)
+
+    A not-ready set is reported, not silently ingested, and never advances the
+    stored cutoff past the data actually present.
+    """
+    now = now if now is not None else time.time()
+    report: dict[str, Any] = {
+        "ready": False,
+        "reason": None,
+        "complete": 0,
+        "total_files": 0,
+        "last_date": None,
+        "delivery_pending": [],
+        "unstable_files": 0,
+    }
+
+    meta_pending: list = []
+    try:
+        meta_path = os.path.join(os.path.dirname(eod2_daily), "meta.json")
+        if os.path.exists(meta_path):
+            with open(meta_path, "r", encoding="utf-8") as fh:
+                meta_pending = json.load(fh).get("DLV_PENDING_DATES") or []
+    except Exception:  # noqa: BLE001 - a bad meta must not crash the assessment
+        meta_pending = []
+    report["delivery_pending"] = meta_pending
+
+    try:
+        files = sorted(f for f in os.listdir(eod2_daily) if f.endswith(".csv"))
+    except OSError:
+        report["reason"] = f"cannot list {eod2_daily}"
+        return report
+
+    last_dates: list[str] = []
+    unstable = 0
+    for fname in files:
+        path = os.path.join(eod2_daily, fname)
+        if not _is_file_stable(path, now):
+            unstable += 1
+        try:
+            with open(path, "rb") as fh:
+                try:
+                    fh.seek(-256, os.SEEK_END)
+                except OSError:
+                    pass
+                tail = fh.read().decode("utf-8", "replace").strip().splitlines()
+        except OSError:
+            continue
+        rows = [r for r in tail if r and not r.startswith("Date,")]
+        if rows:
+            last_dates.append(rows[-1].split(",")[0])  # noqa: PG-APPEND - plain list
+
+    report["unstable_files"] = unstable
+    if not last_dates:
+        report["reason"] = "no dated rows found in any CSV"
+        return report
+
+    newest = max(last_dates)
+    report["last_date"] = newest
+    complete = sum(1 for d in last_dates if d == newest)
+    total = len(last_dates)
+    report["complete"] = complete
+    report["total_files"] = total
+
+    if unstable:
+        report["reason"] = (
+            f"{unstable} file(s) still being written; wait for the source to settle"
+        )
+        return report
+    if meta_pending:
+        report["reason"] = (
+            f"delivery data pending for {meta_pending} - source set incomplete"
+        )
+        return report
+
+    # The stored DB is only "behind" a session it can actually see complete rows
+    # for. If the newest source date is still <= DB, there is nothing to do.
+    if db_latest and newest <= db_latest:
+        report["ready"] = True
+        report["reason"] = "source not newer than stored data"
+        return report
+
+    frac = (complete / total) if total else 0.0
+    if frac < MIN_SESSION_COMPLETENESS:
+        report["reason"] = (
+            f"only {complete}/{total} ({frac:.0%}) of source files carry "
+            f"{newest}; treating the set as partially copied"
+        )
+        return report
+
+    report["ready"] = True
+    report["reason"] = f"complete session: {complete}/{total} files at {newest}"
+    return report
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 def sync_eod2_data() -> dict[str, Any]:
     """Incremental sync from eod2_data/daily/ CSVs into myra_technical.db.
 
     Returns a dict with keys ``rows_inserted``, ``symbols_updated``,
-    ``skipped``, and ``error`` (``None`` on success).
+    ``skipped``, ``readiness`` and ``error`` (``None`` on success).
+
+    Ingest is **per symbol**: each file advances only its own symbol's cutoff, so
+    a partially-copied source set ingests the files that are ready and a later run
+    picks up the rest. A single global ``MAX(date)`` cutoff would let the first
+    ready file advance the whole-universe cutoff and silently drop every symbol
+    still catching up (WS4).
     """
     result: dict[str, Any] = {
         "rows_inserted": 0,
@@ -342,6 +481,7 @@ def sync_eod2_data() -> dict[str, Any]:
         "skipped": 0,
         "rejected_rows": 0,
         "rejected_symbols": 0,
+        "readiness": None,
         "error": None,
     }
 
@@ -357,7 +497,10 @@ def sync_eod2_data() -> dict[str, Any]:
         logger.error(f"[EOD2] {result['error']}")
         return result
 
-    # Determine the cutoff: any CSV row with date > DB max(date) is new.
+    # Determine the cutoff: any CSV row with date > that symbol's own max(date)
+    # is new. A per-symbol cutoff is what makes a partially-copied file set safe:
+    # the files that are ready advance their own symbol, and the ones still
+    # catching up are picked up by a later run instead of being skipped forever.
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA busy_timeout = 30000")
     try:
@@ -368,18 +511,70 @@ def sync_eod2_data() -> dict[str, Any]:
             f"source={eod2_daily}"
         )
 
-        # Quick bail: if meta.json is older than or equal to DB, nothing new.
-        if meta_latest and db_max and meta_latest <= db_max:
-            logger.info("[EOD2] No new data — meta.json ≤ DB max date.")
+        # Assess whether the source set is a complete, settled session. This
+        # reads only the tail of each file, so it is cheap, and it is what tells
+        # us the newest date the source actually holds.
+        readiness = assess_source_readiness(eod2_daily, db_max)
+        result["readiness"] = readiness
+        if readiness["last_date"] is None:
+            result["error"] = f"source not ready: {readiness['reason']}"
+            logger.error(f"[EOD2] {result['error']}")
             conn.close()
             return result
+        if not readiness["ready"]:
+            logger.warning(
+                f"[EOD2] Source set reported not ready: {readiness['reason']}. "
+                "Ingesting ready symbols only (per-symbol cutoff)."
+            )
 
         csv_files = [f for f in os.listdir(eod2_daily) if f.endswith(".csv")]
         logger.info(f"[EOD2] Found {len(csv_files)} CSV files.")
 
+        # Per-symbol cutoffs, loaded in ONE grouped query (not a query per file).
+        # Each symbol advances only its own cutoff, which is what makes a
+        # partially-copied set safe: the files that are ready land now and the
+        # stragglers land on a later run instead of being skipped forever.
+        cutoff_cache: dict[str, Optional[str]] = {
+            sym: dt
+            for sym, dt in conn.execute(
+                "SELECT symbol, MAX(date) FROM technical_data GROUP BY symbol"
+            ).fetchall()
+        }
+
+        # Cheap, *correct* no-op bail. The old test compared meta.json against the
+        # single global MAX(date), which cannot distinguish "this session is fully
+        # ingested" from "3 symbols are at this date and 7 are not" — so it
+        # short-circuited and dropped the rest of the day. The least-advanced
+        # symbol is the only safe lower bound: when even it is at/past the newest
+        # source date, every symbol is genuinely done.
+        source_symbols = [f[:-4].upper() for f in csv_files]
+        known = [cutoff_cache[sym] for sym in source_symbols if cutoff_cache.get(sym)]
+        if known and len(known) == len(source_symbols):
+            if min(known) >= readiness["last_date"]:
+                logger.info(
+                    "[EOD2] No new data — every source symbol is already at "
+                    f"{readiness['last_date']}."
+                )
+                result["readiness"] = {
+                    "ready": True,
+                    "reason": "source not newer than stored data",
+                }
+                conn.close()
+                return result
+
+        now = time.time()
+
         for fname in csv_files:
             symbol = fname.replace(".csv", "")  # e.g. "20microns"
+            sym_key = symbol.upper()
             csv_path = os.path.join(eod2_daily, fname)
+
+            # A file still being written/copied is in flux: parsing it could store
+            # a torn last row. Skip it; a later run picks it up once it settles.
+            if not _is_file_stable(csv_path, now):
+                logger.debug(f"[EOD2] Skipping unstable file (still writing): {fname}")
+                result["skipped"] += 1
+                continue
 
             try:
                 read = _read_symbol_csv(csv_path, symbol)
@@ -400,9 +595,10 @@ def sync_eod2_data() -> dict[str, Any]:
                     result["skipped"] += 1
                     continue
 
-                # Filter to new rows only
-                if db_max:
-                    valid_df = valid_df[valid_df["date"] > db_max]
+                # Filter to new rows only, against THIS symbol's cutoff.
+                sym_cutoff = cutoff_cache.get(sym_key)
+                if sym_cutoff:
+                    valid_df = valid_df[valid_df["date"] > sym_cutoff]
                 if valid_df.empty:
                     result["skipped"] += 1
                     continue
@@ -416,6 +612,10 @@ def sync_eod2_data() -> dict[str, Any]:
                 inserted = _insert_rows(conn, rows)
                 result["rows_inserted"] += inserted
                 result["symbols_updated"] += 1
+                # Advance this symbol's cutoff in the cache so a duplicate file
+                # entry in the same pass cannot re-insert the same date.
+                if not valid_df.empty:
+                    cutoff_cache[sym_key] = max(valid_df["date"])
             except Exception as exc:
                 logger.debug(f"[EOD2] Error processing {symbol}: {exc}")
                 result["skipped"] += 1
@@ -448,7 +648,17 @@ def sync_eod2_data() -> dict[str, Any]:
         # Audit H9: surface parse-error skips at INFO, not only DEBUG.
         if result["skipped"] > 0:
             logger.info(
-                f"[EOD2] skipped {result['skipped']} symbols due to parse errors"
+                f"[EOD2] skipped {result['skipped']} symbols due to parse errors "
+                "or already-present data"
+            )
+
+        # Make the input-readiness verdict visible to the operator (WS5): a
+        # partially-copied source set is a degraded input, not a clean success.
+        if readiness and not readiness.get("ready"):
+            logger.warning(
+                f"[EOD2] INPUT DEGRADED: {readiness.get('reason')} "
+                f"(complete={readiness.get('complete')}/{readiness.get('total_files')}). "
+                "Run again after the source finishes to pick up the remaining symbols."
             )
 
     except Exception as exc:
