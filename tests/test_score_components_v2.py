@@ -44,21 +44,65 @@ def test_precompute_ranks_creates_expected_columns():
     assert out.at[0, "_rank_sm_score"] > out.at[1, "_rank_sm_score"]
 
 
-def test_precompute_ranks_nan_gets_highest_pct_rank_current_behaviour():
-    """Documents a pre-existing quirk (NOT a change in this PR).
+def test_precompute_ranks_missing_values_are_not_ranked():
+    """Missing data must never be rewarded with a percentile rank.
 
-    ``precompute_ranks`` uses ``rank(pct=True, na_option="bottom")`` with a
-    comment claiming missing data gets the *lowest* rank. In pandas,
-    ``na_option="bottom"`` actually assigns NaN the *largest* rank, so a
-    missing metric receives the top percentile (1.0) rather than the bottom
-    one. This test locks the observed behaviour; see the PR notes for the
-    discrepancy between the comment and the code.
+    Regression for the ``na_option="bottom"`` defect: in pandas that option
+    assigns NaN the *largest* rank (the comment claimed the opposite), so a
+    missing metric silently received the top percentile. Now NaN is preserved
+    and the present values are ranked among themselves.
     """
     df = pd.DataFrame({"roe": [10, 5, np.nan]})
     out = score_components_v2.precompute_ranks(df.copy())
-    assert out.at[2, "_rank_roe"] == 1.0  # missing -> highest rank, not lowest
-    assert out.at[0, "_rank_roe"] == 2 / 3
-    assert out.at[1, "_rank_roe"] == 1 / 3
+    assert np.isnan(out.at[2, "_rank_roe"])  # missing -> NaN, not 1.0
+    assert out.at[0, "_rank_roe"] == 1.0  # highest of the *present* values
+    assert out.at[1, "_rank_roe"] == 0.5
+
+
+def test_precompute_ranks_missing_does_not_outrank_real_weak_value():
+    """A row with no data must rank at-or-below every row that has real data."""
+    df = pd.DataFrame({"smart_money_score": [np.nan, 0.01, 0.02]})
+    out = score_components_v2.precompute_ranks(df.copy())
+    assert np.isnan(out.at[0, "_rank_sm_score"])
+    assert out.at[1, "_rank_sm_score"] < out.at[2, "_rank_sm_score"]
+
+
+def test_precompute_ranks_all_missing_gives_all_nan():
+    df = pd.DataFrame({"roe": [np.nan, np.nan]})
+    out = score_components_v2.precompute_ranks(df.copy())
+    assert out["_rank_roe"].isna().all()
+
+
+def test_precompute_ranks_masks_non_finite():
+    # +/-inf must not dominate the distribution (masked -> NaN -> unranked).
+    df = pd.DataFrame({"roe": [1.0, np.inf, -np.inf, 2.0, np.nan]})
+    out = score_components_v2.precompute_ranks(df.copy())
+    ranks = out["_rank_roe"].tolist()
+    assert ranks[0] == 0.5 and ranks[3] == 1.0
+    assert np.isnan(ranks[1]) and np.isnan(ranks[2]) and np.isnan(ranks[4])
+
+
+def test_precompute_ranks_ties_share_percentile():
+    df = pd.DataFrame({"roe": [5.0, 5.0, 5.0]})
+    out = score_components_v2.precompute_ranks(df.copy())
+    assert np.allclose(out["_rank_roe"].to_numpy(), [2 / 3, 2 / 3, 2 / 3])
+
+
+def test_precompute_ranks_does_not_mutate_input():
+    df = pd.DataFrame({"roe": [10, 5, np.nan]})
+    before = list(df.columns)
+    out = score_components_v2.precompute_ranks(df)
+    assert "_rank_roe" in out.columns
+    assert list(df.columns) == before  # caller's frame untouched
+
+
+def test_precompute_ranks_preserves_custom_index():
+    df = pd.DataFrame({"roe": [10, 5, np.nan]}, index=["a", "b", "c"])
+    out = score_components_v2.precompute_ranks(df)
+    assert list(out.index) == ["a", "b", "c"]
+    assert out.at["a", "_rank_roe"] == 1.0
+    assert out.at["b", "_rank_roe"] == 0.5
+    assert np.isnan(out.at["c", "_rank_roe"])
 
 
 def test_precompute_ranks_partial_columns():
@@ -179,6 +223,31 @@ def test_fundamental_score():
             {"_rank_roe": np.nan, "_rank_growth": np.nan}
         ),
         0.28,
+    )
+
+
+def test_fundamental_score_nan_f_score_does_not_propagate():
+    # Regression: a NaN F_Score used to propagate into the composite score.
+    val = score_components_v2.fundamental_score(
+        {"_rank_roe": 0.8, "_rank_growth": 0.6, "F_Score": np.nan}
+    )
+    assert not math.isnan(val)
+    assert math.isclose(val, 0.5)  # 0.8*0.4 + 0.6*0.3 + 0
+
+
+def test_valuation_score_nan_graham_is_neutral():
+    # Regression: ``NaN <= 0`` is False, so a missing Graham Number used to fall
+    # through to the 0.2 "Expensive" band instead of the neutral 0.5.
+    assert (
+        score_components_v2.valuation_score({"close": 100, "graham_number": np.nan})
+        == 0.5
+    )
+    assert (
+        score_components_v2.valuation_score({"close": np.nan, "graham_number": 120})
+        == 0.5
+    )
+    assert (
+        score_components_v2.valuation_score({"close": 0, "graham_number": 120}) == 0.5
     )
 
 

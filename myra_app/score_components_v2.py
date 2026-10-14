@@ -6,22 +6,41 @@ def precompute_ranks(df):
     """
     Precomputes percentile ranks for the entire dataframe in a single vectorized pass.
     This eliminates the O(N^2) performance bottleneck, dropping scan time to milliseconds.
+
+    Missing-data policy (correctness-critical)
+    ------------------------------------------
+    A missing (NaN) or non-finite (``+/-inf``) source value is left as NaN in the
+    rank column instead of being ranked. The previous implementation used
+    ``na_option="bottom"`` under a comment claiming it gave missing data the
+    *lowest* rank; in pandas ``na_option="bottom"`` actually assigns NaN the
+    *largest* rank, so a stock with no delivery / volume / smart-money data
+    silently received the **top** percentile and out-ranked every stock that had
+    real (even weak) data. Emitting NaN here lets each consumer apply its own
+    documented neutral fallback (0.3 / 0.4) rather than rewarding absence.
+
+    Ranks are therefore computed over the *available* values only, so the
+    percentile scale is not skewed by how many rows happen to be missing.
+
+    Returns a new DataFrame; the caller's frame is not mutated.
     """
-    # .rank(pct=True) automatically ignores NaNs and scales values between 0.0 and 1.0
-    # na_option='bottom' ensures that missing data gets the lowest rank
-    if "roe" in df.columns:
-        df["_rank_roe"] = df["roe"].rank(pct=True, na_option="bottom")
-    if "ProfitGrowth" in df.columns:
-        df["_rank_growth"] = df["ProfitGrowth"].rank(pct=True, na_option="bottom")
-    if "avg_delivery_20d" in df.columns:
-        df["_rank_delivery"] = df["avg_delivery_20d"].rank(pct=True, na_option="bottom")
-    if "avg_volume_20d" in df.columns:
-        df["_rank_volume"] = df["avg_volume_20d"].rank(pct=True, na_option="bottom")
-    if "smart_money_score" in df.columns:
-        df["_rank_sm_score"] = df["smart_money_score"].rank(
-            pct=True, na_option="bottom"
-        )
-    return df
+    out = df.copy()
+    rank_sources = (
+        ("roe", "_rank_roe"),
+        ("ProfitGrowth", "_rank_growth"),
+        ("avg_delivery_20d", "_rank_delivery"),
+        ("avg_volume_20d", "_rank_volume"),
+        ("smart_money_score", "_rank_sm_score"),
+    )
+    for source, dest in rank_sources:
+        if source not in out.columns:
+            continue
+        values = pd.to_numeric(out[source], errors="coerce")
+        # Mask +/-inf so a sentinel cannot dominate the distribution.
+        values = values.replace([np.inf, -np.inf], np.nan)
+        # na_option="keep" preserves NaN -> downstream neutral fallbacks (0.3/0.4).
+        # to_numpy() keeps the assignment positional regardless of index labels.
+        out[dest] = values.rank(pct=True, na_option="keep").to_numpy()
+    return out
 
 
 # 1. TREND STRUCTURE (LONG TERM)
@@ -46,6 +65,11 @@ def trend_score(row):
 
 # 2. STABILITY (CONSISTENCY)
 def stability_score(row):
+    # NOTE (known ambiguity, not changed in Phase 5): an absent key falls through
+    # to the ``row.get`` default 0.0 whereas NaN -> 0.3 neutral, so "unavailable"
+    # and "consistently below MA50" are conflated for this one component. Left as
+    # documented behaviour because relaxing it would substitute a more favourable
+    # default for missing inputs.
     val = row.get("pct_above_ma50_60d", 0)
     return val if not pd.isna(val) else 0.3
 
@@ -113,6 +137,10 @@ def fundamental_score(row):
         growth_score = 0.4
 
     f_score = row.get("F_Score", 0)
+    # Guard non-finite F_Score: without this a NaN propagated into the composite
+    # score (and, through it, into MYRA_Score_v25) instead of the neutral 0.
+    if pd.isna(f_score):
+        f_score = 0
     quality_score = f_score / 5.0  # Institutional Quality Weighting (0 to 1)
 
     return (roe_score * 0.4) + (growth_score * 0.3) + (quality_score * 0.3)
@@ -124,8 +152,13 @@ def valuation_score(row):
     close = row.get("close", 1)
     graham = row.get("graham_number", 0)
 
-    if graham <= 0:
+    # Non-finite / absent graham -> neutral. NaN must be checked before the
+    # comparison: ``NaN <= 0`` is False, so a missing Graham Number previously
+    # fell through to the 0.2 "Expensive" band instead of the documented neutral.
+    if pd.isna(graham) or graham <= 0:
         return 0.5  # Neutral if no data
+    if pd.isna(close) or close <= 0:
+        return 0.5  # Neutral: margin of safety is undefined without a price
 
     # Margin of Safety: Discount to Graham Number
     mos = (graham / close) - 1

@@ -236,6 +236,7 @@ _GRADE_RANK: dict[str, float] = {
 }
 _TIER_RANK: dict[str, float] = {
     "HIGH": 3.5,
+    "MOD": 2.5,
     "MID": 2.5,
     "LOW": 1.5,
 }

@@ -149,3 +149,22 @@ class TestStatusEndpointTierRank:
         data = resp.json()
         assert "candidates" in data
         assert isinstance(data["candidates"], list)
+
+
+class TestGradeRank:
+    """``_grade_rank`` must map the tier strings scanners actually emit.
+
+    Regression: the tier map only knew ``MID`` while ``bottom_hunter`` emits
+    ``MOD``, so a MOD candidate scored 0 -- *worse* than a LOW candidate (1.5)
+    -- in the confluence "best grade" aggregation.
+    """
+
+    def test_mod_tier_ranks_above_low(self):
+        from myra_web.utils import _grade_rank
+
+        assert _grade_rank("HIGH") > _grade_rank("MOD") > _grade_rank("LOW")
+
+    def test_unknown_tier_is_zero(self):
+        from myra_web.utils import _grade_rank
+
+        assert _grade_rank("WHATEVER") == 0

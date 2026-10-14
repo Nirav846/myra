@@ -261,3 +261,60 @@ Phase 3 "Next up" item 3. Full write-up in `docs/PHASE4_TEST_ISOLATION.md`.
   green; full suite **1179 passed** / 0 errors (255 s); black 26.10.1 + flake8
   clean. CI (ubuntu, no live DBs) **1158 passed, 21 skipped, 0 failed**; CodeQL
   green (commit `76504b5`).
+
+---
+
+## Phase 5 - ranking & scoring integrity (2026-10-14)
+
+Starting point: `4763f86` (Phase 4 on `origin/main`, suite 1179 passed). Resolves
+the Phase 3 "Next up" item 1 (`na_option="bottom"`). Full write-up in
+`docs/PHASE5_RANKING_INTEGRITY.md`. Directive: correctness before score
+optimisation; no weight retuning, no renormalisation, no favourable defaults for
+missing inputs.
+
+- **D1 (HIGH) - the rank layer was inert in production.** `PositionalScorer.rank`
+  passed `itertuples()._asdict()` to the scorer; `itertuples` renames every
+  leading-underscore column (`_rank_delivery` -> `_0`), so `_rank_*` never
+  arrived and delivery / liquidity / ROE / growth **always** used neutral
+  fallbacks. 60% of the advertised cross-sectional signal contributed nothing.
+  Fixed with `to_dict("records")`. (Same trap already documented at
+  `tools/backtest_bulk_deals.py:1080`.)
+- **D2 (HIGH) - missing data earned the top percentile.** `precompute_ranks`
+  used `rank(pct=True, na_option="bottom")` (comment claimed the opposite; pandas
+  assigns NaN the *largest* rank). Fixed: mask `+/-inf`, `na_option="keep"` ->
+  NaN -> documented neutral fallbacks; ranks computed over available values
+  only; function now returns a copy (no input mutation).
+- **D3** `fundamental_score` NaN `F_Score` propagated into `MYRA_Score_v25` ->
+  now 0. **D4** `valuation_score` NaN `graham_number` fell to the 0.2
+  "Expensive" band (`NaN <= 0` is False) and `close == 0` raised -> now neutral
+  0.5 (latent; not called in prod). **D5** removed the dead `if f is not None`
+  fundamentals guard. **D6** `myra_web.utils._TIER_RANK` only knew `MID`, but
+  scanners emit `MOD`, so `_grade_rank("MOD")` scored 0 - below `LOW` (1.5) in
+  the confluence best-grade -> added `MOD: 2.5`. **D7** `rank` now uses
+  `kind="mergesort"` (deterministic ties) and tolerates a `None` drawdown.
+- **Explainability:** new `PositionalScorer.explain_score(row, regime)` and an
+  opt-out `MYRA_Score_v25_breakdown` column from `rank(..., explain=True)`
+  (components, weights, regime, drawdown multiplier, `missing_inputs`), produced
+  by the same single pass as the score so it cannot drift. Column added to
+  `results_manager`'s `std` list so it is not rendered as a CLI "hero" metric.
+- **Unchanged by design (locked by tests):** weights 0.25/0.15/0.20/0.10/0.10 +
+  0.30, 70/30 split, regime 1.15/0.9, drawdown 0.8/0.95, and every known scalar
+  (`_BULL` 71.1, FEAR 81.8, GREED 64.0, dd 67.5/56.9, minimal 20.3).
+- **Before/after (deterministic fixtures):** identical-technicals pairs differing
+  only in delivery/volume/smart-money. All-present: `47.4/47.4 tie -> 69.5/59.0`.
+  Missing-vs-weak: `47.4/47.4 tie -> (with bottom ranks) NO_DATA 69.5 > WEAK 59.0
+  bug -> 54.8 vs 69.5 (fixed)`. Proves D1 and D2 had to be fixed together.
+- **Tests:** `tests/test_score_components_v2.py` (+8, replaced the Phase 3
+  bug-locking test), `tests/test_positional_engine.py` (+9, incl.
+  `test_rank_consumes_precomputed_ranks` which fails without D1),
+  `tests/test_dcb_defaults.py` (+2 for D6).
+- **Verification:** full suite **1197 passed** / 0 failed / 0 skipped (360 s);
+  black 26.10.1 + flake8 clean on touched files.
+- **Deferred (documented, not changed):** `stability_score` absent-key `0.0` vs
+  NaN `0.3`; `universe_loader` zero-defaults conflating absent with 0 across
+  ~40 columns; `EXTREME GREED` regime branch unreachable + `"Neutral"` /
+  `"NEUTRAL"` mismatch; ranks are within-scan, not universe-wide.
+- **Next phase:** populate the rank sources (`avg_delivery_20d`,
+  `avg_volume_20d`, `smart_money_score`, `roe`, `ProfitGrowth`) on the real scan
+  path so the now-correct rank semantics discriminate candidates, with a
+  shadow-mode ordering comparison first.

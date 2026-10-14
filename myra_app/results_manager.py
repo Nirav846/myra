@@ -262,6 +262,7 @@ class ResultsManager:
                 "Stars",
                 "Grade",
                 "MYRA_Score_v25",
+                "MYRA_Score_v25_breakdown",
                 "Stage",
                 "LTP",
                 "Entry",
