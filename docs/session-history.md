@@ -908,3 +908,14 @@ are three separate facts.
   the test suite's live-DB guard trips whenever the app is running. The backend
   was stopped for testing and restarted once afterwards; the Vite dev server was
   left running throughout (it touches no databases).
+- **P1 follow-up - residual instances of the same bug, closed.** After the
+  readiness path was fixed the browser console still showed
+  `http://localhost:8000/api/health` blocked from the LAN origin. Three more
+  files hardcoded the identical absolute base - `lib/Librarian.ts` (`apiUrl`
+  default), `lib/marketCapCache.ts` (`getApiUrl()` fallback) and
+  `lib/SettingsContext.tsx` (default `apiEndpoint`). All three now default to
+  `API_BASE`; the LAN-origin console is clean with **0 CORS errors and 0
+  `Failed to fetch`**, and `tools/verify_readiness_transport.py` reports all three
+  origins `HTTP 200`. A `localStorage`-persisted `apiEndpoint` still overrides,
+  intentionally. Found only by reading the browser console after the first fix,
+  not by inspection.

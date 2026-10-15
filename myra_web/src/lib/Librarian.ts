@@ -1,3 +1,5 @@
+import { API_BASE } from '../config';
+
 export type ConnectionStatus = {
   connected: boolean;
   path: string;
@@ -7,7 +9,13 @@ export type ConnectionStatus = {
 export class Librarian {
   public health: Record<string, ConnectionStatus> = {};
   public coverage: Record<string, number> = {};
-  public apiUrl: string = 'http://localhost:8000/api'; // Target for your local MYRA repo
+  // Phase 11: was hardcoded to 'http://localhost:8000/api', which made every
+  // call a cross-origin request into the browser's loopback address space and
+  // failed for any page origin outside the backend's CORS allow-list (surfaced
+  // to the operator as "Failed to fetch"). Defaults to the same-origin API
+  // prefix so the dev proxy / reverse proxy forwards it. An operator-configured
+  // endpoint in settings still overrides this.
+  public apiUrl: string = API_BASE;
   public isConnectedToLocalRepo: boolean = true;
   
   // Rate limit concurrent queries to avoid SQLite contention

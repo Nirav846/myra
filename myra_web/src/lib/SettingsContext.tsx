@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { API_BASE } from '../config';
 
 export type Theme = 'myra-dark' | 'pitch-black';
 export type Density = 'comfortable' | 'compact';
@@ -56,7 +57,9 @@ const defaultSettings: SettingsState = {
   density: 'comfortable',
   animations: true,
   accentColor: 'indigo',
-  apiEndpoint: 'http://localhost:8000/api',
+  // Phase 11: same-origin by default. A hardcoded 'http://localhost:8000/api'
+  // made every call cross-origin and failed on non-allowlisted page origins.
+  apiEndpoint: API_BASE,
   defaultChartRange: '1M',
   candlestickStyle: 'Filled',
   showGridLines: true,

@@ -1,3 +1,5 @@
+import { API_BASE } from '../config';
+
 let mcapMap: Map<string, number> | null = null;
 
 function getApiUrl(): string {
@@ -10,7 +12,10 @@ function getApiUrl(): string {
             }
         }
     } catch {}
-    return 'http://localhost:8000/api';
+    // Phase 11: was 'http://localhost:8000/api', which broke for any page
+    // origin outside the backend's CORS allow-list. Fall back to the
+    // same-origin API prefix so the dev proxy forwards it.
+    return API_BASE;
 }
 
 export async function fetchMarketCapMap(): Promise<Map<string, number>> {

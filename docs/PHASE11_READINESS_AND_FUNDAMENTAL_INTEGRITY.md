@@ -135,6 +135,20 @@ hook's own documented behaviour. State is now updated only for a changed verdict
 | Backend stopped | `Readiness unavailable — API not responding (HTTP 502 via proxy) — start it with: python run_fastapi.py` |
 | Backend restarted | recovers to `READY` without a page reload |
 | Live panel (LAN origin) | `READY`, latest `2026-10-14` = expected `2026-10-14`, 3203/3220 symbols |
+| `tools/verify_readiness_transport.py` | all three origins `HTTP 200`, **0** failures |
+
+**Residual instances found and closed during verification.** With the readiness
+path fixed, the browser console still showed `http://localhost:8000/api/health`
+being blocked from the LAN origin. Three more files hardcoded the same absolute
+base and were the identical bug class, not a new defect:
+
+- `myra_web/src/lib/Librarian.ts` — `apiUrl` default
+- `myra_web/src/lib/marketCapCache.ts` — `getApiUrl()` fallback
+- `myra_web/src/lib/SettingsContext.tsx` — default `apiEndpoint`
+
+All three now default to `API_BASE`. After the change the console is clean from
+the LAN origin: **0 CORS errors, 0 `Failed to fetch`**. A locally persisted
+`apiEndpoint` in `localStorage` still overrides, which is intentional.
 
 ### 2.6 Regression tests
 
