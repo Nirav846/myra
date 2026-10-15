@@ -27,6 +27,7 @@ import pytest
 from myra_app import eod_recovery as er
 from myra_app import constants
 from myra_app.librarian_core import LibrarianCore
+from myra_app.utils.task_utils import now_ist
 
 MONDAY = dt.date(2026, 10, 12)
 TUESDAY = dt.date(2026, 10, 13)
@@ -198,9 +199,12 @@ def test_before_the_publication_window_does_not_delay_a_published_session(
 
 def test_the_cooldown_suppresses_a_repeat_attempt(ready, sealed_calendar, monkeypatch):
     sealed_calendar(trading=True)
+    # `now_ist()`, not `datetime.now()`: the recorded attempt timestamps are IST
+    # and `evaluate` compares against `now_ist()`. A naive local-clock stub
+    # happens to work on an IST machine and silently fails on a UTC CI runner.
     monkeypatch.setattr(
         "myra_app.utils.task_utils._get_last_run",
-        lambda _label: dt.datetime.now(),
+        lambda _label: now_ist(),
     )
     out = er.evaluate(
         expected_date="2026-10-13", db_latest="2026-10-12", source=SOURCE_OK
