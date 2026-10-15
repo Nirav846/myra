@@ -27,6 +27,14 @@ except ImportError:
         return "Never"
 
 
+try:
+    from myra_app.scheduler_health import STATE_UNKNOWN, get_state_cached
+except ImportError:  # pragma: no cover - defensive only
+
+    def get_state_cached():  # type: ignore[misc]
+        return {"state": "unknown", "reason": "scheduler_health unavailable"}
+
+
 router = APIRouter(prefix="/api", tags=["health"])
 
 
@@ -92,7 +100,19 @@ def health_check():
             conn.close()
         except Exception:
             coverage = {"error": "query failed"}
-    return {"health": health, "coverage": coverage}
+    # Phase 13: DB reachability said nothing about whether the scheduler was
+    # actually running. Surface it explicitly so a serving-but-not-scheduling
+    # process cannot read as healthy.
+    try:
+        scheduler = get_state_cached()
+    except Exception as exc:  # noqa: BLE001 - health must never raise
+        logger.debug("scheduler health lookup failed: %s", exc)
+        scheduler = {
+            "state": STATE_UNKNOWN,
+            "reason": f"scheduler health failed: {exc}",
+        }
+
+    return {"health": health, "coverage": coverage, "scheduler": scheduler}
 
 
 @router.get("/data-health")

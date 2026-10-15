@@ -7,6 +7,7 @@ export function useHealthStatus() {
   const { settings } = useSettings();
   const [health, setHealth] = useState(lib.health);
   const [coverage, setCoverage] = useState(lib.coverage);
+  const [scheduler, setScheduler] = useState(lib.scheduler);
   const [isConnected, setIsConnected] = useState(true);
 
   useEffect(() => {
@@ -15,6 +16,7 @@ export function useHealthStatus() {
     const checkState = () => {
         setHealth({...lib.health});
         setCoverage({...lib.coverage});
+        setScheduler({...lib.scheduler});
         setIsConnected(lib.isConnectedToLocalRepo);
     };
 
@@ -25,6 +27,7 @@ export function useHealthStatus() {
         }).then(data => {
             lib.health = data.health || lib.health;
             lib.coverage = data.coverage || lib.coverage;
+            lib.scheduler = data.scheduler || lib.scheduler;
             lib.isConnectedToLocalRepo = true;
             checkState();
         }).catch(() => {
@@ -56,5 +59,5 @@ export function useHealthStatus() {
     };
   }, [settings.autoRefreshInterval]);
 
-  return { health, coverage, isConnected };
+  return { health, coverage, scheduler, isConnected };
 }

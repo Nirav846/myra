@@ -991,3 +991,67 @@ are three separate facts.
 - **Operational note.** The MYRA scheduler writes to the metadata sidecar, so the
   test suite's live-DB guard trips whenever the backend is running. It was
   stopped for test runs and restarted once afterwards.
+
+## Phase 13 — Fundamental recovery, margin semantics, scheduler health
+
+- **The question that started it.** Phase 12 ended with the API answering
+  `/api/health` 200 and every database "connected", while the scheduler and the
+  EOD recovery watchdog were **not running at all**. The watchdog had been
+  frozen at `22:39:28` for 20 minutes, and nothing on any status surface said
+  so. "Serving" had been silently standing in for "scheduling".
+- **Root cause.** A hard kill left the lock file with a dead PID, and
+  `_pid_alive` failed **closed** (any exception resolved to "probably alive").
+  The restarted API therefore concluded a live scheduler existed and started
+  nothing. The refusal was a single line at info level.
+- **Fix, and the principle behind it.** Reclamation now requires the previous
+  owner to be *provably* gone. "Cannot tell" is not "gone" - misreading a
+  healthy lock as dead is exactly how one gets destroyed. The read path returns
+  `alive` / `dead` / `unknown` / `absent` instead of a binary; `unknown`
+  refuses and `dead` reclaims. Reclamation is a compare-and-swap (`O_EXCL` for
+  a free lock, otherwise write-then-`os.replace` then re-read) so two processes
+  racing on the same staleness still produce exactly one winner. A per-record
+  process creation token catches PID reuse.
+- **Release tightened.** It now deletes the lock only when the record names
+  *this* process. The previous `owner in (None, os.getpid())` test would delete
+  a lock this process never held - that is how a healthy lock gets destroyed.
+- **Observable, not inferable.** `/api/health` gains a `scheduler` block
+  (`running` / `starting` / `degraded` / `disabled` / `unknown`) driven by the
+  watchdog's own 60s heartbeat, so a frozen timestamp means a frozen watchdog.
+  `degraded` and `unknown` are deliberately **not** healthy, and the on-screen
+  banner is bound to that state - the failure is visible to the operator, not
+  only written to a log. A failed lock probe now warns instead of hiding at
+  `debug`, and the orchestrator records *why* it declined (`disabled` /
+  `lock_held` / `lock_probe_failed`).
+- **`DISABLE_SCHEDULER`** was added so "the scheduler is off" is a choice an
+  operator made, rather than something inferred from a missing lock file.
+  Defaults to unset; behaviour unchanged unless set.
+- **net_margin: the recorded defect was wrong.** Provenance said the units were
+  `MIXED` - a fraction in some rows and a percent up to 699 in others. They are
+  not mixed; they are a pass-through **fraction**. Of 3,309 non-null rows, 95.1%
+  are `|v| <= 1` (median 0.0644), every value above 1 is a fraction over a
+  near-zero-revenue denominator, the extremes match the live source
+  byte-for-byte, and one sample (`ESSARSHPNG 699.92`) is identical across three
+  archived snapshots while its `pe` drifts. A live probe returns fractions
+  directly (`20MICRONS 0.07137`, `360ONE 0.37408`). The entry now records one
+  unit plus the consumer warning. **No stored data was changed** - only the
+  recorded interpretation, and the test that asserted `MIXED`.
+- **roe_ttm can never populate - two independent causes.** (1) `roeTTM` is
+  absent from the requested Morningstar `securityDataPoints`, and the API
+  honours that list: probed live, the current field list returns **no roeTTM
+  key at all**, while adding it returns values. (2) The merge reads `["roeTTM"]`
+  although the fetch stored `"roe_ttm"`. Both recorded; left NULL on purpose
+  (no consumer, and the source value is a fraction while sibling `roe` is a
+  percent).
+- **Deferred, on purpose.** `profit_growth` / `sales_growth` *do* have a source
+  (`upstox_income_statement` YoY strings such as `"+9.83%"`, verified against
+  `INFY 182972 -> 166590`), but populating them feeds the ranking pipeline -
+  that turns on a signal, so it needs an explicit decision rather than a quiet
+  backfill. `debt_to_equity` is not derivable (the balance sheet carries only
+  `total_asset` / `total_liability`), and `smart_money_score` still has no
+  definition.
+- **Verification.** Full suite green including the pre-existing lock tests
+  unmodified (they monkeypatch `_pid_alive` and write the legacy two-line
+  format, so backward compatibility is asserted by their continuing to pass);
+  `black` + `flake8` clean; frontend `npm run build` succeeds. No test touches
+  the real lock file or the live databases - the lock tests use isolated
+  temp directories and injected process state.

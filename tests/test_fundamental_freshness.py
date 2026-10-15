@@ -153,11 +153,37 @@ def test_unknown_field_is_unverified_not_verified():
     assert ff.provenance("some_column_nobody_checked")["status"] == "unverified"
 
 
-def test_net_margin_unit_caveat_is_recorded():
-    """Known defect: net_margin mixes fraction and percent scales."""
+def test_net_margin_units_are_a_fraction_not_a_mix():
+    """Phase 13: the 'mixed fraction/percent' reading was disproved.
+
+    The claim used to live here. It was wrong: the producer is a plain
+    pass-through of the provider's ``netMargin``, the live source returns
+    fractions, and every stored value above 1 is a fraction over a
+    near-zero-revenue denominator (verified byte-for-byte against the
+    source, and stable across archived snapshots).
+
+    The point of keeping this test is the *guard*, not the string: the
+    entry must state a single unit, and must warn consumers off
+    percent-style comparisons.
+    """
     meta = ff.provenance("net_margin")
-    assert meta["status"] != "verified"
-    assert "MIXED" in meta["units"]
+    assert meta["status"] == "verified"
+    assert "MIXED" not in meta["units"]
+    assert "fraction" in meta["units"].lower()
+    assert "percent" in meta["caveat"].lower()
+
+
+def test_roe_ttm_records_the_two_part_wiring_defect():
+    """The column exists but can never populate - say why, with both causes.
+
+    (1) 'roeTTM' is not in the requested Morningstar fields, and the API
+        honours that list; (2) the merge reads a key the fetch never wrote.
+    """
+    meta = ff.provenance("roe_ttm")
+    assert meta["status"] == "unavailable"
+    assert "roeTTM" in meta["producer"]
+    assert "roe_ttm" in meta["producer"]
+    assert "fraction" in meta["units"].lower()
 
 
 def test_inst_holding_is_not_presented_as_smart_money():

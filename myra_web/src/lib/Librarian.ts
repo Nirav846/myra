@@ -6,9 +6,27 @@ export type ConnectionStatus = {
   error?: string;
 };
 
+// Phase 13: DB reachability never told us whether the scheduler was running.
+// ``degraded``/``unknown`` are deliberately NOT healthy - a serving API with a
+// dead scheduler used to look completely green.
+export type SchedulerState =
+  | 'running'
+  | 'starting'
+  | 'degraded'
+  | 'disabled'
+  | 'unknown';
+
+export type SchedulerStatus = {
+  state: SchedulerState;
+  reason?: string;
+  owner_pid?: number | null;
+  watchdog_last_tick_age_seconds?: number | null;
+};
+
 export class Librarian {
   public health: Record<string, ConnectionStatus> = {};
   public coverage: Record<string, number> = {};
+  public scheduler: SchedulerStatus = { state: 'unknown' };
   // Phase 11: was hardcoded to 'http://localhost:8000/api', which made every
   // call a cross-origin request into the browser's loopback address space and
   // failed for any page origin outside the backend's CORS allow-list (surfaced
@@ -61,6 +79,7 @@ export class Librarian {
         this.isConnectedToLocalRepo = true;
         this.health = data.health || this.getFallbackHealth();
         this.coverage = data.coverage || {};
+        this.scheduler = data.scheduler || { state: 'unknown' };
       } else {
         this.handleFallback();
       }

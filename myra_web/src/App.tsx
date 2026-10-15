@@ -136,7 +136,7 @@ export default function App() {
   const [showPresetsPanel, setShowPresetsPanel] = useState(false);
   
   const { settings } = useSettings();
-  const { health, coverage, isConnected } = useHealthStatus();
+  const { health, coverage, isConnected, scheduler } = useHealthStatus();
   
   const [toolsStatus, setToolsStatus] = useState<any>(null);
   const [dbSize, setDbSize] = useState<string>("N/A");
@@ -182,6 +182,16 @@ export default function App() {
 
   // Compute disconnected DBs
   const disconnectedDBs = Object.entries(health as Record<string, HealthStatus>).filter(([_, status]) => !status.connected);
+
+  // Phase 13: DB reachability said nothing about whether the scheduler was
+  // running. A serving API with a dead scheduler must not look healthy, so
+  // surface it here rather than leaving it in a log file.
+  const schedulerUnhealthy =
+    isConnected && (scheduler.state === 'degraded' || scheduler.state === 'unknown');
+  const schedulerLabel =
+    scheduler.state === 'degraded'
+      ? 'Scheduler Not Running'
+      : 'Scheduler State Unknown';
 
   // Dynamic Theme mappings based on SettingsContext
   const bgMain = settings.theme === 'pitch-black' ? 'bg-[#000000]' : 'bg-[#0e1117]';
@@ -255,6 +265,29 @@ export default function App() {
               </div>
             </div>
           ))}
+
+          {schedulerUnhealthy && (
+            <div
+              role="alert"
+              data-testid="scheduler-degraded-banner"
+              className="bg-amber-950/40 border border-amber-500/50 p-4 rounded-lg flex items-start gap-3 shrink-0"
+            >
+              <AlertCircle className="text-amber-400 flex-shrink-0 mt-0.5" size={18} />
+              <div>
+                <h3 className="text-amber-400 text-sm font-semibold mb-1">
+                  Scheduler Not Running ({scheduler.state})
+                </h3>
+                <p className="text-[#ccc] text-xs font-mono">
+                  {scheduler.reason ||
+                    'The API is responding but the background scheduler is not driving the schedule.'}
+                </p>
+                <p className="text-[#888] text-xs mt-1">
+                  Scheduled ingestion and EOD recovery will not run until this is
+                  resolved. Leave DISABLE_SCHEDULER unset to run it here.
+                </p>
+              </div>
+            </div>
+          )}
 
           <Navbar tabs={TABS} />
           <div className="flex-1 min-h-0">

@@ -49,6 +49,17 @@ DISABLE_FUNDAMENTAL_WRITERS = (
     os.getenv("DISABLE_FUNDAMENTAL_WRITERS", "False").strip().lower() == "true"
 )
 
+# --- Scheduler ownership toggle -------------------------------------------
+# When True, the embedded background scheduler (and therefore the EOD recovery
+# watchdog) is deliberately NOT started by the API process.  This exists so the
+# "disabled" scheduler state is something an operator can *choose* rather than
+# something inferred from a missing lock file.
+#
+# It changes nothing by default: unset/False keeps the current behaviour of
+# starting the scheduler on boot.  Set DISABLE_SCHEDULER=True only when another
+# process is intentionally driving the scheduled tasks.
+DISABLE_SCHEDULER = os.getenv("DISABLE_SCHEDULER", "False").strip().lower() == "true"
+
 # ─── Fund Traction Sync ─────────────────────────────────────────────────────
 # GitHub Pages base URL for cross-fund-holdings-traction monthly JSON files.
 # Replace <username> with the actual GitHub username before first run.

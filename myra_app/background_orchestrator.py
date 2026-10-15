@@ -22,7 +22,7 @@ _ROOT = os.path.dirname(_HERE)
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from myra_app.constants import DB_DIR, DISABLE_FUNDAMENTAL_WRITERS
+from myra_app.constants import DB_DIR, DISABLE_FUNDAMENTAL_WRITERS, DISABLE_SCHEDULER
 from myra_app.librarian_core import LibrarianCore
 from myra_app.utils.index_sync import sync_index_constituents
 from myra_app.utils.task_utils import (  # noqa: F401  (re-exported for external callers, e.g. myra_web/routes/health.py)
@@ -50,6 +50,28 @@ _task_lock = threading.Lock()
 # additionally guards against a *second process* starting a scheduler.
 _start_lock = threading.Lock()
 _started = False
+
+#: Phase 13: why the last ``start()`` declined to run a scheduler (or ``None``
+#: if it succeeded). The API keeps serving when this happens, which used to be
+#: visible only as one log line - :mod:`myra_app.scheduler_health` surfaces it
+#: so a serving-but-not-scheduling process cannot look healthy.
+_last_start_refusal: dict | None = None
+
+
+def get_last_start_refusal() -> dict | None:
+    """The most recent scheduler-refusal record, if the last start declined."""
+    return dict(_last_start_refusal) if _last_start_refusal else None
+
+
+def _record_refusal(reason: str, detail: str | None = None) -> None:
+    global _last_start_refusal
+    _last_start_refusal = {
+        "reason": reason,
+        "detail": detail,
+        "pid": os.getpid(),
+        "at": time.time(),
+    }
+
 
 # ─── Thread-local connection pool for metadata operations ─────────────────────
 # PERFORMANCE IMPROVEMENT: Reuse connections per thread to avoid repeated open/close
@@ -586,7 +608,7 @@ def start(register_signals: bool = True) -> bool:
     than starting a competing scheduler. ``register_signals`` is ``False`` when an
     embedding server (uvicorn) owns signal handling.
     """
-    global _started
+    global _started, _last_start_refusal
     if not _claim_start():
         logger.info(
             "[MYRA BG] Orchestrator already started in this process; "
@@ -594,21 +616,38 @@ def start(register_signals: bool = True) -> bool:
         )
         return False
 
+    # Operator opt-out: intentionally run no scheduler (see constants).
+    if DISABLE_SCHEDULER:
+        logger.warning(
+            "[MYRA BG] DISABLE_SCHEDULER is set - not starting the scheduler or "
+            "its EOD recovery watchdog. Scheduled ingest will not run here."
+        )
+        _record_refusal("disabled", "DISABLE_SCHEDULER is set")
+        with _start_lock:
+            _started = False
+        return False
+
     # Cross-process guard: never run a second scheduler against the same DBs.
     try:
-        from myra_app.utils.scheduler_lock import acquire as _acquire_lock
+        from myra_app.utils.scheduler_lock import acquire_detailed as _acquire_lock
 
-        acquired, existing = _acquire_lock()
+        acquired, existing, lock_reason = _acquire_lock()
         if not acquired:
             logger.warning(
                 f"[MYRA BG] Another MYRA scheduler (pid={existing}) is already "
-                "running; not starting a second one."
+                f"running; not starting a second one. ({lock_reason})"
             )
+            _record_refusal("lock_held", lock_reason)
             with _start_lock:
                 _started = False
             return False
     except Exception as e:  # noqa: BLE001 - advisory guard
-        logger.debug(f"[MYRA BG] scheduler lock check skipped: {e}")
+        # Was ``logger.debug``: a failure here means we are about to run a
+        # scheduler *without* the cross-process guard, which must not be silent.
+        logger.warning(f"[MYRA BG] scheduler lock check failed; starting anyway: {e}")
+        _record_refusal("lock_probe_failed", str(e))
+    else:
+        _last_start_refusal = None
 
     if register_signals:
         _register_signals()

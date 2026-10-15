@@ -105,14 +105,26 @@ PROVENANCE: dict[str, dict[str, Any]] = {
         "negative values are legitimate losses",
     },
     "net_margin": {
-        "status": "unverified",
-        "producer": "stored net_margin has no confirmed live producer",
-        "units": "MIXED - observed both as a fraction (~0.14) and as a percent "
-        "(up to 699). Do not aggregate until normalised.",
+        "status": "verified",
+        # Phase 13: the producer and the units are both confirmed now. The
+        # earlier "MIXED / up to 699 = percent" reading was wrong - see caveat.
+        "producer": "fundamental_sync._fetch_morningstar_bulk -> MS_CANONICAL_MAP"
+        "['netMargin'] -> net_margin. Faithful pass-through; no scaling is"
+        " applied in either direction.",
+        "units": "fraction (0.1442 = 14.42%). Never a percent - do not compare a"
+        " stored value against a 0-100 threshold.",
         "cadence": "quarterly",
         "kind": "financial",
-        "caveat": "unit inconsistency is a known data-quality defect; consumers "
-        "must not compare these values across rows",
+        "caveat": "Confirmed against the live source, not inferred: 20MICRONS"
+        "=0.07137, 360ONE=0.37408, 3BBLACKBIO=0.37129, all fractions."
+        " The 'mixed units' defect previously recorded here did NOT hold - of"
+        " 3309 non-null rows, 95.1% are |v|<=1 and every row above 1 is a"
+        " fraction whose denominator is near-zero revenue (e.g. MMTC 163.87,"
+        " RAINBOWPAP -26570.08, ESSARSHPNG 699.92 all verified byte-for-byte"
+        " against the source, and ESSARSHPNG's value is stable across three"
+        " archived snapshots). Those are genuine distressed/penny-sheet"
+        " inputs, not a stored percent. Display code must multiply by 100;"
+        " ranking code must not treat these as percentages.",
     },
     "inst_holding": {
         "status": "verified",
@@ -157,10 +169,24 @@ PROVENANCE: dict[str, dict[str, Any]] = {
     },
     "roe_ttm": {
         "status": "unavailable",
-        "producer": "NONE",
-        "units": "unknown",
+        # Phase 13: a producer *was* written, but it can never fire. Two
+        # independent defects, both required for the column to populate.
+        "producer": "fundamental_sync writes it from row['roeTTM'], but"
+        " (1) 'roeTTM' is absent from the Morningstar securityDataPoints"
+        " request, and the API honours that list - verified: with the current"
+        " field list the response contains no roeTTM key at all, while adding"
+        " 'roeTTM' to the request returns values; and (2) the merge step reads"
+        " ms['roeTTM'] although the fetch stored the value under 'roe_ttm'."
+        " Either one alone leaves the column NULL; both must be fixed.",
+        "units": "source value is a fraction (0.16485 = 16.485%); the sibling"
+        " row `roe` is a percent (median 12.42). Normalising would be required"
+        " before any future consumer treats them alike.",
         "cadence": "quarterly",
         "kind": "financial",
+        "caveat": "Left NULL on purpose in Phase 13: there is no consumer, and"
+        " populating it would introduce a second, differently-scaled"
+        " profitability column next to `roe`. The fix recipe is recorded"
+        " above rather than applied.",
     },
     "smart_money_score": {
         "status": "unavailable",
