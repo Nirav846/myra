@@ -95,23 +95,71 @@ def _record_no_new_data(reason: str) -> None:
     _mark_task_run("daily_ingest", status=NO_NEW_DATA, error_message=reason[:500])
 
 
-def run(ctx: TaskContext, force: bool = False):
+def run(ctx: TaskContext, force: bool = False) -> bool:
     """Run one ingestion attempt, guarded against concurrent execution.
 
     The executor and the watchdog evaluate eligibility independently, so both
     could decide to start ingestion at nearly the same moment. ``_INGEST_LOCK``
     makes that overlap impossible: the second caller is dropped with a warning
     rather than running a duplicate sync.
+
+    Returns True when the attempt actually ran, False when it was dropped
+    because one was already in progress. Phase 10's recovery watchdog uses this
+    to report ``skipped_already_running`` truthfully instead of silently
+    attributing someone else's run to its own attempt.
     """
     if not _INGEST_LOCK.acquire(blocking=False):
         logger.warning(
             "[MYRA BG] Ingestion already in progress — skipping this attempt."
         )
-        return
+        return False
     try:
         _run_ingest_locked(ctx, force=force)
+        return True
     finally:
         _INGEST_LOCK.release()
+
+
+def _has_publishable_backlog() -> bool:
+    """True when the source already holds sessions we have not ingested.
+
+    The "before 18:00 IST" and "is it a weekend" guards below exist for one
+    reason: today's EOD bhavcopy is not published yet, so fetching would be
+    pointless and would only hammer the source. That reasoning is about
+    *today's* session and says nothing about sessions the source has already
+    published.
+
+    Applying them unconditionally is what left 2026-10-13 and 2026-10-14 sitting
+    un-ingested on the morning of 2026-10-15: the source already carried both,
+    the database was three sessions behind, and both guards said "not yet".
+    (On a Saturday morning the weekend guard suppressed Friday's catch-up for
+    the same reason.)
+
+    So: if the newest session available upstream is newer than what we have
+    stored, there is real, already-published work to do and the guards must not
+    apply. Otherwise they do.
+    """
+    # Imported here, not at module scope: `daily_ingestor` pulls in the pandas /
+    # fetcher stack, and this module must stay cheap to import for the watchdog.
+    from myra_app import data_readiness as dr
+    from myra_app.daily_ingestor import get_db_latest_date
+
+    try:
+        source_last = (dr.source_facts() or {}).get("last_date")
+        if not source_last:
+            return False
+        db_last = get_db_latest_date()
+        if not db_last:
+            return True
+        return str(source_last) > str(db_last)
+    except Exception as exc:  # noqa: BLE001 - never block ingest on a probe slip
+        # Warning, not debug: this fallback decides whether catch-up happens at
+        # all, so a failure here must be visible rather than silently reverting
+        # to "nothing to do".
+        logger.warning(
+            f"[MYRA BG] Could not determine publishable backlog, assuming none: {exc}"
+        )
+        return False
 
 
 def _run_ingest_locked(ctx: TaskContext, force: bool = False):
@@ -132,17 +180,28 @@ def _run_ingest_locked(ctx: TaskContext, force: bool = False):
         )
         return
 
-    # Skip weekends (unless forced)
-    if not force and ist_now.weekday() >= 5:
+    # Skip weekends (unless forced) — but not when the source is already
+    # carrying sessions we have not ingested, otherwise Saturday morning would
+    # permanently skip Friday's catch-up.
+    backlog = _has_publishable_backlog()
+    if not force and ist_now.weekday() >= 5 and not backlog:
         logger.info(f"[MYRA BG] {ist_now.date()} is a weekend – skipping daily ingest.")
         return
 
-    # Skip before 6 PM IST (data not yet available) unless forced
-    if not force and ist_now.hour < 18:
+    # Skip before 6 PM IST (today's data not yet available) unless forced. This
+    # is about *today's* session only: if upstream already publishes sessions we
+    # lack, there is nothing to wait for.
+    if not force and ist_now.hour < 18 and not backlog:
         logger.info(
             f"[MYRA BG] Market data not yet available (IST: {ist_now.hour:02d}:{ist_now.minute:02d}). Skipping."
         )
         return
+
+    if backlog and not force and ist_now.hour < 18:
+        logger.info(
+            "[MYRA BG] Before the 18:00 cutoff, but the source already holds "
+            "sessions we lack - running catch-up instead of waiting."
+        )
 
     # Record the attempt BEFORE any work, so the shared 30-minute cooldown holds
     # even if this run crashes, hangs or is interrupted. This is bookkeeping

@@ -62,6 +62,43 @@ class DBState:
         return self.latest
 
 
+@pytest.fixture(autouse=True)
+def _phase10_recovery_seams(monkeypatch):
+    """Neutralise the Phase 10 recovery seams for this module.
+
+    ``_maybe_trigger_ingest`` now delegates eligibility to
+    ``myra_app.eod_recovery`` and records the outcome to the metadata sidecar.
+    This module's ``env`` fixture already stubs every watchdog seam, so the same
+    discipline is applied here: pin the official calendar (hermetic, no live
+    meta.json), pin the stored-data date, and neutralise the status write so no
+    test can touch a live database.
+    """
+    import myra_app.eod_recovery as er
+    import myra_app.nse_calendar as nc
+
+    monkeypatch.setattr(
+        nc,
+        "load_official_meta",
+        lambda: {"year": 2026, "holidays": {}, "special_sessions": []},
+    )
+    monkeypatch.setattr(nc, "verified_years", lambda: [2026])
+    monkeypatch.setattr(er, "record_outcome", lambda *a, **k: True)
+    monkeypatch.setattr(er, "note_attempt", lambda *a, **k: {"attempts": 1})
+    monkeypatch.setattr(er, "refund_attempt", lambda *a, **k: {"attempts": 0})
+    monkeypatch.setattr(er, "budget_allows", lambda *a, **k: (True, {"attempts": 0}))
+    monkeypatch.setattr(
+        "myra_app.data_readiness.source_facts",
+        lambda: {
+            "available": False,
+            "ready": None,
+            "reason": None,
+            "last_date": None,
+            "complete": None,
+            "total_files": None,
+        },
+    )
+
+
 @pytest.fixture
 def env(monkeypatch):
     """Wire the watchdog's time / calendar / DB-truth seams."""

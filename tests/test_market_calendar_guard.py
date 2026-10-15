@@ -29,6 +29,7 @@ import pytest
 
 import myra_app.constants as constants
 import myra_app.daily_ingestor as di
+import myra_app.nse_calendar as nc
 from myra_app.librarian_core import LibrarianCore
 from tests.conftest import LIVE_DB_DIR
 
@@ -42,6 +43,28 @@ NEXT_MONDAY = dt.date(2026, 10, 12)
 NEXT_FRIDAY = dt.date(2026, 10, 16)
 
 HEURISTIC = di.HEURISTIC_HOLIDAY_REASON
+
+#: A deterministic stand-in for the official NSE publication, so this module's
+#: assertions never depend on the live eod2_data/meta.json (which changes with
+#: the real trading year). Only the dates these tests reference matter.
+_OFFICIAL = {
+    "year": 2026,
+    "data-version": "test",
+    "holidays": {
+        "02-Oct-2026": "Mahatma Gandhi Jayanti",
+        "13-Oct-2026": "Ambedkar Jayanti",  # a curated holiday for reader tests
+        "15-Aug-2026": "Independence Day",
+    },
+    "special_sessions": [],
+    "special_sessions_last_update": "2026-10-14",
+}
+
+
+@pytest.fixture(autouse=True)
+def _pin_official_calendar(monkeypatch):
+    """Pin the official calendar so tests are hermetic and date-stable."""
+    monkeypatch.setattr(nc, "load_official_meta", lambda: dict(_OFFICIAL))
+    monkeypatch.setattr(nc, "verified_years", lambda: [2026])
 
 
 @pytest.fixture(autouse=True)
@@ -193,41 +216,42 @@ def test_writer_never_overwrites_correct_trading_day(cal):
 
 
 def test_writer_will_not_flag_a_data_bearing_date(cal):
-    """EOD rows exist for the date, so a zero-row insert proves nothing."""
+    """EOD rows exist for the date, so a zero-row insert proves nothing.
+
+    Phase 10: the writer now records the *official* verdict rather than an
+    inference. 2026-10-09 is a Friday absent from the official NSE holiday list,
+    so the recorded row is a confirmed session - and it is still written with
+    INSERT OR IGNORE, so a pre-existing record is never touched.
+    """
     cal.eod_rows(FRIDAY, n=50)
 
     # db_before == 0 only because the caller counted a different slice; the
     # authoritative evidence is the presence of rows.
-    assert di._mark_calendar_unproven(_at_noon(FRIDAY), db_before=0) is False
-    assert cal.read(FRIDAY) is None
-
-    # And when db_before itself reports pre-existing rows, it is also refused.
-    assert di._mark_calendar_unproven(_at_noon(FRIDAY), db_before=50) is False
-    assert cal.read(FRIDAY) is None
+    di._mark_calendar_unproven(_at_noon(FRIDAY), db_before=0)
+    assert cal.read(FRIDAY) == (1, nc.RECONCILED_NOTE)
 
 
 def test_zero_row_result_is_not_definitive_evidence(cal):
-    """An unproven date is recorded as an inference and stays recoverable.
+    """A zero-row attempt never records a holiday; the calendar decides.
 
-    The writer may still annotate the date so the gap is visible, but the record
-    must be recognisable as a heuristic rather than a confirmed closure — and the
-    reader must flip to "trading day" the moment real data appears, with no
-    further calendar write.
+    Phase 10 supersedes the earlier "conservative inference" behaviour. The
+    writer now asks the official calendar and stores its verdict, so a real
+    session can no longer be suppressed by a zero-row attempt - the defect that
+    left the expected trading date behind the source.
     """
     assert di._mark_calendar_unproven(_at_noon(FRIDAY), db_before=0) is True
 
     flag, reason = cal.read(FRIDAY)
-    assert flag == 0
-    assert reason == HEURISTIC  # an inference, not a named exchange holiday
+    assert flag == 1, "a zero-row attempt must not record a holiday"
+    assert reason == nc.RECONCILED_NOTE
 
-    # Nothing contradicts it yet -> conservative existing behaviour holds.
-    assert di.is_trading_day(_at_noon(FRIDAY)) is False
+    # The session is a trading day immediately - no counter-evidence required.
+    assert di.is_trading_day(_at_noon(FRIDAY)) is True
 
-    # Data arrives (EOD2 loaded the session). The reader recovers on its own,
-    # with no calendar rewrite.
+    # Data arriving changes nothing about the calendar record.
     cal.eod_rows(FRIDAY, n=5)
     assert di.is_trading_day(_at_noon(FRIDAY)) is True
-    assert cal.read(FRIDAY) == (0, HEURISTIC)  # untouched
+    assert cal.read(FRIDAY) == (1, nc.RECONCILED_NOTE)
 
 
 def test_writer_preserves_named_holidays_and_weekends(cal):
@@ -281,10 +305,18 @@ def test_flagged_session_with_eod_rows_is_a_trading_day(cal):
 
 
 def test_flagged_session_without_eod_rows_stays_conservative(cal):
-    """With no counter-evidence the existing conservative rule is unchanged."""
+    """Phase 10: a stale heuristic record no longer decides the answer.
+
+    This was the defect. ``FRIDAY`` is flagged "likely holiday" purely because
+    an attempt once inserted zero rows, and it holds no EOD rows - which is
+    exactly the state of a real trading session whose file has not been copied
+    in yet. The official NSE calendar says it traded, so the reader must say so
+    too; otherwise the watchdog never looks for the data.
+    """
     cal.flag_heuristic(FRIDAY)
 
-    assert di.is_trading_day(_at_noon(FRIDAY)) is False
+    assert nc.classify(FRIDAY)["state"] == nc.SESSION_TRADING
+    assert di.is_trading_day(_at_noon(FRIDAY)) is True
 
 
 def test_presence_of_rows_is_the_only_evidence_required(cal):
@@ -357,18 +389,20 @@ def test_watchdog_uses_the_shared_override(cal):
 
 
 def test_watchdog_expected_date_for_genuinely_stale_database(cal):
-    """With no counter-evidence the watchdog falls back to the prior session.
+    """The expected date follows the official calendar, not the stored flag.
 
-    Same calendar shape as the test above minus the EOD rows: Friday stays a
-    non-session and the expected trading date walks back to Thursday.
+    Same shape as the test above minus the EOD rows. Under Phase 10 the official
+    calendar decides, so 2026-10-09 remains a session and the expected trading
+    date is that Friday - which is precisely the repair: the watchdog will now
+    look for the missing data instead of treating the date as a holiday.
     """
     from myra_app.tasks import watchdog as wd
 
-    cal.flag_heuristic(FRIDAY)  # no EOD rows -> conservative, not a session
+    cal.flag_heuristic(FRIDAY)  # stale heuristic record, no EOD rows
     cal.record(THURSDAY, 1, None)
 
-    assert wd._is_trading_day(FRIDAY) is False
-    assert wd._expected_trading_date(_ist(NEXT_MONDAY, 9, 0)) == THURSDAY
+    assert wd._is_trading_day(FRIDAY) is True
+    assert wd._expected_trading_date(_ist(NEXT_MONDAY, 9, 0)) == FRIDAY
 
 
 def test_backtest_date_filter_recovers_flagged_sessions(cal):
@@ -457,3 +491,60 @@ def test_technical_audit_counts_recovered_sessions(cal):
 
     assert base == 1
     assert sum(1 for d in flagged if has_eod_evidence(d)) == 1
+
+
+# ---------------------------------------------------------------------------
+# Official publication precedence (Phase 10)
+#
+# The local shortcuts in ``is_trading_day`` cannot express the published
+# reality, which is why the official calendar is consulted first. These pin that
+# ordering: a weekday shortcut evaluated first would suppress a published
+# weekend session.
+# ---------------------------------------------------------------------------
+
+
+def test_official_holiday_overrides_a_stored_trading_record(cal):
+    """The publication outranks whatever the calendar table happens to say."""
+    cal.record(dt.date(2026, 10, 2), 1, None)
+    assert di.is_trading_day(dt.datetime(2026, 10, 2, 12, tzinfo=IST)) is False
+
+
+def test_official_session_overrides_a_stored_holiday_record(cal):
+    cal.flag_heuristic(dt.date(2026, 10, 14))
+    assert di.is_trading_day(dt.datetime(2026, 10, 14, 12, tzinfo=IST)) is True
+
+
+def test_a_published_weekend_session_is_a_trading_day(cal, monkeypatch):
+    """2026-02-01 is a Sunday with an NSE special session.
+
+    A ``weekday() >= 5`` shortcut checked first would return False here and the
+    session would never be ingested.
+    """
+    monkeypatch.setattr(
+        nc,
+        "load_official_meta",
+        lambda: {**_OFFICIAL, "special_sessions": ["2026-02-01T00:00:00"]},
+    )
+    sunday = dt.datetime(2026, 2, 1, 12, tzinfo=IST)
+    assert sunday.weekday() == 6, "the fixture must stay a Sunday"
+    assert di.is_trading_day(sunday) is True
+
+
+def test_a_plain_weekend_without_a_circular_stays_closed(cal):
+    assert di.is_trading_day(dt.datetime(2026, 10, 10, 12, tzinfo=IST)) is False
+
+
+def test_an_unverifiable_year_falls_back_to_local_rules(cal, monkeypatch):
+    """With no publication we keep the legacy behaviour rather than guessing."""
+    monkeypatch.setattr(nc, "load_official_meta", lambda: None)
+    monkeypatch.setattr(nc, "verified_years", lambda: [])
+    cal.record(dt.date(2027, 1, 4), 0, "Curated closure")
+    assert di.is_trading_day(dt.datetime(2027, 1, 4, 12, tzinfo=IST)) is False
+
+
+def test_a_curated_pre_2026_holiday_survives_without_a_publication(cal, monkeypatch):
+    """Curated history must not be erased just because the feed lacks that year."""
+    monkeypatch.setattr(nc, "load_official_meta", lambda: None)
+    monkeypatch.setattr(nc, "verified_years", lambda: [])
+    cal.record(dt.date(2022, 8, 15), 0, "Independence Day")
+    assert di.is_trading_day(dt.datetime(2022, 8, 15, 12, tzinfo=IST)) is False

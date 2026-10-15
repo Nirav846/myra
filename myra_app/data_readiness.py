@@ -69,8 +69,6 @@ import time
 from datetime import datetime
 from typing import Any, Optional
 
-from myra_app.constants import DB_DIR
-
 logger = logging.getLogger(__name__)
 
 # ── Operational constants ────────────────────────────────────────────────────
@@ -138,10 +136,18 @@ def _ro(path: str) -> Optional[sqlite3.Connection]:
 
 
 def _db(key: str, filename: str) -> str:
-    """Resolve a sidecar path through constants.DB_DIR + the canonical DB_MAP."""
+    """Resolve a sidecar path through ``constants.DB_DIR`` + the canonical DB_MAP.
+
+    ``DB_DIR`` is read from the module **at call time**, not through the
+    import-time binding at the top of this file. A test that redirects
+    ``constants.DB_DIR`` (or a caller that repoints it) must never be able to
+    leave this module resolving - and therefore reading or writing - the live
+    sidecar. This is the same hazard Phase 8 hit in ``eod2_sync``.
+    """
+    from myra_app import constants
     from myra_app.librarian_core import LibrarianCore
 
-    return os.path.join(DB_DIR, LibrarianCore.DB_MAP.get(key, filename))
+    return os.path.join(constants.DB_DIR, LibrarianCore.DB_MAP.get(key, filename))
 
 
 # ── Individual measurements ──────────────────────────────────────────────────
@@ -466,6 +472,36 @@ def ingestion_facts() -> dict[str, Any]:
 # ── Orchestration ────────────────────────────────────────────────────────────
 
 
+def recovery_facts() -> dict[str, Any]:
+    """Last automatic EOD recovery outcome (Phase 10).
+
+    Read from the ``metadata`` key the recovery policy writes. This is a cheap
+    single-row read and adds nothing to the assessment's query budget.
+    """
+    out: dict[str, Any] = {
+        "reason": None,
+        "detail": None,
+        "at": None,
+        "fingerprint": None,
+    }
+    try:
+        from myra_app.eod_recovery import last_outcome
+
+        data = last_outcome() or {}
+    except Exception as exc:  # noqa: BLE001 - status is advisory
+        logger.debug("readiness: recovery status unavailable (%s)", exc)
+        return out
+    out.update(
+        {
+            "reason": data.get("reason"),
+            "detail": data.get("detail"),
+            "at": data.get("at"),
+            "fingerprint": data.get("fingerprint"),
+        }
+    )
+    return out
+
+
 def assess(now: Optional[datetime] = None) -> dict[str, Any]:
     """Full readiness assessment.
 
@@ -480,6 +516,7 @@ def assess(now: Optional[datetime] = None) -> dict[str, Any]:
     source = source_facts()
     fundamentals = fundamental_facts()
     ingestion = ingestion_facts()
+    recovery = recovery_facts()
 
     latest = technical.get("latest_date")
     expected = technical.get("expected_date")
@@ -500,6 +537,7 @@ def assess(now: Optional[datetime] = None) -> dict[str, Any]:
         "source": source,
         "fundamentals": fundamentals,
         "ingestion": ingestion,
+        "recovery": recovery,
         "publication_cutoff_ist": PUBLICATION_READY_IST,
         "generated_at": (now or datetime.now()).isoformat(),
     }
@@ -597,6 +635,9 @@ def fingerprint(assessment: dict[str, Any]) -> str:
         "universe": (assessment.get("coverage") or {}).get("universe"),
         "source": (assessment.get("source") or {}).get("last_date"),
         "fundamentals": (assessment.get("fundamentals") or {}).get("reporting_date"),
+        # Phase 10: a recovery starting or changing outcome is a real change and
+        # must reach the UI.
+        "recovery": (assessment.get("recovery") or {}).get("reason"),
     }
     return json.dumps(payload, sort_keys=True)
 

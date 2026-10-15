@@ -679,3 +679,138 @@ are three separate facts.
   second event transport, no background "is it ready yet" thread, no readiness
   auto-repair, no invented publication dates or progress percentages, no Phase 6
   promotion and no scoring-weight change.
+
+### Phase 10 - Authoritative NSE Calendar & Automatic EOD Recovery
+- **Root cause.** `daily_ingestor` wrote `"Likely holiday (zero rows)"` with
+  `is_trading_day=0` the first time a date ingested zero rows, conflating "NSE
+  did not trade" with "I do not have the data yet". Self-reinforcing, because a
+  date marked closed stops being fetched, so no rows ever contradict it. Live
+  damage: 215 heuristic rows, 24 of which actually had `technical_data`; 78
+  weekdays were wrongly suppressed, including `2026-10-13`/`2026-10-14`, exactly
+  the sessions the watchdog existed to catch up on.
+- **WS1 (calendar).** New `myra_app/nse_calendar.py` classifies a date as
+  `trading`/`closed`/`special`/`unknown` with provenance, from the official
+  publication already vendored in `eod2/src/eod2_data/meta.json` (NSE
+  `holidays(type=HOLIDAY_TRADING)`, `CM` segment, plus circular-announced special
+  sessions). `technical_data` is never consulted. Precedence: special session >
+  official holiday > coverage check > weekend > trading day. The coverage check
+  precedes the weekend rule **deliberately** - NSE publishes weekend live
+  sessions (2026-02-01 is a Sunday), so an unpublished year yields `unknown`
+  rather than a confident "closed", which would reintroduce the original bug for
+  every future date. Heuristic rows are never rewritten as holidays;
+  `_mark_calendar_unproven()` records a confirmed session as trading, and the
+  legacy `holiday_skip` `INSERT OR REPLACE` (which could overwrite a curated
+  record) is gone.
+- **WS1 (repair).** New `tools/calendar_reconcile.py`, dry-run by default.
+  Only rows named exactly `"Likely holiday (zero rows)"` are eligible, the
+  `UPDATE` re-checks `holiday_name` in its `WHERE`, nothing is deleted, and the
+  run is idempotent. Applied: 4,383 rows before and after (zero deletes), trading
+  days 2,891 -> 2,969, heuristics 215 -> 127; 78 restored to trading, 10 confirmed
+  as genuine official holidays. **127 pre-2026 records left untouched** because no
+  official publication for those years exists in the repo - a guessed verdict is
+  worse than a visibly unverified one. Re-running reports `changed: 0`.
+- **WS2 (recovery).** New `myra_app/eod_recovery.py` holds the policy with **no
+  scheduler, thread or polling of its own**; the existing 60 s watchdog stays the
+  only driver. Eligibility requires a confirmed session, a genuinely stale DB,
+  the publication window, the shared cooldown and available retry budget. Two
+  bounds, answering different questions: the cooldown spaces attempts apart
+  (shared with the ingest task so two drivers cannot both fire), while a
+  per-input-state budget (`MAX_ATTEMPTS_PER_INPUT=6`, keyed by a fingerprint of
+  session + source state) is a hard cap on one unchanged input. A cooldown alone
+  would re-import an endlessly incomplete source every 30 minutes forever; the
+  budget stops that, and because it is fingerprint-keyed a late-arriving file
+  produces a new fingerprint and therefore a fresh budget - a prior failure can
+  never permanently wedge recovery. Persisted in the existing `metadata` sidecar
+  (cross-process, restart-safe, no schema change); a corrupt row degrades to zero
+  attempts rather than raising.
+- **Honest outcomes.** `tasks.ingest.run()` now returns whether it actually
+  executed. When another driver holds the ingest lock the watchdog reports
+  `skipped_already_running` and **refunds** the budget it optimistically spent,
+  instead of charging for work it did not do. Success is claimed only when the
+  stored date actually advances; `stale_catchup` is marked only on real progress.
+- **WS3 (Mission Control).** `readiness.recovery` (`reason`/`detail`/`at`/
+  `fingerprint`) is served by the **existing** `/api/pipeline/readiness` and the
+  **existing** SSE bus - no new endpoint, no new polling loop, cadence unchanged
+  (30 s idle / 8 s active). It is deliberately not folded into the overall state:
+  "waiting for EOD" and "recovery failed" are different facts and merging them
+  makes a correctly waiting system look broken. Reason codes render as plain
+  language and most are not errors. A recovery change is part of the readiness
+  fingerprint so the transition actually reaches the UI.
+- **Tests / verification.** `+tests/test_nse_calendar.py` (22) and
+  `+tests/test_eod_recovery.py` (34); every calendar/recovery test pins the
+  official source in-process, so none reads the real `meta.json` and none drifts
+  when eod2 refreshes it. Focused run **271 passed**; full suite **1360 passed /
+  0 failed** (was 1304, +56). `black` 26.10.1 + `flake8` clean; `tsc --noEmit` +
+  `npm run build` clean; performance guard **271 / 0 CRITICAL** (+3 are
+  false positives - `summary["unclassified"].append()` builds a plain dict list,
+  not a DataFrame, so `pd.concat` does not apply). `db_doctor`: 2 pre-existing
+  issues (225 zero-close rows; technical DB 3 days behind), neither introduced
+  here - the second is precisely what Phase 10 recovery now handles.
+- **Process notes.** The live-DB guard caught three real leaks during this phase,
+  each fixed rather than suppressed: a stale `eod2.DB_DIR` assertion in
+  `test_eod2_sync.py` (module-level binding replaced by call-time resolution);
+  and two missing Phase 10 stubs (`note_attempt`, `refund_attempt`,
+  `budget_allows`) in the watchdog suites that wrote budget rows to the live
+  metadata sidecar. Leak rows were removed; live metadata is back to its 17
+  production rows. Two real bugs were also caught by the new tests and fixed:
+  the weekend rule firing for unverified years, and special-session descriptions
+  being discarded.
+- **Not changed (deliberately):** `eod2/` untouched (read-only reference); no
+  schema migration; no row deleted; no heuristic may close a session the official
+  calendar confirms is open; nothing guessed - unverifiable dates report
+  `unknown`; no new scheduler/thread/endpoint/event transport; no scoring,
+  ranking or manual-CSV change.
+- **Post-repair outage: published sessions would not ingest (top priority).**
+  After the calendar repair the system still sat at `2026-10-12` while the source
+  held `2026-10-14` (`ready`, 3552/3770 files). `eod_recovery.evaluate()`
+  reported **`eligible=True`** - the policy was right - and the data was blocked
+  by **three separate wall-clock guards**, each asking "has *today* bhavcopy
+  landed?" and each applied to sessions the source had **already published**:
+  `eod_recovery.evaluate`'s `after_publication_window` (deferred to 18:30 IST),
+  `tasks/ingest`'s `if ist_now.hour < 18` ("Market data not yet available
+  (IST: 09:21). Skipping."), and `if ist_now.weekday() >= 5` (which would
+  suppress Friday's catch-up on a Saturday morning). None is wrong about
+  today's session; each was being asked about the wrong thing. Fixed with one
+  shared rule, `tasks.ingest._has_publishable_backlog()`: if the newest upstream
+  session is newer than what is stored, there is real already-published work and
+  the guards must not apply. With no backlog, all three behave exactly as
+  before. A fourth, non-code cause: no MYRA process was running, so no watchdog
+  was ticking.
+  **Verified by driving the real watchdog tick** (`_maybe_trigger_ingest`):
+  `rows=398611, symbols=3627` -> "Catch-up ingestion advanced DB to 2026-10-14",
+  outcome `success` (829.6s); readiness flipped to **`ready`** ("Latest market
+  date 2026-10-14 matches the expected session"); recovery recorded
+  `recovered - advanced 2026-10-12 -> 2026-10-14`.
+- **Ctrl+C / shutdown safety.** The first signal already took the full graceful
+  path (join every task so none is killed mid-write, close pooled connections,
+  checkpoint WAL, release the single-scheduler lock). The gap closed here: a
+  **second Ctrl+C was swallowed** by the `if _shutdown_event.is_set(): return`
+  guard, so with a wedged task the operator was pressing Ctrl+C against no
+  response at all. A repeat signal now counts down and then exits - safe because
+  every database is in WAL mode, so an interrupted write rolls back to the last
+  commit and forcing costs a WAL checkpoint, not data. Three details that matter:
+  the countdown is **cancellable** (a graceful finish disarms it, so a clean stop
+  is never killed by a stale timer); it is **single-shot** (a third Ctrl+C does not
+  stack a second countdown); and `run_pipeline.py` now only calls `handle_exit()`
+  from its `finally` when **no signal already did**, which otherwise made an
+  ordinary clean shutdown look like a second Ctrl+C and arm the countdown against
+  itself. A task that will not stop within `TASK_JOIN_SECONDS` is now reported
+  rather than silently waited on.
+- **A test bug that killed the whole suite.** `test_force_exit_runs_on_a_separate_
+  thread` armed a real 5-second countdown that outlived the test; by the time it
+  fired, monkeypatch had been undone, so it called the real `os._exit` and killed
+  pytest with exit 130. Fixed at the source (cancellable countdown + cancel in
+  fixture teardown) rather than by making the test slower - the underlying
+  "unarmed timer outlives its test" hazard is real in production too, where a
+  clean stop could be killed by a stale forced exit.
+- **Tests / verification.** `+tests/test_shutdown_safety.py` (16) and 9 new
+  ingest-gate tests in `tests/test_ingest_freshness.py` (now 22).
+  `+tests/test_nse_calendar.py` (22), `+tests/test_eod_recovery.py` (35), and 6
+  new precedence tests in `test_market_calendar_guard.py` (now 26). Full suite
+  **1392 passed / 0 failed**. `black` 26.10.1 + `flake8` clean; `tsc --noEmit`
+  clean; performance guard **271 / 0 CRITICAL**. Live state after the fix:
+  `technical_data` max date `2026-10-14`, readiness **`ready`**.
+- **Known limitation (stated, not hidden).** Automatic ingestion still requires
+  the MYRA process to be running - recovery is driven by the 60 s watchdog inside
+  it, and no second scheduler was added by design. If MYRA is down, a published
+  session waits for the next start.

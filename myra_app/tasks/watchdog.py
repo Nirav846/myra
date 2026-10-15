@@ -255,42 +255,76 @@ def _maybe_trigger_ingest(ctx, ist_now: datetime, run_daily_ingest) -> str | Non
     here the expected-date, publication-window and cooldown checks have already
     established that the attempt is legitimate, so ``tasks.ingest.run`` keeps
     ownership of its own weekend / after-close guards.
+
+    Phase 10: eligibility is delegated to :mod:`myra_app.eod_recovery`, which
+    adds the official-calendar requirement (a confirmed session, never an
+    official holiday or an unknown calendar) and keeps the attempt bounded by
+    the existing shared cooldown. The watchdog remains the only driver - no new
+    scheduler or thread was introduced - and the eligibility check is a cheap
+    decision function, so a 60 s tick costs a handful of indexed reads.
     """
-    expected = _expected_trading_date(ist_now).isoformat()
-    db_latest = _db_latest_date()
+    from myra_app import eod_recovery
 
-    if db_latest is not None and db_latest >= expected:
-        return None  # already current for the expected trading date
+    decision = eod_recovery.evaluate(
+        now=ist_now,
+        expected_date=(
+            _expected_trading_date(ist_now).isoformat()
+            if _expected_trading_date(ist_now)
+            else None
+        ),
+        db_latest=_db_latest_date(),
+        after_publication_window=_after_publication_window(ist_now),
+        cooldown_minutes=STALE_RETRY_COOLDOWN_MINUTES,
+    )
 
-    if not _after_publication_window(ist_now):
-        logger.debug(
-            "[MYRA BG] Before 18:30 IST – %s data cannot be published yet; "
-            "deferring catch-up.",
-            expected,
-        )
+    if not decision["eligible"]:
+        # Record only the suppression reasons an operator would want to see; the
+        # "already current" case is the normal quiet state and is not worth a
+        # metadata write on every tick.
+        if decision["reason"] not in (
+            eod_recovery.REASON_SKIPPED_READY,
+            eod_recovery.REASON_SKIPPED_COOLDOWN,
+        ):
+            logger.debug("[MYRA BG] Recovery not eligible: %s", decision["reason"])
         return None
 
-    if not _cooldown_elapsed(ist_now):
-        logger.debug(
-            "[MYRA BG] Catch-up cooldown active (last attempt < %d min ago); skipping.",
-            STALE_RETRY_COOLDOWN_MINUTES,
-        )
-        return None
-
+    expected = decision["expected_date"]
     logger.info(
-        "[MYRA BG] Database behind expected trading date (%s < %s) – "
+        "[MYRA BG] Database behind confirmed trading date (%s < %s) – "
         "triggering catch-up ingestion.",
-        db_latest or "empty",
+        decision["db_latest"] or "empty",
         expected,
     )
 
-    before = db_latest
-    run_daily_ingest(ctx)
+    before = decision["db_latest"]
+    # Spend one unit of per-input-state budget *before* starting, so a crash or
+    # an exception cannot produce an unbounded retry loop. Keyed by the input
+    # fingerprint: new input (late file, new session) means a fresh budget.
+    eod_recovery.note_attempt(decision["fingerprint"], reason="catchup")
+    ran = run_daily_ingest(ctx)
+
+    if ran is False:
+        # Another driver (the executor) held the ingest lock. Our attempt never
+        # happened, so report that honestly and give the budget back rather than
+        # charging an attempt we did not make.
+        logger.info("[MYRA BG] Catch-up attempt dropped: ingest already running.")
+        eod_recovery.refund_attempt(decision["fingerprint"])
+        eod_recovery.record_outcome(
+            eod_recovery.REASON_SKIPPED_RUNNING,
+            detail="an ingest attempt was already in progress",
+            fingerprint=decision["fingerprint"],
+        )
+        return None
 
     after = _db_latest_date()
     if after is not None and (before is None or after > before):
         _mark_task_run("stale_catchup")
-        logger.info(f"[MYRA BG] Catch-up ingestion advanced DB to {after}.")
+        logger.info("[MYRA BG] Catch-up ingestion advanced DB to %s.", after)
+        eod_recovery.record_outcome(
+            eod_recovery.REASON_RECOVERED,
+            detail=f"advanced {before or 'empty'} -> {after}",
+            fingerprint=decision["fingerprint"],
+        )
         return "success"
 
     # Freshness NOT established. Do not write a stale_catchup success marker.
@@ -299,6 +333,23 @@ def _maybe_trigger_ingest(ctx, ist_now: datetime, run_daily_ingest) -> str | Non
     logger.info(
         f"[MYRA BG] Catch-up ingestion did not advance the stored date "
         f"(still {after or 'empty'}); freshness not established."
+    )
+    # Report the honest outcome: the task did not advance the date, so recovery
+    # is NOT reported as successful. Whether that is "waiting for the source" or
+    # a genuine failure is decided by the readiness verdict, not assumed here.
+    from myra_app import data_readiness as dr
+
+    verdict = dr.assess(ist_now)
+    if verdict["state"] == dr.STATE_WAITING:
+        reason = eod_recovery.REASON_WAITING
+    elif verdict["state"] in (dr.STATE_PARTIAL, dr.STATE_FAILED):
+        reason = eod_recovery.REASON_PARTIAL
+    else:
+        reason = eod_recovery.REASON_NO_NEW_DATA
+    eod_recovery.record_outcome(
+        reason,
+        detail=f"stored date still {after or 'empty'}; readiness={verdict['state']}",
+        fingerprint=decision["fingerprint"],
     )
     return "no_new_data"
 

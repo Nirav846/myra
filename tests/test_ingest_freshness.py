@@ -96,12 +96,16 @@ NO_ROWS = {
 }
 
 
-def _run_eod2(ctx, monkeypatch, result):
+#: A run that actually ingested something - the positive path.
+NEW_ROWS = dict(NO_ROWS, rows_inserted=3184, symbols_updated=1200)
+
+
+def _run_eod2(ctx, monkeypatch, result, force: bool = True):
     from myra_app import constants
 
     monkeypatch.setattr(constants, "USE_EOD2_DATA", True)
     monkeypatch.setattr(constants, "ENABLE_DAILY_INGEST", True)
-    ingest_mod.run(ctx, force=True)
+    ingest_mod.run(ctx, force=force)
 
 
 # ---------------------------------------------------------------------------
@@ -369,3 +373,137 @@ def test_no_new_data_persists_with_its_status_and_message(fixture_db_dir):
     assert row is not None
     assert row[0] == ingest_mod.NO_NEW_DATA
     assert "freshness not established" in row[1]
+
+
+# ---------------------------------------------------------------------------
+# 9: the "data not yet available" gate must not block published sessions
+#
+# Regression: on 2026-10-15 at 09:2x IST the source already carried 2026-10-13
+# and 2026-10-14, the database was stuck at 2026-10-12, and both the cutoff gate
+# and the weekend gate said "not yet" - so the sessions were never ingested and
+# nothing recovered. These guards are about *today's* bhavcopy only; they must
+# not suppress catch-up of sessions upstream has already published.
+# ---------------------------------------------------------------------------
+
+
+def _pin_backlog(monkeypatch, backlog: bool):
+    monkeypatch.setattr(ingest_mod, "_has_publishable_backlog", lambda: backlog)
+
+
+def test_backlog_probe_is_true_when_the_source_is_ahead():
+    from myra_app.tasks.ingest import _has_publishable_backlog
+
+    monkey = pytest.MonkeyPatch()
+    monkey.setattr(
+        "myra_app.data_readiness.source_facts",
+        lambda: {"last_date": "2026-10-14"},
+    )
+    monkey.setattr("myra_app.daily_ingestor.get_db_latest_date", lambda: "2026-10-12")
+    try:
+        assert _has_publishable_backlog() is True
+    finally:
+        monkey.undo()
+
+
+def test_backlog_probe_is_false_when_we_are_already_current():
+    from myra_app.tasks.ingest import _has_publishable_backlog
+
+    monkey = pytest.MonkeyPatch()
+    monkey.setattr(
+        "myra_app.data_readiness.source_facts",
+        lambda: {"last_date": "2026-10-14"},
+    )
+    monkey.setattr("myra_app.daily_ingestor.get_db_latest_date", lambda: "2026-10-14")
+    try:
+        assert _has_publishable_backlog() is False
+    finally:
+        monkey.undo()
+
+
+def test_backlog_probe_is_false_when_the_source_is_unknown():
+    from myra_app.tasks.ingest import _has_publishable_backlog
+
+    monkey = pytest.MonkeyPatch()
+    monkey.setattr("myra_app.data_readiness.source_facts", lambda: {"last_date": None})
+    try:
+        assert _has_publishable_backlog() is False
+    finally:
+        monkey.undo()
+
+
+def test_backlog_probe_does_not_raise_when_the_probe_itself_fails():
+    """A probe failure must degrade to 'no backlog', not blow up the task."""
+    from myra_app.tasks.ingest import _has_publishable_backlog
+
+    monkey = pytest.MonkeyPatch()
+
+    def _boom():
+        raise RuntimeError("probe exploded")
+
+    monkey.setattr("myra_app.data_readiness.source_facts", _boom)
+    try:
+        assert _has_publishable_backlog() is False
+    finally:
+        monkey.undo()
+
+
+def test_before_cutoff_runs_catch_up_when_a_backlog_exists(ctx, monkeypatch, synced):
+    """The core fix: a published backlog must be ingested before 18:00 IST."""
+    import datetime as dt
+
+    _pin_backlog(monkeypatch, True)
+    morning = dt.datetime(
+        2026, 10, 15, 9, 25, tzinfo=dt.timezone(dt.timedelta(hours=5, minutes=30))
+    )
+    monkeypatch.setattr(ingest_mod, "now_ist", lambda: morning)
+    _stub_eod2(monkeypatch, NEW_ROWS)
+    _run_eod2(ctx, monkeypatch, NEW_ROWS, force=False)
+    assert synced["mark_run"], "catch-up must not be suppressed by the clock"
+
+
+def test_before_cutoff_still_skips_when_there_is_no_backlog(ctx, monkeypatch, synced):
+    import datetime as dt
+
+    _pin_backlog(monkeypatch, False)
+    morning = dt.datetime(
+        2026, 10, 15, 9, 25, tzinfo=dt.timezone(dt.timedelta(hours=5, minutes=30))
+    )
+    monkeypatch.setattr(ingest_mod, "now_ist", lambda: morning)
+    _stub_eod2(monkeypatch, NEW_ROWS)
+    _run_eod2(ctx, monkeypatch, NEW_ROWS, force=False)
+    assert synced["mark_run"] == [], "waiting for today's bhavcopy is still correct"
+
+
+def test_saturday_morning_still_ingests_friday_catch_up(ctx, monkeypatch, synced):
+    """The weekend guard must not swallow Friday's published session."""
+    import datetime as dt
+
+    assert dt.date(2026, 10, 17).weekday() == 5, "fixture must be a Saturday"
+    _pin_backlog(monkeypatch, True)
+    saturday = dt.datetime(
+        2026, 10, 17, 9, 30, tzinfo=dt.timezone(dt.timedelta(hours=5, minutes=30))
+    )
+    monkeypatch.setattr(ingest_mod, "now_ist", lambda: saturday)
+    _stub_eod2(monkeypatch, NEW_ROWS)
+    _run_eod2(ctx, monkeypatch, NEW_ROWS, force=False)
+    assert synced["mark_run"], "a weekend must not block already-published data"
+
+
+def test_saturday_with_no_backlog_is_still_skipped(ctx, monkeypatch, synced):
+    import datetime as dt
+
+    _pin_backlog(monkeypatch, False)
+    saturday = dt.datetime(
+        2026, 10, 17, 9, 30, tzinfo=dt.timezone(dt.timedelta(hours=5, minutes=30))
+    )
+    monkeypatch.setattr(ingest_mod, "now_ist", lambda: saturday)
+    _stub_eod2(monkeypatch, NEW_ROWS)
+    _run_eod2(ctx, monkeypatch, NEW_ROWS, force=False)
+    assert synced["mark_run"] == []
+
+
+def test_force_still_bypasses_every_guard(ctx, monkeypatch, synced):
+    _pin_backlog(monkeypatch, False)
+    _stub_eod2(monkeypatch, NEW_ROWS)
+    _run_eod2(ctx, monkeypatch, NEW_ROWS, force=True)
+    assert synced["mark_run"], "force must remain an unconditional override"

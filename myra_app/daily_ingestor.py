@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
+from myra_app import constants
 from myra_app.constants import DB_DIR
 from myra_app.fetcher import DataFetcher
 from myra_app.librarian_core import LibrarianCore
@@ -19,7 +20,14 @@ IST = timezone(timedelta(hours=5, minutes=30))
 
 #: holiday_name written by the legacy zero-row path (see _mark_calendar_unproven).
 #: It records "this attempt inserted nothing", which is not proof of a holiday.
+#: Retained verbatim so existing rows, audits and the backtest guard keep
+#: matching them; Phase 10 reconciliation replaces them with official verdicts.
 HEURISTIC_HOLIDAY_REASON = "Likely holiday (zero rows)"
+
+#: holiday_name written by Phase 10 when a zero-row attempt happens but no
+#: official calendar verdict is available. Explicitly non-authoritative: it says
+#: "an attempt found nothing", never "the exchange was closed".
+UNPROVEN_REASON = "Attempt found no data (calendar unverified)"
 
 NSE_HOLIDAYS_BASELINE = {
     "2025-02-26",
@@ -238,37 +246,90 @@ def is_trading_day(dt: datetime) -> bool:
 
     Authority order, weakest evidence first:
       1. weekend            -> not a trading day
-      2. NSE_HOLIDAYS_BASELINE -> not a trading day
-      3. market_calendar    -> honour the record, EXCEPT when the record is the
-                               legacy zero-row *heuristic* and either
-                               technical_data holds real rows for that date
-                               (:func:`has_eod_evidence`) or the upstream EOD
-                               source already carries it
-                               (:func:`has_source_evidence`).
+    The official NSE publication (:mod:`myra_app.nse_calendar`) supplies the
+    authoritative verdict whenever the date can be verified. The order is
+    deliberate and preserves two earlier phases' guarantees:
 
-    Step 3's exception exists because the legacy ingest path used to write
+    1. a published **special session** wins outright, because NSE announces live
+       weekend sessions by circular and a weekday shortcut would suppress them;
+    2. a stored **named** closure (a curated holiday) still wins, because neither
+       stray ingested rows nor a locally mislabelled entry should be able to
+       declare a known exchange holiday an ordinary session (Phase 7);
+    3. otherwise the official list decides, replacing the hardcoded baseline.
+
+    Only when the date cannot be verified (an unpublished future year, or a
+    missing publication) does the legacy local chain apply:
+
+      1. weekend               -> not a trading day
+      2. NSE_HOLIDAYS_BASELINE -> not a trading day
+      3. market_calendar       -> honour the record, EXCEPT when the record is a
+                                  zero-row *heuristic* and either technical_data
+                                  holds real rows for that date
+                                  (:func:`has_eod_evidence`) or the upstream EOD
+                                  source already carries it
+                                  (:func:`has_source_evidence`).
+
+    That legacy chain is also what carries curated pre-2026 holidays, which a
+    2026-only publication cannot confirm either way.
+
+    Steps 3's exception exists because the legacy ingest path used to write
     ``is_trading_day = 0`` whenever an attempt inserted zero rows — "we inserted
     nothing" is not evidence that the exchange was closed. Such rows were then
     excluded from :func:`calculate_missing_dates` forever, while EOD2 went on to
-    load the session normally. Only the heuristic reason is overridable; a named
-    exchange holiday (Gandhi Jayanti, Christmas) stays authoritative even when
-    rows happen to exist.
+    load the session normally.
 
     The source-evidence arm additionally covers the not-yet-ingested session,
     which the database arm cannot see.
     """
+    # Phase 10 precedence, in order:
+    #
+    #  1. A published special session wins outright. NSE announces live weekend
+    #     sessions by circular (2026-02-01 is a Sunday), so a ``weekday() >= 5``
+    #     shortcut evaluated first would suppress a real session.
+    #  2. A stored *named* closure (curated "Gandhi Jayanti", "Christmas") stays
+    #     authoritative. This is the Phase 7 guardrail: a stray batch of rows, or
+    #     a locally mislabelled entry, must not be able to declare a known
+    #     exchange holiday an ordinary session.
+    #  3. The official publication decides, replacing the hardcoded baseline.
+    #  4. When the date cannot be verified (unpublished future year, missing
+    #     publication) the legacy local rules below apply, which is what carries
+    #     curated pre-2026 holidays.
+    date_str = dt.date().isoformat()
+    verdict = None
+    try:
+        from myra_app import nse_calendar
+
+        verdict = nse_calendar.classify(dt.date())
+        if verdict["verified"] and verdict["state"] == nse_calendar.SESSION_SPECIAL:
+            return True
+    except Exception as exc:  # noqa: BLE001 - fall back to legacy behaviour
+        logger.debug("calendar: official classification unavailable (%s)", exc)
+
+    recorded = calendar_classification(date_str)
+    if (
+        recorded is not None
+        and recorded[0] == 0
+        and recorded[1] not in (HEURISTIC_HOLIDAY_REASON, UNPROVEN_REASON)
+    ):
+        return False  # curated / named closure wins
+
+    if verdict is not None and verdict.get("verified"):
+        return verdict["state"] in (
+            nse_calendar.SESSION_TRADING,
+            nse_calendar.SESSION_SPECIAL,
+        )
+
     if dt.weekday() >= 5:
         return False
-    date_str = dt.date().isoformat()
     if date_str in NSE_HOLIDAYS_BASELINE:
         return False
-    recorded = calendar_classification(date_str)
+
     if recorded is None:
         return True
     is_trading, reason = recorded
     if is_trading:
         return True
-    if reason == HEURISTIC_HOLIDAY_REASON:
+    if reason in (HEURISTIC_HOLIDAY_REASON, UNPROVEN_REASON):
         if has_eod_evidence(date_str):
             return True
         if has_source_evidence(date_str):
@@ -308,41 +369,63 @@ def calculate_missing_dates(db_latest_date: str, target_date: datetime) -> list:
 
 
 def _mark_calendar_unproven(current_date: datetime, db_before: int) -> bool:
-    """Record a zero-row attempt, but only when nothing contradicts a session.
+    """Record a zero-row attempt **without** asserting a holiday.
 
-    A zero-row insert is *not* evidence that the exchange was closed. It can also
-    mean duplicate/already-present rows, an empty or unavailable source, or a parse
-    problem. This helper therefore refuses to downgrade a date that has any of:
+    Phase 10. A zero-row ingest attempt is not evidence that the exchange was
+    closed - it is equally consistent with an EOD file that had not been
+    published yet, a partially copied folder, a parse problem, or rows that were
+    already present. The previous behaviour wrote
+    ``is_trading_day = 0 "Likely holiday (zero rows)"``, which permanently
+    branded a not-yet-ingested session as a holiday and stopped the watchdog
+    from ever looking for its data (see docs/PHASE10_CALENDAR_AND_AUTOMATIC_EOD_RECOVERY.md).
 
-      * an existing ``is_trading_day = 1`` calendar record, or
-      * EOD rows already present for the date (``db_before`` / ``technical_data``).
+    What is recorded now is only the *unproven* fact, with provenance that makes
+    it unmistakable and non-authoritative. The official calendar module decides
+    trading-day status; this row never overrides it.
 
-    The record is written with INSERT OR IGNORE semantics so an existing — correct
-    or explicitly curated — row is never overwritten. Idempotent: a second run
-    writes nothing. Returns True when a row was written.
+    The record is written with INSERT OR IGNORE, so an existing correct or
+    curated row is never overwritten, and the operation is idempotent.
     """
     date_str = current_date.date().isoformat()
 
-    # Strongest existing evidence wins: never overwrite a recorded trading day.
-    recorded = calendar_classification(date_str)
-    if recorded is not None and recorded[0]:
-        return False
+    # An official verdict is available: record it instead of a heuristic guess.
+    try:
+        from myra_app import nse_calendar
 
-    # Real data for the date proves the exchange traded.
-    if db_before and db_before > 0:
-        return False
-    if has_eod_evidence(date_str):
-        return False
+        verdict = nse_calendar.classify(current_date.date())
+        if verdict["verified"]:
+            if verdict["state"] in (
+                nse_calendar.SESSION_TRADING,
+                nse_calendar.SESSION_SPECIAL,
+            ):
+                flag = 1
+                name = nse_calendar.RECONCILED_NOTE
+            else:
+                flag = 0
+                name = verdict["reason"]
+            return _write_calendar_row(date_str, flag, name, current_date)
+    except Exception as exc:  # noqa: BLE001 - never block an ingest on the calendar
+        logger.debug(
+            "calendar: could not record official verdict for %s: %s", date_str, exc
+        )
 
+    # No official verdict: keep the historical "unproven" marker, but with a name
+    # that says what it is. The row is never treated as a holiday by
+    # nse_calendar.classify(), which reads the official publication first.
+    return _write_calendar_row(date_str, 0, UNPROVEN_REASON, current_date)
+
+
+def _write_calendar_row(
+    date_str: str, flag: int, name: str, current_date: datetime
+) -> bool:
+    """INSERT OR IGNORE one calendar row. Never overwrites, never deletes."""
     try:
         conn = sqlite3.connect(_calendar_db_path(), timeout=5)
         try:
-            # INSERT OR IGNORE, not REPLACE: an existing record (including a
-            # curated named holiday) must survive untouched.
             conn.execute(
                 "INSERT OR IGNORE INTO market_calendar "
-                "(date, is_trading_day, holiday_name) VALUES (?, 0, ?)",
-                (date_str, HEURISTIC_HOLIDAY_REASON),
+                "(date, is_trading_day, holiday_name) VALUES (?, ?, ?)",
+                (date_str, flag, name),
             )
             conn.commit()
             return conn.total_changes > 0
@@ -375,7 +458,13 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
         db_before = get_db_row_count(target_date=current_date.date().isoformat())
         result["db_before"] = db_before
 
-        calendar_db_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["calendar"])
+        # Resolved through `constants.DB_DIR` at call time: an import-time
+        # binding here would pin the calendar sidecar to whatever DB_DIR was
+        # when the module loaded, which is exactly how tests and re-pointed
+        # deployments end up reading the live database.
+        calendar_db_path = os.path.join(
+            constants.DB_DIR, LibrarianCore.DB_MAP["calendar"]
+        )
         if os.path.exists(calendar_db_path):
             try:
                 with sqlite3.connect(calendar_db_path) as cal_conn:
@@ -423,18 +512,26 @@ def run_daily_update_for_date(current_date: datetime, force: bool = False) -> di
             return result
         elif data_csv == "holiday_skip":
             print("🛑 Market Holiday or Weekend. Skipping fetch.")
+            # Phase 10: an auto-detected skip is NOT a holiday claim. The fetch
+            # layer also returns this for a not-yet-published file, so writing a
+            # holiday row here (with INSERT OR REPLACE, which could also clobber
+            # a curated record) was the same defect in a second place. Record the
+            # official verdict when we have one, and never overwrite.
             try:
-                calendar_db_path = os.path.join(
-                    DB_DIR, LibrarianCore.DB_MAP["calendar"]
+                from myra_app import nse_calendar
+
+                verdict = nse_calendar.classify(current_date.date())
+                if verdict["verified"]:
+                    flag = 0 if verdict["state"] == nse_calendar.SESSION_CLOSED else 1
+                    name = verdict["reason"]
+                else:
+                    flag = 0
+                    name = UNPROVEN_REASON
+                _write_calendar_row(
+                    current_date.date().isoformat(), flag, name, current_date
                 )
-                if os.path.exists(calendar_db_path):
-                    with sqlite3.connect(calendar_db_path) as cal_conn:
-                        cal_conn.execute(
-                            "INSERT OR REPLACE INTO market_calendar (date, is_trading_day, holiday_name) VALUES (?, 0, 'NSE holiday (auto-detected)')",
-                            (current_date.date().isoformat(),),
-                        )
-            except Exception:
-                pass
+            except Exception as e:  # noqa: BLE001 - calendar note is best-effort
+                print(f"⚠️ Warning: Could not record calendar verdict: {e}")
             result["success"] = True
             result["skipped"] = True
             result["skip_reason"] = "holiday_or_weekend"

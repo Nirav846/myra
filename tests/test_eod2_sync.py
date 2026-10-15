@@ -403,15 +403,15 @@ def test_duplicate_dates_in_one_file_are_collapsed(tmp_path, monkeypatch, techni
 
 
 def test_sync_writes_only_to_the_redirected_database(fixture_db_dir, monkeypatch):
-    """Regression guard for the near-miss this phase hit.
+    """Regression guard for the near-miss this phase hit, and for Phase 10.
 
-    ``eod2_sync`` binds ``DB_DIR`` by value at import, so a caller that patches
-    only ``myra_app.constants.DB_DIR`` still writes to the *live* database. The
-    real path is resolved through the module-level binding, which is what
-    ``fixture_db_dir`` rebinds.
+    ``eod2_sync`` used to bind ``DB_DIR`` by value at import, so a caller that
+    patched only ``myra_app.constants.DB_DIR`` still wrote to the *live*
+    database. It now resolves ``DB_DIR`` at call time, so the returned path
+    follows the redirect rather than a stale snapshot.
     """
     assert constants.DB_DIR == fixture_db_dir
-    assert eod2.DB_DIR == fixture_db_dir, (
-        "eod2_sync.DB_DIR must track the redirected DB_DIR, otherwise the sync "
-        "writes to the live technical database"
-    )
+    resolved = eod2._get_db_path()
+    assert resolved.startswith(
+        os.path.abspath(fixture_db_dir)
+    ), f"eod2 resolves its database outside the redirect: {resolved}"

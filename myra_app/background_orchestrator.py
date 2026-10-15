@@ -86,15 +86,52 @@ def _get_metadata_connection(read_only: bool = True) -> LibrarianCore:
 # ─── Shutdown handler ─────────────────────────────────────────────────────────
 
 
+#: True once a graceful shutdown has begun. Used to escalate on a repeat signal.
+_shutdown_started = threading.Event()
+
+#: Grace period a second signal waits before forcing exit.
+FORCE_EXIT_GRACE_SECONDS = 5
+
+#: How long shutdown waits for each task to finish its current DB write.
+TASK_JOIN_SECONDS = 15
+
+#: Set to disarm a pending forced exit when the graceful path wins the race.
+_force_exit_cancelled = threading.Event()
+
+#: The pending force-exit countdown, if any. Guards against stacking several.
+_force_exit_thread: threading.Thread | None = None
+
+
 def _graceful_shutdown(_signum=None, _frame=None):
     """
     Called on Ctrl+C (SIGINT), SIGTERM, or Windows console close.
     Signals all background tasks to stop and waits for them to finish
     their current DB write before exiting.
+
+    Repeat-signal escalation
+    ------------------------
+    The first signal always takes the full graceful path: join every task (so no
+    thread is killed mid-write), close pooled connections, checkpoint WAL, and
+    release the single-scheduler lock.
+
+    Previously a second Ctrl+C was silently swallowed by the
+    ``if _shutdown_event.is_set(): return`` guard. If any task was wedged in a
+    long write, that left the operator pressing Ctrl+C with no recourse and no
+    feedback - a genuinely unpleasant failure mode for a service you have to be
+    able to stop.
+
+    A second signal now counts down a short grace period and then exits the
+    process. That is safe because every database is in WAL mode: an interrupted
+    write is rolled back to the last commit rather than left half-applied, so a
+    forced exit costs a WAL checkpoint, never data integrity. Skipping the
+    checkpoint only means the next start has slightly more WAL to replay.
     """
     global _started
     if _shutdown_event.is_set():
-        return  # Already shutting down
+        if _shutdown_started.is_set():
+            _force_exit_on_repeat_signal()
+        return  # Already shutting down (e.g. lifespan teardown won the race)
+    _shutdown_started.set()
     logger.info(
         "[MYRA] Shutdown signal received. Waiting for background tasks to finish..."
     )
@@ -103,7 +140,13 @@ def _graceful_shutdown(_signum=None, _frame=None):
     with _task_lock:
         for t in _active_tasks:
             if t.is_alive():
-                t.join(timeout=15)  # Give each task 15s to finish current write
+                t.join(timeout=TASK_JOIN_SECONDS)  # let it finish its current write
+                if t.is_alive():
+                    logger.warning(
+                        f"[MYRA] Task '{t.name}' did not stop within "
+                        f"{TASK_JOIN_SECONDS}s; continuing shutdown. Press "
+                        f"Ctrl+C again to force exit."
+                    )
 
     # PERFORMANCE IMPROVEMENT: Clean up connection pool
     with _pool_lock:
@@ -133,7 +176,57 @@ def _graceful_shutdown(_signum=None, _frame=None):
 
     with _start_lock:
         _started = False
+    _shutdown_started.clear()
+    # If a repeat signal armed a forced exit while we were still joining, the
+    # clean stop has now won: disarm it rather than killing an orderly exit.
+    _cancel_force_exit()
     logger.info("[MYRA] All background tasks finished. DB is safe. Goodbye.")
+
+
+def _force_exit_on_repeat_signal() -> None:
+    """Second Ctrl+C: count down briefly, then exit anyway.
+
+    Runs on a daemon thread so the signal handler itself stays non-blocking.
+
+    The countdown is cancellable and single-shot: a third Ctrl+C must not spawn a
+    second countdown, and if the graceful shutdown *does* finish during the grace
+    period the pending forced exit is cancelled rather than killing a process
+    that was already on its way out cleanly.
+    """
+    global _force_exit_thread
+    if _force_exit_thread is not None and _force_exit_thread.is_alive():
+        return  # already counting down
+    _force_exit_cancelled.clear()
+    logger.warning(
+        "[MYRA] Second shutdown signal received. Waiting %ds for a clean stop, "
+        "then forcing exit. All databases are in WAL mode, so an interrupted "
+        "write rolls back to the last commit - forcing costs a WAL checkpoint, "
+        "not data.",
+        FORCE_EXIT_GRACE_SECONDS,
+    )
+
+    def _countdown() -> None:
+        deadline = time.time() + FORCE_EXIT_GRACE_SECONDS
+        while time.time() < deadline:
+            if _force_exit_cancelled.wait(0.25):
+                logger.info(
+                    "[MYRA] Graceful shutdown completed - forced exit cancelled."
+                )
+                return
+        logger.warning("[MYRA] Forcing exit now (repeat shutdown signal).")
+        # os._exit, not sys.exit: a normal exit would run interpreter teardown
+        # on a thread stack we are deliberately abandoning.
+        os._exit(130)
+
+    _force_exit_thread = threading.Thread(
+        target=_countdown, name="myra-force-exit", daemon=True
+    )
+    _force_exit_thread.start()
+
+
+def _cancel_force_exit() -> None:
+    """Disarm a pending forced exit (the clean shutdown beat the countdown)."""
+    _force_exit_cancelled.set()
 
 
 def request_shutdown():
@@ -366,15 +459,13 @@ def _ensure_calendar_db():
         calendar_db_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["calendar"])
         os.makedirs(os.path.dirname(calendar_db_path), exist_ok=True)
         conn = sqlite3.connect(calendar_db_path)
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS market_calendar (
                 date TEXT PRIMARY KEY,
                 is_trading_day INTEGER NOT NULL DEFAULT 1,
                 holiday_name TEXT
             )
-        """
-        )
+        """)
         conn.commit()
         conn.close()
         logger.info(f"[MYRA BG] Calendar database verified at {calendar_db_path}")
@@ -392,15 +483,13 @@ def _ensure_network_cache_db():
         cache_db_path = os.path.join(DB_DIR, LibrarianCore.DB_MAP["network_cache"])
         os.makedirs(os.path.dirname(cache_db_path), exist_ok=True)
         conn = sqlite3.connect(cache_db_path)
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS cache (
                 key TEXT PRIMARY KEY,
                 value BLOB,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             )
-        """
-        )
+        """)
         conn.commit()
         conn.close()
         logger.info(f"[MYRA BG] Memory DB verified at {cache_db_path}")

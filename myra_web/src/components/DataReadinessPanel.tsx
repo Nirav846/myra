@@ -29,6 +29,31 @@ const STATE_STYLE: Record<ReadinessState, { cls: string; dot: string; icon: type
   unknown: { cls: 'text-gray-300 border-white/15 bg-white/5', dot: 'bg-gray-400', icon: HelpCircle },
 };
 
+/**
+ * Phase 10: plain-language labels for the recovery watchdog's reason codes.
+ *
+ * Keys must stay in sync with the `REASON_*` constants in
+ * `myra_app/eod_recovery.py`.
+ *
+ * Most of these are *not* errors — "Skipped — exchange holiday" is the system
+ * working correctly. Wording them this way stops a normal waiting state from
+ * looking like a fault on a control-room screen.
+ */
+const RECOVERY_LABELS: Record<string, string> = {
+  recovered: 'Recovered — data advanced to the expected session',
+  partial_recovery: 'Partial — some files landed, more still expected',
+  waiting_for_source: 'Waiting — source files still landing',
+  no_new_data: 'No new data in the source yet',
+  failed: 'Recovery attempt failed',
+  skipped_already_running: 'Skipped — an ingest is already running',
+  skipped_cooldown: 'Waiting — retry cooldown after an earlier attempt',
+  skipped_retry_budget_exhausted: 'Paused — retry budget spent on this source state',
+  skipped_official_holiday: 'Skipped — exchange holiday',
+  skipped_calendar_unknown: 'Skipped — session could not be confirmed',
+  skipped_already_current: 'Skipped — data already current',
+  skipped_before_publication_window: 'Waiting — before the EOD publication cutoff',
+};
+
 function Row({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="flex items-baseline justify-between gap-3 py-0.5">
@@ -85,6 +110,7 @@ export default function DataReadinessPanel({ busy }: { busy: boolean }) {
   const cov = readiness.coverage;
   const src = readiness.source;
   const fund = readiness.fundamentals;
+  const rec = readiness.recovery;
 
   const coverageText =
     cov.symbols_at_latest !== null && cov.universe
@@ -183,6 +209,17 @@ export default function DataReadinessPanel({ busy }: { busy: boolean }) {
                     readiness.ingestion.last_status ? ` (${readiness.ingestion.last_status})` : ''
                   }`
                 : 'Not recorded'
+            }
+          />
+          <Row
+            label="Auto-recovery"
+            value={
+              rec.reason ? RECOVERY_LABELS[rec.reason] ?? rec.reason : 'Not recorded'
+            }
+            hint={
+              rec.at
+                ? `${rec.detail ? `${rec.detail} — ` : ''}${rec.at.replace('T', ' ').slice(0, 19)}`
+                : 'The watchdog decides this; a waiting state is normal and is not an error.'
             }
           />
         </div>

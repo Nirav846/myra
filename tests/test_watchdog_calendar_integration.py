@@ -22,11 +22,31 @@ import pytest
 
 import myra_app.constants as constants
 import myra_app.daily_ingestor as di
+import myra_app.nse_calendar as nc
 from myra_app.librarian_core import LibrarianCore
 from myra_app.tasks import watchdog as wd
 from myra_app.tasks.context import TaskContext
 
 IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
+
+#: Pinned official calendar so these assertions are hermetic and do not depend on
+#: the live eod2_data/meta.json (which changes with the real trading year).
+#: 2026-10-02 is a named holiday; the surrounding weekdays are sessions.
+_OFFICIAL = {
+    "year": 2026,
+    "data-version": "test",
+    "holidays": {"02-Oct-2026": "Mahatma Gandhi Jayanti"},
+    "special_sessions": [],
+    "special_sessions_last_update": "2026-10-14",
+}
+
+
+@pytest.fixture(autouse=True)
+def _pin_official_calendar(monkeypatch):
+    """Pin the official calendar for the whole module."""
+    monkeypatch.setattr(nc, "load_official_meta", lambda: dict(_OFFICIAL))
+    monkeypatch.setattr(nc, "verified_years", lambda: [2026])
+
 
 FRIDAY = dt.date(2026, 10, 9)
 SATURDAY = FRIDAY + dt.timedelta(days=1)
@@ -95,6 +115,19 @@ def real_calendar(monkeypatch, tmp_path):
     monkeypatch.setattr(di, "DB_DIR", str(db_dir), raising=False)
     monkeypatch.setattr(di, "LibrarianCore", LibrarianCore, raising=False)
 
+    # Phase 10: the watchdog's recovery path also writes a status row through
+    # `eod_recovery`, which resolves its own metadata path. Redirect that module
+    # too, and give it a real metadata DB, so the end-to-end test cannot touch
+    # the live sidecar (the Phase 7 guard would (correctly) fail the session).
+    meta_path = db_dir / "myra_metadata.db"
+    meta = sqlite3.connect(meta_path)
+    meta.execute("CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT)")
+    meta.commit()
+    meta.close()
+    import myra_app.eod_recovery as er
+
+    monkeypatch.setattr(er, "_meta_path", lambda: str(meta_path), raising=False)
+
     class Harness:
         pass
 
@@ -134,10 +167,19 @@ def test_heuristic_holiday_with_eod_rows_is_a_trading_day(real_calendar):
     ), "a date holding valid EOD data must not be rejected as a holiday"
 
 
-def test_heuristic_holiday_without_eod_rows_stays_a_holiday(real_calendar):
-    """The heuristic is only overridden by contrary evidence."""
+def test_heuristic_holiday_without_eod_rows_is_recovered_by_the_official_calendar(
+    real_calendar,
+):
+    """Phase 10: a zero-row heuristic mark no longer decides trading-day status.
+
+    2026-10-12 is a Monday absent from the official NSE holiday list, so it is a
+    confirmed session even with no rows present. This is the repair: the date can
+    no longer suppress the search for its own data. A *named* holiday still wins
+    (see the next test).
+    """
     real_calendar.calendar(MONDAY, 0, "Likely holiday (zero rows)")
-    assert wd._is_trading_day(MONDAY) is False
+    assert nc.classify(MONDAY)["state"] == nc.SESSION_TRADING
+    assert wd._is_trading_day(MONDAY) is True
 
 
 def test_named_holiday_is_never_overridden(real_calendar):
@@ -225,8 +267,34 @@ def test_watchdog_end_to_end_with_real_calendar_triggers_ingestion(
     now = _ist(MONDAY, 19, 0)
     monkeypatch.setattr(wd, "now_ist", lambda: now)
     monkeypatch.setattr(wd, "_db_latest_date", lambda: thursday.isoformat())
-    monkeypatch.setattr(wd, "_cooldown_elapsed", lambda *_a, **_k: True)
     monkeypatch.setattr(wd, "_mark_task_run", lambda *a, **k: None)
+
+    # Phase 10: eligibility lives in `eod_recovery`. Pin the two inputs the
+    # watchdog used to compute inline (the shared attempt cooldown and the
+    # readiness verdict) and neutralise the status write, so this test exercises
+    # the decision path without touching any database.
+    import myra_app.eod_recovery as er
+
+    monkeypatch.setattr(er, "record_outcome", lambda *a, **k: True)
+    monkeypatch.setattr(er, "note_attempt", lambda *a, **k: {"attempts": 1})
+    monkeypatch.setattr(er, "refund_attempt", lambda *a, **k: {"attempts": 0})
+    monkeypatch.setattr(er, "budget_allows", lambda *a, **k: (True, {"attempts": 0}))
+    monkeypatch.setattr(
+        er,
+        "evaluate",
+        lambda now=None, **_k: {
+            "eligible": True,
+            "reason": "eligible",
+            "fingerprint": "test",
+            "expected_date": MONDAY.isoformat(),
+            "db_latest": thursday.isoformat(),
+            "source_last_date": None,
+        },
+    )
+    monkeypatch.setattr(
+        "myra_app.data_readiness.assess",
+        lambda *a, **k: {"state": "no_new_data"},
+    )
 
     calls = []
 

@@ -419,4 +419,20 @@ def test_assessment_does_not_write(monkeypatch, tech, val, fake_source):
 
 
 def test_readiness_respects_redirected_db_dir(fixture_db_dir):
-    assert dr.DB_DIR == fixture_db_dir
+    """Paths must resolve through the *current* DB_DIR, never a stale binding.
+
+    Phase 8 proved that an import-time ``from ... import DB_DIR`` is what let a
+    helper write to a live database. This asserts the call-time resolution.
+    """
+    from myra_app import constants
+
+    assert constants.DB_DIR == fixture_db_dir
+    # Every sidecar path the module builds must land inside the redirect.
+    for key, name in (
+        ("technical", "myra_technical.db"),
+        ("valuation", "myra_valuation.db"),
+        ("meta", "myra_metadata.db"),
+    ):
+        assert os.path.abspath(dr._db(key, name)).startswith(
+            os.path.abspath(fixture_db_dir)
+        ), f"{key} resolves outside the redirect"

@@ -65,6 +65,25 @@ export interface ReadinessIngestion {
   last_status: string | null;
 }
 
+/**
+ * Phase 10: why the automatic recovery watchdog last did (or did not) act.
+ *
+ * This is deliberately *not* folded into `state`. The readiness state answers
+ * "do we have the data we should have?"; this answers "what did the watchdog
+ * most recently decide, and why?". Conflating them would make a correctly
+ * waiting-for-EOD system look like a failure.
+ */
+export interface ReadinessRecovery {
+  /** Stable reason code, e.g. 'skipped_holiday', 'source_incomplete'. */
+  reason: string | null;
+  /** Human-readable specifics (which date, which source fact). */
+  detail: string | null;
+  /** When the watchdog last recorded this outcome (ISO, local). */
+  at: string | null;
+  /** Digest of the (date, source state) the decision was made against. */
+  fingerprint: string | null;
+}
+
 export interface DataReadiness {
   state: ReadinessState;
   label: string;
@@ -74,6 +93,7 @@ export interface DataReadiness {
   source: ReadinessSource;
   fundamentals: ReadinessFundamentals;
   ingestion: ReadinessIngestion;
+  recovery: ReadinessRecovery;
   publication_cutoff_ist: string;
   generated_at: string;
 }

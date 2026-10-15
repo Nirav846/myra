@@ -131,6 +131,8 @@ def main():
     def handle_exit(signum=None, frame=None):
         # Delegate to the orchestrator so threads are *joined* and the WAL is
         # checkpointed before exit (a bare sys.exit here would skip both).
+        # The orchestrator treats a repeat call as "escalate and force exit",
+        # so this must never fire twice for one shutdown.
         logger.info("Received shutdown signal – stopping threads…")
         orch.request_shutdown()
         logger.info("Pipeline stopped cleanly.")
@@ -145,7 +147,12 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
-        handle_exit()
+        # Reached via the signal handler in the normal case, which has already
+        # begun the graceful shutdown. Only call in when we got here *without*
+        # one, otherwise the orchestrator would read this as a second Ctrl+C
+        # and arm its force-exit countdown on an otherwise clean stop.
+        if not shutdown_event.is_set():
+            handle_exit()
 
 
 if __name__ == "__main__":

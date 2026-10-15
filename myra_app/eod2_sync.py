@@ -22,7 +22,24 @@ from typing import Any, Optional
 import numpy as np
 import pandas as pd
 
-from myra_app.constants import DB_DIR, PROJECT_ROOT
+from myra_app.constants import PROJECT_ROOT
+
+
+def _db_dir() -> str:
+    """Resolve ``constants.DB_DIR`` **at call time**.
+
+    A module-level ``from ... import DB_DIR`` snapshots whatever the directory was
+    when this module first imported. If that happened inside a test that had
+    already redirected DB_DIR to a temporary directory, this module would keep
+    resolving that (soon-deleted) path forever, and the Phase 7 isolation guard
+    correctly aborts every later isolated test. Reading the attribute at call
+    time removes the whole class of stale-binding failures - and is what makes it
+    safe for a readiness probe to touch this module from anywhere.
+    """
+    from myra_app import constants
+
+    return constants.DB_DIR
+
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +69,7 @@ def _get_db_path() -> str:
     """Canonical path to myra_technical.db."""
     from myra_app.librarian_core import LibrarianCore
 
-    return os.path.join(DB_DIR, LibrarianCore.DB_MAP["technical"])
+    return os.path.join(_db_dir(), LibrarianCore.DB_MAP["technical"])
 
 
 def _get_meta_latest(eod2_daily: str) -> str | None:
