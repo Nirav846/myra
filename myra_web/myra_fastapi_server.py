@@ -108,10 +108,15 @@ async def _lifespan(_app: FastAPI):
 
 app = FastAPI(title="MYRA v3.2 API Bridge", lifespan=_lifespan)
 
-# Allow the React frontend to communicate with this local API
+# Allow the React frontend to communicate with this local API.
+# The allow-list lives in its own module so it can be unit-tested without
+# constructing this app; see myra_web/cors_config.py for why the defaults
+# include loopback-by-IP and 0.0.0.0 as well as localhost.
+from myra_web.cors_config import allowed_origins as _allowed_origins  # noqa: E402
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -814,3 +814,97 @@ are three separate facts.
   the MYRA process to be running - recovery is driven by the 60 s watchdog inside
   it, and no second scheduler was added by design. If MYRA is down, a published
   session waits for the next start.
+### Phase 11 - Readiness Transport Reliability & Fundamental Data Integrity
+- **State verified, not assumed.** Branch `main`, HEAD and `origin/main` both
+  `88f3966`, 0 ahead / 0 behind, clean tree, 3 pre-existing stashes untouched.
+  All 7 Phase 10 files present. No discrepancy, no user changes overwritten.
+- **P1 - readiness `Failed to fetch`: root cause, reproduced in a real browser.**
+  The string is emitted by the *browser*, not the server, for connection refusal,
+  DNS, TLS **and** CORS alike. Backend verified healthy (200) throughout. Matrix
+  against the real Vite dev server: page origin `localhost:3000` -> absolute URL
+  200; `127.0.0.1:3000` -> "Failed to fetch"; LAN `192.168.29.162:3000` ->
+  "Failed to fetch". Browser console: *"blocked by CORS policy: No
+  `Access-Control-Allow-Origin` header is present"*.
+  Two independent causes: `myra_web/src/config.ts` hardcoded an absolute
+  cross-origin base `http://localhost:8000/api` (making every panel call a
+  cross-origin call into loopback and bypassing the already-configured Vite
+  `/api` proxy), and the backend allow-list named only `localhost:3000` /
+  `localhost:5173` while Vite runs `--host=0.0.0.0` and therefore advertises
+  `127.0.0.1` and LAN origins. An early Playwright route shim produced a
+  misleading "loopback address space" denial; the shim was discarded and the
+  matrix re-run against the real dev server, which is what made the result
+  trustworthy.
+- **P1 - fix.** `config.ts` now defaults to the **relative `/api`** so requests
+  stay same-origin and the existing proxy forwards them; `VITE_API_BASE` remains
+  as the split-deployment override. CORS policy extracted to
+  `myra_web/cors_config.py` (own module so it is testable without constructing
+  the app, whose routers touch the DB) and widened to `127.0.0.1` / `0.0.0.0`,
+  overridable via `MYRA_ALLOWED_ORIGINS`. Failures now classify as
+  `unreachable` / `http` / `malformed` with actionable text (e.g. "API not
+  responding (HTTP 502 via proxy) - start it with: python run_fastapi.py") rather
+  than echoing `Failed to fetch`; a 2xx that breaks the contract is rejected as
+  malformed rather than rendered; a displayed verdict during a transport failure
+  is disclaimed as "not currently confirmed"; and `setLastUpdated` no longer
+  fires on unchanged polls, which had re-rendered the panel every 30s for a value
+  that never changed.
+  **A bug this introduced and caught:** the first fix used an *empty* base, so
+  `${API_BASE}/pipeline/readiness` became `/pipeline/readiness`, missing the
+  router's `/api` mount and returning the SPA `index.html` where JSON was
+  expected. The new payload validator caught it immediately as `malformed` rather
+  than rendering a false verdict. Base is therefore `/api`, not `''`.
+  **Verified in the real browser:** both `localhost` and LAN origins render the
+  panel with 0 `Failed to fetch` and 0 CORS errors; backend-stopped shows the
+  actionable 502 message; restarting recovers to `READY` with no page reload.
+  19 regression tests in `+tests/test_readiness_transport.py`, plus
+  `tools/verify_readiness_transport.py` as an operator browser smoke check.
+- **P2 - fundamental provenance and freshness (read-only).** New
+  `tools/fundamentals_audit.py` (every connection `mode=ro`, bounded, CLI only)
+  reporting coverage against explicit, non-conflated denominators: 3,948
+  `fundamentals` rows vs a 3,424-symbol tracked universe. There is **no**
+  `myra_fundamentals.db` - `fundamentals` lives in `myra_valuation.db`.
+  Previously reported figures **confirmed**: `roe` 17.50% (691), `market_cap`
+  82.22% (3,246), `profit_growth` 0%. **New finding:** `sales_growth` and
+  `debt_to_equity` are *also* 0% - the Morningstar camelCase path is effectively
+  dead (`revenueGrowth`/`earningsGrowth`/`debtToEquity`/`netMargin`/`dividendYield`
+  all 0; `marketCap` 8 rows, `operatingMargin` 7). The percentage-vs-fraction
+  defect is quantified: `net_margin` samples 0.1366 (fraction-like) but ranges to
+  699.9 and -26,570 (percent-like), so values cannot be compared across rows.
+  `inst_holding` (18.44%) is month-end shareholding - a **stock, not a flow**, and
+  cannot represent who bought during a quarter.
+- **P2 - freshness implemented.** New `myra_app/fundamental_freshness.py`,
+  surfaced through the **existing** readiness endpoint as
+  `fundamentals.freshness` (no new endpoint). States fresh/aging/stale/unknown;
+  cadence per source *kind* (market 7d, ownership 45d, financial 120d) rather
+  than a universal TTL, labelled as policy not source fact. Enforced: missing
+  timestamps -> `unknown` never `fresh`; **a recent retrieval of an old reporting
+  period is still old**; future periods -> `unknown`; valid zero preserved; no
+  `COALESCE`/`or 0`; module imports no DB, threading, scheduling or HTTP code.
+  Live state: period 2026-09-30, retrieval 2026-10-13 -> `fresh`.
+- **P2 - untrustworthy fields labelled, not invented.** `profit_growth`,
+  `sales_growth`, `debt_to_equity`, `roe_ttm` and `smart_money_score` are marked
+  **unavailable** with the reason. `smart_money_score` is **not a `fundamentals`
+  column at all** - it is read from a candidate dict in `universe_loader` /
+  `worker_pool` with a `0` default and never written anywhere, confirming and
+  extending the Phase 6 finding. No producer was fabricated. Phase 6's opt-in
+  (`MYRA_V25_RANKING_INPUTS`) is untouched and the freshness module deliberately
+  does not reference it (asserted by test).
+- **P2 - found but deliberately NOT changed (documented for a later phase).**
+  `myra_web/routes/fund_traction.py:254-255` scores with
+  `COALESCE(f.roe, 0) * 0.4 + COALESCE(f.net_margin, 0) * 0.3`;
+  `confluence_batch.py:161` and `routes/scanners.py:1836` use
+  `COALESCE(f.market_cap, 0)`; `universe_loader.py:215-216` does
+  `f.get("profit_growth", 0) or 0` on a field empty for every row. Each is a
+  null-as-zero defect in a scoring path and changing them would alter investment
+  decisions, which this phase is explicitly not authorised to do.
+- **Tests / verification.** `+tests/test_readiness_transport.py` (19) and
+  `+tests/test_fundamental_freshness.py` (28). Full suite **1439 passed / 0
+  failed**, no live-database writes. `black` + `flake8` clean, `tsc --noEmit`
+  clean, `npm run build` success, performance guard **273 / 0 CRITICAL** (+2 are
+  the same `.append()`-in-loop false positive - a plain dict list, not a
+  DataFrame). One of my own tests wrote rows into the session-shared fixture DB
+  and broke an unrelated module's row-count assertions later in the run; fixed by
+  restoring the fixture in-test and verified by running both modules together.
+- **Operational note.** MYRA's live scheduler writes to the metadata sidecar, so
+  the test suite's live-DB guard trips whenever the app is running. The backend
+  was stopped for testing and restarted once afterwards; the Vite dev server was
+  left running throughout (it touches no databases).

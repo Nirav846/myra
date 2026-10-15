@@ -283,6 +283,7 @@ def fundamental_facts() -> dict[str, Any]:
     conn = _ro(_db("valuation", "myra_valuation.db"))
     if conn is None:
         out["error"] = "valuation database unavailable"
+        out["freshness"] = _fundamental_freshness_block(None, None)
         return out
     try:
         tables = {
@@ -320,7 +321,36 @@ def fundamental_facts() -> dict[str, Any]:
         logger.debug("readiness fundamentals query failed", exc_info=True)
     finally:
         conn.close()
+    out["freshness"] = _fundamental_freshness_block(
+        out.get("reporting_date"), out.get("retrieval_date")
+    )
     return out
+
+
+def _fundamental_freshness_block(
+    reporting_date: Optional[str], retrieval_date: Optional[str]
+) -> dict[str, Any]:
+    """Attach Phase 11 freshness + provenance to the fundamentals block.
+
+    Reporting-only and bounded: no ranking, scoring or screening behaviour is
+    touched, and nothing here converts a missing fundamental to zero.
+    """
+    from myra_app import fundamental_freshness as ff
+
+    return {
+        "financials": ff.assess_row(
+            reporting_date, retrieval_date, cadence="quarterly"
+        ),
+        "provenance": {
+            name: {
+                "status": meta["status"],
+                "producer": meta["producer"],
+                "units": meta["units"],
+                "caveat": meta.get("caveat"),
+            }
+            for name, meta in ff.PROVENANCE.items()
+        },
+    }
 
 
 def source_facts() -> dict[str, Any]:

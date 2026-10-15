@@ -256,6 +256,13 @@ export default function DataReadinessPanel({ busy }: { busy: boolean }) {
           ? `Assessed ${new Date(lastUpdated).toLocaleTimeString()} · updates only when the verdict changes`
           : 'Not yet assessed'}
         {error ? ` · transport error: ${error}` : ''}
+        {/*
+          A displayed verdict is only as current as the last successful poll.
+          When the transport is down the panel still shows that last verdict, so
+          say plainly that it is no longer confirmed rather than letting a stale
+          "ready" read as current.
+        */}
+        {error && readiness ? ' · shown verdict is not currently confirmed' : ''}
       </p>
     </section>
   );
