@@ -21,6 +21,76 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/fund-traction", tags=["fund-traction"])
 
 
+# Weights are the pre-existing policy and are unchanged: ROE 0.4, P/E 0.3.
+# Only *which* components are allowed to contribute changed (Phase 12).
+_QUALITY_WEIGHT_ROE = 0.4
+_QUALITY_WEIGHT_PE = 0.3
+
+
+def quality_score_sql(alias: str = "f") -> str:
+    """SQL for the fund-traction quality score, with explicit missing-data rules.
+
+    The previous expression was::
+
+        ROUND(COALESCE(roe,0)*0.4 + COALESCE(net_margin,0)*0.3
+              + (100 - MIN(COALESCE(pe,100),100))*0.3, 2)
+
+    which had three defects, all reproduced against the live database:
+
+    1. **Absent inputs silently scored zero.** The weights were never
+       renormalised over the inputs that actually existed, so a stock with no
+       ROE (2,769 of 3,246 rows with a market cap have none) lost the whole
+       0.4 and a stock with none of the three could reach at most 0.3. Being
+       unmeasured was therefore a de facto penalty.
+
+    2. **Negative P/E inverted the meaning of the metric.** ``MIN(pe, 100)``
+       capped the cheap end but had no floor, so a loss-making company
+       (pe = -341.7, 14 such rows) received ``100 - (-341.7) = 441.7`` points -
+       the *largest* score in the data, for the worst possible quality signal.
+
+    3. **Mixed-scale ``net_margin`` swamped everything.** Observed values run
+       from ~0.13 (fraction) to -26,570 (percent or corrupt); at 0.3 weight a
+       single bad row contributed -7,971, overwhelming every other term.
+
+    Corrected rules:
+
+    * a component contributes only when its input is actually present;
+    * a negative or zero P/E means "no positive earnings", i.e. an unavailable
+      cheapness signal - it is *not* treated as maximum cheapness;
+    * the cheapness term is clamped to [0, 100] so it can never run away;
+    * ``net_margin`` is excluded outright because its scale is unresolved (see
+      docs/PHASE12_MISSING_DATA_DECISION_SAFETY.md). Normalising it by guessing
+      a per-row unit is exactly what this phase must not do, but continuing to
+      rank on an incomparable column is worse. It is deferred to a data-repair
+      phase, not silently guessed here;
+    * the result is scaled so a row that has **every** component scores exactly
+      what the old expression gave it. The renormalising factor is
+      ``total_weight / present_weight``, so an absent input is redistributed
+      across the inputs that exist instead of subtracting points, while
+      well-measured rows keep their established magnitude and their existing
+      UI bands (0-40 / 40-70 / 70+);
+    * when no component is available the score is ``NULL`` - unavailable, not 0.
+
+    The relative 4:3 emphasis between ROE and P/E is preserved.
+    """
+    roe = f"{alias}.roe"
+    pe = f"{alias}.pe"
+    roe_num = (
+        f"CASE WHEN {roe} IS NOT NULL THEN {roe} * {_QUALITY_WEIGHT_ROE} ELSE 0 END"
+    )
+    roe_w = f"CASE WHEN {roe} IS NOT NULL THEN {_QUALITY_WEIGHT_ROE} ELSE 0 END"
+    # A P/E that is absent, zero or negative carries no cheapness information.
+    pe_num = (
+        f"CASE WHEN {pe} IS NOT NULL AND {pe} > 0 "
+        f"THEN (100 - MAX(0, MIN({pe}, 100))) * {_QUALITY_WEIGHT_PE} ELSE 0 END"
+    )
+    pe_w = (
+        f"CASE WHEN {pe} IS NOT NULL AND {pe} > 0 THEN {_QUALITY_WEIGHT_PE} ELSE 0 END"
+    )
+    total_w = _QUALITY_WEIGHT_ROE + _QUALITY_WEIGHT_PE
+    return f"ROUND(({roe_num} + {pe_num}) * {total_w} / NULLIF({roe_w} + {pe_w}, 0), 2)"
+
+
 def _get_db_path() -> str:
     return os.path.join(DB_DIR, "myra_valuation.db")
 
@@ -250,11 +320,7 @@ def fund_traction_scanner(
                    f.market_cap, f.sector, f.roe, f.net_margin, f.pe,
                    f.promoter_holding_pct, f.free_float_pct,
                    prev.prev_score, prev.prev_month,
-                   ROUND(
-                       COALESCE(f.roe, 0) * 0.4
-                       + COALESCE(f.net_margin, 0) * 0.3
-                       + (100 - MIN(COALESCE(f.pe, 100), 100)) * 0.3, 2
-                   ) AS quality_score
+                   {quality_score_sql("f")} AS quality_score
             FROM fund_traction ft
             LEFT JOIN fundamentals f
                 ON f.symbol = COALESCE(NULLIF(ft.nse, ''), ft.symbol)

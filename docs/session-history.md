@@ -919,3 +919,75 @@ are three separate facts.
   origins `HTTP 200`. A `localStorage`-persisted `apiEndpoint` still overrides,
   intentionally. Found only by reading the browser console after the first fix,
   not by inspection.
+### Phase 12 - Missing-Data Safety in Investment Decisions
+- **State verified, not assumed.** Branch `main`, HEAD and `origin/main` both
+  `7f2ac8d`, 0 ahead / 0 behind, clean tree, 3 stashes untouched, both Phase 11
+  commits present. Port 8000 was LISTENING, port 3000 down (not needed). No
+  discrepancy, no user changes overwritten.
+- **All four flagged paths traced before editing. TWO were genuine defects, two
+  were already correct and were deliberately NOT changed.**
+  - `scanners.py` and `confluence_batch.py` use `COALESCE(market_cap, 0)` only
+    inside a *positive-threshold* filter. NULL and 0 both fail `> 0` and both
+    fail `BETWEEN min AND max`, so the rows are excluded either way: redundant,
+    not wrong. Removing it would be a cosmetic edit to a screening path. A test
+    now pins these files unchanged so a later reader does not "fix" them.
+  - `screener.py`'s `if r.get("ProfitGrowth") is None: r["ProfitGrowth"] = 0`
+    sits under a comment stating it is a *display-compatibility* default that
+    fills gaps only and never clobbers a real value. Not a ranking input;
+    changing it would alter rendering without improving any evidence.
+- **Defect 1 - fund-traction quality score (3 bugs in one expression), which
+  feeds a sortable column in FundTractionScanner.tsx.**
+  (a) *Absent inputs silently scored zero*: weights were never renormalised over
+  inputs that existed. Of 3,246 rows with a market cap, **2,769 have no ROE**
+  (85%), 504 no P/E, 339 no net_margin - being unmeasured was a de facto penalty.
+  (b) *Negative P/E inverted the metric*: `MIN(pe,100)` capped the cheap end but
+  had no floor, so pe=-341.7 scored **+132.51** - the largest score in the data
+  - for the worst possible quality signal. 14 rows have pe<0 with a market cap.
+  (c) *Mixed-scale net_margin swamped everything*: values run from ~0.13
+  (fraction) to -26,570; NECLIFE contributed **-5,070** and RAINBOWPAP -7,971,
+  overwhelming every other term combined.
+- **Defect 2 - universe_loader fabricated evidence for the entire universe.**
+  `PE`/`ROE`/`MCap` correctly preserved `None`, but `ProfitGrowth`, `SalesGrowth`
+  and `Debt_Equity` were written as `f.get(col, 0) or 0`. Phase 11 measured all
+  three at **0 of 3,948 rows populated**, so the default asserted "0% growth" and
+  "zero debt" for every symbol. All three now preserve `None`; a valid stored
+  `0.0` still stays `0.0`.
+- **Defect 3 - smart_money_score.** No producer exists (re-verified: no writer,
+  only readers). `worker_pool.py` did `funda.get("smart_money_score", 0) > 0.7`
+  to award a star - behaviourally the star was **never** awarded, so no ranking
+  inversion, but the code fabricated a numeric 0 to compare against (and
+  `None > 0.7` would raise TypeError). Now compared only when a value exists; the
+  field stays explicitly `None`. No proxy signal derived.
+- **Scale preservation - a fix I had to discard.** My first correction used a
+  plain weighted *average* over present components. The before/after demo showed
+  that moved a **complete** row from 34.05 to 48.57, which would have flipped the
+  UI's 0-40 / 40-70 / 70+ bands - a policy change disguised as a bug fix. It was
+  replaced with a `total_weight / present_weight` renormalising factor, so a row
+  with every component scores exactly what it scored before (34.05 -> 34.00,
+  REAL_ZERO_ROE 24.00 -> 24.00) while an absent input is redistributed across the
+  inputs that exist instead of subtracting points. Weights remain 0.4 / 0.3 and
+  the 4:3 emphasis is unchanged.
+- **net_margin excluded, not normalised.** Its scale is unresolved, so it no
+  longer enters the quality score at all. Guessing a per-row unit is precisely
+  what this phase must not do, but ranking on an incomparable column is worse.
+  Repair requires a source-level decision and is **deferred to a separately
+  scoped phase**.
+- **Measured impact (read-only, `tools/phase12_real_impact.py`).** Of 3,246 rows
+  with a market cap: **2,942 (90.6%) changed**, **481 now genuinely unavailable
+  (NULL)** instead of showing a fabricated number, and top-10 overlap fell to
+  **4/10**. Four names left the top 10; NECLIFE moved from -5,070 to unavailable.
+  This is a statement that an unavailable input no longer outranks a measured
+  one - **not** a claim the new ordering is financially better.
+- **Tests / verification.** `+tests/test_missing_data_safety.py` (24): NULL,
+  valid zero, negative pe, pe=0, very high pe, negative ROE, corrupt net_margin,
+  all-missing, scale preservation, weight preservation, Phase 6 opt-in,
+  smart_money_score unavailability, and pins that the three "already correct"
+  files stay untouched. Full suite **1463 passed / 0 failed**, no live-database
+  writes; `black` + `flake8` clean, `tsc --noEmit` clean, `npm run build` success,
+  performance guard **274 / 0 CRITICAL**. Two of my own test expectations were
+  wrong and were corrected against the implementation rather than by loosening
+  the tests. All inspection was read-only; the only writes were to `tmp_path`
+  synthetic fixtures.
+- **Operational note.** The MYRA scheduler writes to the metadata sidecar, so the
+  test suite's live-DB guard trips whenever the backend is running. It was
+  stopped for test runs and restarted once afterwards.

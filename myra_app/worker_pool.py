@@ -122,7 +122,11 @@ def _worker_task(payload):
             for variant in delivery_variants:
                 df[variant] = df[actual_col]
             # Inject delivery_percent into funds for TUI display
-            funda["delivery_percent"] = float(df["delivery_percent"].iloc[-1]) if not df["delivery_percent"].empty else 0.0
+            funda["delivery_percent"] = (
+                float(df["delivery_percent"].iloc[-1])
+                if not df["delivery_percent"].empty
+                else 0.0
+            )
 
         # Calculate Stage (Case-Safe & Float-Hardened)
         sma150_col = next((c for c in ["sma150", "SMA150"] if c in df.columns), None)
@@ -266,9 +270,7 @@ def _worker_task(payload):
                     "Confluence": (
                         "High"
                         if funda.get("Consensus", 0) >= 4
-                        else "Moderate"
-                        if funda.get("Consensus", 0) >= 2
-                        else "Low"
+                        else "Moderate" if funda.get("Consensus", 0) >= 2 else "Low"
                     ),
                     **funda,
                 }
@@ -282,7 +284,13 @@ def _worker_task(payload):
                     stars += 1
                 if funda.get("RDV", 0) > 1.5 and funda.get("VIX_Stable") == True:
                     stars += 1
-                if funda.get("smart_money_score", 0) > 0.7:
+                # Phase 12: there is no producer for smart_money_score, so the
+                # old `funda.get("smart_money_score", 0) > 0.7` fabricated a 0
+                # to compare against. Compare only when a value actually
+                # exists: an unavailable signal must not award a star, and
+                # must not raise a TypeError either.
+                _sm = funda.get("smart_money_score")
+                if _sm is not None and _sm > 0.7:
                     stars += 1
                 res_payload["Stars"] = "*" * int(min(5, stars))
 

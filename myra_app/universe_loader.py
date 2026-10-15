@@ -212,9 +212,16 @@ def load_universe(lib, symbols, as_of_date, silent=False, populate_ranking_input
             "symbol": s,
             "PE": f.get("pe"),
             "ROE": f.get("roe"),
-            "ProfitGrowth": f.get("profit_growth", 0) or 0,
-            "SalesGrowth": f.get("sales_growth", 0) or 0,
-            "Debt_Equity": f.get("debt_to_equity", 0) or 0,
+            # Phase 12: these three columns were written as
+            # ``f.get(col, 0) or 0``, which turned "we have no value" into
+            # "0% growth" / "0 debt-to-equity" for every symbol. All three are
+            # empty in the live database (0 of 3,948 rows), so the old default
+            # asserted fabricated evidence for the entire universe. Missing now
+            # stays missing; a valid stored 0.0 is still 0.0. PE/ROE/MCap below
+            # already preserved None, and now these do too.
+            "ProfitGrowth": f.get("profit_growth"),
+            "SalesGrowth": f.get("sales_growth"),
+            "Debt_Equity": f.get("debt_to_equity"),
             "MCap": f.get("market_cap"),
             "Sector": f.get("sector"),
             "Inst_Hold": f.get("inst_holding"),
@@ -287,11 +294,12 @@ def load_universe(lib, symbols, as_of_date, silent=False, populate_ranking_input
             "RDV": c.get("rdv", 0) if c.get("rdv") is not None else 0,
             "ATR14": c.get("atr14", 0) if c.get("atr14") is not None else 0,
             "Squeeze": c.get("squeeze_flag", False),
-            "smart_money_score": (
-                c.get("smart_money_score", 0)
-                if c.get("smart_money_score") is not None
-                else 0
-            ),
+            # Phase 12: no producer exists for smart_money_score anywhere in
+            # the repository, so this previously fabricated a 0 for every
+            # symbol. It stays None - explicitly unavailable - which is what
+            # consumers must handle. No proxy signal is derived from unrelated
+            # fields, and Phase 6's opt-in ranking stays off.
+            "smart_money_score": c.get("smart_money_score"),
             "smc_phase": c.get("smc_phase", 0) if c.get("smc_phase") is not None else 0,
             "d_poc": c.get("d_poc", 0) if c.get("d_poc") is not None else 0,
             "choch": c.get("choch", 0) if c.get("choch") is not None else 0,
