@@ -1246,3 +1246,80 @@ are three separate facts.
   universe definition and the 1,006 / 1,191 join gaps; (5) only then run A/B/C
   and report the full metric set. The ATR fix is on a separate track because it
   cannot change relative order.
+
+## Phase 16 — Restore production screening and make readiness truthful
+
+- **Scope.** Items (1)-(4) of Phase 15's unblock list: the producer, the silent
+  failure, readiness, and the universe counts. Item (5), the growth A/B/C run,
+  is not attempted. No weight, threshold, formula, band, ordering, or scoring
+  input changed; growth stays disabled; the ATR defect stays isolated and
+  unfixed; no production DB, cache, or lake was written.
+- **The root cause was never the assertion — it is that the producer cannot be
+  called.** `sync_market_data` returns at `librarian_sync.py:90-92` under
+  `skip_maintenance=True`, *before* `update_indicator_history()` at `:154`, and
+  both call sites in the tree pass `skip_maintenance=True`
+  (`librarian_sync.py:318`, `screener.py:273`). `if not skip_maintenance:` at
+  `:177` is dead for the same reason, so the "background sync" fetches and
+  enriches only and has never built the lake.
+- **Two proofs it never ran.** (a) commit `aa7016e` removed the indicator
+  calculations and `pandas_ta` from the producer, leaving the caller-visible
+  `assert "symbol" in df_final.columns` reachable on an empty lake; (b)
+  `myra_log` was called in `librarian_intelligence.py` without ever being
+  imported — an immediate `NameError` that `.flake8`'s ignored `F821` could not
+  flag, because the path never executed. **A clean lint run is not evidence a
+  code path runs.**
+- **Scope correction: two stacks.** The web/API scanners
+  (`myra_web/routes/scanners.py` → `strategies/*_scanner.py` → `fundamentals` +
+  `technical_data`) work today and never touch the lake — `TriggerScanner`
+  scanned a bounded 200 and returned 2 real candidates in 2.6 s off a
+  1,846-symbol universe. Only the CLI/turbo path (`execute_scan` → `run_scan` →
+  `load_universe` → `precompute_indicators`) depends on the lake.
+- **What was built.** `myra_app/scan_outcome.py` (six closed statuses +
+  `ScanOutcome`); `myra_app/indicator_lake.py` (read-only probe: list, sample,
+  validate, freshness — call-time `DATA_DIR`, never creates a directory);
+  `myra_app/lake_build.py` (explicit CLI: `--status`, `--limit`, `--force`,
+  `--no-progress`); `precompute_indicators` returns the empty frame instead of
+  raising; `build_indicator_lake` (freshness-gated, bounded, resumable, never
+  raises per symbol); atomic `save_indicators` via `os.replace`;
+  `Engine.last_scan_outcome` set on every exit path with `_classify_failure`
+  mapping exceptions by remedy; `_abort_empty_universe` splitting
+  `indicator_lake_empty` from `no_precomputed_rows`; `execute_scan` printing the
+  outcome instead of pretending an empty list is a verdict.
+- **Readiness: `ready` no longer means "ingested".** New `STATE_BLOCKED`
+  ("Screening blocked") plus `screening_facts()` and `_apply_screening()`, which
+  escalates `ready`/`waiting`/`stale` and never downgrades
+  `failed`/`unknown`/`partial`. The verdict and its reason are in the `assess()`
+  payload and the fingerprint, so a lake going from blocked to built is visible;
+  the panel styles `blocked` as a failure with an alert icon.
+- **Universe reconciliation (reported, membership untouched).** `symbols_master`
+  3,610 = 3,610 distinct, 100% `in_active_universe`, all labelled `EQUITY`;
+  `technical_data` 3,425 all-time, 3,194 at 2026-10-15, readiness universe 3,221
+  (MAX over 3 sessions). Joins: active ∩ tech = 2,419; active − tech = 1,191
+  (1,053 other + 108 possible ETF + 30 rights); tech − active = 1,006 (**585
+  `_SME` twins** + 420 other + 1 fund). Nothing was added or removed — what "the
+  active universe" *should* mean is a product decision.
+- **Two existing tests changed, deliberately.** `test_data_readiness.py` gained
+  an autouse `screening_facts` stub (its fixture redirects `DB_DIR`, not
+  `DATA_DIR`, so the tests would otherwise probe this machine's real lake) plus
+  four tests that re-patch it to assert the escalation.
+  `test_scoring_components_are_not_modified_by_this_phase` was a whole-file
+  `git diff` guard that this phase's legitimate `screener.py` reporting changes
+  tripped: it now keeps the three scoring files byte-identical and checks
+  `screener.py`'s changed lines for ranking markers instead — the Phase 15
+  guarantee preserved, and made durable.
+- **Not executed, by instruction.** No lake build. Section 7 of
+  `PHASE16_SCREENING_RECOVERY_AND_READINESS.md` is the runbook
+  (`python -m myra_app.lake_build --status` / `--limit N`), including the
+  warning that `data/ohlcv_cache` is ~168 days behind `technical_data`, so a
+  build from it will be correctly reported as `stale`.
+- **Limitation stated rather than defaulted away.** The producer still emits
+  neither `atr_pct`, `sma150`, `pct_above_ma50_60d`, `keltner_*`, `atr5`, nor
+  `drawdown`, so a rebuilt lake restores *screening* but not the scorer's
+  70%-of-score technical block. Nothing zero-fills them.
+- **Verification.** 79 new tests; full suite **1624 passed** (Phase 15's 1545);
+  Phase 15's 10 ATR characterization tests untouched and passing; `black` (the
+  repo's pinned 26.x) and `flake8` clean; `tsc --noEmit` clean; production lake
+  still 0 files.
+- **Handoff.** Before A/B/C: run the section 7 build, confirm readiness reaches
+  `ready`, then resolve item (1) of section 8 (the scorer's missing technical
+  inputs). The ATR fix stays on its separate track.

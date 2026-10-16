@@ -113,6 +113,12 @@ STATE_PARTIAL = "partial"
 STATE_STALE = "stale"
 STATE_FAILED = "failed"
 STATE_UNKNOWN = "unknown"
+#: The database is present and current, but the *derived* artifacts the
+#: screening path depends on are absent, unusable or stale, so no scan can run.
+#: Deliberately separate from ``failed`` (an ingestion failure) and from
+#: ``ready``: holding current data is not the same capability as producing a
+#: screener result, and only this state can say so.
+STATE_BLOCKED = "blocked"
 
 STATE_LABELS = {
     STATE_READY: "Ready",
@@ -121,6 +127,7 @@ STATE_LABELS = {
     STATE_STALE: "Stale data",
     STATE_FAILED: "Failed ingestion",
     STATE_UNKNOWN: "Unknown",
+    STATE_BLOCKED: "Screening blocked",
 }
 
 
@@ -532,6 +539,171 @@ def recovery_facts() -> dict[str, Any]:
     return out
 
 
+def _active_universe_size() -> Optional[int]:
+    """How many symbols the active universe holds, or ``None`` if unknown.
+
+    The indicator lake is keyed by the active universe, so this is the correct
+    denominator for lake coverage. Read-only and index-free, but tiny (one
+    ``COUNT(*)``).
+    """
+    conn = _ro(_db("meta", "myra_metadata.db"))
+    if conn is None:
+        return None
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM symbols_master WHERE in_active_universe = 1"
+        ).fetchone()
+        return int(row[0]) if row and row[0] is not None else None
+    except sqlite3.Error as exc:
+        logger.debug("readiness: active universe count failed (%s)", exc)
+        return None
+    finally:
+        conn.close()
+
+
+def screening_facts(technical: Optional[dict] = None) -> dict[str, Any]:
+    """Whether MYRA can actually *screen*, given its derived artifacts.
+
+    Freshness and screening capability are different facts. ``technical_facts``
+    answers "the market database holds the expected session"; this answers
+    "the artifacts the screening path reads were built from it, and are
+    usable". The second can be false while the first is true — that is the
+    precise state MYRA was in, reporting ``ready`` with an empty indicator lake.
+
+    Cheap and read-only: it lists the lake directory, reads the ``reference_date``
+    it is given (never a new query of its own), opens at most a handful of
+    artifacts, and issues one ``COUNT(*)``. Nothing is created or written — a
+    probe that materialised the very directory it was checking for would be
+    self-defeating.
+
+    ``technical`` is the technical-facts mapping; its ``latest_date`` is the
+    reference the lake must be at least as new as.
+    """
+    out: dict[str, Any] = {
+        "state": STATE_UNKNOWN,
+        # Defensive default only: every branch below sets both ``state`` and
+        # ``reason`` before returning, so this is never what a caller observes.
+        "reason": "unexamined",
+        "detail": "The indicator lake was not examined.",
+        "available": False,
+        "lake": None,
+        "expected": None,
+        "coverage": None,
+    }
+
+    try:
+        from myra_app.indicator_lake import status as lake_status
+    except Exception as exc:  # noqa: BLE001 - never fail a probe over its own import
+        out["reason"] = "probe_unavailable"
+        out["detail"] = f"Indicator-lake probe unavailable: {exc}"
+        return out
+
+    reference = (technical or {}).get("latest_date")
+    try:
+        lake = lake_status(reference_date=reference)
+    except Exception as exc:  # noqa: BLE001 - advisory measurement
+        out["reason"] = "probe_failed"
+        out["detail"] = f"Indicator-lake probe raised {type(exc).__name__}: {exc}"
+        return out
+
+    out["lake"] = lake
+    out["available"] = bool(lake.get("present"))
+
+    if lake.get("error"):
+        out["reason"] = "unreadable"
+        out["detail"] = f"The indicator lake could not be read: {lake['error']}"
+        return out
+
+    count = int(lake.get("count") or 0)
+
+    if lake.get("invalid"):
+        bad = lake["invalid"][0]
+        out["state"] = STATE_BLOCKED
+        out["reason"] = "invalid_artifact"
+        out["detail"] = (
+            f"The indicator lake holds {count} artifacts but {bad['file']} is "
+            f"not usable ({bad['reason']}); a rebuild is required."
+        )
+        return out
+
+    if count == 0:
+        out["state"] = STATE_BLOCKED
+        out["reason"] = "lake_empty"
+        out["detail"] = (
+            "The indicator lake (data/indicators/precomputed) is empty, so the "
+            "screening path has no precomputed indicators to load. The lake is "
+            "built explicitly, not as a side effect of a scan."
+        )
+        return out
+
+    expected = _active_universe_size()
+    out["expected"] = expected
+    if expected:
+        out["coverage"] = round(count / expected, 4)
+
+    if lake.get("stale"):
+        out["state"] = STATE_STALE
+        out["reason"] = "stale"
+        out["detail"] = (
+            f"The indicator lake was last written {lake.get('freshest')}, "
+            f"before the newest stored session ({reference}); its rankings "
+            "would silently be stale."
+        )
+        return out
+
+    if out["coverage"] is not None:
+        if out["coverage"] < COVERAGE_PARTIAL_FRACTION:
+            out["state"] = STATE_BLOCKED
+            out["reason"] = "coverage_insufficient"
+            out["detail"] = (
+                f"Only {count} of {expected} active symbols have precomputed "
+                "indicators; most of the universe cannot be screened."
+            )
+            return out
+        if out["coverage"] < COVERAGE_COMPLETE_FRACTION:
+            out["state"] = STATE_PARTIAL
+            out["reason"] = "coverage_partial"
+            out["detail"] = (
+                f"{count} of {expected} active symbols have precomputed " "indicators."
+            )
+            return out
+
+    out["state"] = STATE_READY
+    out["reason"] = "ok"
+    out["detail"] = f"The indicator lake holds {count} usable artifacts."
+    return out
+
+
+#: Overall states a screening verdict may escalate. A verdict never *downgrades*
+#: a stronger signal — a genuine ingestion failure stays ``failed``, and
+#: insufficient evidence stays ``unknown``.
+_SCREENING_ESCALATABLE = (STATE_READY, STATE_WAITING, STATE_STALE)
+
+#: blocked > stale > partial. Every escalatable state ranks 0.
+_SCREENING_RANKING = {STATE_PARTIAL: 1, STATE_STALE: 2, STATE_BLOCKED: 3}
+
+
+def _apply_screening(
+    state: str, explanation: str, screening: Optional[dict]
+) -> tuple[str, str]:
+    """Escalate ``state`` when screening capability is worse than freshness.
+
+    Escalation only. Data freshness is still the primary axis, but a current
+    database with an unusable screening path must not read ``ready`` — that was
+    the false assurance this state exists to prevent.
+    """
+    verdict = (screening or {}).get("state")
+    if state not in _SCREENING_ESCALATABLE:
+        return state, explanation
+    if verdict not in _SCREENING_RANKING:
+        return state, explanation
+    if _SCREENING_RANKING[verdict] <= _SCREENING_RANKING.get(state, 0):
+        return state, explanation
+    base = explanation.rstrip().rstrip(".")
+    suffix = (screening or {}).get("detail") or ""
+    return verdict, f"{base}. {suffix}".strip()
+
+
 def assess(now: Optional[datetime] = None) -> dict[str, Any]:
     """Full readiness assessment.
 
@@ -547,10 +719,14 @@ def assess(now: Optional[datetime] = None) -> dict[str, Any]:
     fundamentals = fundamental_facts()
     ingestion = ingestion_facts()
     recovery = recovery_facts()
+    screening = screening_facts(technical)
 
     latest = technical.get("latest_date")
     expected = technical.get("expected_date")
     state, explanation = _decide(technical, coverage, source, ingestion)
+    # Freshness is not capability: a current database with an unusable
+    # screening path must not report ``ready``.
+    state, explanation = _apply_screening(state, explanation, screening)
 
     return {
         "state": state,
@@ -568,6 +744,7 @@ def assess(now: Optional[datetime] = None) -> dict[str, Any]:
         "fundamentals": fundamentals,
         "ingestion": ingestion,
         "recovery": recovery,
+        "screening": screening,
         "publication_cutoff_ist": PUBLICATION_READY_IST,
         "generated_at": (now or datetime.now()).isoformat(),
     }
@@ -668,6 +845,9 @@ def fingerprint(assessment: dict[str, Any]) -> str:
         # Phase 10: a recovery starting or changing outcome is a real change and
         # must reach the UI.
         "recovery": (assessment.get("recovery") or {}).get("reason"),
+        # Screening capability is decision-bearing: the lake going from blocked
+        # to built is exactly the transition an operator must be told about.
+        "screening": (assessment.get("screening") or {}).get("reason"),
     }
     return json.dumps(payload, sort_keys=True)
 
@@ -678,6 +858,7 @@ __all__ = [
     "fundamental_facts",
     "source_facts",
     "ingestion_facts",
+    "screening_facts",
     "fingerprint",
     "STATE_READY",
     "STATE_WAITING",
@@ -685,5 +866,6 @@ __all__ = [
     "STATE_STALE",
     "STATE_FAILED",
     "STATE_UNKNOWN",
+    "STATE_BLOCKED",
     "STATE_LABELS",
 ]

@@ -263,10 +263,24 @@ def test_phase6_ranking_inputs_remain_opt_in():
     assert ranking_inputs_enabled() is False
 
 
+#: Source markers that only appear on lines carrying ranking behaviour.
+RANKING_MARKERS = ("stars_count", "s_score", "multibagger_early", "smc_phase")
+
+
 def test_scoring_components_are_not_modified_by_this_phase():
+    """The ranking maths stays byte-identical across phases.
+
+    Phase 6/15 pinned this with a whole-file ``git diff`` guard over four files.
+    Phase 16 legitimately edits ``myra_app/screener.py`` — it replaces the
+    "starting background refresh" message with the lake's real state (the
+    refresh it described could never have worked), and makes an empty result say
+    *why* it was empty. Neither is a ranking change, so the guard is split: the
+    three files carrying the scoring maths stay untouched, and ``screener.py``
+    is checked for ranking-relevant edits specifically.
+    """
     import subprocess
 
-    diff = subprocess.run(
+    scoring = subprocess.run(
         [
             "git",
             "diff",
@@ -276,13 +290,28 @@ def test_scoring_components_are_not_modified_by_this_phase():
             "myra_app/score_components_v2.py",
             "myra_app/positional_engine.py",
             "myra_app/ranking_inputs.py",
-            "myra_app/screener.py",
         ],
         cwd=REPO,
         capture_output=True,
         text=True,
     )
-    assert diff.stdout.strip() == "", f"untouched files were modified:\n{diff.stdout}"
+    assert (
+        scoring.stdout.strip() == ""
+    ), f"scoring files were modified:\n{scoring.stdout}"
+
+    # ``-U0`` keeps the output to changed lines only, so no surrounding context
+    # can trip the marker check by accident.
+    screener = subprocess.run(
+        ["git", "diff", "-U0", "HEAD", "--", "myra_app/screener.py"],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+    )
+    for marker in RANKING_MARKERS:
+        assert marker not in screener.stdout, (
+            f"a ranking-relevant line in screener.py changed ({marker}):\n"
+            f"{screener.stdout}"
+        )
 
 
 def test_the_two_coalesce_filters_are_left_as_they_are():

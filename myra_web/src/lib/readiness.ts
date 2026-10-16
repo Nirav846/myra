@@ -14,7 +14,29 @@ export type ReadinessState =
   | 'partial'
   | 'stale'
   | 'failed'
+  | 'blocked'
   | 'unknown';
+
+/**
+ * Phase 16: can MYRA produce a screener result from what is stored?
+ *
+ * Kept separate from `state` for the same reason `recovery` is: the readiness
+ * state answers "do we have the data we should have?", and this answers "are
+ * the *derived* artifacts the screening path reads present and usable?". Data
+ * can be perfectly current while screening is impossible.
+ */
+export interface ReadinessScreening {
+  /** Verdict reusing the ReadinessState vocabulary. Drives the escalation. */
+  state: ReadinessState;
+  /** Stable reason code, e.g. 'lake_empty', 'stale', 'coverage_partial'. */
+  reason: string;
+  /** Human-readable specifics for the control room. */
+  detail: string | null;
+  available: boolean;
+  expected: number | null;
+  coverage: number | null;
+  lake: Record<string, unknown> | null;
+}
 
 export interface ReadinessTechnical {
   /** Latest market date represented in stored observations (ISO). */
@@ -94,6 +116,7 @@ export interface DataReadiness {
   fundamentals: ReadinessFundamentals;
   ingestion: ReadinessIngestion;
   recovery: ReadinessRecovery;
+  screening: ReadinessScreening;
   publication_cutoff_ist: string;
   generated_at: string;
 }

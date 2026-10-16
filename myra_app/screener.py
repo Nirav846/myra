@@ -54,24 +54,27 @@ class MYRAScreener:
         try:
             df = self.lib.precompute_indicators()
             if df.empty:
-                myra_log(0, 1, desc="Parquet lake empty")
+                # An empty result here means the *artifacts* are absent, not that
+                # the market offered nothing. The "background refresh" this used
+                # to start called
+                # ``sync_market_data(history_years=0.02, skip_maintenance=True)``,
+                # and ``skip_maintenance=True`` returns from that method before it
+                # ever reaches ``update_indicator_history()``. The refresh was
+                # therefore structurally incapable of rebuilding the lake, while
+                # the message promised it was under way.
+                #
+                # Report the real state and the concrete remedy instead.
                 self.console.print(
-                    "[warning][!] Parquet Indicator Lake is empty. Starting background refresh...[/warning]"
+                    "[warning][!] No precomputed indicators are available "
+                    f"({self._indicator_lake_state()}).[/warning]"
                 )
-
-                # PERFORMANCE IMPROVEMENT: Non-blocking background refresh
-                def _background_refresh():
-                    try:
-                        self.lib.sync_market_data(
-                            history_years=0.02, skip_maintenance=True
-                        )
-                        self.lib.start_background_sync(history_years=3)
-                    except Exception as e:
-                        self.console.print(
-                            f"[error]Background refresh failed: {e}[/error]"
-                        )
-
-                threading.Thread(target=_background_refresh, daemon=True).start()
+                self.console.print(
+                    "[warning]    The lake is built explicitly, never as a "
+                    "side effect of a scan:[/warning]"
+                )
+                self.console.print(
+                    "[warning]    python -m myra_app.lake_build --status[/warning]"
+                )
                 return df
 
             # Update cache
@@ -82,6 +85,26 @@ class MYRAScreener:
         except Exception as e:
             self.console.print(f"[error]Failed to build X-Ray: {e}[/error]")
             return pd.DataFrame()
+
+    def _indicator_lake_state(self) -> str:
+        """One-line, human-readable state of the indicator lake.
+
+        Never raises: a status string is what the caller wanted, and an
+        exception here would replace the real diagnosis with a reporting bug.
+        """
+        try:
+            from myra_app.indicator_lake import status as lake_status
+
+            state = lake_status()
+        except Exception as exc:  # noqa: BLE001 - reporting must not raise
+            return f"indicator lake state unavailable: {exc}"
+
+        if not state.get("present"):
+            return "the indicator lake is empty and has never been built"
+        return (
+            f"the indicator lake holds {state.get('count')} artifact(s), "
+            f"newest {state.get('freshest')}, verdict {state.get('reason')}"
+        )
 
     def run_market_xray(self):
         """Bird's Eye View of Market Health (PKScreener Superpower)"""
@@ -307,7 +330,26 @@ class MYRAScreener:
             logging.debug("Enrichment resumed after scan")
 
         if not results:
-            # ... (Stale data warning logic)
+            # An empty result list used to be returned here regardless of *why*
+            # the scan came back empty, which made a dead indicator lake
+            # indistinguishable from a genuinely quiet market. ``run_scan``
+            # records which of the two happened.
+            outcome = self.engine.last_scan_outcome
+            if outcome is not None and outcome.failed:
+                self.console.print(
+                    f"[error][!] Scan did not complete: {outcome.label}.[/error]"
+                )
+                if outcome.detail:
+                    self.console.print(f"[error]    {outcome.detail}[/error]")
+                self.console.print(
+                    "[warning]    No symbols were evaluated, so an empty "
+                    "candidate list means 'unknown', not 'no setups'.[/warning]"
+                )
+            elif outcome is not None:
+                self.console.print(
+                    f"[info][*] Scan completed with no matches "
+                    f"({outcome.reason}).[/info]"
+                )
             return []
 
         # 3. Intelligence Buffer & Feature Enrichment (Tier 2 & 3)

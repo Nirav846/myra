@@ -88,6 +88,20 @@ class LibrarianSyncMixin:
                 logging.getLogger(__name__).warning(f"Feature enrichment failed: {e}")
 
             if skip_maintenance:
+                # Every call site passes skip_maintenance=True, so this is the
+                # path that always runs: fetch + enrichment, then *nothing*.
+                # update_indicator_history() (step 5) and the rest of the
+                # maintenance pipeline therefore never execute.
+                #
+                # Log it explicitly rather than returning silently: the flag
+                # reads like "skip a little housekeeping", but it actually
+                # aborts the whole orchestration, which is what made a dead
+                # indicator lake look like a finished sync.
+                logging.getLogger(__name__).info(
+                    "[MYRA Sync] skip_maintenance=True: returning before the "
+                    "maintenance pipeline (indicators, large deals, "
+                    "fundamentals, integrity check). Nothing was maintained."
+                )
                 self.sync_status.update(task="", completed=0, total=0)
                 return
 

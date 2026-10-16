@@ -5,6 +5,7 @@ Unified SQL precompute for both standard and piped (silent) scans.
 """
 
 import importlib
+import logging
 import multiprocessing
 import os
 import signal
@@ -20,7 +21,16 @@ import pandas as pd
 from rich.progress import Progress
 
 from myra_app.data_adapter import DataAdapter
+from myra_app.scan_outcome import (
+    FAILED_MISSING_REQUIRED_ARTIFACTS,
+    FAILED_INTERNAL_ERROR,
+    SUCCESS_NO_CANDIDATES,
+    SUCCESS_WITH_CANDIDATES,
+    ScanOutcome,
+)
 from myra_core.utils.myra_log import myra_log
+
+logger = logging.getLogger(__name__)
 
 # Suppress warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -77,9 +87,39 @@ class ScanWatchdog(threading.Thread):
 from myra_app.worker_pool import run_workers
 
 
+def _classify_failure(exc: BaseException) -> tuple:
+    """Map a caught exception to ``(status, reason)``.
+
+    The distinction is not cosmetic: "the stored data does not satisfy the
+    contract" and "the run blew up" have different remedies, and collapsing
+    both into one silent empty result is what hid the empty indicator lake in
+    the first place.
+    """
+    from myra_app import scan_outcome as so
+
+    if isinstance(exc, FileNotFoundError):
+        return so.FAILED_MISSING_REQUIRED_ARTIFACTS, "artifact_not_found"
+    if isinstance(exc, (AssertionError, KeyError, IndexError)):
+        # ``precompute_indicators`` enforces its contract with assertions and
+        # column access; either firing means the stored artifacts are not shaped
+        # the way the run requires.
+        return so.FAILED_INVALID_INPUT_SCHEMA, "input_schema_violated"
+    if isinstance(exc, (ValueError, TypeError, AttributeError, ArithmeticError)):
+        # Typical of a bad column dtype or a broken indicator computation,
+        # rather than a missing file or a malformed schema.
+        return so.FAILED_INDICATOR_COMPUTATION, "indicator_computation"
+    return so.FAILED_INTERNAL_ERROR, "internal_error"
+
+
 class Engine:
     def __init__(self, librarian):
         self.librarian = librarian
+        #: Outcome of the most recent :meth:`run_scan`. ``None`` until a scan
+        #: has run. ``run_scan``'s return signature is unchanged (callers unpack
+        #: ``results, payload_map``), so this is the channel a caller uses to
+        #: tell "the run failed" apart from "the run legitimately matched
+        #: nothing" — the two used to be the same empty list.
+        self.last_scan_outcome = None
 
     def calculate_accuracy(
         self,
@@ -173,6 +213,47 @@ class Engine:
         except Exception:
             return True
 
+    def _abort_empty_universe(self, symbols, silent):
+        """Record why a broad scan produced no universe, and return nothing.
+
+        Distinguishes "the required artifacts are absent" (a build problem with
+        a concrete remedy) from "artifacts exist but yielded no rows" (a shape
+        problem). Both are failures — neither is "no candidates today".
+        """
+        from myra_app.indicator_lake import status as lake_status
+
+        lake = {}
+        try:
+            lake = lake_status(reference_date=None)
+        except Exception as exc:  # noqa: BLE001 - the probe must not mask the abort
+            logger.debug("[MYRA] indicator lake probe failed: %s", exc)
+
+        count = int(lake.get("count") or 0)
+        if count == 0:
+            reason = "indicator_lake_empty"
+            detail = (
+                "the indicator lake (data/indicators/precomputed) is empty, so "
+                "no precomputed indicators exist to load. The lake producer "
+                "has never run successfully under the current code."
+            )
+        else:
+            reason = "no_precomputed_rows"
+            detail = (
+                f"the indicator lake holds {count} artifact(s) for "
+                f"{len(symbols)} requested symbols, but none yielded usable "
+                "rows."
+            )
+
+        self.last_scan_outcome = ScanOutcome(
+            status=FAILED_MISSING_REQUIRED_ARTIFACTS,
+            reason=reason,
+            detail=detail,
+            error_type="IndicatorLakeEmpty",
+        )
+        if not silent:
+            print(f"[!] Scan aborted: {self.last_scan_outcome.describe()}")
+        return [], {}
+
     def run_scan(
         self,
         symbols: List[str],
@@ -182,6 +263,8 @@ class Engine:
     ):
         start_time = time.time()
         precomputed = {}
+        # Reset per run: a caller must never read a previous run's verdict.
+        self.last_scan_outcome = None
         lib = self.librarian
         if not lib._tech_conn:
             lib.connect()
@@ -206,6 +289,17 @@ class Engine:
                 if snapshot:
                     if not silent:
                         print(f"[MYRA] Success: Loaded Last Known Good Snapshot.")
+                    self.last_scan_outcome = ScanOutcome(
+                        status=(
+                            SUCCESS_WITH_CANDIDATES
+                            if snapshot
+                            else SUCCESS_NO_CANDIDATES
+                        ),
+                        reason="holiday_snapshot",
+                        detail=f"{target_date} is a market holiday; served the "
+                        "last known good snapshot.",
+                        candidates=len(snapshot),
+                    )
                     return snapshot, {"status": "HOLIDAY_SNAPSHOT"}
             except Exception:
                 pass
@@ -222,6 +316,12 @@ class Engine:
                     else last_trading_day.isoformat()
                 )
             else:
+                self.last_scan_outcome = ScanOutcome(
+                    status=SUCCESS_NO_CANDIDATES,
+                    reason="holiday_no_data",
+                    detail=f"{target_date} is a market holiday and no "
+                    "as-of date was supplied to fall back to.",
+                )
                 return [], {"status": "HOLIDAY_NO_DATA"}
 
         if not silent:
@@ -241,7 +341,12 @@ class Engine:
                 deal_map,
             ) = load_universe(lib, symbols, as_of_date, silent=silent)
             if cache_df.empty and len(symbols) >= 10:
-                return [], {}
+                # The universe loaded but no rows came back for a broad scan.
+                # Returned as a plain empty list before, which is byte-identical
+                # to "the strategy matched nothing" — so a dead indicator lake
+                # looked exactly like a quiet market. Classify it explicitly
+                # instead, and say what to do about it.
+                return self._abort_empty_universe(symbols, silent)
 
             target_symbols = (
                 [s.split(".")[0].upper() for s in symbols]
@@ -295,6 +400,15 @@ class Engine:
         except Exception as e:
             if not silent:
                 print(f"[!] Turbo Load failed: {e}")
+            status, reason = _classify_failure(e)
+            self.last_scan_outcome = ScanOutcome(
+                status=status,
+                reason=reason,
+                detail=str(e) or type(e).__name__,
+                error_type=type(e).__name__,
+            )
+            if not silent:
+                print(f"[!] {self.last_scan_outcome.describe()}")
             return [], {}
 
         # VECTORIZED PRE-COMPUTATION: compute indicators for ALL symbols once
@@ -369,6 +483,12 @@ class Engine:
                 print(
                     f"\n[CRITICAL] Data Integrity Failure: 0/{num_stocks} results produced. Aborting."
                 )
+            self.last_scan_outcome = ScanOutcome(
+                status=FAILED_INTERNAL_ERROR,
+                reason="catastrophic_pipeline_failure",
+                detail=f"0/{num_stocks} results were produced for a broad scan.",
+                error_type="DataIntegrityFailure",
+            )
             return [], {"error": "CATASTROPHIC_PIPELINE_FAILURE"}
 
         # Observability: report failed/skipped symbols
@@ -397,6 +517,21 @@ class Engine:
             print(
                 f"[MYRA] Scan completed in {elapsed:.2f}s ({num_stocks} stocks, {elapsed/max(1,num_stocks):.3f}s/stock)"
             )
+
+        # The run reached a verdict, so this is a *success* either way: results
+        # mean candidates were found, and none means the strategies genuinely
+        # matched nothing for this date. Neither is an error.
+        self.last_scan_outcome = ScanOutcome(
+            status=(
+                SUCCESS_WITH_CANDIDATES if len(results) > 0 else SUCCESS_NO_CANDIDATES
+            ),
+            reason="scan_completed",
+            detail=(
+                f"{valid_results} of {num_stocks} scanned symbols satisfied "
+                f"{strategy_name}."
+            ),
+            candidates=len(results),
+        )
 
         try:
             # Use librarian.lineage if available, otherwise skip gracefully

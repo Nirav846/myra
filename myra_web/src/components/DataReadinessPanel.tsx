@@ -26,6 +26,9 @@ const STATE_STYLE: Record<ReadinessState, { cls: string; dot: string; icon: type
   partial: { cls: 'text-amber-300 border-amber-500/40 bg-amber-500/10', dot: 'bg-amber-400', icon: AlertTriangle },
   stale: { cls: 'text-amber-300 border-amber-500/40 bg-amber-500/10', dot: 'bg-amber-400', icon: Clock3 },
   failed: { cls: 'text-red-300 border-red-500/40 bg-red-500/10', dot: 'bg-red-400', icon: AlertTriangle },
+  // Phase 16: the data is current, but a derived artifact the screening path
+  // needs is missing/unusable — distinct from both `ready` and `failed`.
+  blocked: { cls: 'text-red-300 border-red-500/40 bg-red-500/10', dot: 'bg-red-400', icon: AlertTriangle },
   unknown: { cls: 'text-gray-300 border-white/15 bg-white/5', dot: 'bg-gray-400', icon: HelpCircle },
 };
 

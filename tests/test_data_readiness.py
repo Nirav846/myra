@@ -112,6 +112,35 @@ def _patch_expected(monkeypatch, value):
     monkeypatch.setattr(dr, "_expected_date", lambda now=None: value)
 
 
+@pytest.fixture(autouse=True)
+def _screening_is_healthy(monkeypatch):
+    """Keep this module about *ingestion* readiness.
+
+    ``assess()`` also asks whether the screening path can run, which probes the
+    derived indicator lake. ``fixture_db_dir`` redirects ``DB_DIR`` but not
+    ``DATA_DIR``, so without this the tests would read whatever lake the machine
+    running them happens to have and every ``ready``/``waiting`` verdict would
+    be escalated to ``blocked`` for a reason this module does not test.
+
+    The screening axis itself is covered in
+    ``tests/test_phase16_readiness_screening.py``; the three tests at the end of
+    this file re-patch it to check the escalation wiring.
+    """
+    monkeypatch.setattr(
+        dr,
+        "screening_facts",
+        lambda technical=None: {
+            "state": dr.STATE_READY,
+            "reason": "ok",
+            "detail": "Stubbed: screening is not this module's subject.",
+            "available": True,
+            "lake": None,
+            "expected": None,
+            "coverage": None,
+        },
+    )
+
+
 # ── 1. Dates are reported separately and never conflated ─────────────────────
 
 
@@ -258,6 +287,7 @@ def test_all_states_have_labels():
         dr.STATE_STALE,
         dr.STATE_FAILED,
         dr.STATE_UNKNOWN,
+        dr.STATE_BLOCKED,
     ):
         assert dr.STATE_LABELS[state]
 
@@ -436,3 +466,114 @@ def test_readiness_respects_redirected_db_dir(fixture_db_dir):
         assert os.path.abspath(dr._db(key, name)).startswith(
             os.path.abspath(fixture_db_dir)
         ), f"{key} resolves outside the redirect"
+
+
+# ── 6. Freshness is not capability (Phase 16) ────────────────────────────────
+
+
+def _screening_blocked(monkeypatch, reason="lake_empty"):
+    monkeypatch.setattr(
+        dr,
+        "screening_facts",
+        lambda technical=None: {
+            "state": dr.STATE_BLOCKED,
+            "reason": reason,
+            "detail": "The indicator lake is empty.",
+            "available": False,
+            "lake": {"reason": "missing"},
+            "expected": 10,
+            "coverage": 0.0,
+        },
+    )
+
+
+def test_current_data_with_an_unusable_screening_path_is_blocked(
+    monkeypatch, tech, fake_source
+):
+    """The exact false assurance this state exists to prevent.
+
+    Every stored session is present, so freshness alone says ``ready`` — while
+    the derivation the screener reads was never built.
+    """
+    daily, write = fake_source
+    write([f"S{i}" for i in range(10)], "2026-01-02")
+    _write_session(tech, "2026-01-02", [f"S{i}" for i in range(10)])
+    _patch_expected(monkeypatch, "2026-01-02")
+    _screening_blocked(monkeypatch)
+
+    r = dr.assess()
+
+    assert r["state"] == dr.STATE_BLOCKED
+    assert r["label"] == dr.STATE_LABELS[dr.STATE_BLOCKED]
+    assert r["screening"]["reason"] == "lake_empty"
+    # The operator must be able to see *why*, not just that it is blocked.
+    assert "indicator lake is empty" in r["explanation"].lower()
+    assert r["technical"]["latest_date"] == "2026-01-02"
+
+
+def test_a_broken_ingestion_is_not_downgraded_by_screening(
+    monkeypatch, tech, fake_source
+):
+    """The stronger signal wins: escalation only, never a downgrade."""
+    daily, write = fake_source
+    write([f"S{i}" for i in range(10)], "2026-01-01")
+    _write_session(tech, "2026-01-01", [f"S{i}" for i in range(10)])
+    _patch_expected(monkeypatch, "2026-01-02")
+    monkeypatch.setattr(
+        dr,
+        "ingestion_facts",
+        lambda: {
+            "last_success": None,
+            "last_attempt": "2026-01-02T10:00:00",
+            "last_status": "failed",
+        },
+    )
+    _screening_blocked(monkeypatch)
+
+    r = dr.assess()
+
+    assert r["state"] == dr.STATE_FAILED
+    assert r["screening"]["state"] == dr.STATE_BLOCKED
+
+
+def test_fingerprint_changes_when_screening_capability_moves(
+    monkeypatch, tech, fake_source
+):
+    """A lake going from blocked to built is a transition worth reporting."""
+    daily, write = fake_source
+    write([f"S{i}" for i in range(10)], "2026-01-02")
+    _write_session(tech, "2026-01-02", [f"S{i}" for i in range(10)])
+    _patch_expected(monkeypatch, "2026-01-02")
+    _screening_blocked(monkeypatch)
+    blocked = dr.fingerprint(dr.assess())
+
+    monkeypatch.setattr(
+        dr,
+        "screening_facts",
+        lambda technical=None: {
+            "state": dr.STATE_READY,
+            "reason": "ok",
+            "detail": "Built.",
+            "available": True,
+            "lake": None,
+            "expected": 10,
+            "coverage": 1.0,
+        },
+    )
+    built = dr.fingerprint(dr.assess())
+
+    assert blocked != built
+
+
+def test_the_report_always_carries_the_screening_axis(monkeypatch, tech, fake_source):
+    """The API payload must expose it even when it is healthy."""
+    daily, write = fake_source
+    write([f"S{i}" for i in range(10)], "2026-01-02")
+    _write_session(tech, "2026-01-02", [f"S{i}" for i in range(10)])
+    _patch_expected(monkeypatch, "2026-01-02")
+
+    r = dr.assess()
+
+    assert r["state"] == dr.STATE_READY
+    assert set(r["screening"]) >= {"state", "reason", "detail", "available"}
+    json.dumps(r, default=str)
