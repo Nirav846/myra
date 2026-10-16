@@ -1141,3 +1141,108 @@ are three separate facts.
   applicable. Every database connection in the new code and the growth mode opens
   `mode=ro`, and a test asserts the growth run modifies **zero** rows via
   `Connection.total_changes`.
+
+## Phase 15 — No fresh snapshot can be produced; the indicator lake is empty
+
+- **The question.** Phase 14A left growth validated but unauthorised, on the
+  strength of a stale April snapshot that only 222 of 938 rows could even be
+  scored on. Phase 15 asks the question that has to come first: can a *fresh,
+  technically representative* ranking snapshot be produced at all, and if so,
+  what do A (production), B (Phase 6 inputs) and C (B + Phase 14A growth) do to
+  one common universe? Verdict: **`INSUFFICIENT DATA` — no snapshot can be
+  produced, and the reason is a release-blocking bug.**
+- **Ingestion is genuinely fresh, and that is not the problem.** Readiness is
+  `ready`; the latest market date `2026-10-15` equals the expected trading day;
+  3,194 symbols are present at that date; the EOD source folder holds 3,545 of
+  3,770 files with 0 unstable; the last ingest succeeded at
+  `2026-10-15T21:58:51`; fundamentals are reporting-period `2026-09-30` and
+  `fresh`. The daily pipeline is doing its job.
+- **The blocker: the derived indicator lake is empty.** `myra_app/data/indicators/
+  precomputed/` holds **0 files**. `precompute_indicators` reads it, finds
+  nothing, and hits `assert "symbol" in df_final.columns`
+  (`librarian_intelligence.py:76`) — reproduced by execution, not inferred:
+  calling it with a real `StockDataLoader` raises `AssertionError`. `engine.py`
+  catches that at `:295-298`, prints one `[!] Turbo Load failed:` line and
+  returns `([], {})`. **Every production scan currently returns zero candidates,
+  and the only symptom is a console line.**
+- **"Ready" does not mean "derivable".** The readiness oracle reports `ready`
+  while no ranking snapshot can exist. It measures ingestion freshness, not
+  whether a derived artifact is present — the same shape of gap as Phase 13's
+  "scheduled ≠ serving". This one is "ready ≠ derivable".
+- **The raw caches are ~168 days stale.** `data/ohlcv_cache` and `data/lake`
+  hold 3,320 files each, written 2026-05-02, carrying OHLCV only to
+  **2026-04-30** against a 2026-10-15 market date. `data/lake` is an orphan — no
+  `.py` in the tree references it. `librarian.get_ohlcv` (`:307`) refreshes
+  stale parquet in place (~`:397`), so even *reading* through it is a write.
+- **Rebuilding inside this phase was not permitted.** The only writer,
+  `update_indicator_history` (`librarian_intelligence.py:89`), needs
+  `LibrarianCore(read_only=False)`, whose constructor runs `_create_tables()`,
+  `_migrate_meta_schema()` and `SchemaRegistry.validate_schema()` — production
+  schema writes, explicitly forbidden — and would then rewrite ~3,320 OHLCV and
+  ~3,320 indicator files off a stale cache.
+- **The writer does not produce what the scorer reads.** It writes `sma20`,
+  `sma50`, `sma200`, `rsi`, `atr20`, `vol_sma50`, `avg_deliv_20d`, `rdv`,
+  `delivery_pct`, `vcp`, `delivery_accumulation_signal`, `ias`, `fvg`, `bos`,
+  `choch` — and never `atr_pct`. `schema/technical.sql` confirms `technical_data`
+  has no `sma150`, `atr_pct`, `pct_above_ma50_60d`, `keltner_*`, `atr5` or
+  `drawdown`. The scorer's technical block — **70% of the score** — therefore has
+  no populated source anywhere. Any frame built now would measure fabricated
+  fallbacks, which is precisely the result this phase was told not to
+  manufacture.
+- **Coverage baseline, measured read-only.** Four "universe" numbers disagree:
+  `symbols_master` **3,610**, `technical_data` distinct **3,425**, at the latest
+  date **3,194**, readiness `coverage.universe` **3,221**. Active ∩ technical =
+  **2,419**; active ∩ latest-date = 2,353; 1,006 technical symbols are not active
+  (mostly `*_SME`); 1,191 active symbols have no technical data at all (ETFs,
+  rights). Over the 20 sessions 2026-09-17→2026-10-15: `avg_volume_20d` **2,332
+  (64.6%)**, `avg_delivery_20d` 2,332, full 20-session window 2,332. Fundamentals
+  are thinner still: `roe` **234** of the active universe, `roe_ttm` 0,
+  `profit_growth` 0, `sales_growth` 0, `debt_to_equity` 0. Growth eligibility is
+  the healthiest input at **1,788/3,610 (49.5%)**. `atr_pct` with a readable
+  value: **0**.
+- **A/B/C was not run, and reusing April was rejected.** The tools are already
+  correct and unchanged (`shadow_ranking.compare_orderings` drives the real
+  `PositionalScorer`; `--growth-source` still defaults to `none`), so no new
+  comparison behaviour was added. Reporting April's numbers again would present
+  stale data as fresh; they remain Phase 14A's upper bound (candidate Spearman
+  0.9489, top-20 6/20, 216 moved, max displacement 56), not activation-grade.
+- **Missing-ATR defect, audited and deliberately not fixed.** `universe_loader`
+  emits `"atr_pct": c.get("atr_pct", 0) if c.get("atr_pct") is not None else 0`
+  (`universe_loader.py:309`), so "no measurement" becomes a stored `0.0`.
+  `base_score` (`score_components_v2.py:104-125`) reads `atr < 0.03` as
+  favourable and adds `+0.5`, so **missing data earns the maximum base score**.
+  Measured on the real scorer: a fabricated `0.0` and a genuinely tight `0.02`
+  both give `base_score = 0.5`; an absent key, `None`, `0.04` and a genuinely
+  wide `0.08` all give `0.3`. Two defects in one line — missing is scored as
+  best, and wide is indistinguishable from missing. Magnitude: `+1.4` points on
+  `MYRA_Score_v25` at `NORMAL`, roughly `+1.1`–`+1.6` once regime and drawdown
+  multipliers apply. Relative order is **not** distorted (the uplift is
+  uniform), but absolute scores and display bands are: a verified row scores
+  `68.8` honestly and `70.2` with the fabricated zero, crossing into `70+`
+  "Elite" purely because a value is missing. `_missing_inputs()` also reports
+  `[]` for the fabricated zero, so the breakdown presents it as observed.
+  Affects every snapshot, including April's (constant `0.0` across all 938
+  rows).
+- **Pre-existing issues reported, not buried.** `engine.py:267` builds a
+  meta-DB path as `os.path.join(os.getcwd(), "db", ...)`, bypassing the
+  documented `DB_DIR` / `DB_MAP` invariant (medium; wrong DB if cwd differs, the
+  same cwd assumption section 4.2 already shows is fragile). `roe_ttm` and
+  `smart_money_score` still have no producer and stay `None`. Dependabot's
+  `base_factor` `dependency_file_not_resolvable` failure is pre-existing and
+  third-party; no action taken.
+- **Deliverables.** `+docs/PHASE15_FRESH_SNAPSHOT_RANKING_VALIDATION.md` (the
+  audit, the coverage baseline, the ATR analysis, and the single `INSUFFICIENT
+  DATA` decision); `+tests/test_phase15_atr_characterization.py` (10 tests).
+  **No production file changed** — `git diff --stat HEAD` is empty.
+- **Verification.** New tests 10 passed; full suite **1545 passed** (+10 over
+  Phase 14A's 1535); `black` + `flake8` clean. No frontend file changed, so the
+  TypeScript check and frontend build were not applicable. Every database
+  connection opened `mode=ro`; no schema write, no cache rewrite. Production
+  growth stays disabled and `--growth-source` still defaults to `none`.
+- **What would unblock it.** (1) populate the indicator lake, or derive the
+  scorer's technical fields on demand — release-blocking and independent of
+  Phase 15; (2) make the empty-lake failure loud to the user instead of one
+  console line; (3) teach readiness about derived artifacts; (4) settle the
+  universe definition and the 1,006 / 1,191 join gaps; (5) only then run A/B/C
+  and report the full metric set. The ATR fix is on a separate track because it
+  cannot change relative order.
