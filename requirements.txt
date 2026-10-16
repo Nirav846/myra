@@ -27,6 +27,13 @@ patchright
 openpyxl
 ta
 tabulate
+# pandas' parquet engine. The OHLCV cache, the indicator lake, and
+# `IndicatorManager.save_indicators`/`load_indicators` are all parquet, and
+# `pandas.to_parquet`/`read_parquet` raise "Unable to find a usable engine"
+# without it. It was present in the operator's environment but missing from
+# this manifest, so CI silently had no parquet engine at all - no test had ever
+# written a parquet file until the Phase 16 indicator-lake tests did.
+pyarrow
 # pywin32 is Windows-only; without the marker `pip install -r requirements.txt`
 # fails outright on the Linux CI runner (and any Linux/macOS host).
 pywin32; sys_platform == "win32"

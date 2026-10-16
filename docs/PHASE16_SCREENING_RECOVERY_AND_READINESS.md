@@ -243,6 +243,7 @@ mean is a product decision, not a repair, and is left to the operator.
 | `black` (pre-commit's pinned 26.x) | clean |
 | `flake8` (pinned 6.0.0) | clean |
 | `tsc --noEmit` (`pnpm lint`) | clean |
+| CI (`test` job) | green after declaring `pyarrow` (see section 8.6) - the first run failed 21 of these tests because CI had no parquet engine |
 | Production databases / caches / lakes | **never written**; the lake is still 0 files |
 
 What the tests pin: probe availability vs validity, the "never create what you
@@ -335,7 +336,17 @@ python -m myra_app.lake_build
    stay `None`.
 5. `.flake8` ignores `F401` and `F821`; a clean lint run does not prove a code
    path executes (section 2.2).
-6. Dependabot's `base_factor` `dependency_file_not_resolvable` failure is
+6. **`pyarrow` was missing from `requirements.txt`.** Parquet is load-bearing
+   in production - the OHLCV cache, the indicator lake, and
+   `IndicatorManager.save_indicators`/`load_indicators` all use it - but the
+   engine was present only in the operator's environment, so CI ran with no
+   parquet engine at all. It had never surfaced because **no test had ever
+   written a parquet file** until this phase's lake tests did; the first CI run
+   of Phase 16 failed 21 tests with `ImportError: Unable to find a usable
+   engine`. Fixed by declaring `pyarrow` in `requirements.txt` (the manifest now
+   matches what the code imports). This is the same class of gap the file's
+   existing "direct imports that were missing from this list" block documents.
+7. Dependabot's `base_factor` `dependency_file_not_resolvable` failure is
    pre-existing and third-party; no action taken.
 
 ---
