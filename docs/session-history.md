@@ -1055,3 +1055,89 @@ are three separate facts.
   `black` + `flake8` clean; frontend `npm run build` succeeds. No test touches
   the real lock file or the live databases - the lock tests use isolated
   temp directories and injected process state.
+
+## Phase 14 — Annual growth signal validated; shadow ranking is preliminary
+
+- **The question.** Phase 13 deferred `profit_growth` / `sales_growth` because
+  populating them "turns on a signal" and needs an explicit decision. Phase 14
+  answers the question that must precede it: what do those numbers mean, how many
+  symbols can be measured honestly, and what would populating them do to the
+  ranking? Verdict: **the definition is validated enough to encode and test; the
+  ranking evidence is not enough to authorize live activation.**
+- **Definition, verified against the source not the schema comment.** Annual
+  year-on-year growth is `(current - prior) / abs(prior) * 100`, in percent.
+  `abs(prior)` is the provider's convention (a recovery from a loss reads
+  positive). Recomputed every annual pair and compared with the provider's own
+  `net_profit_change` string: **2,166 of 2,166 eligible symbols agree** within
+  0.02pp - the strongest available independent check on both formula and sign.
+- **Quarterly rows cannot make a YoY number.** Within one series, quarterly lag-1
+  is QoQ (6,378/6,399 agreement) and lag-4 - the same-quarter-prior-year pair YoY
+  needs - yields **0 pairs**: the source does not store them. Mixing the two would
+  silently compare different statistics, so only `time_period='yearly'` is
+  admitted and quarterly rows can never supply a missing prior period.
+- **Fiscal year ends are company-specific** (Mar 26 · Dec 23 · Jun 23 · Sep 22 ·
+  Nov 5 across 99 clean labels). Each fiscal-end month is evaluated as its own
+  cohort and the newest cohort wins, so a Dec-year-end company is not mis-paired
+  against a March calendar.
+- **Coverage, corrected from the estimate.** `upstox_income_statement` holds
+  17,771 rows / 2,456 symbols, all `consolidated` and all in `crore`. **2,166 of
+  2,456 symbols are eligible** (the pre-implementation estimate of 2,170/2,454 is
+  wrong and superseded). Exclusions: 162 stale, 63 no prior period, 55 prior base
+  below the 1-crore floor, 8 non-consecutive annual filings (the extra rule the
+  implementation added), 2 with no annual rows at all. `conflicting_records`,
+  `missing_values`, `zero_prior_base` and `missing_freshness_metadata` are all 0.
+- **Growth is currently absent from the live ranking, proved read-only.** In
+  `fundamentals` (3,948 rows): `profit_growth` **0**, `sales_growth` **0**,
+  `debt_to_equity` **0**, `roe_ttm` **0**, against `roe` 691, `net_margin` 3,309,
+  `market_cap` 3,246. So the scorer's growth input has only ever contributed its
+  neutral 0.4. `SalesGrowth` is not even a scorer input - `precompute_ranks` reads
+  `roe`, `ProfitGrowth`, `avg_delivery_20d`, `avg_volume_20d`,
+  `smart_money_score` - so revenue growth is derived for completeness and can
+  move nothing.
+- **Shadow result (preliminary, stale snapshot).** `scan_rs_rating.csv`, 174 days
+  old, 938 rows of which only **222** have a populated technical block. Baseline
+  (growth absent) vs candidate (validated YoY): coverage **0/222 -> 196/222**,
+  Spearman **0.9489**, top-20 overlap **6/20**, **216 moved, max displacement
+  56**. Fourteen names entered and fourteen left the top 20. This says the input
+  reorders the ranking materially; it does **not** say the new order is better,
+  and no return or risk statistic was computed.
+- **An earlier 938-row result was discarded, not reported.** It showed Spearman
+  0.667 with swings of up to ±724, which was an artefact: the snapshot's
+  `ProfitGrowth` is 938 filled / **1 distinct value, all `0.0`** (the pre-Phase-12
+  `f.get(col, 0) or 0`), and a **constant** column still ranks at the *maximum*
+  percentile - so the baseline handed every symbol the best growth rank. Only 225
+  of 938 rows have any real technical block, which is why the file's own
+  `MYRA_Score_v25` has just 16 distinct values with a 725-row tie block. The
+  tool's default mode on the same file reproduces the degeneracy (Spearman 0.6628,
+  max displacement 753), independently confirming the file cannot support a
+  fine-grained ranking claim.
+- **Baseline honesty.** A saved snapshot carries Phase 6 opt-in inputs and
+  pre-Phase-12 placeholders; a live default scan supplies none of them. The
+  growth mode therefore strips `roe`, `ProfitGrowth`, `SalesGrowth`,
+  `avg_volume_20d`, `avg_delivery_20d`, `smart_money_score` and the precomputed
+  rank columns before scoring, so the "baseline" is the production ordering
+  rather than whatever the file happens to contain.
+- **Limitations, stated rather than buried.** The only snapshots on disk are from
+  April 2026 and are not live-representative; the measured effect is an **upper
+  bound**, because with the faithful baseline having all Phase 6 inputs absent,
+  growth is the only populated input in the candidate; `atr_pct` is a constant
+  `0` in the file so `base_score` adds a constant +0.5 and the printed absolute
+  scores are not what a live run would show; 26 of 222 frame symbols still fall
+  back to neutral. The scorer was deliberately **not** refactored to accommodate
+  the comparison - the candidate stays isolated.
+- **Deferred, separately scoped finding.** `universe_loader` writes `atr_pct` as
+  `0` when absent, and `base_score` reads `atr_pct < 0.03` as a very tight
+  (favourable) base and adds +0.5 - a missing ATR **rewards** the row. Same class
+  of defect as the `ProfitGrowth = 0` sentinel, on a different field. Recorded
+  and explicitly **not** changed in this phase.
+- **Deliverables.** `+myra_app/growth_signals.py` (definition, eligibility
+  contract, pure derivation, read-only adapter);
+  `~tools/compare_v25_orderings.py` gains an opt-in `--growth-source
+  upstox-annual` mode with default behaviour unchanged and no implicit fetch;
+  `+tests/test_growth_signals.py` (44); `+docs/PHASE14_...md`.
+- **Verification.** Focused 66 passed; full suite **1535 passed** (+44 over
+  Phase 13's 1491), no live-database writes; `black` + `flake8` clean. No
+  frontend file changed, so the TypeScript check and frontend build were not
+  applicable. Every database connection in the new code and the growth mode opens
+  `mode=ro`, and a test asserts the growth run modifies **zero** rows via
+  `Connection.total_changes`.
