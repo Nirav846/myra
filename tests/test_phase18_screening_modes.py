@@ -238,17 +238,31 @@ def test_unreadable_lake_fields_are_reported_not_assumed_fine(monkeypatch):
     v25 = result["modes"][sm.MODE_V25_TURBO]
     assert v25["state"] != sm.MODE_OPERATIONAL
     assert v25["missing"] == list(sm.V25_REQUIRED_INPUTS)
-    assert v25["reason"] == "inputs_unsourced"
+    # Phase 19 split the requirement into mandatory and optional inputs; an
+    # unreadable lake leaves every mandatory one unsourced, so the mode is
+    # blocked rather than merely degraded - it could not publish an
+    # authoritative score.
+    assert v25["reason"] == "mandatory_inputs_unsourced"
 
 
 def test_a_lake_missing_inputs_cannot_be_promoted_to_operational():
+    """A built lake is still not enough for an authoritative v2.5 score.
+
+    Phase 19 strengthened this: the *mandatory* inputs (the weighted
+    components) have no producers, so the mode is blocked, not degraded. The
+    scorer would happily return a number built on neutral constants and
+    zero-filled placeholders - which is exactly what must not be published.
+    """
     result = _run(available_fields=set(sm.V25_LAKE_PRODUCED_INPUTS))
     v25 = result["modes"][sm.MODE_V25_TURBO]
-    assert v25["state"] == sm.MODE_DEGRADED
-    assert v25["reason"] == "inputs_unsourced"
+    assert v25["state"] == sm.MODE_BLOCKED
+    assert v25["reason"] == "mandatory_inputs_unsourced"
     # The reason the score cannot be trusted is spelled out.
     assert "zero-filled" in v25["detail"].lower()
     assert set(v25["missing"]) == set(sm.V25_REQUIRED_INPUTS) - set(
+        sm.V25_LAKE_PRODUCED_INPUTS
+    )
+    assert set(v25["missing_mandatory"]) == set(sm.V25_MANDATORY_INPUTS) - set(
         sm.V25_LAKE_PRODUCED_INPUTS
     )
 

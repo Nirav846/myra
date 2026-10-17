@@ -196,6 +196,19 @@ def _worker_task(payload):
             fvg_zone = None
             funda["fvg_active"] = 0
 
+        # ``fvg_mid`` is the FVG zone's midpoint. The definition is established,
+        # not invented: ``fvg_zone["mid"]`` above is ``(top + bottom) / 2``, and
+        # the repository's canonical FVG zone builder
+        # (``SMCManager.get_fvg_buy_zone``) returns exactly that as ``mid``.
+        #
+        # Both success paths below referenced this name without anything ever
+        # assigning it, so ``NameError`` fired on *every* candidate and the
+        # worker returned ``status: FAILED`` for the whole universe - no scan
+        # could surface a single result, whatever the data contained. Binding it
+        # here keeps each call site's own written fallback intact (a missing
+        # zone stays ``None``, which is falsy, so the fallback engages).
+        fvg_mid = fvg_zone["mid"] if fvg_zone else None
+
         funda["fvg"] = 1 if has_bullish else 0
         funda["bos"] = funda.get("bos", 0)  # keep existing if already set
         funda["choch"] = funda.get("choch", 0)

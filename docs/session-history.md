@@ -1469,3 +1469,94 @@ Plan and full evidence: `docs/PHASE18_SCREENING_CONTINUITY_AND_DATA_OPERATIONS.m
   the fundamental refresh, and starting the scheduler — all operator
   decisions. The report names the exact command and reason instead of guessing.
 
+
+
+## Phase 19 — The V2.5 signal contract, and the lake builder that could not write
+
+*Goal: settle which values a published `MYRA_Score_v25` actually consumes and
+where each comes from, repair the smallest proven set of execution defects, and
+decide — from evidence — whether the indicator lake can be built. No lake build,
+no OHLCV rebuild, no fundamental refresh, no scheduler start.*
+
+- **The contract, not just the six names.** Phase 17 named six scorer inputs;
+  reading the scorer (`score_components_v2.py`) end to end gives **17**:
+  `sma50`/`sma150`/`sma200`/`close`, `pct_above_ma50_60d`, `avg_delivery_20d`,
+  `smart_money_score`, `avg_volume_20d`, `atr_pct`/`keltner_upper`/`keltner_lower`/
+  `atr5`, `drawdown`, `roe`/`ProfitGrowth`/`F_Score`, `regime`. `graham_number` is
+  *not* consumed (`valuation_score` is never wired into the composite).
+  `docs/V25_TECHNICAL_SIGNAL_CONTRACT.md` records each field's meaning, units,
+  lookback, producer, missing behaviour and status.
+- **Four classes of "missing", which used to wear one name.** Not built (a build
+  fixes it) / no writer anywhere (a build never will) / producer exists but is
+  switched off (`MYRA_V25_RANKING_INPUTS`, off by default — enabling it changes
+  published ordering) / absent and zero-filled (already inside the numbers).
+  `V25_MANDATORY_INPUTS` (7) vs `V25_OPTIONAL_INPUTS` (5) now drives the mode:
+  a mandatory gap is `blocked`/`mandatory_inputs_unsourced`, an optional gap is
+  `degraded`/`optional_inputs_unsourced` and never `operational`. `V25_GATED_INPUTS`
+  and `V25_UNSOURCED_INPUTS` make the distinction machine-readable, and
+  `evaluate()["v25_input_contract"]` exposes all of it.
+- **The lake builder could not write a single artifact.** The headline finding of
+  this phase, and it was not in the original blocker list. `_compute_symbol_indicators`
+  returned a frame with duplicate column names — `delivery_pct`, `vwap`,
+  `delivery_divergence_score` — because `get_ohlcv` already returns those
+  lower-case, enriched columns, the `capitalize()` pass renames them, and the
+  producer's own later assignment of the same names then appends a second column.
+  `to_parquet` rejects it (`Duplicate column names found`), `save_indicators`
+  re-raises, `build_indicator_lake` counts the symbol as `failed` — so a build
+  would have reported *every* symbol as failed and `data/indicators/precomputed`
+  could never be populated by anything. Fixed with the dedup idiom that method
+  already used after `capitalize()`, `keep="first"`. That choice is what stops a
+  fabricated zero (`Delivery_qty` is absent from `technical_data`, ~7% populated
+  in the cache, so the dropped duplicate is `fillna(0.0)×100`) from replacing the
+  measured NSE delivery percentage.
+- **The lake's SMC indicators were fabricated zeros.** `librarian_intelligence`
+  imported `SMCManager` from `myra_app.engine`, which has never contained it; the
+  `ImportError` was swallowed by a blanket handler, so every artifact carried
+  `fvg = 0.0 / bos = False / choch = False` as if measured. Now imported from
+  `myra_app.smc_manager`, **outside** the `try` (so a misnamed module fails loudly
+  instead of fabricating), with a per-symbol warning on the genuine fallback.
+  Verified end-to-end: `fvg` now carries real values (−1/0/1, latest row 1).
+- **`fvg_mid` was never assigned.** Both success paths referenced the name; the
+  resulting `NameError` failed the whole universe, so no scan could surface a
+  result whatever the data held. Bound to `fvg_zone["mid"]` — an established
+  definition (`(top + bottom) / 2`, the same `mid` the canonical
+  `SMCManager.get_fvg_buy_zone` returns), not an invented indicator. Each call
+  site keeps its own written fallback.
+- **The Polars read had no declared schema.** `pl.read_database` gets no types
+  from a DBAPI cursor, so it inferred from a leading sample; `technical_data`'s
+  leading rows are NULL-heavy, the sample resolved to `Null`, and the first real
+  value raised `ComputeError: could not append value: 40.0`. New
+  `myra_app/utils/sqlite_schema.py` derives an explicit schema from
+  `PRAGMA table_info`; wired into both `engine.py` read sites. `infer_schema_length=None`
+  was rejected because it leaves 17 all-NULL columns typed `Null`. A full scan of
+  all 11 INTEGER-declared columns (8,022,725 rows) found zero non-integral values,
+  so `Int64` is exact for the real data.
+- **Verdict: the builder works, the lake still cannot produce a trustworthy
+  score.** Only 2 of 17 consumed fields are lake-produced; 8 have no producer at
+  all. And two data findings sit upstream of every indicator: on 2026-10-13 and
+  2026-10-07 `technical_data` stores `sma_50 = close` for ~the whole universe
+  (3220/3223) and `sma_200` NULL for every symbol (3221/3224); and the OHLCV cache
+  and `technical_data` disagree by **exactly 2×** for `RELIANCE` (736 of 1216
+  shared sessions, median ratio 2.0000) up to and including 2026-02-01 — one
+  series is corporate-action adjusted and the other is not.
+- **Restraint, recorded rather than applied.** The missing-`atr_pct` defect
+  (absence → `0` → `base_score` awards **+0.5, the maximum**; while a zero-filled
+  `pct_above_ma50_60d` returns **0**, a fabricated worst case) is documented with
+  its exact fix but not changed, because it moves published scores. Eight
+  definitions (`sma150` source, `atr_pct`, `atr5`, Keltner, `drawdown`,
+  `smart_money_score`, `F_Score`) are listed as open investment-strategy
+  decisions with options, not guessed at.
+- **Scheduler (read-only):** lock absent, `state=degraded`, `DISABLE_SCHEDULER`
+  unset, 0 python processes, port 8000 idle. Degraded because nothing started
+  `python run_fastapi.py` — not because of a lock. Not started; the command is
+  named instead. Manual screening and individual data-ops commands are unaffected.
+- **Verified:** new `tests/test_phase19_signal_contract.py` (**27 tests**), full
+  suite **1749 passed** (Phase 18: 1722), the targeted nine suites 245 passed,
+  `black`/`flake8` clean; no frontend files changed. **No production writes:** lake
+  still 0 files, every production read `mode=ro`, `live_db_guard` passed, no
+  `.myra_task_*` left behind, working tree contains only the intended seven files.
+  `myra_technical.db`'s mtime did not move this phase (still `2026-10-17 11:55:59`),
+  so the earlier mid-Phase-18 advance remains undiagnosed and is carried forward.
+- **Deliberately not done:** the lake build, the OHLCV rebuild, the fundamental
+  refresh, starting the scheduler, enabling `MYRA_V25_RANKING_INPUTS`, and any
+  weight/threshold/formula/ordering change.

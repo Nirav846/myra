@@ -28,6 +28,7 @@ from myra_app.scan_outcome import (
     SUCCESS_WITH_CANDIDATES,
     ScanOutcome,
 )
+from myra_app.utils.sqlite_schema import sqlite_schema_overrides
 from myra_core.utils.myra_log import myra_log
 
 logger = logging.getLogger(__name__)
@@ -428,7 +429,16 @@ class Engine:
                 query = f"SELECT * FROM technical_data WHERE symbol IN ({placeholders}) ORDER BY symbol, date"
                 params = target_symbols
             raw_df = pl.read_database(
-                query, lib._tech_conn, execute_options={"parameters": params}
+                query,
+                lib._tech_conn,
+                execute_options={"parameters": params},
+                # Explicit dtypes: Polars cannot see SQLite's declared types and
+                # its value-based inference fails on this table's NULL-heavy
+                # leading rows ("could not append value ... to the builder").
+                # See ``myra_app.utils.sqlite_schema``.
+                schema_overrides=sqlite_schema_overrides(
+                    lib._tech_conn, "technical_data"
+                ),
             )
 
             if not raw_df.is_empty():
@@ -436,6 +446,9 @@ class Engine:
                 nifty_df = pl.read_database(
                     "SELECT date, close FROM technical_data WHERE symbol LIKE '%NIFTY 50%'",
                     lib._tech_conn,
+                    schema_overrides=sqlite_schema_overrides(
+                        lib._tech_conn, "technical_data", columns=["date", "close"]
+                    ),
                 )
                 enriched = enrich_features(raw_df, nifty_df)
 

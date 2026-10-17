@@ -214,9 +214,20 @@ class LibrarianIntelligenceMixin:
             df["ias"] = 0.0
 
         # SMC block
-        try:
-            from myra_app.engine import SMCManager
+        #
+        # The import sits *outside* the try on purpose. ``myra_app.engine`` has
+        # never defined or re-exported ``SMCManager``, so the previous
+        # ``from myra_app.engine import SMCManager`` raised ImportError on every
+        # call, and the blanket handler below turned that into
+        # ``fvg = 0.0 / bos = False / choch = False``. Every lake artifact
+        # therefore carried zeroed SMC indicators that were indistinguishable
+        # from measured ones. The class lives in ``myra_app.smc_manager`` (which
+        # is where ``worker_pool`` already imports it from). Keeping the import
+        # outside the try means a misnamed or missing module is now a loud,
+        # countable build failure rather than a silent fabricated value.
+        from myra_app.smc_manager import SMCManager
 
+        try:
             df_lower = df.rename(columns=lambda x: x.lower())
             df["fvg"] = SMCManager.calculate_fvg(df_lower)
             bos, choch = SMCManager.calculate_market_structure(df_lower)
@@ -225,6 +236,9 @@ class LibrarianIntelligenceMixin:
             df["choch"] = choch
 
         except Exception:
+            # A genuine per-symbol SMC failure must not abort the build, but it
+            # must be visible rather than silently published as a zero.
+            logger.warning("[MYRA] SMC indicators fell back to zero for %s", sym)
             df["fvg"] = 0.0
             df["bos"] = False
             df["choch"] = False
@@ -232,6 +246,33 @@ class LibrarianIntelligenceMixin:
         # Normalise for persistence (lower-cased columns + symbol tag), so the
         # caller only has to write the frame out.
         df.columns = [c.lower() for c in df.columns]
+
+        # Lower-casing is what *creates* the duplicate columns.
+        #
+        # ``get_ohlcv`` already returns some lower-case, already-enriched
+        # columns (``delivery_pct``, ``vwap``, ``delivery_divergence_score``).
+        # The ``capitalize()`` pass above renames them to ``Delivery_pct`` /
+        # ``Vwap`` / ``Delivery_divergence_score``, so this method's own
+        # assignments to ``delivery_pct`` (below), ``vwap`` and
+        # ``delivery_divergence_score`` append a *second* column instead of
+        # overwriting the first. Lower-casing both here then produced a frame
+        # with two columns of each name, and ``to_parquet`` rejects that with
+        # ``ValueError: Duplicate column names found`` — so *every* artifact
+        # write failed and ``data/indicators/precomputed`` could never be
+        # populated at all (``build_indicator_lake`` reported every symbol as
+        # ``failed``, honestly but permanently).
+        #
+        # ``keep="first"`` (pandas' default, and the same idiom the
+        # ``capitalize()`` pass at the top of this method already uses) keeps
+        # the ingested/enriched value and drops this method's duplicate. That
+        # matters for ``delivery_pct``: ``Delivery_qty`` is absent from
+        # ``technical_data`` and only ~7% populated in the OHLCV cache, so the
+        # duplicate computed here is ``fillna(0.0)`` — a fabricated zero — while
+        # the kept column is the measured NSE delivery percentage. Which of the
+        # two competing sources should win is recorded as an open definition
+        # question in ``docs/V25_TECHNICAL_SIGNAL_CONTRACT.md``; this repair
+        # only avoids publishing the fabricated zero and unblocks the write.
+        df = df.loc[:, ~df.columns.duplicated(keep="first")]
         df["symbol"] = sym
 
         return df

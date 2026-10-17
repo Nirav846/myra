@@ -104,26 +104,74 @@ TRIGGER_CONTRIBUTING_COLUMNS = (
 COLUMN_DEGRADE_FRACTION = 0.80
 COLUMN_BLOCK_FRACTION = 0.50
 
-#: Every per-symbol input ``positional_engine`` reads through
-#: ``score_components_v2``. The Phase 17 audit established which of these the
-#: lake producer actually emits; this tuple is the requirement, not the
-#: capability.
-V25_REQUIRED_INPUTS = (
+#: The v2.5 inputs whose absence makes a published ``MYRA_Score_v25``
+#: untrustworthy. Every one of them carries weight in the composite, and every
+#: one of them is substituted rather than reported when it is missing: the
+#: scorer falls back to a neutral constant (0.3 / 0.4) or, worse, receives the
+#: zero that ``universe_loader`` writes in its place. The number that comes out
+#: is then arithmetic on a placeholder, not a measurement of the stock - so a
+#: score computed without these is not authoritative, however plausible it
+#: looks. See ``docs/V25_TECHNICAL_SIGNAL_CONTRACT.md``.
+V25_MANDATORY_INPUTS = (
+    # trend component (weight 0.25) - the single heaviest technical block
     "sma50",
     "sma150",
     "sma200",
-    "atr_pct",
+    # stability component (0.15)
     "pct_above_ma50_60d",
+    # delivery component (0.20)
+    "avg_delivery_20d",
+    # liquidity component (0.10)
+    "avg_volume_20d",
+    # base component (0.10) - absent ATR is zero-filled, and a zero *earns the
+    # highest* base score, so absence is currently rewarded rather than neutral
+    "atr_pct",
+)
+
+#: Inputs the scorer consumes that only *qualify* the score. Their absence
+#: withholds a bonus (the TTM-squeeze pair) or a soft penalty (drawdown), and
+#: the component's documented neutral behaviour applies, so a score computed
+#: without them still means what it says.
+V25_OPTIONAL_INPUTS = (
     "keltner_upper",
     "keltner_lower",
     "atr5",
     "drawdown",
+    "smart_money_score",
 )
+
+#: Every per-symbol input ``positional_engine`` reads through
+#: ``score_components_v2``. This tuple is the requirement, not the capability:
+#: the Phase 17/19 audit established which of these any producer actually
+#: emits.
+V25_REQUIRED_INPUTS = V25_MANDATORY_INPUTS + V25_OPTIONAL_INPUTS
+
 
 #: The subset of :data:`V25_REQUIRED_INPUTS` the lake producer emits.
 #: The rest are zero-filled by ``universe_loader`` when absent, which is why a
 #: built lake is still not enough for a trustworthy v2.5 score.
 V25_LAKE_PRODUCED_INPUTS = ("sma50", "sma200")
+
+#: Inputs that *do* have a real producer, which is switched off by default:
+#: ``ranking_inputs.compute_ranking_inputs`` measures the 20-session volume mean
+#: and the 20-session mean of the daily delivery *percentage*, and
+#: ``universe_loader`` only merges them when ``MYRA_V25_RANKING_INPUTS`` (or the
+#: explicit argument) is enabled. They are therefore not definitional gaps - but
+#: turning the flag on changes published scores and ordering, so it is an
+#: operator decision, not a Phase 19 repair.
+V25_GATED_INPUTS = ("avg_volume_20d", "avg_delivery_20d")
+
+#: The v2.5 inputs that **no producer anywhere in the repository** writes - as
+#: distinct from "absent from the lake" and from "present but switched off".
+#: Established by the Phase 19 producer/consumer audit (see
+#: ``docs/V25_TECHNICAL_SIGNAL_CONTRACT.md``): each was traced to its consumers
+#: and has no writer, so building the lake will not supply them. They need
+#: definitions and producers, not a build.
+V25_UNSOURCED_INPUTS = tuple(
+    name
+    for name in V25_REQUIRED_INPUTS
+    if name not in V25_LAKE_PRODUCED_INPUTS and name not in V25_GATED_INPUTS
+)
 
 
 def _pct(part: Optional[int], whole: Optional[int]) -> Optional[float]:
@@ -141,6 +189,18 @@ def missing_v25_inputs(available: Optional[set]) -> list:
     if available is None:
         return list(V25_REQUIRED_INPUTS)
     return [name for name in V25_REQUIRED_INPUTS if name not in available]
+
+
+def classify_missing_v25_inputs(missing: list) -> dict:
+    """Split a missing-input list into the mandatory and optional halves.
+
+    The scorer always returns a number, so "does it run?" is the wrong
+    question. This is the one that matters: is the number arithmetic on
+    measured inputs, or on placeholders?
+    """
+    mandatory = [name for name in missing if name in V25_MANDATORY_INPUTS]
+    optional = [name for name in missing if name in V25_OPTIONAL_INPUTS]
+    return {"mandatory": mandatory, "optional": optional}
 
 
 def lake_field_names() -> Optional[set]:
@@ -310,6 +370,8 @@ def _v25_mode(
         "reads": "indicator lake (data/indicators/precomputed)",
         "reads_lake": True,
         "missing": [],
+        "missing_mandatory": [],
+        "missing_optional": [],
         "blocked_by": [],
     }
 
@@ -341,6 +403,8 @@ def _v25_mode(
                 + " Until it is built, MYRA_Score_v25 cannot be produced at all."
             ),
             missing=list(V25_REQUIRED_INPUTS),
+            missing_mandatory=list(V25_MANDATORY_INPUTS),
+            missing_optional=list(V25_OPTIONAL_INPUTS),
         )
         return mode
 
@@ -355,28 +419,52 @@ def _v25_mode(
     # The lake holds artifacts. Ask what it actually measured.
     missing = missing_v25_inputs(available_fields)
     mode["missing"] = missing
+    split = classify_missing_v25_inputs(missing)
+    mode["missing_mandatory"] = split["mandatory"]
+    mode["missing_optional"] = split["optional"]
 
-    if missing:
+    if split["mandatory"]:
+        # Not "degraded": the scorer would still return a number, and that
+        # number would be arithmetic on substituted placeholders for the
+        # weighted components. Publishing it as MYRA_Score_v25 is exactly the
+        # outcome this phase exists to prevent, so the mode stays blocked until
+        # the mandatory inputs have producers.
         detail = (
-            f"The lake is present and readable, but it does not carry "
-            f"{len(missing)} of the {len(V25_REQUIRED_INPUTS)} inputs the v2.5 "
-            f"scorer reads ({', '.join(missing)}). Those would be zero-filled "
-            "rather than measured, so the resulting MYRA_Score_v25 would not be "
-            "trustworthy and must not be published as authoritative."
+            f"The lake is present and readable, but it carries none of the "
+            f"{len(split['mandatory'])} mandatory v2.5 inputs "
+            f"({', '.join(split['mandatory'])}). Those would be substituted "
+            "with neutral constants or zero-filled rather than measured, so any "
+            "MYRA_Score_v25 computed from them would not be authoritative and "
+            "must not be published."
         )
-        if mode["blocked_by"]:
-            mode.update(
-                state=MODE_BLOCKED,
-                reason="inputs_unsourced",
-                detail=(
-                    detail
-                    + " The path is also blocked at runtime by: "
-                    + ", ".join(mode["blocked_by"])
-                    + "."
-                ),
+        if split["optional"]:
+            detail += (
+                f" A further {len(split['optional'])} optional input(s) are "
+                f"also absent ({', '.join(split['optional'])}), which only "
+                "withhold a squeeze bonus / drawdown penalty."
             )
-        else:
-            mode.update(state=MODE_DEGRADED, reason="inputs_unsourced", detail=detail)
+        if mode["blocked_by"]:
+            detail += (
+                " The path is also blocked at runtime by: "
+                + ", ".join(mode["blocked_by"])
+                + "."
+            )
+        mode.update(
+            state=MODE_BLOCKED, reason="mandatory_inputs_unsourced", detail=detail
+        )
+        return mode
+
+    if split["optional"]:
+        mode.update(
+            state=MODE_DEGRADED,
+            reason="optional_inputs_unsourced",
+            detail=(
+                f"Every mandatory v2.5 input is present. These optional inputs "
+                f"are not ({', '.join(split['optional'])}), so the TTM-squeeze "
+                "bonus and the drawdown penalty cannot engage; the published "
+                "score keeps its meaning but is slightly less differentiated."
+            ),
+        )
         return mode
 
     if mode["blocked_by"]:
@@ -470,6 +558,16 @@ def evaluate(
         "modes": modes,
         "required_v25_inputs": list(V25_REQUIRED_INPUTS),
         "lake_produced_v25_inputs": list(V25_LAKE_PRODUCED_INPUTS),
+        "unsourced_v25_inputs": list(V25_UNSOURCED_INPUTS),
+        # Which of the above a published MYRA_Score_v25 cannot survive losing.
+        # A consumer must not have to re-derive this from the scorer's source.
+        "v25_input_contract": {
+            "mandatory": list(V25_MANDATORY_INPUTS),
+            "optional": list(V25_OPTIONAL_INPUTS),
+            "lake_produced": list(V25_LAKE_PRODUCED_INPUTS),
+            "gated_v25_inputs": list(V25_GATED_INPUTS),
+            "unsourced_v25_inputs": list(V25_UNSOURCED_INPUTS),
+        },
     }
 
 
@@ -485,11 +583,16 @@ __all__ = [
     "TRIGGER_REQUIRED_COLUMNS",
     "TRIGGER_CONTRIBUTING_COLUMNS",
     "V25_REQUIRED_INPUTS",
+    "V25_MANDATORY_INPUTS",
+    "V25_OPTIONAL_INPUTS",
     "V25_LAKE_PRODUCED_INPUTS",
+    "V25_GATED_INPUTS",
+    "V25_UNSOURCED_INPUTS",
     "COLUMN_DEGRADE_FRACTION",
     "COLUMN_BLOCK_FRACTION",
     "evaluate",
     "missing_v25_inputs",
+    "classify_missing_v25_inputs",
     "lake_field_names",
     "worker_path_blocker",
     "polars_schema_blocker",
