@@ -186,12 +186,39 @@ export default function App() {
   // Phase 13: DB reachability said nothing about whether the scheduler was
   // running. A serving API with a dead scheduler must not look healthy, so
   // surface it here rather than leaving it in a log file.
+  //
+  // Phase 18: `disabled` was missing from this list, so a scheduler switched off
+  // by configuration — just as unavailable as one that died — rendered no banner
+  // at all. The `SchedulerState` union already carried it.
   const schedulerUnhealthy =
-    isConnected && (scheduler.state === 'degraded' || scheduler.state === 'unknown');
+    isConnected &&
+    (scheduler.state === 'degraded' ||
+      scheduler.state === 'unknown' ||
+      scheduler.state === 'disabled');
+
   const schedulerLabel =
-    scheduler.state === 'degraded'
-      ? 'Scheduler Not Running'
-      : 'Scheduler State Unknown';
+    scheduler.state === 'disabled'
+      ? 'Scheduler Disabled'
+      : scheduler.state === 'unknown'
+        ? 'Scheduler State Unknown'
+        : 'Scheduler Not Running';
+
+  /**
+   * Phase 18: the remedy depends on *why* the scheduler is absent.
+   *
+   * This previously said "Leave DISABLE_SCHEDULER unset to run it here"
+   * regardless of the cause. That advice is wrong in the common case: the
+   * variable is already unset and the real cause is that nothing started the
+   * process that owns the scheduler. Pointing at a setting that is already
+   * correct sends the operator down a dead end, so each state now states its own
+   * actual next step.
+   */
+  const schedulerAdvice =
+    scheduler.state === 'disabled'
+      ? 'DISABLE_SCHEDULER is set, so scheduled ingestion and EOD recovery are switched off. Unset it and restart to re-enable them.'
+      : scheduler.state === 'unknown'
+        ? 'Scheduler ownership could not be determined. Check that the API was started through its scheduler-owning entry point.'
+        : 'No process owns the scheduler lock, so scheduled ingestion and EOD recovery are not running. Start the application through the entry point that owns the scheduler — python run_fastapi.py — rather than clearing the lock: nothing is holding it, so the lock is not the fault.';
 
   // Dynamic Theme mappings based on SettingsContext
   const bgMain = settings.theme === 'pitch-black' ? 'bg-[#000000]' : 'bg-[#0e1117]';
@@ -275,16 +302,13 @@ export default function App() {
               <AlertCircle className="text-amber-400 flex-shrink-0 mt-0.5" size={18} />
               <div>
                 <h3 className="text-amber-400 text-sm font-semibold mb-1">
-                  Scheduler Not Running ({scheduler.state})
+                  {schedulerLabel} ({scheduler.state})
                 </h3>
                 <p className="text-[#ccc] text-xs font-mono">
                   {scheduler.reason ||
                     'The API is responding but the background scheduler is not driving the schedule.'}
                 </p>
-                <p className="text-[#888] text-xs mt-1">
-                  Scheduled ingestion and EOD recovery will not run until this is
-                  resolved. Leave DISABLE_SCHEDULER unset to run it here.
-                </p>
+                <p className="text-[#888] text-xs mt-1">{schedulerAdvice}</p>
               </div>
             </div>
           )}

@@ -15,9 +15,9 @@
  */
 import {
   CalendarClock, Database, FileStack, CheckCircle2, AlertTriangle,
-  Clock3, HelpCircle, RefreshCw,
+  Clock3, HelpCircle, RefreshCw, ShieldCheck,
 } from 'lucide-react';
-import type { ReadinessState } from '../lib/readiness';
+import type { ReadinessState, ScreeningModeState } from '../lib/readiness';
 import { useDataReadiness } from '../hooks/useDataReadiness';
 
 const STATE_STYLE: Record<ReadinessState, { cls: string; dot: string; icon: typeof CheckCircle2 }> = {
@@ -31,6 +31,23 @@ const STATE_STYLE: Record<ReadinessState, { cls: string; dot: string; icon: type
   blocked: { cls: 'text-red-300 border-red-500/40 bg-red-500/10', dot: 'bg-red-400', icon: AlertTriangle },
   unknown: { cls: 'text-gray-300 border-white/15 bg-white/5', dot: 'bg-gray-400', icon: HelpCircle },
 };
+
+/**
+ * Phase 18: per-mode availability styling.
+ *
+ * `degraded` is amber rather than green on purpose — the mode runs, but its
+ * output is qualified, and colouring that green is how a partial result gets
+ * mistaken for a sound one.
+ */
+const MODE_STYLE: Record<ScreeningModeState, { cls: string; dot: string }> = {
+  operational: { cls: 'text-green-300 border-green-500/40 bg-green-500/10', dot: 'bg-green-400' },
+  degraded: { cls: 'text-amber-300 border-amber-500/40 bg-amber-500/10', dot: 'bg-amber-400' },
+  blocked: { cls: 'text-red-300 border-red-500/40 bg-red-500/10', dot: 'bg-red-400' },
+  unknown: { cls: 'text-gray-300 border-white/15 bg-white/5', dot: 'bg-gray-400' },
+};
+
+/** Stable render order so a mode never appears to move between polls. */
+const MODE_ORDER = ['trigger', 'v25_turbo'];
 
 /**
  * Phase 10: plain-language labels for the recovery watchdog's reason codes.
@@ -115,6 +132,17 @@ export default function DataReadinessPanel({ busy }: { busy: boolean }) {
   const fund = readiness.fundamentals;
   const rec = readiness.recovery;
 
+  // Phase 18: render each screening mode separately. Sorted by a fixed order so
+  // a mode never appears to move between polls, and derived from the payload
+  // only — the panel never infers a mode's health itself.
+  const modeRank = (name: string) => {
+    const index = MODE_ORDER.indexOf(name);
+    return index === -1 ? MODE_ORDER.length : index;
+  };
+  const modeList = Object.values(readiness.screening_modes?.modes ?? {}).sort(
+    (a, b) => modeRank(a.mode) - modeRank(b.mode),
+  );
+
   const coverageText =
     cov.symbols_at_latest !== null && cov.universe
       ? `${cov.symbols_at_latest} / ${cov.universe} symbols`
@@ -161,6 +189,63 @@ export default function DataReadinessPanel({ busy }: { busy: boolean }) {
       <p className="text-[11px] font-mono text-[#bbb]" data-testid="readiness-explanation">
         {readiness.explanation}
       </p>
+
+      {/*
+        Phase 18: capability is per mode. The headline explanation already says
+        this in prose; listing the modes shows *which* mode survives and under
+        which score, so a TriggerScanner result is never mistaken for a v2.5 one.
+      */}
+      {modeList.length > 0 && (
+        <div
+          className="flex flex-col gap-1.5"
+          data-testid="screening-modes"
+          aria-label="Screening availability by mode"
+        >
+          <div className="flex items-center gap-1">
+            <ShieldCheck size={11} className="text-[#666]" aria-hidden="true" />
+            <span className="text-[10px] font-mono uppercase tracking-wider text-[#666]">
+              Screening availability
+            </span>
+          </div>
+          {modeList.map((mode) => {
+            const modeStyle = MODE_STYLE[mode.state] ?? MODE_STYLE.unknown;
+            return (
+              <div key={mode.mode} className="flex items-start gap-2" title={mode.detail}>
+                <span
+                  className={`mt-1.5 h-1.5 w-1.5 rounded-full shrink-0 ${modeStyle.dot}`}
+                  aria-hidden="true"
+                />
+                <div className="flex flex-col min-w-0">
+                  <span className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[11px] font-mono text-[#ddd]">{mode.label}</span>
+                    <span
+                      className={`text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded border ${modeStyle.cls}`}
+                    >
+                      {mode.state}
+                    </span>
+                  </span>
+                  {/*
+                    Naming the score is the point: a mode's output is not
+                    interchangeable with another's, and the label is the only
+                    thing standing between a trigger_score and MYRA_Score_v25.
+                  */}
+                  <span className="text-[10px] font-mono text-[#666]">
+                    score: {mode.score}
+                    {mode.missing.length > 0
+                      ? ` · ${mode.missing.length} input(s) unavailable`
+                      : ''}
+                  </span>
+                  {mode.missing.length > 0 && (
+                    <span className="text-[10px] font-mono text-[#555]" title={mode.missing.join(', ')}>
+                      {mode.missing.join(', ')}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1">
         {/* Technical market data */}

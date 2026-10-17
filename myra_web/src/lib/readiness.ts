@@ -106,6 +106,60 @@ export interface ReadinessRecovery {
   fingerprint: string | null;
 }
 
+/**
+ * Phase 18: one *screening mode*'s availability.
+ *
+ * Phase 16 modelled screening as a single verdict — the indicator lake is usable
+ * or it is not. That was one axis too few: MYRA has two independent modes, and a
+ * single verdict let a working `TriggerScanner` hide behind a blocked lake while
+ * letting a healthy scanner make the incomplete v2.5 ranking look operational.
+ *
+ * The vocabulary here is deliberately three-valued and separate from
+ * `ReadinessState`, because "the data is current" and "this mode can run" are
+ * different questions with different remedies.
+ */
+export type ScreeningModeState = 'operational' | 'degraded' | 'blocked' | 'unknown';
+
+export interface ReadinessScreeningMode {
+  mode: string;
+  /** Human-facing mode name, e.g. "TriggerScanner (web/API)". */
+  label: string;
+  /** The score this mode emits. Not interchangeable with another mode's. */
+  score: string;
+  /** Explicit warning that this mode's score cannot be compared to another's. */
+  comparability: string;
+  /** What the mode reads, so the remedy is obvious. */
+  reads: string;
+  /** True when the mode depends on the derived indicator lake. */
+  reads_lake: boolean;
+  state: ScreeningModeState;
+  /** Stable reason code, e.g. 'lake_empty', 'inputs_unsourced'. */
+  reason: string;
+  /** Human-readable specifics. */
+  detail: string;
+  /** Inputs the mode needs that are absent. Names, never fabricated values. */
+  missing: string[];
+  /** Runtime defects that block the mode regardless of the data. */
+  blocked_by?: string[];
+}
+
+export interface ReadinessScreeningModes {
+  /** One honest status over all modes; never stronger than the weakest mode. */
+  overall: {
+    state: ScreeningModeState;
+    label: string;
+    detail: string;
+    operational_modes: string[];
+    unavailable_modes: string[];
+    blocked: string[];
+  };
+  modes: Record<string, ReadinessScreeningMode>;
+  /** Every input the v2.5 scorer reads. */
+  required_v25_inputs?: string[];
+  /** The subset the lake producer actually emits — a strict subset by design. */
+  lake_produced_v25_inputs?: string[];
+}
+
 export interface DataReadiness {
   state: ReadinessState;
   label: string;
@@ -117,6 +171,11 @@ export interface DataReadiness {
   ingestion: ReadinessIngestion;
   recovery: ReadinessRecovery;
   screening: ReadinessScreening;
+  /**
+   * Optional: an older backend predates Phase 18 and omits this axis entirely.
+   * The panel must then render nothing rather than infer a mode's health.
+   */
+  screening_modes?: ReadinessScreeningModes;
   publication_cutoff_ist: string;
   generated_at: string;
 }

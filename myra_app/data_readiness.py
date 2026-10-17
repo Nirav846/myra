@@ -69,6 +69,10 @@ import time
 from datetime import datetime
 from typing import Any, Optional
 
+# ``screening_modes`` imports nothing from this package at module scope, so this
+# is a leaf dependency and cannot form a cycle.
+from myra_app.screening_modes import MODE_BLOCKED, MODE_DEGRADED
+
 logger = logging.getLogger(__name__)
 
 # ── Operational constants ────────────────────────────────────────────────────
@@ -561,6 +565,49 @@ def _active_universe_size() -> Optional[int]:
         conn.close()
 
 
+def _column_population(date: Optional[str]) -> Optional[dict]:
+    """Share of one session's rows that carry each TriggerScanner column.
+
+    One aggregate over one date (served by ``idx_tech_date``), so it reads about
+    one session (~3,200 rows) rather than the table. ``None`` means the session
+    could not be measured, which callers must report as "unknown" - never as
+    "populated". The column list is a code constant, not caller input.
+    """
+    if not date:
+        return None
+    from myra_app.screening_modes import (
+        TRIGGER_CONTRIBUTING_COLUMNS,
+        TRIGGER_REQUIRED_COLUMNS,
+    )
+
+    columns = tuple(TRIGGER_REQUIRED_COLUMNS) + tuple(TRIGGER_CONTRIBUTING_COLUMNS)
+    conn = _ro(_db("technical", "myra_technical.db"))
+    if conn is None:
+        return None
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM technical_data WHERE date = ?", (date,)
+        ).fetchone()
+        total = int(row[0]) if row and row[0] else 0
+        if not total:
+            return None
+        expr = ", ".join(
+            f"SUM(CASE WHEN {name} IS NOT NULL THEN 1 ELSE 0 END)" for name in columns
+        )
+        values = conn.execute(
+            f"SELECT {expr} FROM technical_data WHERE date = ?", (date,)
+        ).fetchone()
+        return {
+            name: round(float(value or 0) / float(total), 4)
+            for name, value in zip(columns, values)
+        }
+    except sqlite3.Error as exc:
+        logger.debug("readiness: column population failed (%s)", exc)
+        return None
+    finally:
+        conn.close()
+
+
 def screening_facts(technical: Optional[dict] = None) -> dict[str, Any]:
     """Whether MYRA can actually *screen*, given its derived artifacts.
 
@@ -704,6 +751,85 @@ def _apply_screening(
     return verdict, f"{base}. {suffix}".strip()
 
 
+def screening_mode_facts(
+    technical: Optional[dict] = None,
+    coverage: Optional[dict] = None,
+    screening: Optional[dict] = None,
+    populations: Optional[dict] = None,
+    available_fields: Optional[set] = None,
+) -> dict[str, Any]:
+    """Per-mode screening capability, plus an honest aggregate (Phase 18).
+
+    ``screening_facts`` answers "is the indicator lake usable?" - which is a
+    question about one mode. MYRA has an independent mode, the web/API
+    ``TriggerScanner``, that reads ``technical_data`` directly and needs no
+    lake at all. Reporting a single verdict over both hid a working scanner
+    behind a blocked lake.
+
+    A probe failure here is reported, never raised: an assessment must not
+    fail because one of its measurements did.
+    """
+    from myra_app.screening_modes import evaluate as _evaluate
+
+    if populations is None:
+        populations = _column_population((technical or {}).get("latest_date"))
+    try:
+        return _evaluate(
+            technical=technical,
+            coverage=coverage,
+            screening=screening,
+            populations=populations,
+            available_fields=available_fields,
+        )
+    except Exception as exc:  # noqa: BLE001 - never fail an assessment
+        logger.debug("readiness: screening-mode evaluation failed (%s)", exc)
+        return {
+            "overall": {
+                "state": "unknown",
+                "label": "Screening modes unknown",
+                "detail": (
+                    "Screening-mode capability could not be evaluated: "
+                    f"{type(exc).__name__}: {exc}"
+                ),
+                "operational_modes": [],
+                "unavailable_modes": [],
+                "blocked": [],
+            },
+            "modes": {},
+        }
+
+
+#: Mode-aggregate verdict -> the freshness state it escalates to. ``degraded``
+#: means *some* mode still works, so it is ``partial`` (availability is real but
+#: qualified), not ``blocked``. ``blocked`` means no mode can run.
+_MODE_RANKING = {MODE_DEGRADED: 1, MODE_BLOCKED: 3}
+
+
+def _apply_mode_capability(
+    state: str, explanation: str, modes: Optional[dict]
+) -> tuple[str, str]:
+    """Escalate ``state`` when no screening mode can serve the operator.
+
+    Escalation only, and deliberately *not* the same mapping as
+    :func:`_apply_screening`: a mode that still works keeps the verdict at
+    ``partial`` rather than ``blocked``, because "the turbo ranking is
+    unavailable" and "nothing can be screened" are different facts. Freshness
+    remains the primary axis - a genuine ingestion failure is never downgraded.
+    """
+    overall = (modes or {}).get("overall") or {}
+    verdict = overall.get("state")
+    if state not in _SCREENING_ESCALATABLE:
+        return state, explanation
+    if verdict not in _MODE_RANKING:
+        return state, explanation
+    target = STATE_PARTIAL if verdict == MODE_DEGRADED else STATE_BLOCKED
+    if _SCREENING_RANKING[target] <= _SCREENING_RANKING.get(state, 0):
+        return state, explanation
+    base = explanation.rstrip().rstrip(".")
+    detail = overall.get("detail") or ""
+    return target, f"{base}. {detail}".strip()
+
+
 def assess(now: Optional[datetime] = None) -> dict[str, Any]:
     """Full readiness assessment.
 
@@ -723,10 +849,16 @@ def assess(now: Optional[datetime] = None) -> dict[str, Any]:
 
     latest = technical.get("latest_date")
     expected = technical.get("expected_date")
+    # Capability is measured per mode. A built lake and a working
+    # TriggerScanner are independent facts; neither stands in for the other, so
+    # a working scanner is never hidden behind a blocked lake and a healthy
+    # scanner never makes the v2.5 ranking look operational.
+    modes = screening_mode_facts(technical, coverage, screening)
+
     state, explanation = _decide(technical, coverage, source, ingestion)
-    # Freshness is not capability: a current database with an unusable
-    # screening path must not report ``ready``.
-    state, explanation = _apply_screening(state, explanation, screening)
+    # Freshness is not capability: a current database with no usable screening
+    # mode must not report ``ready``. Escalation only.
+    state, explanation = _apply_mode_capability(state, explanation, modes)
 
     return {
         "state": state,
@@ -745,6 +877,7 @@ def assess(now: Optional[datetime] = None) -> dict[str, Any]:
         "ingestion": ingestion,
         "recovery": recovery,
         "screening": screening,
+        "screening_modes": modes,
         "publication_cutoff_ist": PUBLICATION_READY_IST,
         "generated_at": (now or datetime.now()).isoformat(),
     }
@@ -848,6 +981,11 @@ def fingerprint(assessment: dict[str, Any]) -> str:
         # Screening capability is decision-bearing: the lake going from blocked
         # to built is exactly the transition an operator must be told about.
         "screening": (assessment.get("screening") or {}).get("reason"),
+        # Phase 18: a mode becoming available (or unavailable) is a change the
+        # operator must be told about, even when the lake verdict is unchanged.
+        "screening_modes": (
+            (assessment.get("screening_modes") or {}).get("overall") or {}
+        ).get("state"),
     }
     return json.dumps(payload, sort_keys=True)
 
@@ -859,6 +997,7 @@ __all__ = [
     "source_facts",
     "ingestion_facts",
     "screening_facts",
+    "screening_mode_facts",
     "fingerprint",
     "STATE_READY",
     "STATE_WAITING",

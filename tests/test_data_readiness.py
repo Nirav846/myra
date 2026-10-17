@@ -122,9 +122,12 @@ def _screening_is_healthy(monkeypatch):
     running them happens to have and every ``ready``/``waiting`` verdict would
     be escalated to ``blocked`` for a reason this module does not test.
 
-    The screening axis itself is covered in
-    ``tests/test_phase16_readiness_screening.py``; the three tests at the end of
-    this file re-patch it to check the escalation wiring.
+    Phase 18 added a second capability axis - one state per screening mode -
+    which additionally inspects the live ``worker_pool``/``engine`` module
+    source. That is stubbed here for the same reason: this module is about
+    ingestion, and the mode axis has its own coverage in
+    ``tests/test_phase18_screening_modes.py``. The tests at the end of this file
+    re-patch both axes to check the escalation wiring.
     """
     monkeypatch.setattr(
         dr,
@@ -139,6 +142,33 @@ def _screening_is_healthy(monkeypatch):
             "coverage": None,
         },
     )
+    monkeypatch.setattr(
+        dr, "screening_mode_facts", lambda *a, **k: _modes("operational")
+    )
+
+
+def _modes(state="operational", detail="Stubbed screening modes."):
+    """A screening-mode aggregate with every mode in one state."""
+    names = {"trigger": "TriggerScanner (web/API)", "v25_turbo": "MYRA_Score_v25"}
+    modes = {
+        key: {"mode": key, "label": label, "state": state}
+        for key, label in names.items()
+    }
+    return {
+        "overall": {
+            "state": state,
+            "label": f"Stubbed {state}",
+            "detail": detail,
+            "operational_modes": [
+                k for k, m in modes.items() if m["state"] == "operational"
+            ],
+            "unavailable_modes": [
+                k for k, m in modes.items() if m["state"] != "operational"
+            ],
+            "blocked": [k for k, m in modes.items() if m["state"] == "blocked"],
+        },
+        "modes": modes,
+    }
 
 
 # ── 1. Dates are reported separately and never conflated ─────────────────────
@@ -471,7 +501,14 @@ def test_readiness_respects_redirected_db_dir(fixture_db_dir):
 # ── 6. Freshness is not capability (Phase 16) ────────────────────────────────
 
 
-def _screening_blocked(monkeypatch, reason="lake_empty"):
+def _screening_blocked(monkeypatch, reason="lake_empty", modes="blocked"):
+    """Block the v2.5 lake axis, and set the mode aggregate independently.
+
+    The two are separate facts on purpose: ``screening_facts`` assesses the
+    indicator lake, while ``screening_mode_facts`` assesses each mode. A blocked
+    lake can coexist with an operational TriggerScanner, and that distinction is
+    the whole point of Phase 18.
+    """
     monkeypatch.setattr(
         dr,
         "screening_facts",
@@ -485,30 +522,62 @@ def _screening_blocked(monkeypatch, reason="lake_empty"):
             "coverage": 0.0,
         },
     )
+    monkeypatch.setattr(
+        dr,
+        "screening_mode_facts",
+        lambda *a, **k: _modes(
+            modes,
+            detail=(
+                "TriggerScanner (web/API) is operational, but MYRA_Score_v25 "
+                "turbo ranking (CLI) is unavailable because the indicator lake "
+                "is empty."
+                if modes != "blocked"
+                else "No screening mode can run because the indicator lake is empty."
+            ),
+        ),
+    )
 
 
-def test_current_data_with_an_unusable_screening_path_is_blocked(
-    monkeypatch, tech, fake_source
-):
-    """The exact false assurance this state exists to prevent.
-
-    Every stored session is present, so freshness alone says ``ready`` — while
-    the derivation the screener reads was never built.
-    """
+def _current_session(monkeypatch, tech, fake_source):
     daily, write = fake_source
     write([f"S{i}" for i in range(10)], "2026-01-02")
     _write_session(tech, "2026-01-02", [f"S{i}" for i in range(10)])
     _patch_expected(monkeypatch, "2026-01-02")
-    _screening_blocked(monkeypatch)
+
+
+def test_current_data_with_an_unusable_screening_path_is_never_ready(
+    monkeypatch, tech, fake_source
+):
+    """The exact false assurance this state exists to prevent.
+
+    Every stored session is present, so freshness alone says ``ready`` - while
+    the derivation the v2.5 ranking reads was never built. Phase 18 refines the
+    verdict: because the TriggerScanner runs off ``technical_data`` directly and
+    *is* available, the honest state is ``partial`` rather than ``blocked`` - a
+    working mode must not be hidden - but it is still never ``ready``.
+    """
+    _current_session(monkeypatch, tech, fake_source)
+    _screening_blocked(monkeypatch, modes="degraded")
+
+    r = dr.assess()
+
+    assert r["state"] == dr.STATE_PARTIAL
+    assert r["state"] != dr.STATE_READY
+    assert r["screening"]["reason"] == "lake_empty"
+    # The operator must be able to see *why*, not just that it is qualified.
+    assert "indicator lake is empty" in r["explanation"].lower()
+    assert r["technical"]["latest_date"] == "2026-01-02"
+
+
+def test_no_runnable_screening_mode_is_blocked(monkeypatch, tech, fake_source):
+    """When *nothing* can screen, the verdict is blocked, not merely partial."""
+    _current_session(monkeypatch, tech, fake_source)
+    _screening_blocked(monkeypatch, modes="blocked")
 
     r = dr.assess()
 
     assert r["state"] == dr.STATE_BLOCKED
     assert r["label"] == dr.STATE_LABELS[dr.STATE_BLOCKED]
-    assert r["screening"]["reason"] == "lake_empty"
-    # The operator must be able to see *why*, not just that it is blocked.
-    assert "indicator lake is empty" in r["explanation"].lower()
-    assert r["technical"]["latest_date"] == "2026-01-02"
 
 
 def test_a_broken_ingestion_is_not_downgraded_by_screening(
@@ -540,11 +609,8 @@ def test_fingerprint_changes_when_screening_capability_moves(
     monkeypatch, tech, fake_source
 ):
     """A lake going from blocked to built is a transition worth reporting."""
-    daily, write = fake_source
-    write([f"S{i}" for i in range(10)], "2026-01-02")
-    _write_session(tech, "2026-01-02", [f"S{i}" for i in range(10)])
-    _patch_expected(monkeypatch, "2026-01-02")
-    _screening_blocked(monkeypatch)
+    _current_session(monkeypatch, tech, fake_source)
+    _screening_blocked(monkeypatch, modes="blocked")
     blocked = dr.fingerprint(dr.assess())
 
     monkeypatch.setattr(
@@ -560,20 +626,37 @@ def test_fingerprint_changes_when_screening_capability_moves(
             "coverage": 1.0,
         },
     )
+    monkeypatch.setattr(
+        dr, "screening_mode_facts", lambda *a, **k: _modes("operational")
+    )
     built = dr.fingerprint(dr.assess())
 
     assert blocked != built
 
 
+def test_a_mode_becoming_unavailable_changes_the_fingerprint(
+    monkeypatch, tech, fake_source
+):
+    """Phase 18: the lake verdict can be unchanged while capability changes."""
+    _current_session(monkeypatch, tech, fake_source)
+    _screening_blocked(monkeypatch, modes="operational")
+    all_well = dr.fingerprint(dr.assess())
+
+    _screening_blocked(monkeypatch, modes="degraded")
+    partial = dr.fingerprint(dr.assess())
+
+    assert all_well != partial
+
+
 def test_the_report_always_carries_the_screening_axis(monkeypatch, tech, fake_source):
     """The API payload must expose it even when it is healthy."""
-    daily, write = fake_source
-    write([f"S{i}" for i in range(10)], "2026-01-02")
-    _write_session(tech, "2026-01-02", [f"S{i}" for i in range(10)])
-    _patch_expected(monkeypatch, "2026-01-02")
+    _current_session(monkeypatch, tech, fake_source)
 
     r = dr.assess()
 
     assert r["state"] == dr.STATE_READY
     assert set(r["screening"]) >= {"state", "reason", "detail", "available"}
+    # Phase 18: capability is reported per mode, not as one verdict.
+    assert set(r["screening_modes"]) >= {"overall", "modes"}
+    assert set(r["screening_modes"]["modes"]) == {"trigger", "v25_turbo"}
     json.dumps(r, default=str)

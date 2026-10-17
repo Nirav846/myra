@@ -1394,3 +1394,78 @@ Plan and full evidence: `docs/PHASE17_TECHNICAL_DATA_PROVENANCE_AND_SCREENING_PL
 - **Recovery is not claimed and cannot be** until an operator decision: refresh
   the OHLCV cache, or authorise deriving from `technical_data` — and in both
   cases authorise fixing B3.
+
+## Phase 18 — Stop hiding a working scanner behind a blocked lake
+
+Plan and full evidence: `docs/PHASE18_SCREENING_CONTINUITY_AND_DATA_OPERATIONS.md`.
+
+- **The defect was a reporting defect, and it cut both ways.** Phase 16 modelled
+  screening as one verdict — the lake is usable or it is not — so the operator
+  was shown **"Screening blocked"** while the web/API `TriggerScanner` was
+  healthy and producing candidates, and on a machine with a built lake the same
+  single verdict would have let a healthy scanner make the incomplete v2.5
+  ranking look operational.
+- **Fixed by measuring per mode.** `screening_modes.py` (new) reports
+  `operational` / `degraded` / `blocked` **per mode** — `trigger`
+  (`trigger_score`, reads `technical_data` directly, no lake) and `v25_turbo`
+  (`MYRA_Score_v25`, reads the derived lake) — plus an aggregate that is never
+  stronger than the weakest mode and is `blocked` only when **no** mode can run.
+  The two scores are declared **not comparable** as a field in the payload, not a
+  comment. Missing inputs are reported **by name**; no missing value becomes a
+  zero, a score, or a clean bill of health.
+- **The runtime blockers are derived, not asserted.**
+  `worker_path_blocker()` inspects the live `worker_pool` source for the
+  unassigned `fvg_mid`, `polars_schema_blocker()` inspects `engine` for the
+  implicit `pl.read_database`. Both clear themselves when the defect is fixed, so
+  the report cannot go stale.
+- **Live effect: readiness moved `blocked` → `partial`.** `assess()` now
+  escalates from the mode aggregate (`degraded` → `partial`, `blocked` →
+  `blocked`, escalation only). The explanation reads "TriggerScanner (web/API) is
+  operational, but MYRA_Score_v25 turbo ranking (CLI) is unavailable…", with
+  `trigger: operational` and `v25_turbo: blocked / lake_empty`.
+- **One contract test updated deliberately, with its intent preserved.**
+  `test_data_readiness.py`'s "fresh data + unusable screening is blocked" now
+  asserts `partial` — because the trigger mode genuinely *is* available — while
+  still asserting `!= ready`, and the `blocked` case is kept as its own separate
+  test. Phase 16's precedent of updating a contract test alongside the contract.
+  The mode axis is stubbed in that module exactly as `screening_facts` was,
+  because `fixture_db_dir` redirects `DB_DIR` and not `DATA_DIR`.
+- **One front door for data operations.** `data_ops.py` (new):
+  `python -m myra_app.data_ops status|recommend|run <op>` plus an interactive
+  menu. It *discovers* operations from `tasks.registry.TASKS` (so it cannot
+  drift from the single source of truth) and invokes them through the real
+  executor contract. It is not a scheduler: no thread, no period, no lock
+  ownership, and it never starts anything by itself.
+- **The taxonomy is the useful part.** `stale` / `not_ingested` /
+  `derived_missing` are data problems with operations behind them;
+  `mapping_mismatch` / `unsourced` / `blocked` are **not** data problems, and are
+  reported as such with no operation offered. Live output recommends
+  `lake-build` for the two inputs the lake really produces *and*, separately,
+  states that 7 of 9 scorer inputs have **no producer in the repo** — so a built
+  lake still cannot yield a trustworthy score.
+- **Restraint by construction.** Every write requires explicit confirmation;
+  every operation takes the existing `task_lock` and releases it in a `finally`;
+  a task a **live** scheduler owns is refused (`unknown` counts as live, the safe
+  side); the self-managed `watchdog` loop and the registry-disabled
+  `screener-enrich` are neither offered nor recommended; and all heavy imports
+  are function-local so an unset `MORNINGSTAR_TOKEN` (which makes
+  `fundamental_sync` raise `KeyError` at import) cannot break `status` — asserted
+  by a subprocess test with the variable removed.
+- **Mission Control told the operator to fix the wrong thing.** Three defects in
+  `App.tsx`: `disabled` was never surfaced at all (`schedulerUnhealthy` covered
+  only `degraded`/`unknown`); the advice was hardcoded to "Leave DISABLE_SCHEDULER
+  unset" even though it already was, in the common case where the real cause is
+  that nothing started the scheduler-owning process; and `schedulerLabel` was
+  computed then ignored in favour of a hardcoded title. All three fixed, and
+  `DataReadinessPanel` now lists each screening mode with its state, its score
+  name, and its unavailable inputs.
+- **Verified:** full suite **1722 passed** (1628 + 42 + 52); `black`/`flake8`
+  clean on every changed file; frontend `tsc --noEmit` clean and `vite build`
+  succeeds; **no production DB writes** (all 13 `myra_*.db` mtimes unchanged, lake
+  still 0 files); no `.myra_task_*.pid` left behind.
+- **Deliberately not done:** the `fvg_mid` / Polars / key-mismatch fixes
+  (fixing `fvg_mid` first would turn a *visible* failure into an *invisible*
+  wrong answer scored on fabricated zeros), the lake build, the OHLCV rebuild,
+  the fundamental refresh, and starting the scheduler — all operator
+  decisions. The report names the exact command and reason instead of guessing.
+
