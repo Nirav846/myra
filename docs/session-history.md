@@ -1323,3 +1323,74 @@ are three separate facts.
 - **Handoff.** Before A/B/C: run the section 7 build, confirm readiness reaches
   `ready`, then resolve item (1) of section 8 (the scorer's missing technical
   inputs). The ATR fix stays on its separate track.
+
+## Phase 17 — Technical data provenance: a lake build would not restore the score
+
+Plan and full evidence: `docs/PHASE17_TECHNICAL_DATA_PROVENANCE_AND_SCREENING_PLAN.md`.
+
+- **Traced all seven scorer fields to real sources.** The lake producer
+  (`librarian_intelligence._compute_symbol_indicators`) emits
+  `sma20 sma50 sma200 rsi atr20 vol_sma50 avg_deliv_20d rdv delivery_pct vcp
+  delivery_divergence_score delivery_accumulation_signal ias vwap fvg bos choch
+  inst_vol` — and **six of the seven** the scorer reads
+  (`sma150, atr_pct, pct_above_ma50_60d, keltner_upper, keltner_lower, atr5,
+  drawdown`) are not among them. `universe_loader` turns each missing key into
+  a stored `0`. `keltner_*` has **zero producers repo-wide**.
+- **The zero-fill is not what costs accuracy.** Across 60 real symbols,
+  post-build rows (fabricated zeros) and rows with the keys merely *absent*
+  rank **identically** — same Spearman (0.7696) and same 3/10 top-10 overlap
+  against provenance-correct values. The loss is the *unmeasured fields
+  themselves*: `stability` (weight 0.15) is **identically 0.0 for all 60**
+  symbols, `trend` collapses to just `{0.4, 0.6}`, `base` is identically `0.5`,
+  and the squeeze bonus fires **0/60** times (vs 6/60 with real inputs).
+  "Stop zero-filling" alone would change absolute scores (~1.4 pts, the Phase 15
+  ATR effect) but not one rank.
+- **Five more fields are dead by key-name mismatch alone** (§3b):
+  `universe_loader` reads `avg_volume_20d`/`avg_delivery_20d`/`delivery_percent`
+  where the lake emits `vol_sma50`/`avg_deliv_20d`/`delivery_pct`, and reads
+  `rel_spread`/`rel_vol` which the lake never emits at all. Consequence:
+  `VSA_Intensity` is identically `0`, and `Stage` is identically `"Stage 4"` for
+  every symbol because `:184 if sma150 > 0:` guards on the fabricated zero.
+  Lowercase `roe` (the key `precompute_ranks` reads) is never populated, so ROE
+  contributes nothing to ranking.
+- **The correct pattern already exists and is dormant** (§3c):
+  `myra_app/ranking_inputs.py` leaves a metric `None` on source failure so the
+  scorer applies its neutral fallback, and `_merge_row` never overwrites a real
+  value with `None`/`0` — but it is opt-in (`MYRA_V25_RANKING_INPUTS`, default
+  off) and `load_universe` is called from exactly one place, `engine.py:342`,
+  without the flag. Note the internal inconsistency: `smart_money_score` was
+  deliberately left `None` for having no producer, while the seven fields in
+  the same dict were left as `0`.
+- **The CLI/turbo path has three blockers, none of them the missing indicators.**
+  (B1) `load_universe` returned the literal `[]` on an empty lake while its own
+  `<10` fast path returned a `DataFrame`, so `run_scan`'s `cache_df.empty` raised
+  `AttributeError: 'list' object has no attribute 'empty'` and the actionable
+  verdict was **unreachable** — Phase 16's unit test passed only because it
+  called `_abort_empty_universe` directly. (B2) `pl.read_database`'s schema
+  inference fails at default/1,000/10,000 and succeeds only at 100,000/`None`
+  (latent behind B1). (B3) `worker_pool.py:249`/`:310` reference `fvg_mid`,
+  which is **assigned nowhere in the repo** — reproduced empirically: an
+  always-matching stub returns `FAILED / NameError`; a non-matching stub returns
+  `SKIPPED`. **No symbol can be returned as a candidate by the worker pool,
+  whatever the data contains.**
+- **One bounded fix applied (B1).** `universe_loader.py:69` now returns
+  `pd.DataFrame()`, matching every other return. Verified against the live DB:
+  the same 12-symbol scan that reported `failed_indicator_computation /
+  "'list' object has no attribute 'empty'"` now reports
+  `failed_missing_required_artifacts / indicator_lake_empty` with the build
+  remedy. 4 new tests, including the **integration** through `run_scan` that
+  Phase 16 omitted. Full suite **1628 passed**; `black`/`flake8` clean; all
+  production DB mtimes unchanged and the lake still 0 files.
+- **Deliberately not fixed:** `fvg_mid` (fixing it first would convert a visible
+  failure into an invisible wrong answer scored on fabricated zeros), the Polars
+  inference, the ATR scoring defect, the zero-fill, the key mismatches.
+- **Both paths characterised, neither recovered.** Web/API scanners are healthy
+  and current — 2,010 universe (route default `min_mcap=200`), **37 candidates**,
+  24.6 s on `2026-10-16` — but produce a different construct (`trigger_score`),
+  not `MYRA_Score_v25`, and record no data date. Recommendation: use it as the
+  immediate research path; derive the six unsourced fields from `technical_data`
+  (measured 57.9 ms/symbol) only after B1–B3, and **not** from the 168-day-stale
+  OHLCV cache. `ranking_history` holds 0 rows.
+- **Recovery is not claimed and cannot be** until an operator decision: refresh
+  the OHLCV cache, or authorise deriving from `technical_data` — and in both
+  cases authorise fixing B3.

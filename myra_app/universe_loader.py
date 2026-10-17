@@ -66,7 +66,17 @@ def load_universe(lib, symbols, as_of_date, silent=False, populate_ranking_input
     if cache_df.empty:
         if not silent:
             print("[!] No precomputed indicators found. Database might be stale.")
-        return [], {}, {}, {}, {}, {}, {}
+        # Return an empty *frame*, matching the ``len(symbols) < 10`` fast path
+        # above and the ``cache_df`` this function hands back on every other
+        # path. It used to return the literal list ``[]``, so
+        # ``Engine.run_scan``'s ``if cache_df.empty`` raised
+        # ``AttributeError: 'list' object has no attribute 'empty'`` and the
+        # scan was classified as an opaque ``failed_indicator_computation``.
+        # That AttributeError fired *before* the engine could call
+        # ``_abort_empty_universe``, so the actionable "the indicator lake is
+        # empty and has never been built" verdict was unreachable in
+        # production even though its unit test passed.
+        return pd.DataFrame(), {}, {}, {}, {}, {}, {}
 
     regime = lib.get_market_regime()
     from myra_app.strategies.base_strategy import MarketMoodHelper
