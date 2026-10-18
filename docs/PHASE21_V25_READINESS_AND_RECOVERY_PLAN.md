@@ -227,6 +227,14 @@ back. Recovery = restore the R0 snapshot.
 
 ### C.2 The phantom sessions — scope is larger than recorded
 
+> **Superseded in part by Phase 24.** The premise that `2026-02-01` is a
+> spurious Sunday record is **wrong**: eod2 records it under
+> `meta.json` → `special_sessions`, populated from an NSE circular containing
+> "live trading session", so NSE genuinely traded that Sunday. It is legitimate
+> data and must not be deleted. The **other eight** weekend-dated sessions
+> remain unexplained and are the ones needing source-owner input. See
+> `docs/PHASE24_RECOVERY_DEPENDENCY_AUDIT.md` §B.
+
 Phase 20 identified one phantom session (2026-02-01). Measured scope:
 
 - **37** weekend-dated sessions exist in `technical_data` (31 Saturday,

@@ -1823,3 +1823,67 @@ sessions using the Phase 22 canonical adjusted-price path. No production write.*
   the ~99.3% historical sma_200 NULLs, and the 9 weekend-dated sessions. The
   eod2 sync / enrichment divergence on 52-week semantics also persists and is
   worth its own follow-up.
+
+## Phase 24 - Recovery dependency audit: SMA200 deferred, "phantom" session exonerated
+
+*Goal: decide the safest execution order for the F2 recovery - can the 12-session
+repair proceed while the weekend-dated sessions remain, and should SMA200 be in
+the same operation? Read-only; nothing was executed.*
+
+- **Verdict: READY FOR NARROWLY SCOPED OWNER AUTHORIZATION.** Recover `sma_50`,
+  `high_52w`, `low_52w`. **Defer `sma_200`.** No production data was changed.
+- **A Phase 20/21 finding turned out to be wrong, and saying so matters.** The
+  "phantom session" 2026-02-01 (a Sunday) is a **declared NSE live trading
+  session**: eod2 records it under `meta.json` -> `special_sessions`, populated by
+  `check_special_sessions()` from circulars whose subject contains "live trading
+  session" (eod2/src/defs/defs.py:699-757). NSE traded that Sunday. The row is
+  legitimate and must never be deleted - the omission of 2026-01-31 was correct,
+  since that was a Saturday. Phase 20/21 reports are annotated.
+- **The other eight weekend-dated sessions remain unexplained.** All are in the
+  eod2 CSVs with distinct plausible prices (so not an ingestion artefact), none
+  is declared a special session or holiday, and for every one the preceding
+  Friday and following Monday both exist - every absent neighbour is itself a
+  weekend, so these are *extra* rows, not mislabelled ones. Four questions for
+  the eod2 owner are listed in the Phase 24 report.
+- **Rolling-window contamination quantified, not hand-waved.** Recomputing all
+  40,332 (symbol, session) pairs with and without the eight unexplained rows:
+  sma_50 6 pairs (0.016%, max 0.017), sma_200 126 (0.332%, max 3.63), high_52w 18
+  (0.047%, max 17.05), low_52w 26 (0.069%, max 12.35). Every one of the 12
+  sessions is touched by at least one column, so the Phase 23 plan was **not**
+  blind to this - it simply had not measured it.
+- **The 7 SMA200 mismatches are explained.** All seven have fewer than 200 rows
+  inside the producer's 365-day frame (104-197) while holding 225-4,942 rows of
+  total history: they are *infrequently-trading* symbols, not short-history
+  listings. Their stored value is a mean over whatever rows the frame contained.
+- **Why SMA200 is deferred rather than included.** Across the target set, 6,299
+  of 40,332 pairs (15.62%) have under 200 sessions of history, so a "200-session
+  mean" would be stored over fewer observations - and the two producers
+  demonstrably disagree about what such a symbol's value should be. That is an
+  unresolved definition, not a recoverable value. No minimum-history rule was
+  invented to improve the match rate. sma_50/high_52w/low_52w validated
+  150/150, 130/130 and 124/124, with exposure of only 6/18/26 rows.
+- **Partial recovery is safe here, and that was checked rather than assumed.**
+  Every SQL consumer uses `ORDER BY date DESC LIMIT 1` (latest row, which is
+  clean); every scanner reads `.iloc[-1]`; `liquidity_flip_detector` computes its
+  own sma_200; `screening_modes` measures column population at the latest date.
+  **No consumer reads a historical row of these columns**, so recovering three
+  and deferring one creates no incoherence. The only date-range reader is the
+  chart endpoint, where repaired history would render correctly.
+- **The WAL backup hazard is now demonstrated, not just asserted.** On a
+  temporary WAL database, a plain file copy produced a database with **no tables
+  at all** (committed data still lives in the -wal file), while `VACUUM INTO`
+  yielded a complete backup: integrity_check ok, and a SHA-256 over the ordered
+  rows identical to the source. R0 must use VACUUM INTO and verify a digest.
+- **No drift.** Manifest hash recomputed as
+  `5ad81709748c2641a3439a39a2669344046f4531bad6faaf1f82d80ee2643e74`, identical
+  to Phase 23; aggregates match the Phase 20/23 baselines exactly.
+- **Shipped:** `DECLARED_SPECIAL_SESSIONS` and
+  `UNEXPLAINED_WEEKEND_SESSIONS` added to `myra_app/recovery_f2.py` with tests -
+  a declared special session can never be a cleanup target, and the module still
+  contains no DELETE/INSERT/DROP path. 4 new tests (27 in that file); full suite
+  to be confirmed at delivery.
+- **Still open for the owner:** adopt Option B; annotate the Phase 20/21 record;
+  route the eight sessions to the eod2 owner; decide the sma200 contract for
+  sub-200-session symbols; decide `delivery_ma_60`; align the two producers'
+  52-week semantics. A **new manifest hash is required** for the reduced scope -
+  the Phase 23 hash covers all four columns and must not be reused.

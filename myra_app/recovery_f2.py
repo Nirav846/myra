@@ -67,6 +67,34 @@ TARGET_SESSIONS: tuple[str, ...] = (
     "2026-10-13",
 )
 
+#: Weekend-dated sessions that are **declared NSE live trading sessions** and
+#: must never be treated as spurious.
+#:
+#: eod2 records these in ``eod2/src/eod2_data/meta.json`` under
+#: ``special_sessions``, populated from NSE circulars whose subject contains
+#: "live trading session" (``eod2/src/defs/defs.py`` ``check_special_sessions``).
+#: 2026-02-01 is a Sunday in this set: NSE ran a live session on it, so the row
+#: is legitimate data, not a calendar artefact.
+#:
+#: Phases 20 and 21 recorded 2026-02-01 as a "phantom session" requiring the
+#: source maintainer to resolve. Phase 24 established that label was wrong.
+DECLARED_SPECIAL_SESSIONS: tuple[str, ...] = ("2026-02-01",)
+
+#: Weekend-dated sessions with no declared provenance. These remain unexplained
+#: and sit inside 252-row rolling windows, so removing them would change
+#: already-stored rolling values. Never delete them as part of a recovery; the
+#: question belongs to the eod2 source owner.
+UNEXPLAINED_WEEKEND_SESSIONS: tuple[str, ...] = (
+    "2025-02-01",
+    "2024-05-18",
+    "2024-03-02",
+    "2024-01-20",
+    "2023-11-12",
+    "2016-10-30",
+    "2015-02-28",
+    "2014-03-22",
+)
+
 #: Columns this module is allowed to recompute. Anything not listed here is out
 #: of scope by construction, so a future caller cannot widen the write scope by
 #: accident.

@@ -132,6 +132,13 @@ is an operator decision. Documented, not changed.
 and 73 dates absent from the source. Source correction is upstream of this
 repository's inputs.
 
+> **Corrected by Phase 24.** `2026-02-01` is **not** a spurious Sunday record:
+> eod2 lists it under `meta.json` → `special_sessions`, sourced from an NSE
+> circular containing "live trading session", so NSE traded that Sunday and the
+> row is legitimate. It must not be deleted. The omission of 2026-01-31 is
+> correct (a Saturday). Eight *other* weekend-dated sessions are still
+> unexplained. See `docs/PHASE24_RECOVERY_DEPENDENCY_AUDIT.md` §B.
+
 ## Stage 5 — input completeness (re-verified against code)
 
 | Input | Producer today | Class |

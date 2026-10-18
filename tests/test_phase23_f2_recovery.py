@@ -212,6 +212,74 @@ def test_only_the_four_validated_columns_are_in_scope():
     assert set(f2.RECOVERABLE_COLUMNS) == {"sma_50", "sma_200", "high_52w", "low_52w"}
 
 
+# ---------------------------------------------------------------------------
+# weekend-session provenance (Phase 24)
+# ---------------------------------------------------------------------------
+
+
+def test_a_declared_special_session_is_never_treated_as_spurious():
+    """2026-02-01 is a Sunday NSE traded on, so it must never be a cleanup target.
+
+    Phases 20/21 recorded it as a "phantom session". eod2's meta.json lists it
+    under ``special_sessions``, sourced from NSE circulars that mention a "live
+    trading session" (``eod2/src/defs/defs.py::check_special_sessions``). Any
+    future "delete weekend rows" sweep would destroy legitimate data.
+    """
+    assert "2026-02-01" in f2.DECLARED_SPECIAL_SESSIONS
+    assert "2026-02-01" not in f2.UNEXPLAINED_WEEKEND_SESSIONS
+    # and it is a Sunday, which is exactly what made it look spurious
+    assert pd.Timestamp("2026-02-01").dayofweek == 6
+
+
+def test_the_two_weekend_sets_are_disjoint_and_weekend_dated():
+    assert not (
+        set(f2.DECLARED_SPECIAL_SESSIONS) & set(f2.UNEXPLAINED_WEEKEND_SESSIONS)
+    )
+    for d in f2.DECLARED_SPECIAL_SESSIONS + f2.UNEXPLAINED_WEEKEND_SESSIONS:
+        assert pd.Timestamp(d).dayofweek >= 5, f"{d} is not a weekend date"
+
+
+def test_no_target_session_is_a_weekend_date():
+    """The recovery targets weekdays; it must not touch any weekend-dated row."""
+    for d in f2.TARGET_SESSIONS:
+        assert pd.Timestamp(d).dayofweek < 5, f"{d} is a weekend date"
+
+
+def test_this_module_offers_no_delete_operation():
+    """Recovery may only ever UPDATE. A destructive path must not be added here.
+
+    Checks SQL statements specifically: pandas' ``.dropna``/``.drop_duplicates``
+    are legitimate frame hygiene and would otherwise trip a naive substring scan.
+    """
+    src = open(  # noqa: SIM115
+        __import__("os").path.join(
+            __import__("os").path.dirname(
+                __import__("os").path.dirname(__import__("os").path.abspath(__file__))
+            ),
+            "myra_app",
+            "recovery_f2.py",
+        ),
+        encoding="utf-8",
+    ).read()
+    lowered = src.lower()
+    for verb in (
+        "delete from",
+        "drop table",
+        "truncate",
+        "insert into",
+        "replace into",
+    ):
+        assert verb not in lowered, f"recovery_f2 must never run: {verb.upper()}"
+    # Every statement it does issue must be an UPDATE.
+    statements = [
+        seg.strip()
+        for seg in lowered.split('"')[0::2]  # string literals only
+        if seg.strip().startswith(("update", "delete", "insert", "drop", "replace"))
+    ]
+    for stmt in statements:
+        assert stmt.startswith("update"), f"non-UPDATE statement found: {stmt[:60]!r}"
+
+
 def test_the_target_sessions_are_the_twelve_known_sessions():
     assert len(f2.TARGET_SESSIONS) == 12
     assert f2.TARGET_SESSIONS[0] == "2026-08-17"
