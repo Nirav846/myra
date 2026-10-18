@@ -1887,3 +1887,65 @@ the same operation? Read-only; nothing was executed.*
   sub-200-session symbols; decide `delivery_ma_60`; align the two producers'
   52-week semantics. A **new manifest hash is required** for the reduced scope -
   the Phase 23 hash covers all four columns and must not be reused.
+
+## Phase 25 - Three-column Option B manifest generated, rehearsed, NOT executed
+
+*Goal: prepare the owner-approved Option B scope - recover `sma_50`, `high_52w`,
+`low_52w` only; defer `sma_200` completely; never write `delivery_ma_60` -
+generate a fresh manifest, validate it independently, rehearse the transaction,
+and stop. No production write was performed.*
+
+- **Verdict: READY FOR EXPLICIT PRODUCTION WRITE AUTHORIZATION.**
+  Content SHA-256 **`c566fad52e8234c81ebcff55ad36d0490d3436f095d8ca3fb1d90add9566f9bb`**,
+  baseline scope digest `340843ded89247aa…`, code fingerprint `2fa01abdf3ca329…`.
+- **Fresh scope: 38,173 rows, 111,056 cell changes, all value->value, zero
+  null->value.** The Phase 23 four-column hash `5ad81709…` is not reused and
+  cannot authorise this - `validate_plan(..., expected_columns=<four>)` raises.
+  156 already-correct rows and 3,931 already-correct cells are excluded.
+- **Independent validation reproduces the plan exactly.** The rolling maths was
+  re-implemented from scratch (explicit loops, not the implementation) and
+  compared against rows parsed back out of the generated SQL: sma_50 / high_52w /
+  low_52w each **38,164 agree, 0 disagree, max abs diff 0.0**. Nine rows have
+  under 5 sessions of history and are not independently checkable.
+- **2026-02-01 intact (2,791 rows)** and the **eight unexplained weekend sessions
+  all untouched** - none is a target session, so none enters the write set. The
+  generated SQL has exactly one SET shape (`sma_50, high_52w, low_52w`); the two
+  deferred columns appear only in a comment naming them as excluded.
+- **Three real defects were found and fixed while preparing this - the rehearsal
+  earned its keep.** (1) `content_hash` covered only the payload, so changing a
+  symbol, date or target value did **not** change it, defeating the drift guard;
+  it now folds in every row. (2) The SQL renderer emitted malformed SET clauses
+  (`SET sma_50, high_52w, low_52w = ...`), caught by the independent validator.
+  (3) Injecting one malformed key made that statement match **zero rows without
+  raising**, so the batch silently committed the other 35 - `apply_write_plan`
+  now compares rowcount against the plan size and aborts on a partial apply.
+  Each fix changed the hash, so the manifest was regenerated after each and is
+  stable across repeat generation.
+- **Transaction rehearsed on an isolated temporary WAL database: 21 checks, 0
+  failed** - VACUUM INTO backup with a matching content digest, only the three
+  columns changed, `sma_200` / `delivery_ma_60` / schema / unrelated rows
+  untouched, every planned row holding its planned value, idempotent rerun
+  (0 rows), rollback byte-identical on both a partial match and a constraint
+  violation, and fail-closed on a stale digest, a four-column expectation, a
+  tampered column list, and a concurrent writer holding the lock.
+- **The WAL copy hazard was reproduced again** during rehearsal: copying a WAL
+  database's main file without a checkpoint yields a database with **no tables**.
+  VACUUM INTO is mandatory for R0.
+- **25 new tests** (`tests/test_phase25_optionb_plan.py`) covering all seven
+  required properties: exact column set, deferred columns unreachable, hash
+  sensitivity to symbol/date/value/column/rule/code/version, unexpected columns
+  rejected before any write, stale digest refused, the four-column manifest
+  cannot authorise this one, and target rows reproducible from plan + source.
+  Full suite **1849 passed**; black/flake8/guards clean.
+- **Production untouched and re-verified by digest**, not timestamp:
+  integrity_check ok, 8,022,725 rows, 40,431 degenerate, 7,965,142 sma_200 NULL,
+  scope digest `340843de…` unchanged, lake still 0 files, scheduler still down,
+  no V2.5 score, ranking inputs still disabled.
+- **Still outstanding and deliberately not expanded into this scope:** the eight
+  unexplained weekend sessions (four EOD2-owner questions), the `sma_200`
+  sub-200-session contract (6,299/40,332 pairs), the ~99.3% historical sma_200
+  NULLs, the missing `delivery_ma_60` producer, and the 252-session vs
+  365-calendar-day divergence between the two producers.
+- **Stopping here.** The plan is prepared and validated; no production write was
+  attempted. Execution requires explicit owner authorisation of the exact hash
+  `c566fad5...`, the three-column scope and the 38,173-row write plan.
