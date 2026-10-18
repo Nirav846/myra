@@ -1631,3 +1631,74 @@ no scheduler start, no live-DB write.*
 - **Deliberately not done:** the lake build, the OHLCV rebuild, the sma backfill,
   the eod2 source's phantom 2026-02-01 session, enabling MYRA_V25_RANKING_INPUTS,
   and any weight/threshold/formula/ordering change.
+
+## Phase 21 - Price basis decided, recovery planned, V2.5 roadmap
+
+*Goal: establish an evidence-backed path to a trustworthy V2.5 validation build -
+resolve the price-basis question Phase 20 had to leave open, measure the
+historical recovery scope, and roadmap the signal producers. No production
+operation, no backfill, no ingestion, no lake build, no scheduler start.*
+
+- **Verdict: READY FOR OWNER-APPROVED RECOVERY.** The Phase 20 blockers are
+  resolved as decisions, not code. What remains is approval to execute, not
+  missing evidence. Verdict is about readiness for the next approved operation,
+  not permission to run it.
+- **State verified against running code, not docs.** HEAD 58a89ea, tree clean,
+  CI+CodeQL green; `data_readiness.assess()` = **partial**; TriggerScanner
+  **operational**; V2.5 **blocked** on `lake_empty`; lake 0 files; latest session
+  2026-10-16 == expected; universe 3213; scheduler still down; no V2.5 score
+  published. `myra_technical.db` mtime unmoved at 2026-10-17 11:55:59.
+- **The price-basis question is now conclusively answered.** `technical_data`
+  (eod2) is corporate-action-**adjusted, back-adjusted**; the parquet OHLCV cache
+  is a stale **unadjusted** snapshot. Proof is local and needs no external data:
+  at each ex-date the cache drops by exactly the factor (RELIANCE 2024-10-28
+  -49.76%, WIPRO 2024-12-03 -50.11%, HDFCBANK 2025-08-26 -50.44%, ZYDUSWELL
+  2025-09-18 -79.80%, i.e. a 1:4 bonus) while db/eod2 show ordinary moves (+0.49%,
+  -0.21%, -0.88%, +1.02%) and are byte-identical to each other. Volume is
+  unscaled (ratio 1.0 on 1095/1096). Canonical basis = adjusted.
+- **Correction to Phase 20.** The cache/DB factor is **not** a per-symbol constant
+  over the window; it is a **single step at that symbol's ex-date** (RELIANCE
+  2024-10-28, WIPRO 2024-12-03, HDFCBANK 2025-08-26, ZYDUSWELL 2025-09-18;
+  TCS/ITC/SBIN/INFY have no action). The 2026-02-01 boundary Phase 20 reported is
+  a calendar artifact - a Sunday row - not a price-basis boundary.
+- **One seam mixes bases: `LibrarianCore.get_ohlcv`** (cache history + DB delta).
+  The indicator lake inherits it via `_compute_symbol_indicators:125`, and
+  `results_manager:449` charts it. Measured damage at a straddling window:
+  sma50 RELIANCE 1446 -> 2849, ZYDUSWELL 426 -> 2106. A lake build today would
+  roughly double every SMA for any symbol with an action in its trailing 200
+  sessions. Recommended fix: have the lake read `technical_data` directly and
+  retire the cache as a price source (one source of truth) rather than rebuild it.
+- **Recovery is measurable and reproducible.** The 12 degenerate sessions are
+  38,320 rows, and correct values are **recomputable from stored history** - the
+  same recomputation reproduces a clean session exactly (RELIANCE 2026-10-16:
+  sma_50 1260.5080 vs stored 1260.508, sma_200 1345.2610 vs 1345.261). So the
+  12 sessions need recomputation only, no re-ingestion. A 5-step plan (R0 backup,
+  R1 dry-run on a copy, R2 update, R3 sma_200, R4 re-audit) is specified with
+  postconditions and rollback; the ~99.3% sma_200 history backfill is a
+  *separate* decision deferred until the basis is fixed.
+- **The phantom-session scope is larger than recorded.** 37 weekend-dated
+  sessions exist, **9** universe-wide (2014-03-22, 2015-02-28, 2016-10-30,
+  2023-11-12, 2024-01-20, 2024-03-02, 2024-05-18, 2025-02-01, 2026-02-01). And
+  nothing is missing - 2026-01-31 is a **Saturday**, so the Sunday row is an
+  *extra* record, not a shifted one. Origin is the eod2 source itself, so
+  recovery needs the eod2 maintainer; MYRA must not delete the rows first, or the
+  next ingest re-adds them under the same wrong dates.
+- **V2.5 roadmap: 6 of 7 mandatory inputs need no new data.** `sma50`/`sma200`
+  are produced; `avg_volume_20d` + `avg_delivery_20d` already have a validated
+  producer behind the opt-in flag; `sma150` + `pct_above_ma50_60d` are decidable
+  from columns that already exist. Only `atr_pct` genuinely needs a product
+  decision. Critically, **the two gated inputs are volume/delivery-derived, so
+  they are NOT blocked by the price-basis decision** - they can move first.
+- **`MYRA_V25_RANKING_INPUTS` stays disabled.** Enabling it merges roe,
+  ProfitGrowth, avg_delivery_20d and avg_volume_20d, which feed the roe/growth/
+  delivery/liquidity components; the validation evidence it needs (score
+  distribution re-measurement, coverage fraction, non-zero-filled check, one A/B
+  ranking run) does not exist yet.
+- **Verified:** new `tests/test_phase21_price_basis.py` (5 tests, temporary
+  fixtures only, no live data) pins the price-basis contract without pinning the
+  current cache state, so the planned repair will not read as a regression;
+  `black`(pinned via pre_commit)/`flake8`/Performance-Guard/schema-drift clean.
+  **No production writes:** every live read was `mode=ro`, `live_db_guard`
+  preserved, no ingestion/backfill/lake build/scheduler operation.
+- **Eight operator decisions** are listed in the Phase 21 report (F1-F8), the
+  first being: adopt the adjusted basis and authorise the read-path fix.
