@@ -1767,3 +1767,59 @@ ingestion, lake build or production write.*
   amount, which adjusted prices would make wrong for level-based sizing; and the
   lake artifact carrying fewer columns than the cache frame, to confirm at the
   first real build.
+
+## Phase 23 - F2 recovery preflight: rule validated, write scope pinned
+
+*Goal: prepare (not execute) the controlled recovery of the 12 degenerate
+sessions using the Phase 22 canonical adjusted-price path. No production write.*
+
+- **Verdict: READY FOR EXPLICIT OWNER AUTHORIZATION** for four of the five
+  affected columns, with `delivery_ma_60` deliberately excluded. Nothing was
+  executed.
+- **The first control check FAILED, and that is the most important result of the
+  phase.** Recomputing over full history matched only 1 of 200 symbols on the
+  clean session 2026-10-16. Rather than accept it, the cause was traced:
+  `feature_enrichment` rolls over a frame loaded with
+  `WHERE date >= date(latest, '-365 days')` (feature_enrichment.py:202), so its
+  "52-week" is a ~250-session **calendar** window, not 252 sessions - and it
+  **never writes `delivery_ma_60` at all** (:538-544 covers only the SMAs and the
+  52w columns). Two producers, one column set, different semantics.
+- **Each field validated against the newest session where that field is not
+  degenerate:** sma_50 150/150, sma_200 143/150, high_52w 130/130, low_52w 124/124
+  (excluding NULL rows). The 365-calendar-day rule was tested and **rejected** -
+  it missed 7-8 per 150, while the session-count rule produced zero false
+  matches. The seven sma_200 exceptions are symbols whose 365-day frame holds
+  fewer than 200 sessions; the contract's rule is the full-history one.
+- **`delivery_ma_60` cannot be recovered, and is excluded structurally.** No
+  session anywhere in the table holds a non-degenerate value, so nothing can
+  validate any rule. It sits in `EXCLUDED_COLUMNS` with a test proving this path
+  can never write it. It needs its own decision, not a recovery.
+- **Write scope pinned and hash-stamped.** 38,329 rows across the 12 sessions and
+  3,370 symbols; 149,385 cell-level changes; 38,329 UPDATE statements;
+  `sma_200` goes NULL -> value on all 38,329. The ~1,930 rows per 52w column that
+  are already correct (legitimately, for young listings) are excluded, so
+  unaffected rows are never written. Target set hash
+  `5ad81709748c2641a3439a39a2669344046f4531bad6faaf1f82d80ee2643e74` - recompute it
+  before any authorised run; **a different hash means a stale plan, stop.**
+- **Backup corrected.** The database is ~2.0 GB in WAL mode, so a plain file copy
+  would not be a safe backup. R0 must use `VACUUM INTO` or the backup API with no
+  writer running, and the result must be checksum-verified and shown to open.
+- **Shipped read-only only.** `myra_app/recovery_f2.py` holds the rule, the
+  manifest and a tested `apply_plan` (single transaction, rollback on any
+  failure, idempotent). `tools/f2_recovery_manifest.py` generates the manifest
+  and the SQL plan but **has no writable code path** - wiring an unauthorised
+  production write into a CLI would be the wrong default.
+- **23 new tests**: rule correctness and warm-up, write-scope containment,
+  manifest hash stability/drift detection, a stale manifest planning nothing, and
+  application behaviour including a mid-batch failure that must roll back to a
+  byte-identical table. Focused suite clean under `-W error::FutureWarning`;
+  **full suite 1820 passed** (Phase 22: 1797); black/flake8/guards clean.
+- **Production untouched, and proven:** every read used `mode=ro`;
+  `myra_technical.db` mtime still 2026-10-17 11:55:59; aggregates re-verified
+  against the Phase 20 baseline (8,022,725 rows / 40,431 degenerate / 7,965,142
+  NULL - identical). Lake still 0 files, cache 3,320 files, scheduler down,
+  ranking inputs disabled, TriggerScanner operational, no V2.5 score published.
+- **Still out of scope and still broken after this recovery:** `delivery_ma_60`,
+  the ~99.3% historical sma_200 NULLs, and the 9 weekend-dated sessions. The
+  eod2 sync / enrichment divergence on 52-week semantics also persists and is
+  worth its own follow-up.
