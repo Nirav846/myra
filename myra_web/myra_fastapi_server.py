@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from myra_web.access_log_filter import install_access_log_filter
 from myra_web.routes.fundamentals import router as fundamentals_router
 from myra_web.routes.full_fundamentals import router as full_fundamentals_router
 from myra_web.routes.ai_opinion import router as ai_opinion_router
@@ -105,6 +106,11 @@ async def _lifespan(_app: FastAPI):
             stopper.start()
             stopper.join(timeout=30)
 
+
+# Keep the readiness dashboard's 30 s poll from burying the access log under
+# ~466-character lines: oversized `since` cursors are elided in the log only.
+# Endpoint behaviour, polling interval and change detection are untouched.
+install_access_log_filter()
 
 app = FastAPI(title="MYRA v3.2 API Bridge", lifespan=_lifespan)
 

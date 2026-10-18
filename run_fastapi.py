@@ -15,6 +15,8 @@ import sys
 import threading
 import time
 
+from myra_web.access_log_filter import install_access_log_filter
+
 
 def _signal_pipeline_shutdown_on_exit(server: "uvicorn.Server") -> None:
     """End long-lived pipeline SSE streams as soon as shutdown begins.
@@ -45,6 +47,10 @@ def run():
     # This process owns the one-and-only background scheduler for the web flow,
     # so the frontend's start/pause/cancel controls actually reach it.
     os.environ.setdefault("MYRA_EMBED_SCHEDULER", "1")
+    # Install before uvicorn builds its handlers so the readiness poll's ~400-char
+    # `since` cursor never floods the access log. Idempotent, and the app module
+    # installs it too -- whichever runs first wins.
+    install_access_log_filter()
     # Disable reloader to avoid double-process issues on Windows
     config = uvicorn.Config(
         "myra_web.myra_fastapi_server:app",

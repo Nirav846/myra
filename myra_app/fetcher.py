@@ -1165,6 +1165,14 @@ class DataFetcher:
         # exception class name is kept -- never its message, which can embed a
         # URL, cookie or session token.
         self.last_source_errors = {}
+        # Both are per-call state. They were previously left over from whatever
+        # ran before, which mislabelled failures two ways: a stale status from an
+        # earlier symbol was reported against this one, and because
+        # `_fetch_google` never set a status of its own, Google returning nothing
+        # inherited *Screener's* status and was reported as "HTTP 403" for a
+        # source that was never refused.
+        self.last_http_status = None
+        self.last_page_note = None
         for stream in streams:
             name = stream["name"]
             if not source_config.is_enabled(name):
@@ -1183,8 +1191,15 @@ class DataFetcher:
                 # fine but carried no quarterly table" -- they have very different
                 # operational meanings.
                 status = getattr(self, "last_http_status", None)
+                note = getattr(self, "last_page_note", None)
                 if status is not None and status != 200:
                     self.last_source_errors[name] = f"HTTP {status}"
+                elif note:
+                    # The page came back 200 but did not carry the table we
+                    # need. That is a different problem from being refused --
+                    # it points at the symbol having no financials *or* at
+                    # Screener.in's HTML having changed under us.
+                    self.last_source_errors[name] = note
                 else:
                     self.last_source_errors[name] = "no data returned"
             except (
@@ -1270,6 +1285,9 @@ class DataFetcher:
         parsed = parse_company_page(r.text)
         quarters = parsed["quarterly"]
         if not quarters:
+            # Served fine, but nothing we can date. Say so explicitly rather
+            # than letting it collapse into a generic "no data returned".
+            self.last_page_note = "HTTP 200 but no quarterly table in page"
             return None
 
         # Page-level values that apply to every quarter row, since downstream
@@ -1316,7 +1334,9 @@ class DataFetcher:
         url = f"https://www.google.com/finance/quote/{symbol}:NSE"
         r = self.session.get(url, timeout=10)
         if not r or r.status_code != 200:
+            self.last_http_status = getattr(r, "status_code", None)
             return None
+        self.last_http_status = 200
         soup = BeautifulSoup(r.text, "html.parser")
         results = []
         for table in soup.find_all("table"):
