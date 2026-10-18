@@ -316,7 +316,19 @@ def load_universe(lib, symbols, as_of_date, silent=False, populate_ranking_input
             "bos": c.get("bos", 0) if c.get("bos") is not None else 0,
             "fvg": c.get("fvg", 0) if c.get("fvg") is not None else 0,
             "std20": c.get("std20", 0) if c.get("std20") is not None else 0,
-            "atr_pct": c.get("atr_pct", 0) if c.get("atr_pct") is not None else 0,
+            # Phase 20: `atr_pct` has no producer anywhere in the repo (it is
+            # absent from the indicator lake and every technical DB column set),
+            # so this expression fabricated a stored `0.0` for every symbol. A
+            # fabricated `0` is then read by `score_components_v2.base_score` as
+            # a *favourable* `atr_pct < 0.03` and collects the maximum base
+            # score - a symbol with no volatility data was rewarded as "tighter"
+            # than one with a real measurement, and reported as an observed
+            # input rather than a missing one. Missing now stays missing; a valid
+            # stored 0.0 is still 0.0. This is the same data-integrity fix Phase
+            # 12 applied to ProfitGrowth/SalesGrowth/Debt_Equity, and it changes
+            # no scoring band - an absent ATR falls through to the documented
+            # 0.3 neutral, exactly as a genuine SQL NULL already did.
+            "atr_pct": c.get("atr_pct"),
             "atr5": atr5,
             "drawdown": c.get("drawdown", 0) if c.get("drawdown") is not None else 0,
             "money_flow_cr": (

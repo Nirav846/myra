@@ -415,3 +415,238 @@ def test_sync_writes_only_to_the_redirected_database(fixture_db_dir, monkeypatch
     assert resolved.startswith(
         os.path.abspath(fixture_db_dir)
     ), f"eod2 resolves its database outside the redirect: {resolved}"
+
+
+# ---------------------------------------------------------------------------
+# 6. Phase 20 (defect D1): derived columns must roll over the symbol's history
+# ---------------------------------------------------------------------------
+
+
+def _seed_history(technical_db, symbol, n_rows=60, end_date=OLD):
+    """Store ``n_rows`` daily sessions for ``symbol`` ending at ``end_date``.
+
+    Closes ascend 100.. so every rolling statistic over the series is a value
+    the new session's own price can never reproduce. Delivery is held at 50% of
+    volume so the 60-day delivery mean is likewise distinct.
+    """
+    import sqlite3
+
+    import pandas as pd
+
+    dates = pd.bdate_range(end=end_date, periods=n_rows).strftime("%Y-%m-%d")
+    conn = sqlite3.connect(technical_db)
+    try:
+        for i, d in enumerate(dates):
+            close = 100.0 + i
+            conn.execute(
+                "INSERT OR IGNORE INTO technical_data "
+                "(symbol, date, open, high, low, close, volume, delivery) "
+                "VALUES (?, ?, ?, ?, ?, ?, 1000, 500)",
+                (symbol, d, close, close + 5, close - 5, close),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return dates
+
+
+def test_one_new_session_rolls_over_history_not_the_new_row(tmp_path, monkeypatch):
+    """A one-row daily sync must compute a real SMA / 52-week / 60-day series.
+
+    Phase 20 defect D1. ``_compute_derived`` used to be handed only the rows
+    newer than the per-symbol cutoff, so a normal one-session sync took a
+    ``len(df) < 2`` branch that stored the raw session values in place of every
+    rolling column: ``sma_50 == close``, ``high_52w == high``,
+    ``low_52w == low``, ``delivery_ma_60 == delivery_pct``. That happened for
+    the *whole universe* on 12 sessions in 2026-08..2026-10, because the
+    enrichment repair only ever touches the latest date.
+
+    The new session here is priced far below its own 60-session history and
+    delivers far less, so every rolling column has a value the new row's own
+    fields cannot match.
+    """
+    import sqlite3
+
+    # A private DB: the shared fixture accumulates rows from other tests, and a
+    # symbol already stored at NEW would leave this run with nothing to insert.
+    technical_db = _fresh_db(tmp_path)
+    history = _seed_history(technical_db, "SYM00", n_rows=60, end_date=OLD)
+    assert len(history) == 60
+    # The history ends at OLD, so the per-symbol cutoff is OLD and the CSV below
+    # contributes exactly one new row -- the production shape.
+    daily = tmp_path / "daily"
+    daily.mkdir()
+    _write_csv(str(daily), "sym00.csv", _csv(NEW, close=97, delivery=600))
+
+    monkeypatch.setattr(eod2, "_get_db_path", lambda: technical_db)
+    monkeypatch.setattr(eod2, "_find_eod2_daily", lambda: daily)
+    monkeypatch.setattr(eod2, "_get_meta_latest", lambda _d: NEW)
+    # The enrichment repair is out of scope here: it only ever writes the latest
+    # date, so it cannot be what saves a session that is not the latest one.
+    monkeypatch.setattr(eod2, "_run_enrichment", lambda _conn: None)
+
+    result = eod2.sync_eod2_data()
+    assert result["rows_inserted"] == 1, result
+
+    conn = sqlite3.connect(f"file:{technical_db}?mode=ro", uri=True)
+    try:
+        row = conn.execute(
+            "SELECT date, high, low, close, volume, delivery FROM technical_data"
+            " WHERE symbol='SYM00' ORDER BY date",
+        ).fetchall()
+        stored = conn.execute(
+            "SELECT close, sma_50, sma_200, high, high_52w, low, low_52w,"
+            " delivery_pct, delivery_ma_60 FROM technical_data"
+            " WHERE symbol='SYM00' AND date=?",
+            (NEW,),
+        ).fetchone()
+    finally:
+        conn.close()
+    assert len(row) == 61, f"expected 61 sessions, got {len(row)}"
+    assert stored is not None, "the new session was not stored"
+    (
+        close,
+        sma_50,
+        sma_200,
+        high,
+        high_52w,
+        low,
+        low_52w,
+        d_pct,
+        dm60,
+    ) = stored
+
+    # The fabricated-value shape, asserted against directly: none of the rolling
+    # columns may equal the session's own field.
+    assert sma_50 != close, f"sma_50 was stored as the session close ({sma_50})"
+    assert high_52w != high, f"high_52w was stored as the session high ({high_52w})"
+    assert low_52w != low, f"low_52w was stored as the session low ({low_52w})"
+    assert dm60 != d_pct, f"delivery_ma_60 was stored as delivery_pct ({dm60})"
+    assert sma_200 is not None, "sma_200 was left NULL by the sync"
+
+    # Recompute the rolling series independently, over the same 61 sessions the
+    # sync saw, and require the stored values to match.
+    import pandas as pd
+
+    frame = pd.DataFrame(
+        row, columns=["date", "high", "low", "close", "volume", "delivery"]
+    )
+    vol = frame["volume"].replace(0, pd.NA).astype("float64")
+    d_pct_series = (frame["delivery"] / vol * 100).fillna(0)
+    expected = {
+        "sma_50": frame["close"].rolling(50, min_periods=1).mean().iloc[-1],
+        "sma_200": frame["close"].rolling(200, min_periods=1).mean().iloc[-1],
+        "high_52w": frame["high"].rolling(252, min_periods=1).max().iloc[-1],
+        "low_52w": frame["low"].rolling(252, min_periods=1).min().iloc[-1],
+        "delivery_ma_60": d_pct_series.rolling(60, min_periods=1).mean().iloc[-1],
+    }
+    got = {
+        "sma_50": sma_50,
+        "sma_200": sma_200,
+        "high_52w": high_52w,
+        "low_52w": low_52w,
+        "delivery_ma_60": dm60,
+    }
+    for col, want in expected.items():
+        assert got[col] == pytest.approx(want, rel=1e-9), f"{col}: {got[col]} != {want}"
+
+
+def test_first_ever_ingest_has_no_history_to_roll_over(tmp_path, monkeypatch):
+    """A symbol with no stored rows still ingests; nothing is fabricated."""
+    technical_db = _fresh_db(tmp_path)
+    daily = _source(tmp_path, 1, NEW, meta=False)
+
+    monkeypatch.setattr(eod2, "_get_db_path", lambda: technical_db)
+    monkeypatch.setattr(eod2, "_find_eod2_daily", lambda: daily)
+    monkeypatch.setattr(eod2, "_get_meta_latest", lambda _d: NEW)
+    monkeypatch.setattr(eod2, "_run_enrichment", lambda _conn: None)
+
+    result = eod2.sync_eod2_data()
+    assert result["rows_inserted"] == 1, result
+    per_symbol = _max_dates(technical_db)
+    assert per_symbol["SYM00"] == NEW
+
+
+def test_load_history_tail_returns_oldest_first_and_honours_the_limit(tmp_path):
+    technical_db = _fresh_db(tmp_path)
+
+    import sqlite3
+
+    conn = sqlite3.connect(technical_db)
+    try:
+        # Nothing stored yet, so there is no history to roll over.
+        assert eod2._load_history_tail(conn, "SYM00") is None
+        assert eod2._load_history_tail(conn, "NOSUCH") is None
+    finally:
+        conn.close()
+
+    _seed_history(technical_db, "SYM00", n_rows=40, end_date=OLD)
+
+    conn = sqlite3.connect(f"file:{technical_db}?mode=ro", uri=True)
+    try:
+        tail = eod2._load_history_tail(conn, "SYM00", limit=10)
+        assert tail is not None and len(tail) == 10, tail
+        assert tail["date"].is_monotonic_increasing, "history tail is not oldest-first"
+        assert tail["date"].iloc[-1] == OLD, tail["date"].iloc[-1]
+    finally:
+        conn.close()
+
+
+def test_a_narrower_table_degrades_loudly_instead_of_losing_the_session(
+    tmp_path, monkeypatch, caplog
+):
+    """A table missing a written column must still store the session's OHLCV.
+
+    ``technical_data`` is normally the live table, which carries every column.
+    A narrower table makes every INSERT raise ``no column named ...``; the
+    per-symbol handler counts that as one skipped symbol, so the sync would
+    report a completed run having stored *nothing* for the whole universe.
+    The absent columns are dropped with a warning instead.
+    """
+    import logging
+    import sqlite3
+
+    technical_db = str(tmp_path / "narrow.db")
+    conn = sqlite3.connect(technical_db)
+    try:
+        # Deliberately missing the Phase 20 addition.
+        conn.execute(
+            "CREATE TABLE technical_data (symbol TEXT, date TEXT, open REAL, "
+            "high REAL, low REAL, close REAL, volume REAL, delivery REAL, "
+            "trades REAL, delivery_pct REAL, delivery_ratio REAL, "
+            "delivery_source TEXT, sma_50 REAL, high_52w REAL, low_52w REAL, "
+            "delivery_ma_60 REAL, PRIMARY KEY(symbol, date))"
+        )
+        conn.execute(
+            "CREATE TABLE ingestion_rejects (id INTEGER PRIMARY KEY, symbol TEXT, "
+            "date TEXT, reason TEXT, raw_values TEXT)"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    daily = tmp_path / "daily"
+    daily.mkdir()
+    _write_csv(str(daily), "sym00.csv", _csv(NEW))
+
+    monkeypatch.setattr(eod2, "_get_db_path", lambda: technical_db)
+    monkeypatch.setattr(eod2, "_find_eod2_daily", lambda: str(daily))
+    monkeypatch.setattr(eod2, "_get_meta_latest", lambda _d: NEW)
+    monkeypatch.setattr(eod2, "_run_enrichment", lambda _conn: None)
+
+    with caplog.at_level(logging.WARNING, logger="myra_app.eod2_sync"):
+        result = eod2.sync_eod2_data()
+
+    assert result["rows_inserted"] == 1, result
+    assert "sma_200" in caplog.text, "the dropped column was not reported"
+
+    conn = sqlite3.connect(f"file:{technical_db}?mode=ro", uri=True)
+    try:
+        row = conn.execute(
+            "SELECT close, sma_50 FROM technical_data WHERE symbol='SYM00' AND date=?",
+            (NEW,),
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row is not None, "the session was lost when a column was missing"
+    assert row[0] == 100.0

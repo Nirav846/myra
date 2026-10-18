@@ -200,7 +200,13 @@ def _read_symbol_csv(
 
 def _compute_derived(df: pd.DataFrame) -> pd.DataFrame:
     """Add delivery_pct, delivery_ratio, delivery_source and the rolling
-    enrichment columns (sma_50, high_52w, low_52w, delivery_ma_60)."""
+    enrichment columns (sma_50, sma_200, high_52w, low_52w, delivery_ma_60).
+
+    The caller must hand in the symbol's *history plus* the new row(s) — the
+    rolling windows are only meaningful over a real series. A one-row frame
+    yields the mean of one observation, which is exactly the fabricated-value
+    shape Phase 20 defect D1 removed from the call site.
+    """
     df = df.sort_values("date").copy()
 
     # delivery_pct
@@ -214,19 +220,90 @@ def _compute_derived(df: pd.DataFrame) -> pd.DataFrame:
     # delivery_source
     df["delivery_source"] = "eod2_adjusted"
 
-    # Rolling enrichments (need ≥2 rows to be meaningful)
-    if len(df) >= 2:
-        df["sma_50"] = df["close"].rolling(50, min_periods=1).mean()
-        df["high_52w"] = df["high"].rolling(252, min_periods=1).max()
-        df["low_52w"] = df["low"].rolling(252, min_periods=1).min()
-        df["delivery_ma_60"] = df["delivery_pct"].rolling(60, min_periods=1).mean()
-    else:
-        df["sma_50"] = df["close"]
-        df["high_52w"] = df["high"]
-        df["low_52w"] = df["low"]
-        df["delivery_ma_60"] = df["delivery_pct"]
+    # Rolling enrichments, computed over whatever series the caller supplied.
+    #
+    # These used to sit behind `if len(df) >= 2`, with an `else` branch storing
+    # the raw session values (`sma_50 = close`, `high_52w = high`,
+    # `low_52w = low`, `delivery_ma_60 = delivery_pct`). Because the call site
+    # filtered to the rows newer than the per-symbol cutoff *before* calling
+    # this, a normal one-session sync always took that branch: the whole
+    # universe got a "50-day average" equal to the day's close, a "52-week
+    # high" equal to the day's high, and a "60-day delivery average" equal to
+    # the day's delivery percentage. `min_periods=1` already gives the honest
+    # short-history answer (the mean of what exists); a raw price must never
+    # stand in for a rolling statistic, because no downstream consumer can tell
+    # the difference. (Phase 20 defect D1.)
+    df["sma_50"] = df["close"].rolling(50, min_periods=1).mean()
+    df["sma_200"] = df["close"].rolling(200, min_periods=1).mean()
+    df["high_52w"] = df["high"].rolling(252, min_periods=1).max()
+    df["low_52w"] = df["low"].rolling(252, min_periods=1).min()
+    df["delivery_ma_60"] = df["delivery_pct"].rolling(60, min_periods=1).mean()
 
     return df
+
+
+# Rows of prior history needed to compute the longest rolling window above
+# (high_52w/low_52w use 252). Fetching 252 historical rows plus the new row(s)
+# is exactly enough for every window to be fully populated.
+_HISTORY_TAIL_ROWS = 252
+
+# The only columns `_compute_derived` reads. The history tail and the new rows
+# are concatenated over exactly this set, so neither frame contributes an
+# all-null column to the other.
+_ROLLING_INPUT_COLS = ["date", "high", "low", "close", "volume", "delivery"]
+
+# The columns `_compute_derived` adds.
+_DERIVED_COLS = [
+    "delivery_pct",
+    "delivery_ratio",
+    "delivery_source",
+    "sma_50",
+    "sma_200",
+    "high_52w",
+    "low_52w",
+    "delivery_ma_60",
+]
+
+
+def _load_history_tail(
+    conn: sqlite3.Connection, symbol: str, limit: int = _HISTORY_TAIL_ROWS
+) -> pd.DataFrame | None:
+    """Return the symbol's most recent ``limit`` stored rows, oldest first.
+
+    Returns ``None`` when the symbol has no stored rows yet (a first-ever
+    ingest), in which case the caller computes over the new rows alone.
+    """
+    try:
+        rows = conn.execute(
+            "SELECT " + ", ".join(_ROLLING_INPUT_COLS) + " FROM technical_data"
+            " WHERE symbol = ? ORDER BY date DESC LIMIT ?",
+            (symbol.upper(), int(limit)),
+        ).fetchall()
+    except sqlite3.Error as exc:
+        logger.debug(f"[EOD2] history read failed for {symbol}: {exc}")
+        return None
+    if not rows:
+        return None
+    return (
+        pd.DataFrame(rows, columns=_ROLLING_INPUT_COLS)
+        .iloc[::-1]
+        .reset_index(drop=True)
+    )
+
+
+def _rolling_inputs(frame: pd.DataFrame) -> pd.DataFrame:
+    """The rolling-input columns of ``frame``, numeric and free of all-NaN gaps.
+
+    ``volume`` and ``delivery`` are legitimately absent for some sessions (an
+    unevaluated delivery quantity is common), and a one-row frame whose only
+    value is missing would make the whole column all-NA -- which pandas warns
+    about on concat. Normalising them here is equivalent to the ``fillna(0)``
+    that ``_compute_derived`` already applies to the ratios it builds from them.
+    """
+    out = frame[_ROLLING_INPUT_COLS].copy()
+    for col in ("volume", "delivery"):
+        out[col] = pd.to_numeric(out[col], errors="coerce").fillna(0.0)
+    return out
 
 
 # Columns written by the sync (order must match the INSERT statement)
@@ -244,6 +321,7 @@ _INSERT_COLS = [
     "delivery_ratio",
     "delivery_source",
     "sma_50",
+    "sma_200",
     "high_52w",
     "low_52w",
     "delivery_ma_60",
@@ -256,12 +334,52 @@ _INSERT_SQL = (
 )
 
 
-def _insert_rows(conn: sqlite3.Connection, rows: list[tuple]) -> int:
+def _insert_rows(
+    conn: sqlite3.Connection,
+    rows: list[tuple],
+    columns: list[str] | None = None,
+) -> int:
     """Bulk-insert rows and return count."""
     if not rows:
         return 0
-    conn.executemany(_INSERT_SQL, rows)
+    conn.executemany(_INSERT_SQL if columns is None else _insert_sql(columns), rows)
     return len(rows)
+
+
+def _insert_columns(conn: sqlite3.Connection) -> list[str]:
+    """The subset of ``_INSERT_COLS`` the target database actually carries.
+
+    The live ``myra_technical.db`` carries every column, so this normally
+    returns ``_INSERT_COLS`` unchanged. It matters because a narrower table
+    makes *every* INSERT raise ``no column named ...``, and the per-symbol
+    handler treats that as one skipped symbol: the sync would report a
+    completed run while storing nothing at all for the whole universe. Omit the
+    absent columns loudly instead, so the session's OHLCV still lands and the
+    gap is visible rather than silent.
+    """
+    try:
+        present = {row[1] for row in conn.execute("PRAGMA table_info(technical_data)")}
+    except sqlite3.Error as exc:
+        logger.warning(f"[EOD2] could not read the technical_data schema: {exc}")
+        return list(_INSERT_COLS)
+    if not present:
+        return list(_INSERT_COLS)
+    missing = [c for c in _INSERT_COLS if c not in present]
+    if missing:
+        logger.warning(
+            "[EOD2] technical_data has no column(s) "
+            f"{', '.join(missing)}; this sync will write the stored columns "
+            "only. OHLCV still lands, but those inputs will stay absent."
+        )
+    return [c for c in _INSERT_COLS if c in present]
+
+
+def _insert_sql(columns: list[str]) -> str:
+    return (
+        "INSERT OR REPLACE INTO technical_data "
+        "(" + ", ".join(columns) + ") "
+        "VALUES (" + ", ".join(["?"] * len(columns)) + ")"
+    )
 
 
 def _record_eod2_rejects(conn: sqlite3.Connection, rejected_df: pd.DataFrame) -> int:
@@ -558,6 +676,10 @@ def sync_eod2_data() -> dict[str, Any]:
             ).fetchall()
         }
 
+        # Resolve the writable column set once per run: a table narrower than
+        # `_INSERT_COLS` must degrade loudly, not fail every symbol silently.
+        insert_cols = _insert_columns(conn)
+
         # Cheap, *correct* no-op bail. The old test compared meta.json against the
         # single global MAX(date), which cannot distinguish "this session is fully
         # ingested" from "3 symbols are at this date and 7 are not" — so it
@@ -614,25 +736,58 @@ def sync_eod2_data() -> dict[str, Any]:
 
                 # Filter to new rows only, against THIS symbol's cutoff.
                 sym_cutoff = cutoff_cache.get(sym_key)
+                new_df = valid_df
                 if sym_cutoff:
-                    valid_df = valid_df[valid_df["date"] > sym_cutoff]
-                if valid_df.empty:
+                    new_df = valid_df[valid_df["date"] > sym_cutoff]
+                if new_df.empty:
                     result["skipped"] += 1
                     continue
 
-                valid_df = _compute_derived(valid_df)
+                # Derive over the symbol's history *plus* the new rows, then
+                # keep only the new rows for the INSERT. Computing on the slice
+                # handed a single row to the rolling windows, which is how the
+                # whole universe ended up with sma_50 == close and high_52w ==
+                # high (Phase 20 defect D1). A first-ever ingest has no history
+                # and legitimately rolls over the new rows alone.
+                history = _load_history_tail(conn, sym_key)
+                if history is None or history.empty:
+                    derived = _compute_derived(new_df)
+                else:
+                    series = pd.concat(
+                        [
+                            _rolling_inputs(history),
+                            _rolling_inputs(new_df),
+                        ],
+                        ignore_index=True,
+                    )
+                    series = (
+                        series.drop_duplicates(subset=["date"], keep="last")
+                        .sort_values("date")
+                        .reset_index(drop=True)
+                    )
+                    new_dates = set(new_df["date"])
+                    rolled = _compute_derived(series)
+                    rolled = rolled[rolled["date"].isin(new_dates)].set_index("date")
+                    # Attach by date lookup rather than a frame merge: the new
+                    # rows are the only ones published, and a lookup cannot
+                    # fan out if a file repeats a session date.
+                    derived = new_df.assign(
+                        **{
+                            col: new_df["date"].map(rolled[col])
+                            for col in _DERIVED_COLS
+                        }
+                    )
 
                 rows = [
                     tuple(row)
-                    for row in valid_df[_INSERT_COLS].itertuples(index=False, name=None)
+                    for row in derived[insert_cols].itertuples(index=False, name=None)
                 ]
-                inserted = _insert_rows(conn, rows)
+                inserted = _insert_rows(conn, rows, insert_cols)
                 result["rows_inserted"] += inserted
                 result["symbols_updated"] += 1
                 # Advance this symbol's cutoff in the cache so a duplicate file
                 # entry in the same pass cannot re-insert the same date.
-                if not valid_df.empty:
-                    cutoff_cache[sym_key] = max(valid_df["date"])
+                cutoff_cache[sym_key] = max(new_df["date"])
             except Exception as exc:
                 logger.debug(f"[EOD2] Error processing {symbol}: {exc}")
                 result["skipped"] += 1

@@ -138,6 +138,7 @@ Which module writes which consumed field, today, in this repository:
 | Producer | Writes | Enabled? |
 |---|---|---|
 | `librarian_intelligence._compute_symbol_indicators` → the indicator lake | `sma50`, `sma200` (of the 17) | yes — once the build can write at all (§4 of the phase report) |
+| `eod2_sync.sync_eod2_data` → `technical_data` (Phase 20) | `sma_50`, `sma_200`, `high_52w`, `low_52w`, `delivery_ma_60` | yes — the daily ingestion, but only for **new** sessions (no backfill) |
 | `ranking_inputs.compute_ranking_inputs` → merged by `universe_loader` | `avg_volume_20d`, `avg_delivery_20d` | **no** — behind `MYRA_V25_RANKING_INPUTS`, off by default |
 | `ranking_inputs.compute_fundamental_inputs` → merged by `universe_loader` | `roe`, `ProfitGrowth` | **no** — same flag |
 | — nothing — | `sma150`, `pct_above_ma50_60d`, `atr_pct`, `atr5`, `keltner_upper`, `keltner_lower`, `drawdown`, `smart_money_score`, `F_Score` | n/a |
@@ -183,11 +184,20 @@ Two consequences were traced through the real code paths:
    not neutral — `stability_score` reads it as "never above MA50" and returns 0,
    the minimum.
 
-Recorded fix, **deliberately not applied in Phase 19** because it changes
-published scores: stop zero-filling `atr_pct` in `universe_loader` and let the
-absence reach the scorer's documented neutral fallback — or make `base_score`
-distinguish a measured `0.0` from an absence. Either way it is a scoring
-behaviour change and needs an explicit decision.
+**Resolution (Phase 20).** Consequence 1 is **fixed**. `universe_loader` no longer
+fabricates a `0` for an absent `atr_pct`; it passes the value through, so an
+unmeasured ATR reaches `base_score` as absent and falls to the same documented
+`0.3` neutral that a genuine SQL NULL, a NaN, or an absent key already produced.
+No scoring band changed — the repair is upstream, at the fabrication site — and a
+genuine measurement (including a legitimate stored `0.0`) is preserved unchanged.
+Because `atr_pct` has no producer anywhere in the repo, the fabricated maximum was
+being applied to the *entire universe*; it is now applied to none. See
+`docs/PHASE20_MARKET_DATA_INTEGRITY_REPORT.md` (defect D2) and the regression
+tests in `tests/test_phase20_atr_pct_integrity.py`.
+
+Consequence 2 is **not** fixed and is deliberately left as Phase 5 documented
+behaviour: relaxing it would substitute a more favourable default for a missing
+input, which is a scoring decision, not an integrity fix.
 
 ---
 
@@ -199,15 +209,29 @@ behaviour change and needs an explicit decision.
 | **Strong proposal** | `avg_delivery_20d` from the lake (rejected as a substitute, §2.1) | the mapping is decidable, and the evidence says *don't* |
 | **Unresolved** | `sma150`, `atr_pct`, `atr5`, `keltner_upper`, `keltner_lower`, `drawdown`, `smart_money_score`, `F_Score` | needs an investment-strategy decision |
 
+The "Unresolved" class is about the **definition**, and Phase 20 did not change
+any of them: it removed a fabrication that made the *absence* of `atr_pct`
+rewarding (§4), not the still-undecided ATR lookback/denominator. So `atr_pct`
+remains unresolved-as-a-definition while its missing-value behaviour is now
+neutral.
+
 **Therefore:** a trustworthy `MYRA_Score_v25` is not a data-volume problem. Nine
 of seventeen inputs have no enabled producer, and eight of those have no
 producer at all. Building the lake is necessary and not sufficient.
+
+*(Phase 20 re-verified every "no producer" claim above against the code: `sma150`,
+`pct_above_ma50_60d`, `atr_pct`, `atr5`, `keltner_upper`, `keltner_lower`,
+`drawdown` and `smart_money_score` have no write site for the consumed input
+column. A few files compute a *local* variable of the same name for their own
+strategy signal — `strategies/alpha_vcp.py` builds an `atr5`, and
+`strategies/wyckoff_automaton_dynamic.py` builds an `atr_pct` — but none persist
+the column that `score_components_v2` consumes, so the classification stands.)*
 
 ---
 
 ## 6. Data-quality findings recorded alongside
 
-### 6.1 Two sessions carry a fabricated 50-day mean
+### 6.1 Twelve sessions carry a fabricated 50-day mean (root-caused and fixed in Phase 20)
 
 On **2026-10-13** and **2026-10-07**, `technical_data` stores `sma_50 = close`
 for essentially the whole universe (3220 of 3223 rows, 3223 of 3224) and
@@ -217,6 +241,35 @@ columns).
 
 A scan that reads the latest row is unaffected. A 50- or 200-session window that
 *contains* those dates is not — which is exactly the 3.1 gap in §2.1.
+
+**Phase 20 corrected the scope and root-caused it.** A full-universe scan (not a
+one-date probe) finds **12** defective sessions, not 2 — 6 in 2026-08 (08-17 …
+08-31), 4 in 2026-09 (09-08, 09-11, 09-21, 09-28) and 2 in 2026-10 (10-07,
+10-13). On every one of them all four degenerate columns co-occur
+(`sma_50 = close`, `high_52w = high`, `low_52w = low`,
+`delivery_ma_60 = delivery_pct`) with `sma_200` NULL. Table-wide,
+`sma_50 = close` matches on **40,431** rows and `sma_200` is NULL on
+**7,965,142 of 8,022,725** rows (99.3%); the only non-NULL `sma_200` values are
+the 18 sessions from 2026-09-15 onward, i.e. since the enrichment path began
+writing that column.
+
+Root cause: `eod2_sync.sync_eod2_data` filtered to the rows newer than the
+per-symbol cutoff *before* computing the derived columns, so a normal one-session
+sync handed `_compute_derived` a single row, took its `len(df) < 2` branch and
+stored the raw session values in place of every rolling column. The enrichment
+repair only ever writes the latest date, so no later session could correct them.
+
+A table-wide re-scan puts the totals at `sma_50 = close` on **40,431** rows and
+`sma_200` NULL on **7,965,142 of 8,022,725** rows (99.3%); the only non-NULL
+`sma_200` values are the 18 sessions from 2026-09-15 onward, i.e. since the
+enrichment path began writing that column.
+
+Phase 20 fixes the **forward** path (rolling columns are computed over the
+symbol's history plus the new rows; `sma_200` is now written by the sync). The 12
+already-defective sessions and the 99.3% historical `sma_200` NULLs are **not**
+backfilled — a backfill is a forbidden bulk production operation in this phase.
+The exact repair is specified in the Phase 20 report, §"Required but not
+executed"; the code that wrote those rows is fixed, so they cannot recur.
 
 ### 6.2 The OHLCV cache and `technical_data` disagree by a factor of 2
 
@@ -232,6 +285,21 @@ boundary is inconsistent, and a lake built from this cache reconciles with
 nothing in `technical_data`. Which series is authoritative is a decision, not a
 bug fix — and it is upstream of every indicator in §2.1.
 
+**Phase 20 settled the mechanism (decision still open).** `technical_data`
+matches the eod2 CSV source **exactly** (7860/7860 sessions for RELIANCE, close
+max-abs-diff 0.0), and the database is the *adjusted* series. The parquet OHLCV
+cache is a stale, **unadjusted** snapshot: every file has an mtime ≤ 2026-05-02
+and its window is fixed at 2021-10-01 … 2026-04-30. The per-symbol cache/source
+ratio is a constant cumulative corporate-action factor — 2.0 for RELIANCE,
+5.0 for ZYDUSWELL, 1.0 for TCS/ITC/SBIN — identical across open/high/low/close,
+while volume is unscaled. `delivery` is absent from the cache. So this is not a
+fetch, scaling, or ingestion bug: the cache is simply a pre-split, unadjusted
+snapshot that was never rebuilt. Correcting it requires either a cache rebuild
+(which also never persists, because `get_ohlcv`'s save sits inside a swallowing
+`try/except`) or a change so the lake reads `technical_data` directly — **both
+bulk production operations this phase may not perform.** See the Phase 20 report,
+defect D3.
+
 ### 6.3 `technical_data.delivery` is a delivery *quantity*, not a percentage
 
 Verified on the latest session: `delivery / volume × 100 == delivery_pct` for
@@ -245,15 +313,22 @@ not interchangeable with one.
 
 ## 7. Open decisions
 
-1. Authorise (or reject) the four execution repairs in the phase report.
-2. Authorise the B5 lake-write repair **before** any lake build is attempted —
-   without it the build fails for every symbol.
-3. Resolve the eight unresolved definitions in §2.2.
-4. Decide the missing-`atr_pct` zero-fill in §4.
+1. ~~Authorise (or reject) the four execution repairs in the phase report.~~
+   Done in Phase 19 (F1–F4).
+2. ~~Authorise the B5 lake-write repair before any lake build.~~ Done in Phase 19.
+3. Resolve the eight unresolved definitions in §2.2. **Still open** — unchanged
+   by Phase 20; each needs an investment-strategy decision.
+4. ~~Decide the missing-`atr_pct` zero-fill in §4.~~ **Done in Phase 20**: the
+   fabrication is removed; absence now scores the documented neutral.
 5. Decide whether `MYRA_V25_RANKING_INPUTS` should ever be enabled, given it
-   changes published ordering.
+   changes published ordering. **Still open.**
 6. Decide the price-basis question in §6.2 before trusting lake indicators.
-7. Decide whether the 2026-10-07 / 2026-10-13 rows are repaired or left, and
-   whether the ingestion that wrote them is fixed.
+   **Still open** — Phase 20 confirmed it is a stale unadjusted cache, not a bug,
+   and that repairing it needs a cache rebuild this phase may not perform.
+7. Decide whether the 2026-08/09/10 defective rows are repaired or left, and
+   whether a backfill is authorised. **Still open.** The *code* that wrote them is
+   fixed, so they cannot recur; the 12 historical sessions and the historical
+   `sma_200` NULLs remain until a backfill is explicitly authorised. See §6.1 and
+   the Phase 20 report.
 
 Nothing in this document is authorised for implementation by its own existence.

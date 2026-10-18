@@ -415,12 +415,17 @@ def eod(tmp_path, monkeypatch):
 
     tech = str(tmp_path / "tech.db")
     conn = sqlite3.connect(tech)
-    conn.execute(
-        "CREATE TABLE technical_data (symbol TEXT, date TEXT, open REAL, high REAL, "
-        "low REAL, close REAL, volume REAL, delivery REAL, trades REAL, "
-        "delivery_pct REAL, delivery_ratio REAL, delivery_source TEXT, sma_50 REAL, "
-        "high_52w REAL, low_52w REAL, delivery_ma_60 REAL, PRIMARY KEY(symbol, date))"
+    # Derived from the sync's own INSERT column list so the fixture cannot fall
+    # behind the real schema. A hardcoded DDL here previously still listed only
+    # the pre-Phase-20 columns, so adding `sma_200` to the INSERT made every
+    # symbol fail to store and the whole scenario silently ingested nothing.
+    cols = list(eod2._INSERT_COLS)
+    ddl = ", ".join(
+        f"{c} REAL" if c not in ("symbol", "date", "delivery_source") else f"{c} TEXT"
+        for c in cols
     )
+    conn.execute(f"CREATE TABLE technical_data ({ddl}, PRIMARY KEY(symbol, date))")
+
     conn.execute(
         "CREATE TABLE ingestion_rejects (id INTEGER PRIMARY KEY, symbol TEXT, "
         "date TEXT, reason TEXT, raw_values TEXT)"

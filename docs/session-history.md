@@ -1560,3 +1560,74 @@ no OHLCV rebuild, no fundamental refresh, no scheduler start.*
 - **Deliberately not done:** the lake build, the OHLCV rebuild, the fundamental
   refresh, starting the scheduler, enabling `MYRA_V25_RANKING_INPUTS`, and any
   weight/threshold/formula/ordering change.
+
+## Phase 20 - Market-data integrity: two root causes found and fixed forward
+
+*Goal: reproduce the three anomalies carried out of Phase 19 (OHLCV 2x
+disagreement; sma_50==close / sma_200 NULL at universe scale; missing atr_pct ->
+max base_score), find their root causes, repair only what is conclusively
+justified, and return a verdict. No lake build, no OHLCV rebuild, no ingestion,
+no scheduler start, no live-DB write.*
+
+- **The 50-day-mean defect was far bigger than two sessions, and had a single
+  root cause.** A full-universe re-scan (Phase 19 probed one date) found **12**
+  degenerate sessions, not 2: 6 in 2026-08 (17-31), 4 in 2026-09 (8,11,21,28),
+  2 in 2026-10 (7,13); table-wide sma_50==close on 40,431 rows and sma_200 NULL
+  on 99.3% of 8,022,725. On each, all four columns degenerate together
+  (sma_50==close, high_52w==high, low_52w==low, delivery_ma_60==delivery_pct) with
+  sma_200 NULL for every symbol. Cause: `eod2_sync.sync_eod2_data` filtered to
+  the new rows *before* calling `_compute_derived`, so a normal one-session sync
+  handed it a 1-row frame, took its `len(df)>=2` else-branch, and stored the raw
+  session values as if they were rolling statistics. `sma_200` was absent from
+  `_INSERT_COLS`, and `INSERT OR REPLACE` then nulled it. The enrichment repair
+  could not heal it because it writes only the latest date.
+- **Repair (forward path only).** The sync now computes the rolling columns over
+  the symbol's 252-row history plus the new rows (publishing only the new dates),
+  `_compute_derived` no longer substitutes a raw price for a rolling statistic,
+  and sma_200 is computed and written. **Fixed, not backfilled:** the 12 sessions
+  and the 99.3% historical sma_200 NULLs stay until a backfill is authorised - a
+  backfill is a forbidden bulk operation here. They cannot recur.
+- **A silent whole-ingest hazard, caught by an existing test.** Adding sma_200 to
+  the INSERT revealed that a table missing any written column makes every
+  symbol's INSERT raise, which the per-symbol handler downgrades to a skipped
+  symbol - a run could report "done" having stored nothing. `sync_eod2_data` now
+  resolves the table's real columns and drops absent ones with a *warning*, so
+  OHLCV still lands and the gap is visible. The recovery fixture's DDL now derives
+  from `_INSERT_COLS` so it cannot drift again.
+- **The missing-atr_pct defect is fixed at the fabrication site, not the scorer.**
+  `atr_pct` has no producer anywhere, so `universe_loader`'s
+  `c.get("atr_pct", 0)...else 0` stored a fabricated 0.0 for the whole universe,
+  which `base_score` reads as `atr_pct<0.03` -> +0.5, the maximum - better than a
+  genuinely mid base - and reported as an *observed* input. `universe_loader` now
+  passes the value through, so an absent ATR lands on the same documented 0.3
+  neutral that a real NULL/NaN/absent key already produced. This is the Phase 12
+  pattern (ProfitGrowth/SalesGrowth/Debt_Equity); it is a data-integrity fix, not a
+  scoring change - the bands, ranking formula and weights are untouched, so the
+  Phase 15 characterisation tests still pass by design.
+- **The OHLCV 2x disagreement is settled as to mechanism, open as to decision.**
+  `technical_data` matches the eod2 source exactly and is the adjusted series; the
+  parquet cache is a stale *unadjusted* snapshot (all mtimes <= 2026-05-02,
+  window 2021-10-01..2026-04-30) whose per-symbol ratio is a constant
+  corporate-action factor (RELIANCE 2.0, ZYDUSWELL 5.0, TCS/ITC/SBIN 1.0). Beyond
+  the split (last differing session 2026-02-01) they agree, reproducing Phase 19's
+  unexplained sma_200 gap to the decimal. Not a bug: rebuilding the cache or
+  pointing the lake at `technical_data` are both forbidden bulk operations, and
+  the authoritative series is an operator decision. Documented, not changed.
+- **Input ledger re-verified against code:** sma150, pct_above_ma50_60d, atr_pct,
+  atr5, keltner_*, drawdown and smart_money_score have no writer for the consumed
+  column (a couple of strategy files compute a same-named *local*, but persist
+  nothing); avg_volume_20d/avg_delivery_20d/roe/ProfitGrowth are behind the
+  opt-in flag. pct_above_ma50_60d absence is *punished* (0.0) not rewarded, and
+  Phase 5 deliberately left that alone - unchanged here.
+- **Verdict: NOT READY for a controlled validation build.** Two root causes fixed
+  forward, but the price basis is still undecided (D3) and six of seven mandatory
+  inputs still have no enabled producer, so MYRA_Score_v25 stays MODEBLOCKED.
+  TriggerScanner remains the usable mode; nothing published a v25 score.
+- **Verified:** full suite **1768 passed** (Phase 19: 1749; +19 new), the whole
+  eod2/recovery/ingest set clean under `-W error::FutureWarning`,
+  `black`(pinned 26.10.1 via pre_commit)/`flake8`/Performance-Guard/schema-drift
+  all pass. **No production writes:** every live read was `mode=ro`,
+  `live_db_guard` not weakened, no ingestion/scheduler/bulk refresh run.
+- **Deliberately not done:** the lake build, the OHLCV rebuild, the sma backfill,
+  the eod2 source's phantom 2026-02-01 session, enabling MYRA_V25_RANKING_INPUTS,
+  and any weight/threshold/formula/ordering change.
