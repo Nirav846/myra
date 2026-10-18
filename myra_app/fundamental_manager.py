@@ -147,6 +147,21 @@ class FundamentalManager:
             # printed a "Cooling off for 60 mins" warning that had no effect on
             # anything -- DataFetcher does its own prioritisation and never
             # consults SourceManager. Record it honestly instead.
+            #
+            # The fetcher now carries a per-source reason for each source that
+            # raised / returned nothing / returned only undated rows. Surface it
+            # so a run log names the real cause instead of only "multi-source
+            # fallback exhausted". The reasons are already credential-free
+            # (exception *type* and HTTP status only, never a message).
+            reasons = getattr(self.fetcher, "last_source_errors", None) or {}
+            if reasons:
+                self.last_error = (
+                    "multi-source fallback exhausted ("
+                    + "; ".join(f"{k}: {v}" for k, v in sorted(reasons.items()))
+                    + ")"
+                )
+            else:
+                self.last_error = "multi-source fallback exhausted"
             self.source_manager.mark_failure("screener_in")
             return None
 
@@ -159,7 +174,11 @@ class FundamentalManager:
         # Reset per-call provenance so a failed fetch never carries a stale claim.
         self.last_owned_fields = frozenset()
         if not data:
-            self.last_error = "multi-source fallback exhausted"
+            # ``_fetch_raw_data`` already recorded *why* each source failed (per
+            # source exception type / HTTP status). Do not overwrite that with a
+            # generic message -- the per-source reason is the whole point.
+            if not self.last_error:
+                self.last_error = "multi-source fallback exhausted"
             return False
 
         # Undateable rows are worse than no rows -- writing them would poison
@@ -170,6 +189,10 @@ class FundamentalManager:
             if not _PLACEHOLDER_REPORT_DATE.match(str(r.get("report_date") or ""))
         ]
         if not dated:
+            # Name the source that produced the undated rows. `_fetch_google`
+            # labels them "Q-1".."Q-4" by construction, so this is the expected
+            # outcome whenever the Google fallback is reached - it is not a bug,
+            # and naming it removes the guesswork from the run log.
             self.last_error = "source returned only undated rows (google fallback)"
             logger.warning(
                 "FundamentalManager: %s produced only undated rows; skipping write",

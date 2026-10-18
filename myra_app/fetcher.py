@@ -914,9 +914,9 @@ class DataFetcher:
             "NOV",
             "DEC",
         ]
-        df_full[
-            "DATE1"
-        ] = f"{current_date.day:02d}-{MONTHS[current_date.month-1]}-{current_date.year}"
+        df_full["DATE1"] = (
+            f"{current_date.day:02d}-{MONTHS[current_date.month-1]}-{current_date.year}"
+        )
 
         # Drop anything not explicitly in whitelist, ensuring no duplicate mapping creates chaos
         for c in CORE_COLUMNS:
@@ -1158,6 +1158,13 @@ class DataFetcher:
         # honoured everywhere it is consulted.
         from myra_app.data_sources import source_config
 
+        # Per-source failure reasons for this call. A source that raises, returns
+        # nothing, or hands back undated rows is recorded here so the caller can
+        # report *which* source failed and *why*, instead of collapsing every
+        # cause into one generic "multi-source fallback exhausted". Only the
+        # exception class name is kept -- never its message, which can embed a
+        # URL, cookie or session token.
+        self.last_source_errors = {}
         for stream in streams:
             name = stream["name"]
             if not source_config.is_enabled(name):
@@ -1172,9 +1179,21 @@ class DataFetcher:
                     continue
                 if res:
                     return res, name
-            except Exception:
+                # Distinguish "the page was unreadable/denied" from "the page was
+                # fine but carried no quarterly table" -- they have very different
+                # operational meanings.
+                status = getattr(self, "last_http_status", None)
+                if status is not None and status != 200:
+                    self.last_source_errors[name] = f"HTTP {status}"
+                else:
+                    self.last_source_errors[name] = "no data returned"
+            except (
+                Exception
+            ) as exc:  # noqa: BLE001 - one source must not abort the chain
+                # Keep the traceback at debug for engineers, but surface the
+                # *type* so the run log can name the real failure mode.
                 logger.debug("Non-critical fetch error, skipping item", exc_info=True)
-                continue
+                self.last_source_errors[name] = f"{name}: {type(exc).__name__}"
         return None, None
 
     def fetch_deep_history(self, symbol):
@@ -1343,9 +1362,7 @@ class DataFetcher:
             col = (
                 "Symbol"
                 if "Symbol" in df.columns
-                else "SYMBOL"
-                if "SYMBOL" in df.columns
-                else df.columns[2]
+                else "SYMBOL" if "SYMBOL" in df.columns else df.columns[2]
             )
             return df[col].tolist()
         except:
@@ -1396,9 +1413,9 @@ class DataFetcher:
 
     def fetch_sast_disclosures(self, days=3):
         headers = self.registry.get("headers", {}).get("nse_api_headers", {}).copy()
-        headers[
-            "Referer"
-        ] = "https://www.nseindia.com/companies-listing/corporate-filings-insider-trading"
+        headers["Referer"] = (
+            "https://www.nseindia.com/companies-listing/corporate-filings-insider-trading"
+        )
         today = date.today()
         start_date = today - timedelta(days=days)
         end_str = f"{today.day:02d}-{today.month:02d}-{today.year}"

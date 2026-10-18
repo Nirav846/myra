@@ -1949,3 +1949,58 @@ and stop. No production write was performed.*
 - **Stopping here.** The plan is prepared and validated; no production write was
   attempted. Execution requires explicit owner authorisation of the exact hash
   `c566fad5...`, the three-column scope and the 38,173-row write plan.
+
+## Fundamentals refresh failure diagnosis (read-only, bounded)
+
+*Goal: find why fundamentals acquisition was failing and whether the manual
+refresh harmed existing data. No refresh triggered, no network calls to data
+sources, no production writes.*
+
+- **Verdict: INCONCLUSIVE - SPECIFIC EVIDENCE REQUIRED** (with one narrow fix
+  applied and validated).
+- **The run did not damage existing data - verified, not assumed.** The
+  fundamentals UPSERT COALESCEs every column, so a failed or partial refresh
+  cannot null a held metric; the sync marker is written only after a successful
+  commit; the undated-row guard skips the write entirely. **0 placeholder and 0
+  NULL `report_date` rows** exist across 9,100 `quarterly_results` rows. The
+  three reported symbols are empty, not corrupted.
+- **The logged 10-minute Screener.in cooldown is inert.** `SourceManager` is the
+  only implementation, and its `get_available_sources()` is **never called** - both
+  `data_sources/registry.py:3` and `fundamental_manager.py:144-149` say so in
+  their own comments. A single failed symbol triggers it, it is always the
+  generic branch (`is_rate_limit` is never True), and it can neither skip nor
+  reroute a symbol. It caused no loss.
+- **The real throttling is a different, sound mechanism** in
+  `fundamentals_sync.py:394-411`: HTTP 429/403/503 is separated out, excluded
+  from parking, backs off 120s and aborts after 3 consecutive.
+- **The persisted `screener_in` cooldown in `enrichment_source_health` belongs to
+  a different task** (`tasks/fundamentals_enrich.py`), not the fundamentals
+  sync; its stored value is 7 days stale.
+- **Why the run could not say what went wrong (the real defect):**
+  `fetcher.fetch_fundamentals` caught every per-source exception at `debug` and
+  discarded it, so the chain returned `(None, None)` and the manager could only
+  print the generic "multi-source fallback exhausted". **Fixed narrowly:** each
+  source now records a reason (exception **type** or HTTP status only, never the
+  message, so no URL/cookie/token can leak), and the manager surfaces it instead
+  of overwriting it.
+- **AAATECH's undated rows are structural, not a parsing loss.** `_fetch_google`
+  hardcodes `"Q-1".."Q-4"` because Google Finance exposes no datable period
+  headers; there is no date to lose and none was invented. The guard rejects
+  them, which protects the `report_date DESC` ordering every consumer relies on.
+  **This affects every symbol that reaches the Google fallback**, not just
+  AAATECH.
+- **Run outcomes recovered** from `metadata` (a run was still live throughout,
+  PID 12388): 72 in this pass, 221 updated / 115 failed cumulative, 115 parked
+  (57x1, 50x2, 2x3, 6x4) all attempted 2026-10-18. Per-symbol **reasons were not
+  persisted** - that is the missing telemetry.
+- **Readiness was never fooled.** `fundamental_facts()` derives its dates from
+  stored data (`MAX(last_updated)`, `MAX(period_end)`), not from job state or an
+  HTTP 200, and states outright that "a recent fetch of an old period is still
+  old".
+- **Verified:** 9 new focused tests pass; 326 passed across the related suites;
+  full suite **1858 passed + 1 error**, the error being `live_db_guard`
+  correctly detecting the live refresh writing `myra_valuation.db` mid-run - both
+  affected modules pass in isolation. black/flake8/guards clean.
+- **Not changed:** the cooldown, date validation, source priority, scoring,
+  growth defaults, freshness thresholds, and the COALESCE / undated-row
+  safeguards. The inert SourceManager is documented, not rewired.
