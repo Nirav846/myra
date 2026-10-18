@@ -26,6 +26,8 @@ regression.
 
 from __future__ import annotations
 
+import inspect
+
 import pandas as pd
 import pytest
 
@@ -111,19 +113,40 @@ def test_volume_is_not_price_adjusted():
     assert derived["delivery_pct"].iloc[-1] == pytest.approx(50.0)
 
 
-def test_the_lake_must_not_derive_from_a_mixed_basis_frame():
-    """``get_ohlcv`` is cache+delta; the lake reads it. Guard the seam in code.
+def test_the_lake_requires_the_canonical_basis():
+    """The indicator path must ask for ``technical_data``, not the cache.
 
-    This does not inspect the live cache. It asserts the *documented* hazard so
-    that a future change which starts mixing bases (or forgets to exclude the
-    cache) surfaces here rather than as a silently wrong indicator lake.
+    This is the seam Phase 21 identified (``_compute_symbol_indicators`` reads
+    ``get_ohlcv``, which served unadjusted cache history spliced onto an
+    adjusted delta). Phase 22 decision F1 closed it by making the lake request
+    the canonical source explicitly, so this now pins the fix rather than
+    recording the hazard: reverting to the bare ``get_ohlcv(sym)`` call would
+    silently restore the mixed-basis series.
     """
-    from myra_app import librarian_intelligence
+    from myra_app.librarian_intelligence import LibrarianIntelligenceMixin
 
-    src = librarian_intelligence.__file__
-    with open(src, encoding="utf-8") as fh:
-        text = fh.read()
-    assert "self.get_ohlcv(sym)" in text, (
-        "the lake currently sources from get_ohlcv (cache + DB delta); this test "
-        "records that dependency so the basis fix has a known blast radius"
+    body = inspect.getsource(LibrarianIntelligenceMixin._compute_symbol_indicators)
+    assert "SOURCE_TECHNICAL_DATA" in body, (
+        "the indicator lake must request the canonical technical_data basis; "
+        "the default read path serves unadjusted cache prices"
     )
+    assert "get_ohlcv(sym)" not in body, (
+        "a bare get_ohlcv(sym) call falls back to the cache-first path and "
+        "reintroduces the mixed price basis"
+    )
+
+
+def test_the_cache_stays_a_valid_consumer_source():
+    """The legacy default must still work — the change is additive, not a break.
+
+    ``results_manager`` charts still call ``get_ohlcv`` with no ``source`` and
+    keep the cache-first behaviour; only historical-indicator consumers opt into
+    the canonical basis.
+    """
+    from myra_app.librarian import Librarian
+
+    sig = inspect.signature(Librarian.get_ohlcv)
+    assert (
+        sig.parameters["source"].default is None
+    ), "the default must remain None so existing callers are unaffected"
+    assert sig.parameters["source"].kind is inspect.Parameter.KEYWORD_ONLY

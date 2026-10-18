@@ -285,19 +285,30 @@ boundary is inconsistent, and a lake built from this cache reconciles with
 nothing in `technical_data`. Which series is authoritative is a decision, not a
 bug fix — and it is upstream of every indicator in §2.1.
 
-**Phase 20 settled the mechanism (decision still open).** `technical_data`
-matches the eod2 CSV source **exactly** (7860/7860 sessions for RELIANCE, close
-max-abs-diff 0.0), and the database is the *adjusted* series. The parquet OHLCV
-cache is a stale, **unadjusted** snapshot: every file has an mtime ≤ 2026-05-02
-and its window is fixed at 2021-10-01 … 2026-04-30. The per-symbol cache/source
-ratio is a constant cumulative corporate-action factor — 2.0 for RELIANCE,
-5.0 for ZYDUSWELL, 1.0 for TCS/ITC/SBIN — identical across open/high/low/close,
-while volume is unscaled. `delivery` is absent from the cache. So this is not a
-fetch, scaling, or ingestion bug: the cache is simply a pre-split, unadjusted
-snapshot that was never rebuilt. Correcting it requires either a cache rebuild
-(which also never persists, because `get_ohlcv`'s save sits inside a swallowing
-`try/except`) or a change so the lake reads `technical_data` directly — **both
-bulk production operations this phase may not perform.** See the Phase 20 report,
+**Phase 20 settled the mechanism; Phase 21 corrected and closed it; Phase 22
+implemented it.** `technical_data` matches the eod2 CSV source **exactly** (7860/7860
+sessions for RELIANCE, close max-abs-diff 0.0), and the database is the *adjusted*
+series. The parquet OHLCV cache is a stale, **unadjusted** snapshot: every file has
+an mtime ≤ 2026-05-02 and its window is fixed at 2021-10-01 … 2026-04-30.
+
+Phase 21 corrected Phase 20's description: the cache/source ratio is **not** a
+constant over the window — it is a **single step at each symbol's ex-date**
+(RELIANCE 2024-10-28, WIPRO 2024-12-03, HDFCBANK 2025-08-26, ZYDUSWELL
+2025-09-18; TCS/ITC/SBIN/INFY have no action in the window), and the factor is
+constant on either side of it. The decisive test is continuity: at each ex-date the
+cache drops by exactly the factor (−49.76% / −50.11% / −50.44% / −79.80%) while
+`technical_data` and eod2 move normally and agree with each other. Volume is
+unscaled (ratio 1.0 on 1095 of 1096 shared sessions), and `delivery` is absent from
+the cache.
+
+**Canonical basis: the adjusted, back-adjusted series in `technical_data`.**
+Phase 22 (decision F1) made the indicator path read it directly —
+`_compute_symbol_indicators` now calls
+`get_ohlcv(sym, source=SOURCE_TECHNICAL_DATA)`, which bypasses the cache read and
+its write-back. The cache-first default is retained only for the chart consumer.
+The cache lifecycle (retire / rebuild / keep-for-charts) remains open but no longer
+blocks the canonical indicator path. See the Phase 21 plan §B and the Phase 22
+report.
 defect D3.
 
 ### 6.3 `technical_data.delivery` is a delivery *quantity*, not a percentage
@@ -323,8 +334,12 @@ not interchangeable with one.
 5. Decide whether `MYRA_V25_RANKING_INPUTS` should ever be enabled, given it
    changes published ordering. **Still open.**
 6. Decide the price-basis question in §6.2 before trusting lake indicators.
-   **Still open** — Phase 20 confirmed it is a stale unadjusted cache, not a bug,
-   and that repairing it needs a cache rebuild this phase may not perform.
+   **Decided in Phase 21, implemented in Phase 22.** The canonical basis is the
+   corporate-action-adjusted, back-adjusted series in `technical_data`; Phase 22
+   made the indicator path read it directly (decision F1). What remains open is
+   only the *cache lifecycle* — whether the unadjusted parquet cache is retired,
+   rebuilt, or kept for the chart consumer — plus the rupee-level question for
+   backtests. Neither blocks the canonical path.
 7. Decide whether the 2026-08/09/10 defective rows are repaired or left, and
    whether a backfill is authorised. **Still open.** The *code* that wrote them is
    fixed, so they cannot recur; the 12 historical sessions and the historical

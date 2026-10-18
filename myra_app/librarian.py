@@ -11,7 +11,7 @@ import os
 import pandas as pd
 from rich.console import Console
 
-from myra_app.constants import CACHE_DIR, DATA_DIR, DB_DIR
+from myra_app.constants import CACHE_DIR, DATA_DIR, DB_DIR, SOURCE_TECHNICAL_DATA
 from myra_app.data_loader import StockDataLoader
 from myra_app.fetcher import DataFetcher
 from myra_app.fundamental_manager import FundamentalManager
@@ -294,9 +294,17 @@ class Librarian(
         try:
             rows = self._meta_conn.execute(
                 "SELECT symbol, sector, industry FROM symbols_master WHERE (symbol LIKE ? OR sector LIKE ?) AND is_active = 1 LIMIT 15",
-                (q, q)
+                (q, q),
             ).fetchall()
-            return [{"symbol": r[0], "name": r[1] or r[2] or "", "sector": r[1] or "", "industry": r[2] or ""} for r in rows]
+            return [
+                {
+                    "symbol": r[0],
+                    "name": r[1] or r[2] or "",
+                    "sector": r[1] or "",
+                    "industry": r[2] or "",
+                }
+                for r in rows
+            ]
         except Exception:
             return []
 
@@ -304,13 +312,47 @@ class Librarian(
         # Market regime will transition to Parquet Indicators in Phase 3
         return "NEUTRAL (Modular Transition)"
 
-    def get_ohlcv(self, symbol, as_of_date=None):
+    def get_ohlcv(self, symbol, as_of_date=None, *, source=None):
+        """Return one symbol's OHLCV history.
+
+        Two sources exist and they are **not** interchangeable:
+
+        ``source=SOURCE_TECHNICAL_DATA`` (canonical)
+            Read the whole series from ``technical_data``, which the eod2
+            ingestion fills with corporate-action-**adjusted**, back-adjusted
+            prices. This is the canonical basis for historical technical
+            indicators (Phase 21, decision F1): a back-adjusted series has no
+            price jump at an ex-date, so a 50- or 200-session window that spans
+            a split or bonus is computed from one consistent basis.
+
+        default (legacy cache-first)
+            Serve the parquet OHLCV cache, appending a ``technical_data`` delta
+            when the cache is stale. The cache holds **unadjusted** prices
+            (Phase 21 §B), so appending a DB delta to it splices two price bases
+            into one series and roughly doubles every moving average that
+            straddles a corporate action. This remains the default only because
+            existing consumers depend on it; nothing historical-indicator-shaped
+            may use it.
+
+        The canonical path deliberately performs **no cache read and no cache
+        write**. Writing would silently repair the cache as a side effect of a
+        read, which is a data operation this change must not perform.
+        """
         clean = symbol.split(".")[0].upper()
-        df = self.loader.load_from_parquet(clean)
+        canonical = source == SOURCE_TECHNICAL_DATA
+
+        if canonical:
+            # Skip the cache entirely. Falling back to it would defeat the
+            # whole point: an indicator series must never mix bases, and a
+            # missing adjusted observation must read as unavailable rather than
+            # silently inherit an unadjusted price.
+            df = pd.DataFrame()
+        else:
+            df = self.loader.load_from_parquet(clean)
 
         # 1. Smart Cache Validation (Fix: Staleness Loop)
         db_max = self.get_max_price_date()
-        if not df.empty and db_max:
+        if not canonical and not df.empty and db_max:
             cache_max = df.index.max().date().isoformat()
             if cache_max < db_max:
                 # Cache is stale. Fetch delta from DB.
@@ -518,7 +560,11 @@ class Librarian(
                 if "delivery_qty" not in res.columns and "delivery" in res.columns:
                     res["delivery_qty"] = res["delivery"]
 
-                self.loader.save_to_parquet(clean, res)
+                # The canonical path is a pure read. Seeding the cache here would
+                # rewrite a production artefact (and change the other consumer's
+                # data) as a side effect of building indicators.
+                if not canonical:
+                    self.loader.save_to_parquet(clean, res)
                 return res
         except Exception:
             pass

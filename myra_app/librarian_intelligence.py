@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import pandas_ta as ta
 
+from myra_app.constants import SOURCE_TECHNICAL_DATA
 from myra_core.utils.data_validation import enforce_index_contract, validate_dataframe
 from myra_core.utils.myra_log import myra_log
 
@@ -121,8 +122,14 @@ class LibrarianIntelligenceMixin:
         usable history. Exceptions are left to propagate: a failure for one
         symbol is the caller's to count and report, not this method's to hide
         behind a defaulted value.
+
+        Prices come from ``technical_data`` (Phase 21 decision F1), never from
+        the OHLCV cache. The cache holds *unadjusted* prices, so the default
+        cache-first read splices an unadjusted history onto an adjusted delta
+        and roughly doubles every moving average whose window straddles a
+        corporate action. A single indicator series must have a single basis.
         """
-        df = self.get_ohlcv(sym)
+        df = self.get_ohlcv(sym, source=SOURCE_TECHNICAL_DATA)
 
         if df is None or len(df) < 30:
             return None

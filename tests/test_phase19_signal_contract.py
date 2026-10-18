@@ -103,7 +103,8 @@ class _FakeLibrarian:
     def __init__(self, frame):
         self._frame = frame
 
-    def get_ohlcv(self, symbol):
+    def get_ohlcv(self, symbol, as_of_date=None, *, source=None):
+        # Mirrors the real signature (Phase 22 F1 added ``source``).
         return self._frame.copy()
 
 

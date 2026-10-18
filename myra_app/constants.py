@@ -32,6 +32,21 @@ USE_EOD2_DATA = True
 # to guarantee no writes happen during the rename window.
 ENABLE_DAILY_INGEST = True
 
+# ─── Canonical historical price source ───────────────────────────────────────
+# Identifies ``technical_data`` as the source that historical technical
+# indicators must be computed from (Phase 21 decision F1).
+#
+# Because USE_EOD2_DATA is True, technical_data holds corporate-action ADJUSTED
+# prices with history restated prior to each ex-date, so a series read from it
+# has no price jump at a split or bonus. The parquet OHLCV cache
+# (data/ohlcv_cache) holds UNADJUSTED prices and is not an alternative spelling
+# of the same data: merging the two produces a series with two price bases,
+# which roughly doubles every moving average spanning a corporate action.
+#
+# Live here rather than in ``librarian`` so both ``librarian`` and
+# ``librarian_intelligence`` can name it without an import cycle.
+SOURCE_TECHNICAL_DATA = "technical_data"
+
 # ─── Fundamentals writer ownership toggle ───────────────────────────────────
 # When True, ALL Myra-side writers to the `fundamentals` table in
 # myra_valuation.db are disabled.  The upstox_fetcher process now owns

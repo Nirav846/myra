@@ -108,7 +108,10 @@ class _FakeLibrarian(LibrarianIntelligenceMixin):
     def get_max_price_date(self):
         return self.reference_date
 
-    def get_ohlcv(self, symbol):
+    def get_ohlcv(self, symbol, as_of_date=None, *, source=None):
+        # Mirrors the real signature (Phase 22 F1 added ``source``). The real
+        # method reads technical_data when asked for the canonical basis; this
+        # fake just serves whatever the test stored under the symbol.
         return self._prices.get(symbol)
 
 

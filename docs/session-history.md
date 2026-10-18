@@ -1702,3 +1702,68 @@ operation, no backfill, no ingestion, no lake build, no scheduler start.*
   preserved, no ingestion/backfill/lake build/scheduler operation.
 - **Eight operator decisions** are listed in the Phase 21 report (F1-F8), the
   first being: adopt the adjusted basis and authorise the read-path fix.
+
+## Phase 22 - Canonical adjusted-price read path (decision F1)
+
+*Goal: implement Phase 21's approved F1 decision - make historical technical
+indicators read one price basis - without performing any historical recovery (F2),
+ingestion, lake build or production write.*
+
+- **F1 implemented; historical data deliberately NOT repaired.** The indicator
+  path now reads the corporate-action-adjusted series in `technical_data`
+  directly. The 12 degenerate sessions, the 99.3% NULL `sma_200`, and the 9
+  weekend-dated sessions all remain exactly as they were - this phase changed the
+  read path only.
+- **The fix is three small edits and adds no new data-access layer.**
+  `constants.SOURCE_TECHNICAL_DATA` names the canonical source (placed there, not
+  in `librarian`, because `librarian` already imports `librarian_intelligence`
+  and a constant there would be an import cycle). `get_ohlcv` gained a
+  keyword-only `source=` parameter; when set to the canonical source it skips the
+  cache read and the branch's `save_to_parquet` write-back, and reuses the
+  **already existing** `technical_data` read block unchanged.
+  `_compute_symbol_indicators` - the single producer for both lake build paths -
+  now asks for that source.
+- **Read-only by construction.** The canonical path suppresses the cache
+  write-back on purpose: seeding the cache there would rewrite a production
+  artefact as a side effect of building indicators, blurring a read-path change
+  into a data repair.
+- **Additive, not a breaking change.** `source` defaults to `None`, so the
+  cache-first behaviour every existing caller relies on is untouched. Missing
+  symbols/dates read as unavailable (`None`) and never fall back to unadjusted
+  cache prices. Ordering, `as_of_date`, symbol isolation and per-session
+  deduplication are unchanged.
+- **Consumers audited by reading their implementations, not their names.** Only
+  TWO consumers of `get_ohlcv` exist: the indicator lake and a chart plotter.
+  `backtest_engine` reads `technical_data` by direct SQL and therefore never
+  inherited the mixed basis - it was left alone, and a test now asserts it still
+  does not route through `get_ohlcv`. Exactly one consumer's read path changed.
+- **Chart semantics left unchanged on purpose.** Whether a price chart should
+  show actual traded levels or a continuous adjusted history is genuinely
+  ambiguous; guessing would have been worse than documenting it. It stays on the
+  legacy default.
+- **23 new tests**, synthetic data and temp databases only, covering the
+  corporate-action discontinuity, source selection, missing data, volume and
+  delivery semantics, backtest/rupee safeguards and preserved behaviour. Six
+  exercise the REAL `Librarian.get_ohlcv` body against a temp SQLite
+  `technical_data` plus a deliberately conflicting parquet cache. The Phase 21
+  guard - which asserted the *hazard* - was inverted to pin the *fix*, and two
+  older fakes were updated to mirror the new signature.
+- **Mutation-checked.** Disabling the fix made the integration tests fail with
+  exactly `unexpected 0.5016 jump at the ex-date` - the artificial 50%
+  discontinuity, reproduced on demand. The guards are real.
+- **Verified:** full suite **1797 passed** (Phase 21: 1773); focused
+  librarian/lake/indicator/ohlcv/parquet/phase suites **272 passed**;
+  `black`(pinned 26.10.1)/`flake8`/Performance-Guard/schema-drift clean.
+  **No production writes:** `myra_technical.db` mtime still 2026-10-17 11:55:59,
+  lake still 0 files, OHLCV cache still 3320 files at 2026-05-02, scheduler still
+  down (0 processes, port 8000 idle), `MYRA_V25_RANKING_INPUTS` still disabled,
+  no V2.5 score published, TriggerScanner still **operational**.
+- **Pre-existing drift, not ours:** the pinned black reformatted one unrelated
+  dict literal in `librarian.py`; the file at HEAD was already non-compliant with
+  black 26.10.1 (verified with `black --check` against `git show HEAD:...`), so
+  the repo's own hook mandates it on any commit touching that file.
+- **Still open, not in scope for F1:** the cache lifecycle (retire / rebuild /
+  keep-for-charts); whether any backtest output is consumed as an absolute rupee
+  amount, which adjusted prices would make wrong for level-based sizing; and the
+  lake artifact carrying fewer columns than the cache frame, to confirm at the
+  first real build.
