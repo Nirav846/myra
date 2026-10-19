@@ -2117,3 +2117,67 @@ job or production write.*
   month-name-then-year versus ISO `YYYY-MM`. Labels absent means a per-symbol
   reality and remaining parked is correct; labels present but elsewhere means the
   parser contract drifted and needs its own bounded, validated fix.
+
+## Phase 29 - AAATECH quarterly table structure and period-label diagnostic
+
+*One authorized HTTP request, one symbol. No refresh, retry, bulk run, scheduler
+job or production write.*
+
+- **Verdict: TABLE PRESENT WITHOUT PERIOD-LIKE HEADERS - DATE CONTRACT STILL
+  OPEN.** Phase 28's last ambiguity is resolved.
+- **Preflight:** HEAD `12085e0`, main, clean and synced; no MYRA writer; no
+  listener on 8000/3000; all WAL files zero-length.
+- **Added in the tool only:** `quarterly_table_present`, `quarterly_table_count`,
+  `header_cell_count`, `recognized_period_header_count`, `mon_year_header_count`,
+  `iso_year_month_header_count`, `structure_classification`
+  (`SECTION_ABSENT`/`NO_TABLE`/`TABLE_NO_PERIOD_LABELS`/
+  `TABLE_PERIOD_LABELS_IN_UNEXPECTED_STRUCTURE`/`EXPECTED_TABLE_MATCHED`/
+  `AMBIGUOUS`). `myra_app/` untouched - parser and fetcher unchanged, so ingestion
+  cannot have shifted.
+- **`Mon YYYY` and `YYYY-MM` are tested independently** of the parser's
+  recogniser, with months validated so `2026-00` and `2026-13` are rejected.
+  Ambiguity (several tables, or several period-labelled rows) is reported as
+  `AMBIGUOUS`, never resolved by silently picking a row. Unavailable counts are
+  `null`, never a `0` that would read as "found none".
+- **Discovery about the existing flag:** `parse_quarterly` accepts any non-empty
+  header cell as a column, so `quarterly_table_matched` is true for a header of
+  `Column A`/`Column B` too. Classification is therefore driven by the period-label
+  structure, not by that flag; a test pins the two apart.
+- **Result: HTTP 200, 81,852 bytes, 3.597s, no retry.**
+  `quarterly_section_present=true`, `quarterly_table_present=true`,
+  `quarterly_table_count=1`, `header_cell_count=0`,
+  `recognized_period_header_count=0`, `mon_year_header_count=0`,
+  `iso_year_month_header_count=0`, `quarterly_table_matched=false`,
+  `structure_classification=TABLE_NO_PERIOD_LABELS`. The byte length is identical
+  to Phases 27 and 28 from a third independent request, so the page is
+  deterministic. A first invocation attempt failed with `ModuleNotFoundError` at
+  the import, before the request was issued - it spent no request.
+- **What it establishes:** the section DOES contain a table, so Phase 28's "no
+  table" case is excluded. The header row the parser reads has zero cells after the
+  label column, which alone explains the persistent parse miss. And no row in the
+  table carries a period-like label in its non-first columns - otherwise the
+  classification would be `TABLE_PERIOD_LABELS_IN_UNEXPECTED_STRUCTURE`. So the
+  labels are not merely in the wrong row.
+- **What it does not establish, stated plainly:** why row 0 has no cells. A
+  single-cell title row, a label-only cell, labels in the first cell of rows,
+  labels outside `<tr>`, and genuinely absent labels are all indistinguishable
+  here, because the tool never reads cell text by design. `header_cell_count=0`
+  also conflates "one label-only cell" with "no cells at all". One symbol cannot
+  prove a site-wide change; the other 118 parked symbols are unexamined.
+- **Tests, all mocked and all before the request:** 56 new in
+  `tests/test_screener_probe_table_structure.py`; 63 existing (26 + 37) unchanged;
+  119 across the three probe suites; **full suite 2010 passed, 0 failed** (5:56),
+  internally consistent with 1954 + 56. black/flake8/guards clean. The privacy
+  boundary is still structural - a test plants a secret in body and `Set-Cookie`
+  and asserts `Sep 2025`, `123456.78` and `Revenue` are all equally absent.
+- **No production write, re-verified value by value:** 10,798 quarterly rows,
+  3,951 fundamentals rows, 0 placeholder and 0 blank report dates, AAATECH 0
+  quarterly rows, `AAATECH.last_updated` 2026-10-17, 119 parked with AAATECH
+  present - all identical.
+- **Next step, only with new authorization:** do not change the parser. One more
+  value-free request capturing layout only - total cells in row 0 including the
+  label column, `<thead>`/`<tbody>` presence and row counts, the table's row count,
+  and whether period-shaped markup exists outside `<tr>`. Only a systematic wrapper
+  structure would justify a parser change, and that alters ingestion and so needs
+  its own explicit authorization and bounded validation. If row 0 is a per-symbol
+  single-cell title row, AAATECH staying parked is correct.

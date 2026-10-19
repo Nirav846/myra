@@ -1,4 +1,4 @@
-"""Single-symbol, single-request Screener.in diagnostic (Phase 27).
+"""Single-symbol, single-request Screener.in diagnostic (Phases 27-29).
 
 Why this exists
 ---------------
@@ -45,12 +45,27 @@ Outcome                                  What it supports
                                          site's HTTP status is unknown.
 ======================================  ====================================
 
+On a 200, ``structure_classification`` states which of these was observed:
+
+* ``EXPECTED_TABLE_MATCHED`` -- row 0 carries period labels and production
+  parsing matched.
+* ``TABLE_PERIOD_LABELS_IN_UNEXPECTED_STRUCTURE`` -- period-like labels exist,
+  but not where the parser reads them.
+* ``TABLE_NO_PERIOD_LABELS`` -- a table exists, but no row carries period labels.
+* ``NO_TABLE`` -- the section exists but holds no table.
+* ``SECTION_ABSENT`` -- no quarterly section was found.
+* ``AMBIGUOUS`` -- the evidence does not identify one authoritative structure.
+
+A matching label shape is a structural observation only. It is never a period
+assigned to a financial row.
+
 A single symbol cannot establish the failure distribution across a whole run.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import time
 from datetime import datetime, timezone
 
@@ -69,6 +84,15 @@ ALLOWED_FIELDS = frozenset(
         "quarterly_section_present",
         "quarterly_header_has_period_label",
         "quarterly_section_detection",
+        # Phase 29: structural counts (small integers or null) and one
+        # enumerated classification. No cell text, dates or values.
+        "quarterly_table_present",
+        "quarterly_table_count",
+        "header_cell_count",
+        "recognized_period_header_count",
+        "mon_year_header_count",
+        "iso_year_month_header_count",
+        "structure_classification",
         "elapsed_seconds",
         "completed_without_retry",
         "transport_exception_class",
@@ -117,77 +141,235 @@ def _is_period_label(text: str) -> bool:
     return year > 0 and 1 <= month <= 12
 
 
+#: Strict ``Mon YYYY``: a month name followed by a four-digit year.
+_MONTH_YEAR_RE = re.compile(r"^[A-Za-z]{3,9}\s+\d{4}$")
+
+#: Strict ``YYYY-MM``. The month is validated separately, so a syntactically
+#: plausible but impossible ``2026-00`` or ``2026-13`` is refused.
+_ISO_YEAR_MONTH_RE = re.compile(r"^(\d{4})-(\d{2})$")
+
+
+def _is_mon_year_label(text: str) -> bool:
+    """Whether ``text`` is a strict month-name + four-digit-year label.
+
+    An *independent* shape test, not the parser's recogniser: it reports what
+    the header looks like, so it must not borrow the recogniser's leniency (the
+    recogniser also accepts ISO). The month name is resolved through the
+    parser's own ``report_date_sort_key`` so a non-month such as ``Foo 2025``
+    cannot pass.
+    """
+    from myra_app.data_sources.screener_parse import report_date_sort_key
+
+    candidate = text.strip()
+    if not _MONTH_YEAR_RE.match(candidate):
+        return False
+    year, month = report_date_sort_key(candidate)
+    return year > 0 and 1 <= month <= 12
+
+
+def _is_iso_year_month_label(text: str) -> bool:
+    """Whether ``text`` is a strict ``YYYY-MM`` label with a real month.
+
+    ``2026-00`` and ``2026-13`` are rejected: the shape is plausible, the month
+    is not.
+    """
+    match = _ISO_YEAR_MONTH_RE.match(text.strip())
+    if match is None:
+        return False
+    return 1 <= int(match.group(2)) <= 12
+
+
+def _row_has_period_label(row) -> bool:
+    """Whether any cell after the row-label column is a period label."""
+    cells = row.find_all(["th", "td"])
+    return any(_is_period_label(cell.get_text().strip()) for cell in cells[1:])
+
+
+def _locate_section(soup):
+    """Return ``(section, state)``, state in present/absent/indeterminate.
+
+    ``#quarters`` wins, matching ``_quarterly_table``. Otherwise a section whose
+    text mentions quarterly results is used; if more than one does, the answer
+    is ``indeterminate`` rather than a guess.
+    """
+    section = soup.find(id="quarters")
+    if section is not None:
+        return section, "present"
+    candidates = [
+        node
+        for node in soup.find_all("section")
+        if "quarterly" in node.get_text().lower()
+    ]
+    if not candidates:
+        return None, "absent"
+    if len(candidates) > 1:
+        return None, "indeterminate"
+    return candidates[0], "present"
+
+
+def _expected_table_matched(html: str) -> bool:
+    """Whether production parsing found quarterly columns in this response.
+
+    Unchanged in meaning from the original diagnostic: it calls the real
+    ``parse_company_page``, so the answer is what the parser did rather than a
+    re-implementation of it.
+    """
+    from myra_app.data_sources.screener_parse import parse_company_page
+
+    try:
+        return bool(parse_company_page(html)["quarterly"])
+    except Exception:  # noqa: BLE001 - a parse failure is itself an observation
+        return False
+
+
+#: Returned when structure inspection itself fails. Every count is ``None`` --
+#: "not available" -- never a zero that would read as "found none".
+_SAFE_DEFAULT = {
+    "section": "indeterminate",
+    "header_has_period_label": False,
+    "table_present": False,
+    "table_count": 0,
+    "header_cell_count": None,
+    "recognized_period_header_count": None,
+    "mon_year_header_count": None,
+    "iso_year_month_header_count": None,
+    "expected_table_matched": False,
+    "classification": "AMBIGUOUS",
+}
+
+
 def detect_quarterly_structure(html: str) -> dict:
-    """Classify the quarterly section and its header, without reading values.
+    """Classify the quarterly section, its table and its header, value-free.
 
-    Returns ``{"section": ..., "header_has_period_label": bool}`` where section
-    is ``"present"``, ``"absent"`` or ``"indeterminate"``.
+    Reports three facts that the original single boolean collapsed together:
+    whether the quarterly section exists, whether a table exists inside it, and
+    whether that table's header carries labels the parser recognises. It adds
+    structural *counts* describing that header and one ``classification`` from a
+    small fixed set:
 
-    Section presence is detected *independently* of whether the expected table
-    matched: a section can exist while the table the parser looks for does not,
-    and reporting one fact as the other would send the follow-up investigation
-    to the wrong place.
+    ``SECTION_ABSENT``
+        No quarterly section was found in this response.
+    ``NO_TABLE``
+        The section exists but holds no table.
+    ``TABLE_NO_PERIOD_LABELS``
+        A table exists, but no row carries a period-like label.
+    ``TABLE_PERIOD_LABELS_IN_UNEXPECTED_STRUCTURE``
+        Period-like labels exist, but not where the parser reads them (its
+        header is row 0).
+    ``EXPECTED_TABLE_MATCHED``
+        Row 0 carries period labels *and* production parsing matched.
+    ``AMBIGUOUS``
+        The evidence does not identify one authoritative structure.
 
-    ``"indeterminate"`` is a real outcome, not a failure: if several sections
-    plausibly describe quarterly results, this cannot say which one the parser
-    would read, and a guess would be worse than an admission.
+    Counts describe the parser's own header row (row 0, excluding the row-label
+    column) and are ``None`` when that row is not reliably available. A matching
+    shape is a structural observation only: it is never treated as a period that
+    could be assigned to a financial row.
+
+    ``expected_table_matched`` is reported alongside the classification but is a
+    weaker signal: ``parse_quarterly`` accepts any non-empty header cell as a
+    column, so a header of "Column A" matches while carrying no period at all.
+    The classification is driven by the period-label structure, not by that flag.
     """
     from bs4 import BeautifulSoup
 
     soup = BeautifulSoup(html, "html.parser")
+    section, state = _locate_section(soup)
 
-    section = soup.find(id="quarters")
-    if section is None:
-        candidates = [
-            node
-            for node in soup.find_all("section")
-            if "quarterly" in node.get_text().lower()
-        ]
-        if not candidates:
-            return {"section": "absent", "header_has_period_label": False}
-        if len(candidates) > 1:
-            return {"section": "indeterminate", "header_has_period_label": False}
-        section = candidates[0]
-
-    # A present section with no table has no header to read. That is a
-    # legitimate observation, not an error.
-    table = section.find("table")
-    if table is None:
-        return {"section": "present", "header_has_period_label": False}
-
-    rows = table.find_all("tr")
-    if not rows:
-        return {"section": "present", "header_has_period_label": False}
-
-    # Mirror `parse_quarterly`: the header it reads is row 0, skipping the
-    # row-label column. Diagnosing a different row would not tell us whether
-    # the parser's own contract is satisfied.
-    header_cells = rows[0].find_all(["th", "td"])
-    labels = [cell.get_text().strip() for cell in header_cells[1:]]
-    return {
-        "section": "present",
-        "header_has_period_label": any(_is_period_label(t) for t in labels),
+    result = {
+        "section": state,
+        "header_has_period_label": False,
+        "table_present": False,
+        "table_count": 0,
+        "header_cell_count": None,
+        "recognized_period_header_count": None,
+        "mon_year_header_count": None,
+        "iso_year_month_header_count": None,
+        "expected_table_matched": False,
+        "classification": "SECTION_ABSENT",
     }
+
+    if state == "indeterminate":
+        result["classification"] = "AMBIGUOUS"
+        return result
+    if state == "absent":
+        return result
+
+    result["expected_table_matched"] = _expected_table_matched(html)
+
+    tables = section.find_all("table")
+    result["table_count"] = len(tables)
+    result["table_present"] = bool(tables)
+
+    # Counts are only meaningful with exactly one table in play: with several
+    # there is no single "relevant header row", so the counts stay None.
+    rows = []
+    if len(tables) == 1:
+        rows = tables[0].find_all("tr")
+        if rows:
+            labels = [
+                cell.get_text().strip() for cell in rows[0].find_all(["th", "td"])[1:]
+            ]
+            result["header_cell_count"] = len(labels)
+            result["recognized_period_header_count"] = sum(
+                _is_period_label(text) for text in labels
+            )
+            result["mon_year_header_count"] = sum(
+                _is_mon_year_label(text) for text in labels
+            )
+            result["iso_year_month_header_count"] = sum(
+                _is_iso_year_month_label(text) for text in labels
+            )
+            result["header_has_period_label"] = (
+                result["recognized_period_header_count"] > 0
+            )
+
+    # Classification follows the *structure* the period labels reveal, not
+    # ``expected_table_matched``: that flag is weak, because ``parse_quarterly``
+    # accepts any non-empty header cell as a column (it never checks that a cell
+    # is a date). So a header of "Column A" matches too. The two are reported
+    # side by side on purpose; neither implies the other.
+    if not tables:
+        result["classification"] = "NO_TABLE"
+    elif len(tables) > 1:
+        # More than one table in the section: which one is authoritative is not
+        # determinable, so neither is the structure.
+        result["classification"] = "AMBIGUOUS"
+    else:
+        label_rows = [
+            index for index, row in enumerate(rows) if _row_has_period_label(row)
+        ]
+        if len(label_rows) > 1:
+            # Period labels in more than one row: which one the parser would
+            # read is not determinable, so neither is the structure.
+            result["classification"] = "AMBIGUOUS"
+        elif result["header_has_period_label"] and result["expected_table_matched"]:
+            result["classification"] = "EXPECTED_TABLE_MATCHED"
+        elif label_rows:
+            result["classification"] = "TABLE_PERIOD_LABELS_IN_UNEXPECTED_STRUCTURE"
+        else:
+            result["classification"] = "TABLE_NO_PERIOD_LABELS"
+    return result
 
 
 def _safe_detect(html: str) -> dict:
     """``detect_quarterly_structure`` that cannot raise and cannot leak.
 
-    Any failure is reported as indeterminate. The exception message is
-    deliberately discarded: it can echo page markup.
+    Any failure is reported as indeterminate with null counts. The exception
+    message is deliberately discarded: it can echo page markup.
     """
     try:
         return detect_quarterly_structure(html)
     except Exception:  # noqa: BLE001 - an unreachable structure is an answer
-        return {"section": "indeterminate", "header_has_period_label": False}
+        return dict(_SAFE_DEFAULT)
 
 
 def classify_response(response, elapsed_seconds: float, symbol: str) -> dict:
     """Turn a 200-or-other HTTP response into a sanitised result.
 
     The response is inspected in memory only: its byte length is recorded, and
-    the quarterly table is detected to decide the boolean. No part of the body
-    is returned, and for a non-200 no body is read at all.
+    the quarterly structure is classified to fill the structural fields. No part
+    of the body is returned, and for a non-200 no body is read at all.
     """
     status = getattr(response, "status_code", None)
     out = _result(
@@ -197,26 +379,31 @@ def classify_response(response, elapsed_seconds: float, symbol: str) -> dict:
         completed_without_retry=True,
     )
     if status == 200:
-        from myra_app.data_sources.screener_parse import parse_company_page
-
-        try:
-            matched = bool(parse_company_page(response.text)["quarterly"])
-        except Exception:  # noqa: BLE001 - detection failure is itself the answer
-            matched = False
         structure = _safe_detect(response.text)
         out["outcome"] = (
             "INDETERMINATE_STRUCTURE"
             if structure["section"] == "indeterminate"
+            or structure["classification"] == "AMBIGUOUS"
             else "HTTP_RESPONSE"
         )
         out["response_bytes"] = len(response.content)
-        out["quarterly_table_matched"] = matched
-        # The two observations. On an indeterminate result these stay False
-        # rather than asserting absence; the detection field carries the
-        # ambiguity so nothing is claimed that was not observed.
+        out["quarterly_table_matched"] = structure["expected_table_matched"]
+        # The section/table/header observations. On an indeterminate or
+        # ambiguous result the booleans stay False rather than asserting
+        # absence; the detection and classification fields carry the ambiguity
+        # so nothing is claimed that was not observed.
         out["quarterly_section_detection"] = structure["section"]
         out["quarterly_section_present"] = structure["section"] == "present"
         out["quarterly_header_has_period_label"] = structure["header_has_period_label"]
+        out["quarterly_table_present"] = structure["table_present"]
+        out["quarterly_table_count"] = structure["table_count"]
+        out["header_cell_count"] = structure["header_cell_count"]
+        out["recognized_period_header_count"] = structure[
+            "recognized_period_header_count"
+        ]
+        out["mon_year_header_count"] = structure["mon_year_header_count"]
+        out["iso_year_month_header_count"] = structure["iso_year_month_header_count"]
+        out["structure_classification"] = structure["classification"]
     else:
         # A refusal is still an HTTP response. Its body is never touched.
         out["outcome"] = "HTTP_RESPONSE"
