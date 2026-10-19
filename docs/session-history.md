@@ -2061,3 +2061,59 @@ job or production write.*
   resolve the one ambiguity, still in a single request for the same symbol.
   Section absent means a per-symbol data reality; section present but undated
   means the parser's date contract needs its own bounded follow-up.
+
+## Phase 28 - AAATECH quarterly section and period-header diagnostic
+
+*One authorized HTTP request, one symbol. No refresh, retry, bulk run, scheduler
+job or production write.*
+
+- **Verdict: SECTION PRESENT BUT PERIOD LABEL MISSING - DATE CONTRACT FOLLOW-UP
+  NEEDED.** This resolves the exact ambiguity Phase 27 could not.
+- **Preflight:** HEAD `12827a7`, main, clean and synced; no MYRA writer; no
+  listener on 8000/3000; all five WAL files zero-length (checkpointed). A process
+  scan first appeared to show a writer - it was my own PowerShell command line
+  matching its own search pattern, and excluding shell processes returned
+  nothing.
+- **What was added, in the tool only:** two observations, `quarterly_section_present`
+  and `quarterly_header_has_period_label`, plus `quarterly_section_detection`
+  (`present`/`absent`/`indeterminate`) as the documented indeterminate channel the
+  brief allows rather than forcing a false result. Production source was NOT
+  touched - `screener_parse.py` and the fetcher are unchanged, so ingestion
+  behaviour is unaffected. Purely additive.
+- **Period recognition reuses the parser's own `report_date_sort_key`**, plus a
+  month 1-12 / non-zero-year check so a malformed `2026-0` is rejected. Nothing
+  is inferred from values, column position, the current date, or the `Q-1`..`Q-4`
+  convention - which is a placeholder and is asserted non-recognised by test.
+  Header inspection mirrors `parse_quarterly` (row 0, skipping the row-label
+  column) so the answer speaks to the parser's own contract.
+- **Result: HTTP 200, 81,852 bytes, 3.738s, no retry.**
+  `quarterly_section_present=true`, `quarterly_section_detection=present`,
+  `quarterly_header_has_period_label=false`, `quarterly_table_matched=false`.
+  The byte length is **identical to Phase 27** from an independent request a day
+  apart, so the page is deterministic.
+- **What it establishes:** a quarterly section DOES exist, so the Phase 27 miss
+  is not "this symbol has no quarterly page". The header the parser reads carries
+  no recognisable period label. The follow-up therefore belongs on the parser's
+  date/header contract, not on per-symbol data availability.
+- **What it does not establish, stated plainly:** one symbol cannot prove a
+  site-wide change. And the probe cannot separate "section has no table at all"
+  from "table exists but its row 0 has no period labels" - both yield false. Same
+  verdict and same follow-up either way, but the next step will need that
+  distinction and this output cannot supply it. Why the labels are absent is
+  genuinely unknown, since no page content was retained by design.
+- **Tests, all mocked and all before the request:** 37 new in
+  `tests/test_screener_probe_structure.py`; 63 with the Phase 27 suite; 113
+  focused+related; **full suite 1954 passed, 0 failed** (internally consistent:
+  1891 + 26 + 37). black/flake8/guards clean. The privacy boundary is still
+  structural - a test plants a secret in body and `Set-Cookie` and asserts the
+  label `Sep 2025`, the value `123456.78` and the row label `Revenue` are all
+  equally absent.
+- **No production write, re-verified value by value:** 229/119 sync, 119 parked,
+  AAATECH 4 fails, 10,798 quarterly rows, 3,951 fundamentals rows, 0 placeholder
+  rows, `AAATECH.last_updated` 2026-10-17 - all identical.
+- **Next step, only with new authorization:** one request capturing structural
+  facts only - does the section contain a table at all, the header cell count,
+  how many a period recogniser accepts, and whether any cell shape matches
+  month-name-then-year versus ISO `YYYY-MM`. Labels absent means a per-symbol
+  reality and remaining parked is correct; labels present but elsewhere means the
+  parser contract drifted and needs its own bounded, validated fix.

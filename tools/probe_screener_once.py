@@ -64,6 +64,11 @@ ALLOWED_FIELDS = frozenset(
         "http_status",
         "response_bytes",
         "quarterly_table_matched",
+        # Phase 28: the section/header observations are booleans and an
+        # enumerated detection state -- never header text.
+        "quarterly_section_present",
+        "quarterly_header_has_period_label",
+        "quarterly_section_detection",
         "elapsed_seconds",
         "completed_without_retry",
         "transport_exception_class",
@@ -94,6 +99,89 @@ def _result(**fields) -> dict:
     return {k: v for k, v in fields.items() if k in ALLOWED_FIELDS}
 
 
+def _is_period_label(text: str) -> bool:
+    """Whether ``text`` is a real reporting-period label.
+
+    Recognition uses the parser's *own* ``report_date_sort_key`` rather than
+    anything introduced here, so "a period label" means exactly what production
+    parsing means by one. That helper returns ``(0, 0)`` for anything it cannot
+    read, and real labels always carry a month of 1-12, so a malformed header
+    such as "2026-0" is correctly rejected rather than counted.
+
+    Nothing is inferred from values, column position, the current date, or a
+    ``Q-1``-style convention: only an explicitly recognised label qualifies.
+    """
+    from myra_app.data_sources.screener_parse import report_date_sort_key
+
+    year, month = report_date_sort_key(text)
+    return year > 0 and 1 <= month <= 12
+
+
+def detect_quarterly_structure(html: str) -> dict:
+    """Classify the quarterly section and its header, without reading values.
+
+    Returns ``{"section": ..., "header_has_period_label": bool}`` where section
+    is ``"present"``, ``"absent"`` or ``"indeterminate"``.
+
+    Section presence is detected *independently* of whether the expected table
+    matched: a section can exist while the table the parser looks for does not,
+    and reporting one fact as the other would send the follow-up investigation
+    to the wrong place.
+
+    ``"indeterminate"`` is a real outcome, not a failure: if several sections
+    plausibly describe quarterly results, this cannot say which one the parser
+    would read, and a guess would be worse than an admission.
+    """
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    section = soup.find(id="quarters")
+    if section is None:
+        candidates = [
+            node
+            for node in soup.find_all("section")
+            if "quarterly" in node.get_text().lower()
+        ]
+        if not candidates:
+            return {"section": "absent", "header_has_period_label": False}
+        if len(candidates) > 1:
+            return {"section": "indeterminate", "header_has_period_label": False}
+        section = candidates[0]
+
+    # A present section with no table has no header to read. That is a
+    # legitimate observation, not an error.
+    table = section.find("table")
+    if table is None:
+        return {"section": "present", "header_has_period_label": False}
+
+    rows = table.find_all("tr")
+    if not rows:
+        return {"section": "present", "header_has_period_label": False}
+
+    # Mirror `parse_quarterly`: the header it reads is row 0, skipping the
+    # row-label column. Diagnosing a different row would not tell us whether
+    # the parser's own contract is satisfied.
+    header_cells = rows[0].find_all(["th", "td"])
+    labels = [cell.get_text().strip() for cell in header_cells[1:]]
+    return {
+        "section": "present",
+        "header_has_period_label": any(_is_period_label(t) for t in labels),
+    }
+
+
+def _safe_detect(html: str) -> dict:
+    """``detect_quarterly_structure`` that cannot raise and cannot leak.
+
+    Any failure is reported as indeterminate. The exception message is
+    deliberately discarded: it can echo page markup.
+    """
+    try:
+        return detect_quarterly_structure(html)
+    except Exception:  # noqa: BLE001 - an unreachable structure is an answer
+        return {"section": "indeterminate", "header_has_period_label": False}
+
+
 def classify_response(response, elapsed_seconds: float, symbol: str) -> dict:
     """Turn a 200-or-other HTTP response into a sanitised result.
 
@@ -115,9 +203,20 @@ def classify_response(response, elapsed_seconds: float, symbol: str) -> dict:
             matched = bool(parse_company_page(response.text)["quarterly"])
         except Exception:  # noqa: BLE001 - detection failure is itself the answer
             matched = False
-        out["outcome"] = "HTTP_RESPONSE"
+        structure = _safe_detect(response.text)
+        out["outcome"] = (
+            "INDETERMINATE_STRUCTURE"
+            if structure["section"] == "indeterminate"
+            else "HTTP_RESPONSE"
+        )
         out["response_bytes"] = len(response.content)
         out["quarterly_table_matched"] = matched
+        # The two observations. On an indeterminate result these stay False
+        # rather than asserting absence; the detection field carries the
+        # ambiguity so nothing is claimed that was not observed.
+        out["quarterly_section_detection"] = structure["section"]
+        out["quarterly_section_present"] = structure["section"] == "present"
+        out["quarterly_header_has_period_label"] = structure["header_has_period_label"]
     else:
         # A refusal is still an HTTP response. Its body is never touched.
         out["outcome"] = "HTTP_RESPONSE"
