@@ -2181,3 +2181,72 @@ job or production write.*
   structure would justify a parser change, and that alters ingestion and so needs
   its own explicit authorization and bounded validation. If row 0 is a per-symbol
   single-cell title row, AAATECH staying parked is correct.
+
+## Phase 30 - AAATECH quarterly table layout diagnostic
+
+*One authorized HTTP request, one symbol. No refresh, retry, bulk run, scheduler
+job or production write.*
+
+- **Verdict: LABEL-ONLY FIRST ROW OBSERVED - PARSER CHANGE NOT JUSTIFIED.**
+  Phase 29's last ambiguity (`header_cell_count=0` conflating "one label-only
+  cell" with "no cells") is resolved.
+- **Preflight:** HEAD `7a6a924`, main, clean and synced; no MYRA writer; no
+  listener on 8000/3000; all WAL files zero-length. `_quarterly_table` and
+  `parse_quarterly` were read first, because the parser reads
+  `table.find_all("tr")[0]` - a *recursive* search, so a `<thead>` row IS the row
+  it reads. That framing decided how the layout question had to be asked.
+- **Added in the tool only:** `row0_total_cell_count`, `table_row_count`,
+  `thead_present`/`thead_row_count`, `tbody_present`/`tbody_row_count`,
+  `period_shaped_markup_outside_tr`, and `layout_classification`
+  (`NO_QUARTERLY_SECTION`/`NO_TABLE`/`TABLE_WITHOUT_ROWS`/
+  `TABLE_WITH_LABEL_ONLY_FIRST_ROW`/`TABLE_WITH_STRUCTURAL_HEADER`/
+  `PERIOD_SHAPED_MARKUP_OUTSIDE_ROWS`/`AMBIGUOUS_LAYOUT`). `myra_app/` untouched.
+- **`structure_classification` was deliberately NOT repurposed** - Phase 28/29
+  published it as a documented, tested label-axis allowlist, so the layout
+  question became a *second axis* (`layout_classification`) and both are reported.
+  Phase 29's tests are unchanged and still pass.
+- **Measurement rules:** only the detected section and its selected table; rows
+  counted as `<tr>` whose nearest ancestor table is the selected one (nested
+  tables excluded); presence and row counts reported separately, so "present but
+  empty" (`True`, 0) differs from "absent" (`False`, `None`); `thead`/`tbody` read
+  as direct children only; `period_shaped_markup_outside_tr` narrow (skips text
+  inside a `<tr>`, validates the token via `report_date_sort_key`, returns only a
+  bool); `None` means unavailable, never a zero reading as "measured none".
+- **Result: HTTP 200, 81,852 bytes, 2.947s, no retry.**
+  **`row0_total_cell_count=1`** - the first row is a *label-only* row, not a row
+  with no cells. `table_row_count=13`, `thead_present=true` (1 row),
+  `tbody_present=true` (12 rows), `period_shaped_markup_outside_tr=false`,
+  `layout_classification=TABLE_WITH_LABEL_ONLY_FIRST_ROW`,
+  `structure_classification=TABLE_NO_PERIOD_LABELS`,
+  `quarterly_table_matched=false`. Fourth identical byte length - deterministic.
+- **What it establishes:** the first row has exactly one cell, so the parser has
+  nothing after the label column and no date can be read from row 0 whatever that
+  cell holds - the parse miss is explained by structure alone. The wrapper is
+  standard and complete (1 + 12 = 13) and, because the parser's row search is
+  recursive, it already traverses `thead`: **the wrapper is benign, not the
+  cause.** No period markup outside rows, and none in any row's non-first columns.
+- **What it does not establish, stated plainly:** what the single cell contains,
+  and where the page's periods live if anywhere. Given the two negative scans, the
+  only remaining place is the **label column** (cell index 0 of each row) - which
+  the diagnostic does not read, because it mirrors the parser's contract rather
+  than exceeding it. That is a scope limit, not a finding. One symbol cannot show
+  the 118 other parked symbols share this shape.
+- **Wrapper documented, judged benign:** `thead`/`tbody` were observed and are
+  recorded as evidence, but they cannot justify a parser review here - the parser
+  handles them correctly, and one symbol cannot make a wrapper look "systematic".
+- **Tests, all mocked and all before the request:** 51 new in
+  `tests/test_screener_probe_layout.py`; 119 existing unchanged; 170 across the
+  four probe suites; **full suite 2061 passed, 0 failed** (5:44), internally
+  consistent with 2010 + 51. Two tests pin the reasoning itself: the two axes'
+  counts must satisfy `row0_total = header_cell_count + 1`, and a zero-cell first
+  row is *not* reported as label-only. black/flake8/guards clean.
+- **No production write, re-verified value by value:** 10,798 quarterly rows,
+  3,951 fundamentals rows, 0 placeholder and 0 blank report dates, AAATECH 0
+  quarterly rows, `AAATECH.last_updated` 2026-10-17, 119 parked with AAATECH
+  present - all identical.
+- **Recommendation: no separate parser-contract investigation is justified. Do not
+  change the parser; keep AAATECH parked.** Reading the label column would not
+  fix it: assigning a period from row position is exactly the inference this task
+  forbids. Pursuing it further is a *source-evidence* question needing its own
+  authorization, and answering it would require reading cell text, which the
+  privacy boundary deliberately prevents.

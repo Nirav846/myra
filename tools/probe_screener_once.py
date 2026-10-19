@@ -59,6 +59,14 @@ On a 200, ``structure_classification`` states which of these was observed:
 A matching label shape is a structural observation only. It is never a period
 assigned to a financial row.
 
+``layout_classification`` is a second, separate axis: it describes the table's
+layout from element and cell counts alone -- ``NO_QUARTERLY_SECTION``,
+``NO_TABLE``, ``TABLE_WITHOUT_ROWS``, ``TABLE_WITH_LABEL_ONLY_FIRST_ROW``,
+``TABLE_WITH_STRUCTURAL_HEADER``, ``PERIOD_SHAPED_MARKUP_OUTSIDE_ROWS`` or
+``AMBIGUOUS_LAYOUT``. ``structure_classification`` answers "are period labels
+where the parser reads them?"; ``layout_classification`` answers "what shape is
+the first row, and does the table use a wrapper structure?".
+
 A single symbol cannot establish the failure distribution across a whole run.
 """
 
@@ -93,6 +101,17 @@ ALLOWED_FIELDS = frozenset(
         "mon_year_header_count",
         "iso_year_month_header_count",
         "structure_classification",
+        # Phase 30: layout-only observations -- element presence and row/cell
+        # counts, one enumerated layout classification, and one boolean. Still
+        # no cell text, no dates, no values.
+        "row0_total_cell_count",
+        "thead_present",
+        "thead_row_count",
+        "tbody_present",
+        "tbody_row_count",
+        "table_row_count",
+        "period_shaped_markup_outside_tr",
+        "layout_classification",
         "elapsed_seconds",
         "completed_without_retry",
         "transport_exception_class",
@@ -185,6 +204,60 @@ def _row_has_period_label(row) -> bool:
     return any(_is_period_label(cell.get_text().strip()) for cell in cells[1:])
 
 
+#: Period-shaped tokens for the layout scan. The month-name form is validated
+#: afterwards, so a phrase such as "Quarterly 2025" cannot pass as a period.
+_PERIOD_TOKEN_RE = re.compile(r"\b\d{4}-(?:0[1-9]|1[0-2])\b|\b[A-Za-z]{3,9}\s+\d{4}\b")
+
+
+def _direct_child(table, name: str):
+    """The first direct child element of ``table`` named ``name``, else ``None``.
+
+    Immediate children only, on purpose: ``<thead>``/``<tbody>`` are meaningful
+    only as direct children of the table, and a descendant search would quietly
+    accept stray nesting as though it were a structural wrapper.
+    """
+    for child in table.children:
+        if getattr(child, "name", None) == name:
+            return child
+    return None
+
+
+def _text_has_period_shape(text: str) -> bool:
+    """Whether ``text`` holds a valid period-shaped token -- returning only a bool.
+
+    Nothing but a boolean leaves this function: the token, and the text around
+    it, are never stored or reported. The month is validated through the parser's
+    own ``report_date_sort_key``, so ``2026-00`` and the phrase "Quarterly 2025"
+    are both rejected rather than counted.
+    """
+    from myra_app.data_sources.screener_parse import report_date_sort_key
+
+    for token in _PERIOD_TOKEN_RE.findall(text):
+        year, month = report_date_sort_key(token)
+        if year > 0 and 1 <= month <= 12:
+            return True
+    return False
+
+
+def _period_shaped_markup_outside_rows(section) -> bool:
+    """Whether period-shaped markup sits outside any table-row element.
+
+    Scoped to the detected section, so an unrelated table elsewhere on the page
+    cannot influence the answer. Text inside a ``<tr>`` is skipped; everything
+    else in the section -- a ``<caption>``, a stray heading, text between rows --
+    is checked. A boolean is all that escapes; no fragment is retained.
+    """
+    for node in section.find_all(string=True):
+        parent = node.parent
+        if parent is not None and (
+            getattr(parent, "name", None) == "tr" or parent.find_parent("tr")
+        ):
+            continue
+        if _text_has_period_shape(str(node)):
+            return True
+    return False
+
+
 def _locate_section(soup):
     """Return ``(section, state)``, state in present/absent/indeterminate.
 
@@ -235,6 +308,15 @@ _SAFE_DEFAULT = {
     "iso_year_month_header_count": None,
     "expected_table_matched": False,
     "classification": "AMBIGUOUS",
+    # Phase 30 layout observations.
+    "row0_total_cell_count": None,
+    "table_row_count": None,
+    "thead_present": None,
+    "thead_row_count": None,
+    "tbody_present": None,
+    "tbody_row_count": None,
+    "period_shaped_markup_outside_tr": None,
+    "layout_classification": "AMBIGUOUS_LAYOUT",
 }
 
 
@@ -270,6 +352,16 @@ def detect_quarterly_structure(html: str) -> dict:
     weaker signal: ``parse_quarterly`` accepts any non-empty header cell as a
     column, so a header of "Column A" matches while carrying no period at all.
     The classification is driven by the period-label structure, not by that flag.
+
+    ``layout_classification`` is a separate axis describing layout rather than
+    labels. ``row0_total_cell_count`` counts the first row's cells *including*
+    the label column, which distinguishes a label-only first row (1) from a row
+    with no cells at all (0) -- a distinction Phase 29's count could not make.
+    ``thead_present``/``tbody_present`` report element presence, while their row
+    counts stay ``None`` when the element is absent, so "present but empty"
+    (``True``, 0) differs from "absent" (``False``, ``None``).
+    ``period_shaped_markup_outside_tr`` reports whether period-shaped markup
+    exists outside any row, without ever returning the token.
     """
     from bs4 import BeautifulSoup
 
@@ -287,10 +379,21 @@ def detect_quarterly_structure(html: str) -> dict:
         "iso_year_month_header_count": None,
         "expected_table_matched": False,
         "classification": "SECTION_ABSENT",
+        # Phase 30 layout observations. ``None`` means "not available", never a
+        # zero that would read as "measured none".
+        "row0_total_cell_count": None,
+        "table_row_count": None,
+        "thead_present": None,
+        "thead_row_count": None,
+        "tbody_present": None,
+        "tbody_row_count": None,
+        "period_shaped_markup_outside_tr": None,
+        "layout_classification": "NO_QUARTERLY_SECTION",
     }
 
     if state == "indeterminate":
         result["classification"] = "AMBIGUOUS"
+        result["layout_classification"] = "AMBIGUOUS_LAYOUT"
         return result
     if state == "absent":
         return result
@@ -305,11 +408,19 @@ def detect_quarterly_structure(html: str) -> dict:
     # there is no single "relevant header row", so the counts stay None.
     rows = []
     if len(tables) == 1:
-        rows = tables[0].find_all("tr")
+        table = tables[0]
+        # Rows of *this* table only: a row inside a nested table is not ours.
+        rows = [
+            row for row in table.find_all("tr") if row.find_parent("table") is table
+        ]
+        result["table_row_count"] = len(rows)
         if rows:
-            labels = [
-                cell.get_text().strip() for cell in rows[0].find_all(["th", "td"])[1:]
-            ]
+            row0_cells = rows[0].find_all(["th", "td"])
+            # Phase 30: the *total* first-row cell count including the label
+            # column. This is what separates "one label-only cell" from a first
+            # row that genuinely has no cells -- Phase 29's count conflated both.
+            result["row0_total_cell_count"] = len(row0_cells)
+            labels = [cell.get_text().strip() for cell in row0_cells[1:]]
             result["header_cell_count"] = len(labels)
             result["recognized_period_header_count"] = sum(
                 _is_period_label(text) for text in labels
@@ -323,6 +434,21 @@ def detect_quarterly_structure(html: str) -> dict:
             result["header_has_period_label"] = (
                 result["recognized_period_header_count"] > 0
             )
+        thead = _direct_child(table, "thead")
+        tbody = _direct_child(table, "tbody")
+        # Presence and row count are separate facts, so "present but empty"
+        # (True, 0) stays distinguishable from "absent" (False, None).
+        result["thead_present"] = thead is not None
+        result["thead_row_count"] = (
+            len(thead.find_all("tr")) if thead is not None else None
+        )
+        result["tbody_present"] = tbody is not None
+        result["tbody_row_count"] = (
+            len(tbody.find_all("tr")) if tbody is not None else None
+        )
+        result["period_shaped_markup_outside_tr"] = _period_shaped_markup_outside_rows(
+            section
+        )
 
     # Classification follows the *structure* the period labels reveal, not
     # ``expected_table_matched``: that flag is weak, because ``parse_quarterly``
@@ -331,10 +457,12 @@ def detect_quarterly_structure(html: str) -> dict:
     # side by side on purpose; neither implies the other.
     if not tables:
         result["classification"] = "NO_TABLE"
+        result["layout_classification"] = "NO_TABLE"
     elif len(tables) > 1:
         # More than one table in the section: which one is authoritative is not
         # determinable, so neither is the structure.
         result["classification"] = "AMBIGUOUS"
+        result["layout_classification"] = "AMBIGUOUS_LAYOUT"
     else:
         label_rows = [
             index for index, row in enumerate(rows) if _row_has_period_label(row)
@@ -349,6 +477,24 @@ def detect_quarterly_structure(html: str) -> dict:
             result["classification"] = "TABLE_PERIOD_LABELS_IN_UNEXPECTED_STRUCTURE"
         else:
             result["classification"] = "TABLE_NO_PERIOD_LABELS"
+
+        # Phase 30 layout axis, decided from cell and element counts alone.
+        row0_total = result["row0_total_cell_count"]
+        if not rows:
+            result["layout_classification"] = "TABLE_WITHOUT_ROWS"
+        elif row0_total == 0:
+            # A row element with no cells is neither a header nor a label row,
+            # and no documented classification describes it: keep the ambiguity.
+            result["layout_classification"] = "AMBIGUOUS_LAYOUT"
+        elif row0_total == 1:
+            result["layout_classification"] = "TABLE_WITH_LABEL_ONLY_FIRST_ROW"
+        elif (
+            result["period_shaped_markup_outside_tr"]
+            and not result["header_has_period_label"]
+        ):
+            result["layout_classification"] = "PERIOD_SHAPED_MARKUP_OUTSIDE_ROWS"
+        else:
+            result["layout_classification"] = "TABLE_WITH_STRUCTURAL_HEADER"
     return result
 
 
@@ -384,6 +530,7 @@ def classify_response(response, elapsed_seconds: float, symbol: str) -> dict:
             "INDETERMINATE_STRUCTURE"
             if structure["section"] == "indeterminate"
             or structure["classification"] == "AMBIGUOUS"
+            or structure["layout_classification"] == "AMBIGUOUS_LAYOUT"
             else "HTTP_RESPONSE"
         )
         out["response_bytes"] = len(response.content)
@@ -404,6 +551,18 @@ def classify_response(response, elapsed_seconds: float, symbol: str) -> dict:
         out["mon_year_header_count"] = structure["mon_year_header_count"]
         out["iso_year_month_header_count"] = structure["iso_year_month_header_count"]
         out["structure_classification"] = structure["classification"]
+        # Phase 30 layout observations: element presence and counts, one
+        # enumerated classification, one boolean. Still value-free.
+        out["row0_total_cell_count"] = structure["row0_total_cell_count"]
+        out["table_row_count"] = structure["table_row_count"]
+        out["thead_present"] = structure["thead_present"]
+        out["thead_row_count"] = structure["thead_row_count"]
+        out["tbody_present"] = structure["tbody_present"]
+        out["tbody_row_count"] = structure["tbody_row_count"]
+        out["period_shaped_markup_outside_tr"] = structure[
+            "period_shaped_markup_outside_tr"
+        ]
+        out["layout_classification"] = structure["layout_classification"]
     else:
         # A refusal is still an HTTP response. Its body is never touched.
         out["outcome"] = "HTTP_RESPONSE"
