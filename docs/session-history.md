@@ -2004,3 +2004,60 @@ sources, no production writes.*
 - **Not changed:** the cooldown, date validation, source priority, scoring,
   growth defaults, freshness thresholds, and the COALESCE / undated-row
   safeguards. The inert SourceManager is documented, not rewired.
+
+## Phase 27 - single-symbol Screener.in diagnostic (AAATECH)
+
+*One authorized HTTP request, one symbol. No refresh, retry, bulk run, scheduler
+job or production write.*
+
+- **Verdict: HTTP 200 TABLE MISSING - PARSING CONTRACT NEEDS FOLLOW-UP.**
+- **Preflight satisfied all five gates:** HEAD `4e847ec` clean and synced; zero
+  Python processes and a byte-identical metadata WAL (no writer); `AAATECH`
+  independently confirmed in the failure set (4 recorded fails, 0 quarterly
+  rows, a real symbol with an existing fundamentals row); and single-request
+  isolation verified - `GhostSession.get()` performs exactly one
+  `session.get()`, has no retry loop, and the probe never touches the fallback
+  chain or any DB writer.
+- **Result: HTTP 200, 81,852 bytes, quarterly table NOT matched, 3.277 s, no
+  retry.** So this request was *not* refused at the HTTP level (no 403/429/404),
+  the transport worked, and a substantial real document was served - but it did
+  not satisfy the parser contract.
+- **What it does not prove, stated plainly:** one symbol cannot establish a
+  site-wide redesign, cannot describe the other 118 failures, and - because the
+  permitted output was a single boolean - **cannot separate "no quarterly
+  section" from "section present but undated"**. `parse_quarterly` returns `[]`
+  in both cases. That ambiguity is the honest limit of this probe.
+- **Offline corroboration:** 884 symbols hold properly dated quarters
+  ("Mar 2023", "Sep 2025", ...) and 0 placeholder rows exist, which only the
+  Screener parser can produce - so the contract is not obviously globally
+  broken. But `quarterly_results` has **no write-timestamp column**, so those
+  rows cannot be shown to be recent. Not over-claimed.
+- **Shipped as a tested tool, not a throwaway script:** `tools/probe_screener_once.py`
+  (single request, no persistence, no retry, sanitised output) plus 26 tests in
+  `tests/test_screener_probe.py`.
+- **Privacy boundary is structural:** the result is assembled from a fixed
+  allowlist, so a secret planted in a body, `Set-Cookie`, header or exception
+  message has no path into the output. Tests plant `SUPER_SECRET_COOKIE_VALUE`
+  in body and cookie and assert it cannot appear; exception messages containing a
+  URL and token are asserted absent while the class is kept; an injected
+  financial value `123456.78` is asserted absent; and a monkeypatched
+  `sqlite3.connect` that raises proves no DB connection is attempted.
+- **A test caught a real defect mid-build:** on a transport failure the result
+  omitted `http_status`, so the schema varied with the outcome. It now always
+  reports the key (null when unknown).
+- **Change set is purely additive** - two new files, zero existing source
+  modified (`git diff --name-only` empty). The full suite was aborted by the
+  operator before completion and is **not claimed**; the related suites were
+  re-run and pass (50 tests, including the Phase 26 status-reset and Google
+  status-isolation tests).
+- **No production write, re-verified value by value:** 229/119 sync counts,
+  119 parked, `AAATECH` 4 fails, 10,798 quarterly rows, 3,951 fundamentals rows,
+  `AAATECH.last_updated` 2026-10-17 - all identical before and after. One honest
+  note: `myra_metadata.db`'s mtime moved at 22:54, *before* the probe at 23:19,
+  from SQLite's automatic WAL checkpoint on a read-only connection closing; the
+  size is unchanged and every value identical, so no data was written.
+- **Next step, only with explicit authorization:** add a second boolean - does
+  the quarterly section exist, and did its header carry a period label - to
+  resolve the one ambiguity, still in a single request for the same symbol.
+  Section absent means a per-symbol data reality; section present but undated
+  means the parser's date contract needs its own bounded follow-up.
