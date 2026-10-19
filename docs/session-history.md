@@ -2250,3 +2250,64 @@ job or production write.*
   forbids. Pursuing it further is a *source-evidence* question needing its own
   authorization, and answering it would require reading cell text, which the
   privacy boundary deliberately prevents.
+
+## Phase 31 - Parked fundamentals cohort audit
+
+*Read-only. No external request, no refresh, no production write, no scheduled
+task.*
+
+- **Verdict: MULTIPLE FAILURE CLASSES CONFIRMED - TARGETED FOLLOW-UP NEEDED.**
+- **The phrase "119 parked" was wrong for five phases.** Measured properly:
+  119 entries exist in `fundamentals_park_state`, but **zero** have
+  `parked_until`, and the maximum `fails` is 4 against a threshold of 5. They are
+  failure-*tracked*, not parked: `is_parked()` returns False for all of them and
+  the run's own `Parked:` counter prints 0. Phases 26-30 read "119 entries in
+  park state" as "119 parked" and never checked.
+- **Per-symbol cause is unrecoverable for all 119.** `record_failure` persists
+  only fails/last_attempt/parked_until; `last_error` and the Phase 26
+  `last_source_errors` are in-memory and only `print`ed; **every log file stops
+  at 2026-09-23** while the refresh ran 2026-10-18, and zero `[FAIL]` lines exist
+  anywhere. All 119 are therefore UNKNOWN as to cause - a confirmed evidence
+  gap, not an inferred one.
+- **Confirmed system-level classes instead:** (A) hard fetch failures, 119 of
+  348 attempts (34.2%), reason unrecorded; (B) the **Google fallback cannot ever
+  persist** - `_fetch_google` stamps every row `Q-1..Q-4` and the undated-row
+  guard rejects exactly that shape, so "multi-source fallback exhausted" is
+  really single-source; (C) 2,910 backlog symbols were successfully written on
+  10-17 yet still miss a required metric; (D) the run was cut off by operator
+  cancellation - 348 of ~3,551 symbols (10.5%), 3,007 never reached.
+- **Concentration tested against baselines, not assumed.** The queue is defined
+  by a missing metric, so the obvious claim is a trap: ROE is missing in 76.5% of
+  the cohort versus **92.6% of the backlog** - the cohort is *less* ROE-deficient
+  than its own source pool, so the ROE hypothesis is **refuted**. What survives:
+  `market_cap`-only-missing at 24% vs 9% (2.7x), and SME at 31.1% vs 8.9%
+  (3.5x) / 13.3% in-window (2.3x) - direction robust under two controls.
+- **Reconciled:** 229 + 119 = 348 attempts, and `last_updated=2026-10-18` exists
+  on exactly 229 rows (178 complete + 51 still partial). **Unresolved:** the
+  counters say 348 but `last_processed_symbol` sits at index 169 of 2,543
+  tradable symbols - only ~170 are individually reachable, so either a second
+  concurrent invocation wrote the same progress key or the counter reset did not
+  apply. Neither is provable locally, and it is reported as open rather than
+  smoothed over.
+- **`last_updated` is not freshness:** 3,131 rows share 2026-10-17 from one bulk
+  run and 2,910 of those are still incomplete. Only `fundamental_manager` writes
+  that column, which is what makes the 229/348 match usable evidence at all.
+- **Other confirmed defects:** `last_attempt` is the run *start* time and
+  overwrites prior attempts; progress is left `in_progress` with a five-month-old
+  `last_sync_date` and a legacy `total_symbols: 72`; and `sync_log` (10-17),
+  `fundamentals_sync_status` (10-18) and `pipeline_run_state` (10-18) disagree
+  about the last run. `fundamentals_sync.py.OLD` (149 lines) is still tracked.
+- **Data preservation:** 10,798 quarterly rows, 3,951 fundamentals rows, 0
+  null/blank/placeholder report dates, 79 distinct periods (Dec 2005-Sep 2026),
+  AAATECH unchanged, park-state JSON byte-identical, WAL 0 bytes - all identical
+  before and after. COALESCE and the undated-row guard intact.
+- **Nothing implemented.** Source code changed: none. The smallest justified
+  action is an additive `fundamentals_failure_log` (one insert per failure,
+  reusing the already credential-free `last_source_errors`) so the next audit can
+  answer what this one could not - proposed, awaiting authorization. A broad
+  refresh was explicitly rejected: it would cost ~3,300 requests against a source
+  that just rate-limited, to learn what one insert per failure would record.
+- Pre-existing test-suite fragility reported, not fixed: the fail-closed DB
+  isolation guard trips in arbitrary multi-file batches (`myra_app.task_tracker`
+  keeps a stale `DB_DIR`); both affected files pass in isolation and the full
+  suite is green.
