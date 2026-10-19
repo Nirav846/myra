@@ -2311,3 +2311,56 @@ task.*
   isolation guard trips in arbitrary multi-file batches (`myra_app.task_tracker`
   keeps a stale `DB_DIR`); both affected files pass in isolation and the full
   suite is green.
+
+## Phase 32 - Additive fundamentals failure telemetry
+
+*Observability only. No refresh, no external request, no production write.*
+
+- **Verdict: FAILURE TELEMETRY IMPLEMENTED - TESTED AND DATA PRESERVED.**
+- **The gap:** Phase 31 could not classify one of 119 failures because the
+  per-source reasons the fetcher already computes (`last_source_errors`) were
+  only ever `print`ed. They are now persisted. No new diagnostics were invented -
+  this writes down what already existed.
+- **New table** `fundamentals_failure_log` in `myra_metadata.db`, created lazily
+  with `CREATE TABLE IF NOT EXISTS` (the `source_stats`/`task_registry`
+  convention). Additive only: nothing existing altered, no migration.
+- **Granularity: one row per (symbol, source) per attempt**, recorded at exactly
+  one call site per branch inside the sync loop - never in the fetcher or manager
+  - so an attempt cannot be counted twice.
+- **Categories are a closed set of nine:** http_error, no_data, page_note,
+  exception, rate_limited, fallback_exhausted, undated_rows_rejected,
+  persist_failed, unknown. Anything unrecognised becomes `unknown` with **no
+  text stored** - hostile values are dropped, not escaped.
+- **No free text is storable by construction:** category from constants, status
+  an int 100-599, exception class validated against a real-exception suffix
+  allowlist, detail code from a fixed map, source/symbol regex-validated.
+- **Two holes found by the tests, not by inspection.** (1) A value shaped
+  `"X: SECRET123"` matched the generic `<name>: <token>` shape and would have
+  stored the secret as an exception class; fixed by requiring the prefix to equal
+  the symbol's own source key *and* requiring a real exception suffix. (2) The
+  exception path recorded in the `except` block *and* fell through to the
+  hard-failure branch, double-recording one attempt; fixed with a single
+  `escaped_exc` marker and one call site. The second also prevents stale
+  `last_source_errors` from the previous symbol being attributed to this one.
+- **Statuses stay with their source:** when per-source detail exists, each row
+  carries its own status and the fetcher-level status is not used. When only
+  generic exhaustion is known, the row is `fallback_exhausted` with
+  `source = NULL` and **no status** rather than inventing a culprit.
+- **Retention:** newest `KEEP_PER_SYMBOL = 20` rows per symbol, same transaction,
+  mirroring the only bounded-log precedent in the repo (`source_stats` keeps the
+  last 15). Growth bounded at symbols x 20; no TTL job, no scheduler.
+- **Telemetry can never break a run:** `record_failure` swallows everything and
+  logs a warning naming only the symbol; the `[FAIL]` stdout diagnostic is
+  untouched; the summary, parking and backoff are computed independently.
+- **25 new tests**, all against temp DBs with fake managers; **full suite 2086
+  passed** (2061 + 25, 6:51). black/flake8 clean.
+- **Production preserved (read-only, before and after):** 10,798 quarterly rows,
+  3,951 fundamentals rows, 0 null/blank/placeholder dates, 79 distinct periods,
+  park state byte-identical (119 entries, 9,312 bytes), AAATECH unchanged,
+  **telemetry table absent from the live DB**, WAL 0 bytes.
+- **+43 lines, 0 deletions** in `fundamentals_sync.py`. Source order, fallback,
+  cooldowns, retry thresholds, `is_parked()`, COALESCE and the undated-row guard
+  are all unchanged.
+- **Follow-up, deliberately not done:** `scripts/dump_schema.py` should be run
+  after the first real refresh creates the table. Adding it to `schema/` now -
+  before it exists in the live DB - would itself register as schema drift.

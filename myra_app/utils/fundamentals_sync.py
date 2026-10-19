@@ -164,6 +164,24 @@ def record_failure(
     return entry
 
 
+def _record_failure_telemetry(symbol, run_id, **evidence):
+    """Persist one attempt's sanitized failure evidence; never affect the run.
+
+    Observability only (Phase 32). The reasons come from what the fetcher and
+    manager already computed -- this adds no new diagnostics, touches no
+    retry/parking state, and cannot change the outcome of the attempt. A
+    telemetry problem is reported as a warning naming only the symbol; the
+    existing ``[FAIL]`` diagnostic on stdout is deliberately left untouched.
+    """
+    try:
+        from myra_app.utils.fundamentals_failure_log import record_failure
+
+        record_failure(constants.DB_DIR, symbol, run_id=run_id, **evidence)
+    except Exception:  # noqa: BLE001 - telemetry must never break a refresh
+        logger.warning("could not record fundamentals failure telemetry for %s", symbol)
+        logger.debug("fundamentals failure telemetry error", exc_info=True)
+
+
 def _backoff_sleep(seconds, cancel_event):
     """Sleep ``seconds`` (with jitter), waking early if cancellation is requested."""
     # Jitter so a run that failed a burst of symbols does not retry them all in
@@ -353,6 +371,7 @@ def sync_fundamentals(
         progress["updated_count"] = 0
         progress["failed_count"] = 0
         progress["start_time"] = now.isoformat()
+        run_started = progress["start_time"]
         _save_progress(meta_conn, progress)
         _n(f"Fetching fundamentals for {len(queue)} symbols…")
 
@@ -374,10 +393,14 @@ def sync_fundamentals(
                 print("[MYRA FUNDA] Cancelled while paused.")
                 break
 
+            escaped_exc = None
             try:
                 ok = mgr.fetch_fundamentals(symbol)
             except Exception as exc:  # noqa: BLE001 - one symbol must never abort
                 ok = False
+                # Remember only the class name. The message may embed a URL,
+                # cookie or token, and the telemetry table stores no free text.
+                escaped_exc = type(exc).__name__
                 mgr.last_error = f"{type(exc).__name__}: {exc}"
                 mgr.last_http_status = None
 
@@ -401,6 +424,11 @@ def sync_fundamentals(
                     f"  [THROTTLED] {symbol}: HTTP {status} — backing off "
                     f"{int(RATE_LIMIT_SLEEP_SECONDS)}s"
                 )
+                # Throttling is not the symbol's fault, so it is recorded as its
+                # own category and still never counts toward parking it.
+                _record_failure_telemetry(
+                    symbol, run_started, rate_limited=True, http_status=status
+                )
                 _backoff_sleep(RATE_LIMIT_SLEEP_SECONDS, cancel_event)
                 if consec_rate_limited >= RATE_LIMIT_ABORT_AFTER:
                     print(
@@ -415,6 +443,30 @@ def sync_fundamentals(
                 consec_fail += 1
                 record_failure(park_state, symbol, now)
                 print(f"  [FAIL] {symbol}: {mgr.last_error or 'unknown failure'}")
+                # Exactly one telemetry call per failed attempt. An escaped
+                # exception is recorded as such, and its per-source evidence is
+                # deliberately NOT reused: the fetcher may never have run, so
+                # ``last_source_errors`` could still describe the previous
+                # symbol.
+                if escaped_exc:
+                    _record_failure_telemetry(
+                        symbol, run_started, exc_class=escaped_exc
+                    )
+                else:
+                    # One row per source, from the reasons the fetcher already
+                    # collected.
+                    _record_failure_telemetry(
+                        symbol,
+                        run_started,
+                        last_error=getattr(mgr, "last_error", None),
+                        source_errors=getattr(
+                            getattr(mgr, "fetcher", None),
+                            "last_source_errors",
+                            None,
+                        ),
+                        last_source=getattr(mgr, "last_source", None),
+                        http_status=status,
+                    )
                 if consec_fail > 1:
                     _backoff_sleep(
                         min(MAX_BACKOFF_SECONDS, 2.0 ** min(consec_fail, 10)),
