@@ -5,6 +5,7 @@ import { Box, Filter, AlertTriangle, ArrowUpRight, RefreshCw, CheckCircle, Clock
 import FundTractionButton from '../components/FundTractionButton';
 import MarketCapRangeFilter from '../components/MarketCapRangeFilter';
 import { fetchMarketCapMap } from '../lib/marketCapCache';
+import { sortWyckoffCandidates } from '../lib/tableSort';
 import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
 import { API_BASE } from '../config';
@@ -316,15 +317,10 @@ export default function WyckoffAutomatonView({ lib }: { lib: Librarian }) {
     if (maxDaysFilter < 999) {
       data = data.filter((c) => c.days_since_event <= maxDaysFilter);
     }
-    data.sort((a, b) => {
-      const aVal = a[sortCol as keyof Candidate] ?? 0;
-      const bVal = b[sortCol as keyof Candidate] ?? 0;
-      if (typeof aVal === 'string' && typeof bVal === 'string') {
-        return sortAsc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-      }
-      return sortAsc ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
-    });
-    return data;
+    // Non-mutating: sortWyckoffCandidates returns a sorted copy, so this can
+    // never reorder the array held in React state (`data === candidates` when
+    // no filter above matched).
+    return sortWyckoffCandidates(data, sortCol, sortAsc);
   }, [candidates, mcapRange, watchlistOnly, isWatched, sectorFilter, eventFilter, phaseFilter, minQualityFilter, maxDaysFilter, sortCol, sortAsc]);
 
   const stats = useMemo(() => {

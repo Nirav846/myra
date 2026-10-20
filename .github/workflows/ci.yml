@@ -123,6 +123,9 @@ jobs:
       - name: Type-check (tsc --noEmit)
         run: pnpm lint
 
+      - name: Frontend tests (node:test)
+        run: pnpm test
+
       - name: Build frontend
         run: pnpm build
 
