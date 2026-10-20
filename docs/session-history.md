@@ -2364,3 +2364,45 @@ task.*
 - **Follow-up, deliberately not done:** `scripts/dump_schema.py` should be run
   after the first real refresh creates the table. Adding it to `schema/` now -
   before it exists in the live DB - would itself register as schema drift.
+
+## Phase 33 - Wyckoff detection optimisation (2026-10-20)
+
+- **Target:** `WyckoffAutomaton._detect_events()`. A profile of 80 real symbols
+  showed 52 % of the time in `.loc` / `__getitem__` (38,290 calls, ~479/symbol),
+  18 % in row-Series `fast_xs`, 10 % in `isinstance` - pandas scalar-access
+  overhead, not compute.
+- **Change 1 - column extraction:** each candle column is pulled out of the
+  frame once as a numpy array (`dates` built by iterating the Series so `str(v)`
+  still yields `"YYYY-MM-DD 00:00:00"`), replacing ~11 `.iloc` reads per candle.
+- **Change 2 - precomputed windows:** `prior_low` uses
+  `rolling(60, min_periods=1).min().shift(1)` (no arithmetic -> exact); the
+  delivery window is sliced once per candle and shared between `avg_del_50d`
+  and `avg_del_50`, which previously averaged the same values twice from two
+  full-column float copies.
+- **Change 3 - `_window_mean`:** `np.nanmean` cost ~170 us for 50 elements and
+  was 33 % of the remaining time. New helper takes a plain-mean fast path when
+  the column has no NaN (same `add.reduce` + divide -> bit-identical), keeps
+  `np.nanmean` and all-NaN handling for the rest.
+- **Result:** detection 21.09 s -> 3.01 s on 182 real symbols (115.9 -> 16.5
+  ms/symbol, 7.0x, median of 3); full scan 204.21 s -> 61.79 s (3.31x, 142 s
+  saved per run). Event hash `a050123e0bbfe665...` and candidate hash
+  `3a7e2b8b8a5b67e1...` identical at every stage.
+- **Parity evidence:** 12-case golden fixture captured from the unmodified code
+  (SC/SOS/Spring plus every edge case: n<55, exactly 54, warm-up 55,
+  zero-volume, NaN + non-numeric delivery, missing and all-NaN `swing_low`,
+  flat series, reversed input), asserted by full structural equality. Each
+  substitution also compared against the expression it replaced across the
+  whole universe: 100,377 candles and 102,052 windows, **0 mismatches**.
+- **+60 / -30** in one file; **40 new tests**; **full suite 2126 passed**
+  (2086 + 40, 5:51). black/flake8 clean.
+- **Pre-existing defect found, not fixed:** the post-loop AR/ST block compares
+  `df["date"].astype(str)` (`"2025-03-12"`) with `str(Timestamp)`
+  (`"2025-03-12 00:00:00"`), so the SC lookup is always empty and **AR and ST
+  have never been emitted** - the live cache holds only SC/SOS/Spring across
+  1,389 rows. Fixing it would add two event types to scanner output, which is a
+  product change, not a performance one. Now pinned by
+  `test_ar_and_st_remain_unreachable` so it cannot drift in either direction.
+- **Not touched:** `_get_tech_data` (22 s), frame build/scoring (19 s), the
+  bulk-vs-per-symbol frame path, and all thresholds, scoring formulas and
+  output fields.
+- **Report:** `docs/WYCKOFF_DETECTION_OPTIMIZATION.md`.
