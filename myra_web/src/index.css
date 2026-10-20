@@ -565,6 +565,76 @@ body {
   vertical-align: middle;
 }
 
+/* --------------------------------------------------------------------------
+ * Pinned symbol column (results-table usability).
+ *
+ * Opt-in: a view marks its symbol header and body cells with `sticky-symbol`.
+ * Nothing is pinned implicitly, so tables whose first column is not the symbol
+ * (sector-first, rank-first, action-first) are unaffected.
+ *
+ * The opaque background is mandatory - the point is that columns scrolling
+ * underneath must not show through. --sticky-symbol-bg is the panel colour
+ * used by most result tables; a view on a different panel tone can override
+ * the three variables locally.
+ * -------------------------------------------------------------------------- */
+:root {
+  --sticky-symbol-bg: #1a1c24;
+  --sticky-symbol-bg-alt: #1d2029;
+  --sticky-symbol-bg-hover: #242b3d;
+}
+
+th.sticky-symbol,
+td.sticky-symbol {
+  position: sticky;
+  left: 0;
+  min-width: 7.5rem;
+  text-align: left;
+}
+
+th.sticky-symbol {
+  z-index: 7; /* over the other header cells, which sit at z-index 5 */
+  background: linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-tertiary) 100%);
+  box-shadow: 1px 0 0 var(--border-default);
+}
+
+td.sticky-symbol {
+  z-index: 2; /* over body cells, under the sticky header row */
+  background: var(--sticky-symbol-bg);
+  box-shadow: 1px 0 0 var(--border-default);
+}
+
+/* The generic rules above lose to the more specific .scanner-table-scroll
+   header rule (z-index 5 + gradient), so restate them for that context. */
+.scanner-table-scroll thead th.sticky-symbol {
+  z-index: 7;
+  background: linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-tertiary) 100%);
+}
+
+/* Keep the pinned fill in step with the row it belongs to. */
+.scanner-table-scroll tbody tr:nth-child(even) td.sticky-symbol {
+  background: var(--sticky-symbol-bg-alt);
+}
+
+.scanner-table-scroll tbody tr:hover td.sticky-symbol {
+  background: var(--sticky-symbol-bg-hover);
+}
+
+/* The existing row hover applies transform: scale(1.0001). A transformed
+   ancestor becomes the containing block for position:sticky descendants, which
+   would un-pin the symbol for the row under the cursor. Drop the (invisible)
+   scale only for rows that actually carry a pinned cell. */
+.scanner-table-scroll tbody tr:has(td.sticky-symbol):hover {
+  transform: none;
+}
+
+/* One clear affordance: our own X button, not the browser's. */
+input[type='search']::-webkit-search-cancel-button,
+input[type='search']::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
+
 /* Numeric column alignment with tabular numbers */
 .scanner-table-scroll tbody td.numeric {
   text-align: right;

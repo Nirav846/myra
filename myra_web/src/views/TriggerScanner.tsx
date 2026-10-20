@@ -11,6 +11,9 @@ import { API_BASE } from '../config';
 import { Tooltip } from '../components/Tooltip';
 import { HistoricalScanDatePicker } from '../components/HistoricalScanDatePicker';
 import ScrollableTable from '../components/ScrollableTable';
+import SymbolFilterInput from '../components/SymbolFilterInput';
+import { useSymbolFilter } from '../lib/useSymbolFilter';
+import { filterBySymbol } from '../lib/symbolFilter';
 
 interface Candidate {
   symbol: string;
@@ -99,6 +102,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
 
   const [sortCol, setSortCol] = useState<string>('trigger_score');
   const [sortAsc, setSortAsc] = useState(false);
+  const symbolFilter = useSymbolFilter();
 
   useEffect(() => { fetchMarketCapMap().then(m => mcapMapRef.current = m); }, []);
 
@@ -114,7 +118,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
   }, [candidates]);
 
   const filteredData = useMemo(() => {
-    let data = [...candidates];
+    let data = filterBySymbol(candidates, symbolFilter.query, (d) => d.symbol);
     if (mcapRange) {
       const map = mcapMapRef.current;
       data = data.filter(d => {
@@ -137,7 +141,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
       return String(av).localeCompare(String(bv)) * (sortAsc ? 1 : -1);
     });
     return data;
-  }, [candidates, mcapRange, watchlistOnly, sectorFilter, minTriggerScoreFilter, minDefenseBarsFilter, minBaseDurationFilter, gradeFilter, isWatched, sortCol, sortAsc]);
+  }, [candidates, symbolFilter.query, mcapRange, watchlistOnly, sectorFilter, minTriggerScoreFilter, minDefenseBarsFilter, minBaseDurationFilter, gradeFilter, isWatched, sortCol, sortAsc]);
 
   const clearPolling = useCallback(() => {
     if (pollTimerRef.current) {
@@ -456,6 +460,16 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
         <div className="flex items-center gap-2 mb-1 text-xs text-[#888] w-full">
           <Filter size={14} aria-hidden="true" /> <span className="font-mono uppercase font-semibold">Filters</span>
         </div>
+        <div className="flex flex-col gap-1">
+          <div className="text-[12px] text-[#888] font-mono">Symbol</div>
+          <SymbolFilterInput
+            value={symbolFilter.query}
+            onChange={symbolFilter.setQuery}
+            onClear={symbolFilter.clear}
+            matchCount={filteredData.length}
+            totalCount={candidates.length}
+          />
+        </div>
         <div className="max-w-[220px] flex-shrink-0">
           <MarketCapRangeFilter onChange={setMcapRange} />
         </div>
@@ -706,7 +720,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
                 <thead className="sticky top-0 z-20 text-[#888]">
                   <tr style={{ boxShadow: '0 1px 0 0 rgba(255,255,255,0.08), 0 2px 4px 0 rgba(0,0,0,0.4)' }}>
 
-                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white select-none"
+                    <th role="columnheader" className="sticky-symbol px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white select-none"
                         aria-sort={sortCol === 'symbol' ? (sortAsc ? 'ascending' : 'descending') : 'none'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('symbol'); } }} onClick={() => handleSort('symbol')} scope="col">
                       Symbol <SortIcon column="symbol" />
                     </th>
@@ -806,7 +820,7 @@ export default function TriggerScannerView({ lib }: { lib: Librarian }) {
                   ) : (
                     filteredData.map((row, index) => (
                       <tr key={row.symbol} role="row" aria-rowindex={index + 1} className="hover:bg-[#ffffff05] transition-colors group">
-                        <td className="px-3 py-3 font-bold" role="rowheader">
+                        <td className="sticky-symbol px-3 py-3 font-bold" role="rowheader">
                           <div className="flex items-center gap-1.5">
                             <StarButton symbol={row.symbol} size={11} />
                             <button

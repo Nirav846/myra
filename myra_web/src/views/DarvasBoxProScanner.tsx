@@ -10,6 +10,9 @@ import { StarButton } from '../components/StarButton';
 import { API_BASE } from '../config';
 import { Tooltip } from '../components/Tooltip';
 import ScrollableTable from '../components/ScrollableTable';
+import SymbolFilterInput from '../components/SymbolFilterInput';
+import { useSymbolFilter } from '../lib/useSymbolFilter';
+import { filterBySymbol } from '../lib/symbolFilter';
 import { HistoricalScanDatePicker } from '../components/HistoricalScanDatePicker';
 
 interface Candidate {
@@ -132,6 +135,7 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
 
   const [sortCol, setSortCol] = useState<string>('composite_score');
   const [sortAsc, setSortAsc] = useState(false);
+  const symbolFilter = useSymbolFilter();
 
   useEffect(() => { fetchMarketCapMap().then(m => mcapMapRef.current = m); }, []);
 
@@ -147,7 +151,7 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
   }, [candidates]);
 
   const filteredData = useMemo(() => {
-    let data = [...candidates];
+    let data = filterBySymbol(candidates, symbolFilter.query, (d) => d.symbol);
     if (mcapRange) {
       const map = mcapMapRef.current;
       data = data.filter(d => {
@@ -174,7 +178,7 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
       return String(av).localeCompare(String(bv)) * (sortAsc ? 1 : -1);
     });
     return data;
-  }, [candidates, mcapRange, watchlistOnly, sectorFilter, statusFilter, minScoreFilter, minAmFilter, minSarFilter, isWatched, sortCol, sortAsc]);
+  }, [candidates, symbolFilter.query, mcapRange, watchlistOnly, sectorFilter, statusFilter, minScoreFilter, minAmFilter, minSarFilter, isWatched, sortCol, sortAsc]);
 
   const clearPolling = useCallback(() => {
     if (pollTimerRef.current) {
@@ -454,6 +458,16 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
             aria-labelledby="min-dar-label"
           />
         </div>
+        <div className="flex flex-col gap-1">
+          <div className="text-[12px] text-[#888] font-mono">Symbol</div>
+          <SymbolFilterInput
+            value={symbolFilter.query}
+            onChange={symbolFilter.setQuery}
+            onClear={symbolFilter.clear}
+            matchCount={filteredData.length}
+            totalCount={candidates.length}
+          />
+        </div>
         <div className="max-w-[220px] flex-shrink-0">
           <MarketCapRangeFilter onChange={setMcapRange} />
         </div>
@@ -634,7 +648,7 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
               >
                 <thead className="sticky top-0 z-20 text-[#888]">
                   <tr style={{ boxShadow: '0 1px 0 0 rgba(255,255,255,0.08), 0 2px 4px 0 rgba(0,0,0,0.4)' }}>
-                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('symbol')} scope="col" aria-sort={sortCol === 'symbol' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    <th role="columnheader" className="sticky-symbol px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('symbol')} scope="col" aria-sort={sortCol === 'symbol' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       <Tooltip content="NSE ticker. Click to open the chart in a new tab." showIcon={false}>Symbol <SortIcon column="symbol" /></Tooltip>
                     </th>
                     <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('sector')} scope="col" aria-sort={sortCol === 'sector' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
@@ -728,7 +742,7 @@ export default function DarvasBoxProScannerView({ lib }: { lib: Librarian }) {
                   ) : (
                     filteredData.map((row, index) => (
                       <tr key={row.symbol} role="row" aria-rowindex={index + 1} className="hover:bg-[#ffffff05] transition-colors">
-                        <td className="px-3 py-3 font-bold" role="rowheader">
+                        <td className="sticky-symbol px-3 py-3 font-bold" role="rowheader">
                           <div className="flex items-center gap-1.5">
                             <StarButton symbol={row.symbol} size={11} />
                             <button

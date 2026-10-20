@@ -6,6 +6,9 @@ import FundTractionButton from '../components/FundTractionButton';
 import { API_BASE } from '../config';
 import { Tooltip } from '../components/Tooltip';
 import ScrollableTable from '../components/ScrollableTable';
+import SymbolFilterInput from '../components/SymbolFilterInput';
+import { useSymbolFilter } from '../lib/useSymbolFilter';
+import { filterBySymbol } from '../lib/symbolFilter';
 import { HistoricalScanDatePicker } from '../components/HistoricalScanDatePicker';
 import SignalBadge from '../components/common/SignalBadge';
 
@@ -64,6 +67,7 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
 
   const [sortCol, setSortCol] = useState<string>('dist_pct');
   const [sortAsc, setSortAsc] = useState(false);
+  const symbolFilter = useSymbolFilter();
 
   const mountedRef = useRef(true);
   const scanParamsRef = useRef<Record<string, unknown> | null>(null);
@@ -73,7 +77,7 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
   const candidates = scanStatus?.candidates ?? [];
 
   const filteredData = useMemo(() => {
-    let data = [...candidates];
+    let data = filterBySymbol(candidates, symbolFilter.query, (d) => d.symbol);
     data.sort((a, b) => {
       const av = (a as any)[sortCol] ?? 0;
       const bv = (b as any)[sortCol] ?? 0;
@@ -83,7 +87,7 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
       return String(av).localeCompare(String(bv)) * (sortAsc ? 1 : -1);
     });
     return data;
-  }, [candidates, sortCol, sortAsc]);
+  }, [candidates, symbolFilter.query, sortCol, sortAsc]);
 
   const clearPolling = useCallback(() => {
     if (pollTimerRef.current) {
@@ -370,6 +374,15 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
           </div>
 
           <div className="flex-1 bg-[#1a1c24] border border-[#ffffff1a] rounded overflow-hidden">
+            <div className="flex items-center justify-end gap-2 px-3 py-2 border-b border-[#ffffff1a]">
+              <SymbolFilterInput
+                value={symbolFilter.query}
+                onChange={symbolFilter.setQuery}
+                onClear={symbolFilter.clear}
+                matchCount={filteredData.length}
+                totalCount={candidates.length}
+              />
+            </div>
             <ScrollableTable>
               <table
                 className="w-full min-w-max text-left text-xs font-mono whitespace-nowrap"
@@ -380,7 +393,7 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
               >
                 <thead className="sticky top-0 z-20 text-[#888]">
                   <tr style={{ boxShadow: '0 1px 0 0 rgba(255,255,255,0.08), 0 2px 4px 0 rgba(0,0,0,0.4)' }}>
-                    <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('symbol')} scope="col" aria-sort={sortCol === 'symbol' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+                    <th role="columnheader" className="sticky-symbol px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50" onClick={() => handleSort('symbol')} scope="col" aria-sort={sortCol === 'symbol' ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
                       Symbol <SortIcon column="symbol" />
                     </th>
                     <th role="columnheader" className="px-3 py-3 bg-[#0e1117] font-semibold uppercase tracking-wider cursor-pointer hover:text-white" onClick={() => handleSort('sector')} scope="col">
@@ -429,7 +442,7 @@ export default function ClimaxAccumulationView({ lib }: { lib: Librarian }) {
                   ) : (
                     filteredData.map((row, index) => (
                       <tr key={row.symbol} role="row" aria-rowindex={index + 1} className="hover:bg-[#ffffff05] transition-colors">
-                        <td className="px-3 py-3 font-bold" role="rowheader">
+                        <td className="sticky-symbol px-3 py-3 font-bold" role="rowheader">
                           <button
                             onClick={() => window.open(`/#/chart?symbol=${encodeURIComponent(row.symbol)}`, '_blank')}
                             className="text-[#fafafa] hover:text-purple-400 inline-flex items-center gap-1 transition-colors group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500/50"

@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test": "tsx --test src/lib/tableSort.test.ts"
+    "test": "tsx --test src/lib/tableSort.test.ts src/lib/symbolFilter.test.ts src/lib/stickySymbol.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.22.0",

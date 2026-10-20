@@ -8,6 +8,9 @@ import { fetchMarketCapMap } from '../lib/marketCapCache';
 import { useWatchlist } from '../lib/WatchlistContext';
 import { API_BASE } from '../config';
 import ScrollableTable from '../components/ScrollableTable';
+import SymbolFilterInput from '../components/SymbolFilterInput';
+import { useSymbolFilter } from '../lib/useSymbolFilter';
+import { filterBySymbol } from '../lib/symbolFilter';
 import { HistoricalScanDatePicker } from '../components/HistoricalScanDatePicker';
 import SignalBadge from '../components/common/SignalBadge';
 
@@ -109,6 +112,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
   // Filtering / display
   const [sortCol, setSortCol] = useState<string>('score');
   const [sortAsc, setSortAsc] = useState(false);
+  const symbolFilter = useSymbolFilter();
   const [minScore, setMinScore] = useState(0);
   const [minDeliveryChange, setMinDeliveryChange] = useState(0);
   const [filtersVisible, setFiltersVisible] = useState(() => localStorage.getItem('pdd_filters_visible') !== 'false');
@@ -149,7 +153,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
 
   // Filter + sort
   const filteredData = useMemo(() => {
-    let data = [...candidates];
+    let data = filterBySymbol(candidates, symbolFilter.query, (d) => d.symbol);
     if (mcapRange) {
       const map = mcapMapRef.current;
       data = data.filter(d => {
@@ -170,7 +174,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
       return String(av).localeCompare(String(bv)) * (sortAsc ? 1 : -1);
     });
     return data;
-  }, [candidates, mcapRange, watchlistOnly, minScore, minDeliveryChange, isWatched, sortCol, sortAsc]);
+  }, [candidates, symbolFilter.query, mcapRange, watchlistOnly, minScore, minDeliveryChange, isWatched, sortCol, sortAsc]);
 
   // Summaries
   const summaries = useMemo(() => {
@@ -474,6 +478,16 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
         </div>
         <div className="flex flex-wrap gap-3 items-end">
           <div className="flex flex-col">
+            <label className="text-[12px] text-[#888] font-mono mb-1">Symbol</label>
+            <SymbolFilterInput
+              value={symbolFilter.query}
+              onChange={symbolFilter.setQuery}
+              onClear={symbolFilter.clear}
+              matchCount={filteredData.length}
+              totalCount={candidates.length}
+            />
+          </div>
+          <div className="flex flex-col">
             <label className="text-[12px] text-[#888] font-mono mb-1">Min Score</label>
             <input type="range" min={0} max={50} value={minScore}
               onChange={e => setMinScore(Number(e.target.value))}
@@ -528,7 +542,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                     ['delivery_threshold', 'Thr'],
                   ] as [string, string][]).map(([col, label]) => (
                     <th key={col}
-                      className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap${['close','low_in_window','price_dist_pct','latest_del_pct','delivery_change','divergence_strength','score'].includes(col) ? ' text-right' : ''}`}
+                      className={`p-3 text-[12px] font-medium uppercase text-[#888] font-mono cursor-pointer hover:text-white transition-colors whitespace-nowrap${col === 'symbol' ? ' sticky-symbol' : ''}${['close','low_in_window','price_dist_pct','latest_del_pct','delivery_change','divergence_strength','score'].includes(col) ? ' text-right' : ''}`}
                       onClick={() => handleSort(col)}
                       scope="col"
                     >
@@ -547,7 +561,7 @@ export default function PriceDeliveryDivergenceScannerView({ lib }: { lib: Libra
                 ) : (
                   filteredData.slice(0, 500).map(d => (
                     <tr key={d.symbol} className="border-b border-[#ffffff0a] hover:bg-[#ffffff05] transition-colors group">
-                      <td className="p-3 whitespace-nowrap" scope="row">
+                      <td className="sticky-symbol p-3 whitespace-nowrap" scope="row">
                         <span
                           onClick={() => window.open(`/#/chart?symbol=${encodeURIComponent(d.symbol)}`, '_blank')}
                           className="font-bold text-[#fafafa] cursor-pointer hover:text-orange-400 hover:underline inline-flex items-center gap-1 transition-colors"

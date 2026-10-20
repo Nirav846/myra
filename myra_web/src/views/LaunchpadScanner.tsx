@@ -7,6 +7,9 @@ import { fetchMarketCapMap } from '../lib/marketCapCache';
 import { useWatchlist } from '../lib/WatchlistContext';
 import { StarButton } from '../components/StarButton';
 import ScrollableTable from '../components/ScrollableTable';
+import SymbolFilterInput from '../components/SymbolFilterInput';
+import { useSymbolFilter } from '../lib/useSymbolFilter';
+import { filterBySymbol } from '../lib/symbolFilter';
 import { API_BASE } from '../config';
 
 interface ScanPrediction {
@@ -87,6 +90,7 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
 
   const { isWatched } = useWatchlist();
   const [watchlistOnly, setWatchlistOnly] = useState(false);
+  const symbolFilter = useSymbolFilter();
 
   const [minReturn, setMinReturn] = useState<number>(0);
   const [mcapRange, setMcapRange] = useState<{ min: number; max: number } | null>(null);
@@ -101,7 +105,11 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
   const predictions = scanStatus?.predictions ?? [];
 
   const filteredData = useMemo(() => {
-    let result = predictions.filter(d => d.predicted_return_pct >= minReturn);
+    let result = filterBySymbol(
+      predictions.filter(d => d.predicted_return_pct >= minReturn),
+      symbolFilter.query,
+      (d) => d.symbol,
+    );
     if (mcapRange) {
       const map = mcapMapRef.current;
       result = result.filter(d => {
@@ -111,7 +119,7 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
     }
     if (watchlistOnly) result = result.filter(d => isWatched(d.symbol));
     return result.sort((a, b) => b.predicted_return_pct - a.predicted_return_pct);
-  }, [predictions, minReturn, mcapRange, watchlistOnly, isWatched]);
+  }, [predictions, symbolFilter.query, minReturn, mcapRange, watchlistOnly, isWatched]);
 
   const avgExpectedReturn = useMemo(() => {
     if (filteredData.length === 0) return 0;
@@ -414,6 +422,16 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
             <div className="flex items-center gap-2 mb-1 text-xs text-[#888] w-full">
               <Filter size={14} /> <span className="font-mono uppercase font-semibold">Filters</span>
             </div>
+            <div className="flex flex-col gap-1">
+              <div className="text-[12px] text-[#888] font-mono">Symbol</div>
+              <SymbolFilterInput
+                value={symbolFilter.query}
+                onChange={symbolFilter.setQuery}
+                onClear={symbolFilter.clear}
+                matchCount={filteredData.length}
+                totalCount={predictions.length}
+              />
+            </div>
             <div className="flex flex-col gap-1 w-64">
               <div className="flex justify-between items-center text-[12px] text-[#888] font-mono">
                 <span>Min Exp Return</span>
@@ -453,7 +471,7 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
               <table className="w-full min-w-max text-left text-xs font-mono whitespace-nowrap" aria-label="Launchpad scanner candidates">
                 <thead className="sticky top-0 z-10 bg-[#1a1c24] text-[#888] shadow-sm">
                   <tr>
-                    <th className="px-4 py-3 font-semibold uppercase tracking-wider">Symbol</th>
+                    <th className="sticky-symbol px-4 py-3 font-semibold uppercase tracking-wider">Symbol</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Trigger Date</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Age (Days)</th>
                     <th className="px-4 py-3 font-semibold uppercase tracking-wider text-right">Mkt Cap</th>
@@ -472,7 +490,7 @@ export default function LaunchpadScannerView({ lib, onNavigate }: { lib: Librari
                       const conf = getConfidence(row.predicted_return_pct);
                       return (
                         <tr key={row.symbol + '-' + row.trigger_date} className="hover:bg-[#ffffff05] transition-colors">
-                          <td className="px-4 py-3 text-[#fafafa] font-bold">
+                          <td className="sticky-symbol px-4 py-3 text-[#fafafa] font-bold">
                             <div className="flex items-center gap-1.5">
                               <StarButton symbol={row.symbol} size={11} />
                               <button
