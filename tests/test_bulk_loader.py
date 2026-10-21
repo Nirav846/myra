@@ -12,6 +12,7 @@ bulk path returns byte-identical candidate lists:
    backed by the bulk loader vs the original per-symbol DB path.
 """
 
+import math
 import os
 import sqlite3
 from datetime import date
@@ -210,3 +211,135 @@ class TestScannerBulkParity:
         # Must NOT raise; returns an empty DataFrame.
         assert isinstance(guarded, pd.DataFrame)
         assert guarded.empty
+
+
+# ---------------------------------------------------------------------------
+# Conversion parity: the tuple-building fast path vs the original loop.
+# ---------------------------------------------------------------------------
+def _legacy_rows_for_symbol(bulk, symbol, columns, min_date, max_date=None):
+    """Verbatim copy of the pre-optimization implementation (oracle)."""
+    df = bulk.get(symbol)
+    if df is None or df.empty:
+        return []
+    max_date = max_date or date.today().isoformat()
+    mask = df["date"] >= min_date
+    if max_date:
+        mask = mask & (df["date"] <= max_date)
+    sub = df.loc[mask]
+    if sub.empty:
+        return []
+    present = [c for c in columns if c in sub.columns]
+    if not present:
+        return []
+    out = []
+    for r in sub[present].itertuples(index=False, name=None):
+        row = list(r)
+        padded = []
+        i = 0
+        for c in columns:
+            if c in sub.columns:
+                value = row[i]
+                i += 1
+            else:
+                value = None
+            if isinstance(value, float) and math.isnan(value):
+                value = None
+            padded.append(value)  # noqa: PG-APPEND
+        out.append(tuple(padded))  # noqa: PG-APPEND
+    return out
+
+
+def _synthetic_bulk():
+    frame = pd.DataFrame(
+        {
+            "date": ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"],
+            "open": [1.0, float("nan"), 3.0, 4.0],
+            "close": [10, 11, 12, 13],
+            "label": ["a", "b", "c", "d"],
+            # Object column that still holds a float NaN, as a dynamically
+            # typed SQLite REAL column can arrive.
+            "odd": ["x", float("nan"), "z", None],
+        }
+    )
+    return {
+        "AAA": frame,
+        "EMPTY": pd.DataFrame(),
+        "NO_COLUMNS": pd.DataFrame({"date": ["2026-01-01"]}),
+    }
+
+
+class TestRowsForSymbolConversion:
+    def setup_method(self):
+        self.bulk = _synthetic_bulk()
+        self.cols = ("date", "open", "close", "label", "odd")
+
+    def test_matches_legacy_mixed_dtypes(self):
+        got = rows_for_symbol(self.bulk, "AAA", self.cols, "2026-01-01", "2026-01-04")
+        want = _legacy_rows_for_symbol(
+            self.bulk, "AAA", self.cols, "2026-01-01", "2026-01-04"
+        )
+        assert got == want
+
+    def test_float_nan_becomes_none(self):
+        got = rows_for_symbol(self.bulk, "AAA", self.cols, "2026-01-01", "2026-01-04")
+        assert got[1][1] is None
+        assert got[0][1] == 1.0 and type(got[0][1]) is float
+
+    def test_object_nan_becomes_none(self):
+        got = rows_for_symbol(self.bulk, "AAA", self.cols, "2026-01-01", "2026-01-04")
+        assert got[1][4] is None
+        assert got[3][4] is None
+
+    def test_int_and_str_types_preserved(self):
+        got = rows_for_symbol(self.bulk, "AAA", self.cols, "2026-01-01", "2026-01-04")
+        assert type(got[0][2]) is int
+        assert type(got[0][3]) is str
+
+    def test_window_bounds_are_inclusive(self):
+        got = rows_for_symbol(self.bulk, "AAA", ("date",), "2026-01-02", "2026-01-03")
+        assert got == [("2026-01-02",), ("2026-01-03",)]
+
+    def test_window_excludes_outside_rows(self):
+        got = rows_for_symbol(self.bulk, "AAA", ("date",), "2026-01-05", "2026-01-09")
+        assert got == []
+
+    def test_unknown_symbol(self):
+        assert rows_for_symbol(self.bulk, "NOPE", self.cols, "2026-01-01") == []
+
+    def test_empty_frame(self):
+        assert rows_for_symbol(self.bulk, "EMPTY", self.cols, "2026-01-01") == []
+
+    def test_missing_columns_padded_in_position(self):
+        cols = ("date", "swing_low", "open")
+        got = rows_for_symbol(self.bulk, "AAA", cols, "2026-01-01", "2026-01-02")
+        want = _legacy_rows_for_symbol(
+            self.bulk, "AAA", cols, "2026-01-01", "2026-01-02"
+        )
+        assert got == want
+        assert got[0] == ("2026-01-01", None, 1.0)
+
+    def test_extra_frame_columns_ignored(self):
+        got = rows_for_symbol(
+            self.bulk, "AAA", ("date", "close"), "2026-01-01", "2026-01-02"
+        )
+        assert got == [("2026-01-01", 10), ("2026-01-02", 11)]
+
+    def test_all_nan_float_column(self):
+        frame = pd.DataFrame(
+            {"date": ["2026-01-01", "2026-01-02"], "sma_50": [float("nan")] * 2}
+        )
+        bulk = {"NAN": frame}
+        got = rows_for_symbol(bulk, "NAN", ("date", "sma_50"), "2026-01-01")
+        want = _legacy_rows_for_symbol(bulk, "NAN", ("date", "sma_50"), "2026-01-01")
+        assert got == want
+        assert got == [("2026-01-01", None), ("2026-01-02", None)]
+
+    def test_repeated_calls_identical(self):
+        first = rows_for_symbol(self.bulk, "AAA", self.cols, "2026-01-01")
+        second = rows_for_symbol(self.bulk, "AAA", self.cols, "2026-01-01")
+        assert first == second
+
+    def test_bulk_frame_not_mutated(self):
+        before = self.bulk["AAA"].copy(deep=True)
+        rows_for_symbol(self.bulk, "AAA", self.cols, "2026-01-01")
+        pd.testing.assert_frame_equal(self.bulk["AAA"], before)

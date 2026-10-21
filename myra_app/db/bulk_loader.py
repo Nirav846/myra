@@ -22,6 +22,7 @@ from contextlib import contextmanager
 from datetime import date
 from typing import Dict, Iterator, Optional, Sequence
 
+import numpy as np
 import pandas as pd
 
 from myra_app.constants import DB_DIR
@@ -399,6 +400,31 @@ def get_df_for_symbol(
     return df
 
 
+def _pad_rows(
+    sub: pd.DataFrame, columns: tuple[str, ...], present: list[str]
+) -> list[tuple]:
+    """Slow path: pad columns missing from the live schema with ``None``."""
+    out = []
+    for r in sub[present].itertuples(index=False, name=None):
+        row = list(r)
+        padded = []
+        i = 0
+        for c in columns:
+            if c in sub.columns:
+                value = row[i]
+                i += 1
+            else:
+                value = None
+            # sqlite3 returns None for NULL; pandas read_sql produces NaN
+            # in float columns. Normalize so tuples match the per-symbol
+            # SQL path byte-for-byte.
+            if isinstance(value, float) and math.isnan(value):
+                value = None
+            padded.append(value)  # noqa: PG-APPEND
+        out.append(tuple(padded))  # noqa: PG-APPEND
+    return out
+
+
 def rows_for_symbol(
     bulk: Dict[str, pd.DataFrame],
     symbol: str,
@@ -428,22 +454,31 @@ def rows_for_symbol(
     present = [c for c in columns if c in sub.columns]
     if not present:
         return []
-    out = []
-    for r in sub[present].itertuples(index=False, name=None):
-        row = list(r)
-        padded = []
-        i = 0
-        for c in columns:
-            if c in sub.columns:
-                value = row[i]
-                i += 1
-            else:
-                value = None
-            # sqlite3 returns None for NULL; pandas read_sql produces NaN
-            # in float columns. Normalize so tuples match the per-symbol
-            # SQL path byte-for-byte.
-            if isinstance(value, float) and math.isnan(value):
-                value = None
-            padded.append(value)  # noqa: PG-APPEND
-        out.append(tuple(padded))  # noqa: PG-APPEND
-    return out
+    if len(present) != len(columns):
+        return _pad_rows(sub, columns, present)
+
+    # Full schema: convert the whole frame in one C-level pass instead of
+    # testing ``c in sub.columns`` and NaN-checking every cell in Python.
+    # The result is the same tuple-of-Python-scalars shape: float columns
+    # contribute Python floats (NaN -> None), everything else keeps its
+    # native Python type. Object columns are swept explicitly because SQLite
+    # is dynamically typed and a REAL column can arrive as object dtype with
+    # a float NaN still inside it.
+    frame = sub[present]
+    values = frame.to_numpy(dtype=object)
+    nan_mask = np.zeros(values.shape, dtype=bool)
+    object_cols: list[int] = []
+    for j, c in enumerate(present):
+        kind = frame[c].dtype.kind
+        if kind == "f":
+            nan_mask[:, j] = np.isnan(frame[c].to_numpy())
+        elif kind == "O":
+            object_cols.append(j)  # noqa: PG-APPEND
+    if nan_mask.any():
+        values[nan_mask] = None
+    for j in object_cols:
+        col = values[:, j]
+        for i, v in enumerate(col):
+            if isinstance(v, float) and v != v:
+                col[i] = None
+    return [tuple(r) for r in values.tolist()]
