@@ -47,8 +47,7 @@ def compute_sector_momentum_tiers(
         # Step 1: Build symbol → sector map from fundamentals
         try:
             with sqlite3.connect(val_db) as conn:
-                rows = conn.execute(
-                    """
+                rows = conn.execute("""
                     SELECT f.symbol, f.sector
                     FROM fundamentals f
                     INNER JOIN (
@@ -58,8 +57,7 @@ def compute_sector_momentum_tiers(
                         GROUP BY symbol
                     ) latest ON f.symbol = latest.symbol AND f.date = latest.max_date
                     WHERE f.sector IS NOT NULL
-                    """
-                ).fetchall()
+                    """).fetchall()
                 symbol_sector = {r[0].strip(): r[1] for r in rows}
         except Exception:
             return {}
@@ -67,37 +65,61 @@ def compute_sector_momentum_tiers(
     if not symbol_sector:
         return {}
 
-    # Step 2: Batch load close data for all symbols at once (no N+1)
+    # Step 2: Latest and 126th-most-recent close per symbol.
+    #
+    # Two point lookups per symbol on the (symbol, date) primary key replace the
+    # single window-function query that used to scan this table. That version
+    # read every row of every symbol (~2,400 each, 8M rows for the live
+    # universe) and sorted each partition with a temp B-tree just to keep rn=1
+    # and rn=126; these lookups read 126 index entries per symbol and need no
+    # sort at all.
+    #
+    # Equivalence: (symbol, date) is the primary key, so `ORDER BY date DESC`
+    # is a total order per symbol with no ties, and `LIMIT 1 OFFSET k` returns
+    # exactly the row `ROW_NUMBER() = k + 1` selects. A symbol with fewer than
+    # 126 rows has no rn=126 row under either form, and NULL dates sort last in
+    # DESC under both, so they land on the same row either way.
+    #
+    # rowid is selected next to close so "no such row" (skip the symbol) stays
+    # distinguishable from "the row exists with a NULL close" (abort).
     sector_rocs: dict[str, list[float]] = {}
     symbols = list(symbol_sector.keys())
 
     try:
         with sqlite3.connect(tech_db) as conn:
-            # Single query: get latest and ~126th-close for all symbols
-            placeholders = ",".join("?" for _ in symbols)
+            values = ",".join("(?)" for _ in symbols)
             rows = conn.execute(
                 f"""
-                SELECT symbol, close, date, rn FROM (
-                    SELECT symbol, close, date,
-                           ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
-                    FROM technical_data
-                    WHERE symbol IN ({placeholders})
-                ) WHERE rn IN (1, 126)
-                ORDER BY symbol, rn
+                SELECT v.column1 AS symbol,
+                       (SELECT t.rowid FROM technical_data t
+                         WHERE t.symbol = v.column1
+                         ORDER BY t.date DESC LIMIT 1 OFFSET 0) AS latest_rowid,
+                       (SELECT t.close FROM technical_data t
+                         WHERE t.symbol = v.column1
+                         ORDER BY t.date DESC LIMIT 1 OFFSET 0) AS latest_close,
+                       (SELECT t.rowid FROM technical_data t
+                         WHERE t.symbol = v.column1
+                         ORDER BY t.date DESC LIMIT 1 OFFSET 125) AS old_rowid,
+                       (SELECT t.close FROM technical_data t
+                         WHERE t.symbol = v.column1
+                         ORDER BY t.date DESC LIMIT 1 OFFSET 125) AS old_close
+                FROM (VALUES {values}) AS v
                 """,
                 symbols,
             ).fetchall()
 
-        # Group by symbol: rn=1 is latest, rn=126 is ~6mo ago.
-        # Pair on the explicit rn value — never on arrival order, which the
-        # outer query's absence of ORDER BY used to leave undefined.
+        # rn=1 is latest, rn=126 is ~6mo ago. float() is applied without a None
+        # guard on purpose: a NULL close aborts the whole function via the
+        # except below, exactly as the tuple-conversion loop did.
         sym_latest: dict[str, float] = {}
         sym_old: dict[str, float] = {}
-        for sym, close, _dt, rn in rows:
-            if rn == 1:
-                sym_latest[sym] = float(close)
-            elif rn == 126:
-                sym_old[sym] = float(close)
+        for sym, latest_rowid, latest_close, old_rowid, old_close in rows:
+            if latest_rowid is None:
+                continue
+            sym_latest[sym] = float(latest_close)
+            if old_rowid is None:
+                continue
+            sym_old[sym] = float(old_close)
 
         for sym in symbols:
             latest_close = sym_latest.get(sym, 0)
@@ -363,8 +385,7 @@ class BottomHunter:
         try:
             val_db = self._db_path("valuation")
             with sqlite3.connect(val_db) as _sc:
-                _sec_rows = _sc.execute(
-                    """
+                _sec_rows = _sc.execute("""
                     SELECT f.symbol, f.sector
                     FROM fundamentals f
                     INNER JOIN (
@@ -374,8 +395,7 @@ class BottomHunter:
                         GROUP BY symbol
                     ) latest ON f.symbol = latest.symbol AND f.date = latest.max_date
                     WHERE f.sector IS NOT NULL
-                    """
-                ).fetchall()
+                    """).fetchall()
                 _sector_map = {r[0].strip(): r[1] for r in _sec_rows}
         except Exception:
             pass
@@ -393,8 +413,7 @@ class BottomHunter:
         try:
             val_db_q = self._db_path("valuation")
             with sqlite3.connect(val_db_q) as _qc:
-                _q_rows = _qc.execute(
-                    """
+                _q_rows = _qc.execute("""
                     SELECT f.symbol, f.net_margin, f.pe, f.promoter_holding_pct
                     FROM fundamentals f
                     INNER JOIN (
@@ -402,8 +421,7 @@ class BottomHunter:
                         FROM fundamentals
                         GROUP BY symbol
                     ) latest ON f.symbol = latest.symbol AND f.date = latest.max_date
-                    """
-                ).fetchall()
+                    """).fetchall()
                 for r in _q_rows:
                     _quality_map[r[0].strip()] = {
                         "net_margin": r[1],
