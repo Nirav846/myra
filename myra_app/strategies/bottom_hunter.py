@@ -1,5 +1,6 @@
 import logging
 import math
+from contextlib import closing
 from myra_app.strategies.scanner_utils import sanitize_float
 import sqlite3
 import os
@@ -46,7 +47,7 @@ def compute_sector_momentum_tiers(
 
         # Step 1: Build symbol → sector map from fundamentals
         try:
-            with sqlite3.connect(val_db) as conn:
+            with closing(sqlite3.connect(val_db)) as conn:
                 rows = conn.execute("""
                     SELECT f.symbol, f.sector
                     FROM fundamentals f
@@ -86,7 +87,7 @@ def compute_sector_momentum_tiers(
     symbols = list(symbol_sector.keys())
 
     try:
-        with sqlite3.connect(tech_db) as conn:
+        with closing(sqlite3.connect(tech_db)) as conn:
             values = ",".join("(?)" for _ in symbols)
             rows = conn.execute(
                 f"""
