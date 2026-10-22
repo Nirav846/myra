@@ -15,6 +15,7 @@ bulk path returns byte-identical candidate lists:
 import math
 import os
 import sqlite3
+import types
 from datetime import date
 
 import pandas as pd
@@ -22,6 +23,7 @@ import pytest
 
 from myra_app.constants import DB_DIR
 from myra_app.librarian_core import LibrarianCore
+from myra_app.db import bulk_loader
 from myra_app.db.bulk_loader import (
     load_ohlcv_for_universe,
     rows_for_symbol,
@@ -29,6 +31,7 @@ from myra_app.db.bulk_loader import (
     COLUMNS_8,
     COLUMNS_12,
     COLUMNS_13,
+    TECH_COLUMNS,
 )
 
 TECH_DB = os.path.join(DB_DIR, LibrarianCore.DB_MAP["technical"])
@@ -343,3 +346,364 @@ class TestRowsForSymbolConversion:
         before = self.bulk["AAA"].copy(deep=True)
         rows_for_symbol(self.bulk, "AAA", self.cols, "2026-01-01")
         pd.testing.assert_frame_equal(self.bulk["AAA"], before)
+
+
+# ---------------------------------------------------------------------------
+# _read_bulk: ordering contract, output parity, and connection lifecycle.
+#
+# Everything below runs against temporary databases built here, never the live
+# sidecar (see tests/conftest.py::live_db_guard).
+# ---------------------------------------------------------------------------
+_TECH_DDL = """
+CREATE TABLE technical_data (
+    symbol TEXT,
+    date TEXT,
+    open REAL,
+    high REAL,
+    low REAL,
+    close REAL,
+    volume INTEGER,
+    delivery INTEGER,
+    delivery_pct REAL,
+    nifty_outperformance_score REAL,
+    sma_50 REAL,
+    high_52w REAL,
+    low_52w REAL,
+    swing_low REAL,
+    PRIMARY KEY (symbol, date)
+)
+"""
+
+_TECH_INDEXES = (
+    "CREATE INDEX idx_tech_date ON technical_data(date)",
+    "CREATE INDEX idx_tech_symbol_date ON technical_data(symbol, date)",
+)
+
+# Deliberately inserted out of (symbol, date) order so an unordered read would
+# surface as a per-symbol ordering difference rather than a lucky pass.
+_ROWS = [
+    (
+        "BBB",
+        "2026-01-05",
+        11.0,
+        12.0,
+        10.0,
+        11.5,
+        300,
+        3,
+        1.0,
+        0.1,
+        10.5,
+        20.0,
+        5.0,
+        8.0,
+    ),
+    ("AAA", "2026-01-04", 10.0, 11.0, 9.0, 10.5, 200, 2, 0.5, 0.2, 9.5, 19.0, 4.0, 7.0),
+    ("CCC", "2025-12-20", 1.0, 2.0, 1.0, 1.5, 100, 1, 0.1, 0.0, 1.4, 2.0, 1.0, 1.2),
+    ("AAA", "2026-01-02", 8.0, 9.0, 7.0, 8.5, 180, 2, 0.4, 0.3, 8.0, 17.0, 3.0, 6.0),
+    ("DDD", "2026-01-04", 5.0, 6.0, 4.0, 5.5, 90, 1, 1.1, -0.1, 5.4, 9.0, 2.0, 3.0),
+    (
+        "AAA",
+        "2026-01-06",
+        14.0,
+        15.0,
+        13.0,
+        14.5,
+        260,
+        4,
+        None,
+        0.4,
+        13.0,
+        22.0,
+        6.0,
+        10.0,
+    ),
+    ("BBB", "2026-01-03", 9.0, 10.0, 8.0, 9.5, 250, 2, 0.9, 0.2, 9.0, 18.0, 4.0, 7.5),
+    (
+        "AAA",
+        "2026-01-05",
+        12.0,
+        13.0,
+        11.0,
+        float("nan"),
+        230,
+        3,
+        0.6,
+        None,
+        11.0,
+        21.0,
+        5.0,
+        9.0,
+    ),
+    ("AAA", "2026-01-03", 9.0, 10.0, 8.0, 9.5, 190, 2, 0.45, 0.25, 8.5, 18.0, 3.5, 6.5),
+    (
+        "BBB",
+        "2026-01-06",
+        12.0,
+        13.0,
+        11.0,
+        12.5,
+        320,
+        4,
+        1.2,
+        0.0,
+        11.5,
+        21.0,
+        6.0,
+        9.0,
+    ),
+]
+
+_COLS = (
+    "symbol",
+    "date",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "delivery",
+    "delivery_pct",
+    "nifty_outperformance_score",
+    "sma_50",
+    "high_52w",
+    "low_52w",
+    "swing_low",
+)
+
+
+def _make_tech_db(path, ddl=_TECH_DDL, rows=_ROWS, indexes=_TECH_INDEXES):
+    conn = sqlite3.connect(path)
+    try:
+        conn.executescript(ddl)
+        for statement in indexes:
+            conn.execute(statement)
+        if rows:
+            conn.executemany(
+                "INSERT INTO technical_data VALUES ("
+                + ",".join("?" * len(rows[0]))
+                + ")",
+                rows,
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return str(path)
+
+
+def _legacy_read_bulk(db_path, start_date, end_date, symbols=None):
+    """Verbatim copy of the pre-optimization _read_bulk (oracle)."""
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute("PRAGMA table_info(technical_data)").fetchall()
+        present = {r[1] for r in rows}
+        cols = [c for c in TECH_COLUMNS if c in present]
+        if not cols:
+            return {}
+        sql = (
+            "SELECT symbol, " + ", ".join(cols) + " FROM technical_data "
+            "WHERE date BETWEEN ? AND ?"
+        )
+        params = [start_date, end_date]
+        if symbols:
+            sql += " AND symbol IN (" + ",".join("?" for _ in symbols) + ")"
+            params.extend(symbols)
+        frame = pd.read_sql_query(sql, conn, params=params)
+
+    if frame is None or frame.empty:
+        return {}
+    return {
+        symbol: group.sort_values("date").reset_index(drop=True)
+        for symbol, group in frame.groupby("symbol")
+    }
+
+
+def _install_connect_spy(monkeypatch):
+    """Record every connection _read_bulk opens, without touching sqlite3."""
+    captured = []
+    real_connect = sqlite3.connect
+
+    def _connect(*args, **kwargs):
+        conn = real_connect(*args, **kwargs)
+        captured.append(conn)
+        return conn
+
+    shim = types.SimpleNamespace(
+        connect=_connect,
+        Connection=sqlite3.Connection,
+        Error=sqlite3.Error,
+        OperationalError=sqlite3.OperationalError,
+        ProgrammingError=sqlite3.ProgrammingError,
+    )
+    monkeypatch.setattr(bulk_loader, "sqlite3", shim)
+    return captured
+
+
+class TestReadBulkOrderingContract:
+    START = "2026-01-02"
+    END = "2026-01-05"
+
+    @pytest.fixture()
+    def db_path(self, tmp_path, monkeypatch):
+        path = _make_tech_db(tmp_path / "myra_technical.db")
+        monkeypatch.setattr(bulk_loader, "_tech_db_path", lambda: path)
+        return path
+
+    def test_full_universe_matches_legacy(self, db_path):
+        got = layout_read(db_path, self.START, self.END)
+        want = _legacy_read_bulk(db_path, self.START, self.END)
+        assert list(got) == list(want) == ["AAA", "BBB", "DDD"]
+        for symbol in want:
+            pd.testing.assert_frame_equal(got[symbol], want[symbol])
+
+    def test_symbol_subset_matches_legacy(self, db_path):
+        symbols = ["BBB", "AAA"]
+        got = layout_read(db_path, self.START, self.END, symbols)
+        want = _legacy_read_bulk(db_path, self.START, self.END, symbols)
+        assert list(got) == list(want) == ["AAA", "BBB"]
+        for symbol in want:
+            pd.testing.assert_frame_equal(got[symbol], want[symbol])
+
+    def test_date_window_boundaries_are_inclusive(self, db_path):
+        got = layout_read(db_path, self.START, self.END)
+        assert got["AAA"]["date"].tolist() == [
+            "2026-01-02",
+            "2026-01-03",
+            "2026-01-04",
+            "2026-01-05",
+        ]
+        assert "CCC" not in got  # 2025-12-20, before the window
+        assert "2026-01-06" not in got["AAA"]["date"].tolist()
+        assert "2026-01-06" not in got["BBB"]["date"].tolist()
+
+    def test_rows_chronological_with_range_index(self, db_path):
+        got = layout_read(db_path, self.START, self.END)
+        for symbol, frame in got.items():
+            assert frame["date"].is_monotonic_increasing, symbol
+            assert frame.index.equals(pd.RangeIndex(len(frame))), symbol
+
+    def test_columns_and_dtypes_preserved(self, db_path):
+        got = layout_read(db_path, self.START, self.END)
+        want = _legacy_read_bulk(db_path, self.START, self.END)
+        for symbol in want:
+            assert got[symbol].columns.tolist() == want[symbol].columns.tolist()
+            assert got[symbol].dtypes.tolist() == want[symbol].dtypes.tolist()
+
+    def test_missing_values_preserved(self, db_path):
+        got = layout_read(db_path, "2026-01-02", "2026-01-06")
+        assert got["AAA"].loc[got["AAA"]["date"] == "2026-01-05", "close"].isna().all()
+        assert (
+            got["AAA"]
+            .loc[got["AAA"]["date"] == "2026-01-05", "nifty_outperformance_score"]
+            .isna()
+            .all()
+        )
+
+    def test_missing_symbol_and_empty_window(self, db_path):
+        assert layout_read(db_path, self.START, self.END, ["ZZZ"]) == {}
+        assert layout_read(db_path, "2024-01-01", "2024-01-05") == {}
+
+    def test_empty_symbol_list_means_full_universe(self, db_path):
+        got = layout_read(db_path, self.START, self.END, [])
+        assert list(got) == ["AAA", "BBB", "DDD"]
+
+    def test_missing_database_returns_empty(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            bulk_loader, "_tech_db_path", lambda: str(tmp_path / "absent.db")
+        )
+        assert load_ohlcv_for_universe(self.START, self.END) == {}
+
+    def test_symbol_date_key_is_unique_by_schema(self, db_path):
+        """The loader may drop the per-group sort because the key is unique."""
+        conn = sqlite3.connect(db_path)
+        try:
+            unique_indexes = [
+                row
+                for row in conn.execute("PRAGMA index_list(technical_data)").fetchall()
+                if row[2] == 1  # unique flag
+            ]
+            assert unique_indexes, "technical_data needs a unique (symbol, date) key"
+            with pytest.raises(sqlite3.IntegrityError):
+                conn.execute(
+                    "INSERT INTO technical_data VALUES ("
+                    + ",".join("?" * len(_COLS))
+                    + ")",
+                    ("AAA", "2026-01-02") + (None,) * 12,
+                )
+        finally:
+            conn.close()
+
+    def test_reduced_schema_still_reads(self, tmp_path, monkeypatch):
+        path = _make_tech_db(
+            tmp_path / "reduced.db",
+            ddl="CREATE TABLE technical_data (symbol TEXT, date TEXT, close REAL)",
+            rows=[("AAA", "2026-01-02", 1.0), ("AAA", "2026-01-03", 2.0)],
+            indexes=(),
+        )
+        monkeypatch.setattr(bulk_loader, "_tech_db_path", lambda: path)
+        got = load_ohlcv_for_universe(self.START, self.END)
+        assert got["AAA"].columns.tolist() == ["symbol", "date", "close"]
+        assert got["AAA"]["close"].tolist() == [1.0, 2.0]
+
+
+def layout_read(db_path, start, end, symbols=None):
+    """Call the real _read_bulk against an explicit database path."""
+    original = bulk_loader._tech_db_path
+    bulk_loader._tech_db_path = lambda: db_path
+    try:
+        return bulk_loader._read_bulk(start, end, symbols)
+    finally:
+        bulk_loader._tech_db_path = original
+
+
+class TestReadBulkConnectionLifecycle:
+    START = "2026-01-02"
+    END = "2026-01-05"
+
+    @pytest.fixture()
+    def db_path(self, tmp_path, monkeypatch):
+        path = _make_tech_db(tmp_path / "myra_technical.db")
+        monkeypatch.setattr(bulk_loader, "_tech_db_path", lambda: path)
+        return path
+
+    def test_connection_closed_on_success(self, db_path, monkeypatch):
+        captured = _install_connect_spy(monkeypatch)
+        result = layout_read(db_path, self.START, self.END)
+        assert result, "read should still return frames after the handle closes"
+        assert len(captured) == 1
+        with pytest.raises(sqlite3.ProgrammingError):
+            captured[0].execute("SELECT 1")
+
+    def test_connection_closed_when_query_raises(self, db_path, monkeypatch):
+        captured = _install_connect_spy(monkeypatch)
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("forced read failure")
+
+        monkeypatch.setattr(
+            bulk_loader, "pd", types.SimpleNamespace(read_sql_query=_boom)
+        )
+        with pytest.raises(RuntimeError):
+            layout_read(db_path, self.START, self.END)
+        assert len(captured) == 1
+        with pytest.raises(sqlite3.ProgrammingError):
+            captured[0].execute("SELECT 1")
+
+    def test_connection_closed_when_no_columns(self, tmp_path, monkeypatch):
+        path = _make_tech_db(
+            tmp_path / "empty.db",
+            ddl="CREATE TABLE technical_data (unrelated TEXT)",
+            rows=None,
+            indexes=(),
+        )
+        monkeypatch.setattr(bulk_loader, "_tech_db_path", lambda: path)
+        captured = _install_connect_spy(monkeypatch)
+        assert layout_read(path, self.START, self.END) == {}
+        assert len(captured) == 1
+        with pytest.raises(sqlite3.ProgrammingError):
+            captured[0].execute("SELECT 1")
+
+    def test_returned_frames_usable_after_close(self, db_path):
+        result = layout_read(db_path, self.START, self.END)
+        frame = result["AAA"]
+        assert frame["close"].sum() > 0
+        assert frame.iloc[-1]["date"] == self.END

@@ -18,7 +18,7 @@ import math
 import os
 import sqlite3
 import threading
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import date
 from typing import Dict, Iterator, Optional, Sequence
 
@@ -302,12 +302,19 @@ def _read_bulk(
     end_date: str,
     symbols: Optional[Sequence[str]],
 ) -> Dict[str, pd.DataFrame]:
-    """Read OHLCV rows straight from SQLite (the unshared code path)."""
+    """Read OHLCV rows straight from SQLite (the unshared code path).
+
+    The query orders by ``symbol, date`` so SQLite can walk
+    ``idx_tech_symbol_date`` and read the table in storage order. Without the
+    ORDER BY the date-only predicate drives ``idx_tech_date`` and every row
+    costs a scattered page fetch. ``(symbol, date)`` is the table's primary
+    key, so that ordering also makes each returned frame chronological.
+    """
     tech_db = _tech_db_path()
     if not os.path.exists(tech_db):
         return {}
 
-    with sqlite3.connect(tech_db) as conn:
+    with closing(sqlite3.connect(tech_db)) as conn:
         cols = _select_columns(conn)
         if not cols:
             return {}
@@ -320,15 +327,17 @@ def _read_bulk(
             ph = ",".join("?" for _ in symbols)
             sql += f" AND symbol IN ({ph})"
             params.extend(symbols)
+        sql += " ORDER BY symbol, date"
         df = pd.read_sql_query(sql, conn, params=params)
 
     if df is None or df.empty:
         return {}
 
     result: Dict[str, pd.DataFrame] = {}
-    for symbol, group in df.groupby("symbol"):
-        # Preserve the SQL `ORDER BY date ASC` contract per symbol.
-        result[symbol] = group.sort_values("date").reset_index(drop=True)
+    for symbol, group in df.groupby("symbol", sort=False):
+        # Rows arrive in (symbol, date) order, so each group is already sorted
+        # and only the per-symbol index needs rebuilding.
+        result[symbol] = group.reset_index(drop=True)
     return result
 
 
