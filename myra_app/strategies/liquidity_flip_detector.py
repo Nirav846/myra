@@ -10,6 +10,7 @@ from myra_app.constants import DB_DIR
 from myra_app.librarian_core import LibrarianCore
 from myra_app.db.bulk_loader import (
     load_ohlcv_for_universe,
+    get_df_for_symbol,
     rows_for_symbol,
     COLUMNS_12,
 )
@@ -99,6 +100,78 @@ class LiquidityFlipDetector:
                 ).fetchall()
         return rows
 
+    def _get_tech_df(
+        self, symbol: str, min_date: str, max_date: str | None = None
+    ) -> pd.DataFrame:
+        """Return one symbol's OHLCV frame, date-sorted with a reset index.
+
+        Uses the single bulk load when available (no tuple round-trip); falls
+        back to the per-symbol DB path for DB-only / parity runs.
+        """
+        if self._bulk_data is not None:
+            df = get_df_for_symbol(
+                self._bulk_data, symbol, self._BULK_COLUMNS, min_date, max_date
+            )
+            if df is None or df.empty:
+                return pd.DataFrame()
+        else:
+            rows = self._get_tech_data(symbol, min_date, max_date)
+            if not rows:
+                return pd.DataFrame()
+            if len(rows[0]) >= 12:
+                df = pd.DataFrame(
+                    rows,
+                    columns=[
+                        "date",
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "volume",
+                        "delivery",
+                        "delivery_pct",
+                        "nifty_outperformance_score",
+                        "sma_50",
+                        "high_52w",
+                        "low_52w",
+                    ],
+                )
+            else:
+                df = pd.DataFrame(
+                    rows,
+                    columns=[
+                        "date",
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "volume",
+                        "delivery",
+                        "delivery_pct",
+                        "nifty_outperformance_score",
+                    ],
+                )
+                df["sma_50"] = None
+                df["high_52w"] = None
+                df["low_52w"] = None
+            df["date"] = pd.to_datetime(df["date"])
+
+        # The scan is written against positional rows (``.iloc[-1]``,
+        # ``.tail()``, ``.values``), so pin the ordering and the index here
+        # instead of relying on the snapshot's build order.
+        df = df.sort_values("date").reset_index(drop=True)
+
+        # ``rows_for_symbol`` pads an absent optional column with None, while
+        # ``get_df_for_symbol`` drops it. Both mean "no such level": the scan
+        # reads the 52-week pair behind a ``pd.notna`` guard and falls back to
+        # the in-window high/low, so an all-NaN column is the faithful stand-in
+        # and the 12-column contract stays intact.
+        for column in ("sma_50", "high_52w", "low_52w"):
+            if column not in df.columns:
+                df[column] = np.nan
+
+        return df
+
     @staticmethod
     def _sanitize_float(value):
         return sanitize_float(value)
@@ -153,49 +226,9 @@ class LiquidityFlipDetector:
             try:
                 symbol = symbol.strip()
 
-                tech = self._get_tech_data(symbol, min_date, max_date=as_on_date)
-                if len(tech) < max(60, int(self.lookback_days * 0.6) + 5):
+                df = self._get_tech_df(symbol, min_date, max_date=as_on_date)
+                if len(df) < max(60, int(self.lookback_days * 0.6) + 5):
                     continue
-
-                col_count = len(tech[0]) if tech else 0
-                if col_count >= 12:
-                    df = pd.DataFrame(
-                        tech,
-                        columns=[
-                            "date",
-                            "open",
-                            "high",
-                            "low",
-                            "close",
-                            "volume",
-                            "delivery",
-                            "delivery_pct",
-                            "nifty_outperformance_score",
-                            "sma_50",
-                            "high_52w",
-                            "low_52w",
-                        ],
-                    )
-                else:
-                    df = pd.DataFrame(
-                        tech,
-                        columns=[
-                            "date",
-                            "open",
-                            "high",
-                            "low",
-                            "close",
-                            "volume",
-                            "delivery",
-                            "delivery_pct",
-                            "nifty_outperformance_score",
-                        ],
-                    )
-                    df["sma_50"] = None
-                    df["high_52w"] = None
-                    df["low_52w"] = None
-                df["date"] = pd.to_datetime(df["date"])
-                df = df.sort_values("date").reset_index(drop=True)
 
                 df["sma_200"] = df["close"].rolling(200, min_periods=1).mean()
                 # SMA-200: require 200+ trading days, else set None (insufficient data)

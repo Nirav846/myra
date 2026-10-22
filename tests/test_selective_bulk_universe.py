@@ -187,14 +187,25 @@ def _scan_with(case: ScannerCase, mode: str, monkeypatch, universe=UNIVERSE):
     monkeypatch.setattr(case.factory, "_db_path", lambda self, key: ":memory:")
 
     seen: list[tuple] = []
-    real = scanner._get_tech_data
+    if hasattr(scanner, "_get_tech_df"):
+        # Frame consumers (Phase 41 onwards) read through the accessor.
+        real_df = scanner._get_tech_df
 
-    def recording(symbol, min_date, max_date=None):
-        rows = real(symbol, min_date, max_date)
-        seen.append((symbol, len(rows), tuple(rows[0]) if rows else None))
-        return rows
+        def recording_df(symbol, min_date, max_date=None):
+            df = real_df(symbol, min_date, max_date)
+            seen.append((symbol, len(df), tuple(df.iloc[0]) if len(df) else None))
+            return df
 
-    scanner._get_tech_data = recording
+        monkeypatch.setattr(scanner, "_get_tech_df", recording_df)
+    else:
+        real = scanner._get_tech_data
+
+        def recording(symbol, min_date, max_date=None):
+            rows = real(symbol, min_date, max_date)
+            seen.append((symbol, len(rows), tuple(rows[0]) if rows else None))
+            return rows
+
+        scanner._get_tech_data = recording
     return loader, seen, case.run(scanner)
 
 
