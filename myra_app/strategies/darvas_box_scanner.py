@@ -464,8 +464,7 @@ class DarvasBoxScanner(AccumulationBaseScanner):
         try:
             val_db = self._db_path("valuation")
             with sqlite3.connect(val_db) as _sc:
-                _sec_rows = _sc.execute(
-                    """
+                _sec_rows = _sc.execute("""
                     SELECT f.symbol, f.sector
                     FROM fundamentals f
                     INNER JOIN (
@@ -475,8 +474,7 @@ class DarvasBoxScanner(AccumulationBaseScanner):
                         GROUP BY symbol
                     ) latest ON f.symbol = latest.symbol AND f.date = latest.max_date
                     WHERE f.sector IS NOT NULL
-                    """
-                ).fetchall()
+                    """).fetchall()
                 _sector_map = {r[0].strip(): r[1] for r in _sec_rows}
         except Exception:
             pass
@@ -490,10 +488,14 @@ class DarvasBoxScanner(AccumulationBaseScanner):
             f"{(ref_date - pd.Timedelta(days=max(self.base_days * 2, 200))):%Y-%m-%d}"
         )
 
-        # Single bulk load replaces per-symbol sqlite connections.
+        # Single bulk load replaces per-symbol sqlite connections. Only the
+        # universe this loop visits is materialized; the loop strips before
+        # lookup, so the selector does too.
         # Upper bound is as_on_date, not today: a historical scan must never
         # see bars after the date it is pretending to run as of.
-        self._bulk_data = load_ohlcv_for_universe(min_date, as_on_date)
+        self._bulk_data = load_ohlcv_for_universe(
+            min_date, as_on_date, [r[0].strip() for r in rows]
+        )
 
         candidates: list[dict] = []
 
@@ -663,11 +665,13 @@ class DarvasBoxScanner(AccumulationBaseScanner):
                         "box_range_pct": round(box["box_range_pct"], 2),
                         "touches_ceiling": box["touches_ceiling"],
                         "touches_floor": box["touches_floor"],
-                        "dist_to_ceiling_pct": round(
-                            (box["ceiling"] - latest_close) / latest_close * 100, 2
-                        )
-                        if latest_close > 0 and latest_close <= box["ceiling"]
-                        else 0.0,
+                        "dist_to_ceiling_pct": (
+                            round(
+                                (box["ceiling"] - latest_close) / latest_close * 100, 2
+                            )
+                            if latest_close > 0 and latest_close <= box["ceiling"]
+                            else 0.0
+                        ),
                         "dar_box_median": round(dar_box_median, 3),
                         "sar": round(sar, 3),
                         "sar_z": round(sar_z, 3),

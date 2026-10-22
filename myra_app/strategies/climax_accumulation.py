@@ -294,8 +294,7 @@ class ClimaxAccumulationScanner:
         try:
             val_db = self._db_path("valuation")
             with sqlite3.connect(val_db) as _sc:
-                _sec_rows = _sc.execute(
-                    """
+                _sec_rows = _sc.execute("""
                     SELECT f.symbol, f.sector
                     FROM fundamentals f
                     INNER JOIN (
@@ -305,8 +304,7 @@ class ClimaxAccumulationScanner:
                         GROUP BY symbol
                     ) latest ON f.symbol = latest.symbol AND f.date = latest.max_date
                     WHERE f.sector IS NOT NULL
-                    """
-                ).fetchall()
+                    """).fetchall()
                 _sector_map = {r[0].strip(): r[1] for r in _sec_rows}
         except Exception:
             pass
@@ -317,8 +315,12 @@ class ClimaxAccumulationScanner:
         ref_date = pd.Timestamp(as_on_date)
         min_date = f"{(ref_date - pd.Timedelta(days=self.lookback_days + 60)):%Y-%m-%d}"
 
-        # Single bulk load replaces per-symbol sqlite connections.
-        self._bulk_data = load_ohlcv_for_universe(min_date, as_on_date)
+        # Single bulk load replaces per-symbol sqlite connections. Only the
+        # universe this loop visits is materialized; the loop strips before
+        # lookup, so the selector does too.
+        self._bulk_data = load_ohlcv_for_universe(
+            min_date, as_on_date, [r[0].strip() for r in universe]
+        )
 
         candidates: list[dict] = []
 

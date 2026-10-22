@@ -117,8 +117,7 @@ class LiquidityFlipDetector:
         try:
             val_db = self._db_path("valuation")
             with sqlite3.connect(val_db) as _sc:
-                _sec_rows = _sc.execute(
-                    """
+                _sec_rows = _sc.execute("""
                     SELECT f.symbol, f.sector
                     FROM fundamentals f
                     INNER JOIN (
@@ -128,8 +127,7 @@ class LiquidityFlipDetector:
                         GROUP BY symbol
                     ) latest ON f.symbol = latest.symbol AND f.date = latest.max_date
                     WHERE f.sector IS NOT NULL
-                    """
-                ).fetchall()
+                    """).fetchall()
                 _sector_map = {r[0].strip(): r[1] for r in _sec_rows}
         except Exception:
             pass
@@ -142,8 +140,12 @@ class LiquidityFlipDetector:
             f"{(ref_date - pd.Timedelta(days=self.lookback_days + 200)):%Y-%m-%d}"
         )
 
-        # Single bulk load replaces per-symbol sqlite connections.
-        self._bulk_data = load_ohlcv_for_universe(min_date, as_on_date)
+        # Single bulk load replaces per-symbol sqlite connections. Only the
+        # universe this loop visits is materialized; the loop strips before
+        # lookup, so the selector does too.
+        self._bulk_data = load_ohlcv_for_universe(
+            min_date, as_on_date, [r[0].strip() for r in rows]
+        )
 
         candidates: list[dict] = []
 
@@ -347,9 +349,9 @@ class LiquidityFlipDetector:
                         "flip_type": flip_type,
                         "avg_del_value_cr": round(avg_del_value_cr, 2),
                         "flip_consistency": flip_consistency,
-                        "sma_200": round(sma_200_val, 2)
-                        if sma_200_val is not None
-                        else None,
+                        "sma_200": (
+                            round(sma_200_val, 2) if sma_200_val is not None else None
+                        ),
                         "sma_200_factor": round(sma_200_factor, 2),
                         "flip_score": round(flip_score, 1),
                         "grade": grade,
