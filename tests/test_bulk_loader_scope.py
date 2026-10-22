@@ -569,13 +569,16 @@ class TestMatchRequestDtypes:
         out = _uniform_case()
         for symbol in out:
             out[symbol]["label"] = ["a", "b"]
+        # A string column's inferred dtype is pandas-version dependent (object on
+        # 2.x, StringDtype on 3.x); only "unchanged" is the contract here.
+        before = {symbol: out[symbol]["label"].dtype for symbol in out}
         expected = {k: v.copy(deep=True) for k, v in out.items()}
         _legacy_match_request_dtypes(expected)
         bulk_loader._match_request_dtypes(out)
         _assert_same(out, expected)
         for symbol in out:
             assert str(out[symbol]["volume"].dtype) == "int64"
-            assert out[symbol]["label"].dtype == object
+            assert out[symbol]["label"].dtype == before[symbol]
 
     def test_no_float_columns_is_a_noop(self):
         out = {
