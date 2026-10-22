@@ -56,7 +56,7 @@ _local = threading.local()
 class _BatchSnapshot:
     """One loaded universe window shared by every scan in a batch."""
 
-    __slots__ = ("start", "end", "symbols", "data")
+    __slots__ = ("start", "end", "symbols", "data", "uniform_dtypes")
 
     def __init__(
         self,
@@ -70,6 +70,10 @@ class _BatchSnapshot:
         # None => the snapshot holds every symbol in the window.
         self.symbols: Optional[set[str]] = None if not symbols else set(symbols)
         self.data = data
+        # ``_read_bulk`` builds every frame from one result set, so dtypes are
+        # uniform by construction. Verifying it once per snapshot (not once per
+        # slice) lets the dtype pass skip its per-symbol scan.
+        self.uniform_dtypes = _frames_share_dtypes(data)
 
     def covers(self, start: str, end: str, symbols: Optional[Sequence[str]]) -> bool:
         """True when the snapshot can answer the request without a reload."""
@@ -101,11 +105,26 @@ class _BatchSnapshot:
             if left >= right:
                 continue
             out[symbol] = df.iloc[left:right].reset_index(drop=True)
-        _match_request_dtypes(out)
+        _match_request_dtypes(out, uniform=self.uniform_dtypes)
         return out
 
 
-def _match_request_dtypes(out: Dict[str, pd.DataFrame]) -> None:
+def _frames_share_dtypes(data: Dict[str, pd.DataFrame]) -> bool:
+    """True when every frame carries the same column dtypes.
+
+    ``slice`` reindexes frames with ``iloc``, which preserves dtypes, so a
+    uniform snapshot yields uniform slices. Empty or single-frame snapshots are
+    trivially uniform.
+    """
+    frames = iter(data.values())
+    try:
+        first = next(frames).dtypes
+    except StopIteration:
+        return True
+    return all(frame.dtypes.equals(first) for frame in frames)
+
+
+def _match_request_dtypes(out: Dict[str, pd.DataFrame], uniform: bool = False) -> None:
     """Match the dtypes a direct SQL read of this exact request would infer.
 
     ``pd.read_sql_query`` infers each column's dtype from its *whole* result
@@ -115,31 +134,33 @@ def _match_request_dtypes(out: Dict[str, pd.DataFrame]) -> None:
     different dtype than the unshared path. Only columns that are entirely NA
     across every returned symbol are recast -- one symbol with a value is
     enough for the real query to infer a float column.
+
+    ``uniform`` lets a snapshot assert what it already verified at construction:
+    every frame shares the same dtypes, so the per-symbol dtype scan is
+    redundant. The recast decision still depends on the requested window and
+    symbol subset, so it stays per call.
     """
     if not out:
         return
-    first = next(iter(out.values()))
-    candidates = []
-    for column in first.columns:
-        if first[column].dtype.kind == "f":
-            candidates.append(column)
+    frames = list(out.values())
+    candidates = [c for c, dt in frames[0].dtypes.items() if dt.kind == "f"]
     if not candidates:
         return
     for column in candidates:
-        if any(sub[column].dtype.kind != "f" for sub in out.values()):
+        if not uniform and any(sub[column].dtype.kind != "f" for sub in frames):
             continue
         has_value = False
-        for sub in out.values():
+        for sub in frames:
             if sub[column].notna().any():
                 has_value = True
                 break
         if has_value:
             continue
-        if all(sub[column].isna().all() for sub in out.values()):
-            for sub in out.values():
-                sub[column] = pd.Series(
-                    [None] * len(sub), index=sub.index, dtype=object
-                )
+        # No frame held a value, so every frame is all-NA for this column (the
+        # loop above already proved it) -- recast all of them, as a direct read
+        # would have inferred object.
+        for sub in frames:
+            sub[column] = pd.Series([None] * len(sub), index=sub.index, dtype=object)
 
 
 class _Scope:

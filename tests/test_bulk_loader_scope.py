@@ -428,3 +428,248 @@ class TestLiveParity:
 
         _assert_equal(everything, _direct(short, end))
         _assert_equal(single, _direct(start, end, [one_symbol]))
+
+
+# ---------------------------------------------------------------------------
+# _match_request_dtypes: dtype parity with the pre-optimization implementation.
+#
+# The function reproduces the dtype ``pd.read_sql_query`` would infer for the
+# *same request*: a float column that is entirely NA across every returned
+# symbol comes back as object/None from SQL, not float64/NaN. These tests pin
+# that behaviour against a verbatim copy of the original implementation.
+# ---------------------------------------------------------------------------
+def _legacy_match_request_dtypes(out):
+    """Verbatim copy of the pre-optimization implementation (oracle)."""
+    if not out:
+        return
+    first = next(iter(out.values()))
+    candidates = []
+    for column in first.columns:
+        if first[column].dtype.kind == "f":
+            candidates.append(column)
+    if not candidates:
+        return
+    for column in candidates:
+        if any(sub[column].dtype.kind != "f" for sub in out.values()):
+            continue
+        has_value = False
+        for sub in out.values():
+            if sub[column].notna().any():
+                has_value = True
+                break
+        if has_value:
+            continue
+        if all(sub[column].isna().all() for sub in out.values()):
+            for sub in out.values():
+                sub[column] = pd.Series(
+                    [None] * len(sub), index=sub.index, dtype=object
+                )
+
+
+def _legacy_slice(snapshot, start, end, symbols):
+    """Same loop as _BatchSnapshot.slice, with the legacy dtype pass."""
+    wanted = None if not symbols else set(symbols)
+    out = {}
+    for symbol, df in snapshot.data.items():
+        if wanted is not None and symbol not in wanted:
+            continue
+        left = df["date"].searchsorted(start, side="left")
+        right = df["date"].searchsorted(end, side="right")
+        if left >= right:
+            continue
+        out[symbol] = df.iloc[left:right].reset_index(drop=True)
+    _legacy_match_request_dtypes(out)
+    return out
+
+
+def _frame(rows, **overrides):
+    data = {
+        "date": [r[0] for r in rows],
+        "close": [r[1] for r in rows],
+        "swing_low": [r[2] for r in rows],
+        "volume": [r[3] for r in rows],
+    }
+    data.update(overrides)
+    return pd.DataFrame(data)
+
+
+def _uniform_case():
+    return {
+        "AAA": _frame(
+            [
+                ("2026-01-01", 10.0, 9.0, 100),
+                ("2026-01-02", 11.0, float("nan"), 110),
+            ]
+        ),
+        "BBB": _frame(
+            [
+                ("2026-01-01", 20.0, float("nan"), 200),
+                ("2026-01-02", 21.0, float("nan"), 210),
+            ]
+        ),
+        "CCC": _frame(
+            [
+                ("2026-01-01", 30.0, float("nan"), 300),
+                ("2026-01-02", 31.0, float("nan"), 310),
+            ]
+        ),
+    }
+
+
+def _all_na_case():
+    """Every symbol is NULL for swing_low: SQL would infer object for it."""
+    data = _uniform_case()
+    for frame in data.values():
+        frame["swing_low"] = float("nan")
+    return data
+
+
+def _assert_same(actual, expected):
+    assert set(actual) == set(expected)
+    for symbol in expected:
+        pd.testing.assert_frame_equal(
+            actual[symbol],
+            expected[symbol],
+            check_dtype=True,
+            check_index_type=True,
+            check_column_type=True,
+        )
+
+
+class TestMatchRequestDtypes:
+    def test_no_recast_when_any_symbol_has_a_value(self):
+        out = _uniform_case()
+        expected = {k: v.copy(deep=True) for k, v in out.items()}
+        _legacy_match_request_dtypes(expected)
+        bulk_loader._match_request_dtypes(out)
+        _assert_same(out, expected)
+        assert out["AAA"]["swing_low"].dtype == float
+        assert out["BBB"]["swing_low"].dtype == float
+
+    def test_all_na_across_request_becomes_object(self):
+        out = _all_na_case()
+        expected = {k: v.copy(deep=True) for k, v in out.items()}
+        _legacy_match_request_dtypes(expected)
+        bulk_loader._match_request_dtypes(out)
+        _assert_same(out, expected)
+        for symbol in out:
+            assert out[symbol]["swing_low"].dtype == object
+            assert out[symbol]["swing_low"].isna().all()
+            assert out[symbol]["swing_low"].tolist() == [None, None]
+
+    def test_all_na_single_symbol_matches_legacy(self):
+        out = {"CCC": _uniform_case()["CCC"]}
+        expected = {"CCC": out["CCC"].copy(deep=True)}
+        _legacy_match_request_dtypes(expected)
+        bulk_loader._match_request_dtypes(out)
+        _assert_same(out, expected)
+        assert out["CCC"]["swing_low"].dtype == object
+
+    def test_int_and_object_columns_untouched(self):
+        out = _uniform_case()
+        for symbol in out:
+            out[symbol]["label"] = ["a", "b"]
+        expected = {k: v.copy(deep=True) for k, v in out.items()}
+        _legacy_match_request_dtypes(expected)
+        bulk_loader._match_request_dtypes(out)
+        _assert_same(out, expected)
+        for symbol in out:
+            assert str(out[symbol]["volume"].dtype) == "int64"
+            assert out[symbol]["label"].dtype == object
+
+    def test_no_float_columns_is_a_noop(self):
+        out = {
+            "AAA": pd.DataFrame({"date": ["2026-01-01"], "volume": [1]}),
+            "BBB": pd.DataFrame({"date": ["2026-01-01"], "volume": [2]}),
+        }
+        expected = {k: v.copy(deep=True) for k, v in out.items()}
+        _legacy_match_request_dtypes(expected)
+        bulk_loader._match_request_dtypes(out)
+        _assert_same(out, expected)
+
+    def test_empty_dict_is_a_noop(self):
+        out = {}
+        bulk_loader._match_request_dtypes(out)
+        assert out == {}
+
+    def test_empty_frames_count_as_all_na(self):
+        out = {
+            "AAA": pd.DataFrame({"date": [], "close": []}),
+            "BBB": pd.DataFrame({"date": [], "close": []}),
+        }
+        expected = {k: v.copy(deep=True) for k, v in out.items()}
+        _legacy_match_request_dtypes(expected)
+        bulk_loader._match_request_dtypes(out)
+        _assert_same(out, expected)
+
+    def test_non_float_frame_skips_the_column(self):
+        out = _uniform_case()
+        # One frame already holds None: the legacy scan bails out of the recast.
+        out["BBB"]["swing_low"] = pd.Series([None, None], dtype=object)
+        expected = {k: v.copy(deep=True) for k, v in out.items()}
+        _legacy_match_request_dtypes(expected)
+        bulk_loader._match_request_dtypes(out)
+        _assert_same(out, expected)
+        assert out["AAA"]["swing_low"].dtype == float
+
+    def test_uniform_flag_does_not_change_uniform_results(self):
+        for case in (_uniform_case(), _all_na_case()):
+            slow = {k: v.copy(deep=True) for k, v in case.items()}
+            fast = {k: v.copy(deep=True) for k, v in case.items()}
+            bulk_loader._match_request_dtypes(slow, uniform=False)
+            bulk_loader._match_request_dtypes(fast, uniform=True)
+            _assert_same(fast, slow)
+
+
+class TestSnapshotDtypeShortcut:
+    START = "2026-01-01"
+    END = "2026-01-02"
+
+    def test_uniform_snapshot_is_marked_uniform(self):
+        snap = bulk_loader._BatchSnapshot(self.START, self.END, None, _uniform_case())
+        assert snap.uniform_dtypes is True
+
+    def test_mixed_dtype_snapshot_is_not_marked_uniform(self):
+        data = _uniform_case()
+        data["BBB"] = data["BBB"].astype({"swing_low": object})
+        snap = bulk_loader._BatchSnapshot(self.START, self.END, None, data)
+        assert snap.uniform_dtypes is False
+
+    def test_empty_snapshot_is_uniform(self):
+        snap = bulk_loader._BatchSnapshot(self.START, self.END, None, {})
+        assert snap.uniform_dtypes is True
+
+    def test_slice_matches_legacy_slice_uniform(self):
+        snap = bulk_loader._BatchSnapshot(self.START, self.END, None, _uniform_case())
+        for symbols in (None, ["AAA"], ["BBB", "CCC"], []):
+            got = snap.slice(self.START, self.END, symbols)
+            want = _legacy_slice(snap, self.START, self.END, symbols)
+            _assert_same(got, want)
+
+    def test_slice_matches_legacy_slice_mixed_dtypes(self):
+        data = _uniform_case()
+        data["BBB"] = data["BBB"].astype({"swing_low": object})
+        snap = bulk_loader._BatchSnapshot(self.START, self.END, None, data)
+        for symbols in (None, ["AAA"], ["BBB"], ["BBB", "CCC"]):
+            got = snap.slice(self.START, self.END, symbols)
+            want = _legacy_slice(snap, self.START, self.END, symbols)
+            _assert_same(got, want)
+
+    def test_slice_matches_legacy_slice_date_window(self):
+        snap = bulk_loader._BatchSnapshot(self.START, self.END, None, _uniform_case())
+        got = snap.slice("2026-01-02", "2026-01-02", None)
+        want = _legacy_slice(snap, "2026-01-02", "2026-01-02", None)
+        _assert_same(got, want)
+        assert all(len(frame) == 1 for frame in got.values())
+
+    def test_repeated_slices_are_stable_and_independent(self):
+        snap = bulk_loader._BatchSnapshot(self.START, self.END, None, _uniform_case())
+        first = snap.slice(self.START, self.END, None)
+        reference = {k: v.copy(deep=True) for k, v in first.items()}
+        first["AAA"].loc[:, "close"] = -1.0
+        second = snap.slice(self.START, self.END, None)
+        _assert_same(second, reference)
+
+    def test_slice_of_empty_window_is_empty(self):
+        snap = bulk_loader._BatchSnapshot(self.START, self.END, None, _uniform_case())
+        assert snap.slice("2025-01-01", "2025-01-02", None) == {}
