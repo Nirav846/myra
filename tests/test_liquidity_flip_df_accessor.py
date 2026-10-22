@@ -1,17 +1,22 @@
-"""Liquidity Flip: DataFrame-accessor migration (Phase 41).
+"""Liquidity Flip: the data-access path behind ``_get_tech_df``.
 
-The scanner used to pull a list of 12-tuples out of the bulk window and rebuild
-a DataFrame from it. It now asks the existing ``get_df_for_symbol`` accessor for
-the frame directly.
+Phase 41 replaced the tuple round-trip with the ``get_df_for_symbol`` accessor.
+Phase 42 puts a private columnar window in front of that accessor: one pass over
+the slice replaces 2,012 per-symbol DataFrame selections.
 
-These tests pin three things:
+These tests pin:
 
-* the migrated path is used in the bulk branch (frame accessor, not tuples);
-* it produces **the same candidates** as the pre-migration recipe, which is
-  reproduced here as an independent oracle built on ``rows_for_symbol``;
+* the bulk branch never rebuilds tuples and serves frames from the window;
+* the window agrees with ``get_df_for_symbol`` for every symbol, on full and
+  narrow windows, including column order, dtypes, index labels and all-NA
+  handling;
+* the produced **candidates** match the pre-Phase-41 recipe, which is reproduced
+  here as an independent oracle built on ``rows_for_symbol``;
 * the two contract hazards from the Phase 40 audit stay resolved: absent
   optional columns behave exactly like all-NaN ones, and index labels never
-  reach the scanner's arithmetic.
+  reach the scanner's arithmetic;
+* a returned frame never shares memory with the window, so mutating it cannot
+  corrupt a later request.
 
 The golden test computes its expectations by hand from the synthetic fixture, so
 at least one assertion does not compare two paths against each other.
@@ -26,7 +31,7 @@ import pandas as pd
 import pytest
 
 import myra_app.strategies.liquidity_flip_detector as lf_module
-from myra_app.db.bulk_loader import COLUMNS_12, rows_for_symbol
+from myra_app.db.bulk_loader import COLUMNS_12, get_df_for_symbol, rows_for_symbol
 from myra_app.strategies.liquidity_flip_detector import LiquidityFlipDetector
 
 AS_ON = "2026-10-16"
@@ -181,27 +186,24 @@ def _fingerprint(frame: pd.DataFrame) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def test_bulk_path_uses_the_frame_accessor(monkeypatch):
-    """The bulk branch must read a frame, not a tuple list."""
-    calls = {"frame": 0, "rows": 0}
-    real_frame = lf_module.get_df_for_symbol
+def test_bulk_path_never_round_trips_through_tuples(monkeypatch):
+    """The bulk branch must not rebuild tuples per symbol."""
+    calls = {"rows": 0}
     real_rows = lf_module.rows_for_symbol
-
-    def frame_accessor(*args, **kwargs):
-        calls["frame"] += 1
-        return real_frame(*args, **kwargs)
 
     def rows_accessor(*args, **kwargs):
         calls["rows"] += 1
         return real_rows(*args, **kwargs)
 
-    monkeypatch.setattr(lf_module, "get_df_for_symbol", frame_accessor)
     monkeypatch.setattr(lf_module, "rows_for_symbol", rows_accessor)
 
-    _scan(monkeypatch, _bulk(_frame("AAA")), _universe("AAA"))
+    scanner = LiquidityFlipDetector()
+    _scan(monkeypatch, _bulk(_frame("AAA")), _universe("AAA"), scanner=scanner)
 
-    assert calls["frame"] == 1
     assert calls["rows"] == 0
+    assert scanner._columnar is not None
+    # The per-symbol frame dict is released once the window owns the rows.
+    assert scanner._bulk_data is None
 
 
 def test_scan_still_uses_the_tuple_path_without_a_bulk_window(monkeypatch):
@@ -412,3 +414,210 @@ def test_empty_columns_are_still_named_like_the_tuple_path(monkeypatch):
     scanner._bulk_data = _bulk(_frame("AAA", drop_52w=True))
     frame = scanner._get_tech_df("AAA", "2025-10-31", AS_ON)
     assert list(frame.columns) == list(COLUMNS_12)
+
+
+# ---------------------------------------------------------------------------
+# Phase 42: the columnar window
+# ---------------------------------------------------------------------------
+
+WIDE_LENGTHS = [0, 1, 6, 40, 95, 140, 120, 200, 137, 61]
+
+
+def _wide_bulk(count: int = 60) -> dict[str, pd.DataFrame]:
+    """A multi-symbol slice with mixed histories, empty frames included."""
+    frames = [
+        _frame(f"S{i:03d}", WIDE_LENGTHS[i % len(WIDE_LENGTHS)] + (i // 10) * 3)
+        for i in range(count)
+    ]
+    return _bulk(*frames)
+
+
+def _window(bulk, columns=COLUMNS_12):
+    return lf_module._ColumnarWindow.from_frames(bulk, columns)
+
+
+def _normalise(frame):
+    if frame is None or frame.empty:
+        return None
+    return frame.sort_values("date").reset_index(drop=True)
+
+
+def test_columnar_window_matches_the_accessor_for_every_symbol():
+    """Full window, complete available universe, every column and dtype."""
+    bulk = _wide_bulk()
+    window = _window(bulk)
+
+    compared = 0
+    for symbol in bulk:
+        expected = _normalise(get_df_for_symbol(bulk, symbol, COLUMNS_12))
+        got = _normalise(window.frame(symbol))
+        if expected is None:
+            assert got is None, symbol
+            continue
+        assert got is not None, symbol
+        pd.testing.assert_frame_equal(got, expected, obj=symbol)
+        assert list(got.dtypes) == list(expected.dtypes), symbol
+        compared += 1
+
+    assert compared >= 50, "the fixture must exercise a real universe"
+
+
+def test_columnar_window_matches_a_narrow_date_window():
+    """The window is built from an already-sliced dict, like production."""
+    narrow_start = "2026-06-01"
+    full = _bulk(_frame("AAA", 400), _frame("BBB", 250, steady=True))
+    sliced = {
+        s: d[d["date"] >= narrow_start].reset_index(drop=True) for s, d in full.items()
+    }
+    window = _window(sliced)
+
+    for symbol in full:
+        expected = _normalise(
+            get_df_for_symbol(full, symbol, COLUMNS_12, narrow_start, AS_ON)
+        )
+        got = _normalise(window.frame(symbol))
+        assert expected is not None and got is not None, symbol
+        pd.testing.assert_frame_equal(got, expected, obj=symbol)
+
+
+def test_columnar_window_keeps_column_order_and_the_date_contract():
+    bulk = _bulk(_frame("AAA"))
+    window = _window(bulk)
+    got = window.frame("AAA")
+    expected = get_df_for_symbol(bulk, "AAA", COLUMNS_12)
+
+    assert list(got.columns) == list(COLUMNS_12)
+    assert list(got.dtypes) == list(expected.dtypes)
+    assert pd.api.types.is_datetime64_any_dtype(got["date"])
+    assert got["date"].is_monotonic_increasing
+
+
+def test_columnar_window_preserves_an_all_na_object_column():
+    """`_match_request_dtypes` recasts a column with no values to object/None."""
+    bulk = _bulk(_frame("AAA", blank_52w=True))
+    for sub in bulk.values():
+        sub["sma_50"] = pd.Series([None] * len(sub), index=sub.index, dtype=object)
+
+    got = _window(bulk).frame("AAA")
+
+    assert got["sma_50"].dtype == object
+    assert got["sma_50"].isna().all()
+    pd.testing.assert_frame_equal(
+        _normalise(got),
+        _normalise(get_df_for_symbol(bulk, "AAA", COLUMNS_12)),
+    )
+
+
+def test_columnar_window_drops_columns_absent_from_every_frame():
+    """A drifted schema loses the column, exactly like `get_df_for_symbol`."""
+    bulk = _bulk(_frame("AAA", drop_52w=True))
+    window = _window(bulk)
+
+    expected = [c for c in COLUMNS_12 if c not in ("sma_50", "high_52w", "low_52w")]
+    assert list(window.columns) == expected
+    assert list(window.frame("AAA").columns) == expected
+
+
+def test_columnar_window_ignores_columns_it_was_not_asked_for():
+    bulk = _bulk(_frame("AAA"))
+    bulk["AAA"]["swing_low"] = 1.0
+
+    window = _window(bulk, COLUMNS_12)
+    assert "swing_low" not in window.columns
+    assert "swing_low" not in window.frame("AAA").columns
+
+
+def test_columnar_window_returns_none_for_absent_and_empty_symbols():
+    window = _window(_bulk(_frame("AAA"), _frame("BTN", 0)))
+
+    assert window.frame("GONE") is None
+    assert window.frame("BTN") is None
+    assert window.frame("AAA") is not None
+    assert window.frame("") is None
+
+
+def test_columnar_window_handles_an_empty_slice():
+    window = _window({})
+
+    assert window.frame("AAA") is None
+    assert window.spans == {}
+
+
+def test_columnar_frames_do_not_share_memory_with_the_window():
+    window = _window(_bulk(_frame("AAA")))
+    frame = window.frame("AAA")
+
+    for column in window.columns:
+        assert not np.shares_memory(
+            np.asarray(frame[column].to_numpy()), window.arrays[column]
+        ), column
+
+
+def test_mutating_one_columnar_frame_cannot_leak():
+    window = _window(_bulk(_frame("AAA"), _frame("BBB")))
+
+    first = window.frame("AAA")
+    first.loc[first.index[0], "close"] = -1.0
+    first.loc[first.index[-1], "delivery_pct"] = 999.0
+
+    again = window.frame("AAA")
+    assert again["close"].iloc[0] == 300.0
+    assert again["delivery_pct"].iloc[-1] == 65.0
+
+    other = window.frame("BBB")
+    assert other["close"].iloc[0] == 300.0
+    assert other["delivery_pct"].iloc[-1] == 65.0
+
+
+def test_dict_fallback_matches_the_columnar_path_for_every_symbol():
+    """The Phase 41 accessor stays the compatibility boundary."""
+    bulk = _wide_bulk()
+    window = _window(bulk)
+
+    compared = 0
+    for symbol in bulk:
+        from_dict = LiquidityFlipDetector()
+        from_dict._bulk_data = bulk
+        expected = from_dict._get_tech_df(symbol, "2000-01-01", AS_ON)
+
+        from_window = LiquidityFlipDetector()
+        from_window._columnar = window
+        got = from_window._get_tech_df(symbol, "2000-01-01", AS_ON)
+
+        pd.testing.assert_frame_equal(got, expected, obj=symbol)
+        if not expected.empty:
+            compared += 1
+
+    assert compared >= 50
+
+
+def test_bulk_scan_serves_frames_from_the_window(monkeypatch):
+    """No per-symbol dict selection is allowed once the window is built."""
+
+    def boom(*args, **kwargs):
+        raise AssertionError("the bulk branch must not re-select from the dict")
+
+    monkeypatch.setattr(lf_module, "get_df_for_symbol", boom)
+
+    out = _scan(monkeypatch, _bulk(_frame("AAA")), _universe("AAA"))
+
+    assert list(out["symbol"]) == ["AAA"]
+    assert out.iloc[0]["flip_score"] == 71.4
+
+
+def test_empty_universe_never_builds_a_window(monkeypatch):
+    scanner = LiquidityFlipDetector()
+    _scan(monkeypatch, _bulk(_frame("AAA")), [], scanner=scanner)
+
+    assert scanner._columnar is None
+
+
+def test_columnar_windows_are_rebuilt_per_scan(monkeypatch):
+    """A second scan must not reuse a window built from older data."""
+    scanner = LiquidityFlipDetector()
+    _scan(monkeypatch, _bulk(_frame("AAA")), _universe("AAA"), scanner=scanner)
+    first = scanner._columnar
+
+    _scan(monkeypatch, _bulk(_frame("AAA")), _universe("AAA"), scanner=scanner)
+
+    assert scanner._columnar is not first

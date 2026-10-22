@@ -18,8 +18,85 @@ from myra_app.db.bulk_loader import (
 logger = logging.getLogger(__name__)
 
 
+class _ColumnarWindow:
+    """Per-column arrays over one symbol slice, materialized per request.
+
+    Every symbol in this scanner's 2,012-name universe is read through the same
+    twelve columns, so selecting and copying each symbol's frame separately
+    costs more than one pass over the whole slice. The build reads each column
+    once into contiguous arrays; a request then slices them and builds one
+    small frame.
+
+    The window is private to a single scan and never handed out. ``frame``
+    returns a fresh DataFrame whose blocks are copies, so a caller mutating what
+    it receives cannot reach the arrays or another symbol.
+
+    A column absent from every frame is dropped, matching ``get_df_for_symbol``;
+    the caller keeps its own missing-column handling.
+    """
+
+    __slots__ = ("columns", "arrays", "spans")
+
+    def __init__(
+        self,
+        columns: tuple[str, ...],
+        arrays: dict[str, np.ndarray],
+        spans: dict[str, tuple[int, int]],
+    ):
+        self.columns = columns
+        self.arrays = arrays
+        self.spans = spans
+
+    @classmethod
+    def from_frames(
+        cls, frames: dict[str, pd.DataFrame], columns: tuple[str, ...]
+    ) -> "_ColumnarWindow":
+        present = tuple(
+            column
+            for column in columns
+            if all(column in df.columns for df in frames.values())
+        )
+        spans: dict[str, tuple[int, int]] = {}
+        parts: dict[str, list[np.ndarray]] = {column: [] for column in present}
+        position = 0
+        for symbol, df in frames.items():
+            length = len(df)
+            # An empty symbol is simply absent from the window, exactly like a
+            # symbol the snapshot never returned.
+            if not length:
+                continue
+            spans[symbol] = (position, position + length)
+            for column in present:
+                parts[column].append(df[column].to_numpy())
+            position += length
+
+        arrays = {
+            column: (
+                np.concatenate(parts[column])
+                if parts[column]
+                else np.empty(0, dtype=object)
+            )
+            for column in present
+        }
+        return cls(present, arrays, spans)
+
+    def frame(self, symbol: str) -> pd.DataFrame | None:
+        """The symbol's rows as a new DataFrame, in snapshot order."""
+        span = self.spans.get(symbol)
+        if span is None:
+            return None
+        start, end = span
+        df = pd.DataFrame(
+            {column: self.arrays[column][start:end] for column in self.columns}
+        )
+        if "date" in df.columns:
+            df["date"] = pd.to_datetime(df["date"])
+        return df
+
+
 class LiquidityFlipDetector:
     _bulk_data = None
+    _columnar = None
     _BULK_COLUMNS = COLUMNS_12
 
     def __init__(
@@ -105,10 +182,16 @@ class LiquidityFlipDetector:
     ) -> pd.DataFrame:
         """Return one symbol's OHLCV frame, date-sorted with a reset index.
 
-        Uses the single bulk load when available (no tuple round-trip); falls
-        back to the per-symbol DB path for DB-only / parity runs.
+        Serves the scan from the columnar window when one exists (one pass over
+        the slice instead of a per-symbol selection), else from a bulk frame
+        dict, else from the per-symbol DB path for DB-only / parity runs. Every
+        branch returns a fresh frame with the same columns, order and dtypes.
         """
-        if self._bulk_data is not None:
+        if self._columnar is not None:
+            df = self._columnar.frame(symbol)
+            if df is None or df.empty:
+                return pd.DataFrame()
+        elif self._bulk_data is not None:
             df = get_df_for_symbol(
                 self._bulk_data, symbol, self._BULK_COLUMNS, min_date, max_date
             )
@@ -215,10 +298,15 @@ class LiquidityFlipDetector:
 
         # Single bulk load replaces per-symbol sqlite connections. Only the
         # universe this loop visits is materialized; the loop strips before
-        # lookup, so the selector does too.
-        self._bulk_data = load_ohlcv_for_universe(
+        # lookup, so the selector does too. The slice is then folded into one
+        # columnar window -- one pass over the columns instead of a DataFrame
+        # selection per symbol -- and released, so only one representation is
+        # alive while the loop runs.
+        bulk = load_ohlcv_for_universe(
             min_date, as_on_date, [r[0].strip() for r in rows]
         )
+        self._columnar = _ColumnarWindow.from_frames(bulk, self._BULK_COLUMNS)
+        self._bulk_data = None
 
         candidates: list[dict] = []
 
