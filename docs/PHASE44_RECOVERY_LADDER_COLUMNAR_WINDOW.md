@@ -130,3 +130,11 @@ this environment; these are pandas deep-usage numbers.)
 * `myra_app/strategies/bottom_hunter_m1_scanner.py` (+~200/−~15)
 * `tests/test_bottom_hunter_m1_columnar.py` (new, 19 tests)
 * `myra_web/routes/scanners.py` (one line + two black hunks)
+
+## Status
+
+Merged to `main` as `2c1fd54`. CI `39988828335` success (test 3.12,
+frontend-build, lint; the `audit` job is still configured to skip). CodeQL
+`39988828739` success on all three languages. Tree clean and
+`HEAD == origin/main` at the time of writing. Phase 44 is closed — no further
+scanner migration is started here.
