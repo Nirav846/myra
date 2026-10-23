@@ -21,8 +21,90 @@ logger = logging.getLogger(__name__)
 _VALID_AGGREGATIONS = {"latest", "max", "average", "momentum"}
 
 
+class _ColumnarWindow:
+    """Per-column arrays over one symbol slice, materialized per request.
+
+    Every symbol in the universe is read through the same eight columns, so
+    selecting and copying each symbol's frame separately costs more than one
+    pass over the whole slice. The build reads each column once into
+    contiguous arrays; a request then slices them and builds one small frame.
+
+    The window is private to a single scan and never handed out. ``frame``
+    returns a fresh DataFrame whose blocks are copies, so a caller mutating what
+    it receives cannot reach the arrays or another symbol.
+
+    Rows keep snapshot order: ``load_ohlcv_for_universe`` emits ``(symbol,
+    date)`` ordered frames and every DCB consumer slices positionally
+    (``iloc[-1]``, ``tail``), so no sort or index rebuild is applied here.
+
+    A column absent from any frame is dropped for the whole slice, matching
+    ``get_df_for_symbol``. ``_read_bulk`` projects a single column list for the
+    entire slice, so frames are uniform in practice and that rule is defensive
+    only; ``delivery_pct`` in particular is consumed by the DCB metrics.
+    """
+
+    __slots__ = ("columns", "arrays", "spans")
+
+    def __init__(
+        self,
+        columns: tuple[str, ...],
+        arrays: dict[str, np.ndarray],
+        spans: dict[str, tuple[int, int]],
+    ):
+        self.columns = columns
+        self.arrays = arrays
+        self.spans = spans
+
+    @classmethod
+    def from_frames(
+        cls, frames: dict[str, pd.DataFrame], columns: tuple[str, ...]
+    ) -> "_ColumnarWindow":
+        present = tuple(
+            column
+            for column in columns
+            if all(column in df.columns for df in frames.values())
+        )
+        spans: dict[str, tuple[int, int]] = {}
+        parts: dict[str, list[np.ndarray]] = {column: [] for column in present}
+        position = 0
+        for symbol, df in frames.items():
+            length = len(df)
+            # An empty symbol is simply absent from the window, exactly like a
+            # symbol the snapshot never returned.
+            if not length:
+                continue
+            spans[symbol] = (position, position + length)
+            for column in present:
+                parts[column].append(df[column].to_numpy())
+            position += length
+
+        arrays = {
+            column: (
+                np.concatenate(parts[column])
+                if parts[column]
+                else np.empty(0, dtype=object)
+            )
+            for column in present
+        }
+        return cls(present, arrays, spans)
+
+    def frame(self, symbol: str) -> pd.DataFrame | None:
+        """The symbol's rows as a new DataFrame, in snapshot order."""
+        span = self.spans.get(symbol)
+        if span is None:
+            return None
+        start, end = span
+        df = pd.DataFrame(
+            {column: self.arrays[column][start:end] for column in self.columns}
+        )
+        if "date" in df.columns:
+            df["date"] = pd.to_datetime(df["date"])
+        return df
+
+
 class DCBBargainScanner:
     _bulk_data = None
+    _columnar = None
     _BULK_COLUMNS = COLUMNS_8
 
     # ── Backtest validation status (audit reference) ────────────────────
@@ -132,9 +214,19 @@ class DCBBargainScanner:
 
         return rows
 
-    def _get_tech_data(
+    def _get_tech_df(
         self, symbol: str, min_date: str, max_date: str | None = None
-    ) -> list[tuple]:
+    ) -> pd.DataFrame:
+        """The symbol's daily frame from the scan window, else the bulk dictionary.
+
+        Returns an empty frame (never ``None``) when the symbol is absent so
+        callers can keep chaining the length guard. The scan releases
+        ``_bulk_data`` as soon as the window owns the slice; the dictionary
+        branch therefore only serves direct callers that set it themselves.
+        """
+        if self._columnar is not None:
+            df = self._columnar.frame(symbol)
+            return pd.DataFrame() if df is None else df
         if self._bulk_data is not None:
             df = get_df_for_symbol(
                 self._bulk_data,
@@ -143,7 +235,15 @@ class DCBBargainScanner:
                 min_date,
                 max_date,
             )
-            if df is None or df.empty:
+            return pd.DataFrame() if df is None else df
+        return pd.DataFrame()
+
+    def _get_tech_data(
+        self, symbol: str, min_date: str, max_date: str | None = None
+    ) -> list[tuple]:
+        if self._columnar is not None or self._bulk_data is not None:
+            df = self._get_tech_df(symbol, min_date, max_date)
+            if df.empty:
                 return []
             # Backward-compatible shape: rows of tuples in column order.
             return list(df.itertuples(index=False, name=None))
@@ -563,8 +663,7 @@ class DCBBargainScanner:
         try:
             val_db = self._db_path("valuation")
             with sqlite3.connect(val_db) as _sc:
-                _sec_rows = _sc.execute(
-                    """
+                _sec_rows = _sc.execute("""
                     SELECT f.symbol, f.sector
                     FROM fundamentals f
                     INNER JOIN (
@@ -574,8 +673,7 @@ class DCBBargainScanner:
                         GROUP BY symbol
                     ) latest ON f.symbol = latest.symbol AND f.date = latest.max_date
                     WHERE f.sector IS NOT NULL
-                    """
-                ).fetchall()
+                    """).fetchall()
                 _sector_map = {r[0].strip(): r[1] for r in _sec_rows}
         except Exception as e:
             logger.warning("DCB sector map load failed: %s", e)
@@ -605,6 +703,15 @@ class DCBBargainScanner:
             )
             return pd.DataFrame()
 
+        # One columnar window per scan. The dictionary is released straight
+        # away so only one representation of the slice stays live: the window
+        # serves every symbol from contiguous arrays instead of re-selecting a
+        # frame per symbol from the dict.
+        self._columnar = _ColumnarWindow.from_frames(
+            self._bulk_data, self._BULK_COLUMNS
+        )
+        self._bulk_data = None
+
         is_weekly = self.timeframe == "weekly"
         effective_window = self.dcb_window // 5 if is_weekly else self.dcb_window
 
@@ -617,18 +724,10 @@ class DCBBargainScanner:
         for idx, (symbol, mcap, ff_pct) in enumerate(rows):
             symbol = symbol.strip()
             try:
-                # DataFrame-backed slice from the bulk window. The date column
-                # is already datetime and sorted — no to_datetime/sort needed.
-                df = get_df_for_symbol(
-                    self._bulk_data,
-                    symbol,
-                    self._BULK_COLUMNS,
-                    min_date,
-                    max_date=as_on_date,
-                )
-                if df is None or len(df) < max(
-                    60, int((self.dcb_window + 50) * 0.6) + 5
-                ):
+                # Frame-backed slice from the scan window. The date column is
+                # already datetime and in snapshot order — no sort needed.
+                df = self._get_tech_df(symbol, min_date, as_on_date)
+                if df.empty or len(df) < max(60, int((self.dcb_window + 50) * 0.6) + 5):
                     frame_too_short_skipped += 1
                     continue
 
@@ -744,9 +843,11 @@ class DCBBargainScanner:
                         "del_abs": round(del_abs, 2),
                         "adtv_cr": round(adtv_cr, 2),
                         "high_del_days": high_del_days,
-                        "free_float_mcap_cr": round(free_float_mcap_cr, 2)
-                        if free_float_mcap_cr is not None
-                        else None,
+                        "free_float_mcap_cr": (
+                            round(free_float_mcap_cr, 2)
+                            if free_float_mcap_cr is not None
+                            else None
+                        ),
                         "ff_data_quality": ff_data_quality,
                         "spike_deep": spike_deep,
                         "is_lower_circuit": is_lower_circuit,

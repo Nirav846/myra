@@ -851,8 +851,9 @@ def _make_valid_tech_rows(n: int = 200) -> list[tuple]:
 
 
 def _make_valid_tech_df(n: int = 200) -> pd.DataFrame:
-    """Build a DataFrame from _make_valid_tech_rows with a datetime date column,
-    matching what get_df_for_symbol returns to scan()."""
+    """Build a DataFrame in the shape ``load_ohlcv_for_universe`` stores per
+    symbol — datetime ``date`` column, ``COLUMNS_8`` order — so it can be fed
+    to ``scan()`` through the bulk slice rather than through a mocked accessor."""
     rows = _make_valid_tech_rows(n)
     df = pd.DataFrame(
         rows,
@@ -879,10 +880,8 @@ def test_free_float_skip_when_null_ff_pct_and_min_ff_mcap_positive():
     with (
         patch.object(scanner, "_get_universe", return_value=[("TEST", 10000, None)]),
         patch(
-            "myra_app.strategies.dcb_bargain.get_df_for_symbol", return_value=tech_df
-        ),
-        patch(
-            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe", return_value={}
+            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe",
+            return_value={"TEST": tech_df},
         ),
     ):
         result = scanner.scan(as_on_date="2025-06-15")
@@ -897,10 +896,8 @@ def test_free_float_missing_path_when_min_ff_mcap_zero():
     with (
         patch.object(scanner, "_get_universe", return_value=[("TEST", 10000, None)]),
         patch(
-            "myra_app.strategies.dcb_bargain.get_df_for_symbol", return_value=tech_df
-        ),
-        patch(
-            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe", return_value={}
+            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe",
+            return_value={"TEST": tech_df},
         ),
     ):
         result = scanner.scan(as_on_date="2025-06-15")
@@ -928,11 +925,8 @@ def test_free_float_measured_path_includes_candidate():
             scanner, "_get_universe", return_value=[("TEST", mcap_raw, ff_pct)]
         ),
         patch(
-            "myra_app.strategies.dcb_bargain.get_df_for_symbol",
-            return_value=_make_valid_tech_df(),
-        ),
-        patch(
-            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe", return_value={}
+            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe",
+            return_value={"TEST": _make_valid_tech_df()},
         ),
     ):
         result = scanner.scan(as_on_date="2025-06-15")
@@ -952,11 +946,8 @@ def test_free_float_measured_path_skips_below_threshold():
             scanner, "_get_universe", return_value=[("TEST", 10_000_000, 25.0)]
         ),
         patch(
-            "myra_app.strategies.dcb_bargain.get_df_for_symbol",
-            return_value=_make_valid_tech_df(),
-        ),
-        patch(
-            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe", return_value={}
+            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe",
+            return_value={"TEST": _make_valid_tech_df()},
         ),
     ):
         result = scanner.scan(as_on_date="2025-06-15")
@@ -971,11 +962,8 @@ def test_free_float_round_none_not_type_error():
     with (
         patch.object(scanner, "_get_universe", return_value=[("TEST", 10000, None)]),
         patch(
-            "myra_app.strategies.dcb_bargain.get_df_for_symbol",
-            return_value=_make_valid_tech_df(),
-        ),
-        patch(
-            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe", return_value={}
+            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe",
+            return_value={"TEST": _make_valid_tech_df()},
         ),
     ):
         # This must NOT raise TypeError from round(None, 2)
@@ -1103,10 +1091,8 @@ def test_scan_weekly_timeframe_end_to_end():
     with (
         patch.object(scanner, "_get_universe", return_value=[("TEST", 5000, 50.0)]),
         patch(
-            "myra_app.strategies.dcb_bargain.get_df_for_symbol", return_value=tech_df
-        ),
-        patch(
-            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe", return_value={}
+            "myra_app.strategies.dcb_bargain.load_ohlcv_for_universe",
+            return_value={"TEST": tech_df},
         ),
     ):
         result = scanner.scan(as_on_date="2025-06-15")
