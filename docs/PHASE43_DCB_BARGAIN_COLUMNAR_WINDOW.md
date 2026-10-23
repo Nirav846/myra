@@ -213,10 +213,14 @@ pre-commit                 black / flake8 / perf guard / schema drift: Passed
 The first push (\773364\) failed CI on one new test that indirectly
 exercised the unguarded SQL fallback described in section 10 (CI has no
 \	echnical_data\ table); the test was narrowed to the accessor and the suite
-went green locally, then on CI.
+went green locally, then on CI (2,250 passed / 21 skipped in 70.66 s).
 
 Database mtimes unchanged after all benchmarks and tests
 (`myra_technical.db` 2026-10-18 21:31:01, `myra_valuation.db` 2026-10-18
 22:01:02, `myra_metadata.db` 2026-10-21 13:48:56). All measurement ran read-only
 outside production services; no refresh, backfill, scheduler or batch job was
 started.
+
+Pushed as \773364\ (implementation) and \718e315\ (test narrowing).
+\HEAD == origin/main == 718e315\, working tree clean. CI run 39931593146
+success (2 m 17 s), CodeQL run 39931592669 success (2 m 4 s).
