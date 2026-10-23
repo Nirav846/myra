@@ -99,6 +99,138 @@ from myra_app.db.bulk_loader import (
 
 logger = logging.getLogger(__name__)
 
+
+class _ColumnarWindow:
+    """Per-column arrays over one symbol slice, served per request.
+
+    The detection loop reads four of the twelve loaded columns — date, low,
+    close, and the last ``delivery_pct`` — and never builds a frame, so the
+    tuple list was only transport. One pass over the slice replaces the
+    per-symbol re-selection, and both shapes are served from the same arrays:
+    ``rows`` reproduces ``rows_for_symbol`` exactly (tuple contract used by the
+    bootstrap and the near-trigger sweep) and ``bars`` hands the loop the
+    columns it actually consumes.
+
+    Columns missing from the slice are kept as all-``None`` object arrays rather
+    than dropped: every caller indexes by position (``row[4]`` is the close), so
+    a dropped column would silently shift the rest. This mirrors
+    ``rows_for_symbol``'s ``_pad_rows`` fallback.
+
+    Rows keep snapshot order. ``load_ohlcv_for_universe`` emits ``(symbol,
+    date)`` ordered frames and the crossing/cooldown math depends on
+    chronological order, so nothing is sorted or reindexed here.
+
+    The window is private to one scan: ``bars`` returns copies, so a caller
+    mutating what it receives cannot reach the arrays or another symbol.
+    """
+
+    __slots__ = ("columns", "arrays", "spans")
+
+    def __init__(
+        self,
+        columns: tuple[str, ...],
+        arrays: dict[str, np.ndarray],
+        spans: dict[str, tuple[int, int]],
+    ):
+        self.columns = columns
+        self.arrays = arrays
+        self.spans = spans
+
+    @classmethod
+    def from_frames(
+        cls, frames: dict[str, pd.DataFrame], columns: tuple[str, ...]
+    ) -> "_ColumnarWindow":
+        arrays: dict[str, np.ndarray] = {}
+        spans: dict[str, tuple[int, int]] = {}
+        parts: dict[str, list[np.ndarray]] = {column: [] for column in columns}
+        position = 0
+        for symbol, df in frames.items():
+            length = len(df)
+            # An empty symbol is absent from the window, exactly like a symbol
+            # the snapshot never returned.
+            if not length:
+                continue
+            spans[symbol] = (position, position + length)
+            for column in columns:
+                # A column missing from one frame is padded for that frame only
+                # (rows_for_symbol does the same), so the other symbols keep
+                # their real values.
+                if column in df.columns:
+                    parts[column].append(df[column].to_numpy())
+                else:
+                    parts[column].append(np.full(length, None, dtype=object))
+            position += length
+
+        for column in columns:
+            if parts[column]:
+                arrays[column] = np.concatenate(parts[column])
+            else:
+                # No rows at all: keep the column so positional indexing works.
+                arrays[column] = np.full(0, None, dtype=object)
+        return cls(columns, arrays, spans)
+
+    def span(
+        self, symbol: str, min_date: str, max_date: str | None
+    ) -> tuple[int, int] | None:
+        """Row bounds for *symbol* clipped to ``[min_date, max_date]``."""
+        bounds = self.spans.get(symbol)
+        if bounds is None:
+            return None
+        start, end = bounds
+        dates = self.arrays["date"]
+        # Only ISO strings are clipped; anything else (a hand-built fixture with
+        # date objects, or a missing date column) keeps the whole span.
+        if isinstance(dates[start], str):
+            if min_date and min_date > dates[start]:
+                start += int(np.searchsorted(dates[start:end], min_date, "left"))
+            if max_date and max_date < dates[end - 1]:
+                end = start + int(np.searchsorted(dates[start:end], max_date, "right"))
+        if end <= start:
+            return None
+        return start, end
+
+    def rows(self, symbol: str, min_date: str, max_date: str | None) -> list[tuple]:
+        """The symbol's rows in ``COLUMNS_12`` order, as ``rows_for_symbol``."""
+        bounds = self.span(symbol, min_date, max_date)
+        if bounds is None:
+            return []
+        start, end = bounds
+        values = np.empty((end - start, len(self.columns)), dtype=object)
+        for j, column in enumerate(self.columns):
+            values[:, j] = self.arrays[column][start:end]
+        # Same NaN -> None sweep as rows_for_symbol, so tuple contents match.
+        for j, column in enumerate(self.columns):
+            array = self.arrays[column]
+            if array.dtype.kind == "f":
+                mask = np.isnan(values[:, j].astype(float))
+                if mask.any():
+                    values[mask, j] = None
+            elif array.dtype.kind == "O":
+                for i, value in enumerate(values[:, j]):
+                    if isinstance(value, float) and value != value:
+                        values[i, j] = None
+        return [tuple(row) for row in values.tolist()]
+
+    def bars(
+        self, symbol: str, min_date: str, max_date: str | None
+    ) -> tuple[np.ndarray, np.ndarray, list, np.ndarray]:
+        """``(closes, lows, dates, delivery_pct)`` clipped like ``rows``."""
+        bounds = self.span(symbol, min_date, max_date)
+        if bounds is None:
+            return (
+                np.empty(0, dtype=float),
+                np.empty(0, dtype=float),
+                [],
+                np.empty(0, dtype=object),
+            )
+        start, end = bounds
+        closes = np.array(self.arrays["close"][start:end], dtype=float)
+        lows = np.array(self.arrays["low"][start:end], dtype=float)
+        dates = self.arrays["date"][start:end].tolist()
+        delivery = self.arrays["delivery_pct"][start:end].copy()
+        return closes, lows, dates, delivery
+
+
 # Backtest constants — do NOT change without re-validating (mirror
 # backtest_engine.KAUSHIK_*).
 BHM1_LOOKBACK = 252  # rolling 52-week window (trading days)
@@ -196,6 +328,7 @@ class BottomHunterM1Scanner:
     """Live Bottom Hunter M1 scanner (see module docstring)."""
 
     _bulk_data = None
+    _columnar = None
     _BULK_COLUMNS = COLUMNS_12
 
     validation_caveat = VALIDATION_CAVEAT
@@ -308,9 +441,11 @@ class BottomHunterM1Scanner:
     def _get_tech_data(
         self, symbol: str, min_date: str, max_date: Optional[str] = None
     ) -> list[tuple]:
-        """Per-symbol rows (bulk path preferred; SQL fallback mirrors the
+        """Per-symbol rows (window/bulk path preferred; SQL fallback mirrors the
         other scanners and is what the web layer patches for progress)."""
         max_date = max_date or date.today().isoformat()
+        if self._columnar is not None:
+            return self._columnar.rows(symbol, min_date, max_date)
         if self._bulk_data is not None:
             return rows_for_symbol(
                 self._bulk_data, symbol, self._BULK_COLUMNS, min_date, max_date
@@ -343,6 +478,36 @@ class BottomHunterM1Scanner:
                     """,
                     (symbol, min_date, max_date),
                 ).fetchall()
+
+    def _get_tech_bars(
+        self, symbol: str, min_date: str, max_date: Optional[str] = None
+    ) -> tuple[np.ndarray, np.ndarray, list, np.ndarray]:
+        """The four columns the detection loop consumes, as native arrays.
+
+        Returns ``(closes, lows, dates, delivery_pct)`` in the same row order as
+        :meth:`_get_tech_data`, so ``len(closes)`` replaces ``len(rows)`` and the
+        crossing math sees identical inputs without a tuple round-trip. The
+        window path slices pre-built arrays; without a window the arrays are
+        built from the rows exactly as the loop used to build them.
+        """
+        if self._columnar is not None:
+            return self._columnar.bars(
+                symbol, min_date, max_date or date.today().isoformat()
+            )
+        rows = self._get_tech_data(symbol, min_date, max_date)
+        if not rows:
+            return (
+                np.empty(0, dtype=float),
+                np.empty(0, dtype=float),
+                [],
+                np.empty(0, dtype=object),
+            )
+        return (
+            np.array([r[4] for r in rows], dtype=float),
+            np.array([r[3] for r in rows], dtype=float),
+            [r[0] for r in rows],
+            np.array([r[7] for r in rows], dtype=object),
+        )
 
     # ── the scan ────────────────────────────────────────────────────────
 
@@ -410,6 +575,16 @@ class BottomHunterM1Scanner:
         else:
             min_date = self._db_min_date()
         self._bulk_data = load_ohlcv_for_universe(min_date, as_of, list(univ_meta))
+        # One columnar window per scan; the dictionary is released immediately so
+        # only one representation of the slice stays live (the window serves both
+        # the tuple accessor and the detection loop's arrays). A falsy result
+        # keeps the previous no-bulk behaviour and falls back to SQL.
+        self._columnar = (
+            _ColumnarWindow.from_frames(self._bulk_data, self._BULK_COLUMNS)
+            if self._bulk_data
+            else None
+        )
+        self._bulk_data = None
         conn = None
         cooldown_seed: dict[str, dict] = {}
         positions: dict[str, dict] = {}
@@ -442,17 +617,16 @@ class BottomHunterM1Scanner:
         final_cooldown: dict[str, dict] = {}
         cycle_signal_date: dict[str, str] = {}
         for symbol, rank, mcap_cr in universe:
-            # Single per-symbol data path (bulk-backed when a bulk load is
-            # present) so the web layer's progress patch on _get_tech_data
+            # Single per-symbol data path (window/bulk-backed when a load is
+            # present) so the web layer's progress patch on _get_tech_bars
             # ticks per symbol.  COLUMNS_12 order: date, open, high, low,
             # close, volume, delivery, delivery_pct, nifty..., sma_50, hi52,
             # lo52.
-            rows = self._get_tech_data(symbol, min_date, max_date=as_of)
-            if len(rows) < self.lookback + 1:
+            closes, lows, dates, delivery_pct = self._get_tech_bars(
+                symbol, min_date, as_of
+            )
+            if len(closes) < self.lookback + 1:
                 continue  # insufficient window (matches backtest n<252+1 skip)
-            closes = np.array([r[4] for r in rows], dtype=float)
-            lows = np.array([r[3] for r in rows], dtype=float)
-            dates = [r[0] for r in rows]
 
             seed = cooldown_seed.get(symbol)
             events, final = detect_events(
@@ -485,6 +659,9 @@ class BottomHunterM1Scanner:
             y = float(np.min(lows[idx - self.lookback + 1 : idx + 1]))
             close = float(closes[idx])
             pos = positions.get(symbol)
+            last_delivery_pct = self._delivery_pct_value(
+                delivery_pct[-1] if len(delivery_pct) else None
+            )
             if pos is not None:
                 at_cap = (pos["n_tranches"] or 0) >= self.max_tranches
                 candidates.append(  # noqa: PG-APPEND
@@ -499,7 +676,7 @@ class BottomHunterM1Scanner:
                         "overshoot_pct": round(overshoot * 100, 3),
                         "mcap_rank": rank,
                         "mcap_cr": round(mcap_cr, 2),
-                        "delivery_pct": self._last_delivery_pct(rows),
+                        "delivery_pct": last_delivery_pct,
                         "n_tranches": pos.get("n_tranches") or 0,
                         "blended_basis": pos.get("blended_basis"),
                         "last_tranche_date": pos.get("last_tranche_date"),
@@ -518,7 +695,7 @@ class BottomHunterM1Scanner:
                         "overshoot_pct": round(overshoot * 100, 3),
                         "mcap_rank": rank,
                         "mcap_cr": round(mcap_cr, 2),
-                        "delivery_pct": self._last_delivery_pct(rows),
+                        "delivery_pct": last_delivery_pct,
                         "n_tranches": None,
                         "blended_basis": None,
                         "last_tranche_date": None,
@@ -570,7 +747,7 @@ class BottomHunterM1Scanner:
         min_date = f"{(pd.Timestamp(as_of) - pd.Timedelta(days=545)):%Y-%m-%d}"
         # Intentionally do NOT call load_ohlcv_for_universe here —
         # scan_near_trigger uses _get_tech_data directly (which respects
-        # the bulk path set by scan(), or falls back to SQL).
+        # the window/bulk path set by scan(), or falls back to SQL).
 
         # Load cooldown state — symbols in cooldown are excluded.
         from myra_app.strategies.bottom_hunter_m1_state import (
@@ -636,13 +813,20 @@ class BottomHunterM1Scanner:
         """
         if not rows:
             return None
-        val = rows[-1][7]
+        return BottomHunterM1Scanner._delivery_pct_value(rows[-1][7])
+
+    @staticmethod
+    def _delivery_pct_value(val) -> Optional[float]:
+        """Round a single delivery_pct cell (None/NaN/inf -> None)."""
         if val is None:
             return None
-        val = float(val)
-        if np.isnan(val) or np.isinf(val):
+        try:
+            value = float(val)
+        except (TypeError, ValueError):
             return None
-        return round(val, 2)
+        if np.isnan(value) or np.isinf(value):
+            return None
+        return round(value, 2)
 
     def _bootstrap_from_full_history(
         self,

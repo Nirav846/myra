@@ -735,9 +735,9 @@ async def mf_smart_money_resolve(payload: dict = Body(default={})):
         "company": company,
         "symbol": symbol,
         "has_price_data": known,
-        "note": None
-        if known
-        else "Mapping saved, but no price data for this ticker yet.",
+        "note": (
+            None if known else "Mapping saved, but no price data for this ticker yet."
+        ),
     }
 
 
@@ -1185,7 +1185,7 @@ register_scanner(
     build_scanner=_bhm1_build,
     scan_as_of=True,
     result_mode="df",
-    progress_attr="_get_tech_data",
+    progress_attr="_get_tech_bars",
     status_extra="scanned_date",
     init_message="Initialising Recovery Ladder scanner...",
     label="Recovery Ladder",
@@ -1419,9 +1419,9 @@ def bhm1_get_positions():
                 "current_price": round(current_price, 2) if current_price else None,
                 "days_held": days_held,
                 "days_to_cap": days_to_cap,
-                "pct_to_target": round(pct_to_target, 2)
-                if pct_to_target is not None
-                else None,
+                "pct_to_target": (
+                    round(pct_to_target, 2) if pct_to_target is not None else None
+                ),
                 "alert": alert,
                 "alert_detail": alert_detail,
                 "delivery_pct": delivery_pct,
