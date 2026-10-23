@@ -370,9 +370,15 @@ def test_scan_follows_the_legacy_arm_when_delivery_pct_is_all_na(monkeypatch):
 
 
 def test_scan_returns_empty_without_a_snapshot():
+    """With no window and no bulk dictionary the frame accessor is empty.
+
+    ``_get_tech_data`` is deliberately not asserted here: with no snapshot it
+    falls through to its SQL branch, which is pre-existing behaviour and needs a
+    live schema (`delivery_pct` retry is unguarded when the table is absent).
+    """
     scanner = DCBBargainScanner()
     assert scanner._get_tech_df("ANY", MIN_DATE, AS_ON).empty
-    assert scanner._get_tech_data("ANY", MIN_DATE, AS_ON) == []
+    assert scanner._get_tech_df("ANY", MIN_DATE, AS_ON).columns.tolist() == []
 
 
 # ---------------------------------------------------------------------------

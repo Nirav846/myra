@@ -109,7 +109,8 @@ column rule) — corrected in the tests, not worked around in the source.
   across runs, `_bulk_data` released while the window keeps the data, score /
   discount identities (`0.6·discount + 0.4·del_abs`, `(dcb − close)/dcb·100`),
   short-history skipping, ghost symbol absent from the slice, all-NA parity,
-  no-snapshot behaviour
+  empty accessor with no snapshot (`_get_tech_df` only — see section 10 for
+  why the tuple accessor is not exercised there)
 - `_get_tech_data` still returns plain tuples in column order
 
 Golden expectation: the score and discount identities above are computed from
@@ -194,6 +195,11 @@ non-overlapping ranges are the load-bearing evidence, not the median alone.
 - **Pre-existing:** a symbol whose `delivery_pct` is entirely NULL makes the
   discount window call `np.nanmean` on an empty slice (RuntimeWarning). Same in
   both arms; the test that exercises it marks the warning explicitly.
+- **Pre-existing:** \_get_tech_data\'s SQL fallback retries without
+  \delivery_pct\ inside the same \xcept sqlite3.OperationalError\ block, so a
+  database that lacks \	echnical_data\ outright raises instead of returning
+  \[]\. CI has such a database; the new test was narrowed to the accessor
+  rather than changing the fallback (out of scope).
 - The other ten batch scanners still materialise frames from tuples per symbol.
 
 ## 11. Verification
@@ -203,6 +209,11 @@ pytest                    2271 passed, 385.34 s
 pandas-3 proxy (141 tests) 141 passed
 pre-commit                 black / flake8 / perf guard / schema drift: Passed
 ```
+
+The first push (\773364\) failed CI on one new test that indirectly
+exercised the unguarded SQL fallback described in section 10 (CI has no
+\	echnical_data\ table); the test was narrowed to the accessor and the suite
+went green locally, then on CI.
 
 Database mtimes unchanged after all benchmarks and tests
 (`myra_technical.db` 2026-10-18 21:31:01, `myra_valuation.db` 2026-10-18
