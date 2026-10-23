@@ -1041,6 +1041,7 @@ register_scanner(
     parse_payload=_darvas_parse,
     build_scanner=_darvas_build,
     result_mode="df",
+    progress_attr="_get_tech_df",
     label="Darvas Box",
 )
 

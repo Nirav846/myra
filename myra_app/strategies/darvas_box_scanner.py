@@ -13,6 +13,115 @@ from myra_app.db.bulk_loader import load_ohlcv_for_universe
 logger = logging.getLogger(__name__)
 
 
+class _ColumnarWindow:
+    """Per-column arrays over one symbol slice, materialized per request.
+
+    The detector genuinely needs a DataFrame per symbol, but the scan used to
+    build it the long way round: ``rows_for_symbol`` projected twelve columns
+    into a tuple list (with a NaN->None sweep), ``pd.DataFrame`` re-inferred
+    every column from Python objects, and the date strings were parsed and
+    sorted once by the scan and again inside ``_detect_box``. One pass over the
+    slice replaces all of it.
+
+    ``from_frames`` concatenates each column once and parses the date column a
+    single time, so a request is twelve slice views and one small frame. Frames
+    are served only when the detector needs one.
+
+    Columns missing from a frame are padded with ``None`` for that frame only:
+    every consumer indexes by position, so a dropped column would shift the
+    rest. This mirrors ``rows_for_symbol``'s ``_pad_rows`` fallback.
+
+    Rows keep snapshot order. ``load_ohlcv_for_universe`` emits ``(symbol,
+    date)`` ordered frames, but a caller's frame may still be unsorted, so the
+    accessor sorts when (and only when) the dates are not already monotonic.
+
+    The window is private to one scan: ``frame`` returns a fresh DataFrame whose
+    blocks are copies, so a caller mutating what it receives cannot reach the
+    arrays or another symbol.
+    """
+
+    __slots__ = ("columns", "arrays", "spans")
+
+    def __init__(
+        self,
+        columns: tuple[str, ...],
+        arrays: dict[str, np.ndarray],
+        spans: dict[str, tuple[int, int]],
+    ):
+        self.columns = columns
+        self.arrays = arrays
+        self.spans = spans
+
+    @classmethod
+    def from_frames(
+        cls, frames: dict[str, pd.DataFrame], columns: tuple[str, ...]
+    ) -> "_ColumnarWindow":
+        spans: dict[str, tuple[int, int]] = {}
+        parts: dict[str, list[np.ndarray]] = {column: [] for column in columns}
+        position = 0
+        for symbol, df in frames.items():
+            length = len(df)
+            # An empty symbol is absent from the window, exactly like a symbol
+            # the snapshot never returned.
+            if not length:
+                continue
+            spans[symbol] = (position, position + length)
+            for column in columns:
+                if column in df.columns:
+                    parts[column].append(df[column].to_numpy())
+                else:
+                    parts[column].append(np.full(length, None, dtype=object))
+            position += length
+
+        arrays: dict[str, np.ndarray] = {}
+        for column in columns:
+            if parts[column]:
+                values = np.concatenate(parts[column])
+            else:
+                values = np.empty(0, dtype=object)
+            # Parsed once here instead of once per symbol in the scan.
+            if column == "date":
+                values = pd.to_datetime(values).to_numpy()
+            arrays[column] = values
+        return cls(columns, arrays, spans)
+
+    def span(
+        self, symbol: str, min_date: str, max_date: str | None
+    ) -> tuple[int, int] | None:
+        """Row bounds for *symbol* clipped to ``[min_date, max_date]``."""
+        bounds = self.spans.get(symbol)
+        if bounds is None:
+            return None
+        start, end = bounds
+        dates = self.arrays["date"]
+        # A date the parser cannot read leaves the window unclipped, which is
+        # what the previous string comparison did for a malformed bound.
+        try:
+            lower = np.datetime64(min_date, "ns") if min_date else None
+            upper = np.datetime64(max_date, "ns") if max_date else None
+        except ValueError:
+            return start, end
+        if lower is not None and lower > dates[start]:
+            start += int(np.searchsorted(dates[start:end], lower, "left"))
+        if upper is not None and end > start and upper < dates[end - 1]:
+            end = start + int(np.searchsorted(dates[start:end], upper, "right"))
+        if end <= start:
+            return None
+        return start, end
+
+    def frame(
+        self, symbol: str, min_date: str, max_date: str | None
+    ) -> pd.DataFrame | None:
+        """The symbol's rows as a new DataFrame, clipped like ``rows_for_symbol``."""
+        bounds = self.span(symbol, min_date, max_date)
+        if bounds is None:
+            return None
+        start, end = bounds
+        return pd.DataFrame(
+            {column: self.arrays[column][start:end] for column in self.columns}
+        )
+
+
 # Market-cap tiered thresholds. Keys are explicit so downstream code can
 # index by mcap without repeating conditional logic everywhere.
 TIER_THRESHOLDS = {
@@ -62,6 +171,8 @@ class DarvasBoxScanner(AccumulationBaseScanner):
     silently eliminate valid Darvas candidates.
     """
 
+    _columnar = None
+
     def __init__(
         self,
         base_days=120,
@@ -103,6 +214,42 @@ class DarvasBoxScanner(AccumulationBaseScanner):
                 (self.min_mcap, self.max_mcap),
             ).fetchall()
         return rows
+
+    # --- Per-symbol frame accessor -------------------------------------------
+
+    def _get_tech_df(
+        self, symbol: str, min_date: str, max_date: str | None = None
+    ) -> pd.DataFrame:
+        """The symbol's bars as a chronologically ordered frame.
+
+        This is the attribute the web layer's progress wrapper patches, so it
+        keeps the ``(symbol, min_date, max_date)`` call shape. The window path
+        slices pre-built arrays; without a window the frame is built from the
+        rows accessor exactly as the scan used to build it (including the
+        nine-column shape of an old schema, padded back to twelve).
+        """
+        columns = list(self._BULK_COLUMNS)
+        max_date = max_date or date.today().isoformat()
+        if self._columnar is not None:
+            df = self._columnar.frame(symbol, min_date, max_date)
+            if df is None:
+                return pd.DataFrame(columns=columns)
+            if not df["date"].is_monotonic_increasing:
+                df = df.sort_values("date").reset_index(drop=True)
+            return df
+
+        rows = self._get_tech_data(symbol, min_date, max_date)
+        if not rows:
+            return pd.DataFrame(columns=columns)
+        if len(rows[0]) >= 12:
+            df = pd.DataFrame(rows, columns=columns)
+        else:
+            df = pd.DataFrame(rows, columns=columns[:9])
+            df["sma_50"] = None
+            df["high_52w"] = None
+            df["low_52w"] = None
+        df["date"] = pd.to_datetime(df["date"])
+        return df.sort_values("date").reset_index(drop=True)
 
     # --- Grade helper (Blocker 5) --------------------------------------------
 
@@ -493,9 +640,19 @@ class DarvasBoxScanner(AccumulationBaseScanner):
         # lookup, so the selector does too.
         # Upper bound is as_on_date, not today: a historical scan must never
         # see bars after the date it is pretending to run as of.
-        self._bulk_data = load_ohlcv_for_universe(
+        bulk = load_ohlcv_for_universe(
             min_date, as_on_date, [r[0].strip() for r in rows]
         )
+        if bulk:
+            # One columnar window per scan; the dictionary only ever held this
+            # same slice, so releasing it keeps a single representation live.
+            self._columnar = _ColumnarWindow.from_frames(bulk, self._BULK_COLUMNS)
+            self._bulk_data = None
+        else:
+            # No rows at all: keep the empty mapping so the rows accessor still
+            # answers "nothing" instead of falling through to the SQL path.
+            self._columnar = None
+            self._bulk_data = bulk
 
         candidates: list[dict] = []
 
@@ -506,49 +663,9 @@ class DarvasBoxScanner(AccumulationBaseScanner):
                 tier = _tier_for_mcap(mcap_cr)
                 th = TIER_THRESHOLDS[tier]
 
-                tech = self._get_tech_data(symbol, min_date, max_date=as_on_date)
-                if len(tech) < 30:
+                df = self._get_tech_df(symbol, min_date, as_on_date)
+                if len(df) < 30:
                     continue
-
-                col_count = len(tech[0]) if tech else 0
-                if col_count >= 12:
-                    df = pd.DataFrame(
-                        tech,
-                        columns=[
-                            "date",
-                            "open",
-                            "high",
-                            "low",
-                            "close",
-                            "volume",
-                            "delivery",
-                            "delivery_pct",
-                            "nifty_outperformance_score",
-                            "sma_50",
-                            "high_52w",
-                            "low_52w",
-                        ],
-                    )
-                else:
-                    df = pd.DataFrame(
-                        tech,
-                        columns=[
-                            "date",
-                            "open",
-                            "high",
-                            "low",
-                            "close",
-                            "volume",
-                            "delivery",
-                            "delivery_pct",
-                            "nifty_outperformance_score",
-                        ],
-                    )
-                    df["sma_50"] = None
-                    df["high_52w"] = None
-                    df["low_52w"] = None
-                df["date"] = pd.to_datetime(df["date"])
-                df = df.sort_values("date").reset_index(drop=True)
 
                 box = self._detect_box(df)
                 if box is None:
