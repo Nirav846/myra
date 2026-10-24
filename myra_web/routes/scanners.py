@@ -946,6 +946,7 @@ register_scanner(
     result_mode="list",
     status_extra="bear_market",
     label="Float Exhaustion",
+    progress_attr="_get_tech_df",
 )
 
 
