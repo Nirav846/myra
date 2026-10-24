@@ -17,6 +17,37 @@ DB_MAP = LibrarianCore.DB_MAP
 META_DB_PATH = os.path.join(DB_DIR, DB_MAP["meta"])
 
 
+def sessions_behind(latest_date: str, now: datetime):
+    """Trading *sessions* a dataset is behind, rather than calendar days.
+
+    Calendar days mislead: on a Monday the newest row is Friday's, three
+    calendar days back but **zero** sessions behind. A calendar-day staleness
+    rule therefore reported CRITICAL on every weekend, Monday and post-holiday
+    morning even when ingestion was perfectly current (doctor_runs id 88 ran on
+    Sunday 2026-10-18 against Friday 2026-10-16 data and reported "2 days
+    behind"). ``myra_web.utils.trading_day_freshness`` already implements the
+    correct rule for the health bar; this reuses it instead of restating it.
+
+    Returns ``(expected_iso, sessions_behind, note)``. ``sessions_behind`` is
+    ``None`` when the trading calendar cannot be consulted — the caller must
+    then fall back to calendar days and say so, never silently report fresh.
+    """
+    try:
+        from myra_app.daily_ingestor import is_trading_day
+        from myra_web.utils import trading_day_freshness
+    except Exception as exc:  # pragma: no cover - import failure is environmental
+        return None, None, f"trading calendar unavailable ({exc})"
+
+    expected, behind = trading_day_freshness(
+        latest_date,
+        now,
+        lambda d: is_trading_day(datetime.combine(d, datetime.min.time())),
+    )
+    if behind is None:
+        return expected, None, "trading calendar returned no verdict"
+    return expected, behind, ""
+
+
 class _TeeStdout:
     """File-like that forwards every write to a real stream and retains a copy.
 
@@ -85,8 +116,7 @@ def _ensure_doctor_runs_table(conn: sqlite3.Connection) -> None:
     (lineage_tracking) and etf_sync.py:369 — lowercase snake_case columns,
     ``INTEGER PRIMARY KEY AUTOINCREMENT`` for event-log tables.
     """
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS doctor_runs (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             when_utc        DATETIME,
@@ -95,8 +125,7 @@ def _ensure_doctor_runs_table(conn: sqlite3.Connection) -> None:
             issues_failed   INTEGER,
             critical_json   TEXT
         )
-        """
-    )
+        """)
     conn.commit()
 
 
@@ -348,14 +377,12 @@ class DbDoctor:
                     print("  [DRY RUN] Would create sync_log table")
                 else:
                     try:
-                        conn.execute(
-                            """
+                        conn.execute("""
                             CREATE TABLE sync_log (
                                 task_name TEXT PRIMARY KEY,
                                 last_run TEXT
                             )
-                        """
-                        )
+                        """)
                         conn.commit()
                         print("  [FIXED] Created sync_log table")
                         self.issues_fixed += 1
@@ -463,8 +490,7 @@ class DbDoctor:
                     )
                 else:
                     try:
-                        conn.execute(
-                            """
+                        conn.execute("""
                             CREATE TABLE fundamentals (
                                 symbol TEXT NOT NULL,
                                 date TEXT NOT NULL,
@@ -483,8 +509,7 @@ class DbDoctor:
                                 source_nse TEXT,
                                 PRIMARY KEY (symbol, date)
                             )
-                        """
-                        )
+                        """)
                         conn.commit()
                         print("  [FIXED] Created fundamentals table")
                         self.issues_fixed += 1
@@ -538,22 +563,45 @@ class DbDoctor:
         try:
             c = conn.cursor()
 
-            # Combine all COUNT(*) queries into a single table scan
+            # Combine all COUNT(*) queries into a single table scan. The
+            # bad_close scope columns (symbols/date span) ride along in the same
+            # scan so the warning can say *what* is affected: a permanent
+            # residue of three non-equity/defunct series otherwise reads exactly
+            # like live price corruption.
             quality_query = """
                 SELECT
                     SUM(CASE WHEN close <= 0 THEN 1 ELSE 0 END) AS bad_close,
                     SUM(CASE WHEN volume = 0 AND delivery > 0 THEN 1 ELSE 0 END) AS bad_del,
                     SUM(CASE WHEN delivery_ratio > 1.0 THEN 1 ELSE 0 END) AS bad_ratio,
                     SUM(CASE WHEN date > date('now') THEN 1 ELSE 0 END) AS future_dates,
-                    SUM(CASE WHEN delivery IS NOT NULL AND delivery_source IS NULL THEN 1 ELSE 0 END) AS null_source
+                    SUM(CASE WHEN delivery IS NOT NULL AND delivery_source IS NULL THEN 1 ELSE 0 END) AS null_source,
+                    COUNT(DISTINCT CASE WHEN close <= 0 THEN symbol END) AS bad_close_symbols,
+                    MIN(CASE WHEN close <= 0 THEN date END) AS bad_close_first,
+                    MAX(CASE WHEN close <= 0 THEN date END) AS bad_close_last
                 FROM technical_data
             """
             c.execute(quality_query)
             result = c.fetchone()
-            bad_close, bad_del, bad_ratio, future_dates, null_source = result
+            (
+                bad_close,
+                bad_del,
+                bad_ratio,
+                future_dates,
+                null_source,
+                bad_close_symbols,
+                bad_close_first,
+                bad_close_last,
+            ) = result
 
             if bad_close > 0:
-                print(f"  [WARNING] Rows with zero/negative close price: {bad_close}")
+                scope = ""
+                if bad_close_symbols:
+                    scope = f" across {bad_close_symbols} symbol(s)"
+                if bad_close_first and bad_close_last:
+                    scope += f" ({bad_close_first} .. {bad_close_last})"
+                print(
+                    f"  [WARNING] Rows with zero/negative close price: {bad_close}{scope}"
+                )
                 self.issues_found += 1
             if bad_del > 0:
                 print(f"  [WARNING] Rows with delivery > 0 but volume = 0: {bad_del}")
@@ -598,13 +646,11 @@ class DbDoctor:
                     f"  [WARNING] Rows with NULL delivery_pct but valid delivery: {null_pct:,}"
                 )
                 if not self.dry_run:
-                    conn.execute(
-                        """
+                    conn.execute("""
                         UPDATE technical_data
                         SET delivery_pct = ROUND((delivery * 100.0 / volume), 2)
                         WHERE delivery IS NOT NULL AND volume > 0 AND delivery_pct IS NULL
-                    """
-                    )
+                    """)
                     conn.commit()
                     self.issues_fixed += 1
                     print(f"  [FIXED] Backfilled delivery_pct for {null_pct:,} rows")
@@ -623,24 +669,35 @@ class DbDoctor:
                 if latest_date:
                     db_date = datetime.strptime(latest_date, "%Y-%m-%d").date()
                     current_date = ist_now.date()
-                    days_behind = (current_date - db_date).days
+                    calendar_days_behind = (current_date - db_date).days
 
                     print(f"  [INFO] DB latest date: {latest_date}")
                     print(f"  [INFO] Current IST date: {current_date.isoformat()}")
-                    print(f"  [INFO] Days behind: {days_behind}")
+                    print(f"  [INFO] Calendar days behind: {calendar_days_behind}")
 
-                    if days_behind >= 2:
-                        print(
-                            f"  [CRITICAL] Database is STALE - {days_behind} days behind current date!"
-                        )
+                    expected, behind, note = sessions_behind(latest_date, ist_now)
+                    if behind is None:
+                        # Fail honest, not fresh: announce that the trading
+                        # calendar was unavailable and fall back to the older
+                        # calendar-day rule rather than skipping the check.
+                        print(f"  [INFO] {note}; falling back to calendar days")
+                        behind = calendar_days_behind
+                        unit = "days behind current date"
+                    else:
+                        print(f"  [INFO] Expected trading date: {expected}")
+                        print(f"  [INFO] Trading sessions behind: {behind}")
+                        unit = "sessions behind the expected trading date"
+
+                    if behind >= 2:
+                        print(f"  [CRITICAL] Database is STALE - {behind} {unit}!")
                         self.issues_found += 1
-                    elif days_behind > 0:
+                    elif behind > 0:
                         print(
-                            f"  [WARNING] Database is slightly behind - {days_behind} days"
+                            f"  [WARNING] Database is slightly behind - {behind} {unit}"
                         )
                         self.issues_found += 1
                     else:
-                        print(f"  [OK] Database is up to date")
+                        print("  [OK] Database is up to date")
                 else:
                     print(f"  [ERROR] No data found in technical_data table")
                     self.issues_found += 1
