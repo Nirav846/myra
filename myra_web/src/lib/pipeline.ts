@@ -10,7 +10,10 @@ export type RunStatus =
 
 export type TaskStatus =
   | 'never' | 'queued' | 'running' | 'completed'
-  | 'failed' | 'cancelled' | 'timed_out' | 'skipped' | 'no_new_data';
+  | 'failed' | 'cancelled' | 'timed_out' | 'skipped' | 'no_new_data'
+  // Did not run because a prerequisite failed in the same run. Distinct from
+  // 'skipped' (the batch stopped for an unrelated reason).
+  | 'blocked';
 
 export interface OverallState {
   status: RunStatus;
@@ -31,10 +34,27 @@ export interface TaskState {
   stage: string | null;
   progress_pct: number | null;
   error_message: string | null;
+  /** Set only while `current_status === 'blocked'`: the failed prerequisite. */
+  blocked_by?: string | null;
   last_run: string | null;
   started_at: string | null;
   finished_at: string | null;
   duration_seconds: number | null;
+}
+
+/**
+ * Background admission gate (GET /api/pipeline/gate, Phase 49).
+ *
+ * Explains why a due background task is not running: an interactive scan owns
+ * the machine, a write resource is held by another task, or the execution-slot
+ * budget is full.
+ */
+export interface AdmissionGate {
+  concurrency_limit: number;
+  resource_keys: string[];
+  scan_active: boolean;
+  active_scanners: string[];
+  deferred: Record<string, { reason: string; since: number; count: number }>;
 }
 
 export interface PipelineEvent {
@@ -118,6 +138,10 @@ export function taskStatusVisual(status: TaskStatus | string): StatusVisual {
       return { label: 'Timed out', cls: 'text-orange-400 border-orange-500/40 bg-orange-500/10', dot: 'bg-orange-400' };
     case 'skipped':
       return { label: 'Skipped', cls: 'text-[#888] border-[#ffffff1a] bg-white/5', dot: 'bg-[#555]' };
+    case 'blocked':
+      // Did not run: a prerequisite failed. Amber, not red — this task is fine,
+      // the upstream one needs attention first.
+      return { label: 'Blocked', cls: 'text-amber-300 border-amber-500/40 bg-amber-500/10', dot: 'bg-amber-400' };
     case 'no_new_data':
       // Attempt ran but ingested nothing — freshness NOT established.
       return { label: 'No new data', cls: 'text-yellow-300 border-yellow-500/40 bg-yellow-500/10', dot: 'bg-yellow-300' };

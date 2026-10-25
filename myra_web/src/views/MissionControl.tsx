@@ -24,6 +24,7 @@ import PipelineStatusPanel from '../components/PipelineStatusPanel';
 import PipelineTaskList from '../components/PipelineTaskList';
 import DataReadinessPanel from '../components/DataReadinessPanel';
 import DataSourcesPanel from '../components/DataSourcesPanel';
+import SchedulerGateIndicator from '../components/SchedulerGateIndicator';
 import { usePipeline } from '../hooks/usePipeline';
 import {
   describeEvent,
@@ -305,7 +306,12 @@ export default function MissionControlView({ lib }: { lib: Librarian; navigateTo
         )}
       </section>
 
-      {/* ── 7. Compact system / API health ───────────────────────────────── */}
+      {/* ── 7. Scheduler admission gate (Phase 49) ─────────────────────────── */}
+      <ErrorBoundary>
+        <SchedulerGateIndicator />
+      </ErrorBoundary>
+
+      {/* ── 8. Compact system / API health ───────────────────────────────── */}
       <ErrorBoundary>
         <PipelineStatusPanel />
       </ErrorBoundary>

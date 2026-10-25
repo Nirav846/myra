@@ -354,6 +354,40 @@ PIPELINE_TASKS: dict[str, PipelineTask] = {
 PIPELINE_ORDER: list[str] = list(PIPELINE_TASKS)
 
 
+def _validate_dependencies(tasks: dict[str, "PipelineTask"]) -> None:
+    """Reject an unknown dependency or a cycle before any dispatch happens.
+
+    A cycle would make every member block forever (each waits on another that
+    can never run), so it must fail at import time — loudly — rather than at
+    02:00 during an unattended scheduled run.
+    """
+    for key, spec in tasks.items():
+        for dep in spec.depends_on:
+            if dep not in tasks:
+                raise ValueError(f"Task {key!r} depends on unknown task {dep!r}")
+
+    white, grey, black = 0, 1, 2
+    colour = {key: white for key in tasks}
+
+    def visit(node: str, path: tuple[str, ...]) -> None:
+        colour[node] = grey
+        for dep in tasks[node].depends_on:
+            if colour[dep] == grey:
+                raise ValueError(
+                    "Dependency cycle detected: " + " -> ".join(path + (node, dep))
+                )
+            if colour[dep] == white:
+                visit(dep, path + (node,))
+        colour[node] = black
+
+    for key in tasks:
+        if colour[key] == white:
+            visit(key, ())
+
+
+_validate_dependencies(PIPELINE_TASKS)
+
+
 # --------------------------------------------------------------------------
 # Per-execution context handed to task bodies
 # --------------------------------------------------------------------------
@@ -434,6 +468,9 @@ class PipelineControl:
                 "stage": None,
                 "progress_pct": None,
                 "error_message": None,
+                # Set only while a task is `blocked`: the prerequisite that must
+                # recover first. Machine-readable key; the message uses the label.
+                "blocked_by": None,
                 "last_run": None,
                 "started_at": None,
                 "finished_at": None,
@@ -740,6 +777,7 @@ class PipelineControl:
                                 "stage": "Waiting for its turn",
                                 "progress_pct": None,
                                 "error_message": None,
+                                "blocked_by": None,
                                 "started_at": None,
                                 "finished_at": None,
                                 "duration_seconds": None,
@@ -863,13 +901,22 @@ class PipelineControl:
 
     def _run_sequence(self, keys: list[str], run_all: bool, stop_on_fail: bool) -> None:
         overall_status = "completed"
+        # Per-batch outcomes, so a dependent task can be blocked by a
+        # prerequisite that failed *in this run* rather than by stale history.
+        outcomes: dict[str, str] = {}
         try:
             for key in keys:
                 if self._cancel_event.is_set():
                     self._mark_remaining_skipped(keys, key, "cancelled")
                     overall_status = "cancelled"
                     break
+                blocker = self._blocked_by(key, outcomes)
+                if blocker is not None:
+                    self._mark_blocked(key, blocker, outcomes[blocker])
+                    outcomes[key] = "blocked"
+                    continue
                 outcome = self._execute_task(key)
+                outcomes[key] = outcome
                 if outcome in ("failed", "timed_out"):
                     if run_all and stop_on_fail:
                         self._mark_remaining_skipped(keys, key, "skipped")
@@ -945,6 +992,63 @@ class PipelineControl:
                         else "Skipped — an earlier task failed"
                     )
         self._emit({"type": "tasks_skipped", "reason": reason})
+
+    #: Outcomes that mean a task produced no usable output this run.
+    NON_SUCCESS_OUTCOMES = ("failed", "timed_out", "cancelled", "blocked")
+
+    def _blocked_by(self, key: str, outcomes: dict[str, str]) -> str | None:
+        """The dependency that blocks ``key`` in this batch, or ``None``.
+
+        Only a dependency that *ran in this batch and did not succeed* blocks.
+        A dependency absent from the batch is deliberately ignored: the operator
+        can legitimately run a single step on its own, and treating an absent
+        prerequisite as failed would make that impossible.
+
+        Until Phase 49 ``depends_on`` was declared on :class:`PipelineTask` but
+        never read, so a failed ``daily_ingest`` still let ``enrichment`` run
+        against stale data.
+        """
+        for dep in PIPELINE_TASKS[key].depends_on:
+            if outcomes.get(dep) in self.NON_SUCCESS_OUTCOMES:
+                return dep
+        return None
+
+    def _mark_blocked(self, key: str, dependency: str, dep_status: str) -> None:
+        """Record a task that did not run because its prerequisite did not.
+
+        Deliberately distinct from ``skipped`` (the batch stopped for an
+        unrelated reason) and from ``failed`` (it ran and broke): ``blocked``
+        names the prerequisite that must recover first.
+
+        ``sync_log`` is intentionally NOT written. A blocked task has not run, so
+        stamping ``last_run`` would postpone the next legitimate attempt by a
+        whole ``interval_days`` — the opposite of "retain enough state for the
+        task to be retried when its prerequisites are healthy".
+        """
+        label = PIPELINE_TASKS[dependency].label
+        reason = f"Blocked by dependency '{label}' ({dep_status})"
+        with self._lock:
+            self._tasks[key].update(
+                {
+                    "current_status": "blocked",
+                    "stage": f"Not started — {label} {dep_status}",
+                    "error_message": reason,
+                    "blocked_by": dependency,
+                    "progress_pct": None,
+                    "started_at": None,
+                    "finished_at": None,
+                    "duration_seconds": None,
+                }
+            )
+        self._emit(
+            {
+                "type": "task_blocked",
+                "task_id": key,
+                "dependency": label,
+                "dependency_status": dep_status,
+                "reason": reason,
+            }
+        )
 
     def _execute_task(self, key: str) -> str:
         spec = PIPELINE_TASKS[key]
@@ -1026,6 +1130,7 @@ class PipelineControl:
                         self._tasks[key]["stage"] if status != "completed" else None
                     ),
                     "error_message": error,
+                    "blocked_by": None,
                     "finished_at": _now(),
                     "duration_seconds": duration,
                     # 100% only after genuine success.

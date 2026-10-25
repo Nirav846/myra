@@ -20,6 +20,8 @@ import logging
 from fastapi import APIRouter, Body, HTTPException
 from fastapi.responses import JSONResponse
 
+from myra_app import scan_activity
+
 from myra_web.confluence_batch import (
     _confluence_lock,
     _confluence_state,
@@ -97,7 +99,13 @@ async def confluence_refresh(payload: dict = Body(default={})):
 
     import threading
 
-    threading.Thread(target=_run, daemon=True, name="confluence-batch").start()
+    def _run_tracked():
+        # The confluence batch runs every registered scanner, so it is the
+        # heaviest interactive workload: mark it active for the scheduler.
+        with scan_activity.scanning("confluence"):
+            _run()
+
+    threading.Thread(target=_run_tracked, daemon=True, name="confluence-batch").start()
 
     return {
         "scan_status": "scanning",

@@ -21,6 +21,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Body, HTTPException
 
+from myra_app import scan_activity
 from myra_app.constants import MODELS_DIR, DB_DIR
 from myra_web.utils import (
     _apply_tier_rank,
@@ -222,7 +223,15 @@ def register_scanner(
                         }
                     )
 
-        threading.Thread(target=_run, daemon=True).start()
+        def _run_tracked():
+            # Register with the shared scan-activity registry for the whole run
+            # so the background scheduler defers compute-heavy work while an
+            # interactive scan is in flight. ``scanning()`` releases from a
+            # ``finally``, so a crash or early return cannot wedge the flag.
+            with scan_activity.scanning(name):
+                _run()
+
+        threading.Thread(target=_run_tracked, daemon=True).start()
         return {"status": "started"}
 
     router.add_api_route(
@@ -1809,7 +1818,11 @@ async def launchpad_scan(payload: dict = Body(default={})):
                 }
             )
 
-    threading.Thread(target=_run, daemon=True).start()
+    def _run_tracked():
+        with scan_activity.scanning("launchpad"):
+            _run()
+
+    threading.Thread(target=_run_tracked, daemon=True).start()
     return {"status": "started"}
 
 
@@ -1947,7 +1960,11 @@ async def multibagger_scan(payload: dict = Body(default={})):
                 "candidates": [],
             }
 
-    threading.Thread(target=_run, daemon=True).start()
+    def _run_tracked():
+        with scan_activity.scanning("multibagger"):
+            _run()
+
+    threading.Thread(target=_run_tracked, daemon=True).start()
     return {"status": "started"}
 
 

@@ -6,12 +6,16 @@ sync_log marking, and failure handling. Task modules now contain a single
 unit of work behind ``run(ctx)``.
 """
 
+import contextlib
 import importlib
 import logging
+import os
+import threading
 import time
 
+from myra_app import scan_activity
 from myra_app.tasks.context import TaskContext
-from myra_app.tasks.registry import TaskSpec
+from myra_app.tasks.registry import TASKS, TaskSpec
 from myra_app.utils.task_utils import (
     _attempt_cooldown_elapsed,
     _is_task_due,
@@ -27,6 +31,143 @@ POLL_SECONDS = 60
 
 # Pause between staggered thread launches (orchestrator launch loop).
 STAGGER_SECONDS = 30
+
+# How many background tasks may execute at the same time.
+#
+# Conservative on purpose: every task is effectively a SQLite writer against
+# multi-hundred-MB databases, and two simultaneous writers already contend for
+# the WAL write lock. One thread per task is fine for *polling*; it is not fine
+# for *executing*. Override with MYRA_TASK_CONCURRENCY when a machine can take
+# more, clamped to the ceiling so a typo cannot unleash every task at once.
+MAX_CONCURRENT_TASKS_DEFAULT = 2
+MAX_CONCURRENT_TASKS_CEILING = 8
+
+# One lock per distinct write-resource key declared in the registry. Two tasks
+# sharing a key never run concurrently, regardless of the slot count.
+_RESOURCE_KEYS: list[str] = sorted({spec.resource for spec in TASKS.values()})
+_resource_locks: dict[str, threading.Lock] = {
+    k: threading.Lock() for k in _RESOURCE_KEYS
+}
+
+
+def concurrency_limit() -> int:
+    """Resolve the execution-slot count from the environment, clamped."""
+    raw = os.environ.get("MYRA_TASK_CONCURRENCY")
+    if raw is None or not raw.strip():
+        return MAX_CONCURRENT_TASKS_DEFAULT
+    try:
+        value = int(raw.strip())
+    except ValueError:
+        logger.warning(
+            "[MYRA BG] Ignoring invalid MYRA_TASK_CONCURRENCY=%r; using %d",
+            raw,
+            MAX_CONCURRENT_TASKS_DEFAULT,
+        )
+        return MAX_CONCURRENT_TASKS_DEFAULT
+    if value < 1:
+        logger.warning("[MYRA BG] MYRA_TASK_CONCURRENCY=%d is below 1; using 1", value)
+        return 1
+    if value > MAX_CONCURRENT_TASKS_CEILING:
+        logger.warning(
+            "[MYRA BG] MYRA_TASK_CONCURRENCY=%d exceeds ceiling; using %d",
+            value,
+            MAX_CONCURRENT_TASKS_CEILING,
+        )
+        return MAX_CONCURRENT_TASKS_CEILING
+    return value
+
+
+_slots = threading.BoundedSemaphore(concurrency_limit())
+
+# Deferral observability: why a due task did not start, so the UI can explain
+# "waiting" instead of showing a silently idle scheduler.
+_deferrals: dict[str, dict] = {}
+_deferrals_lock = threading.Lock()
+
+
+def _record_deferral(name: str, reason: str) -> None:
+    """Remember that a due task is waiting, logging only on transitions."""
+    with _deferrals_lock:
+        entry = _deferrals.get(name)
+        if entry is not None and entry["reason"] == reason:
+            entry["count"] += 1
+            return
+        _deferrals[name] = {"reason": reason, "since": time.time(), "count": 1}
+    logger.info(f"[MYRA BG] Task {name} deferred: {reason}")
+
+
+def _clear_deferral(name: str) -> None:
+    with _deferrals_lock:
+        _deferrals.pop(name, None)
+
+
+def get_deferrals() -> dict[str, dict]:
+    """Snapshot of currently deferred tasks (empty when nothing is waiting)."""
+    with _deferrals_lock:
+        return {k: dict(v) for k, v in _deferrals.items()}
+
+
+def gate_snapshot() -> dict:
+    """Admission-gate state for the status API."""
+    return {
+        "concurrency_limit": _slots._initial_value,  # noqa: SLF001 - read-only
+        "resource_keys": list(_RESOURCE_KEYS),
+        "scan_active": scan_activity.is_active(),
+        "active_scanners": scan_activity.active_scanners(),
+        "deferred": get_deferrals(),
+    }
+
+
+def _reset_gate_for_tests(limit: int | None = None) -> None:
+    """Rebuild the semaphore/deferrals. Tests only; never called at runtime."""
+    global _slots
+    _slots = threading.BoundedSemaphore(limit or concurrency_limit())
+    with _deferrals_lock:
+        _deferrals.clear()
+
+
+def deferral_reason(spec: TaskSpec) -> str | None:
+    """Why this task must not start right now, or ``None`` when it may.
+
+    Interactive scans win: a human is waiting on the UI, whereas every
+    background task has another poll 60s away. Only ``heavy`` tasks yield — a
+    cheap local task can still make progress without competing for the disk.
+    """
+    if spec.heavy and scan_activity.is_active():
+        active = ", ".join(scan_activity.active_scanners()) or "unknown"
+        return f"interactive scan in progress ({active})"
+    return None
+
+
+@contextlib.contextmanager
+def dispatch_slot(spec: TaskSpec):
+    """Hold one execution slot plus the task's write-resource locks.
+
+    Yields ``True`` when granted, ``False`` when the caller must defer to its
+    next poll. Every acquire is non-blocking on purpose: a task that cannot
+    start must not pin its thread, and blocking acquires would risk deadlocking
+    the shutdown joins. Resource keys are taken in sorted order so an exclusive
+    task (which takes all of them) cannot deadlock against another.
+    """
+    keys = list(_RESOURCE_KEYS) if spec.exclusive else [spec.resource]
+    acquired: list[threading.Lock] = []
+    try:
+        for key in keys:
+            lock = _resource_locks[key]
+            if not lock.acquire(blocking=False):
+                yield False
+                return
+            acquired.append(lock)
+        if not _slots.acquire(blocking=False):
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            _slots.release()
+    finally:
+        for lock in acquired:
+            lock.release()
 
 
 def attempt_allowed(spec: TaskSpec) -> bool:
@@ -106,6 +247,25 @@ def should_fire(spec: TaskSpec) -> bool:
     )
 
 
+def _run_admitted(name: str, spec: TaskSpec, fn, ctx: TaskContext) -> None:
+    """Execute one attempt if the machine can take it now, otherwise defer.
+
+    Admission order is cheapest-signal-first: interactive-scan priority, then
+    write-resource locks, then an execution slot. A deferral is not a failure —
+    the task is still due and will be retried on its next poll.
+    """
+    reason = deferral_reason(spec)
+    if reason is not None:
+        _record_deferral(name, reason)
+        return
+    with dispatch_slot(spec) as granted:
+        if not granted:
+            _record_deferral(name, f"write resource '{spec.resource}' busy")
+            return
+        _clear_deferral(name)
+        _execute_once(name, spec, fn, ctx)
+
+
 def run_periodic(task_name: str, spec: TaskSpec, ctx: TaskContext) -> None:
     """
     Executor body for one background task thread.
@@ -144,14 +304,14 @@ def run_periodic(task_name: str, spec: TaskSpec, ctx: TaskContext) -> None:
         and attempt_allowed(spec)
     ):
         logger.info(f"[MYRA BG] Task {task_name} overdue – running catch-up now...")
-        _execute_once(f"{task_name} (catch-up)", spec, fn, ctx)
+        _run_admitted(f"{task_name} (catch-up)", spec, fn, ctx)
 
     # Due-check poll loop.
     while not ctx.shutdown_event.is_set():
         try:
             if should_fire(spec):
                 logger.info(f"[MYRA BG] Task {task_name} due – running...")
-                _execute_once(task_name, spec, fn, ctx)
+                _run_admitted(task_name, spec, fn, ctx)
         except Exception as e:
             # Never let scheduling bookkeeping kill the thread.
             logger.error(f"[MYRA BG] Task {task_name} scheduling error: {e}")

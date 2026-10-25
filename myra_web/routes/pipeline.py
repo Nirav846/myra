@@ -17,10 +17,15 @@ Response contract (consumed by both Mission Control and Data Sync)::
                   paused},
       "tasks":   {<task_key>: {current_status, stage, progress_pct,
                                error_message, last_run, started_at,
-                               finished_at, duration_seconds}},
+                               finished_at, duration_seconds, blocked_by}},
       "order":   ["daily_ingest", ...],
       "events":  [{time, type, ...}, ...]
     }
+
+``GET /gate`` additionally reports the background admission gate (execution
+slots, serialized write resources, interactive-scan ownership and deferrals).
+``current_status == "blocked"`` means the task did not run because the
+prerequisite named in ``blocked_by`` did not succeed in the same run.
 """
 
 from __future__ import annotations
@@ -111,6 +116,27 @@ def get_run_status():
     except Exception:
         logger.exception("pipeline run status failed")
         raise HTTPException(500, "Failed to read run status")
+
+
+@router.get("/gate")
+def get_admission_gate():
+    """Background-execution admission state (Phase 49).
+
+    Answers "why is a due task not running right now?" without exposing the
+    whole task list: whether an interactive scan currently owns the machine,
+    how many execution slots exist, which write resources are serialized, and
+    which tasks are deferred and why.
+
+    Import is deferred to the call so this router keeps working when the
+    orchestrator/executor was never started (a read-only backend).
+    """
+    try:
+        from myra_app.tasks import executor
+
+        return executor.gate_snapshot()
+    except Exception:
+        logger.exception("pipeline gate status failed")
+        raise HTTPException(500, "Failed to read admission gate state")
 
 
 @router.get("/events")

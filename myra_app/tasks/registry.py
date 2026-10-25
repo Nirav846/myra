@@ -51,6 +51,17 @@ class TaskSpec:
     entrypoint: str = "run"
     # Task manages its own loop (watchdog); executor calls it once.
     self_loop: bool = False
+    # Deferrable while an interactive scan is running. Mark anything that
+    # writes a large database or does sustained network work; leave cheap,
+    # local, short tasks unmarked so they can still make progress.
+    heavy: bool = False
+    # Write-resource key. Two tasks sharing a key never run concurrently, so
+    # this is the serialization boundary, not the number of threads.
+    resource: str = "default"
+    # Must hold *every* resource key. Reserved for work that touches all
+    # databases at once (a full backup copy), where any concurrent writer would
+    # produce a torn artifact.
+    exclusive: bool = False
 
 
 TASKS: dict[str, TaskSpec] = {
@@ -67,6 +78,8 @@ TASKS: dict[str, TaskSpec] = {
         # this the executor would re-invoke ingestion on every 60s poll once the
         # after-close guard opens.
         attempt_cooldown_minutes=30,
+        heavy=True,
+        resource="technical",
     ),
     # Special: self-managing 60s poll loop, no catch-up, no stagger.
     "watchdog": TaskSpec(
@@ -81,16 +94,21 @@ TASKS: dict[str, TaskSpec] = {
         module="myra_app.tasks.etf_sync",
         label="etf_sync",
         interval_days=7,
+        heavy=True,
+        resource="technical",
     ),
     "index-sync": TaskSpec(
         module="myra_app.tasks.index_sync",
         label="index_sync",
         interval_days=7,
+        resource="metadata",
     ),
     "fundamentals-sync": TaskSpec(
         module="myra_app.tasks.fundamentals",
         label="fundamentals_sync",
         interval_days=7,
+        heavy=True,
+        resource="valuation",
     ),
     "fundamentals-daily": TaskSpec(
         module="myra_app.tasks.fundamentals",
@@ -99,16 +117,25 @@ TASKS: dict[str, TaskSpec] = {
         entrypoint="run_daily",
         # Weekday/18:00 gate lives inside run_daily; only mark after a real sync.
         mark_on_success=False,
+        heavy=True,
+        resource="valuation",
     ),
     "institutional-sync": TaskSpec(
         module="myra_app.tasks.institutional",
         label="institutional_sync",
         interval_days=7,
+        heavy=True,
+        resource="institutional",
     ),
     "db-backup": TaskSpec(
         module="myra_app.tasks.db_backup",
         label="db_backup",
         interval_days=1,  # nightly backup (docstring + prior cadence)
+        # Copies every database file: any concurrent writer would produce a
+        # torn artifact, so it must hold all resource keys.
+        heavy=True,
+        resource="backup",
+        exclusive=True,
     ),
     # Auto-run disabled (SCREENER_ENRICH_AUTO_ENABLED); manual backfill only.
     "screener-enrich": TaskSpec(
@@ -117,6 +144,8 @@ TASKS: dict[str, TaskSpec] = {
         interval_days=7,
         catchup=False,
         enabled=False,
+        heavy=True,
+        resource="technical",
     ),
     # Smart-gated: the task probes HEAD-only for a newly-published month and
     # no-ops (without marking) when there is nothing new, so the executor polls
@@ -134,6 +163,8 @@ TASKS: dict[str, TaskSpec] = {
         interval_days=1,
         mark_on_success=False,
         poll_seconds=3600,
+        heavy=True,
+        resource="traction",
     ),
     "cross-buy-sync": TaskSpec(
         module="myra_app.tasks.cross_buy",
@@ -141,11 +172,14 @@ TASKS: dict[str, TaskSpec] = {
         interval_days=30,
         # Dead downloader / processor errors must not retry-storm each poll.
         mark_on_failure=True,
+        heavy=True,
+        resource="cross_buy",
     ),
     "traction-sma-update": TaskSpec(
         module="myra_app.tasks.traction_sma",
         label="traction_sma_update",
         interval_days=1,
+        resource="scoring",
     ),
     # RupeeVest full-portfolio sync (mf_fund / mf_holding / mf_fund_aum). The
     # module owns its own "previous month fully reported" gate: once every fund
@@ -157,6 +191,8 @@ TASKS: dict[str, TaskSpec] = {
         label="mf_holdings_sync",
         interval_days=1,
         mark_on_success=False,
+        heavy=True,
+        resource="mf",
     ),
     # Daily post-close gap-fill of the fundamentals table via the resilient
     # source layer. The weekday/18:00-IST gate lives inside run(); it returns
@@ -172,6 +208,8 @@ TASKS: dict[str, TaskSpec] = {
         stagger=True,
         mark_on_success=False,
         poll_seconds=1800,
+        heavy=True,
+        resource="valuation",
     ),
     # Symbol-identity bridge (alias -> canonical) from local name matching.
     # Cheap and idempotent; weekly is plenty (the upstream artifact is monthly).
@@ -179,6 +217,7 @@ TASKS: dict[str, TaskSpec] = {
         module="myra_app.tasks.symbol_identity",
         label="symbol_identity",
         interval_days=7,
+        resource="metadata",
     ),
     # Automated fund_traction symbol resolution (name-key -> canonical NSE
     # ticker) so the board can join price / market-cap. Local resolution is
@@ -191,6 +230,7 @@ TASKS: dict[str, TaskSpec] = {
         catchup=True,
         stagger=True,
         poll_seconds=3600,
+        resource="metadata",
     ),
     # Append-only point-in-time archive. Weekly is fine: it is a safety net
     # for history that is otherwise overwritten in place (rolling
@@ -199,5 +239,7 @@ TASKS: dict[str, TaskSpec] = {
         module="myra_app.tasks.archive",
         label="point_in_time_archive",
         interval_days=7,
+        heavy=True,
+        resource="archive",
     ),
 }
