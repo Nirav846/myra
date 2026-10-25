@@ -199,6 +199,33 @@ def test_stop_on_fail_still_fails_fast(control, monkeypatch):
         assert tasks[key]["current_status"] == "skipped", key
 
 
+def test_batch_overall_status_failed_when_independent_task_fails(control, monkeypatch):
+    """A batch with stop_on_fail=False reports overall 'failed' if any task fails,
+    even when independent tasks complete successfully.
+    """
+    ran: list[str] = []
+    for key in PIPELINE_ORDER:
+        monkeypatch.setattr(
+            PIPELINE_TASKS[key], "_run", (lambda k: (lambda tr: ran.append(k)))(key)
+        )
+    monkeypatch.setattr(PIPELINE_TASKS["etf_sync"], "_run", _fail)
+
+    control.start_run("all", stop_on_fail=False)
+    assert _wait(lambda: _idle(control))
+
+    status = control.get_status()
+    # Overall batch must be 'failed' because etf_sync failed
+    assert status["overall"]["status"] == "failed"
+    # The failed task
+    assert status["tasks"]["etf_sync"]["current_status"] == "failed"
+    # Independent tasks before the failure
+    assert status["tasks"]["daily_ingest"]["current_status"] == "completed"
+    assert status["tasks"]["enrichment"]["current_status"] == "completed"
+    # Independent tasks after the failure (not dependent on etf_sync)
+    for key in ("index_sync", "fundamentals_sync", "institutional_sync"):
+        assert status["tasks"][key]["current_status"] == "completed", key
+
+
 def test_cycle_is_rejected_at_import():
     tasks = {
         "a": pc.PipelineTask("a", "A", 1, lambda tr: None, depends_on=("b",)),
