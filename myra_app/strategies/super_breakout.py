@@ -22,6 +22,7 @@ Protective stop (all variants): if close < SMA(50) BEFORE position first
 closes >= entry * 1.02, exit immediately. Deactivates once 2% profit is
 first reached.
 """
+
 from __future__ import annotations
 
 import math
@@ -88,6 +89,7 @@ def check_precondition_context(
 
 
 # ── Signal detection (precomputed sweep) ─────────────────────────────────────
+
 
 def _rolling_mean(arr: np.ndarray, window: int) -> np.ndarray:
     """Fast rolling mean via cumsum. NaN for first (window-1) elements."""
@@ -214,6 +216,7 @@ def detect_super_breakout_signals(
 
 # ── Exit evaluators (custom for this strategy) ────────────────────────────────
 
+
 def _exit_fixed_target(
     pos_prices: pd.DataFrame,
     entry_idx: int,
@@ -312,7 +315,9 @@ def _exit_atr_trailing(
             pc = float(closes[i - 1])
             tr_list.append(max(h - l, abs(h - pc), abs(l - pc)))
     tr_arr = np.array(tr_list)
-    atr = pd.Series(tr_arr).rolling(atr_window, min_periods=atr_window).mean().to_numpy()
+    atr = (
+        pd.Series(tr_arr).rolling(atr_window, min_periods=atr_window).mean().to_numpy()
+    )
 
     # Compute SMA(50) for protective stop
     sma50 = (
@@ -344,6 +349,7 @@ def _exit_atr_trailing(
 
 
 # ── Full backtest loop ────────────────────────────────────────────────────────
+
 
 @dataclass
 class SuperBreakoutConfig:
@@ -417,9 +423,7 @@ def run_super_breakout_backtest(
                 continue
             # Load forward window: entry day + max forward days
             max_forward = (
-                config.fixed_cap_days + 5
-                if config.exit_mode == "fixed"
-                else 260
+                config.fixed_cap_days + 5 if config.exit_mode == "fixed" else 260
             )
             fwd_end_idx = min(day_idx + max_forward, len(trading_days) - 1)
             fwd_end = trading_days[fwd_end_idx]
@@ -427,9 +431,11 @@ def run_super_breakout_backtest(
             if pos_prices.empty or len(pos_prices) < 2:
                 continue
             pos_prices = pos_prices.sort_values("date").reset_index(drop=True)
-            # Verify first row is the entry day
-            # Scalar Timestamp — .dt accessor N/A; NaT-raise behavior is intentional here.
-            first_date = pos_prices["date"].iloc[0].strftime("%Y-%m-%d")  # noqa: PG-STRFTIME
+            # Vectorized formatting once; then index for both entry and exit.
+            # Avoids scalar .strftime() on iloc[] which triggers the Performance Guard.
+            date_strs = pos_prices["date"].dt.strftime("%Y-%m-%d")
+
+            first_date = date_strs.iloc[0]
             if first_date != day_iso:
                 # Find the entry row
                 date_strs = pos_prices["date"].dt.strftime("%Y-%m-%d").tolist()
@@ -447,7 +453,10 @@ def run_super_breakout_backtest(
             # Choose exit evaluator
             if config.exit_mode == "fixed":
                 exit_idx, reason = _exit_fixed_target(
-                    pos_prices, entry_idx, config.fixed_target_pct, config.fixed_cap_days
+                    pos_prices,
+                    entry_idx,
+                    config.fixed_target_pct,
+                    config.fixed_cap_days,
                 )
             elif config.exit_mode == "ma_trail":
                 exit_idx, reason = _exit_ma_trailing(
@@ -459,8 +468,8 @@ def run_super_breakout_backtest(
                 )
 
             exit_price = float(pos_prices["close"].iloc[exit_idx])
-            # Scalar Timestamp — .dt accessor N/A; NaT-raise behavior is intentional here.
-            exit_date = pos_prices["date"].iloc[exit_idx].strftime("%Y-%m-%d")  # noqa: PG-STRFTIME
+            # Vectorized formatting was done once above; index it for exit.
+            exit_date = date_strs.iloc[exit_idx]
             n_hold = exit_idx - entry_idx
 
             # P&L
@@ -469,9 +478,7 @@ def run_super_breakout_backtest(
             pnl_gross = exit_value - POSITION_VALUE_INR
             # ADV for impact cost
             if day_idx % 20 == 0 or sym not in adv_cache:
-                adv_cache.update(
-                    _load_adv_window(conn, [sym], day_iso, window=20)
-                )
+                adv_cache.update(_load_adv_window(conn, [sym], day_iso, window=20))
             adv_val = adv_cache.get(sym)
             costs = total_round_trip_costs(POSITION_VALUE_INR, exit_value, adv_val)
             pnl_net = pnl_gross - costs["total"]
