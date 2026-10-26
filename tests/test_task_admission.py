@@ -424,6 +424,117 @@ def test_slot_is_released_on_thread_exit():
 
 
 # ---------------------------------------------------------------------------
+# D4 (real threads) — overlap/exclusion proved with a barrier, not inferred
+# from nested context managers on one thread. A barrier only returns when both
+# threads are simultaneously inside their slot, so this cannot pass on a
+# serialised implementation.
+# ---------------------------------------------------------------------------
+
+
+def test_two_threads_hold_independent_resources_at_the_same_time():
+    ex._reset_gate_for_tests(2)
+    barrier = threading.Barrier(2, timeout=5)
+    granted: dict[str, bool] = {}
+
+    def hold(label, resource):
+        spec = TaskSpec(
+            module="m",
+            label=label,
+            interval_days=1,
+            resource=resource,
+            mark_on_success=False,
+            mark_on_failure=False,
+        )
+        with ex.dispatch_slot(spec) as ok:
+            granted[label] = bool(ok)
+            if ok:
+                barrier.wait()  # returns only if the other thread is inside too
+
+    a = threading.Thread(target=hold, args=("a", "technical"))
+    b = threading.Thread(target=hold, args=("b", "metadata"))
+    a.start()
+    b.start()
+    a.join(10)
+    b.join(10)
+
+    assert granted == {"a": True, "b": True}
+    assert not a.is_alive() and not b.is_alive(), "barrier timed out: no overlap"
+
+
+def test_two_threads_never_hold_the_same_resource_together():
+    ex._reset_gate_for_tests(4)
+    spec = TaskSpec(
+        module="m",
+        label="a",
+        interval_days=1,
+        resource="technical",
+        mark_on_success=False,
+        mark_on_failure=False,
+    )
+    held = threading.Event()
+    release = threading.Event()
+    first: dict[str, bool] = {}
+
+    def holder():
+        with ex.dispatch_slot(spec) as ok:
+            first["granted"] = bool(ok)
+            held.set()
+            release.wait(5)
+
+    t = threading.Thread(target=holder)
+    t.start()
+    assert held.wait(5), "first holder never acquired"
+    try:
+        with ex.dispatch_slot(spec) as second:
+            assert second is False
+    finally:
+        release.set()
+        t.join(5)
+    assert first == {"granted": True}
+    with ex.dispatch_slot(spec) as after_release:
+        assert after_release is True
+
+
+def test_admitted_body_failure_releases_the_slot_for_the_next_task():
+    """`_execute_once` swallows the body error, so the gate must still reopen."""
+    ex._reset_gate_for_tests(1)
+    spec = TaskSpec(
+        module="m",
+        label="a",
+        interval_days=1,
+        resource="technical",
+        mark_on_success=False,
+        mark_on_failure=False,
+    )
+    called: list[str] = []
+
+    def boom(_ctx):
+        raise RuntimeError("task blew up")
+
+    ex._run_admitted("a", spec, boom, _ctx())
+    ex._run_admitted("b", spec, lambda _c: called.append("b"), _ctx())
+
+    assert called == ["b"], "the failed attempt must not pin the only slot"
+
+
+def test_note_deferral_records_a_reason_only_when_blocked():
+    """Public probe used by the watchdog's catch-up driver."""
+    heavy = TASKS["daily-ingest"]
+    light = TASKS["symbol-identity"]
+
+    assert ex.note_deferral("daily_ingest", heavy) is None
+    assert ex.get_deferrals() == {}
+
+    with ex.scan_activity.scanning("wyckoff"):
+        reason = ex.note_deferral("daily_ingest", heavy)
+        assert reason is not None and "wyckoff" in reason
+        assert "daily_ingest" in ex.get_deferrals()
+        # A cheap task is still admitted, and is never recorded as deferred.
+        assert ex.note_deferral("symbol_identity", light) is None
+        assert "symbol_identity" not in ex.get_deferrals()
+
+
+# ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 

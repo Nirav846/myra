@@ -139,6 +139,24 @@ def deferral_reason(spec: TaskSpec) -> str | None:
     return None
 
 
+def note_deferral(name: str, spec: TaskSpec) -> str | None:
+    """Admission probe for a driver that does not run through ``_run_admitted``.
+
+    The watchdog is a second automatic driver for the heaviest task (catch-up
+    ingestion), so it must obey exactly the same scanner-priority rule instead
+    of re-implementing it. Returns the deferral reason (and records it for the
+    status API) when the task must wait, or ``None`` when it may proceed — in
+    which case any stale deferral for this task is cleared, because a task that
+    is about to run is not "waiting".
+    """
+    reason = deferral_reason(spec)
+    if reason is not None:
+        _record_deferral(name, reason)
+        return reason
+    _clear_deferral(name)
+    return None
+
+
 @contextlib.contextmanager
 def dispatch_slot(spec: TaskSpec):
     """Hold one execution slot plus the task's write-resource locks.

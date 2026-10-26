@@ -45,6 +45,18 @@ CREATE TABLE etf_sync_log (
             status      TEXT
         )
 
+CREATE TABLE fundamentals_failure_log (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol          TEXT    NOT NULL,
+    observed_at     TEXT    NOT NULL,
+    run_id          TEXT,
+    source          TEXT,
+    category        TEXT    NOT NULL,
+    http_status     INTEGER,
+    exception_class TEXT,
+    detail_code     TEXT
+)
+
 CREATE TABLE index_constituents (
         index_name TEXT NOT NULL,
         symbol TEXT NOT NULL,
@@ -136,6 +148,8 @@ CREATE TABLE traction_symbol_state (
         )
 
 CREATE INDEX idx_constituents_symbol ON index_constituents(symbol)
+
+CREATE INDEX idx_fundamentals_failure_log_symbol ON fundamentals_failure_log (symbol, id)
 
 CREATE INDEX idx_imh_lookup ON index_membership_history (index_name, symbol, from_date, to_date)
 

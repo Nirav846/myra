@@ -289,6 +289,77 @@ def test_successful_ingestion_marks_stale_catchup(env, ctx, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Phase 50 — scanner priority
+#
+# The watchdog is a *second* automatic driver for the heaviest task, and it
+# runs in its own self-managed thread (``self_loop=True``), so it never passes
+# through ``executor._run_admitted``. Before Phase 50 it therefore started a
+# full ingestion even while an interactive scan was running — the one thing the
+# Phase 49 admission gate exists to prevent.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def gate():
+    """Reset the process-global admission gate and the scan registry."""
+    from myra_app import scan_activity
+    from myra_app.tasks import executor
+
+    scan_activity.reset()
+    executor._reset_gate_for_tests(executor.MAX_CONCURRENT_TASKS_DEFAULT)
+    yield executor
+    scan_activity.reset()
+    executor._reset_gate_for_tests(executor.MAX_CONCURRENT_TASKS_DEFAULT)
+
+
+def test_catchup_ingest_is_deferred_while_a_scan_runs(env, ctx, gate):
+    from myra_app import scan_activity
+
+    env(_ist(MONDAY, 19, 0), db_latest=FRIDAY.isoformat())
+    rec = Recorder()
+
+    with scan_activity.scanning("wyckoff"):
+        outcome = wd._maybe_trigger_ingest(ctx, _ist(MONDAY, 19, 0), rec)
+        deferred = gate.get_deferrals()
+
+    assert outcome is None
+    assert rec.calls == [], "a full ingestion must not start during a scan"
+    assert "daily_ingest" in deferred
+    assert "wyckoff" in deferred["daily_ingest"]["reason"]
+
+
+def test_deferral_does_not_charge_the_recovery_budget(env, ctx, gate, monkeypatch):
+    """A deferred attempt never happened, so it must not spend the budget."""
+    from myra_app import scan_activity
+    import myra_app.eod_recovery as er
+
+    env(_ist(MONDAY, 19, 0), db_latest=FRIDAY.isoformat())
+    charged = []
+    monkeypatch.setattr(er, "note_attempt", lambda *a, **k: charged.append(a))
+
+    with scan_activity.scanning("bottom-hunter"):
+        wd._maybe_trigger_ingest(ctx, _ist(MONDAY, 19, 0), Recorder())
+
+    assert charged == [], "a deferred attempt must not consume the budget"
+
+
+def test_catchup_ingest_runs_once_the_scan_ends(env, ctx, gate, monkeypatch):
+    from myra_app import scan_activity
+
+    db = env(_ist(MONDAY, 19, 0), db_latest=FRIDAY.isoformat())
+    with scan_activity.scanning("wyckoff"):
+        assert wd._maybe_trigger_ingest(ctx, _ist(MONDAY, 19, 0), Recorder()) is None
+
+    rec = Recorder(db, advance_to=MONDAY.isoformat())
+    monkeypatch.setattr(wd, "_mark_task_run", lambda *a, **k: None)
+    outcome = wd._maybe_trigger_ingest(ctx, _ist(MONDAY, 19, 0), rec)
+
+    assert outcome == "success"
+    assert len(rec.calls) == 1
+    assert "daily_ingest" not in gate.get_deferrals()
+
+
+# ---------------------------------------------------------------------------
 # 6-7. Cooldown / retry eligibility after no_new_data
 # ---------------------------------------------------------------------------
 

@@ -289,6 +289,18 @@ def _maybe_trigger_ingest(ctx, ist_now: datetime, run_daily_ingest) -> str | Non
         return None
 
     expected = decision["expected_date"]
+    # Scanner priority: this is a *second* automatic driver for the heaviest
+    # task, so it must obey the same admission gate as the executor. Deferring
+    # here — before ``note_attempt`` — keeps the recovery budget intact for the
+    # next tick and stops a full ingestion competing with a user's scan.
+    from myra_app.tasks import executor
+    from myra_app.tasks.registry import TASKS
+
+    deferral = executor.note_deferral("daily_ingest", TASKS["daily-ingest"])
+    if deferral is not None:
+        logger.info("[MYRA BG] Catch-up ingestion deferred: %s", deferral)
+        return None
+
     logger.info(
         "[MYRA BG] Database behind confirmed trading date (%s < %s) – "
         "triggering catch-up ingestion.",

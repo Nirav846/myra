@@ -625,7 +625,7 @@
           }
         ],
         "name": "corporate_actions",
-        "row_count": 2408
+        "row_count": 2415
       },
       {
         "columns": [
@@ -937,7 +937,7 @@
           }
         ],
         "name": "benchmarks",
-        "row_count": 4675
+        "row_count": 4686
       },
       {
         "columns": [
@@ -973,7 +973,7 @@
           }
         ],
         "name": "bhm1_cooldown",
-        "row_count": 735
+        "row_count": 744
       },
       {
         "columns": [
@@ -1063,7 +1063,7 @@
           }
         ],
         "name": "doctor_runs",
-        "row_count": 69
+        "row_count": 92
       },
       {
         "columns": [
@@ -1087,7 +1087,7 @@
           }
         ],
         "name": "etf_blocklist",
-        "row_count": 352
+        "row_count": 355
       },
       {
         "columns": [
@@ -1123,7 +1123,67 @@
           }
         ],
         "name": "etf_sync_log",
-        "row_count": 20
+        "row_count": 22
+      },
+      {
+        "columns": [
+          {
+            "name": "id",
+            "notnull": false,
+            "pk": true,
+            "type": "INTEGER"
+          },
+          {
+            "name": "symbol",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "observed_at",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "run_id",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "source",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "category",
+            "notnull": true,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "http_status",
+            "notnull": false,
+            "pk": false,
+            "type": "INTEGER"
+          },
+          {
+            "name": "exception_class",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          },
+          {
+            "name": "detail_code",
+            "notnull": false,
+            "pk": false,
+            "type": "TEXT"
+          }
+        ],
+        "name": "fundamentals_failure_log",
+        "row_count": 49
       },
       {
         "columns": [
@@ -1237,7 +1297,7 @@
           }
         ],
         "name": "metadata",
-        "row_count": 14
+        "row_count": 19
       },
       {
         "columns": [
@@ -1465,7 +1525,7 @@
           }
         ],
         "name": "sync_log",
-        "row_count": 15
+        "row_count": 18
       },
       {
         "columns": [
@@ -1543,7 +1603,7 @@
           }
         ],
         "name": "task_registry",
-        "row_count": 2458
+        "row_count": 2581
       },
       {
         "columns": [
@@ -1963,7 +2023,7 @@
           }
         ],
         "name": "snapshots",
-        "row_count": 61
+        "row_count": 67
       },
       {
         "columns": [
@@ -2041,7 +2101,7 @@
           }
         ],
         "name": "cache",
-        "row_count": 14
+        "row_count": 411
       }
     ]
   },
@@ -2257,7 +2317,7 @@
           }
         ],
         "name": "mcap_rank_daily",
-        "row_count": 39968
+        "row_count": 51720
       },
       {
         "columns": [
@@ -2797,7 +2857,7 @@
           }
         ],
         "name": "technical_data",
-        "row_count": 8005858
+        "row_count": 8038059
       }
     ]
   },
@@ -3241,7 +3301,7 @@
           }
         ],
         "name": "fundamental_source_freshness",
-        "row_count": 0
+        "row_count": 665
       },
       {
         "columns": [
@@ -3619,7 +3679,7 @@
           }
         ],
         "name": "fundamentals",
-        "row_count": 3946
+        "row_count": 3962
       },
       {
         "columns": [
@@ -3811,7 +3871,7 @@
           }
         ],
         "name": "quarterly_results",
-        "row_count": 7145
+        "row_count": 10798
       },
       {
         "columns": [
