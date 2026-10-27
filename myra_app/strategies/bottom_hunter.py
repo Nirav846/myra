@@ -13,11 +13,134 @@ from myra_app.constants import DB_DIR
 from myra_app.librarian_core import LibrarianCore
 from myra_app.db.bulk_loader import (
     load_ohlcv_for_universe,
-    get_df_for_symbol,
+    rows_for_symbol,
     COLUMNS_12,
 )
 
 logger = logging.getLogger(__name__)
+
+
+class _ColumnarWindow:
+    """Per-column arrays over one symbol slice, materialized per request.
+
+    The scan needs a small DataFrame per symbol, but it used to build it the
+    long way round: ``rows_for_symbol`` projected twelve columns into a tuple
+    list (with a NaN->None sweep), ``pd.DataFrame`` re-inferred every column
+    from Python objects, and the date strings were parsed and sorted per
+    symbol. One pass over the slice replaces all of it.
+
+    ``from_frames`` concatenates each column once and parses the date column a
+    single time, so a request is twelve slice views and one small frame.
+
+    Columns missing from a frame are padded with ``None`` for that frame only:
+    every consumer indexes by position, so a dropped column would shift the
+    rest. This mirrors ``rows_for_symbol``'s ``_pad_rows`` fallback, which pads
+    the same columns to the same twelve-value shape.
+
+    Rows keep snapshot order. ``load_ohlcv_for_universe`` emits ``(symbol,
+    date)`` ordered frames, but a caller's frame may still be unsorted, so the
+    accessor sorts when (and only when) the dates are not already monotonic.
+
+    The window is private to one scan: ``frame`` returns a fresh DataFrame whose
+    blocks are copies, so a caller mutating what it receives cannot reach the
+    arrays or another symbol.
+    """
+
+    __slots__ = ("columns", "arrays", "spans")
+
+    def __init__(
+        self,
+        columns: tuple[str, ...],
+        arrays: dict[str, np.ndarray],
+        spans: dict[str, tuple[int, int]],
+    ):
+        self.columns = columns
+        self.arrays = arrays
+        self.spans = spans
+
+    @classmethod
+    def from_frames(
+        cls, frames: dict[str, pd.DataFrame], columns: tuple[str, ...]
+    ) -> "_ColumnarWindow":
+        spans: dict[str, tuple[int, int]] = {}
+        kept: list[pd.DataFrame] = []
+        position = 0
+        for symbol, df in frames.items():
+            length = len(df)
+            # An empty symbol is absent from the window, exactly like a symbol
+            # the snapshot never returned.
+            if not length:
+                continue
+            # ``span`` binary-searches the symbol's date run, so the run must be
+            # chronological. The loader already orders by (symbol, date); this
+            # only pays for a frame that arrived unsorted.
+            if "date" in df.columns and not df["date"].is_monotonic_increasing:
+                df = df.sort_values("date").reset_index(drop=True)
+            spans[symbol] = (position, position + length)
+            position += length
+            kept.append(df)  # noqa: PG-APPEND
+
+        if not kept:
+            return cls(
+                columns,
+                {column: np.empty(0, dtype=object) for column in columns},
+                spans,
+            )
+
+        # One concat beats 12 x N column extractions and keeps the tuple path's
+        # dtypes: a column missing from *some* frames becomes float64 NaN, which
+        # is exactly what ``rows_for_symbol`` + ``pd.DataFrame`` infer from a
+        # mix of floats and None.
+        wide = pd.concat(kept, ignore_index=True)
+        arrays: dict[str, np.ndarray] = {}
+        for column in columns:
+            if column in wide.columns:
+                values = wide[column].to_numpy()
+            else:
+                # Absent from every frame: an all-None object array, matching
+                # the tuple path's fully-padded column.
+                values = np.full(position, None, dtype=object)
+            # Parsed once here instead of once per symbol in the scan.
+            if column == "date":
+                values = pd.to_datetime(values).to_numpy()
+            arrays[column] = values
+        return cls(columns, arrays, spans)
+
+    def span(
+        self, symbol: str, min_date: str, max_date: str | None
+    ) -> tuple[int, int] | None:
+        """Row bounds for *symbol* clipped to ``[min_date, max_date]``."""
+        bounds = self.spans.get(symbol)
+        if bounds is None:
+            return None
+        start, end = bounds
+        dates = self.arrays["date"]
+        # A date the parser cannot read leaves the window unclipped, which is
+        # what the previous string comparison did for a malformed bound.
+        try:
+            lower = np.datetime64(min_date, "ns") if min_date else None
+            upper = np.datetime64(max_date, "ns") if max_date else None
+        except ValueError:
+            return start, end
+        if lower is not None and lower > dates[start]:
+            start += int(np.searchsorted(dates[start:end], lower, "left"))
+        if upper is not None and end > start and upper < dates[end - 1]:
+            end = start + int(np.searchsorted(dates[start:end], upper, "right"))
+        if end <= start:
+            return None
+        return start, end
+
+    def frame(
+        self, symbol: str, min_date: str, max_date: str | None
+    ) -> pd.DataFrame | None:
+        """The symbol's rows as a new DataFrame, clipped like ``rows_for_symbol``."""
+        bounds = self.span(symbol, min_date, max_date)
+        if bounds is None:
+            return None
+        start, end = bounds
+        return pd.DataFrame(
+            {column: self.arrays[column][start:end] for column in self.columns}
+        )
 
 
 def compute_sector_momentum_tiers(
@@ -164,6 +287,7 @@ def compute_sector_momentum_tiers(
 
 class BottomHunter:
     _bulk_data = None
+    _columnar = None
     _BULK_COLUMNS = COLUMNS_12
 
     def __init__(
@@ -233,22 +357,27 @@ class BottomHunter:
     def _get_tech_df(
         self, symbol: str, min_date: str, max_date: str | None = None
     ) -> pd.DataFrame:
-        """Return a per-symbol OHLCV DataFrame with a datetime, sorted date column.
+        """The symbol's bars as a chronologically ordered frame.
 
-        Uses the single bulk load when available (no tuple round-trip); falls
-        back to the per-symbol DB path for DB-only / parity runs.
+        This is the attribute the web layer's progress wrapper patches, so it
+        keeps the ``(symbol, min_date, max_date)`` call shape. The window path
+        slices pre-built arrays; without a window the frame is built from the
+        rows accessor exactly as the scan used to build it (including the
+        nine-column shape of an old schema, padded back to twelve).
         """
-        if self._bulk_data is not None:
-            df = get_df_for_symbol(
-                self._bulk_data, symbol, self._BULK_COLUMNS, min_date, max_date
-            )
-            if df is None or df.empty:
-                return pd.DataFrame()
+        columns = list(self._BULK_COLUMNS)
+        max_date = max_date or date.today().isoformat()
+        if self._columnar is not None:
+            df = self._columnar.frame(symbol, min_date, max_date)
+            if df is None:
+                return pd.DataFrame(columns=columns)
+            if not df["date"].is_monotonic_increasing:
+                df = df.sort_values("date").reset_index(drop=True)
             return df
 
         rows = self._get_tech_data(symbol, min_date, max_date)
         if not rows:
-            return pd.DataFrame()
+            return pd.DataFrame(columns=columns)
         if len(rows[0]) >= 12:
             df = pd.DataFrame(
                 rows,
@@ -292,8 +421,14 @@ class BottomHunter:
     def _get_tech_data(
         self, symbol: str, min_date: str, max_date: str | None = None
     ) -> list[tuple]:
-        """Per-symbol DB fallback (used when the bulk window is unavailable)."""
+        """Per-symbol rows: from the bulk dictionary when one is held, else SQL."""
         max_date = max_date or date.today().isoformat()
+        if self._bulk_data is not None:
+            # An empty mapping means the bulk load ran and found nothing, so
+            # this returns [] rather than issuing one query per symbol.
+            return rows_for_symbol(
+                self._bulk_data, symbol, self._BULK_COLUMNS, min_date, max_date
+            )
         tech_db = self._db_path("technical")
         if not os.path.exists(tech_db):
             return []
@@ -440,9 +575,20 @@ class BottomHunter:
 
         # Single bulk load replaces per-symbol sqlite connections.
         # Restrict to the post-filter universe to avoid loading unrelated symbols.
-        self._bulk_data = load_ohlcv_for_universe(
+        bulk = load_ohlcv_for_universe(
             min_date, as_on_date, [r[0].strip() for r in rows]
         )
+        if bulk:
+            # One columnar window per scan; the dictionary only ever held this
+            # same slice, so releasing it keeps a single representation live.
+            self._columnar = _ColumnarWindow.from_frames(bulk, self._BULK_COLUMNS)
+            self._bulk_data = None
+        else:
+            # The bulk load ran and held nothing: keep the empty mapping so the
+            # rows accessor answers "nothing" instead of falling through to one
+            # SQL query per symbol.
+            self._columnar = None
+            self._bulk_data = bulk
 
         candidates: list[dict] = []
 
