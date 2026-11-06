@@ -39,9 +39,15 @@ RAW_HOLDINGS_DIR = _TRACTION_DIR / "temp_holdings"
 NAME_TO_NSE_PATH = _TRACTION_DIR / "config" / "name_to_nse.csv"
 TRACTION_SRC = _TRACTION_DIR / "src"
 FUNDS_LIST_PATH = _TRACTION_DIR / "config" / "rupeevest_funds.txt"
+# The real list is local/gitignored; the checked-in example is the fallback so
+# download_holdings() still works on a fresh clone.
+FUNDS_LIST_FALLBACK_PATH = _TRACTION_DIR / "config" / "rupeevest_funds.example.txt"
 DOWNLOAD_SCRIPT_PATH = _TRACTION_DIR / "scripts" / "download_rupeevest_funds.py"
 KEEP_RAW = False
 DOWNLOAD_TIMEOUT_S = 600
+# One renamed/transient fund must not make the month look "no csvs"; matches
+# the task-level budget in myra_app.tasks.cross_buy.
+DOWNLOAD_MAX_FAILURES = 3
 
 # mf_screener is pure stdlib and lives outside the package tree; add once.
 if str(TRACTION_SRC) not in sys.path:
@@ -123,9 +129,9 @@ MANUAL_OVERRIDES_PATH = (
 # Caches
 _NAME_TO_NSE_CACHE: dict[str, str] | None = None
 _MARKET_CAP_CACHE: dict[str, float] | None = None
-_SYMBOL_NAME_CACHE: dict[
-    str, str
-] | None = None  # normalized name -> symbol (for fuzzy fallback)
+_SYMBOL_NAME_CACHE: dict[str, str] | None = (
+    None  # normalized name -> symbol (for fuzzy fallback)
+)
 _NAMES_POPULATED: bool = (
     False  # flag to indicate we have attempted to populate symbols_master.name
 )
@@ -162,16 +168,14 @@ def _load_symbol_names_from_metadata() -> None:
             conn.close()
             return
         # Query for active equity symbols with non-empty name
-        cursor.execute(
-            """
+        cursor.execute("""
             SELECT symbol, name
             FROM symbols_master
             WHERE (instrument_type='EQUITY' OR instrument_type IS NULL)
               AND (is_active=1 OR is_active IS NULL)
               AND name IS NOT NULL
               AND name != ''
-            """
-        )
+            """)
         rows = cursor.fetchall()
         conn.close()
     except sqlite3.Error as exc:
@@ -433,9 +437,12 @@ def download_holdings(month: str) -> bool:
         subprocess fails/times out. Never raises – processing continues with
         whatever CSVs already exist.
     """
-    if not FUNDS_LIST_PATH.exists():
+    if not FUNDS_LIST_PATH.exists() and not FUNDS_LIST_FALLBACK_PATH.exists():
         logger.warning("Funds list missing (%s); skipping download.", FUNDS_LIST_PATH)
         return False
+    funds_path = (
+        FUNDS_LIST_PATH if FUNDS_LIST_PATH.exists() else FUNDS_LIST_FALLBACK_PATH
+    )
     if not DOWNLOAD_SCRIPT_PATH.exists():
         logger.warning(
             "Downloader script missing (%s); skipping download.", DOWNLOAD_SCRIPT_PATH
@@ -447,7 +454,9 @@ def download_holdings(month: str) -> bool:
         "--out-dir",
         str(RAW_HOLDINGS_DIR),
         "--funds-file",
-        str(FUNDS_LIST_PATH),
+        str(funds_path),
+        "--max-failures",
+        str(DOWNLOAD_MAX_FAILURES),
     ]
     try:
         proc = subprocess.run(  # noqa: S603 - fixed argv, no shell
